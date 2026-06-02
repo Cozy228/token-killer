@@ -51,6 +51,8 @@ check_pair "src/handlers/git/diff.ts" "tests/unit/handlers/git/diff.test.ts"
 check_pair "src/handlers/git/log.ts" "tests/unit/handlers/git/log.test.ts"
 check_pair "src/handlers/git/branch.ts" "tests/unit/handlers/git/branch.test.ts"
 check_pair "src/handlers/git/show.ts" "tests/unit/handlers/git/show.test.ts"
+check_pair "src/handlers/git/extended.ts" "tests/unit/handlers/git/extended.test.ts"
+check_pair "src/handlers/git/hostingCli.ts" "tests/unit/handlers/git/hostingCli.test.ts"
 check_pair "src/handlers/generic.ts" "tests/unit/handlers/generic.test.ts"
 check_pair "src/handlers/python/pytest.ts" "tests/unit/handlers/python/pytest.test.ts"
 check_pair "src/handlers/python/ruff.ts" "tests/unit/handlers/python/ruff.test.ts"
@@ -77,7 +79,7 @@ check_pair "src/executor.ts" "tests/unit/executor.test.ts"
 # Check for unmapped handler files
 echo ""
 echo "check-test-presence: scanning for unmapped handler files..."
-KNOWN_HANDLERS="searchLike listLike readLike status diff log branch show generic pytest ruff mypy pip test tsc eslint packageList maven gradle javac"
+KNOWN_HANDLERS="searchLike listLike readLike status diff log branch show extended hostingCli generic pytest ruff mypy pip test tsc eslint packageList maven gradle javac"
 for f in $(find src/handlers -name "*.ts" ! -name "index.ts" ! -name "base.ts" | sort); do
     fname="$(basename "$f" .ts)"
     if ! echo "$KNOWN_HANDLERS" | grep -qw "$fname"; then
