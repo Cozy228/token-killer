@@ -1,0 +1,44 @@
+import { mkdir, writeFile } from "node:fs/promises";
+import path from "node:path";
+
+import type { RawResult, TgOptions } from "../types.js";
+import { safePathPart } from "./path.js";
+
+function timestampForPath(date = new Date()): string {
+  const pad = (n: number) => String(n).padStart(2, "0");
+  return `${date.getFullYear()}${pad(date.getMonth() + 1)}${pad(date.getDate())}-${pad(
+    date.getHours(),
+  )}${pad(date.getMinutes())}${pad(date.getSeconds())}`;
+}
+
+export async function maybeSaveRawOutput(
+  raw: RawResult,
+  options: TgOptions,
+): Promise<string | undefined> {
+  const rawText = `${raw.stdout}${raw.stderr}`;
+  const shouldSave =
+    options.saveRaw === true ||
+    (options.saveRaw === "auto" && (raw.exitCode !== 0 || rawText.length > 20000));
+
+  if (!shouldSave || options.saveRaw === false) return undefined;
+
+  const dir = path.join(options.cwd, ".tg/raw");
+  await mkdir(dir, { recursive: true });
+  const relativePath = path.join(
+    ".tg/raw",
+    `${timestampForPath()}-${safePathPart(raw.command)}.log`,
+  );
+  const absolutePath = path.join(options.cwd, relativePath);
+  const content = [
+    `Command: ${raw.command}`,
+    `Exit Code: ${raw.exitCode}`,
+    `Duration: ${raw.durationMs}ms`,
+    "--- STDOUT ---",
+    raw.stdout,
+    "--- STDERR ---",
+    raw.stderr,
+  ].join("\n");
+
+  await writeFile(absolutePath, content, "utf8");
+  return relativePath;
+}
