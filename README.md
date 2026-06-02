@@ -59,7 +59,7 @@ Implemented:
 - eslint
 - tsc
 - npm/pnpm/yarn list
-- maven
+- mvn/maven
 - gradle
 - javac
 - generic fallback

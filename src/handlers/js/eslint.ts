@@ -16,6 +16,26 @@ function matchesEslint(command: ParsedCommand): boolean {
 }
 
 function parseIssues(text: string): EslintIssue[] {
+  const trimmed = text.trim();
+  if (trimmed.startsWith("[") || trimmed.startsWith("{")) {
+    try {
+      const payload = JSON.parse(trimmed);
+      const files = Array.isArray(payload) ? payload : [payload];
+      return files.flatMap((file: any) =>
+        (file.messages ?? []).map((message: any) => ({
+          file: String(file.filePath ?? "").replace(/^.*?\/repo\//, ""),
+          line: String(message.line ?? 0),
+          column: String(message.column ?? 0),
+          severity: message.severity === 2 ? "error" : "warning",
+          message: String(message.message ?? ""),
+          rule: String(message.ruleId ?? "unknown"),
+        })),
+      );
+    } catch {
+      // Fall through to text parser.
+    }
+  }
+
   const issues: EslintIssue[] = [];
   let currentFile = "";
   for (const line of text.split(/\r?\n/)) {

@@ -8,6 +8,7 @@ type TscIssue = {
   column: string;
   code: string;
   message: string;
+  notes: string[];
 };
 
 function matchesTsc(command: ParsedCommand): boolean {
@@ -23,14 +24,20 @@ function parseIssue(line: string): TscIssue | undefined {
     column: match[3] ?? "",
     code: match[4] ?? "",
     message: match[5] ?? "",
+    notes: [],
   };
 }
 
 function formatTsc(text: string): string {
-  const issues = text
-    .split(/\r?\n/)
-    .map(parseIssue)
-    .filter((issue): issue is TscIssue => Boolean(issue));
+  const issues: TscIssue[] = [];
+  for (const line of text.split(/\r?\n/)) {
+    const issue = parseIssue(line);
+    if (issue) {
+      issues.push(issue);
+      continue;
+    }
+    if (/^\s{2,}\S/.test(line) && issues.length > 0) issues[issues.length - 1]!.notes.push(line.trim());
+  }
   const byCode = new Map<string, TscIssue[]>();
   for (const issue of issues) {
     const list = byCode.get(issue.code) ?? [];
@@ -46,10 +53,12 @@ function formatTsc(text: string): string {
       return aNoise - bNoise || a.file.localeCompare(b.file);
     });
     out.push("", code);
-    for (const issue of sortedIssues.slice(0, 5)) {
+    const shownIssues = sortedIssues.length > 100 ? sortedIssues.slice(0, 20) : sortedIssues;
+    for (const issue of shownIssues) {
       out.push(`- ${issue.file}:${issue.line}:${issue.column} ${issue.message}`);
+      for (const note of issue.notes) out.push(`  ${note}`);
     }
-    if (codeIssues.length > 5) out.push(`- ... ${codeIssues.length - 5} more`);
+    if (sortedIssues.length > shownIssues.length) out.push(`- ... ${sortedIssues.length - shownIssues.length} more`);
   }
   return `${out.join("\n")}\n`;
 }

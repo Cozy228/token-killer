@@ -12,9 +12,14 @@ function matchesPip(command: ParsedCommand): boolean {
   );
 }
 
-function formatPip(text: string): string {
+function formatPip(text: string, command: ParsedCommand): string {
   const lines = text.split(/\r?\n/).filter((line) => line.trim());
-  const packages = lines.filter((line) => /^[A-Za-z0-9_.-]+(?:==|\s+)\S+/.test(line));
+  if (command.args.includes("--outdated") && lines.length === 0) return "No outdated packages\n";
+
+  const packages = lines.filter((line) => {
+    if (/^Package\s+Version/i.test(line) || /^-+$/.test(line.replace(/\s+/g, ""))) return false;
+    return /^[A-Za-z0-9_.-]+(?:==|\s+)\S+/.test(line);
+  });
   const problems = lines.filter((line) => /invalid|unmet|peer|conflict|missing|WARNING|ERROR|audit|security/i.test(line));
   const shownPackages = packages.slice(0, 30);
 
@@ -42,7 +47,7 @@ export const pipHandler: CommandHandler = {
     return executeCommand(command);
   },
 
-  async filter(raw, _command, options) {
-    return makeFilteredResult(this.name, raw, formatPip(`${raw.stdout}\n${raw.stderr}`), options);
+  async filter(raw, command, options) {
+    return makeFilteredResult(this.name, raw, formatPip(`${raw.stdout}\n${raw.stderr}`, command), options);
   },
 };

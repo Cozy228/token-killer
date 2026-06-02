@@ -13,7 +13,7 @@ function matchesPytest(command: ParsedCommand): boolean {
 
 function formatPytest(text: string, exitCode: number): string {
   const lines = text.split(/\r?\n/);
-  const summary = [...lines].reverse().find((line) => /\b(failed|passed|warnings?|skipped)\b/.test(line) && /\d/.test(line));
+  const summary = [...lines].reverse().find((line) => /\b(failed|passed|warnings?|skipped|no tests ran)\b/.test(line) && (/\d/.test(line) || /no tests ran/.test(line)));
   const failed = lines.filter((line) => line.startsWith("FAILED ") || line.includes("::test_")).slice(0, 20);
   const important = lines
     .filter((line) => /^E\s+|^>\s+|AssertionError|\.py:\d+/.test(line.trim()))

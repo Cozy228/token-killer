@@ -26,11 +26,17 @@ function parseIssue(line: string): RuffIssue | undefined {
   };
 }
 
-function formatRuff(text: string): string {
+function formatRuff(text: string, command: ParsedCommand): string {
   const issues = text
     .split(/\r?\n/)
     .map(parseIssue)
     .filter((issue): issue is RuffIssue => Boolean(issue));
+  if (issues.length === 0 && text.trim()) {
+    if (command.args[0] === "format") return `${text.trimEnd()}\n`;
+    if (/All checks passed/i.test(text)) return "Ruff: 0 issues in 0 files\n";
+    return `${text.trimEnd()}\n`;
+  }
+
   const byRule = new Map<string, RuffIssue[]>();
   for (const issue of issues) {
     const list = byRule.get(issue.rule) ?? [];
@@ -50,7 +56,7 @@ function formatRuff(text: string): string {
     for (const issue of sortedIssues.slice(0, 5)) {
       out.push(`- ${issue.file}:${issue.line}:${issue.column} ${issue.message}`);
     }
-    if (ruleIssues.length > 5) out.push(`- ... ${ruleIssues.length - 5} more`);
+    if (ruleIssues.length > 5) out.push(`- ... ${ruleIssues.length - 5} more; use full output for all violations`);
   }
   return `${out.join("\n")}\n`;
 }
@@ -64,7 +70,7 @@ export const ruffHandler: CommandHandler = {
     return executeCommand(command);
   },
 
-  async filter(raw, _command, options) {
-    return makeFilteredResult(this.name, raw, formatRuff(`${raw.stdout}\n${raw.stderr}`), options);
+  async filter(raw, command, options) {
+    return makeFilteredResult(this.name, raw, formatRuff(`${raw.stdout}\n${raw.stderr}`, command), options);
   },
 };

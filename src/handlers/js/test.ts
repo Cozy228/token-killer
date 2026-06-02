@@ -15,6 +15,26 @@ function matchesJsTest(command: ParsedCommand): boolean {
 }
 
 function formatJsTest(text: string, exitCode: number): string {
+  const trimmed = text.trim();
+  if (trimmed.startsWith("{")) {
+    try {
+      const payload = JSON.parse(trimmed);
+      const out = [exitCode === 0 ? "JS tests passed" : "JS tests failed"];
+      out.push(`Summary: ${payload.numFailedTests ?? 0} failed, ${payload.numPassedTests ?? 0} passed`);
+      for (const file of payload.testResults ?? []) {
+        for (const assertion of file.assertionResults ?? []) {
+          if (assertion.status === "failed") {
+            out.push(`- ${file.name}: ${assertion.title}`);
+            for (const message of assertion.failureMessages ?? []) out.push(`  ${message}`);
+          }
+        }
+      }
+      return `${out.join("\n")}\n`;
+    } catch {
+      // Fall through to text parser.
+    }
+  }
+
   const lines = text.split(/\r?\n/);
   const summary = lines.filter((line) => /Test Files|Tests\s+|failed|passed/.test(line)).slice(-6);
   const failures = lines
