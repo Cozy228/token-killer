@@ -1,0 +1,36 @@
+{
+  "name": "@company/tg",
+  "version": "0.1.0",
+  "description": "RTK-style token-saving command proxy.",
+  "type": "module",
+  "packageManager": "pnpm@11.5.0",
+  "bin": {
+    "tg": "./dist/cli.js"
+  },
+  "files": [
+    "dist",
+    "README.md"
+  ],
+  "scripts": {
+    "dev": "tsx src/cli.ts",
+    "build": "tsdown",
+    "test": "vitest",
+    "test:smoke": "bash tests/smoke/smoke.sh",
+    "test:check-presence": "bash scripts/check-test-presence.sh",
+    "test:ci": "vitest run && bash tests/smoke/smoke.sh && bash scripts/check-test-presence.sh",
+    "typecheck": "tsc --noEmit"
+  },
+  "engines": {
+    "node": ">=20"
+  },
+  "dependencies": {
+    "strip-ansi": "^7.2.0"
+  },
+  "devDependencies": {
+    "@types/node": "^25.9.1",
+    "tsdown": "^0.22.1",
+    "tsx": "^4.22.4",
+    "typescript": "^6.0.3",
+    "vitest": "^4.1.8"
+  }
+}
