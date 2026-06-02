@@ -7,6 +7,8 @@ import { gitDiffHandler } from "./git/diff.js";
 import { gitLogHandler } from "./git/log.js";
 import { gitShowHandler } from "./git/show.js";
 import { gitBranchHandler } from "./git/branch.js";
+import { gitExtendedHandlers } from "./git/extended.js";
+import { ghHandler, glabHandler } from "./git/hostingCli.js";
 import { pytestHandler } from "./python/pytest.js";
 import { ruffHandler } from "./python/ruff.js";
 import { mypyHandler } from "./python/mypy.js";
@@ -29,6 +31,9 @@ export const handlers: CommandHandler[] = [
   gitLogHandler,
   gitShowHandler,
   gitBranchHandler,
+  ...gitExtendedHandlers,
+  ghHandler,
+  glabHandler,
   pytestHandler,
   ruffHandler,
   mypyHandler,

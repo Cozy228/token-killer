@@ -7,6 +7,9 @@ function formatBranch(text: string): string {
     .split(/\r?\n/)
     .map((line) => ({ current: line.trimStart().startsWith("*"), name: line.replace(/^\s*\*?\s*/, "").trim() }))
     .filter((branch) => branch.name);
+  if (branches.length === 0) return "Current: unknown\nBranches: 0, showing 0\n";
+  if (branches.length <= 2) return text.endsWith("\n") ? text : `${text}\n`;
+
   const current = branches.find((branch) => branch.current)?.name ?? "unknown";
   const nearby = branches
     .filter((branch) => branch.current || ["main", "master"].includes(branch.name) || branch.name.startsWith("codex/") || branch.name.startsWith("release/"))

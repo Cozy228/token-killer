@@ -7,6 +7,7 @@ type FileSummary = {
   added: number;
   removed: number;
   hunks: string[];
+  changedLines: string[];
 };
 
 function formatDiff(text: string): string {
@@ -16,7 +17,7 @@ function formatDiff(text: string): string {
   for (const line of text.split(/\r?\n/)) {
     if (line.startsWith("diff --git ")) {
       const match = line.match(/ b\/(.+)$/);
-      current = { file: match?.[1] ?? line.replace("diff --git ", ""), added: 0, removed: 0, hunks: [] };
+      current = { file: match?.[1] ?? line.replace("diff --git ", ""), added: 0, removed: 0, hunks: [], changedLines: [] };
       files.push(current);
       continue;
     }
@@ -25,8 +26,14 @@ function formatDiff(text: string): string {
       if (current.hunks.length < 8) current.hunks.push(line);
       continue;
     }
-    if (line.startsWith("+") && !line.startsWith("+++")) current.added += 1;
-    if (line.startsWith("-") && !line.startsWith("---")) current.removed += 1;
+    if (line.startsWith("+") && !line.startsWith("+++")) {
+      current.added += 1;
+      if (current.changedLines.length < 10) current.changedLines.push(line);
+    }
+    if (line.startsWith("-") && !line.startsWith("---")) {
+      current.removed += 1;
+      if (current.changedLines.length < 10) current.changedLines.push(line);
+    }
   }
 
   const totalAdded = files.reduce((sum, file) => sum + file.added, 0);
@@ -38,6 +45,11 @@ function formatDiff(text: string): string {
     for (const hunk of file.hunks) {
       lines.push(`- hunk: ${hunk}`);
     }
+    for (const changedLine of file.changedLines) {
+      lines.push(changedLine);
+    }
+    const hidden = file.added + file.removed - file.changedLines.length;
+    if (hidden > 0) lines.push(`... +${hidden} more changed lines`);
     lines.push("");
   }
 

@@ -17,6 +17,9 @@ export function executeCommand(command: ParsedCommand): Promise<RawResult> {
 
     child.stdout?.on("data", (chunk: Buffer) => stdout.push(chunk));
     child.stderr?.on("data", (chunk: Buffer) => stderr.push(chunk));
+    if (child.stdin) {
+      process.stdin.pipe(child.stdin);
+    }
 
     child.on("error", (error: NodeJS.ErrnoException) => {
       const exitCode = error.code === "ENOENT" ? 127 : 1;

@@ -14,6 +14,12 @@ function shortHash(hash: string): string {
 }
 
 function formatLog(text: string): string {
+  const rawLines = text.split(/\r?\n/).filter(Boolean);
+  if (rawLines.length === 0) return "Git Log\nCommits: 0\n";
+  if (rawLines.length > 0 && rawLines.length <= 5 && rawLines.every((line) => /^[0-9a-f]{7,}\s+/.test(line))) {
+    return `${rawLines.join("\n")}\n`;
+  }
+
   const commits: Commit[] = [];
   let current: Commit | undefined;
   let expectingSubject = false;
@@ -42,12 +48,11 @@ function formatLog(text: string): string {
   }
 
   if (commits.length === 0) {
-    const lines = text
-      .split(/\r?\n/)
-      .filter(Boolean)
-      .slice(0, 20);
-    return `Git Log\nCommits: ${lines.length}\n${lines.join("\n")}\n`;
+    const lines = rawLines.slice(0, 20);
+    return lines.length <= 5 ? `${lines.join("\n")}\n` : `Git Log\nCommits: ${lines.length}\n${lines.join("\n")}\n`;
   }
+
+  if (commits.length <= 1) return text.endsWith("\n") ? text : `${text}\n`;
 
   const shown = commits.slice(0, 20);
   const lines = [`Git Log: ${commits.length} commits, showing ${shown.length}`, ""];
