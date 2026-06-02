@@ -17,7 +17,10 @@
     "test": "vitest",
     "test:smoke": "bash tests/smoke/smoke.sh",
     "test:check-presence": "bash scripts/check-test-presence.sh",
-    "test:ci": "vitest run && bash tests/smoke/smoke.sh && bash scripts/check-test-presence.sh",
+    "test:validate-docs": "bash scripts/validate-docs.sh",
+    "test:install": "bash scripts/test-install.sh",
+    "check:installation": "bash scripts/check-installation.sh",
+    "test:ci": "vitest run && bash scripts/check-test-presence.sh && bash scripts/validate-docs.sh && bash tests/smoke/smoke.sh",
     "typecheck": "tsc --noEmit"
   },
   "engines": {
