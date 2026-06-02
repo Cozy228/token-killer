@@ -33,7 +33,7 @@ echo ""
 check_mention() {
     local label="$1"
     local pattern="$2"
-    if grep -q "$pattern" "$README"; then
+    if grep -q -- "$pattern" "$README"; then
         printf "  PASS   %s\n" "$label"
         PASS=$((PASS + 1))
     else
