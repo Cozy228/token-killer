@@ -146,4 +146,87 @@ describe("pip format variants", () => {
     expect(result.handler).toBe("pip");
     expect(typeof result.output).toBe("string");
   });
+
+  test("handles pip list with no packages", async () => {
+    const raw: RawResult = {
+      command: "pip list",
+      stdout: [
+        "Package Version",
+        "------- -------",
+      ].join("\n"),
+      stderr: "",
+      exitCode: 0,
+      durationMs: 1,
+    };
+
+    const result = await pipHandler.filter(
+      raw,
+      {
+        program: "pip",
+        args: ["list"],
+        original: ["pip", "list"],
+        displayCommand: "pip list",
+      },
+      options,
+    );
+
+    expect(result.handler).toBe("pip");
+    expect(result.output).toContain("Packages: 0");
+  });
+
+  test("preserves pip outdated package updates", async () => {
+    const raw: RawResult = {
+      command: "pip list --outdated",
+      stdout: [
+        "Package    Version Latest Type",
+        "---------- ------- ------ -----",
+        "requests   2.30.0  2.31.0 wheel",
+        "sqlalchemy 1.4.0   2.0.0  wheel",
+      ].join("\n"),
+      stderr: "",
+      exitCode: 0,
+      durationMs: 1,
+    };
+
+    const result = await pipHandler.filter(
+      raw,
+      {
+        program: "pip",
+        args: ["list", "--outdated"],
+        original: ["pip", "list", "--outdated"],
+        displayCommand: "pip list --outdated",
+      },
+      options,
+    );
+
+    expect(result.handler).toBe("pip");
+    expect(result.output).toContain("requests");
+    expect(result.output).toContain("2.30.0");
+    expect(result.output).toContain("2.31.0");
+    expect(result.output).toContain("sqlalchemy");
+  });
+
+  test("reports no outdated pip packages distinctly", async () => {
+    const raw: RawResult = {
+      command: "pip list --outdated",
+      stdout: "",
+      stderr: "",
+      exitCode: 0,
+      durationMs: 1,
+    };
+
+    const result = await pipHandler.filter(
+      raw,
+      {
+        program: "pip",
+        args: ["list", "--outdated"],
+        original: ["pip", "list", "--outdated"],
+        displayCommand: "pip list --outdated",
+      },
+      options,
+    );
+
+    expect(result.handler).toBe("pip");
+    expect(result.output).toContain("No outdated packages");
+  });
 });

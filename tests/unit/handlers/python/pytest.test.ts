@@ -200,4 +200,89 @@ describe("pytest format variants", () => {
     expect(result.output).toContain("test_auth.py::test_login_timeout");
     expect(result.output).toContain("test_cache.py::test_cache_eviction");
   });
+
+  test("preserves no-tests-collected outcome distinctly", async () => {
+    const raw: RawResult = {
+      command: "pytest -q",
+      stdout: "no tests ran in 0.01s\n",
+      stderr: "",
+      exitCode: 5,
+      durationMs: 1,
+    };
+
+    const result = await pytestHandler.filter(
+      raw,
+      {
+        program: "pytest",
+        args: ["-q"],
+        original: ["pytest", "-q"],
+        displayCommand: "pytest -q",
+      },
+      options,
+    );
+
+    expect(result.handler).toBe("pytest");
+    expect(result.output).toContain("no tests ran");
+    expect(result.exitCode).toBe(5);
+  });
+
+  test("preserves xfail and xpass summaries", async () => {
+    const raw: RawResult = {
+      command: "pytest",
+      stdout: [
+        "tests/test_api.py::test_known_bug XFAIL",
+        "tests/test_api.py::test_unexpected_pass XPASS",
+        "================= 10 passed, 1 xfailed, 1 xpassed in 1.20s =================",
+      ].join("\n"),
+      stderr: "",
+      exitCode: 0,
+      durationMs: 1,
+    };
+
+    const result = await pytestHandler.filter(
+      raw,
+      {
+        program: "pytest",
+        args: [],
+        original: ["pytest"],
+        displayCommand: "pytest",
+      },
+      options,
+    );
+
+    expect(result.handler).toBe("pytest");
+    expect(result.output).toContain("xfailed");
+    expect(result.output).toContain("xpassed");
+    expect(result.output).toContain("test_unexpected_pass");
+  });
+
+  test("preserves quiet-mode failure summaries", async () => {
+    const raw: RawResult = {
+      command: "pytest -q",
+      stdout: [
+        "F..s",
+        "=================================== FAILURES ===================================",
+        "FAILED tests/test_api.py::test_timeout - TimeoutError: request timed out",
+        "1 failed, 2 passed, 1 skipped in 0.42s",
+      ].join("\n"),
+      stderr: "",
+      exitCode: 1,
+      durationMs: 1,
+    };
+
+    const result = await pytestHandler.filter(
+      raw,
+      {
+        program: "pytest",
+        args: ["-q"],
+        original: ["pytest", "-q"],
+        displayCommand: "pytest -q",
+      },
+      options,
+    );
+
+    expect(result.handler).toBe("pytest");
+    expect(result.output).toContain("FAILED tests/test_api.py::test_timeout");
+    expect(result.output).toContain("1 failed, 2 passed, 1 skipped");
+  });
 });

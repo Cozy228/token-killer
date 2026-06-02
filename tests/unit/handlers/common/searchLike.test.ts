@@ -349,9 +349,9 @@ describe("search-like grep format variants", () => {
   // Single file, all matches shown (no truncation)
   // --------------------------------------------------------------------------
 
-  test("shows all matches when under the per-file limit", async () => {
+  test("shows all matches when at the per-file limit of five", async () => {
     const lines = Array.from(
-      { length: 3 },
+      { length: 5 },
       (_, i) => `src/single.ts:${i + 1}:match ${i}`,
     );
     const result = await filterWith(
@@ -360,7 +360,142 @@ describe("search-like grep format variants", () => {
       rawFromLines(lines),
     );
 
-    expect(result.output).toContain("Matches: 3 across 1 files");
+    expect(result.output).toContain("Matches: 5 across 1 files");
     expect(result.output).not.toContain("Hidden:");
+  });
+
+  test("hides matches beyond the per-file limit of five", async () => {
+    const lines = Array.from(
+      { length: 6 },
+      (_, i) => `src/single.ts:${i + 1}:match ${i}`,
+    );
+    const result = await filterWith(
+      "rg",
+      ["match", "src"],
+      rawFromLines(lines),
+    );
+
+    expect(result.output).toContain("Matches: 6 across 1 files");
+    expect(result.output).toContain("Hidden:");
+  });
+
+  test("hides matches beyond the total limit of eighty", async () => {
+    const lines = Array.from({ length: 81 }, (_, index) => {
+      const file = index % 3 === 0 ? "src/a.ts" : index % 3 === 1 ? "src/b.ts" : "src/c.ts";
+      return `${file}:${index + 1}:match ${index}`;
+    });
+    const result = await filterWith(
+      "rg",
+      ["match", "src"],
+      rawFromLines(lines),
+    );
+
+    expect(result.output).toContain("Matches: 81 across 3 files");
+    expect(result.output).toContain("Hidden:");
+  });
+
+  test("passes through fully unrecognized non-empty grep output", async () => {
+    const raw: RawResult = {
+      command: "grep -r pattern src",
+      stdout: "plain text without any colon separator\n",
+      stderr: "",
+      exitCode: 0,
+      durationMs: 1,
+    };
+
+    const result = await filterWith("grep", ["-r", "pattern", "src"], raw);
+
+    expect(result.output).toContain("plain text without any colon separator");
+    expect(result.output).not.toMatch(/0 across 0 files/);
+    expect(result.output).not.toContain("Matches:");
+  });
+});
+
+describe("search-like grep flag correctness", () => {
+  test("passes through grep count output instead of treating counts as line numbers", async () => {
+    const result = await filterWith(
+      "grep",
+      ["-c", "export", "src"],
+      rawFromLines([
+        "src/a.ts:2",
+        "src/b.ts:0",
+        "src/c.ts:12",
+      ], "grep -c export src"),
+    );
+
+    expect(result.output).toContain("src/a.ts:2");
+    expect(result.output).toContain("src/b.ts:0");
+    expect(result.output).toContain("src/c.ts:12");
+    expect(result.output).not.toContain("2|");
+    expect(result.output).not.toContain("Matches: 3 across 3 files");
+  });
+
+  test("passes through files-with-matches output", async () => {
+    const result = await filterWith(
+      "grep",
+      ["-l", "export", "src"],
+      rawFromLines(["src/a.ts", "src/b.ts"], "grep -l export src"),
+    );
+
+    expect(result.output).toContain("src/a.ts");
+    expect(result.output).toContain("src/b.ts");
+    expect(result.output).not.toContain("0 matches");
+    expect(result.output).not.toContain("Matches:");
+  });
+
+  test("passes through files-without-match output", async () => {
+    const result = await filterWith(
+      "grep",
+      ["-L", "export", "src"],
+      rawFromLines(["src/unused.ts", "src/legacy.ts"], "grep -L export src"),
+    );
+
+    expect(result.output).toContain("src/unused.ts");
+    expect(result.output).toContain("src/legacy.ts");
+    expect(result.output).not.toContain("Matches:");
+  });
+
+  test("keeps only-matching output visible", async () => {
+    const result = await filterWith(
+      "grep",
+      ["-o", "Order[A-Za-z]*", "src/order.ts"],
+      rawFromLines([
+        "src/order.ts:OrderPayload",
+        "src/order.ts:OrderResult",
+      ], "grep -o Order[A-Za-z]* src/order.ts"),
+    );
+
+    expect(result.output).toContain("OrderPayload");
+    expect(result.output).toContain("OrderResult");
+    expect(result.output).not.toContain("0 matches");
+  });
+
+  test("documents BRE alternation should behave as one search expression", async () => {
+    const result = await filterWith(
+      "grep",
+      [String.raw`fn foo\|pub.*bar`, "src"],
+      rawFromLines([
+        "src/lib.rs:10:fn foo() {}",
+        "src/lib.rs:20:pub fn bar() {}",
+      ], String.raw`grep fn foo\|pub.*bar src`),
+    );
+
+    expect(result.output).toContain(String.raw`Search: fn foo\|pub.*bar`);
+    expect(result.output).toContain("fn foo() {}");
+    expect(result.output).toContain("pub fn bar() {}");
+  });
+
+  test("parses NUL-separated Windows paths without treating drive colon as a separator", async () => {
+    const result = await filterWith(
+      "rg",
+      ["--null", "main", "C:\\src"],
+      rawFromLines([
+        "C:\\src\\file.rs\x0042:fn main() {}",
+      ], "rg --null main C:\\src"),
+    );
+
+    expect(result.output).toContain("C:\\src\\file.rs");
+    expect(result.output).toContain("42| fn main() {}");
+    expect(result.output).not.toContain("0 across 0 files");
   });
 });

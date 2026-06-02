@@ -215,10 +215,29 @@ describe("list-like directory structure preservation", () => {
       rawFromPaths(files),
     );
 
-    // For 3 files, the output should not be significantly larger than raw
-    // (allow small overhead for tree formatting)
     const rawChars = files.map((f) => `./${f}`).join("\n").length;
-    expect(result.outputChars).toBeLessThanOrEqual(rawChars + 80);
+    expect(result.outputChars).toBeLessThanOrEqual(rawChars + 40);
+    for (const file of files) {
+      expect(result.output).toContain(file);
+    }
+  });
+
+  test("lists every filename when ten or fewer unique paths", async () => {
+    const files = Array.from({ length: 10 }, (_, index) => `src/file-${index}.ts`);
+    const result = await filterWith("find", ["src"], rawFromPaths(files));
+
+    for (const file of files) {
+      expect(result.output).toContain(file);
+    }
+    expect(result.output).not.toMatch(/src\/ \(\d+ files\)/);
+  });
+
+  test("summarizes by directory when more than eighty unique paths", async () => {
+    const files = Array.from({ length: 81 }, (_, index) => `src/pkg-${index}/index.ts`);
+    const result = await filterWith("find", ["src"], rawFromPaths(files));
+
+    expect(result.output).toContain("... 1 more files");
+    expect(result.output).not.toContain("src/pkg-80/index.ts");
   });
 
   // --------------------------------------------------------------------------
@@ -251,5 +270,89 @@ describe("list-like directory structure preservation", () => {
 
     // Should show the file, not collapse to "src/ (1 file)"
     expect(result.output).toContain("cli.ts");
+  });
+});
+
+describe("tree-specific handler correctness gaps", () => {
+  test("removes tree summary lines while preserving tree structure", async () => {
+    const raw: RawResult = {
+      command: "tree .",
+      stdout: [
+        ".",
+        "├── src",
+        "│   ├── main.rs",
+        "│   └── lib.rs",
+        "└── Cargo.toml",
+        "",
+        "2 directories, 3 files",
+      ].join("\n"),
+      stderr: "",
+      exitCode: 0,
+      durationMs: 1,
+    };
+
+    const result = await filterWith("tree", ["."], raw);
+
+    expect(result.output).toContain("├── src");
+    expect(result.output).toContain("│   ├── main.rs");
+    expect(result.output).toContain("└── Cargo.toml");
+    expect(result.output).not.toContain("directories");
+    expect(result.output).not.toContain("3 files");
+  });
+
+  test("removes tree summary variations", async () => {
+    const raw: RawResult = {
+      command: "tree .",
+      stdout: ".\n└── file.txt\n\n10 directories, 25 files\n",
+      stderr: "",
+      exitCode: 0,
+      durationMs: 1,
+    };
+
+    const result = await filterWith("tree", ["."], raw);
+
+    expect(result.output).toContain("file.txt");
+    expect(result.output).not.toContain("10 directories");
+    expect(result.output).not.toContain("25 files");
+  });
+
+  test("returns a stable newline for empty tree output", async () => {
+    const raw: RawResult = {
+      command: "tree empty",
+      stdout: "",
+      stderr: "",
+      exitCode: 0,
+      durationMs: 1,
+    };
+
+    const result = await filterWith("tree", ["empty"], raw);
+
+    expect(result.output).toBe("\n");
+  });
+
+  test("reports skipped noise directories from tree output", async () => {
+    const raw: RawResult = {
+      command: "tree .",
+      stdout: [
+        ".",
+        "├── node_modules",
+        "│   └── package",
+        "├── target",
+        "│   └── debug",
+        "└── src",
+        "    └── main.rs",
+      ].join("\n"),
+      stderr: "",
+      exitCode: 0,
+      durationMs: 1,
+    };
+
+    const result = await filterWith("tree", ["."], raw);
+
+    expect(result.output).toContain("Skipped:");
+    expect(result.output).toContain("node_modules/");
+    expect(result.output).toContain("target/");
+    expect(result.output).toContain("src");
+    expect(result.output).not.toContain("package");
   });
 });

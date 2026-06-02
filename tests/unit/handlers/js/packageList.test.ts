@@ -143,4 +143,73 @@ describe("package list format variants", () => {
     expect(result.handler).toBe("package-list");
     expect(typeof result.output).toBe("string");
   });
+
+  test("routes pnpm list JSON-style output through package list handler", async () => {
+    const raw: RawResult = {
+      command: "pnpm list --json",
+      stdout: JSON.stringify([
+        {
+          name: "project",
+          dependencies: {
+            react: { version: "18.3.1" },
+            typescript: { version: "5.4.0" },
+          },
+          devDependencies: {
+            vitest: { version: "1.6.0" },
+          },
+        },
+      ]),
+      stderr: "",
+      exitCode: 0,
+      durationMs: 1,
+    };
+
+    const result = await packageListHandler.filter(
+      raw,
+      {
+        program: "pnpm",
+        args: ["list", "--json"],
+        original: ["pnpm", "list", "--json"],
+        displayCommand: "pnpm list --json",
+      },
+      options,
+    );
+
+    expect(result.handler).toBe("package-list");
+    expect(result.output).toContain("react");
+    expect(result.output).toContain("typescript");
+    expect(result.output).toContain("vitest");
+    expect(result.output).not.toContain('"dependencies"');
+  });
+
+  test("handles pnpm outdated output as package dependency signal", async () => {
+    const raw: RawResult = {
+      command: "pnpm outdated",
+      stdout: [
+        "Package     Current  Wanted  Latest  Package Type",
+        "react       18.2.0   18.3.1  19.0.0  dependencies",
+        "typescript  5.3.0    5.4.0   5.6.0   devDependencies",
+      ].join("\n"),
+      stderr: "",
+      exitCode: 1,
+      durationMs: 1,
+    };
+
+    const result = await packageListHandler.filter(
+      raw,
+      {
+        program: "pnpm",
+        args: ["outdated"],
+        original: ["pnpm", "outdated"],
+        displayCommand: "pnpm outdated",
+      },
+      options,
+    );
+
+    expect(result.handler).toBe("package-list");
+    expect(result.output).toContain("react");
+    expect(result.output).toContain("18.2.0");
+    expect(result.output).toContain("19.0.0");
+    expect(result.output).toContain("typescript");
+  });
 });

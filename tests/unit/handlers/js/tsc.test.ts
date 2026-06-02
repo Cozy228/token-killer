@@ -170,4 +170,64 @@ describe("tsc format variants", () => {
     // Verify grouping: output should show "By code" section
     expect(result.output).toContain("By code");
   });
+
+  test("preserves continuation lines attached to TypeScript errors", async () => {
+    const raw: RawResult = {
+      command: "tsc --noEmit",
+      stdout: [
+        "src/app.ts(10,7): error TS2322: Type '{ id: string; }' is not assignable to type 'User'.",
+        "  Property 'name' is missing in type '{ id: string; }' but required in type 'User'.",
+        "src/app.ts(11,1): error TS1005: ';' expected.",
+      ].join("\n"),
+      stderr: "",
+      exitCode: 2,
+      durationMs: 1,
+    };
+
+    const result = await tscHandler.filter(
+      raw,
+      {
+        program: "tsc",
+        args: ["--noEmit"],
+        original: ["tsc", "--noEmit"],
+        displayCommand: "tsc --noEmit",
+      },
+      options,
+    );
+
+    expect(result.handler).toBe("tsc");
+    expect(result.output).toContain("TS2322");
+    expect(result.output).toContain("Property 'name' is missing");
+    expect(result.output).toContain("TS1005");
+  });
+
+  test("shows every TypeScript error without a hidden file cap", async () => {
+    const raw: RawResult = {
+      command: "tsc --noEmit",
+      stdout: Array.from(
+        { length: 35 },
+        (_, index) =>
+          `src/module-${index}.ts(${index + 1},1): error TS2322: Type 'number' is not assignable to type 'string'.`,
+      ).join("\n"),
+      stderr: "",
+      exitCode: 2,
+      durationMs: 1,
+    };
+
+    const result = await tscHandler.filter(
+      raw,
+      {
+        program: "tsc",
+        args: ["--noEmit"],
+        original: ["tsc", "--noEmit"],
+        displayCommand: "tsc --noEmit",
+      },
+      options,
+    );
+
+    expect(result.handler).toBe("tsc");
+    expect(result.output).toContain("src/module-0.ts");
+    expect(result.output).toContain("src/module-34.ts");
+    expect(result.output).not.toContain("more");
+  });
 });

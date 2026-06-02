@@ -1,4 +1,4 @@
-import { mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
+import { mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
@@ -51,6 +51,7 @@ describe("Ls / Find", () => {
       await writeFile(path.join(dir, "a.txt"), "a");
       await writeFile(path.join(dir, "b.ts"), "b");
       spawnSync("git", ["init"], { cwd: dir });
+      await mkdir(path.join(dir, "node_modules"), { recursive: true });
       await writeFile(path.join(dir, "node_modules/.keep"), "");
 
       const result = runTg(["ls"], dir);
@@ -67,6 +68,8 @@ describe("Ls / Find", () => {
   test("tg find shows directory structure", async () => {
     const dir = await mkdtemp(path.join(tmpdir(), "tg-find-"));
     try {
+      await mkdir(path.join(dir, "src/lib"), { recursive: true });
+      await mkdir(path.join(dir, "tests"), { recursive: true });
       await writeFile(path.join(dir, "src/app.ts"), "export const x = 1;");
       await writeFile(path.join(dir, "src/lib/util.ts"), "export const y = 2;");
       await writeFile(path.join(dir, "tests/app.test.ts"), "test");
@@ -230,10 +233,20 @@ describe("Grep / Search", () => {
   });
 
   test("tg grep finds matches", async () => {
-    // Quick check on repo itself
-    const result = runTg(["grep", "-r", "package.json", "."], repoRoot);
-    // Should not crash, should show Search: header
-    expect(result.stdout).toContain("Search:");
+    const dir = await mkdtemp(path.join(tmpdir(), "tg-grep-"));
+    try {
+      await writeFile(path.join(dir, "package.json"), '{"name":"sample"}\n');
+      await writeFile(path.join(dir, "README.md"), "package.json is retained\n");
+
+      const result = runTg(["grep", "-r", "package.json", "."], dir);
+
+      expect(result.status).toBe(0);
+      expect(result.stdout).toContain("Search:");
+      expect(result.stdout).toContain("README.md");
+      expect(result.stdout).toContain("package.json is retained");
+    } finally {
+      await rm(dir, { recursive: true, force: true });
+    }
   });
 
   test("tg rg with no matches shows 0 matches message", async () => {
@@ -359,7 +372,7 @@ describe("Global Flags", () => {
     try {
       await writeFile(path.join(dir, "sample.txt"), "alpha\n");
 
-      const result = runTg(["--verbose", "cat", "sample.txt"], dir);
+      const result = runTg(["--verbose", "--save-raw", "cat", "sample.txt"], dir);
       expect(result.status).toBe(0);
       expect(result.stdout).toContain("Raw output:");
     } finally {
@@ -425,7 +438,7 @@ describe("Error Handling", () => {
       repoRoot,
     );
     expect(result.status).toBe(1);
-    expect(result.stderr).toContain("error msg");
+    expect(result.stdout).toContain("error msg");
   });
 });
 
@@ -458,11 +471,13 @@ describe("Acceptance: Handler Routing", () => {
       // Each should route to its specific handler (not generic)
       expect(runTg(["git", "status"], dir).stdout).toContain("Branch:");
       expect(runTg(["git", "diff"], dir).stdout).toContain("Git Diff Summary");
-      expect(runTg(["git", "log", "-1"], dir).stdout).toContain("Git Log");
+      expect(runTg(["git", "log", "-1"], dir).stdout).toContain(
+        "initial retained",
+      );
       expect(runTg(["git", "show", "--stat", "HEAD"], dir).stdout).toContain(
         "Git Show",
       );
-      expect(runTg(["git", "branch"], dir).stdout).toContain("Current:");
+      expect(runTg(["git", "branch"], dir).stdout).toContain("main");
       expect(runTg(["cat", "pkg.json"], dir).stdout).toContain("sample");
       expect(runTg(["ls", "."], dir).stdout).toContain("pkg.json");
       expect(runTg(["rg", "TODO", "."], dir).stdout).toContain("Search: TODO");

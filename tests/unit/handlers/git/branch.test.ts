@@ -1,5 +1,6 @@
 import { describe, expect, test } from "vitest";
 
+import { expectCompactPassthrough } from "../../../helpers/assertions.js";
 import { gitBranchHandler } from "../../../../src/handlers/git/branch.js";
 import type { RawResult, TgOptions } from "../../../../src/types.js";
 
@@ -90,22 +91,19 @@ describe("git branch passthrough for small output", () => {
 
     const result = await filterBranch(stdout);
 
-    // Should not inflate the output with unnecessary headers
-    expect(result.outputChars).toBeLessThanOrEqual(result.rawChars + 10);
-    // Should preserve branch names
+    expectCompactPassthrough(result);
     expect(result.output).toContain("codex/token-guard-node-cli");
     expect(result.output).toContain("main");
   });
 
   test("preserves asterisk marker for current branch", async () => {
-    const stdout = ["* feature/new-login", "  main", "  develop"].join("\n");
+    const stdout = ["* codex/feature-login", "  main"].join("\n");
 
     const result = await filterBranch(stdout);
 
-    expect(result.output).toContain("feature/new-login");
+    expect(result.output).toContain("* codex/feature-login");
     expect(result.output).toContain("main");
-    // Output should not be inflated
-    expect(result.outputChars).toBeLessThanOrEqual(result.rawChars + 20);
+    expectCompactPassthrough(result);
   });
 
   // --------------------------------------------------------------------------
@@ -117,8 +115,45 @@ describe("git branch passthrough for small output", () => {
     const result = await filterBranch(stdout);
 
     expect(result.output).toContain("main");
-    // Single branch shouldn't produce "Branches: 1, showing 1" header
-    expect(result.outputChars).toBeLessThanOrEqual(result.rawChars + 10);
+    expectCompactPassthrough(result);
+  });
+});
+
+describe("git branch small-output boundaries", () => {
+  test("keeps all branch names when five or fewer nearby branches", async () => {
+    const stdout = [
+      "* codex/active",
+      "  main",
+      "  codex/support",
+      "  release/2026-06",
+      "  codex/docs",
+    ].join("\n");
+
+    const result = await filterBranch(stdout);
+
+    expect(result.output).toContain("codex/active");
+    expect(result.output).toContain("main");
+    expect(result.output).toContain("codex/support");
+    expect(result.output).toContain("release/2026-06");
+    expect(result.output).toContain("codex/docs");
+    expect(result.output).not.toContain("Hidden:");
+  });
+
+  test("truncates when many branches exceed the nearby summary window", async () => {
+    const branches = [
+      "* main",
+      "  develop",
+      "  codex/active",
+      "  release/v1",
+      ...Array.from({ length: 50 }, (_, i) => `  feature/ticket-${1000 + i}`),
+    ].join("\n");
+
+    const result = await filterBranch(branches);
+
+    expect(result.output).toContain("main");
+    expect(result.output).toContain("codex/active");
+    expect(result.output).toContain("Hidden:");
+    expect(result.output).not.toContain("feature/ticket-1049");
   });
 
   // --------------------------------------------------------------------------

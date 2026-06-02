@@ -205,4 +205,85 @@ describe("js test format variants", () => {
     expect(result.handler).toBe("js-test");
     expect(typeof result.output).toBe("string");
   });
+
+  test("parses Vitest JSON reporter output when available", async () => {
+    const raw: RawResult = {
+      command: "vitest --reporter=json",
+      stdout: JSON.stringify({
+        numFailedTestSuites: 1,
+        numPassedTestSuites: 2,
+        numFailedTests: 1,
+        numPassedTests: 12,
+        testResults: [
+          {
+            name: "src/order.test.ts",
+            status: "failed",
+            assertionResults: [
+              {
+                title: "rejects duplicate submit",
+                status: "failed",
+                failureMessages: ["AssertionError: expected 1 to be 2"],
+              },
+            ],
+          },
+        ],
+      }),
+      stderr: "",
+      exitCode: 1,
+      durationMs: 1,
+    };
+
+    const result = await jsTestHandler.filter(
+      raw,
+      {
+        program: "vitest",
+        args: ["--reporter=json"],
+        original: ["vitest", "--reporter=json"],
+        displayCommand: "vitest --reporter=json",
+      },
+      options,
+    );
+
+    expect(result.handler).toBe("js-test");
+    expect(result.output).toContain("src/order.test.ts");
+    expect(result.output).toContain("rejects duplicate submit");
+    expect(result.output).toContain("AssertionError");
+    expect(result.output).not.toContain('"testResults"');
+  });
+
+  test("parses pnpm-prefixed Vitest failures", async () => {
+    const raw: RawResult = {
+      command: "pnpm vitest run",
+      stdout: [
+        "> project@0.1.0 test /repo",
+        "> vitest run",
+        "",
+        "FAIL  tests/order.test.ts > submit > rejects duplicate",
+        "AssertionError: expected true to be false",
+        " ❯ tests/order.test.ts:22:10",
+        "Test Files  1 failed | 3 passed (4)",
+        "Tests  1 failed | 20 passed (21)",
+      ].join("\n"),
+      stderr: "",
+      exitCode: 1,
+      durationMs: 1,
+    };
+
+    const result = await jsTestHandler.filter(
+      raw,
+      {
+        program: "pnpm",
+        args: ["vitest", "run"],
+        original: ["pnpm", "vitest", "run"],
+        displayCommand: "pnpm vitest run",
+      },
+      options,
+    );
+
+    expect(result.handler).toBe("js-test");
+    expect(result.output).toContain("tests/order.test.ts");
+    expect(result.output).toContain("rejects duplicate");
+    expect(result.output).toContain("AssertionError");
+    expect(result.output).not.toContain("project@0.1.0");
+  });
 });

@@ -55,9 +55,10 @@ describe("generic handler", () => {
 
 describe("generic handler edge cases", () => {
   test("passes through short output unchanged", async () => {
+    const stdout = ["line one", "line two", "line three"].join("\n");
     const raw: RawResult = {
       command: "custom-tool",
-      stdout: "short output line",
+      stdout,
       stderr: "",
       exitCode: 0,
       durationMs: 1,
@@ -75,7 +76,7 @@ describe("generic handler edge cases", () => {
     );
 
     expect(result.handler).toBe("generic");
-    expect(result.output).toContain("short output line");
+    expect(result.output).toBe(stdout);
     expect(result.rawChars).toBeLessThan(2000);
   });
 

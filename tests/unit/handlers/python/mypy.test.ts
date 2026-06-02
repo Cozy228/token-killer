@@ -139,4 +139,121 @@ describe("mypy format variants", () => {
     expect(result.handler).toBe("mypy");
     expect(typeof result.output).toBe("string");
   });
+
+  test("preserves column numbers in mypy output", async () => {
+    const raw: RawResult = {
+      command: "mypy .",
+      stdout: [
+        'src/app.py:10:7: error: Argument 1 has incompatible type "str"; expected "int"  [arg-type]',
+        "Found 1 error in 1 file (checked 10 source files)",
+      ].join("\n"),
+      stderr: "",
+      exitCode: 1,
+      durationMs: 1,
+    };
+
+    const result = await mypyHandler.filter(
+      raw,
+      {
+        program: "mypy",
+        args: ["."],
+        original: ["mypy", "."],
+        displayCommand: "mypy .",
+      },
+      options,
+    );
+
+    expect(result.handler).toBe("mypy");
+    expect(result.output).toContain("src/app.py:10:7");
+    expect(result.output).toContain("arg-type");
+  });
+
+  test("preserves note continuation lines under errors", async () => {
+    const raw: RawResult = {
+      command: "mypy .",
+      stdout: [
+        'src/app.py:10: error: Incompatible return value type (got "str", expected "int")  [return-value]',
+        'src/app.py:10: note: "str" is inferred from config["value"]',
+        "Found 1 error in 1 file (checked 10 source files)",
+      ].join("\n"),
+      stderr: "",
+      exitCode: 1,
+      durationMs: 1,
+    };
+
+    const result = await mypyHandler.filter(
+      raw,
+      {
+        program: "mypy",
+        args: ["."],
+        original: ["mypy", "."],
+        displayCommand: "mypy .",
+      },
+      options,
+    );
+
+    expect(result.handler).toBe("mypy");
+    expect(result.output).toContain("return-value");
+    expect(result.output).toContain('"str" is inferred');
+  });
+
+  test("preserves fileless mypy errors", async () => {
+    const raw: RawResult = {
+      command: "mypy .",
+      stdout: [
+        "error: Cannot find implementation or library stub for module named \"missing_lib\"  [import-not-found]",
+        "Found 1 error in 1 file (checked 10 source files)",
+      ].join("\n"),
+      stderr: "",
+      exitCode: 1,
+      durationMs: 1,
+    };
+
+    const result = await mypyHandler.filter(
+      raw,
+      {
+        program: "mypy",
+        args: ["."],
+        original: ["mypy", "."],
+        displayCommand: "mypy .",
+      },
+      options,
+    );
+
+    expect(result.handler).toBe("mypy");
+    expect(result.output).toContain("missing_lib");
+    expect(result.output).toContain("import-not-found");
+  });
+
+  test("shows every mypy error without a file cap", async () => {
+    const raw: RawResult = {
+      command: "mypy .",
+      stdout: [
+        ...Array.from(
+          { length: 35 },
+          (_, index) => `src/module_${index}.py:${index + 1}: error: Incompatible types [assignment]`,
+        ),
+        "Found 35 errors in 35 files (checked 35 source files)",
+      ].join("\n"),
+      stderr: "",
+      exitCode: 1,
+      durationMs: 1,
+    };
+
+    const result = await mypyHandler.filter(
+      raw,
+      {
+        program: "mypy",
+        args: ["."],
+        original: ["mypy", "."],
+        displayCommand: "mypy .",
+      },
+      options,
+    );
+
+    expect(result.handler).toBe("mypy");
+    expect(result.output).toContain("src/module_0.py");
+    expect(result.output).toContain("src/module_34.py");
+    expect(result.output).not.toContain("more");
+  });
 });

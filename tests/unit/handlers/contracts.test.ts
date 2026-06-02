@@ -69,7 +69,52 @@ const cases: Record<string, Case> = {
   "git-branch": {
     command: { program: "git", args: ["branch"], original: ["git", "branch"], displayCommand: "git branch" },
     raw: { command: "git branch", stdout: "* main\n  codex/test\n", stderr: "", exitCode: 0, durationMs: 1 },
-    critical: ["Current: main", "codex/test"],
+    critical: ["* main", "codex/test"],
+  },
+  "git-add": {
+    command: { program: "git", args: ["add", "."], original: ["git", "add", "."], displayCommand: "git add ." },
+    raw: { command: "git add .", stdout: " 1 file changed, 5 insertions(+)\n", stderr: "", exitCode: 0, durationMs: 1 },
+    critical: ["ok 1 file changed"],
+  },
+  "git-commit": {
+    command: { program: "git", args: ["commit", "-m", "kept subject"], original: ["git", "commit", "-m", "kept subject"], displayCommand: "git commit -m kept subject" },
+    raw: { command: "git commit -m kept subject", stdout: "[main abc1234] kept subject\n", stderr: "", exitCode: 0, durationMs: 1 },
+    critical: ["ok abc1234", "kept subject"],
+  },
+  "git-push": {
+    command: { program: "git", args: ["push"], original: ["git", "push"], displayCommand: "git push" },
+    raw: { command: "git push", stdout: "To https://github.com/foo/bar.git\n   abc1234..def5678  feat/a -> feat/a\n", stderr: "", exitCode: 0, durationMs: 1 },
+    critical: ["feat/a", "ok feat/a"],
+  },
+  "git-pull": {
+    command: { program: "git", args: ["pull"], original: ["git", "pull"], displayCommand: "git pull" },
+    raw: { command: "git pull", stdout: "Already up to date.\n", stderr: "", exitCode: 0, durationMs: 1 },
+    critical: ["ok (up-to-date)"],
+  },
+  "git-fetch": {
+    command: { program: "git", args: ["fetch"], original: ["git", "fetch"], displayCommand: "git fetch" },
+    raw: { command: "git fetch", stdout: "From github.com:foo/bar\n * [new branch] feature -> origin/feature\n", stderr: "", exitCode: 0, durationMs: 1 },
+    critical: ["ok fetched", "feature"],
+  },
+  "git-stash": {
+    command: { program: "git", args: ["stash"], original: ["git", "stash"], displayCommand: "git stash" },
+    raw: { command: "git stash", stdout: "Saved working directory and index state WIP on main: abc1234 fix\n", stderr: "", exitCode: 0, durationMs: 1 },
+    critical: ["ok stashed", "abc1234 fix"],
+  },
+  "git-worktree": {
+    command: { program: "git", args: ["worktree", "list"], original: ["git", "worktree", "list"], displayCommand: "git worktree list" },
+    raw: { command: "git worktree list", stdout: "/repo abc1234 [main]\n", stderr: "", exitCode: 0, durationMs: 1 },
+    critical: ["abc1234", "[main]"],
+  },
+  gh: {
+    command: { program: "gh", args: ["pr", "list"], original: ["gh", "pr", "list"], displayCommand: "gh pr list" },
+    raw: { command: "gh pr list", stdout: '[{"number":42,"title":"kept pr","state":"OPEN","headRefName":"codex/test"}]\n', stderr: "", exitCode: 0, durationMs: 1 },
+    critical: ["#42", "kept pr", "codex/test"],
+  },
+  glab: {
+    command: { program: "glab", args: ["mr", "list"], original: ["glab", "mr", "list"], displayCommand: "glab mr list" },
+    raw: { command: "glab mr list", stdout: '[{"iid":42,"title":"kept mr","state":"opened","source_branch":"codex/test"}]\n', stderr: "", exitCode: 0, durationMs: 1 },
+    critical: ["!42", "kept mr", "codex/test"],
   },
   pytest: {
     command: { program: "pytest", args: [], original: ["pytest"], displayCommand: "pytest" },

@@ -140,4 +140,80 @@ describe("eslint format variants", () => {
     expect(result.handler).toBe("eslint");
     expect(typeof result.output).toBe("string");
   });
+
+  test("parses ESLint JSON output and preserves messages", async () => {
+    const raw: RawResult = {
+      command: "eslint . --format json",
+      stdout: JSON.stringify([
+        {
+          filePath: "/repo/src/app.ts",
+          messages: [
+            {
+              line: 10,
+              column: 5,
+              severity: 2,
+              message: "'unused' is assigned a value but never used.",
+              ruleId: "no-unused-vars",
+            },
+            {
+              line: 20,
+              column: 3,
+              severity: 1,
+              message: "Unexpected console statement.",
+              ruleId: "no-console",
+            },
+          ],
+        },
+      ]),
+      stderr: "",
+      exitCode: 1,
+      durationMs: 1,
+    };
+
+    const result = await eslintHandler.filter(
+      raw,
+      {
+        program: "eslint",
+        args: [".", "--format", "json"],
+        original: ["eslint", ".", "--format", "json"],
+        displayCommand: "eslint . --format json",
+      },
+      options,
+    );
+
+    expect(result.handler).toBe("eslint");
+    expect(result.output).toContain("src/app.ts:10:5");
+    expect(result.output).toContain("no-unused-vars");
+    expect(result.output).toContain("Unexpected console statement");
+    expect(result.output).not.toContain('"filePath"');
+  });
+
+  test("routes pnpm exec eslint output through eslint handler", async () => {
+    const raw: RawResult = {
+      command: "pnpm exec eslint .",
+      stdout: [
+        "/repo/src/app.ts",
+        "  4:1  error  Unexpected var, use let or const instead  no-var",
+        "✖ 1 problem (1 error, 0 warnings)",
+      ].join("\n"),
+      stderr: "",
+      exitCode: 1,
+      durationMs: 1,
+    };
+
+    const result = await eslintHandler.filter(
+      raw,
+      {
+        program: "pnpm",
+        args: ["exec", "eslint", "."],
+        original: ["pnpm", "exec", "eslint", "."],
+        displayCommand: "pnpm exec eslint .",
+      },
+      options,
+    );
+
+    expect(result.handler).toBe("eslint");
+    expect(result.output).toContain("src/app.ts:4:1");
+    expect(result.output).toContain("no-var");
+  });
 });

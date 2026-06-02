@@ -1,5 +1,6 @@
 import { describe, expect, test } from "vitest";
 
+import { expectCompactPassthrough } from "../../../helpers/assertions.js";
 import { gitLogHandler } from "../../../../src/handlers/git/log.js";
 import type { RawResult, TgOptions } from "../../../../src/types.js";
 
@@ -100,9 +101,7 @@ describe("git log passthrough and format variants", () => {
 
     const result = await filterLog(stdout, ["log", "--oneline", "-5"]);
 
-    // Should not inflate the output with unnecessary headers
-    expect(result.outputChars).toBeLessThanOrEqual(result.rawChars + 10);
-    // Should preserve commit content
+    expectCompactPassthrough(result);
     expect(result.output).toContain("0a15557");
     expect(result.output).toContain("368d1aa");
   });
@@ -115,11 +114,9 @@ describe("git log passthrough and format variants", () => {
 
     const result = await filterLog(stdout, ["log", "--oneline", "-2"]);
 
-    // Should not strip useful ref information
     expect(result.output).toContain("0a15557");
     expect(result.output).toContain("368d1aa");
-    // Output should not be significantly inflated
-    expect(result.outputChars).toBeLessThanOrEqual(result.rawChars + 30);
+    expectCompactPassthrough(result, 30);
   });
 
   // --------------------------------------------------------------------------
@@ -131,8 +128,34 @@ describe("git log passthrough and format variants", () => {
     const result = await filterLog(stdout, ["log", "--oneline", "-1"]);
 
     expect(result.output).toContain("0a15557");
-    // Single commit shouldn't need "Commits: 1" header
-    expect(result.outputChars).toBeLessThanOrEqual(result.rawChars + 10);
+    expectCompactPassthrough(result);
+  });
+
+  test("passes through five --oneline commits without header overhead", async () => {
+    const stdout = Array.from(
+      { length: 5 },
+      (_, index) => `${String(index + 1).padStart(7, "a")} retained subject ${index}`,
+    ).join("\n");
+
+    const result = await filterLog(stdout, ["log", "--oneline", "-5"]);
+
+    expectCompactPassthrough(result);
+    for (let index = 0; index < 5; index += 1) {
+      expect(result.output).toContain(`retained subject ${index}`);
+    }
+    expect(result.output).not.toContain("Git Log:");
+  });
+
+  test("adds structure once six --oneline commits exceed the passthrough limit", async () => {
+    const stdout = Array.from(
+      { length: 6 },
+      (_, index) => `${String(index + 1).padStart(7, "b")} retained subject ${index}`,
+    ).join("\n");
+
+    const result = await filterLog(stdout, ["log", "--oneline", "-6"]);
+
+    expect(result.output).toContain("retained subject 0");
+    expect(result.output).toMatch(/Git Log|Commits: 6/);
   });
 
   // --------------------------------------------------------------------------

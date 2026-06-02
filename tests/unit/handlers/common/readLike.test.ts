@@ -47,3 +47,103 @@ describe("read-like handler", () => {
     expectLargeSavings(result);
   });
 });
+
+describe("read-like handler correctness gaps", () => {
+  async function filterRead(raw: RawResult, args: string[]) {
+    return readLikeHandler.filter(
+      raw,
+      {
+        program: "cat",
+        args,
+        original: ["cat", ...args],
+        displayCommand: `cat ${args.join(" ")}`,
+      },
+      options,
+    );
+  }
+
+  test("preserves the final tail lines for large reads", async () => {
+    const raw: RawResult = {
+      command: "cat src/large.ts",
+      stdout: [
+        "export function firstSymbol() { return 1; }",
+        ...Array.from({ length: 500 }, (_, index) => `const noise${index} = ${index};`),
+        "export function finalSymbol() { return 2; }",
+        "final actionable line",
+      ].join("\n"),
+      stderr: "",
+      exitCode: 0,
+      durationMs: 1,
+    };
+
+    const result = await filterRead(raw, ["src/large.ts"]);
+
+    expect(result.output).toContain("export function firstSymbol");
+    expect(result.output).toContain("export function finalSymbol");
+    expect(result.output).toContain("final actionable line");
+    expect(result.output).not.toContain("noise499");
+  });
+
+  test("keeps stdin output when reading from dash", async () => {
+    const raw: RawResult = {
+      command: "cat -",
+      stdout: "alpha\nbravo\ncharlie\n",
+      stderr: "",
+      exitCode: 0,
+      durationMs: 1,
+    };
+
+    const result = await filterRead(raw, ["-"]);
+
+    expect(result.output).toContain("alpha");
+    expect(result.output).toContain("charlie");
+    expect(result.exitCode).toBe(0);
+  });
+
+  test("preserves concatenated multi-file output boundaries", async () => {
+    const raw: RawResult = {
+      command: "cat first.txt second.txt",
+      stdout: "alpha\nbravo\ncharlie\ndelta\n",
+      stderr: "",
+      exitCode: 0,
+      durationMs: 1,
+    };
+
+    const result = await filterRead(raw, ["first.txt", "second.txt"]);
+
+    expect(result.output).toContain("alpha");
+    expect(result.output).toContain("charlie");
+    expect(result.output).toContain("delta");
+  });
+
+  test("preserves stderr from missing files while keeping valid stdout", async () => {
+    const raw: RawResult = {
+      command: "cat valid.txt missing.txt",
+      stdout: "valid content\n",
+      stderr: "cat: missing.txt: No such file or directory\n",
+      exitCode: 1,
+      durationMs: 1,
+    };
+
+    const result = await filterRead(raw, ["valid.txt", "missing.txt"]);
+
+    expect(result.output).toContain("valid content");
+    expect(result.output).toContain("missing.txt");
+    expect(result.exitCode).toBe(1);
+  });
+
+  test("preserves binary-file warning instead of trying to summarize bytes", async () => {
+    const raw: RawResult = {
+      command: "cat image.bin",
+      stdout: "Binary file not shown: image.bin\n",
+      stderr: "",
+      exitCode: 0,
+      durationMs: 1,
+    };
+
+    const result = await filterRead(raw, ["image.bin"]);
+
+    expect(result.output).toContain("Binary file not shown: image.bin");
+    expect(result.output).not.toContain("Symbols:");
+  });
+});

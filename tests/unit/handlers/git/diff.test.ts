@@ -117,9 +117,10 @@ describe("git diff content preservation", () => {
     const result = await filterDiff(diff);
 
     expect(result.output).toContain("Git Diff Summary");
-    // At minimum, the changed line should be detectable
-    // (implementation may show full lines or summary; must not lose all content)
     expect(result.output).toContain("src/order/submit.ts");
+    expect(result.output).toContain("-  return api.submit(payload)");
+    expect(result.output).toContain("+  return api.submit({ ...payload, idempotencyKey })");
+    expect(result.output).toContain("+  console.log('order submitted');");
   });
 
   // --------------------------------------------------------------------------
@@ -180,5 +181,63 @@ describe("git diff content preservation", () => {
 
     expect(result.handler).toBe("git-diff");
     expect(result.output).toBeTypeOf("string");
+  });
+
+  test("reports true hidden change count for large hunks", async () => {
+    const diff = [
+      "diff --git a/src/large.ts b/src/large.ts",
+      "--- a/src/large.ts",
+      "+++ b/src/large.ts",
+      "@@ -1,100 +1,100 @@",
+      ...Array.from({ length: 100 }, (_, index) => `-old_value_${index}`),
+      ...Array.from({ length: 100 }, (_, index) => `+new_value_${index}`),
+    ].join("\n");
+
+    const result = await filterDiff(diff);
+
+    expect(result.output).toContain("src/large.ts");
+    expect(result.output).toContain("+190 more");
+    expect(result.output).not.toContain("+5 more");
+  });
+
+  test("does not truncate long changed lines", async () => {
+    const longLine = "x".repeat(500);
+    const diff = [
+      "diff --git a/src/long.ts b/src/long.ts",
+      "--- a/src/long.ts",
+      "+++ b/src/long.ts",
+      "@@ -1,1 +1,1 @@",
+      `-${longLine}`,
+      "+short",
+    ].join("\n");
+
+    const result = await filterDiff(diff);
+
+    expect(result.output).toContain(longLine);
+    expect(result.output).toContain("+short");
+  });
+
+  test("keeps changed lines from each file in a multi-file diff", async () => {
+    const diff = [
+      "diff --git a/src/a.ts b/src/a.ts",
+      "--- a/src/a.ts",
+      "+++ b/src/a.ts",
+      "@@ -1,1 +1,1 @@",
+      "-export const a = 1;",
+      "+export const a = 2;",
+      "diff --git a/src/b.ts b/src/b.ts",
+      "--- a/src/b.ts",
+      "+++ b/src/b.ts",
+      "@@ -1,1 +1,1 @@",
+      "-export const b = 1;",
+      "+export const b = 2;",
+    ].join("\n");
+
+    const result = await filterDiff(diff);
+
+    expect(result.output).toContain("-export const a = 1;");
+    expect(result.output).toContain("+export const a = 2;");
+    expect(result.output).toContain("-export const b = 1;");
+    expect(result.output).toContain("+export const b = 2;");
   });
 });
