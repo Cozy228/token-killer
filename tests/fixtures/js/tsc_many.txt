@@ -1,0 +1,2 @@
+src/order/submit.ts(42,7): error TS2322: Type 'string | undefined' is not assignable to type 'string'.
+src/order/api.ts(88,12): error TS2339: Property 'id' does not exist on type 'Order | undefined'.

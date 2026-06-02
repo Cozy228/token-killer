@@ -1,0 +1,4 @@
+src/core/history.ts:1:export type HistoryRecord = {
+src/core/pipeline.ts:2:export type PipelineResult = {
+src/core/savings.ts:3:export type Savings = {
+src/core/report.ts:4:export async function buildReport(options: TgOptions): Promise<string> {

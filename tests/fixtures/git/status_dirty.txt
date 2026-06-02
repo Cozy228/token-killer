@@ -1,0 +1,7 @@
+On branch feature/token-proxy
+Changes to be committed:
+  new file:   src/cli.ts
+Changes not staged for commit:
+  modified:   src/parse.ts
+Untracked files:
+  tests/unit/parse.test.ts

@@ -1,0 +1,4 @@
+src/order/App.java:42: error: cannot find symbol
+  symbol:   method submitOrder(String)
+  location: class App
+src/order/Api.java:88: error: incompatible types: String cannot be converted to Order
