@@ -18,7 +18,10 @@ describe("ruff handler", () => {
     const raw: RawResult = {
       command: "ruff check .",
       stdout: [
-        ...Array.from({ length: 300 }, (_, index) => `src/noise_${index}.py:1:1: F401 imported but unused`),
+        ...Array.from(
+          { length: 300 },
+          (_, index) => `src/noise_${index}.py:1:1: F401 imported but unused`,
+        ),
         "src/order/submit.py:42:5: F401 `os` imported but unused",
         "src/order/submit.py:88:12: B008 Do not perform function call in argument defaults",
         "Found 302 errors.",
@@ -31,7 +34,12 @@ describe("ruff handler", () => {
 
     const result = await ruffHandler.filter(
       raw,
-      { program: "ruff", args: ["check", "."], original: ["ruff", "check", "."], displayCommand: "ruff check ." },
+      {
+        program: "ruff",
+        args: ["check", "."],
+        original: ["ruff", "check", "."],
+        displayCommand: "ruff check .",
+      },
       options,
     );
 
@@ -43,5 +51,117 @@ describe("ruff handler", () => {
     expect(result.output).toContain("fixable");
     expect(result.output).not.toContain("noise_299");
     expect(result.savingsPct).toBeGreaterThanOrEqual(80);
+  });
+});
+
+describe("ruff format variants", () => {
+  test("preserves error codes and file locations", async () => {
+    const raw: RawResult = {
+      command: "ruff check .",
+      stdout: [
+        "src/api.py:10:1: F401 `os` imported but unused",
+        "src/api.py:88:12: E501 Line too long (120 > 88 characters)",
+        "src/models.py:42:5: B008 Do not perform function call in argument defaults",
+        "Found 3 errors.",
+      ].join("\n"),
+      stderr: "",
+      exitCode: 1,
+      durationMs: 1,
+    };
+
+    const result = await ruffHandler.filter(
+      raw,
+      {
+        program: "ruff",
+        args: ["check", "."],
+        original: ["ruff", "check", "."],
+        displayCommand: "ruff check .",
+      },
+      options,
+    );
+
+    expect(result.handler).toBe("ruff");
+    expect(result.output).toContain("F401");
+    expect(result.output).toContain("E501");
+    expect(result.output).toContain("B008");
+    expect(result.output).toContain("src/api.py:10:1");
+    expect(result.output).toContain("src/api.py:88:12");
+    expect(result.output).toContain("src/models.py:42:5");
+  });
+
+  test("handles clean ruff output", async () => {
+    const raw: RawResult = {
+      command: "ruff check .",
+      stdout: "All checks passed!",
+      stderr: "",
+      exitCode: 0,
+      durationMs: 1,
+    };
+
+    const result = await ruffHandler.filter(
+      raw,
+      {
+        program: "ruff",
+        args: ["check", "."],
+        original: ["ruff", "check", "."],
+        displayCommand: "ruff check .",
+      },
+      options,
+    );
+
+    expect(result.handler).toBe("ruff");
+    expect(typeof result.output).toBe("string");
+    expect(result.output).toContain("Ruff:");
+    expect(result.output).toContain("0 issues");
+    expect(result.exitCode).toBe(0);
+  });
+
+  test("handles empty output", async () => {
+    const raw: RawResult = {
+      command: "ruff check .",
+      stdout: "",
+      stderr: "",
+      exitCode: 0,
+      durationMs: 1,
+    };
+
+    const result = await ruffHandler.filter(
+      raw,
+      {
+        program: "ruff",
+        args: ["check", "."],
+        original: ["ruff", "check", "."],
+        displayCommand: "ruff check .",
+      },
+      options,
+    );
+
+    expect(result.handler).toBe("ruff");
+    expect(typeof result.output).toBe("string");
+  });
+
+  test("handles stderr-only error", async () => {
+    const raw: RawResult = {
+      command: "ruff check .",
+      stdout: "",
+      stderr: "ruff: error: unrecognized option '--bad-flag'",
+      exitCode: 2,
+      durationMs: 1,
+    };
+
+    const result = await ruffHandler.filter(
+      raw,
+      {
+        program: "ruff",
+        args: ["check", "."],
+        original: ["ruff", "check", "."],
+        displayCommand: "ruff check .",
+      },
+      options,
+    );
+
+    expect(result.handler).toBe("ruff");
+    expect(typeof result.output).toBe("string");
+    expect(result.exitCode).toBe(2);
   });
 });

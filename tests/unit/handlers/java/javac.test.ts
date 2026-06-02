@@ -19,7 +19,11 @@ describe("javac handler", () => {
       command: "javac App.java",
       stdout: "",
       stderr: [
-        ...Array.from({ length: 240 }, (_, index) => `Noise${index}.java:1: error: cannot find symbol\n  symbol: class Missing${index}\n  location: class Noise${index}`),
+        ...Array.from(
+          { length: 240 },
+          (_, index) =>
+            `Noise${index}.java:1: error: cannot find symbol\n  symbol: class Missing${index}\n  location: class Noise${index}`,
+        ),
         "src/order/App.java:42: error: cannot find symbol",
         "        submitOrder(orderId);",
         "        ^",
@@ -34,7 +38,12 @@ describe("javac handler", () => {
 
     const result = await javacHandler.filter(
       raw,
-      { program: "javac", args: ["App.java"], original: ["javac", "App.java"], displayCommand: "javac App.java" },
+      {
+        program: "javac",
+        args: ["App.java"],
+        original: ["javac", "App.java"],
+        displayCommand: "javac App.java",
+      },
       options,
     );
 
@@ -45,5 +54,91 @@ describe("javac handler", () => {
     expect(result.output).toContain("src/order/Api.java:88");
     expect(result.output).not.toContain("Noise239");
     expect(result.savingsPct).toBeGreaterThanOrEqual(80);
+  });
+});
+
+describe("javac format variants", () => {
+  test("preserves error locations", async () => {
+    const raw: RawResult = {
+      command: "javac App.java",
+      stdout: "",
+      stderr: [
+        "src/order/App.java:42: error: cannot find symbol",
+        "        submitOrder(orderId);",
+        "        ^",
+        "  symbol:   method submitOrder(String)",
+        "  location: class App",
+        "1 error",
+      ].join("\n"),
+      exitCode: 1,
+      durationMs: 1,
+    };
+
+    const result = await javacHandler.filter(
+      raw,
+      {
+        program: "javac",
+        args: ["App.java"],
+        original: ["javac", "App.java"],
+        displayCommand: "javac App.java",
+      },
+      options,
+    );
+
+    expect(result.handler).toBe("javac");
+    expect(result.output).toContain("src/order/App.java:42");
+    expect(result.output).toContain("cannot find symbol");
+    expect(result.output).toContain("submitOrder");
+  });
+
+  test("handles clean compilation", async () => {
+    const raw: RawResult = {
+      command: "javac App.java",
+      stdout: "",
+      stderr: "",
+      exitCode: 0,
+      durationMs: 1,
+    };
+
+    const result = await javacHandler.filter(
+      raw,
+      {
+        program: "javac",
+        args: ["App.java"],
+        original: ["javac", "App.java"],
+        displayCommand: "javac App.java",
+      },
+      options,
+    );
+
+    expect(result.handler).toBe("javac");
+    expect(typeof result.output).toBe("string");
+    expect(result.output).toContain("Javac:");
+    expect(result.output).toContain("0 errors");
+    expect(result.exitCode).toBe(0);
+  });
+
+  test("handles empty output", async () => {
+    const raw: RawResult = {
+      command: "javac App.java",
+      stdout: "",
+      stderr: "",
+      exitCode: 1,
+      durationMs: 1,
+    };
+
+    const result = await javacHandler.filter(
+      raw,
+      {
+        program: "javac",
+        args: ["App.java"],
+        original: ["javac", "App.java"],
+        displayCommand: "javac App.java",
+      },
+      options,
+    );
+
+    expect(result.handler).toBe("javac");
+    expect(typeof result.output).toBe("string");
   });
 });
