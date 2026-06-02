@@ -91,7 +91,8 @@ export const readLikeHandler: CommandHandler = {
   async filter(raw, command, options) {
     const text = `${raw.stdout}${raw.stderr}`;
     const fileArg = command.args.find((arg) => !arg.startsWith("-")) ?? command.displayCommand;
-    const output = text.length > 12000 ? summarizeLargeFile(fileArg, text) : text;
+    const lineCount = text.split(/\r?\n/).length;
+    const output = text.length > 12000 || lineCount > 200 ? summarizeLargeFile(fileArg, text) : text;
     return makeFilteredResult(this.name, raw, output, options);
   },
 };

@@ -25,6 +25,7 @@ type TreeSummary = {
   rootFiles: Set<string>;
   dirs: Map<string, number>;
   skipped: Set<string>;
+  visiblePaths: string[];
 };
 
 function cleanPath(line: string): string {
@@ -47,11 +48,13 @@ function addPath(summary: TreeSummary, rawPath: string): void {
 
   if (parts.length === 1) {
     summary.rootFiles.add(parts[0]!);
+    summary.visiblePaths.push(parts[0]!);
     return;
   }
 
-  const top = `${parts[0]}/`;
-  summary.dirs.set(top, (summary.dirs.get(top) ?? 0) + 1);
+  const parent = `${parts.slice(0, -1).join("/")}/`;
+  summary.dirs.set(parent, (summary.dirs.get(parent) ?? 0) + 1);
+  summary.visiblePaths.push(parts.join("/"));
 }
 
 function summarizeListing(text: string): string {
@@ -59,6 +62,7 @@ function summarizeListing(text: string): string {
     rootFiles: new Set(),
     dirs: new Map(),
     skipped: new Set(),
+    visiblePaths: [],
   };
 
   for (const line of text.split(/\r?\n/)) {
@@ -67,15 +71,24 @@ function summarizeListing(text: string): string {
     addPath(summary, longListingMatch?.[1] ?? line);
   }
 
+  if (summary.visiblePaths.length === 0 && summary.skipped.size === 0) return "\n";
+
   const lines = ["."];
-  for (const [dir, count] of [...summary.dirs.entries()].sort()) {
-    lines.push(`├─ ${dir} (${count} files)`);
+  const uniquePaths = [...new Set(summary.visiblePaths)].sort();
+  if (uniquePaths.length <= 80) {
+    for (const file of uniquePaths) {
+      lines.push(`├─ ${file}`);
+    }
+  } else {
+    for (const [dir, count] of [...summary.dirs.entries()].sort()) {
+      lines.push(`├─ ${dir} (${count} files)`);
+    }
+    for (const file of [...summary.rootFiles].sort().slice(0, 40)) {
+      lines.push(`├─ ${file}`);
+    }
   }
-  for (const file of [...summary.rootFiles].sort().slice(0, 40)) {
-    lines.push(`├─ ${file}`);
-  }
-  if (summary.rootFiles.size > 40) {
-    lines.push(`├─ ... ${summary.rootFiles.size - 40} more files`);
+  if (uniquePaths.length > 80) {
+    lines.push(`├─ ... ${uniquePaths.length - 80} more files`);
   }
 
   if (summary.skipped.size > 0) {
@@ -86,6 +99,48 @@ function summarizeListing(text: string): string {
   }
 
   return `${lines.join("\n")}\n`;
+}
+
+function treeLineDepth(line: string): number {
+  const marker = line.search(/[├└]/);
+  return marker < 0 ? 0 : marker;
+}
+
+function treeNodeName(line: string): string {
+  return line.replace(/^[\s│├└─]+/, "").trim().replace(/\/$/, "");
+}
+
+function filterTreeOutput(text: string): string {
+  if (!text.trim()) return "\n";
+
+  const skipped = new Set<string>();
+  const lines: string[] = [];
+  let skipDepth: number | undefined;
+
+  for (const line of text.split(/\r?\n/)) {
+    if (/^\s*\d+ directories?, \d+ files?\s*$/.test(line)) continue;
+    if (!line.trim()) continue;
+
+    const depth = treeLineDepth(line);
+    if (skipDepth !== undefined && depth > skipDepth) continue;
+    skipDepth = undefined;
+
+    const nodeName = treeNodeName(line);
+    if (SKIP_DIRS.has(nodeName)) {
+      skipped.add(`${nodeName}/`);
+      skipDepth = depth;
+      continue;
+    }
+
+    lines.push(line);
+  }
+
+  if (skipped.size > 0) {
+    lines.push("", "Skipped:");
+    for (const name of [...skipped].sort()) lines.push(`- ${name}`);
+  }
+
+  return `${lines.join("\n").trimEnd()}\n`;
 }
 
 async function executeDirInternally(command: ParsedCommand): Promise<RawResult | undefined> {
@@ -117,7 +172,9 @@ export const listLikeHandler: CommandHandler = {
     return (await executeDirInternally(command)) ?? executeCommand(command);
   },
 
-  async filter(raw, _command, options) {
-    return makeFilteredResult(this.name, raw, summarizeListing(`${raw.stdout}\n${raw.stderr}`), options);
+  async filter(raw, command, options) {
+    const text = `${raw.stdout}\n${raw.stderr}`;
+    const output = command.program === "tree" ? filterTreeOutput(text) : summarizeListing(text);
+    return makeFilteredResult(this.name, raw, output, options);
   },
 };
