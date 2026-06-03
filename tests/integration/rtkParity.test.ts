@@ -106,4 +106,30 @@ describe("RTK-style CLI integration parity", () => {
       await rm(dir, { recursive: true, force: true });
     }
   }, 8000);
+
+  test("tg diff - condenses piped unified diff", async () => {
+    const dir = await mkdtemp(path.join(tmpdir(), "tg-rtk-diff-stdin-"));
+    try {
+      const input = [
+        "diff --git a/src/main.ts b/src/main.ts",
+        "--- a/src/main.ts",
+        "+++ b/src/main.ts",
+        "@@ -1,2 +1,3 @@",
+        " export function main() {",
+        '+  console.log("hello");',
+        " }",
+        "",
+      ].join("\n");
+
+      const result = runTg(["diff", "-"], dir, input, 3000);
+
+      expect(result.status).toBe(0);
+      expect(result.stdout).toContain("[file] src/main.ts (+1 -0)");
+      expect(result.stdout).toContain('  +  console.log("hello");');
+      expect(result.stdout).not.toContain("diff --git");
+      expect(result.stdout).not.toContain("@@ -1,2");
+    } finally {
+      await rm(dir, { recursive: true, force: true });
+    }
+  }, 8000);
 });

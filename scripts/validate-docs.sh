@@ -14,6 +14,7 @@ PROGRAMS=(
     cat type less           # common/readLike.ts
     ls dir find tree         # common/listLike.ts
     rg grep                  # common/searchLike.ts
+    diff                     # common/diff.ts
     git                      # git/{status,diff,log,branch,show}.ts
     pytest ruff mypy pip     # python/*.ts
     npm pnpm yarn vitest jest # js/{test,packageList}.ts

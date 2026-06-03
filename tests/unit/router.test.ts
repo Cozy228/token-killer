@@ -23,6 +23,7 @@ describe("routeCommand", () => {
     [["rg", "TODO", "."], "search-like"],
     [["grep", "TODO", "."], "search-like"],
     [["git", "status"], "git-status"],
+    [["diff", "old.ts", "new.ts"], "diff"],
     [["git", "diff"], "git-diff"],
     [["git", "log", "-1"], "git-log"],
     [["git", "show", "HEAD"], "git-show"],

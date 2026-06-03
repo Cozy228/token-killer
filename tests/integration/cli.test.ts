@@ -284,6 +284,40 @@ describe("Generic Passthrough", () => {
     expect(result.status).toBe(0);
     expect(result.stdout).toContain("abc");
   });
+  test("tg diff shows file metadata line numbers and aligned insertions", async () => {
+    const dir = await mkdtemp(path.join(tmpdir(), "tg-diff-"));
+    try {
+      const before = [
+        "export function main() {",
+        "  const unchanged1 = 1;",
+        "  const unchanged2 = 2;",
+        "  const unchanged3 = 3;",
+        "}",
+      ].join("\n");
+      const after = [
+        "export function main() {",
+        "  const timeoutMs = 5000;",
+        "  const unchanged1 = 1;",
+        "  const unchanged2 = 2;",
+        "  const unchanged3 = 3;",
+        "}",
+      ].join("\n");
+      await writeFile(path.join(dir, "old.ts"), `${before}\n`);
+      await writeFile(path.join(dir, "new.ts"), `${after}\n`);
+
+      const result = runTg(["diff", "old.ts", "new.ts"], dir);
+      expect(result.status).toBe(0);
+      expect(result.stdout).toContain("Files: old.ts -> new.ts");
+      expect(result.stdout).toMatch(/Modified: old\.ts @ .+ -> new\.ts @ .+/);
+      expect(result.stdout).toContain("Summary: +1 -0");
+      expect(result.stdout).toContain("+    -:   2 |   const timeoutMs = 5000;");
+      expect(result.stdout).not.toContain("-  const unchanged");
+      expect(result.stdout).not.toContain("+  const unchanged");
+    } finally {
+      await rm(dir, { recursive: true, force: true });
+    }
+  });
+
 });
 
 // ============================================================================

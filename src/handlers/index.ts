@@ -2,6 +2,7 @@ import type { CommandHandler } from "../types.js";
 import { readLikeHandler } from "./common/readLike.js";
 import { listLikeHandler } from "./common/listLike.js";
 import { searchLikeHandler } from "./common/searchLike.js";
+import { diffHandler } from "./common/diff.js";
 import { gitStatusHandler } from "./git/status.js";
 import { gitDiffHandler } from "./git/diff.js";
 import { gitLogHandler } from "./git/log.js";
@@ -26,6 +27,7 @@ export const handlers: CommandHandler[] = [
   readLikeHandler,
   listLikeHandler,
   searchLikeHandler,
+  diffHandler,
   gitStatusHandler,
   gitDiffHandler,
   gitLogHandler,
