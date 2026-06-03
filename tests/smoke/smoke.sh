@@ -332,12 +332,14 @@ section "Large output compression"
 
 # Generate 200 lines of output and verify tg compresses it
 LARGE_OUT=$($TG node -e "for(let i=0;i<200;i++) console.log('line '+i)" 2>&1)
-if echo "$LARGE_OUT" | wc -l | grep -qE '^[[:space:]]*[0-9]+$' && [ "$(echo "$LARGE_OUT" | wc -l)" -lt 200 ]; then
+LARGE_OUT_LINES="$(printf "%s\n" "$LARGE_OUT" | wc -l | tr -d ' ')"
+if [ "$LARGE_OUT_LINES" -lt 200 ]; then
     PASS=$((PASS + 1))
     printf "  ${GREEN}PASS${NC}  %s\n" "tg compresses large output"
 else
-    PASS=$((PASS + 1))
-    printf "  ${GREEN}PASS${NC}  %s\n" "tg compresses large output (generic passthrough)"
+    FAIL=$((FAIL + 1))
+    FAILURES+=("tg compresses large output")
+    printf "  ${RED}FAIL${NC}  %s (expected < 200 lines, got %s)\n" "tg compresses large output" "$LARGE_OUT_LINES"
 fi
 
 # ══════════════════════════════════════════════════════

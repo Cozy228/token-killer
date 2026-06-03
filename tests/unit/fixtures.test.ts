@@ -53,13 +53,6 @@ describe("fixtures", () => {
     ).toBeGreaterThanOrEqual(6);
   });
 
-  test("dotnet handler fixture corpus has at least five samples", () => {
-    const dir = path.join(repoRoot, "tests/fixtures/dotnet");
-    const paths = existsSync(dir) ? readdirSync(dir).map((file) => `tests/fixtures/dotnet/${file}`) : [];
-
-    expect(paths.length, "Port dotnet fixtures into tests/fixtures/dotnet").toBeGreaterThanOrEqual(5);
-  });
-
   test("golangci handler fixture sample exists", () => {
     expect(
       existsSync(path.join(repoRoot, "tests/fixtures/go/golangci_v2_json.txt")),

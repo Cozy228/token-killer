@@ -103,12 +103,14 @@ describe("RTK script parity", () => {
     },
   );
 
-  test("test:ci includes RTK-style script guards", async () => {
+  test("test:ci includes product, install, migration, and RTK-style script guards", async () => {
     const packageJson = JSON.parse(
       await readFile(path.join(repoRoot, "package.json"), "utf8"),
     ) as { scripts: Record<string, string> };
 
-    expect(packageJson.scripts["test:ci"]).toContain("vitest run");
+    expect(packageJson.scripts["test:ci"]).toContain("pnpm test:product");
+    expect(packageJson.scripts["test:ci"]).toContain("pnpm test:install");
+    expect(packageJson.scripts["test:ci"]).toContain("pnpm test:migration");
     expect(packageJson.scripts["test:ci"]).toContain("scripts/check-test-presence.sh");
     expect(packageJson.scripts["test:ci"]).toContain("scripts/validate-docs.sh");
     expect(packageJson.scripts["test:ci"]).toContain("tests/smoke/smoke.sh");

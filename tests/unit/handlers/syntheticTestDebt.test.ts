@@ -11,8 +11,9 @@ const repoRoot = path.resolve(
 
 const verifiedHandlerTests = new Set([
   "fixtureContent.test.ts",
+  "fixtureRegressionDebt.test.ts",
+  "fixtureWiring.test.ts",
   "registeredHandlerCoverage.test.ts",
-  "rtkCommandParity.test.ts",
   "rtkDomainCaseParity.test.ts",
   "syntheticTestDebt.test.ts",
 ]);
@@ -45,7 +46,7 @@ function listSyntheticHandlerTests(dir: string, prefix = ""): string[] {
 }
 
 describe("synthetic handler test debt", () => {
-  test("no unported synthetic handler tests remain in the verified suite", () => {
+  test("no unported synthetic handler tests remain outside the product suite", () => {
     const syntheticTests = listSyntheticHandlerTests(
       path.join(repoRoot, "tests/unit/handlers"),
     );
@@ -53,7 +54,7 @@ describe("synthetic handler test debt", () => {
     expect(
       syntheticTests,
       [
-        "Synthetic stdout handler tests are excluded from CI and must be ported to fixtureCases or deleted:",
+        "Synthetic stdout handler tests are excluded from product tests and must be ported to fixtureCases or deleted:",
         ...syntheticTests,
       ].join("\n"),
     ).toEqual([]);

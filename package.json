@@ -14,13 +14,15 @@
   "scripts": {
     "dev": "tsx src/cli.ts",
     "build": "tsdown",
-    "test": "vitest",
+    "test": "vitest --config vitest.config.ts",
+    "test:product": "vitest run --config vitest.config.ts",
+    "test:migration": "vitest run --config vitest.migration.config.ts",
     "test:smoke": "bash tests/smoke/smoke.sh",
     "test:check-presence": "bash scripts/check-test-presence.sh",
     "test:validate-docs": "bash scripts/validate-docs.sh",
     "test:install": "bash scripts/test-install.sh",
     "check:installation": "bash scripts/check-installation.sh",
-    "test:ci": "vitest run && bash scripts/check-test-presence.sh && bash scripts/validate-docs.sh && bash tests/smoke/smoke.sh",
+    "test:ci": "pnpm test:product && pnpm test:install && pnpm test:migration && bash scripts/check-test-presence.sh && bash scripts/validate-docs.sh && bash tests/smoke/smoke.sh",
     "typecheck": "tsc --noEmit"
   },
   "engines": {

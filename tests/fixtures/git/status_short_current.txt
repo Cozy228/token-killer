@@ -1,0 +1,18 @@
+ M docs/testing-and-migration-audit.md
+ M package.json
+ M tests/helpers/fixtureCases.ts
+ M tests/smoke/smoke.sh
+ M tests/unit/handlers/fixtureContent.test.ts
+ M tests/unit/handlers/syntheticTestDebt.test.ts
+ M tests/unit/rtkScriptParity.test.ts
+ M vitest.config.ts
+?? tests/fixtures/git/add_missing_path.txt
+?? tests/fixtures/git/commit_dry_run_dirty.txt
+?? tests/fixtures/git/fetch_missing_remote.txt
+?? tests/fixtures/git/gh_repo_view.json
+?? tests/fixtures/git/pull_unstaged_changes.txt
+?? tests/fixtures/git/push_dry_run_local.txt
+?? tests/fixtures/git/stash_invalid_ref.txt
+?? tests/fixtures/git/worktree_list.txt
+?? tests/unit/handlers/fixtureWiring.test.ts
+?? vitest.migration.config.ts

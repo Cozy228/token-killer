@@ -8,15 +8,14 @@ import {
 } from "../../helpers/rtkParityManifest.js";
 
 const migrationModules = [
-  ...rtkDomainModules.map((module) => ({
-    rtkSource: module.rtkSource,
-    label: module.rtkSource,
-  })),
-  ...rtkExtendedCommandExpectations.map((module) => ({
-    rtkSource: module.rtkSource,
-    label: module.rtkSource,
-  })),
-];
+  ...new Set([
+    ...rtkDomainModules.map((module) => module.rtkSource),
+    ...rtkExtendedCommandExpectations.map((module) => module.rtkSource),
+  ]),
+].map((rtkSource) => ({
+  rtkSource,
+  label: rtkSource,
+}));
 
 describe("RTK module migration", () => {
   test.each(migrationModules)(

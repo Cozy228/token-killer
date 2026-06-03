@@ -10,15 +10,18 @@ Complete the **RTK → tg migration** for the `token-guard` repo: every RTK comm
 
 **Source of truth (behavior):** `rtk/src/cmds/**/*.rs`  
 **Target (implementation):** `src/handlers/**/*.ts`  
-**Target (tests):** `tests/unit/handlers/**/*.test.ts`, `tests/fixtures/**`  
+**Target (tests):** `tests/helpers/fixtureCases.ts`, `tests/unit/handlers/fixtureContent.test.ts`, migration debt gates, `tests/fixtures/**`  
 **Audit baseline:** `docs/testing-and-migration-audit.md` (canonical; includes review checklist + missing test conditions + suite gaps)
 
 **Current baseline:**
 - RTK: **986 inline `#[test]`** across 47 command modules
-- tg: **20 registered handlers**, **108 unit tests** under `tests/unit/handlers/**`
-- `scripts/check-test-presence.sh` passes (test **files** exist) — this is necessary but **not sufficient**
+- tg: registered handlers have fixture-backed product coverage through `fixtureCases`
+- `pnpm test:product` is the green product gate for implemented behavior
+- `pnpm test:migration` is currently red: missing RTK module gaps, script parity gaps, and repo infrastructure gaps
+- `scripts/check-test-presence.sh` checks fixture-backed handler coverage and core test files — this is necessary but **not sufficient**
 
 **Non-negotiable:** A module is NOT migrated if tg only has generic passthrough or a comment like "no tg X handler". Each RTK command surface needs handler + dedicated tests + fixtures where RTK has them.
+**No fake green:** do not weaken assertions, move failing tests out of the suite, mark gaps as N/A, or replace real fixtures with synthetic stdout to make commands pass.
 
 ---
 
@@ -28,11 +31,11 @@ For each `rtk/src/cmds/<area>/<module>.rs`:
 
 1. **Handler** — tg routes matching commands to a filter in `src/handlers/` (new file or extension of existing handler). Register in `src/handlers/index.ts` and `src/router`/`matches()` logic.
 2. **Filter parity** — Output preserves RTK's critical information (paths, line numbers, error codes, exit semantics) while achieving comparable compression on large noisy output.
-3. **Test parity** — For every meaningful RTK `#[test]` in that module, add a vitest case in the matching `*.test.ts`. Name tests after RTK intent when possible (e.g. `parses grep -r output without line numbers`).
+3. **Test parity** — For every meaningful RTK `#[test]` in that module, add a real fixture-backed `fixtureCases` row or a targeted exported-parser unit test. Name tests after RTK intent when possible.
 4. **Fixtures** — Port RTK fixture files from `rtk/tests/fixtures/` to `tests/fixtures/<domain>/` when RTK uses file-backed samples.
-5. **Contracts** — Add/update entry in `tests/unit/handlers/contracts.test.ts` for new handlers.
+5. **Regression debt** — If current implementation cannot satisfy a real fixture yet, add it to `fixtureRegressionDebt.test.ts` instead of weakening product tests.
 6. **Docs & guards** — Update `README.md` handler list; extend `scripts/check-test-presence.sh`, `scripts/validate-docs.sh`, `tests/smoke/smoke.sh` as needed.
-7. **Verification** — `pnpm typecheck && pnpm vitest run && bash scripts/check-test-presence.sh && bash scripts/validate-docs.sh`
+7. **Verification** — `pnpm typecheck && pnpm test:product && pnpm test:check-presence && pnpm test:validate-docs`; run `pnpm test:migration` to confirm remaining red gates are expected. Migration may stay red until all handlers/infrastructure are implemented.
 
 ---
 
@@ -51,7 +54,7 @@ Mirror RTK's per-command test categories. Each handler test file should include 
 | Content preservation | file:line:code, TS error codes | Assert critical strings survive |
 | Malformed input | unparseable grep lines | Skip gracefully, no crash |
 
-`contracts.test.ts` covers preservation/empty-edge globally — **do not rely on it alone**; per-handler tests must still exist.
+Do not use synthetic stdout-only handler tests. Product handler behavior must be fixture-backed; parser-only units are allowed only for exported pure parser contracts.
 
 ---
 
@@ -68,12 +71,13 @@ For each module, follow this loop:
    - Note gaps vs RTK test list
 
 3. Write/extend tests FIRST
-   - Port RTK test inputs as inline strings or fixtures
-   - Use tests/helpers/assertions.ts (expectCriticalContent, expectLargeSavings)
+   - Port RTK test inputs as real fixtures where agent-visible output is involved
+   - Use tests/helpers/fixtureCases.ts critical/forbidden assertions
+   - Use fixtureRegressionDebt.test.ts for real red tests that implementation cannot pass yet
 
 4. Implement or fix handler until tests pass
 
-5. Update contracts, router.test.ts, smoke.sh, README, check-test-presence.sh
+5. Update router.test.ts, smoke.sh, README, check-test-presence.sh as needed
 
 6. Mark module done in `docs/testing-and-migration-audit.md` §11 audit table
 ```
@@ -84,6 +88,29 @@ When RTK merges multiple commands into one tg handler (e.g. ls + find → listLi
 
 ## Priority Phases
 
+### Phase -1 — Fix current fixture-backed red tests first
+
+Start implementation here before adding new command surfaces. These failures already have real fixture-backed tests, so do **not** add more tests unless the fix reveals a new distinct behavior gap.
+
+| Failing gate | Current failure | Implementation target |
+|--------------|-----------------|-----------------------|
+| `fixtureContent.test.ts` | `rg --json` is rewritten into a `Search:` summary and drops JSON fields | Respect explicit machine-readable / verbose format flags such as `--json`; passthrough raw or preserve JSON lines |
+| `fixtureRegressionDebt.test.ts` | `git status --short` loses modified/untracked paths | Parse short status and preserve changed path names |
+| `fixtureRegressionDebt.test.ts` | `git status --porcelain -b` loses branch and paths | Parse porcelain branch header and preserve changed path names |
+| `fixtureRegressionDebt.test.ts` | `git diff --stat` becomes `Files changed: 0, +0 -0` | Detect stat output and preserve file count / insertion / deletion totals |
+
+Done for Phase -1 when:
+
+```bash
+pnpm typecheck
+pnpm test:product
+pnpm exec vitest run --config vitest.migration.config.ts tests/unit/handlers/fixtureRegressionDebt.test.ts
+pnpm test:check-presence
+pnpm test:validate-docs
+```
+
+`pnpm test:migration` may still be red after Phase -1 because missing RTK handlers, scripts, and repo infrastructure are separate work.
+
 ### Phase 0 — Deepen existing handlers (highest ROI, no new surface)
 
 These have handlers but severe test/behavior gaps:
@@ -91,21 +118,20 @@ These have handlers but severe test/behavior gaps:
 | RTK module | tg target | RTK tests | tg tests | Action |
 |------------|-----------|-----------|----------|--------|
 | `system/read.rs` | `readLike.ts` | 8 | 1 | stdin, tail, multi-file, binary, locale |
-| `system/grep_cmd.rs` | `searchLike.ts` | 23 | 14 | `-c`, `-l`, `-L`, `-o`, BRE `\|` escape, grep -r without line numbers |
+| `system/grep_cmd.rs` | `searchLike.ts` | 23 | fixture-backed subset | explicit `--json`, `-c`, `-l`, `-L`, `-o`, BRE `\|` escape, grep -r without line numbers |
 | `system/tree.rs` | listLike or new tree filter | 6 | 0 | tree summary removal, structure preservation |
-| `git/git.rs` | git/*.ts | 75 | 27 | add, commit, push, pull, fetch, stash, worktree |
+| `git/git.rs` | git/*.ts | 75 | fixture-backed subset | add, commit, push, pull, fetch, stash, worktree |
 | `git/diff_cmd.rs` | `diff.ts` | 19 | 5 | hunk limits, stat passthrough, full header context |
-| `jvm/gradlew_cmd.rs` | `gradle.ts` | 56 | 4 | port 6 gradlew fixtures, build/lint/connected variants |
+| `jvm/gradlew_cmd.rs` | `gradle.ts` | 56 | fixture-backed subset | RTK gradlew fixtures are ported; deepen build/lint/connected behavior |
 | `system/ls.rs` + `find_cmd.rs` | `listLike.ts` | 58 | 7 | symlink, device files, spaces in paths, noise dirs |
 
 ### Phase 1 — Missing handlers with RTK fixtures ready
 
 | Domain | RTK modules | Fixtures |
 |--------|-------------|----------|
-| Gradle corpus | `gradlew_cmd.rs` | `rtk/tests/fixtures/gradlew_*` (6 files) → `tests/fixtures/java/` |
-| .NET | `dotnet_cmd.rs`, `binlog.rs`, `dotnet_trx.rs`, `dotnet_format_report.rs` | `rtk/tests/fixtures/dotnet/*` |
-| Git hosting CLIs | `gh_cmd.rs`, `glab_cmd.rs`, `gt_cmd.rs` | `rtk/tests/fixtures/glab_*` |
-| Go | `go_cmd.rs`, `golangci_cmd.rs` | `golangci_v2_json.txt` |
+| .NET | `dotnet_cmd.rs`, `binlog.rs`, `dotnet_trx.rs`, `dotnet_format_report.rs` | add fixtures after handlers exist |
+| Git hosting CLIs | `gt_cmd.rs` | glab corpus already ported; gt still missing |
+| Go | `go_cmd.rs`, `golangci_cmd.rs` | golangci fixture already ported; handlers missing |
 
 ### Phase 2 — Missing handlers (no fixtures yet, port from RTK inline tests)
 
@@ -130,7 +156,7 @@ These have handlers but severe test/behavior gaps:
 - Handlers implement `CommandHandler`: `name`, `matches()`, `execute()`, `filter()`
 - Use `makeFilteredResult()` from `src/handlers/base.ts`
 - Use `executeCommand()` for default execution
-- File layout: `src/handlers/<domain>/<name>.ts` ↔ `tests/unit/handlers/<domain>/<name>.test.ts`
+- Test layout: product handler behavior lives in `tests/helpers/fixtureCases.ts`; migration-only failures live in gate files under `tests/unit/handlers/`
 - Keep files **under 500 lines** — split handlers if needed
 - English only in code, comments, tests, commit messages
 - Minimize scope: one RTK module (or coherent group) per PR/session
@@ -150,8 +176,7 @@ IMPLEMENTED (deepen tests):
 
 NOT IMPLEMENTED (need handler + tests):
   tree (dedicated), log, json, env, wc, format, pipe, local_llm
-  git: add, commit, push, pull, fetch, stash, worktree
-  gh, glab, gt
+  git: gt
   prettier, next, playwright, prisma
   dotnet (4 modules), aws, curl, psql, wget, docker/kubectl
   go, golangci, cargo, ruby (3)
@@ -173,9 +198,8 @@ Migrate RTK module: rtk/src/cmds/<path>/<module>.rs
 
 Deliverables:
 - [ ] Handler: src/handlers/...
-- [ ] Tests: tests/unit/handlers/... (N new cases mapped from RTK #[test] list)
+- [ ] Tests: tests/helpers/fixtureCases.ts or fixtureRegressionDebt.test.ts (N cases mapped from RTK #[test] list)
 - [ ] Fixtures: tests/fixtures/... (if applicable)
-- [ ] contracts.test.ts entry
 - [ ] router.test.ts + smoke.sh + README + check-test-presence.sh updates
 
 RTK #[test] functions to port (paste from rg 'fn test_' rtk/src/cmds/...):
@@ -193,17 +217,17 @@ Done when: pnpm vitest run <test-file> && check-test-presence && validate-docs p
 Migrate RTK → tg Phase 0: searchLike grep parity.
 
 Read rtk/src/cmds/system/grep_cmd.rs — port all #[test] cases related to:
-- format flags: -c, -l, -L, -o, --null
+- format flags: -c, -l, -L, -o, --null, --json
 - BRE alternation \| → |
 - grep -r (file:content, no line numbers)
 - malformed lines, empty content, windows paths, colons in content
 
-Read current src/handlers/common/searchLike.ts and tests/unit/handlers/common/searchLike.test.ts.
-Tests already exist for several formats but handler may be incomplete — make tests and implementation match RTK behavior.
+Read current src/handlers/common/searchLike.ts and `tests/helpers/fixtureCases.ts`.
+Existing product handler coverage is fixture-backed; add real fixtures or regression-debt rows first, then make implementation match RTK behavior.
 
-Also update contracts if filter output shape changes.
+Also update fixtureRegressionDebt if a real RTK fixture exposes a current implementation gap.
 
-Verify: pnpm vitest run tests/unit/handlers/common/searchLike.test.ts
+Verify: pnpm typecheck && pnpm test:product && pnpm test:check-presence && pnpm test:validate-docs
 ```
 
 ---
@@ -212,10 +236,10 @@ Verify: pnpm vitest run tests/unit/handlers/common/searchLike.test.ts
 
 Migration is complete when:
 
-- [ ] **0** RTK command modules lack tg handler + `*.test.ts`
+- [ ] **0** RTK command modules lack tg handler + fixture-backed coverage
 - [ ] Every RTK `#[test]` in `rtk/src/cmds/**` has a documented tg equivalent (test name or comment linking `RTK: test_*`)
 - [ ] All RTK fixtures under `rtk/tests/fixtures/` ported or explicitly N/A with handler present
 - [ ] `docs/testing-and-migration-audit.md` §11 shows ✅ for all audit rows
 - [ ] `pnpm test:ci` passes in CI
 
-**Current verdict:** NOT COMPLETE — 31 RTK modules without handler/test; mapped modules cover a fraction of 986 RTK inline tests.
+**Current verdict:** NOT COMPLETE — 29 RTK modules without handler/test, plus current fixture-backed red implementation gaps; mapped modules cover a fraction of 986 RTK inline tests.

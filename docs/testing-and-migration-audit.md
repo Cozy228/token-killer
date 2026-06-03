@@ -4,9 +4,9 @@ Single reference for **what good tests are**, **what is wrong with the suite tod
 
 Last audited: 2026-06-03
 
-**Run gates:** `pnpm vitest run` (uses `vitest.config.ts` verified suite). **`pnpm test:ci` must be all green before calling migration complete.**
+**Run gates:** `pnpm test:product` (uses `vitest.config.ts`) is the implemented-behavior fidelity suite and may turn red when a known implementation bug is promoted into fixture-backed coverage. `pnpm test:migration` (uses `vitest.migration.config.ts`) is expected to stay red until RTK migration/debt is complete. **`pnpm test:ci` must be all green before calling migration complete.**
 
-`scripts/check-test-presence.sh` only checks handler **files** have matching `*.test.ts` names — necessary, **not sufficient**.
+`scripts/check-test-presence.sh` checks fixture-backed handler coverage plus core test-pair presence — necessary, **not sufficient**.
 
 ---
 
@@ -14,15 +14,15 @@ Last audited: 2026-06-03
 
 | Question | Answer |
 |----------|--------|
-| Is migration complete? | **No** — ~29 RTK command modules have no tg handler; verified vitest is not all green. |
-| Do passing tests all follow testing principles? | **No** — quality is mixed; only ~19 `fixtureCases` rows meet P0 fidelity bar in verified CI. |
+| Is migration complete? | **No** — ~29 RTK command modules have no tg handler; migration suite is red by design. |
+| Do passing tests all follow testing principles? | **Mostly for product tests** — product handler coverage now runs through 42 real `fixtureCases`; current red tests expose real gaps. |
 | Do passing tests reflect project reality? | **Partially** — core handlers work on selected real fixtures and narrow integration paths; not production-wide or RTK 1:1. |
 
 **Baseline**
 
 - RTK: **986** inline `#[test]` across **47** command modules (inventory only; not CI progress).
 - tg: **29** registered handlers in `src/handlers/index.ts`.
-- Verified CI **excludes** synthetic handler `*.test.ts` until ported to `tests/helpers/fixtureCases.ts` or deleted.
+- Product tests use fixture-backed handler coverage; synthetic handler `*.test.ts` files have been deleted after porting/debt capture.
 
 **Verdict:** Do not treat RTK `#[test]` counts, synthetic handler test counts, or `check-test-presence.sh` PASS as migration progress. **Automated gates + fixture-backed fidelity** are the bar.
 
@@ -199,19 +199,39 @@ Every RTK module migration is **done** when tg covers **all applicable rows** fo
 
 | RTK dimension | tg artifact | CI gate | tg today (honest) |
 |---------------|-------------|---------|-------------------|
-| **A Filter output (large / failure)** | `fixtureCases` row: `fixture` + `command` + `critical[]` + optional `forbidden[]` | `fixtureContent.test.ts` | **19 rows** across handlers; missing git-show, gh, glab, extended git, … |
-| **B Arg parse & routing** | `router.test.ts` + `rtkCommandParity` sample command → handler name | verified | **Partial** — routing only, not arg edge cases |
-| **C Format transform** | Unit tests on exported pure functions **or** fixtureCases when output differs | handler unit file **or** fixtureCases | **Mostly missing** in CI (synthetic files excluded) |
+| **A Filter output (large / failure)** | `fixtureCases` row: `fixture` + `command` + `critical[]` + optional `forbidden[]` | `fixtureContent.test.ts` | **42 rows** across registered handlers; still needs deeper per-handler variants |
+| **B Arg parse & routing** | `router.test.ts` + `rtkDomainCaseParity` sample command → handler name | verified / migration gate | **Partial** — routing only, not arg edge cases |
+| **C Format transform** | Unit tests on exported pure functions **or** fixtureCases when output differs | fixtureCases / future parser units | **Still thin** — add real fixture variants or exported-parser units only |
 | **D Passthrough / small output** | `fixtureCases` with small fixture + max size assertion; `contracts` small-output rows | fixtureContent + (future) size caps | **Rare** — few P1 small-output cases |
-| **E Compression & limits** | `fixtureCases` on large fixture + `critical` + optional `expectLargeSavings` | fixtureContent | **Partial** — some synthetic-only savings tests |
+| **E Compression & limits** | `fixtureCases` on large fixture + `critical` + optional `expectLargeSavings` | fixtureContent | **Partial** — no savings-only tests count |
 | **F Empty / no-match** | `fixtureCases` or unit: empty input → no throw, sensible message | fixtureContent | **Sparse** |
 | **G Error / stderr** | `fixtureCases` with `exitCode != 0`, stderr in fixture or merged raw | fixtureContent | **Some** (pytest, ruff, tsc, …) |
-| **H CLI flags** | One fixtureCases row **per output format** (RTK: separate `test_format_flag_*`) | fixtureContent | **Gaps** — e.g. rg default format, grep -c/-l not in fixtureCases |
+| **H CLI flags** | One fixtureCases row **per output format** (RTK: separate `test_format_flag_*`) | fixtureContent | **Gaps now visible** — grep `-c`/`-l` pass; `rg --json` is red because current handler rewrites machine-readable output |
 | **I Platform / encoding** | fixtureCases with paths/unicode in fixture file | fixtureContent | **Minimal** |
 | **J Malformed / unknown format** | fixtureCases: non-canonical stdout → not empty, not “0 matches” lie | fixtureContent | **Almost none** |
 | **K Module inventory** | Handler exists + at least one dimension-A row | `rtkDomainCaseParity` | **47 modules tracked; most fail** |
 | **Smoke E2E** | `cli.test.ts` / `smoke.sh` | integration | **~30** narrow scenarios |
-| **Parser-only (B/C, no agent diff)** | `tests/unit/handlers/<handler>.test.ts` testing **exported** helpers with literals | include in CI only if real behavior | **~200** synthetic tests **excluded** — must port or delete |
+| **Parser-only (B/C, no agent diff)** | exported pure-helper units only when needed | future targeted unit files | Synthetic stdout-only handler tests deleted; add parser units only for real parser contracts |
+
+### 2.9.1 Dimension-level tg coverage (actual counts + verdict)
+
+As of 2026-06-03, tg test cases classified against the same A–K dimensions:
+
+| Dimension | RTK ~count | tg actual | Coverage verdict | Gap |
+|-----------|-----------|-----------|------------------|-----|
+| **A — Filter output** | ~315 | ~75+ | ⚠️ Thin | 42 fixtureCases rows are high quality, but per-handler depth is still shallow vs RTK |
+| **B — Arg parse/routing** | ~230 | ~55 routing / 0 internal parse | ⚠️ Routing ok, parse untested | Handler-internal parse functions (`formatStatus`, `parseMatch`, …) tested only through filter() pipeline, not in isolation |
+| **C — Format transform** | ~161 | ~14 | 🔴 Thin | Only searchLike has 5+ format variants; other handlers test one canonical format only |
+| **D — Passthrough/small output** | ~34 | ~14 | 🟢 Proportional | branch/list/search small-output rows now assert output growth limits |
+| **E — Compression & limits** | ~24 | ~11 | 🟢 Proportional | Hidden counts, per-file caps, savings math all covered |
+| **F — Empty output** | ~13 | ~10 | 🟡 Adequate | Former synthetic contracts bug was deleted; still needs fixture-backed empty-output depth |
+| **G — Error/stderr** | ~13 | ~10 | 🟢 Proportional | Search regex error, read-like missing file, git failures, pipeline fallback |
+| **H — CLI flags** | ~10 | ~12 | 🔴 Honest red | grep `-c`/`-l` rows pass; `rg --json` row fails until explicit machine-readable output is respected |
+| **I — Platform/encoding** | ~3+ | 2 | 🟡 Minimal | ANSI strip + CJK token estimation; no emoji-in-output, no non-ASCII grep match content |
+| **J — Malformed input** | ~1+ | 4 | 🔴 Honest red | `rg --json`, `git status --short`, `git status --porcelain -b`, and `git diff --stat` expose parser/format gaps |
+| **K — Unit helpers** | ~143 | 0 | N/A | Intentionally not isolated; all helper logic covered through filter() pipeline |
+
+**Note on H:** The previous audit claimed grep -c/-l were covered by synthetic tests. Those tests were deleted; current coverage is real fixture-backed. `rg --json` deliberately stays red.
 
 **Naming / traceability:** each tg case should cite RTK source when porting:
 
@@ -246,32 +266,34 @@ Or in unit tests: `// RTK: rtk/src/cmds/system/grep_cmd.rs test_parse_match_line
 
 ### 3.1 What “passing” means today
 
-The verified suite (`vitest.config.ts`) intentionally includes only gate tests, core unit tests, and integration — **not** per-handler synthetic tests under `tests/unit/handlers/**` (except the gate files listed in §4).
+The product suite (`vitest.config.ts`) intentionally includes current product behavior only: core unit tests, integration, and fixture-backed handler behavior. It does **not** include per-handler synthetic tests under `tests/unit/handlers/**` or migration/debt gates.
 
-At audit time, `pnpm vitest run` was **not all green** (~186 pass / ~94 fail). Treat any “pass count” as **partial progress**, not completeness.
+The migration suite (`vitest.migration.config.ts`) intentionally includes RTK migration, fixture wiring, regression debt, synthetic debt, and infrastructure parity gates. At audit time, `pnpm test:product` was red (**120 pass / 1 fail**) because `rg --json` is now a real fixture-backed bug, and `pnpm test:migration` was red (**97 pass / 39 fail**). Treat failures as debt signals, not regressions to hide.
 
 ### 3.2 Categories of passing tests (quality tiers)
 
 | Tier | Examples | Follows P0/P1 principles? | Reflects real tool output? |
 |------|----------|---------------------------|----------------------------|
-| **A — Fidelity bar** | `fixtureContent.test.ts` → `fixtureCases` (~19 scenarios) | **Yes** — `critical` / `forbidden` + `expectMeaningfulBody` | **Partial** — one real fixture path per major handler |
+| **A — Fidelity bar** | `fixtureContent.test.ts` → `fixtureCases` (42 scenarios) | **Yes** — `critical` / `forbidden` + `expectMeaningfulBody` | **Partial** — one or more real fixture paths per major handler |
 | **B — tg internals** | `savings`, `parse`, `router`, `pipeline`, `executor`, `ansi` | **Yes** for their scope | **N/A** (not handler filters) |
 | **C — E2E smoke** | `tests/integration/cli.test.ts` (~30 cases) | **Mostly** — real `spawn` of tg in temp dirs | **Partial** — narrow scenarios |
-| **D — Structural only** | Routing parity (implemented modules), fixture **file exists**, script **path exists** | **No** for filter behavior | **No** — existence ≠ correct compression |
-| **E — Excluded synthetic** | `listLike.test.ts`, `searchLike.test.ts`, `contracts.test.ts`, … (~23 files) | **Mixed** — some good cases, many `savingsPct >= 80` on hand-built stdout | **No** — not in verified CI; `syntheticTestDebt` fails until ported |
+| **D — Migration/debt only** | Routing parity, fixture wiring, fixture corpus size, script path parity | **No** for product behavior | **No** — existence/routing ≠ correct compression |
+| **E — Deleted synthetic** | former `handlers/**/<name>.test.ts` files | Removed | Anti-pattern removed; replacement coverage is fixture-backed or explicit regression debt |
 
 ### 3.3 Documented shortcomings (audit)
 
-1. **CI not green** — migration gates (`rtkDomainCaseParity`, `registeredHandlerCoverage`, `fixtures` / `projectConfig`, `syntheticTestDebt`, pending script ports) still fail.
-2. **Synthetic handler tests on disk** — ~24 `*.test.ts` files use inline stdout strings; excluded from verified CI; must move to `fixtureCases` or be deleted.
-3. **One fixture per handler is not enough** — `fixtureCases` covers ~19 handlers once each; missing: unknown-format, format variants, small-output passthrough, stderr-only, empty output (for most handlers).
-4. **fixtureCases wiring debt** — `fixtureContent.test.ts` also fails rows for orphaned on-disk fixtures (`rg_default_format`, `log_standard`, `show_large`, …) and commands (`tree`, `ls`, `pnpm list`, …) not yet in `fixtureCases`.
-5. **Handlers without fixtureCases** — e.g. `git-show`, `gh`, `glab`, extended git (`git-add`, `git-commit`, `git-push`, …) fail `registeredHandlerCoverage` until each has a `fixtureCases` row.
-6. **`contracts.test.ts` not in verified CI** — minimal inline samples; useful smoke for handlers but must not replace fixture-backed tests.
-7. **Fixture files exist but corpora incomplete** — gradlew **1/6**, dotnet **0/5**, glab **0/5**, golangci missing; “file on disk” tests do not prove handler behavior.
-8. **Routing tests ≠ behavior** — `rtkCommandParity` only checks handler **name** for sample commands; unimplemented RTK modules still route to `generic`.
-9. **Historical anti-pattern** — tests that only assert high `savingsPct` without critical content (see §5 root cause); still present in excluded synthetic files.
+1. **Migration CI not green** — migration gates (`rtkDomainCaseParity`, `fixtureRegressionDebt`, `projectConfig`, pending script ports) still fail.
+2. **Synthetic handler tests removed** — 23 inline-stdout handler test files were deleted after porting useful coverage into `fixtureCases` or explicit migration debt.
+3. **One fixture per handler is not enough** — `fixtureCases` covers 42 rows, but many handlers still lack full RTK depth for format variants, stderr-only, and empty-output coverage.
+4. **fixtureCases wiring debt cleared** — orphaned on-disk fixtures (`rg_default_format`, `log_standard`, `show_large`, …) and commands (`tree`, `ls`, `pnpm list`, …) are now wired into `fixtureCases`.
+5. **Registered handler fixture coverage complete** — every registered non-generic handler has at least one `fixtureCases` row.
+6. **No synthetic handler contract tests** — global inline contracts were removed; use fixtureCases or explicit regression debt.
+7. **Fixture corpus gate narrowed** — RTK gradlew, glab, and golangci fixtures are ported; dotnet corpus-only gate was removed because dotnet has no handler yet and parity gates already track that gap.
+8. **Routing tests ≠ behavior** — routing-only coverage was removed as a standalone gate; `rtkDomainCaseParity` now keeps routing tied to fixture-backed handler coverage and stays red for unimplemented RTK modules.
+9. **Historical anti-pattern removed from handler tests** — savings-only and hand-built stdout handler tests were deleted; future coverage must use real fixtures or explicit parser-unit contracts.
 10. **RTK scale gap** — e.g. gradlew RTK **56** tests + **6** fixtures vs tg **11** tests + **1** fixture; **986** RTK inline tests vs a thin verified layer.
+11. **Former `contracts.test.ts` empty edge case bug removed** — the no-op `critical: [""]` assertions were deleted with the synthetic contracts file.
+12. **`rg --json` is now intentionally red** — current `search-like` rewrites JSON output into a search summary and drops machine-readable fields.
 
 ### 3.4 What passing tests *do* justify
 
@@ -283,30 +305,28 @@ They do **not** justify: migration complete, full command surface, or freedom fr
 
 ### 3.5 Per-file test inventory (verdict + action)
 
-Merged from `docs/test-case-audit.md` (2026-06-03), **reconciled** with `vitest.config.ts` verified suite and §2.9 coverage matrix.  
-**Legend:** **CI** = included in `pnpm vitest run` today.
+Merged from `docs/test-case-audit.md` (2026-06-03), **reconciled** with `vitest.config.ts`, `vitest.migration.config.ts`, and §2.9 coverage matrix.  
+**Legend:** **Product** = included in `pnpm test:product`; **Migration** = included in `pnpm test:migration`.
 
 | Verdict | Meaning | Action |
 |---------|---------|--------|
-| ✅ **CI keep** | In verified suite; tests tg product behavior | Keep; extend with fixtureCases where gaps remain |
-| 📦 **Port queue** | Tests `src/` but **excluded from CI** (inline stdout); scenarios often valuable | Port each case → `fixtureCases` or exported-parser unit test; then delete file |
+| ✅ **Product keep** | In product suite; tests tg product behavior | Keep; extend with fixtureCases where gaps remain |
+| 🗑️ **Deleted synthetic** | Former inline stdout handler tests | Do not restore; add real fixtureCases or regression debt instead |
 | ⚠️ **Gate** | Migration / debt tracker, not filter behavior | Keep until migration complete; then merge or delete |
-| ❌ **Drop from CI** | File existence, repo hygiene, or redundant with another gate | Remove from `vitest.config.ts`; track in docs/checklist if still needed |
+| 🚦 **Migration only** | File existence, repo hygiene, or script parity debt | Keep out of product tests; keep in migration config while useful |
 
-**Summary (39 files):**
+**Summary:**
 
 | Bucket | Files | Count |
 |--------|-------|------:|
-| ✅ CI keep — core + integration | §3.5.1 | 8 |
-| ✅ CI keep — gates | §3.5.4 (subset) | 4 |
-| 📦 Port queue — handler synthetics | §3.5.2 | 24 |
-| 📦 Port queue — contracts / generic | §3.5.3 | 2 |
-| ❌ Drop from CI — infrastructure | §3.5.5 | 3 |
+| ✅ Product keep — core + integration + fixtureContent | §3.5.1 and §3.5.6 | 9 |
+| 🚦 Migration/debt gates | §3.5.4 and §3.5.5 | 9 |
+| 🗑️ Deleted synthetic handler tests | §3.5.2 | 23 |
 | ⚠️ Gate — consolidate later | §3.5.4 | 2 redundant with `rtkDomainCaseParity` |
 
-#### 3.5.1 ✅ CI keep — core & integration (8 files)
+#### 3.5.1 ✅ Product keep — core & integration (8 files + fixtureContent)
 
-| File | CI | What it tests | Action |
+| File | Product | What it tests | Action |
 |------|:--:|---------------|--------|
 | `tests/unit/parse.test.ts` | ✅ | `parseArgv()` — tg flags vs command flags (6) | Keep |
 | `tests/unit/router.test.ts` | ✅ | `routeCommand()` — handler routing table (32) | Keep; arg edge cases belong in fixtureCases |
@@ -315,65 +335,43 @@ Merged from `docs/test-case-audit.md` (2026-06-03), **reconciled** with `vitest.
 | `tests/unit/executor.test.ts` | ✅ | Real spawn, exit code, 127 (2) | Keep |
 | `tests/unit/core/ansi.test.ts` | ✅ | ANSI strip via generic handler (1) | Keep |
 | `tests/integration/cli.test.ts` | ✅ | E2E tg: ls/cat/git/rg/flags/report (~30) | Keep; primary smoke |
-| `tests/unit/handlers/fixtureContent.test.ts` | ✅ | **19 `fixtureCases`** on real fixtures + wiring debt | Keep; expand rows — this is the handler behavior bar |
+| `tests/unit/handlers/fixtureContent.test.ts` | ✅ | **42 `fixtureCases`** on real fixtures | Keep; expand rows — this is the handler behavior bar; currently red on `rg --json` |
 
-#### 3.5.2 📦 Port queue — handler unit tests (24 files, **not in CI**)
+#### 3.5.2 🗑️ Deleted synthetic handler tests (23 files)
 
-These import `src/handlers/**` and encode **useful scenarios** (often REPORT.md / RTK bug fixes), but use **hand-built stdout** — they do **not** count as migration-complete until ported to `fixtureCases` or real fixtures.
+These files were removed because they used hand-built stdout strings and often asserted savings without enough content preservation. Do not recreate them as same-name handler unit tests unless the new file tests exported pure parser helpers that cannot be fixture-backed.
 
-| File | Handler | ~Tests | RTK dimensions covered | Action |
-|------|---------|-------:|------------------------|--------|
-| `handlers/common/readLike.test.ts` | read-like | 6 | A, D, G | Port large/small/stdin/binary → fixtureCases |
-| `handlers/common/listLike.test.ts` | list-like | 13 | A, C, D, E | Port tree/ls/find scenarios; map RTK ls/find tests |
-| `handlers/common/searchLike.test.ts` | search-like | 20 | A, C, H, J, F | **High priority** — maps ~grep_cmd.rs; port flags + malformed |
-| `handlers/git/status.test.ts` | git-status | 6 | A, F | Port to `status_dirty*.txt` fixtures |
-| `handlers/git/diff.test.ts` | git-diff | 8 | A, C, E | Port hunk/line preservation → `diff_large.txt` + variants |
-| `handlers/git/log.test.ts` | git-log | 7 | A, D | Port small/large log → `log_*.txt` |
-| `handlers/git/show.test.ts` | git-show | 5 | A | **Missing fixtureCases row** — port first |
-| `handlers/git/branch.test.ts` | git-branch | 6 | A, D | Port threshold cases |
-| `handlers/git/extended.test.ts` | git-add…worktree | 28 | A | One fixtureCases row per sub-handler |
-| `handlers/git/hostingCli.test.ts` | gh, glab | 19 | A, D | Port when glab/gh fixtures migrated |
-| `handlers/java/gradle.test.ts` | gradle | 11 | A, E, G | Port 6 gradlew fixtures + RTK task variants |
-| `handlers/java/javac.test.ts` | javac | 4 | A, G | Port `javac_errors.txt` variants |
-| `handlers/java/maven.test.ts` | maven | 4 | A | tg-only; keep scenarios in fixtureCases |
-| `handlers/js/eslint.test.ts` | eslint | 6 | A, F | Port `eslint_many.txt` + clean case |
-| `handlers/js/packageList.test.ts` | package-list | 6 | A, H | Add pnpm row (wiring debt) |
-| `handlers/js/test.test.ts` | js-test | 7 | A, G | Port vitest/jest fixtures |
-| `handlers/js/tsc.test.ts` | tsc | 6 | A, G | Port `tsc_many.txt` + clean |
-| `handlers/python/mypy.test.ts` | mypy | 7 | A, G | Port `mypy_many.txt` |
-| `handlers/python/pip.test.ts` | pip | 7 | A, F | Port list/freeze scenarios |
-| `handlers/python/pytest.test.ts` | pytest | 7 | A, G, F | Port failed + passed fixtures |
-| `handlers/python/ruff.test.ts` | ruff | 7 | A, F, G | Port `ruff_many.txt` + format modes |
+Deleted files:
 
-**Do not** treat these as “32 production tests all green” — they are **~200 scenarios in quarantine** until fixture-backed.
+`common/listLike.test.ts`, `common/readLike.test.ts`, `common/searchLike.test.ts`, `contracts.test.ts`, `generic.test.ts`, `git/branch.test.ts`, `git/diff.test.ts`, `git/extended.test.ts`, `git/hostingCli.test.ts`, `git/log.test.ts`, `git/show.test.ts`, `git/status.test.ts`, `java/gradle.test.ts`, `java/javac.test.ts`, `java/maven.test.ts`, `js/eslint.test.ts`, `js/packageList.test.ts`, `js/test.test.ts`, `js/tsc.test.ts`, `python/mypy.test.ts`, `python/pip.test.ts`, `python/pytest.test.ts`, `python/ruff.test.ts`.
 
-#### 3.5.3 📦 Port queue — contracts & generic (2 files)
+Replacement coverage now lives in:
 
-| File | CI | What it tests | Action |
-|------|:--:|---------------|--------|
-| `handlers/contracts.test.ts` | ❌ | All handlers: minimal inline samples (5×N) | Keep locally as smoke; **replace** with fixtureCases for CI |
-| `handlers/generic.test.ts` | ❌ | Generic passthrough/compression (5) | Port 1–2 rows to fixtureCases or integration |
+- `tests/helpers/fixtureCases.ts` + `fixtureContent.test.ts` for product fidelity.
+- `fixtureRegressionDebt.test.ts` for real fixture-backed failures that cannot be marked green yet.
+- RTK routing/domain gates for missing handlers.
 
-#### 3.5.4 ⚠️ Migration gates (in CI)
+#### 3.5.4 ⚠️ Migration gates
 
-| File | CI | What it tests | Verdict | Action |
+| File | Migration | What it tests | Verdict | Action |
 |------|:--:|---------------|---------|--------|
 | `handlers/rtkDomainCaseParity.test.ts` | ✅ | Per RTK module: routing + fixture coverage (47) | **Primary gate** | Keep |
-| `handlers/rtkCommandParity.test.ts` | ✅ | Routing only (47) | Redundant with above | **Merge** routing into domain parity; then remove |
 | `handlers/registeredHandlerCoverage.test.ts` | ✅ | Every handler has fixtureCases (28) | Redundant subset | **Merge** into domain parity; then remove |
-| `handlers/syntheticTestDebt.test.ts` | ✅ | Fails while §3.5.2 files exist on disk | **Debt gate** | **Keep** until port queue empty (test-case-audit wrongly said remove) |
+| `handlers/fixtureRegressionDebt.test.ts` | ✅ | Real fixture-backed regressions not yet implemented | **Debt gate** | Keep until fixed |
+| `handlers/fixtureWiring.test.ts` | ✅ | Known fixtures/commands wired into fixtureCases | **Debt gate** | Keep while fixtures expand |
+| `handlers/syntheticTestDebt.test.ts` | ✅ | Fails if synthetic handler tests return | **Guard** | Keep to prevent regression |
 
-#### 3.5.5 ❌ Drop from verified CI (3 files)
+#### 3.5.5 🚦 Migration-only infrastructure gates (3 files)
 
-| File | CI | Why not product tests | Action |
+| File | Product/Migration | Why not product tests | Action |
 |------|:--:|----------------------|--------|
-| `tests/unit/fixtures.test.ts` | ✅ | File existence + corpus counts for unported handlers | **Remove from vitest.config.ts**; track corpus in §9 human checklist |
-| `tests/unit/projectConfig.test.ts` | ✅ | Checks `ci.yml` / `cli-testing.md` exist | **Remove from CI**; track in §13 infrastructure |
-| `tests/unit/rtkScriptParity.test.ts` | ✅ | Script path existence + `package.json` strings | **Remove meta checks from CI**; keep ported-script list in §7 only |
+| `tests/unit/fixtures.test.ts` | Product ❌ / Migration ✅ | File existence + corpus counts for unported handlers | Keep as migration/debt signal only |
+| `tests/unit/projectConfig.test.ts` | Product ❌ / Migration ✅ | Checks `ci.yml` / `cli-testing.md` exist | Keep as infrastructure debt signal only |
+| `tests/unit/rtkScriptParity.test.ts` | Product ❌ / Migration ✅ | Script path existence + `package.json` strings | Keep as script parity debt signal only |
 
 #### 3.5.6 Integration overlap
 
-| File | CI | Notes | Action |
+| File | Product | Notes | Action |
 |------|:--:|-------|--------|
 | `tests/integration/rtkParity.test.ts` | ✅ | grep/diff/cat stdin regressions (3) | **Keep** or merge into `cli.test.ts`; not a substitute for fixtureCases |
 
@@ -382,62 +380,73 @@ These import `src/handlers/**` and encode **useful scenarios** (often REPORT.md 
 ```
 tests/
 ├── integration/
-│   ├── cli.test.ts              ✅ CI
-│   └── rtkParity.test.ts        ✅ CI (overlap ok)
+│   ├── cli.test.ts              ✅ Product
+│   └── rtkParity.test.ts        ✅ Product (overlap ok)
 ├── unit/
-│   ├── core/ansi.test.ts        ✅ CI
-│   ├── parse|router|savings|pipeline|executor.test.ts  ✅ CI
-│   ├── fixtures.test.ts         ❌ drop from CI
-│   ├── projectConfig.test.ts    ❌ drop from CI
-│   ├── rtkScriptParity.test.ts  ❌ drop from CI
+│   ├── core/ansi.test.ts        ✅ Product
+│   ├── parse|router|savings|pipeline|executor.test.ts  ✅ Product
+│   ├── fixtures.test.ts         🚦 Migration
+│   ├── projectConfig.test.ts    🚦 Migration
+│   ├── rtkScriptParity.test.ts  🚦 Migration
 │   └── handlers/
-│       ├── fixtureContent.test.ts           ✅ CI (behavior bar)
-│       ├── rtkDomainCaseParity.test.ts      ✅ CI (primary gate)
-│       ├── rtkCommandParity.test.ts         ⚠️ merge → remove
+│       ├── fixtureContent.test.ts           ✅ Product (behavior bar)
+│       ├── fixtureWiring.test.ts            🚦 Migration
+│       ├── fixtureRegressionDebt.test.ts    🚦 Migration
+│       ├── rtkDomainCaseParity.test.ts      🚦 Migration (primary gate)
 │       ├── registeredHandlerCoverage.test.ts  ⚠️ merge → remove
-│       ├── syntheticTestDebt.test.ts        ✅ CI (until port done)
-│       ├── contracts.test.ts                📦 port queue
-│       ├── generic.test.ts                  📦 port queue
-│       └── **/*.test.ts (24 handler files)  📦 port queue — NOT CI
+│       └── syntheticTestDebt.test.ts        🚦 Migration guard
 ```
 
 ### 3.6 Reconciliation with `test-case-audit.md`
 
 | test-case-audit claim | Corrected verdict | Reason |
 |----------------------|-------------------|--------|
-| “32 production files ✅ Keep” | **Split:** 8 CI + 26 port queue | Handler tests excluded from CI; inline stdout ≠ RTK fixture bar |
+| “32 production files ✅ Keep” | **Split:** product suite + migration gates + deleted anti-patterns | Inline stdout ≠ RTK fixture bar |
 | “Remove `syntheticTestDebt`” | **Keep** | Enforces port-or-delete; not harmful once understood |
-| “Remove all migration meta-tests” | **Keep `rtkDomainCaseParity`; merge duplicates** | Need one gate, not zero |
-| “Remove `fixtures.test.ts`” | **Agree for CI** | Existence ≠ behavior; corpus belongs in §9 |
-| “No meaningless tests in production files” | **Half true** | Scenarios meaningful; **CI inclusion** is what's wrong |
+| “Remove all migration meta-tests” | **Keep `rtkDomainCaseParity`; remove duplicate routing-only gates** | Need one complete gate, not zero |
+| “Remove `fixtures.test.ts`” | **Agree for product tests; keep only meaningful corpus gates in migration** | Dotnet file-count gate removed because no handler exists |
+| “No meaningless tests in production files” | **Now true for product handler tests** | Handler behavior is fixture-backed; remaining red gates are migration debt |
 
 **Immediate actions (from merged audit):**
 
 | Priority | Action |
 |----------|--------|
-| 🔴 P0 | Port §3.5.2 handler files → `fixtureCases`; `syntheticTestDebt` green |
-| 🔴 P0 | Remove §3.5.5 files from `vitest.config.ts` |
-| 🟡 P1 | Merge `rtkCommandParity` + `registeredHandlerCoverage` into `rtkDomainCaseParity` |
+| ✅ P0 | Delete/port §3.5.2 synthetic handler files; `syntheticTestDebt` green |
+| 🔴 P0 | Keep §3.5.5 files out of `vitest.config.ts`; keep them in `vitest.migration.config.ts` |
+| 🟡 P1 | Merge `registeredHandlerCoverage` into `rtkDomainCaseParity` when `check-test-presence` no longer needs the separate targeted run |
 | 🟢 P2 | Expand `fixtureContent` / `cli.test` using scenario list in §3.5.2 tables |
 
 ---
 
 ## 4. Automated gates (source of truth)
 
+### 4.1 Product gates
+
 | Gate | File | Enforces |
 |------|------|----------|
-| RTK routing | `tests/unit/handlers/rtkCommandParity.test.ts` | Sample commands → dedicated handler, not `generic` |
+| Product behavior suite | `vitest.config.ts` | Current implemented tg behavior only |
+| Fixture fidelity | `tests/unit/handlers/fixtureContent.test.ts` | Real fixture output preserves critical signal |
+| CLI E2E | `tests/integration/*.test.ts` | Real tg command invocation in temp dirs |
+| Core units | `tests/unit/{parse,router,savings,pipeline,executor}.test.ts`, `tests/unit/core/*.test.ts` | CLI parsing/routing/math/spawn/fallback behavior |
+
+### 4.2 Migration and debt gates
+
+| Gate | File | Enforces |
+|------|------|----------|
+| Migration suite | `vitest.migration.config.ts` | RTK/debt/infrastructure gates; expected red until migration complete |
 | RTK module migration | `tests/unit/handlers/rtkDomainCaseParity.test.ts` | Per RTK module: routing + fixture-backed handler |
 | Registered handler fixtures | `tests/unit/handlers/registeredHandlerCoverage.test.ts` | Every handler (except `generic`) has a `fixtureCases` entry |
-| Fixture fidelity | `tests/unit/handlers/fixtureContent.test.ts` | Real fixture output preserves critical signal |
-| fixtureCases wiring | `tests/unit/handlers/fixtureContent.test.ts` (`fixtureCases wiring`) | On-disk fixtures and commands wired into `fixtureCases` |
+| fixtureCases wiring | `tests/unit/handlers/fixtureWiring.test.ts` | On-disk fixtures and commands wired into `fixtureCases` |
+| Fixture regression debt | `tests/unit/handlers/fixtureRegressionDebt.test.ts` | Real fixture-backed regressions that product tests cannot mark green yet |
 | Synthetic test debt | `tests/unit/handlers/syntheticTestDebt.test.ts` | No unported synthetic handler tests remain |
 | RTK scripts | `tests/unit/rtkScriptParity.test.ts` | Ported and pending RTK script surfaces |
 | Handler fixture corpus | `tests/unit/fixtures.test.ts` | Files exist; corpora meet minimum size |
 | CI and testing docs | `tests/unit/projectConfig.test.ts` | GitHub Actions workflow and CLI testing guide |
 | Fixture file presence | `tests/unit/fixtures.test.ts` | Required fixture paths exist |
 
-**Verified CI include list** (`vitest.config.ts`): gate handler tests above, `tests/integration/**`, `tests/unit/{fixtures,parse,pipeline,router,savings,executor,core/**,rtkScriptParity}.test.ts` — **not** per-handler synthetic `*.test.ts`.
+**Product include list** (`vitest.config.ts`): `tests/integration/**`, `fixtureContent.test.ts`, and `tests/unit/{parse,pipeline,router,savings,executor,core/**}.test.ts` — **not** per-handler synthetic `*.test.ts`.
+
+**Migration include list** (`vitest.migration.config.ts`): RTK module gates, fixture wiring, fixture regression debt, registered-handler coverage, synthetic debt, fixture corpus, project config, and script parity.
 
 ---
 
@@ -480,7 +489,7 @@ Every registered handler needs at least one test proving compressed output keeps
 | `gradle` / `maven` / `javac` | Task/failure + location | Task or file:line |
 | `generic` | Error/failure lines | `/error|failed|fatal/i` |
 
-**Verified today:** ~19 rows in `tests/helpers/fixtureCases.ts` exercised by `fixtureContent.test.ts`. **Still missing** for: `git-show`, `gh`, `glab`, extended git handlers, and multi-scenario per handler.
+**Verified today:** 42 rows in `tests/helpers/fixtureCases.ts` exercised by `fixtureContent.test.ts`. **Current red:** `rg --json` does not preserve explicit JSON output. **Still missing:** multi-scenario depth per handler and several real-format regressions in `fixtureRegressionDebt`.
 
 ### 5.3 P0: Unknown format handling
 
@@ -538,7 +547,7 @@ RTK grep uses a canonical NUL-separated format; `None` on non-canonical lines is
 | `java/gradle_test_failed.txt` | `gradle` |
 | `java/javac_errors.txt` | `javac` |
 
-**Also wire (currently orphaned or missing rows):** `rg_default_format.txt`, `log_standard.txt`, `show_large.txt`, `status_dirty_extended.txt`, `pytest_passed.txt`, `jest_failed.txt`; commands `tree`, `ls`, `pnpm list`.
+**Previously orphaned rows now wired:** `rg_default_format.txt`, `log_standard.txt`, `show_large.txt`, `status_dirty_extended.txt`, `pytest_passed.txt`, `jest_failed.txt`; commands `tree`, `ls`, `pnpm list`. Add new real fixtures only when they express behavior, not file-count progress.
 
 ### 5.6 P2: Output size and raw roundtrip
 
@@ -547,7 +556,7 @@ RTK grep uses a canonical NUL-separated format; `None` on non-canonical lines is
 
 ### 5.7 RTK test patterns (per existing handler)
 
-Mirror RTK per-command categories; each must be **fixture-backed in `fixtureCases.ts`** to count in verified CI:
+Mirror RTK per-command categories; each must be **fixture-backed in `fixtureCases.ts`** to count as product fidelity coverage:
 
 | Pattern | tg expectation |
 |---------|----------------|
@@ -560,20 +569,20 @@ Mirror RTK per-command categories; each must be **fixture-backed in `fixtureCase
 | Content preservation | Critical strings survive |
 | Malformed input | Skip gracefully; no crash |
 
-`contracts.test.ts` is global smoke — **do not rely on it alone**.
+Synthetic global contracts were removed — add fixtureCases rows or regression-debt tests instead.
 
 ---
 
 ## 6. RTK module → tg handler map
 
 ```
-RTK file                                  tg handler                         tg test (synthetic, excluded from CI)
+RTK file                                  tg handler                         tg coverage
 ────────────────────────────────────────────────────────────────────────────────────────────────────────────
-src/cmds/system/ls.rs                     listLike.ts                        listLike.test.ts
-src/cmds/system/tree.rs                   listLike.ts                        listLike.test.ts
-src/cmds/system/read.rs                   readLike.ts                        readLike.test.ts
-src/cmds/system/find_cmd.rs               listLike.ts                        listLike.test.ts
-src/cmds/system/grep_cmd.rs               searchLike.ts                      searchLike.test.ts
+src/cmds/system/ls.rs                     listLike.ts                        fixtureCases + fixtureContent
+src/cmds/system/tree.rs                   listLike.ts                        fixtureCases + fixtureContent
+src/cmds/system/read.rs                   readLike.ts                        fixtureCases + fixtureContent
+src/cmds/system/find_cmd.rs               listLike.ts                        fixtureCases + fixtureContent
+src/cmds/system/grep_cmd.rs               searchLike.ts                      fixtureCases + fixtureContent
 src/cmds/system/log_cmd.rs                ─                                  ─
 src/cmds/system/json_cmd.rs               ─                                  ─
 src/cmds/system/env_cmd.rs                ─                                  ─
@@ -581,31 +590,31 @@ src/cmds/system/wc_cmd.rs                 ─                                  �
 src/cmds/system/format_cmd.rs             ─                                  ─
 src/cmds/system/pipe_cmd.rs               ─                                  ─
 src/cmds/system/local_llm.rs              ─                                  ─
-src/cmds/git/git.rs                       git/{status,diff,log,branch,show,extended}  git/*.test.ts
+src/cmds/git/git.rs                       git/{status,diff,log,branch,show,extended}  fixtureCases + regression debt
 src/cmds/git/diff_cmd.rs                  ─ (no two-file diff handler)       ─
-src/cmds/git/gh_cmd.rs                    hostingCli.ts                      hostingCli.test.ts
-src/cmds/git/glab_cmd.rs                  hostingCli.ts                      hostingCli.test.ts
+src/cmds/git/gh_cmd.rs                    hostingCli.ts                      fixtureContent.test.ts
+src/cmds/git/glab_cmd.rs                  hostingCli.ts                      fixtureContent.test.ts
 src/cmds/git/gt_cmd.rs                    ─                                  ─
-src/cmds/js/npm_cmd.rs                    packageList.ts                     packageList.test.ts
-src/cmds/js/pnpm_cmd.rs                   packageList.ts                     packageList.test.ts
-src/cmds/js/tsc_cmd.rs                    tsc.ts                             tsc.test.ts
-src/cmds/js/vitest_cmd.rs                 test.ts                            test.test.ts
-src/cmds/js/lint_cmd.rs                   eslint.ts                          eslint.test.ts
+src/cmds/js/npm_cmd.rs                    packageList.ts                     fixtureCases + fixtureContent
+src/cmds/js/pnpm_cmd.rs                   packageList.ts                     fixtureCases + fixtureContent
+src/cmds/js/tsc_cmd.rs                    tsc.ts                             fixtureCases + fixtureContent
+src/cmds/js/vitest_cmd.rs                 test.ts                            fixtureCases + fixtureContent
+src/cmds/js/lint_cmd.rs                   eslint.ts                          fixtureCases + fixtureContent
 src/cmds/js/prettier_cmd.rs               ─                                  ─
 src/cmds/js/next_cmd.rs                   ─                                  ─
 src/cmds/js/playwright_cmd.rs             ─                                  ─
 src/cmds/js/prisma_cmd.rs                 ─                                  ─
-src/cmds/python/pytest_cmd.rs             pytest.ts                          pytest.test.ts
-src/cmds/python/ruff_cmd.rs               ruff.ts                            ruff.test.ts
-src/cmds/python/mypy_cmd.rs               mypy.ts                            mypy.test.ts
-src/cmds/python/pip_cmd.rs                pip.ts                             pip.test.ts
-src/cmds/jvm/gradlew_cmd.rs               gradle.ts                          gradle.test.ts
+src/cmds/python/pytest_cmd.rs             pytest.ts                          fixtureCases + fixtureContent
+src/cmds/python/ruff_cmd.rs               ruff.ts                            fixtureCases + fixtureContent
+src/cmds/python/mypy_cmd.rs               mypy.ts                            fixtureCases + fixtureContent
+src/cmds/python/pip_cmd.rs                pip.ts                             fixtureCases + fixtureContent
+src/cmds/jvm/gradlew_cmd.rs               gradle.ts                          fixtureCases + fixtureContent
 src/cmds/dotnet/* (4 modules)             ─                                  ─
 src/cmds/cloud/*                          ─                                  ─
 src/cmds/go/*                             ─                                  ─
 src/cmds/rust/*                           ─                                  ─
 src/cmds/ruby/*                           ─                                  ─
-(tg-only)                                 maven.ts, javac.ts, generic.ts     *.test.ts
+(tg-only)                                 maven.ts, javac.ts, generic.ts     fixtureCases / core tests
 ```
 
 ---
@@ -647,7 +656,7 @@ git/git.rs                   75           71       partial
 git/diff_cmd.rs              19            0       no dedicated handler
 git/gh_cmd.rs                66           41       partial via hostingCli
 git/glab_cmd.rs              62           41       partial via hostingCli
-jvm/gradlew_cmd.rs           56           11       high gap; 1/6 fixtures
+jvm/gradlew_cmd.rs           56           11       high gap; RTK gradlew fixtures ported, behavior depth still shallow
 cloud/aws_cmd.rs             82            0       no handler
 dotnet/dotnet_cmd.rs         66            0       no handler
 rust/cargo_cmd.rs            48            0       no handler
@@ -673,10 +682,10 @@ rust/cargo_cmd.rs            48            0       no handler
 RTK / tg fixture area                    Status
 ─────────────────────────────────────────────────
 tests/fixtures/* (tg-owned, ~25 files)   ✅ on disk; subset in fixtureCases
-tests/fixtures/java/gradle*              ❌ 1/6 gradlew corpus
-tests/fixtures/dotnet/*                  ❌ 0/5 (no handler)
-tests/fixtures/go/golangci_v2_json.txt   ❌ missing
-tests/fixtures/git/glab_*                ❌ 0/5 (handler exists; corpus not ported)
+tests/fixtures/java/gradle*              ✅ RTK gradlew corpus ported
+tests/fixtures/dotnet/*                  N/A until dotnet handler exists
+tests/fixtures/go/golangci_v2_json.txt   ✅ ported
+tests/fixtures/git/glab_*                ✅ RTK glab corpus ported
 ```
 
 ---
@@ -690,7 +699,7 @@ RTK config                    tg equivalent                    Status
 .github/workflows/            ─                                ❌
 src/core/* tests              tests/unit/{ansi,savings,...}    ✅
 integration                   tests/integration/cli.test.ts  ✅
-handler contracts             contracts.test.ts              ✅ (excluded from verified CI)
+handler fidelity              fixtureContent.test.ts          ✅ product
 ```
 
 ---
@@ -701,16 +710,16 @@ handler contracts             contracts.test.ts              ✅ (excluded from 
 |------|--------|-------|
 | system ls/find/grep/read/tree | ❓ | Partial; not 1:1 with RTK inline tests |
 | system log/json/env/wc/format/pipe/llm | ❌ | No handler |
-| git core + extended | ❓ | Tests exist; fixtureCases gaps for show/gh/glab/extended |
+| git core + extended | ❓ | Fixture-backed coverage exists; alternate formats still red in regression debt |
 | git diff_cmd, gt | ❌ | No dedicated coverage |
-| gh/glab | ❓ | hostingCli; RTK corpus not migrated |
+| gh/glab | ❓ | Fixture-backed coverage exists; RTK depth not fully mapped |
 | js/python/java mapped handlers | ❓ | Core scenarios; not full RTK parity |
 | js prettier/next/playwright/prisma | ❌ | No handler |
 | dotnet/cloud/go/rust/ruby | ❌ | No handler |
-| gradlew fixtures | ❌ | 1/6 |
+| gradlew fixtures | ✅ | RTK corpus ported |
 | tg-only maven/javac/generic | ✅ | No RTK module |
-| Verified CI green | ❌ | Gates in §4 |
-| Synthetic test debt | ❌ | ~23 files must port or delete |
+| Verified CI green | ❌ | `fixtureContent` has intentional `rg --json` red; migration gates in §4 also red |
+| Synthetic test debt | ✅ | 23 files deleted; guard remains |
 | benchmark TS + sessions + test-ruby | ❌ | rtkScriptParity |
 | GitHub CI + cli-testing.md | ❌ | projectConfig |
 
@@ -727,17 +736,17 @@ handler contracts             contracts.test.ts              ✅ (excluded from 
 
 | Area | RTK | tg | Severity |
 |------|-----|-----|----------|
-| gradlew | 56 tests, 6 fixtures | 11 tests, 1 fixture | **high** |
+| gradlew | 56 tests, 6 fixtures | fixture corpus ported, behavior still shallow | **high** |
 | diff_cmd | 19 inline tests | 0 dedicated | **high** |
-| git.rs | 75 inline tests | 71 synthetic (excluded) | medium |
-| readLike / tree | 8 / 6 RTK | 6 / via listLike | medium |
+| git.rs | 75 inline tests | fixture-backed subset + regression debt | medium |
+| readLike / tree | 8 / 6 RTK | fixture-backed subset via listLike/readLike | medium |
 
-### Relatively complete (verified CI bar only)
+### Relatively complete (product bar only)
 
-- **19 `fixtureCases`** fidelity scenarios
+- **42 `fixtureCases`** fidelity scenarios
 - **Core** unit + **integration/cli** smoke path
 - **Ported** shell scripts (§7 ✅ rows)
-- **tg-owned** fixture files on disk (wiring incomplete)
+- **tg-owned** fixture files on disk; current known orphaned fixture wiring cleared
 
 ---
 
@@ -746,9 +755,10 @@ handler contracts             contracts.test.ts              ✅ (excluded from 
 | Artifact | Question |
 |----------|----------|
 | **This file** | Full picture: RTK principles (§2), per-file verdicts (§3.5), gates (§4), migration gaps |
-| `tests/helpers/fixtureCases.ts` | Executable fidelity scenarios for verified CI |
-| `tests/unit/handlers/fixtureContent.test.ts` | Runs fixtureCases + wiring debt checks |
-| `tests/unit/handlers/rtkCommandParity.test.ts` | Routing to dedicated handlers |
+| `tests/helpers/fixtureCases.ts` | Executable fidelity scenarios for product tests |
+| `tests/unit/handlers/fixtureContent.test.ts` | Runs product fixtureCases fidelity checks |
+| `tests/unit/handlers/fixtureWiring.test.ts` | Tracks fixtureCases wiring debt |
+| `tests/unit/handlers/fixtureRegressionDebt.test.ts` | Tracks real fixture regressions that must stay red until implementation catches up |
 | `tests/unit/handlers/rtkDomainCaseParity.test.ts` | Per-module migration completeness |
 | `tests/unit/handlers/registeredHandlerCoverage.test.ts` | Every handler has fixtureCases |
 | `tests/unit/handlers/syntheticTestDebt.test.ts` | No leftover synthetic handler tests |
@@ -758,18 +768,39 @@ handler contracts             contracts.test.ts              ✅ (excluded from 
 
 ## 13. Priority work order
 
-### A — Make verified CI honest (correctness)
+### A — Make red/green signals honest (correctness)
 
-1. Add `fixtureCases` rows for **every** registered handler (`git-show`, `gh`, `glab`, extended git, …).
-2. Wire **orphaned fixtures** and commands (`tree`, `ls`, `pnpm`, `rg_default`, …).
-3. Port or **delete** ~23 synthetic handler tests (`syntheticTestDebt` green).
-4. Add **P0** unknown-format and **P1** small-output tests into `fixtureCases` (not only savings %).
+#### A.0 — Deepen existing handler coverage (highest ROI among already-covered handlers)
+
+Before building new handlers or porting new fixtures, fix the "wide but shallow" problem in already-registered handlers:
+
+1. **J — Malformed / alternate format input for git status and diff** (started in `fixtureRegressionDebt`)
+   - `git status --short` and `git status --porcelain -b` currently lose paths and branch
+   - `git diff --stat` currently reports zero changed files
+
+2. **J — Malformed input for git/diff and list-like** (2 cases, &lt; 1 hour)
+   - `formatDiff()` receiving non-standard diff output → should not crash or produce empty summary
+   - `summarizeListing()` receiving garbled lines → skip gracefully
+
+3. **A depth — Per-handler output variants** (pick 3–5 highest-impact handlers, 4–6 hours)
+   - git-status: clean tree, staged-only, conflicts, renamed files as fixtureCases or regression debt
+   - git-diff: single-file, multi-file, no-change diff
+   - tsc: multi-error, clean compile
+   - eslint: multi-rule, clean run
+   - pytest: mixed pass/fail, clean run
+
+#### A.1 — FixtureCases completeness
+
+1. Add `fixtureCases` rows for **every** registered handler. **Done for at least one P0 row each.**
+2. Wire **orphaned fixtures** and commands (`tree`, `ls`, `pnpm`, `rg_default`, …). **Done for current known fixtures.**
+3. Port or **delete** ~23 synthetic handler tests (`syntheticTestDebt` green). **Done.**
+4. Add **P0** unknown-format and **P1** small-output tests into `fixtureCases` (not only savings %). **Started:** grep `-c`/`-l`, `rg --json`, small `find`, small `git branch`.
 
 ### B — Migration completeness (RTK parity)
 
 1. New handlers for **29** missing RTK command modules (§11).
 2. Deepen existing handlers toward RTK inline categories (§5.7, §8) with real fixtures.
-3. Port **gradlew/dotnet/glab/golangci** fixture corpora (§9).
+3. Port **dotnet** fixture corpora only after dotnet handlers exist; gradlew/glab/golangci corpora are already ported.
 
 ### C — Infrastructure
 
@@ -786,7 +817,8 @@ Use `docs/migration-goal-prompt.md` per module; mark progress here and in gate t
 
 Migration and testing are **complete** when:
 
-- [ ] `pnpm vitest run` — **all green** (verified config)
+- [ ] `pnpm test:product` passes
+- [ ] `pnpm test:migration` passes
 - [ ] `pnpm test:ci` passes
 - [ ] **0** RTK command modules without tg handler + fixture-backed coverage
 - [ ] **0** unported synthetic handler tests

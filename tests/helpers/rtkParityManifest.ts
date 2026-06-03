@@ -49,20 +49,20 @@ export type MigrationGap =
 
 /** tg vitest file for each dedicated handler (when it exists). */
 export const handlerTestFiles: Record<string, string> = {
-  "list-like": "tests/unit/handlers/common/listLike.test.ts",
-  "read-like": "tests/unit/handlers/common/readLike.test.ts",
-  "search-like": "tests/unit/handlers/common/searchLike.test.ts",
-  "package-list": "tests/unit/handlers/js/packageList.test.ts",
-  tsc: "tests/unit/handlers/js/tsc.test.ts",
-  "js-test": "tests/unit/handlers/js/test.test.ts",
-  eslint: "tests/unit/handlers/js/eslint.test.ts",
-  pytest: "tests/unit/handlers/python/pytest.test.ts",
-  ruff: "tests/unit/handlers/python/ruff.test.ts",
-  mypy: "tests/unit/handlers/python/mypy.test.ts",
-  pip: "tests/unit/handlers/python/pip.test.ts",
-  gradle: "tests/unit/handlers/java/gradle.test.ts",
-  gh: "tests/unit/handlers/git/hostingCli.test.ts",
-  glab: "tests/unit/handlers/git/hostingCli.test.ts",
+  "list-like": "tests/unit/handlers/fixtureContent.test.ts",
+  "read-like": "tests/unit/handlers/fixtureContent.test.ts",
+  "search-like": "tests/unit/handlers/fixtureContent.test.ts",
+  "package-list": "tests/unit/handlers/fixtureContent.test.ts",
+  tsc: "tests/unit/handlers/fixtureContent.test.ts",
+  "js-test": "tests/unit/handlers/fixtureContent.test.ts",
+  eslint: "tests/unit/handlers/fixtureContent.test.ts",
+  pytest: "tests/unit/handlers/fixtureContent.test.ts",
+  ruff: "tests/unit/handlers/fixtureContent.test.ts",
+  mypy: "tests/unit/handlers/fixtureContent.test.ts",
+  pip: "tests/unit/handlers/fixtureContent.test.ts",
+  gradle: "tests/unit/handlers/fixtureContent.test.ts",
+  gh: "tests/unit/handlers/fixtureContent.test.ts",
+  glab: "tests/unit/handlers/fixtureContent.test.ts",
 };
 
 export const rtkDomainModules: RtkModuleParity[] = [
