@@ -25,6 +25,7 @@ export type FilteredResult = {
   rawOutputPath?: string;
   exitCode: number;
   filterError?: string;
+  qualityStatus: "passed" | "inflated" | "empty_output";
 };
 
 export type TgOptions = {

@@ -15,7 +15,17 @@ export async function makeFilteredResult(
   options: TgOptions,
   filterError?: string,
 ): Promise<FilteredResult> {
-  const limited = limitOutput(removeAnsi(output), options);
+  const cleanRaw = limitOutput(removeAnsi(rawText(raw)), options);
+  const cleanOutput = limitOutput(removeAnsi(output), options);
+  const rawHasContent = cleanRaw.trim().length > 0;
+  const outputHasContent = cleanOutput.trim().length > 0;
+  const outputInflatesRaw = rawHasContent && outputHasContent && cleanOutput.length > cleanRaw.length;
+  const qualityStatus = !outputHasContent && rawHasContent
+    ? "empty_output"
+    : outputInflatesRaw
+    ? "inflated"
+    : "passed";
+  const limited = qualityStatus === "passed" ? cleanOutput : cleanRaw;
   const rawOutputPath = await maybeSaveRawOutput(raw, options);
   const savings = calculateSavings(rawText(raw), limited);
 
@@ -31,5 +41,6 @@ export async function makeFilteredResult(
     rawOutputPath,
     exitCode: raw.exitCode,
     filterError,
+    qualityStatus,
   };
 }

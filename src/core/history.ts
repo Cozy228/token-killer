@@ -16,6 +16,7 @@ export type HistoryRecord = {
   exit_code: number;
   duration_ms: number;
   raw_output_path?: string;
+  quality_status?: string;
 };
 
 function historyPath(cwd: string): string {
@@ -43,6 +44,7 @@ export async function recordHistory(
     exit_code: raw.exitCode,
     duration_ms: raw.durationMs,
     raw_output_path: filtered.rawOutputPath,
+    quality_status: filtered.qualityStatus,
   };
 
   await writeFile(file, `${JSON.stringify(record)}\n`, { encoding: "utf8", flag: "a" });

@@ -45,6 +45,7 @@ async function recordRawPassthrough(raw: RawResult, options: TgOptions): Promise
     savingsPct: savings.savingsPct,
     rawOutputPath,
     exitCode: raw.exitCode,
+    qualityStatus: "passed",
   };
   await recordHistory(raw, filtered, options);
 }

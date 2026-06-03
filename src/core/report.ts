@@ -34,6 +34,16 @@ export async function buildReport(options: TgOptions): Promise<string> {
     })
     .join("\n");
 
+  const byQuality = new Map<string, number>();
+  for (const record of records) {
+    const status = record.quality_status ?? "unknown";
+    byQuality.set(status, (byQuality.get(status) ?? 0) + 1);
+  }
+  const quality = [...byQuality.entries()]
+    .sort(([left], [right]) => left.localeCompare(right))
+    .map(([status, count]) => `- ${status}: ${count}`)
+    .join("\n");
+
   return [
     "Token Savings Report",
     `Commands: ${records.length}`,
@@ -43,6 +53,9 @@ export async function buildReport(options: TgOptions): Promise<string> {
     "",
     "Top handlers:",
     handlers || "- none: 0%",
+    "",
+    "Quality:",
+    quality || "- none: 0",
     "",
   ].join("\n");
 }
