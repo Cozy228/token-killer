@@ -160,6 +160,8 @@ assert_ok      "tg cat package.json"            $TG cat package.json
 assert_contains "tg cat shows name"             "@company/tg" $TG cat package.json
 assert_ok      "tg cat README.md"               $TG cat README.md
 assert_contains "tg cat README content"         "tg" $TG cat README.md
+assert_ok      "tg read aggressive"             $TG read --level aggressive tests/integration/cli.test.ts
+assert_contains "tg read shows symbols"         "Symbols:" $TG read --level aggressive tests/integration/cli.test.ts
 
 # ── 4. Git ───────────────────────────────────────────
 
@@ -174,7 +176,19 @@ assert_contains "tg git diff summary"           "Git Diff Summary" $TG git diff
 assert_ok      "tg git branch"                  $TG git branch
 assert_contains "tg git branch current"         "*" $TG git branch
 
-# ── 5. Grep / Search ─────────────────────────────────
+# ── 5. Diff ──────────────────────────────────────────
+
+section "Diff"
+
+DIFF_DIR="$(mktemp -d)"
+printf "export const value = 1;\n" > "$DIFF_DIR/old.ts"
+printf "export const value = 1;\nexport const extra = 2;\n" > "$DIFF_DIR/new.ts"
+assert_ok       "tg diff files"                 $TG diff "$DIFF_DIR/old.ts" "$DIFF_DIR/new.ts"
+assert_contains "tg diff summary"               "Summary: +1 -0" $TG diff "$DIFF_DIR/old.ts" "$DIFF_DIR/new.ts"
+assert_contains "tg diff added line"            "export const extra = 2;" $TG diff "$DIFF_DIR/old.ts" "$DIFF_DIR/new.ts"
+rm -rf "$DIFF_DIR"
+
+# ── 6. Grep / Search ─────────────────────────────────
 
 section "Grep / Search"
 
@@ -183,14 +197,14 @@ assert_ok      "tg grep -r 'export' src/"       $TG grep -r "export" src/
 assert_contains "tg rg shows Search:"           "Search:" $TG rg "import" src/
 assert_ok      "tg rg with path"                $TG rg "handler" src/handlers/
 
-# ── 6. Find ──────────────────────────────────────────
+# ── 7. Find ──────────────────────────────────────────
 
 section "Find"
 
 assert_ok      "tg find src -name '*.ts'"       $TG find src -name "*.ts"
 assert_contains "tg find shows directories"     "src/" $TG find src -name "*.ts"
 
-# ── 7. Generic passthrough ──────────────────────────
+# ── 8. Generic passthrough ──────────────────────────
 
 section "Generic passthrough"
 
@@ -199,7 +213,7 @@ assert_contains "tg echo output"                "hello" $TG echo hello
 assert_ok      "tg node -e console.log"         $TG node -e "console.log('rtk-style')"
 assert_contains "tg node output"                "rtk-style" $TG node -e "console.log('rtk-style')"
 
-# ── 8. Global flags ─────────────────────────────────
+# ── 9. Global flags ─────────────────────────────────
 
 section "Global flags"
 
@@ -212,7 +226,7 @@ assert_ok      "tg --max-chars 500 ls"          $TG --max-chars 500 ls .
 assert_ok      "tg --save-raw ls"               $TG --save-raw ls .
 assert_ok      "tg --no-save-raw ls"            $TG --no-save-raw ls .
 
-# ── 9. Report ───────────────────────────────────────
+# ── 10. Report ───────────────────────────────────────
 
 section "Report"
 
@@ -223,7 +237,7 @@ assert_contains "tg --report --json valid"      '"commands"' $TG --report --json
 assert_ok      "tg --report --csv"              $TG --report --csv
 assert_contains "tg --report --csv header"      "commands,raw_tokens" $TG --report --csv
 
-# ── 10. Error handling ──────────────────────────────
+# ── 11. Error handling ──────────────────────────────
 
 section "Error handling"
 
@@ -231,7 +245,7 @@ assert_fails   "tg (no command)"                $TG
 assert_exit    "tg exit code passthrough" 7     $TG node -e "process.exit(7)"
 assert_exit    "tg failed command" 1            $TG node -e "process.exit(1)"
 
-# ── 11. Tsc (conditional) ───────────────────────────
+# ── 12. Tsc (conditional) ───────────────────────────
 
 section "Tsc (TypeScript)"
 
@@ -241,7 +255,7 @@ else
     skip_test "tg tsc" "tsc not installed"
 fi
 
-# ── 12. Python (conditional) ────────────────────────
+# ── 13. Python (conditional) ────────────────────────
 
 section "Python (conditional)"
 
@@ -269,7 +283,7 @@ else
     skip_test "tg mypy" "mypy not installed"
 fi
 
-# ── 13. JS Testing (conditional) ────────────────────
+# ── 14. JS Testing (conditional) ────────────────────
 
 section "JS Testing (conditional)"
 
@@ -285,7 +299,7 @@ else
     skip_test "tg jest" "jest not installed"
 fi
 
-# ── 14. ESLint (conditional) ────────────────────────
+# ── 15. ESLint (conditional) ────────────────────────
 
 section "ESLint (conditional)"
 
@@ -295,7 +309,7 @@ else
     skip_test "tg eslint" "eslint not installed"
 fi
 
-# ── 15. Npm / Pnpm (conditional) ────────────────────
+# ── 16. Npm / Pnpm (conditional) ────────────────────
 
 section "Npm / Pnpm (conditional)"
 
@@ -304,7 +318,7 @@ assert_contains "tg npm list"                   "$(node -e "console.log(require(
 assert_ok      "tg pnpm --version"              $TG pnpm --version
 assert_ok      "tg pnpm list"                   $TG pnpm list --depth=0 2>&1 || true
 
-# ── 16. Java (conditional) ──────────────────────────
+# ── 17. Java (conditional) ──────────────────────────
 
 section "Java (conditional)"
 
@@ -326,7 +340,7 @@ else
     skip_test "tg javac" "javac not installed"
 fi
 
-# ── 17. Large output compression ────────────────────
+# ── 18. Large output compression ────────────────────
 
 section "Large output compression"
 

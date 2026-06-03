@@ -15,6 +15,7 @@ function command(original: string[]): ParsedCommand {
 describe("routeCommand", () => {
   test.each([
     [["cat", "package.json"], "read-like"],
+    [["read", "package.json"], "read-like"],
     [["type", "package.json"], "read-like"],
     [["ls", "."], "list-like"],
     [["dir", "."], "list-like"],
@@ -22,8 +23,8 @@ describe("routeCommand", () => {
     [["tree", "."], "list-like"],
     [["rg", "TODO", "."], "search-like"],
     [["grep", "TODO", "."], "search-like"],
-    [["git", "status"], "git-status"],
     [["diff", "old.ts", "new.ts"], "diff"],
+    [["git", "status"], "git-status"],
     [["git", "diff"], "git-diff"],
     [["git", "log", "-1"], "git-log"],
     [["git", "show", "HEAD"], "git-show"],

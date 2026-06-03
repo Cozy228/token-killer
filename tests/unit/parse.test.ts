@@ -44,6 +44,13 @@ describe("parseArgv", () => {
     expect(parsed.command?.args).toEqual(["--noEmit"]);
   });
 
+  test("does not consume read-level flags globally", () => {
+    const parsed = parseArgv(["read", "--level", "aggressive", "src/cli.ts"]);
+
+    expect(parsed.command?.program).toBe("read");
+    expect(parsed.command?.args).toEqual(["--level", "aggressive", "src/cli.ts"]);
+  });
+
   test("does not consume maven flags", () => {
     const parsed = parseArgv(["mvn", "-q", "test"]);
 
