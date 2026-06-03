@@ -186,6 +186,26 @@ describe("Git", () => {
     }
   });
 
+  test("tg diff compares two files without trailing blank-line noise", async () => {
+    const dir = await mkdtemp(path.join(tmpdir(), "tg-diff-"));
+    try {
+      await writeFile(path.join(dir, "old.ts"), "const retries = 1;\n");
+      await writeFile(
+        path.join(dir, "new.ts"),
+        "const retries = 3;\nconst timeoutMs = 5000;\n",
+      );
+
+      const result = runTg(["diff", "old.ts", "new.ts"], dir);
+      expect(result.status).toBe(0);
+      expect(result.stdout).toContain("[file] new.ts (+2 -1)");
+      expect(result.stdout).toContain("-const retries = 1;");
+      expect(result.stdout).toContain("+const timeoutMs = 5000;");
+      expect(result.stdout).not.toMatch(/^  [+-]$/m);
+    } finally {
+      await rm(dir, { recursive: true, force: true });
+    }
+  });
+
   test("tg git branch works", async () => {
     const dir = await mkdtemp(path.join(tmpdir(), "tg-git-branch-"));
     try {

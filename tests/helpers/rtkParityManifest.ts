@@ -63,6 +63,7 @@ export const handlerTestFiles: Record<string, string> = {
   gradle: "tests/unit/handlers/fixtureContent.test.ts",
   gh: "tests/unit/handlers/fixtureContent.test.ts",
   glab: "tests/unit/handlers/fixtureContent.test.ts",
+  diff: "tests/unit/handlers/fixtureContent.test.ts",
 };
 
 export const rtkDomainModules: RtkModuleParity[] = [
@@ -372,8 +373,8 @@ export const rtkExtendedCommandExpectations: RtkCommandExpectation[] = [
   },
   {
     rtkSource: "rtk/src/cmds/git/diff_cmd.rs",
-    command: ["git", "diff", "HEAD~1..HEAD", "--", "src/a.ts"],
-    expectedHandler: "git-diff-cmd",
+    command: ["diff", "src/main.old.ts", "src/main.ts"],
+    expectedHandler: "diff",
   },
 ];
 

@@ -1,0 +1,11 @@
+diff --git a/src/main.ts b/src/main.ts
+--- a/src/main.ts
++++ b/src/main.ts
+@@ -1,5 +1,6 @@
+ import { run } from "./runner.js";
+
+-const retries = 1;
++const retries = 3;
++const timeoutMs = 5000;
+
+ run({ retries });

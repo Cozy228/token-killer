@@ -13,6 +13,7 @@ The command after `tg` is the command you would normally run. `tg` executes it, 
 ```bash
 tg git status
 tg git diff
+tg diff old.txt new.txt
 tg rg "submitOrder" src
 tg cat package.json
 tg ls .
@@ -46,6 +47,7 @@ Implemented:
 - read-like: `cat`, `type`, `less`
 - list-like: `ls`, `dir`, `find`, `tree`
 - search-like: `rg`, `grep`
+- diff: `diff`
 - git status
 - git diff
 - git log
