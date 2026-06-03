@@ -1,0 +1,5 @@
+Files: old.ts -> new.ts
+Modified: old.ts @ 2026-06-03T00:00:00Z -> new.ts @ 2026-06-03T00:00:01Z
+Summary: +1 -0
+
++    -:   2 |   const timeoutMs = 5000;
