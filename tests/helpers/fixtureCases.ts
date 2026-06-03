@@ -129,18 +129,6 @@ export const fixtureCases: FixtureCase[] = [
     ],
   },
   {
-    name: "diff condenses unified diff while preserving changed lines",
-    fixture: "tests/fixtures/common/diff_unified_changes.txt",
-    command: ["diff", "src/main.old.ts", "src/main.ts"],
-    critical: [
-      "[file] src/main.ts (+2 -1)",
-      "-const retries = 1;",
-      "+const retries = 3;",
-      "+const timeoutMs = 5000;",
-    ],
-    forbidden: [/^@@/m, /^diff --git/m],
-  },
-  {
     name: "git-log keeps commit subject from real log",
     fixture: "tests/fixtures/git/log_many.txt",
     command: ["git", "log"],

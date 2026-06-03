@@ -591,7 +591,7 @@ src/cmds/system/format_cmd.rs             ─                                  �
 src/cmds/system/pipe_cmd.rs               ─                                  ─
 src/cmds/system/local_llm.rs              ─                                  ─
 src/cmds/git/git.rs                       git/{status,diff,log,branch,show,extended}  fixtureCases + regression debt
-src/cmds/git/diff_cmd.rs                  diff.ts                            fixtureCases + fixtureContent
+src/cmds/git/diff_cmd.rs                  ─ (no two-file diff handler)       ─
 src/cmds/git/gh_cmd.rs                    hostingCli.ts                      fixtureContent.test.ts
 src/cmds/git/glab_cmd.rs                  hostingCli.ts                      fixtureContent.test.ts
 src/cmds/git/gt_cmd.rs                    ─                                  ─
@@ -653,7 +653,7 @@ system/find_cmd.rs           29           11       partial via listLike
 system/grep_cmd.rs           23           20       partial
 system/pipe_cmd.rs           38            0       no handler
 git/git.rs                   75           71       partial
-git/diff_cmd.rs              19            2       partial via diff
+git/diff_cmd.rs              19            0       no dedicated handler
 git/gh_cmd.rs                66           41       partial via hostingCli
 git/glab_cmd.rs              62           41       partial via hostingCli
 jvm/gradlew_cmd.rs           56           11       high gap; RTK gradlew fixtures ported, behavior depth still shallow
@@ -668,7 +668,7 @@ rust/cargo_cmd.rs            48            0       no handler
 |--------------|-------------|
 | Argument parsing (find/grep/git) | ❓ `parse.test.ts` = tg flags only |
 | Grep format flags | ✅ partial in searchLike |
-| Diff compaction / hunk limits | ❓ diff handler fixture-backed; most diff_cmd inline tests unmigrated |
+| Diff compaction / hunk limits | ❓ diff.test partial; diff_cmd 19 tests unmigrated |
 | Git extended subcommands | ✅ handlers; ❓ fixtureCases incomplete |
 | Pipe chaining | ❌ no handler |
 | Gradlew variants + fixtures | ❓ high gap |
@@ -711,26 +711,25 @@ handler fidelity              fixtureContent.test.ts          ✅ product
 | system ls/find/grep/read/tree | ❓ | Partial; not 1:1 with RTK inline tests |
 | system log/json/env/wc/format/pipe/llm | ❌ | No handler |
 | git core + extended | ❓ | Fixture-backed coverage exists; alternate formats still red in regression debt |
-| git diff_cmd | ❓ | Dedicated two-file handler added; RTK inline depth still unmigrated |
-| git gt | ❌ | No dedicated coverage |
+| git diff_cmd, gt | ❌ | No dedicated coverage |
 | gh/glab | ❓ | Fixture-backed coverage exists; RTK depth not fully mapped |
 | js/python/java mapped handlers | ❓ | Core scenarios; not full RTK parity |
 | js prettier/next/playwright/prisma | ❌ | No handler |
 | dotnet/cloud/go/rust/ruby | ❌ | No handler |
 | gradlew fixtures | ✅ | RTK corpus ported |
 | tg-only maven/javac/generic | ✅ | No RTK module |
-| Verified CI green | ❌ | Migration gates in §4 are still red |
+| Verified CI green | ❌ | `fixtureContent` has intentional `rg --json` red; migration gates in §4 also red |
 | Synthetic test debt | ✅ | 23 files deleted; guard remains |
 | benchmark TS + sessions + test-ruby | ❌ | rtkScriptParity |
 | GitHub CI + cli-testing.md | ❌ | projectConfig |
 
-### Unacceptable gaps (28 RTK modules — no handler AND no migration test)
+### Unacceptable gaps (29 RTK modules — no handler AND no migration test)
 
 **Cloud:** aws, curl, psql, wget, docker/kubectl  
 **JS:** prettier, next, playwright, prisma  
 **Languages:** go, golangci-lint, cargo/rust runner, ruby (rake/rspec/rubocop)  
 **.NET:** dotnet_cmd, binlog, trx, format_report  
-**Git:** gt
+**Git:** gt; dedicated `diff_cmd` two-file diff  
 **System:** log, json, env, wc, format, pipe, local_llm  
 
 ### Implemented but severely under-tested
@@ -738,7 +737,7 @@ handler fidelity              fixtureContent.test.ts          ✅ product
 | Area | RTK | tg | Severity |
 |------|-----|-----|----------|
 | gradlew | 56 tests, 6 fixtures | fixture corpus ported, behavior still shallow | **high** |
-| diff_cmd | 19 inline tests | fixture-backed two-file subset | **high** |
+| diff_cmd | 19 inline tests | 0 dedicated | **high** |
 | git.rs | 75 inline tests | fixture-backed subset + regression debt | medium |
 | readLike / tree | 8 / 6 RTK | fixture-backed subset via listLike/readLike | medium |
 
