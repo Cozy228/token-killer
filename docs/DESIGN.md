@@ -92,6 +92,7 @@ CLI (cli.ts)
               └─ pipeline     # filter → history → stats
                   ├─ handler.filter   # 专用压缩逻辑
                   ├─ fallback         # 异常兜底
+                  ├─ quality gate     # 膨胀/空输出兜底为 raw passthrough
                   ├─ outputLimit      # 全局行数/字符数截断
                   ├─ history          # 写入 .tg/history.jsonl
                   ├─ rawStore         # 条件保存原始输出
@@ -108,6 +109,7 @@ CLI (cli.ts)
 | Executor | `src/executor.ts` | `spawn` 执行命令，捕获 stdout/stderr/exit code/duration |
 | Pipeline | `src/core/pipeline.ts` | 串联 filter → fallback → history |
 | Savings | `src/core/savings.ts` | token 估算（chars ÷ 4）和节省计算 |
+| Quality gate | `src/handlers/base.ts` | 过滤结果质量门：防膨胀、防空输出误导 |
 | Output limit | `src/core/outputLimit.ts` | 全局行数截断 + 字符数截断，保留重要行 |
 | History | `src/core/history.ts` | JSONL 追加写入和读取 |
 | Raw store | `src/core/rawStore.ts` | 条件保存原始输出到 `.tg/raw/`（exit code ≠ 0 或 >20K chars 自动保存） |
@@ -133,10 +135,10 @@ Handler 分类和压缩策略：
 | 分类 | Handler | 压缩策略 |
 |------|---------|----------|
 | Search | `searchLike`（rg、grep） | 按文件分组，每文件限制条数；识别 `file:line:content` 和 `--null` 格式 |
-| Read | `readLike`（cat、type、less） | 内部读取（跳过 shell），大文件（>12K chars）提取 import/export/function/class 符号 + head + tail，二进制直接拒绝 |
-| List | `listLike`（ls、dir、find、tree） | 树形摘要，按顶级目录分组计数，跳过 node_modules/dist/build 等噪音目录 |
-| Git | `gitStatus` | 解析 verbose status 输出，结构化 staged/modified/untracked/conflicts |
-| Git | `gitDiff` | 统计 +added/-removed，保留 hunk headers，大 diff 额外提示用 `--raw` |
+| Read | `readLike`（cat、type、less、read） | 内部读取（跳过 shell），支持多文件与 `read -` stdin，大文件（>12K chars）提取 import/export/function/class 符号 + head + tail，支持 `read --max-lines` / `--tail-lines` / `--line-numbers`，二进制直接拒绝 |
+| List | `listLike`（ls、dir、find、tree） | 小输出 passthrough；较大输出用 `39F 8D` + parent-dir 分组；跳过 node_modules/dist/build 等噪音目录 |
+| Git | `gitStatus` | 解析 verbose 或 porcelain status，输出短状态码（` M file`、`?? file`） |
+| Git | `gitDiff` | 小 diff passthrough；较大 diff 统计 +added/-removed，保留 hunk headers 和部分 changed lines，额外提示用 `--raw` |
 | Git | `gitLog` | 解析 commit/Author/Date，截断到最近 20 条 |
 | Git | `gitShow` | 保留 commit 元信息 + 首段 diff |
 | Git | `gitBranch` | 过滤 current/main/master/codex/*/release/* 邻近分支 |
@@ -168,10 +170,25 @@ type FilteredResult = {
   rawOutputPath?: string;  // 原始输出保存路径（如保存）
   exitCode: number;        // 透传原始 exit code
   filterError?: string;    // fallback 时的错误信息
+  qualityStatus:           // 过滤质量状态
+    | "passed"
+    | "inflated"
+    | "empty_output";
 };
 ```
 
-### 1.6 Rewrite engine
+### 1.6 Quality gate
+
+所有 handler 的结果在 `makeFilteredResult()` 里经过统一质量门。质量门的目标不是让所有命令都压缩，而是避免“为了节省数字牺牲信息”：
+
+- raw 非空、filtered 为空或只有空白 → 输出 raw，`qualityStatus = "empty_output"`。
+- raw 非空、filtered 比 raw 更长 → 输出 raw，`qualityStatus = "inflated"`。
+- filtered 非空且不膨胀 → 输出 filtered，`qualityStatus = "passed"`。
+- raw 为空、filtered 非空（例如 `0 matches for pattern`）允许输出 filtered，不按膨胀处理。
+
+这意味着小输出可以直接 passthrough。报告里的 token savings 只反映最终输出，不把被质量门回退的 handler 当成有效压缩。
+
+### 1.7 Rewrite engine
 
 在 hook 运行时，rewrite engine 负责将用户输入的 raw command 改写为 `tg` wrapper。这是集中式 command rewrite registry，输入 raw command，输出 `rewrite | suggest | pass | deny`。
 
@@ -560,7 +577,8 @@ Parser 模块作为 handler filter 的基础设施，handler 可以选择：
   "savings_pct": 34.3,
   "exit_code": 0,
   "duration_ms": 120,
-  "raw_output_path": ".tg/raw/20260602-103000-git-status.log"
+  "raw_output_path": ".tg/raw/20260602-103000-git-status.log",
+  "quality_status": "passed"
 }
 ```
 
@@ -581,6 +599,7 @@ tg report --csv        # CSV 格式
 - 总命令数 / hook 命中次数。
 - 原始 token 总量、输出 token 总量、节省 token 总量、节省百分比。
 - 按 handler 分组的节省率。
+- 按 `quality_status` 分组的过滤质量计数，例如 `passed`、`inflated`、`empty_output`。
 - `--user` 报告按项目分组，展示每个项目的独立统计。
 - `--user` 报告额外展示按 model 的风险分布（如可获取模型名）。
 - 不记录敏感原文，只记录命令类型、长度、策略结果和时间。
@@ -886,7 +905,52 @@ model_policy:
 
 ---
 
-## 13. Implementation Constraints
+## 13. Future Token Digestion Layers
+
+Layer 1 已落在 command filter 质量门上。后续两层先保留在设计中，不进入当前实现范围。
+
+### 13.1 Layer 2: 少产生输出
+
+目标是在工具执行前减少高成本输出，而不是等 raw output 生成后再压缩。
+
+实现边界：
+
+- 新增 rewrite registry，输入 raw command，输出 `pass | rewrite | warn | deny`。
+- `tg hook pretool` 读取 stdin JSON，对 `cat` lockfile、读依赖目录、无路径全仓 `rg`、`git diff`、测试命令等给出 rewrite/warn/deny。
+- `tg hook posttool` 在宿主已经执行 raw command 时复用现有 handler 压缩输出，不重新执行命令。
+- 命令链、redirect、heredoc、pipe 等语义不等价场景默认 pass。
+
+第一批规则只覆盖高价值命令：
+
+- `cat package-lock.json`、`cat pnpm-lock.yaml` → warn 或 deny。
+- `cat node_modules/...`、`cat dist/...` → deny。
+- `rg pattern .` → suggest 加路径和 ignore globs，或 rewrite 到 `tg rg`。
+- `git diff` → rewrite 到 `tg git diff`。
+- `npm test`、`pnpm test`、`yarn test` → rewrite 到对应 `tg` command。
+
+### 13.2 Layer 3: 增加 cache hit
+
+目标是提高稳定上下文比例、减少重复 raw input 和 cache write。Token Guard 不能直接控制 Copilot 底层 cache，只能让输入更稳定、更可复用。
+
+实现边界：
+
+- 新增 content-addressed output cache：`.tg/cache/outputs/<hash>.json`。
+- cache key 由 `cwd`、command、args、git HEAD、相关文件 fingerprint 构成。
+- 重复命令在 fingerprint 未变时返回 cache summary，并在 history 中记录 `cache_hit`、`cache_key`、`cacheable`。
+- 新增 deterministic project context：`.tg/context.md` 和 `.tg/context.json`，按固定顺序输出 repo map、scripts、重要文件摘要和 section hashes。
+- 默认输出去 volatile：timestamp、duration、临时路径、随机 raw 文件名只在 `--verbose` 出现。
+
+报告后续增加：
+
+- cacheable commands。
+- cache hits。
+- repeated output avoided tokens。
+- stable chars / volatile chars。
+- raw reuse hits。
+
+---
+
+## 14. Implementation Constraints
 
 - L6/L7 暂不考虑，文档和代码必须明确标注。
 - 所有 repo 写入（`.tg/`、`AGENTS.md`、skills）必须可恢复（备份或 marker-based restore）。
@@ -899,7 +963,7 @@ model_policy:
 
 ---
 
-## 14. Development
+## 15. Development
 
 ```bash
 pnpm install

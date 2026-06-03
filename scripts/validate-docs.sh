@@ -11,7 +11,7 @@ EXIT_CODE=0
 
 # All program names covered by src/handlers/*.ts
 PROGRAMS=(
-    cat type less           # common/readLike.ts
+    cat type less read      # common/readLike.ts
     ls dir find tree         # common/listLike.ts
     rg grep                  # common/searchLike.ts
     diff                     # common/diff.ts

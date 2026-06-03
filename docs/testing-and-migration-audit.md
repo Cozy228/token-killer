@@ -15,7 +15,7 @@ Last audited: 2026-06-03
 | Question | Answer |
 |----------|--------|
 | Is migration complete? | **No** — ~29 RTK command modules have no tg handler; migration suite is red by design. |
-| Do passing tests all follow testing principles? | **Mostly for product tests** — product handler coverage now runs through 42 real `fixtureCases`; current red tests expose real gaps. |
+| Do passing tests all follow testing principles? | **Mostly for product tests** — product handler coverage now runs through 47 real `fixtureCases`; migration red tests expose real gaps. |
 | Do passing tests reflect project reality? | **Partially** — core handlers work on selected real fixtures and narrow integration paths; not production-wide or RTK 1:1. |
 
 **Baseline**
@@ -199,14 +199,14 @@ Every RTK module migration is **done** when tg covers **all applicable rows** fo
 
 | RTK dimension | tg artifact | CI gate | tg today (honest) |
 |---------------|-------------|---------|-------------------|
-| **A Filter output (large / failure)** | `fixtureCases` row: `fixture` + `command` + `critical[]` + optional `forbidden[]` | `fixtureContent.test.ts` | **42 rows** across registered handlers; still needs deeper per-handler variants |
+| **A Filter output (large / failure)** | `fixtureCases` row: `fixture` + `command` + `critical[]` + optional `forbidden[]` | `fixtureContent.test.ts` | **47 rows** across registered handlers; still needs deeper per-handler variants |
 | **B Arg parse & routing** | `router.test.ts` + `rtkDomainCaseParity` sample command → handler name | verified / migration gate | **Partial** — routing only, not arg edge cases |
 | **C Format transform** | Unit tests on exported pure functions **or** fixtureCases when output differs | fixtureCases / future parser units | **Still thin** — add real fixture variants or exported-parser units only |
 | **D Passthrough / small output** | `fixtureCases` with small fixture + max size assertion; `contracts` small-output rows | fixtureContent + (future) size caps | **Rare** — few P1 small-output cases |
 | **E Compression & limits** | `fixtureCases` on large fixture + `critical` + optional `expectLargeSavings` | fixtureContent | **Partial** — no savings-only tests count |
 | **F Empty / no-match** | `fixtureCases` or unit: empty input → no throw, sensible message | fixtureContent | **Sparse** |
 | **G Error / stderr** | `fixtureCases` with `exitCode != 0`, stderr in fixture or merged raw | fixtureContent | **Some** (pytest, ruff, tsc, …) |
-| **H CLI flags** | One fixtureCases row **per output format** (RTK: separate `test_format_flag_*`) | fixtureContent | **Gaps now visible** — grep `-c`/`-l` pass; `rg --json` is red because current handler rewrites machine-readable output |
+| **H CLI flags** | One fixtureCases row **per output format** (RTK: separate `test_format_flag_*`) | fixtureContent | **Partial** — grep `-c`/`-l` and `rg --json` are fixture-backed; more RTK variants remain |
 | **I Platform / encoding** | fixtureCases with paths/unicode in fixture file | fixtureContent | **Minimal** |
 | **J Malformed / unknown format** | fixtureCases: non-canonical stdout → not empty, not “0 matches” lie | fixtureContent | **Almost none** |
 | **K Module inventory** | Handler exists + at least one dimension-A row | `rtkDomainCaseParity` | **47 modules tracked; most fail** |
@@ -219,7 +219,7 @@ As of 2026-06-03, tg test cases classified against the same A–K dimensions:
 
 | Dimension | RTK ~count | tg actual | Coverage verdict | Gap |
 |-----------|-----------|-----------|------------------|-----|
-| **A — Filter output** | ~315 | ~75+ | ⚠️ Thin | 42 fixtureCases rows are high quality, but per-handler depth is still shallow vs RTK |
+| **A — Filter output** | ~315 | ~75+ | ⚠️ Thin | 47 fixtureCases rows are high quality, but per-handler depth is still shallow vs RTK |
 | **B — Arg parse/routing** | ~230 | ~55 routing / 0 internal parse | ⚠️ Routing ok, parse untested | Handler-internal parse functions (`formatStatus`, `parseMatch`, …) tested only through filter() pipeline, not in isolation |
 | **C — Format transform** | ~161 | ~14 | 🔴 Thin | Only searchLike has 5+ format variants; other handlers test one canonical format only |
 | **D — Passthrough/small output** | ~34 | ~14 | 🟢 Proportional | branch/list/search small-output rows now assert output growth limits |
@@ -231,7 +231,7 @@ As of 2026-06-03, tg test cases classified against the same A–K dimensions:
 | **J — Malformed input** | ~1+ | 4 | 🔴 Honest red | `rg --json`, `git status --short`, `git status --porcelain -b`, and `git diff --stat` expose parser/format gaps |
 | **K — Unit helpers** | ~143 | 0 | N/A | Intentionally not isolated; all helper logic covered through filter() pipeline |
 
-**Note on H:** The previous audit claimed grep -c/-l were covered by synthetic tests. Those tests were deleted; current coverage is real fixture-backed. `rg --json` deliberately stays red.
+**Note on H:** The previous audit claimed grep -c/-l were covered by synthetic tests. Those tests were deleted; current coverage is real fixture-backed, including `rg --json`.
 
 **Naming / traceability:** each tg case should cite RTK source when porting:
 
@@ -268,13 +268,13 @@ Or in unit tests: `// RTK: rtk/src/cmds/system/grep_cmd.rs test_parse_match_line
 
 The product suite (`vitest.config.ts`) intentionally includes current product behavior only: core unit tests, integration, and fixture-backed handler behavior. It does **not** include per-handler synthetic tests under `tests/unit/handlers/**` or migration/debt gates.
 
-The migration suite (`vitest.migration.config.ts`) intentionally includes RTK migration, fixture wiring, regression debt, synthetic debt, and infrastructure parity gates. At audit time, `pnpm test:product` was red (**120 pass / 1 fail**) because `rg --json` is now a real fixture-backed bug, and `pnpm test:migration` was red (**97 pass / 39 fail**). Treat failures as debt signals, not regressions to hide.
+The migration suite (`vitest.migration.config.ts`) intentionally includes RTK migration, fixture wiring, regression debt, synthetic debt, and infrastructure parity gates. At audit time, `pnpm test:product` is green, and `pnpm test:migration` remains red because missing RTK handlers, scripts, and repo infrastructure are still tracked as debt. Treat failures as debt signals, not regressions to hide.
 
 ### 3.2 Categories of passing tests (quality tiers)
 
 | Tier | Examples | Follows P0/P1 principles? | Reflects real tool output? |
 |------|----------|---------------------------|----------------------------|
-| **A — Fidelity bar** | `fixtureContent.test.ts` → `fixtureCases` (42 scenarios) | **Yes** — `critical` / `forbidden` + `expectMeaningfulBody` | **Partial** — one or more real fixture paths per major handler |
+| **A — Fidelity bar** | `fixtureContent.test.ts` → `fixtureCases` (47 scenarios) | **Yes** — `critical` / `forbidden` + `expectMeaningfulBody` | **Partial** — one or more real fixture paths per major handler |
 | **B — tg internals** | `savings`, `parse`, `router`, `pipeline`, `executor`, `ansi` | **Yes** for their scope | **N/A** (not handler filters) |
 | **C — E2E smoke** | `tests/integration/cli.test.ts` (~30 cases) | **Mostly** — real `spawn` of tg in temp dirs | **Partial** — narrow scenarios |
 | **D — Migration/debt only** | Routing parity, fixture wiring, fixture corpus size, script path parity | **No** for product behavior | **No** — existence/routing ≠ correct compression |
@@ -284,7 +284,7 @@ The migration suite (`vitest.migration.config.ts`) intentionally includes RTK mi
 
 1. **Migration CI not green** — migration gates (`rtkDomainCaseParity`, `fixtureRegressionDebt`, `projectConfig`, pending script ports) still fail.
 2. **Synthetic handler tests removed** — 23 inline-stdout handler test files were deleted after porting useful coverage into `fixtureCases` or explicit migration debt.
-3. **One fixture per handler is not enough** — `fixtureCases` covers 42 rows, but many handlers still lack full RTK depth for format variants, stderr-only, and empty-output coverage.
+3. **One fixture per handler is not enough** — `fixtureCases` covers 47 rows, but many handlers still lack full RTK depth for format variants, stderr-only, and empty-output coverage.
 4. **fixtureCases wiring debt cleared** — orphaned on-disk fixtures (`rg_default_format`, `log_standard`, `show_large`, …) and commands (`tree`, `ls`, `pnpm list`, …) are now wired into `fixtureCases`.
 5. **Registered handler fixture coverage complete** — every registered non-generic handler has at least one `fixtureCases` row.
 6. **No synthetic handler contract tests** — global inline contracts were removed; use fixtureCases or explicit regression debt.
@@ -293,7 +293,7 @@ The migration suite (`vitest.migration.config.ts`) intentionally includes RTK mi
 9. **Historical anti-pattern removed from handler tests** — savings-only and hand-built stdout handler tests were deleted; future coverage must use real fixtures or explicit parser-unit contracts.
 10. **RTK scale gap** — e.g. gradlew RTK **56** tests + **6** fixtures vs tg **11** tests + **1** fixture; **986** RTK inline tests vs a thin verified layer.
 11. **Former `contracts.test.ts` empty edge case bug removed** — the no-op `critical: [""]` assertions were deleted with the synthetic contracts file.
-12. **`rg --json` is now intentionally red** — current `search-like` rewrites JSON output into a search summary and drops machine-readable fields.
+12. **Explicit machine-readable search output is covered** — `rg --json` now stays raw enough to preserve JSON fields; more grep/rg format variants still need parity work.
 
 ### 3.4 What passing tests *do* justify
 
@@ -335,7 +335,7 @@ Merged from `docs/test-case-audit.md` (2026-06-03), **reconciled** with `vitest.
 | `tests/unit/executor.test.ts` | ✅ | Real spawn, exit code, 127 (2) | Keep |
 | `tests/unit/core/ansi.test.ts` | ✅ | ANSI strip via generic handler (1) | Keep |
 | `tests/integration/cli.test.ts` | ✅ | E2E tg: ls/cat/git/rg/flags/report (~30) | Keep; primary smoke |
-| `tests/unit/handlers/fixtureContent.test.ts` | ✅ | **42 `fixtureCases`** on real fixtures | Keep; expand rows — this is the handler behavior bar; currently red on `rg --json` |
+| `tests/unit/handlers/fixtureContent.test.ts` | ✅ | **47 `fixtureCases`** on real fixtures | Keep; expand rows — this is the handler behavior bar |
 
 #### 3.5.2 🗑️ Deleted synthetic handler tests (23 files)
 
@@ -356,7 +356,7 @@ Replacement coverage now lives in:
 | File | Migration | What it tests | Verdict | Action |
 |------|:--:|---------------|---------|--------|
 | `handlers/rtkDomainCaseParity.test.ts` | ✅ | Per RTK module: routing + fixture coverage (47) | **Primary gate** | Keep |
-| `handlers/registeredHandlerCoverage.test.ts` | ✅ | Every handler has fixtureCases (28) | Redundant subset | **Merge** into domain parity; then remove |
+| `handlers/registeredHandlerCoverage.test.ts` | ✅ | Every handler has fixtureCases (29) | Redundant subset | **Merge** into domain parity; then remove |
 | `handlers/fixtureRegressionDebt.test.ts` | ✅ | Real fixture-backed regressions not yet implemented | **Debt gate** | Keep until fixed |
 | `handlers/fixtureWiring.test.ts` | ✅ | Known fixtures/commands wired into fixtureCases | **Debt gate** | Keep while fixtures expand |
 | `handlers/syntheticTestDebt.test.ts` | ✅ | Fails if synthetic handler tests return | **Guard** | Keep to prevent regression |
@@ -373,7 +373,7 @@ Replacement coverage now lives in:
 
 | File | Product | Notes | Action |
 |------|:--:|-------|--------|
-| `tests/integration/rtkParity.test.ts` | ✅ | grep/diff/cat stdin regressions (3) | **Keep** or merge into `cli.test.ts`; not a substitute for fixtureCases |
+| `tests/integration/rtkParity.test.ts` | ✅ | grep/diff/cat stdin regressions (4) | **Keep** or merge into `cli.test.ts`; not a substitute for fixtureCases |
 
 #### 3.5.7 File tree (CI status)
 
@@ -489,7 +489,7 @@ Every registered handler needs at least one test proving compressed output keeps
 | `gradle` / `maven` / `javac` | Task/failure + location | Task or file:line |
 | `generic` | Error/failure lines | `/error|failed|fatal/i` |
 
-**Verified today:** 42 rows in `tests/helpers/fixtureCases.ts` exercised by `fixtureContent.test.ts`. **Current red:** `rg --json` does not preserve explicit JSON output. **Still missing:** multi-scenario depth per handler and several real-format regressions in `fixtureRegressionDebt`.
+**Verified today:** 47 rows in `tests/helpers/fixtureCases.ts` exercised by `fixtureContent.test.ts`. **Still missing:** multi-scenario depth per handler and remaining migration gaps outside the product suite.
 
 ### 5.3 P0: Unknown format handling
 
@@ -591,7 +591,7 @@ src/cmds/system/format_cmd.rs             ─                                  �
 src/cmds/system/pipe_cmd.rs               ─                                  ─
 src/cmds/system/local_llm.rs              ─                                  ─
 src/cmds/git/git.rs                       git/{status,diff,log,branch,show,extended}  fixtureCases + regression debt
-src/cmds/git/diff_cmd.rs                  ─ (no two-file diff handler)       ─
+src/cmds/git/diff_cmd.rs                  diff.ts                            fixtureCases + fixtureContent
 src/cmds/git/gh_cmd.rs                    hostingCli.ts                      fixtureContent.test.ts
 src/cmds/git/glab_cmd.rs                  hostingCli.ts                      fixtureContent.test.ts
 src/cmds/git/gt_cmd.rs                    ─                                  ─
@@ -649,11 +649,12 @@ Full RTK total: **986** `#[test]` in **47** modules. tg `test()` counts below ar
 RTK module              RTK #[test]   tg test()   State
 ────────────────────────────────────────────────────────
 system/ls.rs                 29           11       partial via listLike
+system/read.rs                8            7       partial via readLike
 system/find_cmd.rs           29           11       partial via listLike
 system/grep_cmd.rs           23           20       partial
 system/pipe_cmd.rs           38            0       no handler
 git/git.rs                   75           71       partial
-git/diff_cmd.rs              19            0       no dedicated handler
+git/diff_cmd.rs              19            4       partial via diff
 git/gh_cmd.rs                66           41       partial via hostingCli
 git/glab_cmd.rs              62           41       partial via hostingCli
 jvm/gradlew_cmd.rs           56           11       high gap; RTK gradlew fixtures ported, behavior depth still shallow
@@ -668,7 +669,7 @@ rust/cargo_cmd.rs            48            0       no handler
 |--------------|-------------|
 | Argument parsing (find/grep/git) | ❓ `parse.test.ts` = tg flags only |
 | Grep format flags | ✅ partial in searchLike |
-| Diff compaction / hunk limits | ❓ diff.test partial; diff_cmd 19 tests unmigrated |
+| Diff compaction / hunk limits | ❓ diff handler fixture-backed; most diff_cmd inline tests unmigrated |
 | Git extended subcommands | ✅ handlers; ❓ fixtureCases incomplete |
 | Pipe chaining | ❌ no handler |
 | Gradlew variants + fixtures | ❓ high gap |
@@ -711,25 +712,26 @@ handler fidelity              fixtureContent.test.ts          ✅ product
 | system ls/find/grep/read/tree | ❓ | Partial; not 1:1 with RTK inline tests |
 | system log/json/env/wc/format/pipe/llm | ❌ | No handler |
 | git core + extended | ❓ | Fixture-backed coverage exists; alternate formats still red in regression debt |
-| git diff_cmd, gt | ❌ | No dedicated coverage |
+| git diff_cmd | ❓ | Dedicated two-file handler added; RTK inline depth still unmigrated |
+| git gt | ❌ | No dedicated coverage |
 | gh/glab | ❓ | Fixture-backed coverage exists; RTK depth not fully mapped |
 | js/python/java mapped handlers | ❓ | Core scenarios; not full RTK parity |
 | js prettier/next/playwright/prisma | ❌ | No handler |
 | dotnet/cloud/go/rust/ruby | ❌ | No handler |
 | gradlew fixtures | ✅ | RTK corpus ported |
 | tg-only maven/javac/generic | ✅ | No RTK module |
-| Verified CI green | ❌ | `fixtureContent` has intentional `rg --json` red; migration gates in §4 also red |
+| Verified CI green | ❌ | Migration gates in §4 are still red |
 | Synthetic test debt | ✅ | 23 files deleted; guard remains |
 | benchmark TS + sessions + test-ruby | ❌ | rtkScriptParity |
 | GitHub CI + cli-testing.md | ❌ | projectConfig |
 
-### Unacceptable gaps (29 RTK modules — no handler AND no migration test)
+### Unacceptable gaps (28 RTK modules — no handler AND no migration test)
 
 **Cloud:** aws, curl, psql, wget, docker/kubectl  
 **JS:** prettier, next, playwright, prisma  
 **Languages:** go, golangci-lint, cargo/rust runner, ruby (rake/rspec/rubocop)  
 **.NET:** dotnet_cmd, binlog, trx, format_report  
-**Git:** gt; dedicated `diff_cmd` two-file diff  
+**Git:** gt
 **System:** log, json, env, wc, format, pipe, local_llm  
 
 ### Implemented but severely under-tested
@@ -737,13 +739,13 @@ handler fidelity              fixtureContent.test.ts          ✅ product
 | Area | RTK | tg | Severity |
 |------|-----|-----|----------|
 | gradlew | 56 tests, 6 fixtures | fixture corpus ported, behavior still shallow | **high** |
-| diff_cmd | 19 inline tests | 0 dedicated | **high** |
+| diff_cmd | 19 inline tests | fixture-backed two-file + stdin unified + overflow subset | **high** |
 | git.rs | 75 inline tests | fixture-backed subset + regression debt | medium |
 | readLike / tree | 8 / 6 RTK | fixture-backed subset via listLike/readLike | medium |
 
 ### Relatively complete (product bar only)
 
-- **42 `fixtureCases`** fidelity scenarios
+- **47 `fixtureCases`** fidelity scenarios
 - **Core** unit + **integration/cli** smoke path
 - **Ported** shell scripts (§7 ✅ rows)
 - **tg-owned** fixture files on disk; current known orphaned fixture wiring cleared

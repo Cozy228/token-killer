@@ -16,6 +16,7 @@ tg git diff
 tg diff old.txt new.txt
 tg rg "submitOrder" src
 tg cat package.json
+tg read --level balanced src/cli.ts
 tg ls .
 tg npm test
 tg tsc --noEmit
@@ -45,11 +46,12 @@ tg --version
 Implemented:
 
 - read-like: `cat`, `type`, `less`
+- explicit read: `read --level minimal|balance|balanced|aggressive`
 - list-like: `ls`, `dir`, `find`, `tree`
 - search-like: `rg`, `grep`
+- diff: `diff`
 - git status
 - git diff
-- diff: `diff`
 - git log
 - git show
 - git branch
