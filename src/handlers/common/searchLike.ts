@@ -19,6 +19,10 @@ function hasGrepFormatFlag(args: string[]): boolean {
   });
 }
 
+function hasRgMachineReadableFlag(args: string[]): boolean {
+  return args.includes("--json");
+}
+
 function parseMatch(line: string): Match | undefined {
   const nulIndex = line.indexOf("\0");
   if (nulIndex >= 0) {
@@ -103,7 +107,9 @@ export const searchLikeHandler: CommandHandler = {
   },
 
   async filter(raw, command, options) {
-    const output = raw.stdout.trim() && command.program === "grep" && hasGrepFormatFlag(command.args)
+    const output = raw.stdout.trim() && command.program === "rg" && hasRgMachineReadableFlag(command.args)
+      ? `${raw.stdout.trimEnd()}\n`
+      : raw.stdout.trim() && command.program === "grep" && hasGrepFormatFlag(command.args)
       ? `${raw.stdout.trimEnd()}\n`
       : raw.stdout.trim()
       ? groupSearchOutput(raw.stdout, searchPattern(command.args))

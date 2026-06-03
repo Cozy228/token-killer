@@ -4,6 +4,28 @@ import { makeFilteredResult } from "../base.js";
 
 type Section = "staged" | "modified" | "untracked" | "conflicts" | undefined;
 
+function parseShortStatusLine(line: string) {
+  if (line.startsWith("## ")) {
+    const branch = line.slice(3).split("...")[0]?.trim();
+    return branch ? { branch } : undefined;
+  }
+
+  if (!/^[ MADRCU?!][ MADRCU?!] /.test(line)) return undefined;
+  const indexStatus = line[0] ?? " ";
+  const worktreeStatus = line[1] ?? " ";
+  const file = line.slice(3).trim();
+  if (!file) return undefined;
+
+  if (indexStatus === "?" && worktreeStatus === "?") return { section: "untracked" as const, file };
+  if (indexStatus === "U" || worktreeStatus === "U" || (indexStatus === "A" && worktreeStatus === "A")) {
+    return { section: "conflicts" as const, file };
+  }
+  if (indexStatus !== " ") return { section: "staged" as const, file };
+  if (worktreeStatus !== " ") return { section: "modified" as const, file };
+
+  return undefined;
+}
+
 function formatStatus(text: string): string {
   let branch = "unknown";
   let section: Section;
@@ -14,6 +36,28 @@ function formatStatus(text: string): string {
 
   for (const line of text.split(/\r?\n/)) {
     const trimmed = line.trim();
+    const shortStatus = parseShortStatusLine(line);
+    if (shortStatus?.branch) {
+      branch = shortStatus.branch;
+      continue;
+    }
+    if (shortStatus?.section === "staged") {
+      staged.push(shortStatus.file);
+      continue;
+    }
+    if (shortStatus?.section === "modified") {
+      modified.push(shortStatus.file);
+      continue;
+    }
+    if (shortStatus?.section === "untracked") {
+      untracked.push(shortStatus.file);
+      continue;
+    }
+    if (shortStatus?.section === "conflicts") {
+      conflicts.push(shortStatus.file);
+      continue;
+    }
+
     if (trimmed.startsWith("On branch ")) {
       branch = trimmed.replace("On branch ", "");
       continue;

@@ -10,7 +10,15 @@ type FileSummary = {
   changedLines: string[];
 };
 
+function isStatOutput(text: string): boolean {
+  return /\|\s+\d+/.test(text) && /\d+\s+files? changed/.test(text);
+}
+
 function formatDiff(text: string): string {
+  if (isStatOutput(text)) {
+    return `${text.trimEnd()}\n`;
+  }
+
   const files: FileSummary[] = [];
   let current: FileSummary | undefined;
 
