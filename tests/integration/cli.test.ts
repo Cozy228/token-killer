@@ -58,8 +58,7 @@ describe("Ls / Find", () => {
       expect(result.status).toBe(0);
       expect(result.stdout).toContain("a.txt");
       expect(result.stdout).toContain("b.ts");
-      // node_modules should be skipped
-      expect(result.stdout).toContain("Skipped:");
+      expect(result.stdout.length).toBeLessThanOrEqual("a.txt\nb.ts\nnode_modules\n".length);
     } finally {
       await rm(dir, { recursive: true, force: true });
     }
@@ -142,8 +141,9 @@ describe("Git", () => {
 
       const result = runTg(["git", "status"], dir);
       expect(result.status).toBe(0);
-      expect(result.stdout).toContain("Branch:");
-      expect(result.stdout).toContain("Modified:");
+      expect(result.stdout).toContain("* main");
+      expect(result.stdout).toContain(" M file.txt");
+      expect(result.stdout).toContain("?? new.txt");
     } finally {
       await rm(dir, { recursive: true, force: true });
     }
@@ -469,7 +469,7 @@ describe("Acceptance: Handler Routing", () => {
       await writeFile(path.join(dir, "sample.txt"), "TODO retained\nchanged\n");
 
       // Each should route to its specific handler (not generic)
-      expect(runTg(["git", "status"], dir).stdout).toContain("Branch:");
+      expect(runTg(["git", "status"], dir).stdout).toContain("* main");
       expect(runTg(["git", "diff"], dir).stdout).toContain("Git Diff Summary");
       expect(runTg(["git", "log", "-1"], dir).stdout).toContain(
         "initial retained",

@@ -73,22 +73,43 @@ function summarizeListing(text: string): string {
 
   if (summary.visiblePaths.length === 0 && summary.skipped.size === 0) return "\n";
 
-  const lines = ["."];
   const uniquePaths = [...new Set(summary.visiblePaths)].sort();
+
+  if (summary.skipped.size === 0 && text.length <= 200) {
+    return `${text.trimEnd()}\n`;
+  }
+
+  const dirNames = new Set<string>();
+  for (const file of uniquePaths) {
+    const parts = file.split("/");
+    for (let index = 1; index < parts.length; index += 1) {
+      dirNames.add(`${parts.slice(0, index).join("/")}/`);
+    }
+  }
+
+  const lines = [`${uniquePaths.length}F ${dirNames.size}D:`];
   if (uniquePaths.length <= 80) {
+    const byParent = new Map<string, string[]>();
     for (const file of uniquePaths) {
-      lines.push(`├─ ${file}`);
+      const parts = file.split("/");
+      const parent = parts.length === 1 ? "./" : `${parts.slice(0, -1).join("/")}/`;
+      const files = byParent.get(parent) ?? [];
+      files.push(parts.at(-1) ?? file);
+      byParent.set(parent, files);
+    }
+    for (const [parent, files] of [...byParent.entries()].sort()) {
+      lines.push(`${parent} ${files.sort().join(" ")}`.trimEnd());
     }
   } else {
     for (const [dir, count] of [...summary.dirs.entries()].sort()) {
-      lines.push(`├─ ${dir} (${count} files)`);
+      lines.push(`${dir} (${count} files)`);
     }
     for (const file of [...summary.rootFiles].sort().slice(0, 40)) {
-      lines.push(`├─ ${file}`);
+      lines.push(file);
     }
   }
   if (uniquePaths.length > 80) {
-    lines.push(`├─ ... ${uniquePaths.length - 80} more files`);
+    lines.push(`... ${uniquePaths.length - 80} more files`);
   }
 
   if (summary.skipped.size > 0) {

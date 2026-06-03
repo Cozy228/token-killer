@@ -4,6 +4,10 @@ import { makeFilteredResult } from "../base.js";
 
 type Section = "staged" | "modified" | "untracked" | "conflicts" | undefined;
 
+function shortLine(indexStatus: string, worktreeStatus: string, file: string): string {
+  return `${indexStatus}${worktreeStatus} ${file}`;
+}
+
 function parseShortStatusLine(line: string) {
   if (line.startsWith("## ")) {
     const branch = line.slice(3).split("...")[0]?.trim();
@@ -29,10 +33,7 @@ function parseShortStatusLine(line: string) {
 function formatStatus(text: string): string {
   let branch = "unknown";
   let section: Section;
-  const staged: string[] = [];
-  const modified: string[] = [];
-  const untracked: string[] = [];
-  const conflicts: string[] = [];
+  const statuses: string[] = [];
 
   for (const line of text.split(/\r?\n/)) {
     const trimmed = line.trim();
@@ -42,19 +43,19 @@ function formatStatus(text: string): string {
       continue;
     }
     if (shortStatus?.section === "staged") {
-      staged.push(shortStatus.file);
+      statuses.push(line.slice(0, 3) + shortStatus.file);
       continue;
     }
     if (shortStatus?.section === "modified") {
-      modified.push(shortStatus.file);
+      statuses.push(line.slice(0, 3) + shortStatus.file);
       continue;
     }
     if (shortStatus?.section === "untracked") {
-      untracked.push(shortStatus.file);
+      statuses.push(`?? ${shortStatus.file}`);
       continue;
     }
     if (shortStatus?.section === "conflicts") {
-      conflicts.push(shortStatus.file);
+      statuses.push(line.slice(0, 3) + shortStatus.file);
       continue;
     }
 
@@ -78,24 +79,30 @@ function formatStatus(text: string): string {
       section = "conflicts";
       continue;
     }
-    if (!section || !trimmed || trimmed.startsWith("(") || trimmed.startsWith("use ")) continue;
+    if (
+      !section ||
+      !trimmed ||
+      trimmed.startsWith("(") ||
+      trimmed.startsWith("use ") ||
+      trimmed.startsWith("no changes added")
+    ) {
+      continue;
+    }
 
-    const file = trimmed.replace(/^(new file|modified|deleted|renamed|both modified):\s+/, "");
-    if (section === "staged") staged.push(file);
-    if (section === "modified") modified.push(file);
-    if (section === "untracked") untracked.push(file);
-    if (section === "conflicts") conflicts.push(file);
+    const match = trimmed.match(/^(new file|modified|deleted|renamed|both modified):\s+(.+)$/);
+    const status = match?.[1];
+    const file = match?.[2] ?? trimmed;
+    if (section === "staged") {
+      statuses.push(shortLine(status === "deleted" ? "D" : status === "modified" ? "M" : "A", " ", file));
+    }
+    if (section === "modified") {
+      statuses.push(shortLine(" ", status === "deleted" ? "D" : "M", file));
+    }
+    if (section === "untracked") statuses.push(`?? ${file}`);
+    if (section === "conflicts") statuses.push(shortLine("U", "U", file));
   }
 
-  const lines = [
-    `Branch: ${branch}`,
-    `Status: ${modified.length} modified, ${staged.length} staged, ${untracked.length} untracked, ${conflicts.length} conflicts`,
-  ];
-
-  if (staged.length > 0) lines.push("", "Staged:", ...staged.map((file) => `- ${file}`));
-  if (modified.length > 0) lines.push("", "Modified:", ...modified.map((file) => `- ${file}`));
-  if (untracked.length > 0) lines.push("", "Untracked:", ...untracked.map((file) => `- ${file}`));
-  if (conflicts.length > 0) lines.push("", "Conflicts:", ...conflicts.map((file) => `- ${file}`));
+  const lines = [`* ${branch}`, ...statuses];
 
   return `${lines.join("\n")}\n`;
 }
