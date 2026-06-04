@@ -92,8 +92,8 @@ CLI (cli.ts)
               └─ pipeline     # filter → history → stats
                   ├─ handler.filter   # 专用压缩逻辑
                   ├─ fallback         # 异常兜底
-                  ├─ quality gate     # 膨胀/空输出兜底为 raw passthrough
-                  ├─ outputLimit      # 全局行数/字符数截断
+                  ├─ quality gate     # 膨胀/空输出/省略内容 → raw passthrough
+                  ├─ outputLimit      # 当前 no-op；保留 flags 接口
                   ├─ history          # 写入 .tg/history.jsonl
                   ├─ rawStore         # 条件保存原始输出
                   └─ stats            # token 节省格式化
@@ -110,7 +110,7 @@ CLI (cli.ts)
 | Pipeline | `src/core/pipeline.ts` | 串联 filter → fallback → history |
 | Savings | `src/core/savings.ts` | token 估算（chars ÷ 4）和节省计算 |
 | Quality gate | `src/handlers/base.ts` | 过滤结果质量门：防膨胀、防空输出误导 |
-| Output limit | `src/core/outputLimit.ts` | 全局行数截断 + 字符数截断，保留重要行 |
+| Output limit | `src/core/outputLimit.ts` | 当前为 no-op passthrough；`--max-lines` / `--max-chars` 保留 CLI 接口，实际截断由 handler 或 quality gate 决定 |
 | History | `src/core/history.ts` | JSONL 追加写入和读取 |
 | Raw store | `src/core/rawStore.ts` | 条件保存原始输出到 `.tg/raw/`（exit code ≠ 0 或 >20K chars 自动保存） |
 | Report | `src/core/report.ts` | 汇总 history 生成 text/json/csv 报告 |
@@ -130,28 +130,36 @@ interface CommandHandler {
 
 Router 按注册顺序匹配，最后一个 `genericHandler` 作为兜底。Handler 注册表位于 `src/handlers/index.ts`。
 
-Handler 分类和压缩策略：
+#### 实现原则
 
-| 分类 | Handler | 压缩策略 |
-|------|---------|----------|
-| Search | `searchLike`（rg、grep） | 按文件分组，每文件限制条数；识别 `file:line:content` 和 `--null` 格式 |
-| Read | `readLike`（cat、type、less、read） | 内部读取（跳过 shell），支持多文件与 `read -` stdin，大文件（>12K chars）提取 import/export/function/class 符号 + head + tail，支持 `read --max-lines` / `--tail-lines` / `--line-numbers`，二进制直接拒绝 |
-| List | `listLike`（ls、dir、find、tree） | 小输出 passthrough；较大输出用 `39F 8D` + parent-dir 分组；跳过 node_modules/dist/build 等噪音目录 |
-| Git | `gitStatus` | 解析 verbose 或 porcelain status，输出短状态码（` M file`、`?? file`） |
-| Git | `gitDiff` | 小 diff passthrough；较大 diff 统计 +added/-removed，保留 hunk headers 和部分 changed lines，额外提示用 `--raw` |
-| Git | `gitLog` | 解析 commit/Author/Date，截断到最近 20 条 |
-| Git | `gitShow` | 保留 commit 元信息 + 首段 diff |
-| Git | `gitBranch` | 过滤 current/main/master/codex/*/release/* 邻近分支 |
-| JS | `jsTest`（npm/pnpm/yarn test、vitest、jest） | 保留 failures + Test Files/Tests 摘要 |
-| JS | `eslint` | 保留 error/warning 计数和详情 |
-| JS | `tsc` | 保留 type errors，按文件分组 |
-| JS | `packageList` | 去重、截断 |
-| Python | `pytest` | 保留 FAILED + summary |
-| Python | `ruff` | 保留 violations |
-| Python | `mypy` | 保留 type errors |
-| Python | `pip` | 截断列表 |
-| Java | `maven`、`gradle`、`javac` | 保留 errors，丢弃构建进度 |
-| Generic | `generic` | head 30 行 + tail 30 行 + 匹配 error/failed/fatal 等重要模式的行 |
+Handler 只做两类事：
+
+1. **结构化改写** — 把 verbose 输出换成更短、但信息完整的格式（如 `git status` 短状态码、两文件 `diff` 的 LCS `+/-` 行、`tsc` 按错误码分组）。不丢行、不写 `Hidden` / `+N more` / `... N lines hidden`。
+2. **原文 passthrough** — 无法在不省略内容的前提下明显变短时，原样输出 stdout/stderr（如 `rg`、`grep`、`git diff`、未知命令的 `generic`）。
+
+只有 **`read --level aggressive`** 属于显式 opt-in 的激进摘要（符号列表）；默认 `cat` / `read` 对大文件也 passthrough 全文。
+
+#### Handler 分类与策略
+
+| 分类 | Handler | 策略 |
+|------|---------|------|
+| Search | `searchLike`（rg、grep） | **原文 passthrough**；无匹配时输出 `0 matches for <pattern>` |
+| Read | `readLike`（cat、type、less、read） | `cat`/`read` 默认全文；内部读文件（多文件、`read -` stdin）；`read --max-lines` / `--tail-lines` 只输出真实行切片（无占位行）；`read --level aggressive` 且大文件时仅符号摘要；二进制文件跳过内容 |
+| List | `listLike`（ls、dir、find、tree） | 小输出：过滤 `node_modules` 等目录后的路径列表；大输出：`NF ND:` + 按目录分组或 `(N files)` 汇总，**列出全部路径/目录，不截断** |
+| Diff | `diff`（两文件或 stdin unified） | 两文件：LCS 差异，输出 `old -> new (+N -M)` 与全部 `+/-` 行；stdin unified：按文件汇总并输出全部 change 行 |
+| Git | `gitStatus` | 解析 verbose / porcelain；输出 `* branch` + ` M` / `??` 短行；过滤 `nothing added to commit` 等 hint |
+| Git | `gitDiff` | **原文 passthrough**（完整 unified diff） |
+| Git | `gitLog` | `--oneline` 少量提交 passthrough；多 commit 解析为 `Git Log: N commits` + **全部** subject 行 |
+| Git | `gitShow` | `--stat` / name-only passthrough；完整 show：commit 元信息 + stat + **完整** patch（`--- Changes ---`） |
+| Git | `gitBranch` | ≤2 分支 passthrough；更多分支列出 **全部** 分支名 |
+| JS | `jsTest` | failures + Test Files/Tests 摘要 |
+| JS | `eslint` | 按 rule 分组，输出 **全部** violation |
+| JS | `tsc` | 按 TS 错误码分组，输出 **全部** diagnostic；无 parse 结果时 passthrough raw |
+| JS | `packageList` | 已是 RTK compact 格式则 passthrough；否则解析为 `[prod]`/`[dev]` 列表 + Problems，**不截断** |
+| Python | `pytest`、`ruff`、`mypy` | 保留 failures / violations / errors，分组展示 **全部** 条目 |
+| Python | `pip` | **原文 passthrough** |
+| Java | `maven`、`gradle`、`javac` | 保留 errors 与关键 failure 行，过滤构建进度噪音 |
+| Generic | `generic` | **原文 passthrough**（stdout + stderr） |
 
 ### 1.5 FilteredResult
 
@@ -160,9 +168,9 @@ Handler 分类和压缩策略：
 ```typescript
 type FilteredResult = {
   handler: string;         // handler 名称
-  output: string;          // 压缩后输出（已去 ANSI + 全局截断）
+  output: string;          // 最终输出（已去 ANSI；经 quality gate 选定）
   rawChars: number;        // 原始字符数
-  outputChars: number;     // 压缩后字符数
+  outputChars: number;     // 最终输出字符数
   rawTokens: number;       // 估算原始 token
   outputTokens: number;    // 估算输出 token
   savedTokens: number;     // 节省 token
@@ -177,16 +185,34 @@ type FilteredResult = {
 };
 ```
 
+`savingsPct` 与 history 只反映 **quality gate 之后** 的最终 `output`，不把被回退为 raw 的尝试算成有效压缩。
+
 ### 1.6 Quality gate
 
-所有 handler 的结果在 `makeFilteredResult()` 里经过统一质量门。质量门的目标不是让所有命令都压缩，而是避免“为了节省数字牺牲信息”：
+所有 handler 的结果在 `makeFilteredResult()` 里经过统一质量门。目标不是“让每个命令都变短”，而是 **避免为了 token 数字牺牲信息**：
 
-- raw 非空、filtered 为空或只有空白 → 输出 raw，`qualityStatus = "empty_output"`。
-- raw 非空、filtered 比 raw 更长 → 输出 raw，`qualityStatus = "inflated"`。
-- filtered 非空且不膨胀 → 输出 filtered，`qualityStatus = "passed"`。
-- raw 为空、filtered 非空（例如 `0 matches for pattern`）允许输出 filtered，不按膨胀处理。
+| 条件 | 行为 | `qualityStatus` |
+|------|------|-----------------|
+| raw 非空，filtered 为空或只有空白 | 输出 raw | `empty_output` |
+| raw 非空，filtered 比 raw 长（小输出零容差；大输出允许 ≤5% 或 ≥80 chars 的 metadata 开销） | 输出 raw | `inflated` |
+| filtered 含省略语义（`Hidden`、`+N more`、`[N more lines]`、`... N lines hidden`、`Direct sample:` 等，`outputOmitsContent()` 检测） | 输出 raw | `inflated` |
+| filtered 非空且不膨胀、不省略 | 输出 filtered | `passed` |
+| raw 为空、filtered 非空（如 `0 matches for pattern`） | 输出 filtered | `passed` |
 
-这意味着小输出可以直接 passthrough。报告里的 token savings 只反映最终输出，不把被质量门回退的 handler 当成有效压缩。
+因此：
+
+- 专用 handler 可以 passthrough（savings 为 0），这仍是正确行为。
+- 结构化改写若比 raw 更长或声称省略未展示内容，会自动回退 raw。
+- 需要完整原文时用户始终可用 `tg --raw`；失败或大输出还可能写入 `.tg/raw/`。
+
+**禁止模式**（handler 不应生成；若生成会被 quality gate 打回 raw）：
+
+- `Hidden: … not shown`
+- `+N more matches/files/packages/errors/commits/branches`
+- `[N more lines]`、`... N more lines (use tg --raw …)`
+- 仅展示 sample 却暗示还有更多（如 `Direct sample:` + 截断列表）
+
+这意味着：**能完整给就给；给不全就退回原文**，不在输出里用 metadata 假装 agent 已经看过省略部分。
 
 ### 1.7 Rewrite engine
 
