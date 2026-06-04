@@ -1,7 +1,20 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-HISTORY=".tg/history.jsonl"
+REPO_ROOT="$(cd "$(dirname "$0")/.." && pwd)"
+TG_HOME="${TOKEN_GUARD_HOME:-$HOME/.token-guard}"
+HISTORY="${TG_HISTORY_FILE:-$(node -e "
+  const { createHash } = require('node:crypto');
+  const { realpathSync } = require('node:fs');
+  const path = require('node:path');
+  const os = require('node:os');
+  const cwd = process.argv[1];
+  const home = process.env.TOKEN_GUARD_HOME || path.join(os.homedir(), '.token-guard');
+  let root = cwd;
+  try { root = realpathSync(cwd); } catch { root = path.resolve(cwd); }
+  const fp = 'repo:' + createHash('sha256').update(root).digest('hex').slice(0, 12);
+  process.stdout.write(path.join(home, 'projects', fp, 'history.jsonl'));
+" "$REPO_ROOT")}"
 README="README.md"
 MARKER_S="<!-- BENCHMARK_TABLE_START -->"
 MARKER_E="<!-- BENCHMARK_TABLE_END -->"
