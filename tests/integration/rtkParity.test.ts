@@ -29,6 +29,14 @@ function git(args: string[], cwd: string) {
   });
 }
 
+function nativeGrep(args: string[], cwd: string) {
+  return spawnSync("grep", args, {
+    cwd,
+    encoding: "utf8",
+    timeout: 15000,
+  });
+}
+
 async function initGitRepo(prefix: string) {
   const dir = await mkdtemp(path.join(tmpdir(), prefix));
   git(["init"], dir);
@@ -58,6 +66,45 @@ describe("RTK-style CLI integration parity", () => {
       expect(result.stdout).toContain("recordHistory");
       expect(result.stdout).toContain("pipeline.ts");
       expect(result.stdout).toContain("runPipeline");
+    } finally {
+      await rm(dir, { recursive: true, force: true });
+    }
+  });
+
+  test("tg grep preserves RTK format-flag output shapes", async () => {
+    const dir = await mkdtemp(path.join(tmpdir(), "tg-rtk-grep-format-"));
+    try {
+      await writeFile(path.join(dir, "with-import.ts"), "import fs from 'node:fs';\n");
+      await writeFile(path.join(dir, "without-import.ts"), "export const value = 1;\n");
+
+      const filesWithoutMatch = runTg(
+        ["grep", "-L", "import", "with-import.ts", "without-import.ts"],
+        dir,
+      );
+      const nativeFilesWithoutMatch = nativeGrep(
+        ["-L", "import", "with-import.ts", "without-import.ts"],
+        dir,
+      );
+      expect(filesWithoutMatch.status).toBe(0);
+      expect(filesWithoutMatch.stdout).toBe(nativeFilesWithoutMatch.stdout);
+      expect(filesWithoutMatch.stdout).not.toContain("Search:");
+      expect(filesWithoutMatch.stdout).not.toContain("Matches:");
+
+      const onlyMatching = runTg(["grep", "-o", "import", "with-import.ts"], dir);
+      const nativeOnlyMatching = nativeGrep(["-o", "import", "with-import.ts"], dir);
+      expect(onlyMatching.status).toBe(0);
+      expect(onlyMatching.stdout).toBe(nativeOnlyMatching.stdout);
+
+      const nullDelimited = runTg(
+        ["grep", "-Z", "-l", "import", "with-import.ts", "without-import.ts"],
+        dir,
+      );
+      const nativeNullDelimited = nativeGrep(
+        ["-Z", "-l", "import", "with-import.ts", "without-import.ts"],
+        dir,
+      );
+      expect(nullDelimited.status).toBe(0);
+      expect(nullDelimited.stdout).toBe(nativeNullDelimited.stdout);
     } finally {
       await rm(dir, { recursive: true, force: true });
     }

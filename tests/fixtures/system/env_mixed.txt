@@ -1,0 +1,6 @@
+PATH=/usr/local/bin:/usr/bin:/bin:/opt/tools/bin:/tmp/bin
+API_KEY=sk_live_secret
+NODE_VERSION=22.0.0
+AWS_REGION=us-east-1
+EDITOR=vim
+HOME=/Users/example

@@ -45,7 +45,20 @@ echo "check-test-presence: verifying product test coverage shape..."
 echo ""
 
 echo "check-test-presence: verifying registered handlers have fixture-backed coverage..."
-if pnpm exec vitest run --config vitest.migration.config.ts tests/unit/handlers/registeredHandlerCoverage.test.ts; then
+if pnpm exec tsx -e '
+import { fixtureBackedHandlers } from "./tests/helpers/fixtureCases.ts";
+import { handlers } from "./src/handlers/index.ts";
+
+const backed = fixtureBackedHandlers();
+const missing = handlers
+  .map((handler) => handler.name)
+  .filter((name) => name !== "generic" && !backed.has(name));
+
+if (missing.length > 0) {
+  console.error(`missing fixture-backed handler coverage: ${missing.join(", ")}`);
+  process.exit(1);
+}
+'; then
     printf "  PASS   registered handlers → fixtureCases\n"
 else
     printf "  FAIL   registered handlers → fixtureCases\n"

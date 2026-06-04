@@ -1,0 +1,4 @@
+2026-06-04T10:00:00Z ERROR request failed id=123 path=/tmp/build/a.ts
+2026-06-04T10:00:01Z ERROR request failed id=456 path=/tmp/build/b.ts
+2026-06-04T10:00:02Z WARN retrying request id=789
+2026-06-04T10:00:03Z INFO request complete id=999
