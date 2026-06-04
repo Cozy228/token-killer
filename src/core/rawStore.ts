@@ -2,6 +2,7 @@ import { mkdir, writeFile } from "node:fs/promises";
 import path from "node:path";
 
 import type { RawResult, TgOptions } from "../types.js";
+import { rawOutputDir, rawOutputPathRelative } from "./dataDir.js";
 import { safePathPart } from "./path.js";
 
 function timestampForPath(date = new Date()): string {
@@ -22,13 +23,11 @@ export async function maybeSaveRawOutput(
 
   if (!shouldSave || options.saveRaw === false) return undefined;
 
-  const dir = path.join(options.cwd, ".tg/raw");
+  const fileName = `${timestampForPath()}-${safePathPart(raw.command)}.log`;
+  const dir = rawOutputDir(options.cwd);
   await mkdir(dir, { recursive: true });
-  const relativePath = path.join(
-    ".tg/raw",
-    `${timestampForPath()}-${safePathPart(raw.command)}.log`,
-  );
-  const absolutePath = path.join(options.cwd, relativePath);
+  const relativePath = rawOutputPathRelative(options.cwd, fileName);
+  const absolutePath = path.join(dir, fileName);
   const content = [
     `Command: ${raw.command}`,
     `Exit Code: ${raw.exitCode}`,

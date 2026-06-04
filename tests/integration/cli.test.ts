@@ -5,19 +5,38 @@ import { fileURLToPath } from "node:url";
 import { spawnSync } from "node:child_process";
 import { describe, expect, test } from "vitest";
 
+import { historyFile, resolveStoredPath } from "../../src/core/dataDir.js";
+
 const repoRoot = path.resolve(
   path.dirname(fileURLToPath(import.meta.url)),
   "../..",
 );
 const cli = path.join(repoRoot, "src/cli.ts");
+const tsxLoader = path.join(repoRoot, "node_modules/tsx/dist/loader.mjs");
 
-function runTg(args: string[], cwd: string, input?: string) {
-  return spawnSync("npx", ["tsx", cli, ...args], {
-    cwd,
-    encoding: "utf8",
-    input,
-    timeout: 15000,
-  });
+function runTg(args: string[], cwd: string, input?: string, tokenGuardHomeDir?: string) {
+  const env: NodeJS.ProcessEnv = { ...process.env };
+  if (tokenGuardHomeDir) {
+    env.TOKEN_GUARD_HOME = tokenGuardHomeDir;
+  }
+  const runner =
+    tokenGuardHomeDir !== undefined
+      ? () =>
+          spawnSync(process.execPath, ["--import", tsxLoader, cli, ...args], {
+            cwd,
+            encoding: "utf8",
+            input,
+            timeout: 15000,
+            env,
+          })
+      : () =>
+          spawnSync("npx", ["tsx", cli, ...args], {
+            cwd,
+            encoding: "utf8",
+            input,
+            timeout: 15000,
+          });
+  return runner();
 }
 
 // ============================================================================
@@ -475,27 +494,24 @@ describe("Global Flags", () => {
 
   test("--stats --save-raw prints raw path and writes raw log", async () => {
     const dir = await mkdtemp(path.join(tmpdir(), "tg-save-raw-"));
+    const tgHome = path.join(dir, "token-guard-data");
     try {
       await writeFile(path.join(dir, "sample.txt"), "alpha\nbeta\n");
 
-      const result = runTg(["--stats", "--save-raw", "cat", "sample.txt"], dir);
+      const result = runTg(["--stats", "--save-raw", "cat", "sample.txt"], dir, undefined, tgHome);
+      process.env.TOKEN_GUARD_HOME = tgHome;
       expect(result.status).toBe(0);
       expect(result.stdout).toContain("## Token Savings");
 
-      const history = await readFile(
-        path.join(dir, ".tg/history.jsonl"),
-        "utf8",
-      );
+      const history = await readFile(historyFile(dir), "utf8");
       const record = JSON.parse(history.trim()) as { raw_output_path: string };
-      expect(record.raw_output_path).toMatch(/^\.tg\/raw\//);
+      expect(record.raw_output_path).toMatch(/^projects\/repo:[a-f0-9]{12}\/raw\//);
 
-      const rawLog = await readFile(
-        path.join(dir, record.raw_output_path),
-        "utf8",
-      );
+      const rawLog = await readFile(resolveStoredPath(record.raw_output_path), "utf8");
       expect(rawLog).toContain("Command: cat sample.txt");
       expect(rawLog).toContain("--- STDOUT ---");
     } finally {
+      delete process.env.TOKEN_GUARD_HOME;
       await rm(dir, { recursive: true, force: true });
     }
   });
@@ -510,17 +526,18 @@ describe("Global Flags", () => {
 
   test("--raw still records history with zero savings", async () => {
     const dir = await mkdtemp(path.join(tmpdir(), "tg-raw-history-"));
+    const tgHome = path.join(dir, "token-guard-data");
     try {
       const result = runTg(
         ["--raw", process.execPath, "-e", "console.log('raw retained')"],
         dir,
+        undefined,
+        tgHome,
       );
+      process.env.TOKEN_GUARD_HOME = tgHome;
       expect(result.status).toBe(0);
 
-      const history = await readFile(
-        path.join(dir, ".tg/history.jsonl"),
-        "utf8",
-      );
+      const history = await readFile(historyFile(dir), "utf8");
       const record = JSON.parse(history.trim()) as {
         handler: string;
         saved_tokens: number;
@@ -530,6 +547,7 @@ describe("Global Flags", () => {
       expect(record.saved_tokens).toBe(0);
       expect(record.savings_pct).toBe(0);
     } finally {
+      delete process.env.TOKEN_GUARD_HOME;
       await rm(dir, { recursive: true, force: true });
     }
   });

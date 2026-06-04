@@ -2,6 +2,7 @@ import { mkdir, readFile, writeFile } from "node:fs/promises";
 import path from "node:path";
 
 import type { FilteredResult, RawResult, TgOptions } from "../types.js";
+import { historyFile, projectFingerprint } from "./dataDir.js";
 
 export type HistoryRecord = {
   timestamp: string;
@@ -15,26 +16,24 @@ export type HistoryRecord = {
   savings_pct: number;
   exit_code: number;
   duration_ms: number;
+  project_fingerprint?: string;
   raw_output_path?: string;
   quality_status?: string;
 };
-
-function historyPath(cwd: string): string {
-  return path.join(cwd, ".tg/history.jsonl");
-}
 
 export async function recordHistory(
   raw: RawResult,
   filtered: FilteredResult,
   options: TgOptions,
 ): Promise<void> {
-  const file = historyPath(options.cwd);
+  const file = historyFile(options.cwd);
   await mkdir(path.dirname(file), { recursive: true });
 
   const record: HistoryRecord = {
     timestamp: new Date().toISOString(),
     command: raw.command,
     handler: filtered.handler,
+    project_fingerprint: projectFingerprint(options.cwd),
     raw_chars: filtered.rawChars,
     output_chars: filtered.outputChars,
     raw_tokens: filtered.rawTokens,
@@ -52,7 +51,7 @@ export async function recordHistory(
 
 export async function readHistory(cwd: string): Promise<HistoryRecord[]> {
   try {
-    const text = await readFile(historyPath(cwd), "utf8");
+    const text = await readFile(historyFile(cwd), "utf8");
     return text
       .split(/\r?\n/)
       .filter(Boolean)

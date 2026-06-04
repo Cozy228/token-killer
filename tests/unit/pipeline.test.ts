@@ -3,6 +3,7 @@ import { tmpdir } from "node:os";
 import path from "node:path";
 import { describe, expect, test } from "vitest";
 
+import { resolveStoredPath } from "../../src/core/dataDir.js";
 import { filterWithFallback } from "../../src/core/pipeline.js";
 import type { CommandHandler, ParsedCommand, RawResult, TgOptions } from "../../src/types.js";
 
@@ -21,6 +22,8 @@ function options(cwd: string): TgOptions {
 describe("pipeline fallback", () => {
   test("falls back to generic raw-preserving output when a handler filter throws", async () => {
     const dir = await mkdtemp(path.join(tmpdir(), "tg-fallback-"));
+    const tgHome = path.join(dir, "token-guard-data");
+    process.env.TOKEN_GUARD_HOME = tgHome;
     const command: ParsedCommand = {
       program: "custom",
       args: [],
@@ -52,9 +55,10 @@ describe("pipeline fallback", () => {
       expect(result.exitCode).toBe(9);
       expect(result.rawOutputPath).toBeDefined();
 
-      const rawLog = await readFile(path.join(dir, result.rawOutputPath!), "utf8");
+      const rawLog = await readFile(resolveStoredPath(result.rawOutputPath!), "utf8");
       expect(rawLog).toContain("ERROR retained fallback line");
     } finally {
+      delete process.env.TOKEN_GUARD_HOME;
       await rm(dir, { recursive: true, force: true });
     }
   });
