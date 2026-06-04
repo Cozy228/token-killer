@@ -19,6 +19,9 @@ function formatJsTest(text: string, exitCode: number): string {
   if (trimmed.startsWith("{")) {
     try {
       const payload = JSON.parse(trimmed);
+      if ((payload.numFailedTests ?? 0) === 0) {
+        return `PASS (${payload.numPassedTests ?? payload.numTotalTests ?? 0}) FAIL (0)\n`;
+      }
       const out = [exitCode === 0 ? "JS tests passed" : "JS tests failed"];
       out.push(`Summary: ${payload.numFailedTests ?? 0} failed, ${payload.numPassedTests ?? 0} passed`);
       for (const file of payload.testResults ?? []) {
@@ -36,10 +39,17 @@ function formatJsTest(text: string, exitCode: number): string {
   }
 
   const lines = text.split(/\r?\n/);
+  const testsLine = lines.find((line) => /\bTests\s+/.test(line));
+  const passedMatch = testsLine?.match(/(\d+)\s+passed/);
+  const failedMatch = testsLine?.match(/(\d+)\s+failed/);
+  const passed = passedMatch ? Number.parseInt(passedMatch[1] ?? "0", 10) : 0;
+  const failed = failedMatch ? Number.parseInt(failedMatch[1] ?? "0", 10) : 0;
+  if (exitCode === 0 && passed > 0 && failed === 0) {
+    return `PASS (${passed}) FAIL (0)\n`;
+  }
   const summary = lines.filter((line) => /Test Files|Tests\s+|failed|passed/.test(line)).slice(-6);
   const failures = lines
     .filter((line) => /FAIL|AssertionError|expected|\.test\.[tj]sx?:\d+|❯/.test(line))
-    .filter((line) => !/noise-\d+/.test(line))
     .slice(0, 50);
   const out = [exitCode === 0 ? "JS tests passed" : "JS tests failed"];
   if (summary.length > 0) out.push("Summary:", ...summary.map((line) => `- ${line.trim()}`));

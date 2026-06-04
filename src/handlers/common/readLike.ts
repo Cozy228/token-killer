@@ -30,28 +30,17 @@ function extractSymbols(text: string): string[] {
     .slice(0, 40);
 }
 
-function excerpt(lines: string[], count: number): string {
-  const filtered = lines.filter((line) => !/^\s*const noise\d+\s*=/.test(line));
-  return filtered.slice(0, count).join("\n");
-}
+function filterOutput(text: string, command: ParsedCommand, readConfig: ReadOptions): string {
+  const { level, files } = readConfig;
+  const fileArg = files[0] ?? command.displayCommand;
+  const lineCount = text.split(/\r?\n/).length;
+  const shouldSummarize = text.length > 12000 || lineCount > 200;
 
-function summarizeLargeFile(filePath: string, text: string): string {
-  const lines = text.split(/\r?\n/);
-  const symbols = extractSymbols(text);
-  const head = excerpt(lines, 30);
-  const tail = excerpt(lines.slice(-80), 20);
+  if (command.program === "read" && shouldSummarize && level === "aggressive") {
+    return summarizeAggressively(fileArg, text);
+  }
 
-  return [
-    `File: ${filePath}`,
-    `Lines: ${lines.length}`,
-    symbols.length > 0 ? "\nSymbols:\n" + symbols.map((line) => `- ${line.trim()}`).join("\n") : "",
-    "\nHead:",
-    head,
-    "\nTail:",
-    tail,
-  ]
-    .filter(Boolean)
-    .join("\n");
+  return text;
 }
 
 function summarizeAggressively(filePath: string, text: string): string {
@@ -65,35 +54,6 @@ function summarizeAggressively(filePath: string, text: string): string {
   ]
     .filter(Boolean)
     .join("\n");
-}
-
-function compactMinimal(text: string): string {
-  const lines = text.split(/\r?\n/);
-  const output: string[] = [];
-  const noiseLine = /^\s*const noise\d+\s*=\s*\d+;\s*$/;
-
-  for (let index = 0; index < lines.length; index += 1) {
-    const line = lines[index] ?? "";
-    if (!noiseLine.test(line)) {
-      output.push(line);
-      continue;
-    }
-
-    const start = index;
-    while (index + 1 < lines.length && noiseLine.test(lines[index + 1] ?? "")) {
-      index += 1;
-    }
-
-    const hidden = index - start + 1;
-    if (hidden < 8) {
-      output.push(...lines.slice(start, index + 1));
-      continue;
-    }
-
-    output.push(`${line.match(/^\s*/)?.[0] ?? ""}... ${hidden} repetitive noise lines hidden ...`);
-  }
-
-  return output.join("\n");
 }
 
 function parseReadLevel(value: string | undefined): ReadLevel | undefined {
@@ -198,7 +158,7 @@ async function readInternally(command: ParsedCommand, options: TgOptions): Promi
           continue;
         }
         const buffer = await readFile(absolute);
-        chunks.push(looksBinary(buffer) ? `Binary file not shown: ${fileArg}\n` : buffer.toString("utf8"));
+        chunks.push(looksBinary(buffer) ? `Binary file omitted: ${fileArg}\n` : buffer.toString("utf8"));
       } catch (error) {
         const code = error && typeof error === "object" && "code" in error ? error.code : undefined;
         const message =
@@ -240,12 +200,8 @@ function applyLineWindow(text: string, options: ReadOptions): string {
     if (lines.length <= options.maxLines) {
       return lines.join("\n") + (text.endsWith("\n") ? "\n" : "");
     }
-    if (options.maxLines === 1) {
-      return `[${lines.length} more lines]\n`;
-    }
-    const visible = lines.slice(0, options.maxLines - 1);
-    visible.push(`[${lines.length - visible.length} more lines]`);
-    return visible.join("\n") + "\n";
+    const selected = lines.slice(0, options.maxLines);
+    return selected.join("\n") + (text.endsWith("\n") ? "\n" : "");
   }
 
   return text;
@@ -274,21 +230,12 @@ export const readLikeHandler: CommandHandler = {
   async filter(raw, command, options) {
     const text = `${raw.stdout}${raw.stderr}`;
     const readConfig = readOptions(command);
-    const { level, files } = readConfig;
-    const fileArg = files[0] ?? command.displayCommand;
-    const lineCount = text.split(/\r?\n/).length;
-    const shouldSummarize = text.length > 12000 || lineCount > 200;
-    const filtered = shouldSummarize
-      ? level === "minimal"
-        ? compactMinimal(text)
-        : level === "aggressive"
-          ? summarizeAggressively(fileArg, text)
-          : summarizeLargeFile(fileArg, text)
-      : text;
+    const filtered = filterOutput(text, command, readConfig);
     const windowed = applyLineWindow(filtered, readConfig);
     const output = readConfig.lineNumbers ? addLineNumbers(windowed) : windowed;
+    const lineCount = text.split(/\r?\n/).length;
     const resultOptions =
-      command.program === "read" && level === "minimal"
+      command.program === "read" && readConfig.level === "minimal"
         ? {
             ...options,
             maxLines: Math.max(options.maxLines, lineCount),

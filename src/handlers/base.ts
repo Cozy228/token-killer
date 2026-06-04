@@ -8,6 +8,24 @@ export function rawText(raw: RawResult): string {
   return `${raw.stdout}${raw.stderr}`;
 }
 
+export function outputOmitsContent(output: string): boolean {
+  return output.split(/\r?\n/).some((line) => {
+    const trimmed = line.trim();
+    return (
+      /^\+\d+ more (matches|files|packages|errors|commits|branches|changed lines)$/.test(trimmed) ||
+      /^\[\d+ more lines\]$/.test(trimmed) ||
+      /^more (lines|chars) \(use tg.*\)$/.test(trimmed) ||
+      /^repetitive lines collapsed$/.test(trimmed) ||
+      /^.*lines truncated\)$/.test(trimmed) ||
+      /^\.\.\. \(more changes truncated\)$/.test(trimmed) ||
+      /^- \.\.\. \d+ more$/.test(trimmed) ||
+      /^Hidden:$/.test(trimmed) ||
+      /^- \d+ (matches|files|packages|errors|commits|branches|dependencies) not shown$/.test(trimmed) ||
+      /^Direct sample:$/.test(trimmed)
+    );
+  });
+}
+
 export async function makeFilteredResult(
   handler: string,
   raw: RawResult,
@@ -15,14 +33,24 @@ export async function makeFilteredResult(
   options: TgOptions,
   filterError?: string,
 ): Promise<FilteredResult> {
-  const cleanRaw = limitOutput(removeAnsi(rawText(raw)), options);
-  const cleanOutput = limitOutput(removeAnsi(output), options);
+  const unlimitedRaw = removeAnsi(rawText(raw));
+  const unlimitedOutput = removeAnsi(output);
+  const cleanRaw = limitOutput(unlimitedRaw, options);
+  const cleanOutput = limitOutput(unlimitedOutput, options);
   const rawHasContent = cleanRaw.trim().length > 0;
   const outputHasContent = cleanOutput.trim().length > 0;
-  const outputInflatesRaw = rawHasContent && outputHasContent && cleanOutput.length > cleanRaw.length;
+  const inflationBudget =
+    cleanRaw.length <= 200 ? 0 : Math.max(80, Math.floor(cleanRaw.length * 0.05));
+  const outputInflatesRaw =
+    handler !== "git-diff" &&
+    rawHasContent &&
+    outputHasContent &&
+    cleanOutput.length > cleanRaw.length + inflationBudget;
+  const outputTruncatesContent =
+    handler !== "git-diff" && rawHasContent && outputHasContent && outputOmitsContent(cleanOutput);
   const qualityStatus = !outputHasContent && rawHasContent
     ? "empty_output"
-    : outputInflatesRaw
+    : outputInflatesRaw || outputTruncatesContent
     ? "inflated"
     : "passed";
   const limited = qualityStatus === "passed" ? cleanOutput : cleanRaw;

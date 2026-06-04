@@ -69,16 +69,11 @@ function formatEslint(text: string): string {
   }
   const out = [`ESLint: ${issues.length} problems in ${new Set(issues.map((issue) => issue.file)).size} files`];
   for (const [rule, ruleIssues] of [...byRule.entries()].sort()) {
-    const sortedIssues = [...ruleIssues].sort((a, b) => {
-      const aNoise = /noise|node_modules|dist|build/.test(a.file) ? 1 : 0;
-      const bNoise = /noise|node_modules|dist|build/.test(b.file) ? 1 : 0;
-      return aNoise - bNoise || a.file.localeCompare(b.file);
-    });
+    const sortedIssues = [...ruleIssues].sort((a, b) => a.file.localeCompare(b.file));
     out.push("", `${rule}: ${ruleIssues.length}`);
-    for (const issue of sortedIssues.slice(0, 5)) {
+    for (const issue of sortedIssues) {
       out.push(`- ${issue.file}:${issue.line}:${issue.column} ${issue.severity} ${issue.message}`);
     }
-    if (ruleIssues.length > 5) out.push(`- ... ${ruleIssues.length - 5} more`);
   }
   return `${out.join("\n")}\n`;
 }

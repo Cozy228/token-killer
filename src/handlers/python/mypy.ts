@@ -44,17 +44,11 @@ function formatMypy(text: string): string {
   const out = [`Mypy: ${issues.length} errors in ${new Set(issues.map((issue) => issue.file)).size} files`];
   for (const [code, codeIssues] of [...byCode.entries()].sort()) {
     out.push("", `${code}: ${codeIssues.length}`);
-    const sortedIssues = [...codeIssues].sort((a, b) => {
-      const aNoise = /noise/.test(a.file) ? 1 : 0;
-      const bNoise = /noise/.test(b.file) ? 1 : 0;
-      return aNoise - bNoise || a.file.localeCompare(b.file);
-    });
-    const shownIssues = sortedIssues.length > 100 ? sortedIssues.slice(0, 20) : sortedIssues;
-    for (const issue of shownIssues) {
+    const sortedIssues = [...codeIssues].sort((a, b) => a.file.localeCompare(b.file));
+    for (const issue of sortedIssues) {
       out.push(`- ${issue.file}:${issue.line} ${issue.message}`);
       for (const note of issue.notes) out.push(`  note: ${note}`);
     }
-    if (sortedIssues.length > shownIssues.length) out.push(`- ... ${sortedIssues.length - shownIssues.length} more`);
   }
   return `${out.join("\n")}\n`;
 }

@@ -22,9 +22,6 @@ const SKIP_DIRS = new Set([
 ]);
 
 type TreeSummary = {
-  rootFiles: Set<string>;
-  dirs: Map<string, number>;
-  skipped: Set<string>;
   visiblePaths: string[];
 };
 
@@ -40,28 +37,66 @@ function addPath(summary: TreeSummary, rawPath: string): void {
   if (!cleaned || cleaned === ".") return;
 
   const parts = cleaned.split(/[\\/]+/).filter(Boolean);
-  const skipped = parts.find((part) => SKIP_DIRS.has(part));
-  if (skipped) {
-    summary.skipped.add(`${skipped}/`);
+  if (parts.some((part) => SKIP_DIRS.has(part))) {
     return;
   }
 
   if (parts.length === 1) {
-    summary.rootFiles.add(parts[0]!);
     summary.visiblePaths.push(parts[0]!);
     return;
   }
-
-  const parent = `${parts.slice(0, -1).join("/")}/`;
-  summary.dirs.set(parent, (summary.dirs.get(parent) ?? 0) + 1);
   summary.visiblePaths.push(parts.join("/"));
+}
+
+function treeLineDepth(line: string): number {
+  const marker = line.search(/[├└]/);
+  return marker < 0 ? 0 : Math.floor(marker / 4);
+}
+
+function treeNodeName(line: string): string {
+  return line.replace(/^[\s│├└─]+/, "").trim().replace(/\/$/, "");
+}
+
+function flattenTreeOutput(text: string): string {
+  const paths: string[] = [];
+  const stack: Array<{ depth: number; name: string }> = [];
+  let skipDepth: number | undefined;
+
+  for (const line of text.split(/\r?\n/)) {
+    if (!line.trim() || /^\d+ directories?, \d+ files?\s*$/.test(line.trim())) continue;
+
+    const depth = treeLineDepth(line);
+    if (skipDepth !== undefined && depth > skipDepth) continue;
+    skipDepth = undefined;
+
+    const name = treeNodeName(line);
+    if (!name) continue;
+
+    if (SKIP_DIRS.has(name)) {
+      skipDepth = depth;
+      continue;
+    }
+
+    while (stack.length > 0 && stack[stack.length - 1]!.depth >= depth) {
+      stack.pop();
+    }
+
+    const parent = stack.map((entry) => entry.name).join("/");
+    const fullPath = parent ? `${parent}/${name}` : name;
+    stack.push({ depth, name });
+
+    if (name.includes(".")) {
+      paths.push(fullPath);
+    } else {
+      paths.push(`${fullPath}/`);
+    }
+  }
+
+  return paths.join("\n");
 }
 
 function summarizeListing(text: string): string {
   const summary: TreeSummary = {
-    rootFiles: new Set(),
-    dirs: new Map(),
-    skipped: new Set(),
     visiblePaths: [],
   };
 
@@ -71,97 +106,53 @@ function summarizeListing(text: string): string {
     addPath(summary, longListingMatch?.[1] ?? line);
   }
 
-  if (summary.visiblePaths.length === 0 && summary.skipped.size === 0) return "\n";
+  if (summary.visiblePaths.length === 0) return "\n";
 
   const uniquePaths = [...new Set(summary.visiblePaths)].sort();
+  return `${uniquePaths.join("\n")}\n`;
+}
 
-  if (summary.skipped.size === 0 && text.length <= 200) {
-    return `${text.trimEnd()}\n`;
+function findRoot(command: ParsedCommand): string {
+  const first = command.args.find((arg) => !arg.startsWith("-"));
+  return first && first !== "." ? cleanPath(first) : "";
+}
+
+function stripFindRoot(pathValue: string, root: string): string {
+  const cleaned = cleanPath(pathValue);
+  if (!root) return cleaned;
+  if (cleaned === root) return "";
+  return cleaned.startsWith(`${root}/`) ? cleaned.slice(root.length + 1) : cleaned;
+}
+
+function summarizeFindOutput(text: string, command: ParsedCommand): string {
+  const root = findRoot(command);
+  const files = [...new Set(
+    text
+      .split(/\r?\n/)
+      .map((line) => stripFindRoot(line, root))
+      .filter((line) => line && !line.split(/[\\/]+/).some((part) => SKIP_DIRS.has(part))),
+  )].sort();
+
+  if (files.length === 0) return "\n";
+
+  const byDir = new Map<string, string[]>();
+  for (const file of files) {
+    const parts = file.split(/[\\/]+/).filter(Boolean);
+    const filename = parts.pop();
+    if (!filename) continue;
+    const dir = parts.length === 0 ? "." : parts.join("/");
+    const entries = byDir.get(dir) ?? [];
+    entries.push(filename);
+    byDir.set(dir, entries);
   }
 
-  const dirNames = new Set<string>();
-  for (const file of uniquePaths) {
-    const parts = file.split("/");
-    for (let index = 1; index < parts.length; index += 1) {
-      dirNames.add(`${parts.slice(0, index).join("/")}/`);
-    }
+  const dirs = [...byDir.keys()].sort();
+  const lines = [`${files.length}F ${dirs.length}D:`, ""];
+  for (const dir of dirs) {
+    const entries = byDir.get(dir) ?? [];
+    lines.push(`${dir}/ ${entries.sort().join(" ")}`);
   }
-
-  const lines = [`${uniquePaths.length}F ${dirNames.size}D:`];
-  if (uniquePaths.length <= 80) {
-    const byParent = new Map<string, string[]>();
-    for (const file of uniquePaths) {
-      const parts = file.split("/");
-      const parent = parts.length === 1 ? "./" : `${parts.slice(0, -1).join("/")}/`;
-      const files = byParent.get(parent) ?? [];
-      files.push(parts.at(-1) ?? file);
-      byParent.set(parent, files);
-    }
-    for (const [parent, files] of [...byParent.entries()].sort()) {
-      lines.push(`${parent} ${files.sort().join(" ")}`.trimEnd());
-    }
-  } else {
-    for (const [dir, count] of [...summary.dirs.entries()].sort()) {
-      lines.push(`${dir} (${count} files)`);
-    }
-    for (const file of [...summary.rootFiles].sort().slice(0, 40)) {
-      lines.push(file);
-    }
-  }
-  if (uniquePaths.length > 80) {
-    lines.push(`... ${uniquePaths.length - 80} more files`);
-  }
-
-  if (summary.skipped.size > 0) {
-    lines.push("", "Skipped:");
-    for (const skipped of [...summary.skipped].sort()) {
-      lines.push(`- ${skipped}`);
-    }
-  }
-
   return `${lines.join("\n")}\n`;
-}
-
-function treeLineDepth(line: string): number {
-  const marker = line.search(/[├└]/);
-  return marker < 0 ? 0 : marker;
-}
-
-function treeNodeName(line: string): string {
-  return line.replace(/^[\s│├└─]+/, "").trim().replace(/\/$/, "");
-}
-
-function filterTreeOutput(text: string): string {
-  if (!text.trim()) return "\n";
-
-  const skipped = new Set<string>();
-  const lines: string[] = [];
-  let skipDepth: number | undefined;
-
-  for (const line of text.split(/\r?\n/)) {
-    if (/^\s*\d+ directories?, \d+ files?\s*$/.test(line)) continue;
-    if (!line.trim()) continue;
-
-    const depth = treeLineDepth(line);
-    if (skipDepth !== undefined && depth > skipDepth) continue;
-    skipDepth = undefined;
-
-    const nodeName = treeNodeName(line);
-    if (SKIP_DIRS.has(nodeName)) {
-      skipped.add(`${nodeName}/`);
-      skipDepth = depth;
-      continue;
-    }
-
-    lines.push(line);
-  }
-
-  if (skipped.size > 0) {
-    lines.push("", "Skipped:");
-    for (const name of [...skipped].sort()) lines.push(`- ${name}`);
-  }
-
-  return `${lines.join("\n").trimEnd()}\n`;
 }
 
 async function executeDirInternally(command: ParsedCommand): Promise<RawResult | undefined> {
@@ -195,7 +186,9 @@ export const listLikeHandler: CommandHandler = {
 
   async filter(raw, command, options) {
     const text = `${raw.stdout}\n${raw.stderr}`;
-    const output = command.program === "tree" ? filterTreeOutput(text) : summarizeListing(text);
+    const output = command.program === "find"
+      ? summarizeFindOutput(text, command)
+      : summarizeListing(command.program === "tree" ? flattenTreeOutput(text) : text);
     return makeFilteredResult(this.name, raw, output, options);
   },
 };

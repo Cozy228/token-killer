@@ -48,21 +48,16 @@ function formatLog(text: string): string {
   }
 
   if (commits.length === 0) {
-    const lines = rawLines.slice(0, 20);
-    return lines.length <= 5 ? `${lines.join("\n")}\n` : `Git Log\nCommits: ${lines.length}\n${lines.join("\n")}\n`;
+    return text.endsWith("\n") ? text : `${text}\n`;
   }
 
   if (commits.length <= 1) return text.endsWith("\n") ? text : `${text}\n`;
 
-  const shown = commits.slice(0, 20);
-  const lines = [`Git Log: ${commits.length} commits, showing ${shown.length}`, ""];
-  for (const commit of shown) {
+  const lines = [`Git Log: ${commits.length} commits`, ""];
+  for (const commit of commits) {
     const meta = [commit.author, commit.date].filter(Boolean).join(" | ");
     lines.push(`${shortHash(commit.hash)} ${commit.subject ?? "(no subject)"}`);
     if (meta) lines.push(`  ${meta}`);
-  }
-  if (commits.length > shown.length) {
-    lines.push("", `Hidden: ${commits.length - shown.length} commits not shown`);
   }
   return `${lines.join("\n")}\n`;
 }

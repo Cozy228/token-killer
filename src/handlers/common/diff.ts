@@ -58,47 +58,28 @@ function lcsChanges(oldLines: string[], newLines: string[]): DiffChange[] {
   return changes;
 }
 
-function formatTimestamp(date: Date): string {
-  return date.toISOString().replace(".000Z", "Z");
-}
-
-function formatLineNumber(value: number | "-"): string {
-  return String(value).padStart(4, " ");
-}
-
 function formatDiffOutput(
   oldPath: string,
   newPath: string,
-  oldMtime: Date,
-  newMtime: Date,
+  _oldMtime: Date,
+  _newMtime: Date,
   oldText: string,
   newText: string,
 ): string {
   const changes = lcsChanges(splitLines(oldText), splitLines(newText));
   if (changes.length === 0) {
-    return [
-      `Files: ${oldPath} -> ${newPath}`,
-      `Modified: ${oldPath} @ ${formatTimestamp(oldMtime)} -> ${newPath} @ ${formatTimestamp(newMtime)}`,
-      "Summary: +0 -0",
-      "[ok] Files are identical",
-      "",
-    ].join("\n");
+    return `${oldPath} -> ${newPath}\n[ok] Files are identical\n`;
   }
 
   const added = changes.filter((change) => change.kind === "added").length;
   const removed = changes.length - added;
-  const lines = [
-    `Files: ${oldPath} -> ${newPath}`,
-    `Modified: ${oldPath} @ ${formatTimestamp(oldMtime)} -> ${newPath} @ ${formatTimestamp(newMtime)}`,
-    `Summary: +${added} -${removed}`,
-    "",
-  ];
+  const lines = [`${oldPath} -> ${newPath} (+${added} -${removed})`, ""];
 
   for (const change of changes) {
     if (change.kind === "added") {
-      lines.push(`+ ${formatLineNumber("-")}:${formatLineNumber(change.newLine)} | ${change.content}`);
+      lines.push(`+ ${change.content}`);
     } else {
-      lines.push(`- ${formatLineNumber(change.oldLine)}:${formatLineNumber("-")} | ${change.content}`);
+      lines.push(`- ${change.content}`);
     }
   }
 
@@ -119,13 +100,8 @@ function flushUnifiedFile(
   if (!currentFile || (added === 0 && removed === 0)) return;
 
   output.push(`[file] ${currentFile} (+${added} -${removed})`);
-  const visibleChanges = changes.slice(0, 10);
-  for (const change of visibleChanges) {
+  for (const change of changes) {
     output.push(`  ${change}`);
-  }
-  const hidden = changes.length - visibleChanges.length;
-  if (hidden > 0) {
-    output.push(`  ... +${hidden} more`);
   }
 }
 

@@ -44,21 +44,19 @@ function formatTsc(text: string): string {
     list.push(issue);
     byCode.set(issue.code, list);
   }
+  if (issues.length === 0) {
+    const trimmed = text.trim();
+    return trimmed ? `${trimmed}\n` : "";
+  }
   const out = [`TypeScript: ${issues.length} errors in ${new Set(issues.map((issue) => issue.file)).size} files`];
   out.push("By code:", ...[...byCode.entries()].sort().map(([code, list]) => `- ${code}: ${list.length}`));
   for (const [code, codeIssues] of [...byCode.entries()].sort()) {
-    const sortedIssues = [...codeIssues].sort((a, b) => {
-      const aNoise = /noise|node_modules|dist|build/.test(a.file) ? 1 : 0;
-      const bNoise = /noise|node_modules|dist|build/.test(b.file) ? 1 : 0;
-      return aNoise - bNoise || a.file.localeCompare(b.file);
-    });
+    const sortedIssues = [...codeIssues].sort((a, b) => a.file.localeCompare(b.file));
     out.push("", code);
-    const shownIssues = sortedIssues.length > 100 ? sortedIssues.slice(0, 20) : sortedIssues;
-    for (const issue of shownIssues) {
+    for (const issue of sortedIssues) {
       out.push(`- ${issue.file}:${issue.line}:${issue.column} ${issue.message}`);
       for (const note of issue.notes) out.push(`  ${note}`);
     }
-    if (sortedIssues.length > shownIssues.length) out.push(`- ... ${sortedIssues.length - shownIssues.length} more`);
   }
   return `${out.join("\n")}\n`;
 }

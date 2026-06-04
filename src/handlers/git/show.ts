@@ -1,56 +1,61 @@
 import { executeCommand } from "../../executor.js";
-import type { CommandHandler } from "../../types.js";
+import type { CommandHandler, ParsedCommand } from "../../types.js";
 import { makeFilteredResult } from "../base.js";
+import { compactUnifiedDiff, extractDiffStatLines } from "./compactDiff.js";
 
-type FileSummary = {
-  file: string;
-  added: number;
-  removed: number;
-  hunks: string[];
-};
+function wantsStatOnly(command: ParsedCommand, text: string): boolean {
+  if (command.args.includes("--stat") || command.args.includes("--name-only") || command.args.includes("--name-status")) {
+    return true;
+  }
+  return extractDiffStatLines(text).length > 0 && !text.includes("diff --git");
+}
 
-function formatShow(text: string): string {
+function formatShow(text: string, command: ParsedCommand): string {
+  const trimmed = text.trim();
+  if (!trimmed) return trimmed;
+
+  if (wantsStatOnly(command, text)) {
+    return `${trimmed}\n`;
+  }
+
   const lines = text.split(/\r?\n/);
   const commit = lines.find((line) => line.startsWith("commit "))?.replace("commit ", "").trim();
   const author = lines.find((line) => line.startsWith("Author:"))?.replace("Author:", "").trim();
   const date = lines.find((line) => line.startsWith("Date:"))?.replace("Date:", "").trim();
-  const subject = lines.find((line) => line.startsWith("    ") && line.trim())?.trim();
 
-  const files: FileSummary[] = [];
-  let current: FileSummary | undefined;
+  const subjectLines: string[] = [];
+  let inSubject = false;
   for (const line of lines) {
-    if (line.startsWith("diff --git ")) {
-      const match = line.match(/ b\/(.+)$/);
-      current = { file: match?.[1] ?? line.replace("diff --git ", ""), added: 0, removed: 0, hunks: [] };
-      files.push(current);
+    if (line.startsWith("    ") && line.trim()) {
+      inSubject = true;
+      subjectLines.push(line.trim());
       continue;
     }
-    if (!current) continue;
-    if (line.startsWith("@@")) {
-      if (current.hunks.length < 6) current.hunks.push(line);
-      continue;
-    }
-    if (line.startsWith("+") && !line.startsWith("+++")) current.added += 1;
-    if (line.startsWith("-") && !line.startsWith("---")) current.removed += 1;
+    if (inSubject && line.trim() === "") break;
+    if (inSubject && !line.startsWith("    ")) break;
   }
 
-  const out = ["Git Show"];
-  if (commit) out.push(`Commit: ${commit}`);
+  const statLines = extractDiffStatLines(text);
+  const diffStart = lines.findIndex((line) => line.startsWith("diff --git"));
+  const diffText = diffStart >= 0 ? lines.slice(diffStart).join("\n") : "";
+
+  const out: string[] = [];
+  if (commit) out.push(`commit ${commit}`);
   if (author) out.push(`Author: ${author}`);
-  if (date) out.push(`Date: ${date}`);
-  if (subject) out.push(`Subject: ${subject}`);
-  out.push("", `Files changed: ${files.length}`);
-  for (const file of files) {
-    out.push(`${file.file} (+${file.added} -${file.removed})`);
-    for (const hunk of file.hunks) {
-      out.push(`- hunk: ${hunk}`);
-    }
+  if (date) out.push(`Date:   ${date}`);
+  if (subjectLines.length > 0) {
+    out.push("");
+    out.push(...subjectLines);
   }
-  if (text.length > out.join("\n").length) {
-    out.push("", "Large patch hidden.");
-    out.push("Use tg --raw git show if full patch is required.");
+  if (statLines.length > 0) {
+    out.push("");
+    out.push(...statLines);
   }
-  return `${out.join("\n")}\n`;
+  if (diffText.trim()) {
+    out.push("", "--- Changes ---", compactUnifiedDiff(diffText));
+  }
+
+  return out.length > 0 ? `${out.join("\n").trimEnd()}\n` : `${trimmed}\n`;
 }
 
 export const gitShowHandler: CommandHandler = {
@@ -64,7 +69,7 @@ export const gitShowHandler: CommandHandler = {
     return executeCommand(command);
   },
 
-  async filter(raw, _command, options) {
-    return makeFilteredResult(this.name, raw, formatShow(raw.stdout || raw.stderr), options);
+  async filter(raw, command, options) {
+    return makeFilteredResult(this.name, raw, formatShow(raw.stdout || raw.stderr, command), options);
   },
 };

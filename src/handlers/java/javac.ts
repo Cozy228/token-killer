@@ -31,17 +31,12 @@ function formatJavac(text: string): string {
       details,
     });
   }
-  const sorted = issues.sort((a, b) => {
-    const aNoise = /Noise\d+/.test(a.file) ? 1 : 0;
-    const bNoise = /Noise\d+/.test(b.file) ? 1 : 0;
-    return aNoise - bNoise || a.file.localeCompare(b.file);
-  });
+  const sorted = issues.sort((a, b) => a.file.localeCompare(b.file));
   const out = [`Javac: ${issues.length} errors`];
-  for (const issue of sorted.slice(0, 20)) {
+  for (const issue of sorted) {
     out.push(`${issue.file}:${issue.line}: ${issue.message}`);
     for (const detail of issue.details) out.push(`  ${detail}`);
   }
-  if (issues.length > 20) out.push(`Hidden: ${issues.length - 20} errors not shown`);
   return `${out.join("\n")}\n`;
 }
 

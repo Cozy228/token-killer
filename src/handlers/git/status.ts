@@ -84,7 +84,9 @@ function formatStatus(text: string): string {
       !trimmed ||
       trimmed.startsWith("(") ||
       trimmed.startsWith("use ") ||
-      trimmed.startsWith("no changes added")
+      trimmed.startsWith("no changes added") ||
+      trimmed.startsWith("nothing added to commit") ||
+      trimmed.startsWith("nothing to commit")
     ) {
       continue;
     }

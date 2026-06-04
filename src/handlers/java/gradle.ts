@@ -10,7 +10,7 @@ function formatGradle(text: string): string {
         line,
       ),
     )
-    .filter((line) => !/compileNoise|Run with --stacktrace|Get more help|INSTRUMENTATION_STATUS|Starting \d+ tests| PASSED|org\.junit\.Assert/.test(line))
+    .filter((line) => !/Run with --stacktrace|Get more help|INSTRUMENTATION_STATUS|Starting \d+ tests| PASSED|org\.junit\.Assert/.test(line))
     .slice(0, 80)
     .map((line) => line.trim());
 
