@@ -21,6 +21,7 @@ export default defineConfig({
       "tests/unit/savings.test.ts",
       "tests/unit/executor.test.ts",
       "tests/unit/core/**/*.test.ts",
+      "tests/unit/scripts/**/*.test.ts",
     ],
   },
 });

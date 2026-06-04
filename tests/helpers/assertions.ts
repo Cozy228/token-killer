@@ -3,7 +3,7 @@ import { expect } from "vitest";
 import type { FilteredResult } from "../../src/types.js";
 
 const STRUCTURAL_HEADER =
-  /^(Search:|Matches:|Git Log|Git Diff|Current:|Branches:|Skipped:|Hidden:|\.|\.\.\. \+\d+ more changed lines|Large diff hidden\.|Large patch hidden\.)$/;
+  /^(Git Log|Git Diff|Current:|Branches:|\.|\.\.\. \+\d+ more changed lines|Large diff hidden\.|Large patch hidden\.)$/;
 
 export function stripStructuralHeaders(output: string): string {
   return output

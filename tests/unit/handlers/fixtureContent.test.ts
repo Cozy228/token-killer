@@ -9,6 +9,15 @@ import { fixtureCases, toParsedCommand } from "../../helpers/fixtureCases.js";
 import { routeCommand } from "../../../src/router.js";
 import type { RawResult, TgOptions } from "../../../src/types.js";
 
+const LOSSY_OMISSION_PATTERNS = [
+  /\bHidden:/,
+  /\bnot shown\b/,
+  /\btruncated\b/,
+  /\bomitted\b/,
+  /\bmore lines\b/,
+  /\+\d+ more (matches|files|packages|errors|commits|branches|changed lines)/,
+];
+
 const repoRoot = path.resolve(
   path.dirname(fileURLToPath(import.meta.url)),
   "../../..",
@@ -55,6 +64,10 @@ describe("handler fixture content correctness", () => {
     }
 
     for (const pattern of testCase.forbidden ?? []) {
+      expect(result.output).not.toMatch(pattern);
+    }
+
+    for (const pattern of LOSSY_OMISSION_PATTERNS) {
       expect(result.output).not.toMatch(pattern);
     }
 

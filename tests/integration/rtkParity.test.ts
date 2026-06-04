@@ -80,7 +80,6 @@ describe("RTK-style CLI integration parity", () => {
       const result = runTg(["git", "diff"], dir);
 
       expect(result.status).toBe(0);
-      expect(result.stdout).toContain("Git Diff Summary");
       expect(result.stdout).toContain("-  return api.submit(payload)");
       expect(result.stdout).toContain(
         "+  return api.submit({ ...payload, idempotencyKey })",

@@ -149,7 +149,8 @@ section "Ls"
 
 assert_ok      "tg ls ."                        $TG ls .
 assert_contains "tg ls shows files"             "package.json" $TG ls .
-assert_contains "tg ls skips node_modules"      "Skipped" $TG ls .
+assert_contains "tg ls skips node_modules"      "package.json" $TG ls .
+assert_not_contains "tg ls skips node_modules"  "node_modules" $TG ls .
 assert_ok      "tg ls src/"                     $TG ls src/
 
 # ── 3. Read / Cat ────────────────────────────────────
@@ -168,11 +169,11 @@ assert_contains "tg read shows symbols"         "Symbols:" $TG read --level aggr
 section "Git"
 
 assert_ok      "tg git status"                  $TG git status
-assert_contains "tg git status branch"          "Branch:" $TG git status
+assert_contains "tg git status branch"          "* " $TG git status
 assert_ok      "tg git log"                     $TG git log
 assert_ok      "tg git log -5"                  $TG git log -- -5
 assert_ok      "tg git diff"                    $TG git diff
-assert_contains "tg git diff summary"           "Git Diff Summary" $TG git diff
+assert_ok      "tg git diff"                    $TG git diff
 assert_ok      "tg git branch"                  $TG git branch
 assert_contains "tg git branch current"         "*" $TG git branch
 
@@ -184,7 +185,7 @@ DIFF_DIR="$(mktemp -d)"
 printf "export const value = 1;\n" > "$DIFF_DIR/old.ts"
 printf "export const value = 1;\nexport const extra = 2;\n" > "$DIFF_DIR/new.ts"
 assert_ok       "tg diff files"                 $TG diff "$DIFF_DIR/old.ts" "$DIFF_DIR/new.ts"
-assert_contains "tg diff summary"               "Summary: +1 -0" $TG diff "$DIFF_DIR/old.ts" "$DIFF_DIR/new.ts"
+assert_contains "tg diff summary"               "+1 -0" $TG diff "$DIFF_DIR/old.ts" "$DIFF_DIR/new.ts"
 assert_contains "tg diff added line"            "export const extra = 2;" $TG diff "$DIFF_DIR/old.ts" "$DIFF_DIR/new.ts"
 rm -rf "$DIFF_DIR"
 
@@ -194,7 +195,7 @@ section "Grep / Search"
 
 assert_ok      "tg rg 'export' src/"            $TG rg "export" src/
 assert_ok      "tg grep -r 'export' src/"       $TG grep -r "export" src/
-assert_contains "tg rg shows Search:"           "Search:" $TG rg "import" src/
+assert_contains "tg rg shows matches"           "src/" $TG rg "import" src/
 assert_ok      "tg rg with path"                $TG rg "handler" src/handlers/
 
 # ── 7. Find ──────────────────────────────────────────
@@ -314,7 +315,7 @@ fi
 section "Npm / Pnpm (conditional)"
 
 assert_ok      "tg npm --version"               $TG npm --version
-assert_contains "tg npm list"                   "$(node -e "console.log(require('./package.json').name)")" $TG npm list --depth=0 2>&1 || true
+assert_contains "tg npm list"                   "packages" $TG npm list --depth=0 2>&1 || true
 assert_ok      "tg pnpm --version"              $TG pnpm --version
 assert_ok      "tg pnpm list"                   $TG pnpm list --depth=0 2>&1 || true
 
@@ -342,18 +343,17 @@ fi
 
 # ── 18. Large output compression ────────────────────
 
-section "Large output compression"
+section "Large output passthrough"
 
-# Generate 200 lines of output and verify tg compresses it
 LARGE_OUT=$($TG node -e "for(let i=0;i<200;i++) console.log('line '+i)" 2>&1)
 LARGE_OUT_LINES="$(printf "%s\n" "$LARGE_OUT" | wc -l | tr -d ' ')"
-if [ "$LARGE_OUT_LINES" -lt 200 ]; then
+if [ "$LARGE_OUT_LINES" -eq 200 ]; then
     PASS=$((PASS + 1))
-    printf "  ${GREEN}PASS${NC}  %s\n" "tg compresses large output"
+    printf "  ${GREEN}PASS${NC}  %s\n" "tg passes through large generic output"
 else
     FAIL=$((FAIL + 1))
-    FAILURES+=("tg compresses large output")
-    printf "  ${RED}FAIL${NC}  %s (expected < 200 lines, got %s)\n" "tg compresses large output" "$LARGE_OUT_LINES"
+    FAILURES+=("tg passes through large generic output")
+    printf "  ${RED}FAIL${NC}  %s (expected 200 lines, got %s)\n" "tg passes through large generic output" "$LARGE_OUT_LINES"
 fi
 
 # ══════════════════════════════════════════════════════

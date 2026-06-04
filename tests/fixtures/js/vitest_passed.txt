@@ -1,0 +1,7 @@
+ RUN  v4.1.8 /repo
+
+ ✓ tests/unit/savings.test.ts (4 tests) 3ms
+
+ Test Files  1 passed (1)
+      Tests  4 passed (4)
+   Duration  120ms

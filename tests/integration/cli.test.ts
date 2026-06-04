@@ -122,13 +122,13 @@ describe("Read / Cat", () => {
     }
   });
 
-  test("tg cat compresses large files", async () => {
+  test("tg cat passes through large files", async () => {
     const dir = await mkdtemp(path.join(tmpdir(), "tg-cat-large-"));
     try {
       const lines = [
         "import { api } from './api';",
         "export function main() {",
-        ...Array.from({ length: 2000 }, (_, i) => `  const noise${i} = ${i};`),
+        ...Array.from({ length: 2000 }, (_, i) => `  const filler${i} = ${i};`),
         "  return true;",
         "}",
       ];
@@ -136,8 +136,8 @@ describe("Read / Cat", () => {
 
       const result = runTg(["cat", "large.ts"], dir);
       expect(result.status).toBe(0);
-      // Large file should be summarized (not full 2000 noise lines)
-      expect(result.stdout).not.toContain("noise1999");
+      expect(result.stdout).toContain("filler1999");
+      expect(result.stdout).toContain("return true;");
     } finally {
       await rm(dir, { recursive: true, force: true });
     }
@@ -153,7 +153,7 @@ describe("Read / Cat", () => {
         "}",
         "export async function submitOrder(payload: OrderPayload) {",
         "  const idempotencyKey = `${payload.id}:submit`;",
-        ...Array.from({ length: 260 }, (_, i) => `  const noise${i} = ${i};`),
+        ...Array.from({ length: 260 }, (_, i) => `  const filler${i} = ${i};`),
         ...Array.from({ length: 80 }, (_, i) => `  const checkpoint${i} = payload.items[${i}]?.id ?? "missing";`),
         "  const result = await api.submit({ ...payload, idempotencyKey });",
         "  return { id: result.id };",
@@ -169,19 +169,14 @@ describe("Read / Cat", () => {
       expect(balanced.status).toBe(0);
       expect(aggressive.status).toBe(0);
       expect(minimal.stdout).toContain("idempotencyKey");
-      expect(minimal.stdout).toContain("checkpoint0");
+      expect(minimal.stdout).toContain("filler259");
       expect(minimal.stdout).toContain("checkpoint79");
       expect(minimal.stdout).toContain("return { id: result.id };");
-      expect(minimal.stdout).toContain("repetitive noise lines hidden");
-      expect(minimal.stdout).not.toContain("noise259");
-      expect(balanced.stdout).toContain("Symbols:");
+      expect(balanced.stdout).toContain("filler259");
       expect(balanced.stdout).toContain("submitOrder");
-      expect(balanced.stdout).not.toContain("noise259");
       expect(aggressive.stdout).toContain("export async function submitOrder");
       expect(aggressive.stdout).not.toContain("idempotencyKey");
-      expect(aggressive.stdout.length).toBeLessThan(balanced.stdout.length);
-      expect(minimal.stdout.length).toBeLessThan(lines.join("\n").length);
-      expect(balanced.stdout.length).toBeLessThan(minimal.stdout.length);
+      expect(aggressive.stdout.length).toBeLessThan(minimal.stdout.length);
     } finally {
       await rm(dir, { recursive: true, force: true });
     }
@@ -206,15 +201,14 @@ describe("Read / Cat", () => {
     try {
       await writeFile(
         path.join(dir, "sample.txt"),
-        ["alpha", ...Array.from({ length: 19 }, (_, index) => `noise-${index}`)].join("\n") + "\n",
+        ["alpha", ...Array.from({ length: 19 }, (_, index) => `line-${index}`)].join("\n") + "\n",
       );
 
       const result = runTg(["read", "--max-lines", "2", "--line-numbers", "sample.txt"], dir);
 
       expect(result.status).toBe(0);
-      expect(result.stdout).toContain("1 | alpha");
-      expect(result.stdout).toContain("2 | [19 more lines]");
-      expect(result.stdout).not.toContain("noise-18");
+      expect(result.stdout).toBe("1 | alpha\n2 | line-0\n");
+      expect(result.stdout).not.toContain("line-18");
     } finally {
       await rm(dir, { recursive: true, force: true });
     }
@@ -307,14 +301,23 @@ describe("Git", () => {
       spawnSync("git", ["init"], { cwd: dir });
       spawnSync("git", ["config", "user.email", "test@test.com"], { cwd: dir });
       spawnSync("git", ["config", "user.name", "Test"], { cwd: dir });
-      await writeFile(path.join(dir, "f.txt"), "v1");
+      const before = Array.from({ length: 80 }, (_, index) => `line-${index}`).join("\n");
+      const after = Array.from({ length: 80 }, (_, index) =>
+        index % 4 === 0 ? `changed-${index}` : `line-${index}`,
+      ).join("\n");
+      await writeFile(path.join(dir, "f.txt"), before);
       spawnSync("git", ["add", "f.txt"], { cwd: dir });
       spawnSync("git", ["commit", "-m", "init"], { cwd: dir });
-      await writeFile(path.join(dir, "f.txt"), "v2");
+      await writeFile(path.join(dir, "f.txt"), after);
 
       const result = runTg(["git", "diff"], dir);
       expect(result.status).toBe(0);
-      expect(result.stdout).toContain("Git Diff Summary");
+      expect(result.stdout).toContain("f.txt |");
+      expect(result.stdout).toContain("--- Changes ---");
+      expect(result.stdout).toContain("f.txt");
+      expect(result.stdout).toContain("@@");
+      expect(result.stdout).toContain("-line-0");
+      expect(result.stdout).toContain("+changed-0");
     } finally {
       await rm(dir, { recursive: true, force: true });
     }
@@ -343,10 +346,8 @@ describe("Git", () => {
 
       const result = runTg(["diff", "old.ts", "new.ts"], dir);
       expect(result.status).toBe(0);
-      expect(result.stdout).toContain("Files: old.ts -> new.ts");
-      expect(result.stdout).toMatch(/Modified: old\.ts @ .+ -> new\.ts @ .+/);
-      expect(result.stdout).toContain("Summary: +1 -0");
-      expect(result.stdout).toContain("+    -:   2 |   const timeoutMs = 5000;");
+      expect(result.stdout).toContain("old.ts -> new.ts (+1 -0)");
+      expect(result.stdout).toContain("+   const timeoutMs = 5000;");
       expect(result.stdout).not.toContain("-  const unchanged");
       expect(result.stdout).not.toContain("+  const unchanged");
     } finally {
@@ -704,7 +705,7 @@ describe("Language-specific handlers", () => {
       );
 
       const result = runTg(["npm", "list", "--depth=0"], dir);
-      expect(result.stdout).toContain("Dependencies:");
+      expect(result.stdout).toContain("Problems:");
       expect(result.stdout).toContain("kept");
     } finally {
       await rm(dir, { recursive: true, force: true });

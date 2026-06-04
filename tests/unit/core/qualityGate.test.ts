@@ -50,6 +50,44 @@ describe("filtered output quality gate", () => {
     expect(result.qualityStatus).toBe("empty_output");
   });
 
+  test("passes raw output through when a filter omits content", async () => {
+    const result = await makeFilteredResult(
+      "custom",
+      raw("line one\nline two\nline three\n"),
+      "line one\n+2 more matches\n",
+      options,
+    );
+
+    expect(result.output).toBe("line one\nline two\nline three\n");
+    expect(result.qualityStatus).toBe("inflated");
+  });
+
+  test("passes raw output through when a filter reports truncated content", async () => {
+    const result = await makeFilteredResult(
+      "custom",
+      raw("diff line one\ndiff line two\n"),
+      "diff line one\n... (more changes truncated)\n",
+      options,
+    );
+
+    expect(result.output).toBe("diff line one\ndiff line two\n");
+    expect(result.qualityStatus).toBe("inflated");
+  });
+
+  test("does not treat omission words inside real content as truncation", async () => {
+    const output = [
+      "diff --git a/src/example.ts b/src/example.ts",
+      '+const message = "not shown is just text";',
+      '+const label = "Hidden: also just text";',
+      "",
+    ].join("\n");
+
+    const result = await makeFilteredResult("custom", raw(output), output, options);
+
+    expect(result.output).toBe(output);
+    expect(result.qualityStatus).toBe("passed");
+  });
+
   test("keeps compact output when it is smaller and non-empty", async () => {
     const result = await makeFilteredResult(
       "custom",
