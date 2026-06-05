@@ -1,0 +1,17 @@
+tests/defaults.tftest.hcl... in progress
+  run "uses_default_cidr"... in progress
+  run "uses_default_cidr"... pass
+  run "rejects_invalid_cidr"... in progress
+  run "rejects_invalid_cidr"... fail
+╷
+│ Error: Invalid value for variable
+│
+│   on tests/defaults.tftest.hcl line 18, in run "rejects_invalid_cidr":
+│   18:     cidr_block = "not-a-cidr"
+│
+│ The cidr_block value must be valid CIDR notation, got "not-a-cidr".
+╵
+tests/defaults.tftest.hcl... tearing down
+tests/defaults.tftest.hcl... fail
+
+Failure! 1 passed, 1 failed.

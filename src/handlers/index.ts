@@ -32,6 +32,7 @@ import { awsHandler } from "./cloud/aws.js";
 import { psqlHandler } from "./cloud/psql.js";
 import { wgetHandler } from "./cloud/wget.js";
 import { dockerHandler, kubectlHandler } from "./cloud/container.js";
+import { terraformHandler } from "./iac/terraform.js";
 import { lsHandler } from "./system/ls.js";
 import { treeHandler } from "./system/tree.js";
 import { readHandler } from "./system/read.js";
@@ -41,9 +42,20 @@ import { jsonHandler } from "./system/json.js";
 import { logHandler } from "./system/log.js";
 import { formatHandler } from "./system/format.js";
 import { pipeHandler } from "./system/pipe.js";
+import { errHandler } from "./system/err.js";
+import { summaryHandler } from "./system/summary.js";
+import { testRunnerHandler } from "./system/testRunner.js";
+import { depsHandler } from "./system/deps.js";
+import { smartHandler } from "./system/smart.js";
+import { npxHandler } from "./system/npx.js";
+import { dotnetHandler } from "./dotnet/dotnet.js";
 import { genericHandler } from "./generic.js";
 
 export const handlers: CommandHandler[] = [
+  // npx must precede handlers that match on `original.includes(<tool>)` (e.g. tsc,
+  // js-test), otherwise `npx tsc` would route straight to tsc and the npx
+  // re-dispatch wrapper would never run.
+  npxHandler,
   lsHandler,
   treeHandler,
   readHandler,
@@ -83,10 +95,17 @@ export const handlers: CommandHandler[] = [
   wgetHandler,
   dockerHandler,
   kubectlHandler,
+  terraformHandler,
   wcHandler,
   envHandler,
   jsonHandler,
   logHandler,
   pipeHandler,
+  errHandler,
+  summaryHandler,
+  testRunnerHandler,
+  depsHandler,
+  smartHandler,
+  dotnetHandler,
   genericHandler,
 ];

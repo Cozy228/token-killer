@@ -36,6 +36,11 @@ export function rawText(raw: RawResult): string {
 // the unmasked secret values (a security contract break), so env is structural.
 // log (RTK system/log_cmd.rs) always emits the "Log Summary" digest; on a tiny
 // log the digest can exceed raw and would otherwise revert, dropping the contract.
+// summary / test / deps (RTK system/summary.rs, rust/runner.rs::run_test,
+// system/deps.rs) are always-emit structural digests: a "[FAIL] Command:" + counts
+// summary, a "[FAIL] FAILURES:" + SUMMARY extraction, and a per-ecosystem dependency
+// roll-up. On small inputs the reformat can exceed raw, but RTK always emits it, so
+// it must not be bounced back to the raw replay.
 // git-status (RTK git/git.rs::format_status_inner) prefixes the branch as
 // `* <branch>` and, on a clean tree, appends `clean — nothing to commit`; on a
 // one-line porcelain capture that reformat can exceed raw, but RTK always emits
@@ -62,6 +67,9 @@ const STRUCTURAL_HANDLERS = new Set([
   "json",
   "env",
   "log",
+  "summary",
+  "test",
+  "deps",
 ]);
 
 export function outputOmitsContent(output: string): boolean {

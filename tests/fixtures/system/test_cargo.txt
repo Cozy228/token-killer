@@ -1,0 +1,7 @@
+running 3 tests
+test foo::test_a ... ok
+test foo::test_b ... FAILED
+test foo::test_c ... ok
+failures:
+    foo::test_b
+test result: FAILED. 2 passed; 1 failed; 0 ignored

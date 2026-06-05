@@ -35,6 +35,12 @@ tg read --level balanced src/cli.ts
 tg ls .
 tg npm test
 tg tsc --noEmit
+tg npx tsc --noEmit
+tg dotnet test
+tg deps
+tg err npm run build
+tg summary npm test
+tg smart src/main.ts
 ```
 
 ## Flags
@@ -81,6 +87,8 @@ Implemented:
 - mvn/maven
 - gradle
 - javac
+- dotnet (test, test --logger trx, msbuild -bl, format)
+- generic wrappers: `err <cmd>`, `summary <cmd>`, `test <cmd>`, `deps`, `smart <file>`, `npx <tool>`
 - generic fallback
 
 Planned:

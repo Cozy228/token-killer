@@ -20,6 +20,8 @@ PROGRAMS=(
     npm pnpm yarn vitest jest # js/{test,packageList}.ts
     eslint tsc               # js/{eslint,tsc}.ts
     mvn gradle javac         # java/*.ts
+    dotnet                   # dotnet/dotnet.ts
+    err summary deps smart npx # system/{err,summary,deps,smart,npx}.ts
 )
 
 FLAGS=(

@@ -78,7 +78,7 @@ check_pair "src/executor.ts" "tests/unit/executor.test.ts"
 # Check for unmapped handler files
 echo ""
 echo "check-test-presence: scanning for unmapped handler files..."
-KNOWN_HANDLERS="searchLike listLike readLike status diff log branch show extended hostingCli generic pytest ruff mypy pip test tsc eslint packageList maven gradle javac curl"
+KNOWN_HANDLERS="searchLike listLike readLike status diff log branch show extended hostingCli generic pytest ruff mypy pip test tsc eslint packageList maven gradle javac curl err summary testRunner deps smart npx dotnet"
 for f in $(find src/handlers -name "*.ts" ! -name "index.ts" ! -name "base.ts" | sort); do
     fname="$(basename "$f" .ts)"
     if ! echo "$KNOWN_HANDLERS" | grep -qw "$fname"; then

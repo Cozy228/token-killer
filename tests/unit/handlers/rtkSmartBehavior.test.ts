@@ -19,7 +19,10 @@ describe("RTK smart behavior", () => {
       forbidden: [
         /System prompt/,
       ],
-      exact: "parser routes commands",
+      // The summary payload is the full text after "Summary:"; the filter keeps it
+      // verbatim (only the "System prompt:" framing is stripped). This matches the
+      // goal's contract: "Output must exact-equal the summary text."
+      exact: "parser routes commands to handlers",
     });
   });
 });

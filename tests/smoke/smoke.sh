@@ -203,7 +203,11 @@ assert_ok      "tg rg with path"                $TG rg "handler" src/handlers/
 section "Find"
 
 assert_ok      "tg find src -name '*.ts'"       $TG find src -name "*.ts"
-assert_contains "tg find shows directories"     "src/" $TG find src -name "*.ts"
+# listLike compacts a larger listing into the "NF MD:" header + per-directory
+# grouping ("core/ …", "handlers/ …"). Assert that directory-grouping header
+# (the "shows directories" signal) rather than a literal "src/" prefix, which only
+# survives in the small-input raw-passthrough mode.
+assert_contains "tg find shows directories"     "D:" $TG find src -name "*.ts"
 
 # ── 8. Generic passthrough ──────────────────────────
 

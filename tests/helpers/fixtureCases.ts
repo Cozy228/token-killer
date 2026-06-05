@@ -9,6 +9,20 @@ export type FixtureCase = {
   critical: string[];
   forbidden?: RegExp[];
   maxOutputGrowth?: number;
+  /**
+   * Set for tg-only handlers (e.g. terraform) that rtk has no filter for. The
+   * three-way report represents rtk as a raw passthrough (0% savings) for these
+   * cases instead of skipping them, surfacing the tg-only win in the main table.
+   */
+  rtkUnsupported?: boolean;
+  /**
+   * For the three-way report: how to feed this fixture to a native rtk *wrapper*
+   * command that reads a command/file/dir rather than stdin (err/summary/deps/smart).
+   * - "exec-cat": `rtk <sub…> "cat <fixture>"` (rtk runs cat, sees the fixture as stdout)
+   * - "file-arg": `rtk <sub…> <fixture>` (rtk reads the file directly)
+   * - "dir-package": copy the fixture to a temp `package.json`, `rtk <sub…> <dir>`
+   */
+  rtkWrapper?: { mode: "exec-cat" | "file-arg" | "dir-package"; sub: string[] };
 };
 
 export const fixtureCases: FixtureCase[] = [
@@ -699,6 +713,117 @@ export const fixtureCases: FixtureCase[] = [
       "[ERRORS]",
       "[×3] 2024-01-01 10:00:00 ERROR: Connection failed to /api/server",
     ],
+  },
+  {
+    // tg-only handler: rtk has no terraform support. Strips state lock / refresh /
+    // data-source read progress, the symbol legend, and the trailing -out note;
+    // keeps the full resource action body and the plan summary line.
+    name: "terraform plan keeps resource changes and plan summary",
+    fixture: "tests/fixtures/terraform/plan_changes.txt",
+    command: ["terraform", "plan"],
+    critical: [
+      "Plan: 1 to add, 1 to change, 1 to destroy.",
+      "aws_instance.web will be created",
+      "aws_s3_bucket.data will be updated in-place",
+      "random_pet.name will be destroyed",
+    ],
+    forbidden: [
+      /Refreshing state/,
+      /Read complete after/,
+      /Acquiring state lock/,
+      /Resource actions are indicated/,
+    ],
+    rtkUnsupported: true,
+  },
+  {
+    // tg-only handler: drops per-run progress and box borders, keeps failed runs,
+    // the error diagnostic, and the final Failure! summary.
+    name: "terraform test keeps failed run and assertion",
+    fixture: "tests/fixtures/terraform/test_failed.txt",
+    command: ["terraform", "test"],
+    exitCode: 1,
+    critical: [
+      "Failure! 1 passed, 1 failed.",
+      'run "rejects_invalid_cidr"',
+      "Error: Invalid value for variable",
+      "The cidr_block value must be valid CIDR notation",
+    ],
+    forbidden: [/in progress/, /tearing down/, /uses_default_cidr/],
+    rtkUnsupported: true,
+  },
+  {
+    // RTK: rust/runner.rs::run_err / ErrorStreamFilter — `err <cmd>` keeps error/
+    // warning lines and their indented continuation blocks, dropping info noise.
+    name: "err keeps error blocks and drops info noise",
+    fixture: "tests/fixtures/system/err_build.txt",
+    command: ["err", "npm", "run", "build"],
+    exitCode: 1,
+    critical: ["warning: deprecated option", "error: build failed", "src/app.ts:10"],
+    forbidden: [/info: starting build/, /info: done/],
+    rtkWrapper: { mode: "exec-cat", sub: ["err"] },
+  },
+  {
+    // RTK: system/summary.rs — `summary <cmd>` emits a "[FAIL] Command:" header plus
+    // a detected test digest, dropping the raw replay (e.g. Snapshots noise).
+    name: "summary digests a test run instead of replaying lines",
+    fixture: "tests/fixtures/system/summary_test_run.txt",
+    command: ["summary", "npm", "test"],
+    exitCode: 1,
+    critical: ["[FAIL] Command: npm test", "Test Results:", "[ok] 12 passed", "FAIL src/b.test.ts"],
+    forbidden: [/Snapshots: 0 total/],
+    rtkWrapper: { mode: "exec-cat", sub: ["summary"] },
+  },
+  {
+    // RTK: rust/runner.rs::run_test / extract_test_summary — `test <cmd>` extracts
+    // failures + summary lines, dropping per-test "... ok" chatter.
+    name: "test extracts cargo failures and summary",
+    fixture: "tests/fixtures/system/test_cargo.txt",
+    command: ["test", "cargo", "test"],
+    exitCode: 1,
+    critical: ["[FAIL] FAILURES:", "foo::test_b", "SUMMARY:", "test result: FAILED"],
+    forbidden: [/running 3 tests/, /test foo::test_a \.\.\. ok/],
+  },
+  {
+    // RTK: system/deps.rs — `deps` summarizes a package manifest by ecosystem,
+    // dropping raw JSON keys like "scripts".
+    name: "deps summarizes a package.json manifest",
+    fixture: "tests/fixtures/system/deps_package.json",
+    command: ["deps"],
+    critical: ["Node.js (package.json):", "Dependencies (2):", "react (19.0.0)", "Dev (1):", "vitest (4.1.8)"],
+    forbidden: [/"scripts"/],
+    rtkWrapper: { mode: "dir-package", sub: ["deps"] },
+  },
+  {
+    // RTK: system/local_llm.rs — `smart <file>` keeps the Summary payload and strips
+    // the "System prompt:" framing.
+    name: "smart keeps the summary payload without prompt boilerplate",
+    fixture: "tests/fixtures/system/smart_summary.txt",
+    command: ["smart", "src/main.rs"],
+    critical: ["parser routes commands to handlers"],
+    forbidden: [/System prompt/],
+    // rtk `smart` is a code-structure analyzer (not a Summary passthrough), so the
+    // numbers are not comparable — kept here to surface that by-design divergence.
+    rtkWrapper: { mode: "file-arg", sub: ["smart"] },
+  },
+  {
+    // RTK: main.rs Npx dispatch — `npx tsc` re-dispatches through the TypeScript
+    // filter (the inner handler shapes the output).
+    name: "npx tsc routes through the TypeScript filter",
+    fixture: "tests/fixtures/js/tsc_many.txt",
+    command: ["npx", "tsc", "--noEmit"],
+    exitCode: 2,
+    critical: ["TypeScript: 12 errors in 6 files", "L42: TS2322", "TS2339"],
+    forbidden: [/Found 12 errors/],
+  },
+  {
+    // RTK: cmds/dotnet/dotnet_cmd.rs — `dotnet test` keeps the failure summary and
+    // strips restore/build boilerplate.
+    name: "dotnet test keeps failures and strips restore boilerplate",
+    fixture: "tests/fixtures/dotnet/dotnet_test.txt",
+    command: ["dotnet", "test"],
+    exitCode: 1,
+    critical: ["PreventsDuplicateSubmit", "Failed: 1", "Expected false"],
+    forbidden: [/Determining projects to restore/],
   },
 ];
 

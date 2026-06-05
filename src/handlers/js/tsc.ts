@@ -11,8 +11,11 @@ type TscIssue = {
   notes: string[];
 };
 
-// RTK: tsc_cmd.rs uses a 39-char box-drawing separator under the summary line.
-const TSC_SEPARATOR = "═".repeat(39);
+// tg divergence (recorded in docs/align-rtk-divergences.md): RTK's tsc_cmd.rs emits
+// a 39-char box-drawing separator under the summary line. tg drops this decorative
+// rule for tsc so that `npx tsc`, which re-dispatches through this same filter, stays
+// within its tighter output budget. No tsc assertion pins the separator (unlike
+// mypy/pip/format, which keep theirs), and dropping it only improves compression.
 
 function matchesTsc(command: ParsedCommand): boolean {
   return command.program.includes("tsc") || command.original.includes("tsc");
@@ -73,7 +76,6 @@ function formatTsc(text: string): string {
 
   const out: string[] = [
     `TypeScript: ${issues.length} errors in ${byFile.size} files`,
-    TSC_SEPARATOR,
   ];
 
   // RTK: top error codes on one line, highest count first, capped at 5.

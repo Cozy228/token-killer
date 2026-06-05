@@ -42,14 +42,16 @@ GitHub Copilot cloud agent
 
 | Capability | Status | Code / notes |
 |------------|--------|----------------|
-| Command proxy (`tg <command>`) | **shipped** | `src/cli.ts`, `src/handlers/*`, `src/core/pipeline.ts` |
+| Command proxy (`tg <command>`) | **shipped** | `src/cli.ts`, `src/handlers/*`, `src/core/pipeline.ts`；覆盖 common / git / js / python / java / cloud / system 七大类（handler 表见 §1.4） |
 | Report & history | **shipped** | `src/core/history.ts`, `src/core/report.ts`, `src/core/dataDir.ts` |
 | `tg config init` | planned | — |
-| Hook system | planned | §3；rewrite 规则见 §3.8 |
+| Hook system | planned | §3；rewrite 规则见 §3.8；落地计划见 `docs/layer2-hooks-inspect-goal.md` |
 | Skills optimizer | planned | §4 |
 | AGENTS.md patcher | planned | §5 |
-| Inspect | planned | §9 |
+| Inspect | planned | §9；`docs/inspect-v1-design.md`、`docs/layer2-hooks-inspect-goal.md` |
 | Advice generation | planned | §10 |
+
+> Command proxy 仍有 RTK parity 缺口（.NET、通用 wrapper、npx 路由等），收尾计划见 `docs/parity-completion-goal.md`。Go / Rust / Ruby 生态已判定 out-of-scope。
 
 默认不做：
 
@@ -198,26 +200,49 @@ Handler 只做两类事：
 
 #### Handler 分类与策略
 
+> 注册表与匹配优先级见 `src/handlers/index.ts`。专用 System handler（`ls`、`tree`、`cat`/read）注册在 common `listLike` / `readLike` **之前**，因此对应程序优先走专用 handler；common handler 只接管未被专用 handler 命中的程序（如 `find`、`dir`、`type`、`less`）。`genericHandler` 始终兜底。
+
 | 分类 | Handler | 策略 |
 |------|---------|------|
 | Search | `searchLike`（rg、grep） | **原文 passthrough**；无匹配时输出 `0 matches for <pattern>` |
-| Read | `readLike`（cat、type、less、read） | `cat`/`read` 默认全文；内部读文件（多文件、`read -` stdin）；`read --max-lines` / `--tail-lines` 只输出真实行切片（无占位行）；`read --level aggressive` 且大文件时仅符号摘要；二进制文件跳过内容 |
-| List | `listLike`（ls、dir、find、tree） | 小输出：过滤 `node_modules` 等目录后的路径列表；大输出：`NF ND:` + 按目录分组或 `(N files)` 汇总，**列出全部路径/目录，不截断** |
+| Read | `readLike`（type、less、read） | 默认全文；内部读文件（多文件、`read -` stdin）；`read --max-lines` / `--tail-lines` 只输出真实行切片（无占位行）；`read --level aggressive` 且大文件时仅符号摘要；二进制文件跳过内容 |
+| List | `listLike`（find、dir） | 小输出：过滤 `node_modules` 等目录后的路径列表；大输出：`NF ND:` + 按目录分组或 `(N files)` 汇总，**列出全部路径/目录，不截断** |
 | Diff | `diff`（两文件或 stdin unified） | 两文件：LCS 差异，输出 `old -> new (+N -M)` 与全部 `+/-` 行；stdin unified：按文件汇总并输出全部 change 行 |
+| System | `ls`（专用） | 解析 `ls -la` 长格式为紧凑列表：目录在前（name + `/`），文件 name + human size，过滤 NOISE_DIRS（除非 `-a`），`-l` 时带 octal 权限 |
+| System | `tree`（专用） | 透传原生 `tree` 层级，剥离尾部 `N directories, M files` 汇总；执行时用 `-I <noise>` 排除重目录降本 |
+| System | `read`（专用，匹配 `cat`） | shell 到 `cat`,只透传 file operands；filter 按用户原始 args 重建 level / 行窗口，默认全文 |
+| System | `wc` | 去冗余路径与对齐填充：`wc file` → `30L 96W 978B`；多文件去公共前缀 + `Σ` 合计 |
+| System | `env` | 按类别分组环境变量,屏蔽 secret,`PATH` 折叠为条目数 + 预览;未命中类别的变量丢弃 |
+| System | `json` | 默认 compact:排序 object key + 值,长字符串截断,数组汇总；`--schema`/`--keys-only` 另行处理 |
+| System | `log` | 去重重复日志为 `Log Summary` + error/warn/info 计数,按频次列唯一 error/warning 并标 `[×N]`；归一化剥时间戳/易变 id |
+| System | `format` | dispatcher:检测 formatter（prettier/ruff/black/biome）并路由到对应过滤器（区别于 `prettier` handler） |
+| System | `pipe` | `pipe <cmd> <args...>`:对任意管道输出运行命名或自动检测的过滤器 |
 | Git | `gitStatus` | 解析 verbose / porcelain；输出 `* branch` + ` M` / `??` 短行；过滤 `nothing added to commit` 等 hint |
 | Git | `gitDiff` | **原文 passthrough**（完整 unified diff） |
 | Git | `gitLog` | `--oneline` 少量提交 passthrough；多 commit 解析为 `Git Log: N commits` + **全部** subject 行 |
 | Git | `gitShow` | `--stat` / name-only passthrough；完整 show：commit 元信息 + stat + **完整** patch（`--- Changes ---`） |
 | Git | `gitBranch` | ≤2 分支 passthrough；更多分支列出 **全部** 分支名 |
 | Git | `gitExtended`（add、commit、push、pull、fetch、stash、worktree） | 失败保留完整 stderr；成功输出 shortstat / 关键一行摘要 |
-| Git | `gh`、`glab` | 解析 PR/issue 列表为紧凑行，保留全部条目 |
+| Git | `gh`、`glab` | 解析 PR/issue/MR 列表为紧凑行，保留全部条目 |
+| Git | `gt`（Graphite 栈式 CLI） | 解析 stack/log 图,保留完整栈结构,仅剥离 author email 等噪音 |
 | JS | `jsTest` | failures + Test Files/Tests 摘要 |
 | JS | `eslint` | 按 rule 分组，输出 **全部** violation |
 | JS | `tsc` | 按 TS 错误码分组，输出 **全部** diagnostic；无 parse 结果时 passthrough raw |
+| JS | `next` | `next build` 路由/bundle 摘要:按状态符号计数路由,提取 bundle size、warn/error 计数与构建耗时 |
+| JS | `npm` | 剥离 lifecycle banner、`npm WARN`/`notice`、进度与空行；空结果折叠为 `ok` |
 | JS | `packageList` | 已是 RTK compact 格式则 passthrough；否则解析为 `[prod]`/`[dev]` 列表 + Problems，**不截断** |
+| JS | `prisma` | 剥离 Prisma ASCII art 与冗余装饰,汇总 generate / migrate dev/deploy/status / db push |
+| JS | `prettier` | 仅列出需要格式化的文件 |
+| JS | `playwright` | JSON reporter（Tier1）/ 文本（Tier2）/ passthrough（Tier3）,只展示 failures |
 | Python | `pytest`、`ruff`、`mypy` | 保留 failures / violations / errors，分组展示 **全部** 条目 |
 | Python | `pip` | **原文 passthrough** |
 | Java | `maven`、`gradle`、`javac` | 保留 errors 与关键 failure 行，过滤构建进度噪音 |
+| Cloud | `curl` | 始终 `-s`；非 JSON body 超 `MAX_RESPONSE_SIZE` 截断,完整 body 经 `tg --raw` 恢复 |
+| Cloud | `wget` | 剥离进度条,成功 `{url} ok | {file} | {size}`,失败 `{url} FAILED: {error}` |
+| Cloud | `aws` | 解析 AWS CLI 冗余 JSON,按 service 输出 compact、LLM 友好的摘要 |
+| Cloud | `psql` | 检测 table / expanded 显示,剥边框/填充/`(N rows)`,输出紧凑 TSV 或 `[N] key=value`；其他输出 passthrough |
+| Cloud | `docker`、`kubectl` | `ps`/`images`/`services`/pod issues 等列表压缩,保留关键状态字段 |
+| IaC | `terraform`（`tofu`） | tg-only（RTK 无对应）:`plan` 剥离 state lock/refresh/data-source read 进度、符号 legend 与 `-out` note,保留完整 resource action body 与 `Plan:` 摘要；`test` 剥离 per-run 进度与 box 边框,保留 failed run、error 诊断与 `Success!/Failure!` 摘要；其他子命令 passthrough |
 | Generic | `generic` | **原文 passthrough**（stdout + stderr） |
 
 ### 1.5 FilteredResult
@@ -1138,12 +1163,14 @@ src/
 │   ├── stats.ts        # 统计格式化输出
 │   └── text.ts         # 文本工具
 └── handlers/
-    ├── index.ts        # handler 注册表
+    ├── index.ts        # handler 注册表（匹配优先级 = 数组顺序，generic 兜底）
     ├── base.ts         # 共享工具（rawText、makeFilteredResult、quality gate）
     ├── generic.ts      # 兜底 handler
-    ├── common/         # searchLike、readLike、listLike、diff
-    ├── git/            # status、diff、log、show、branch、extended、hostingCli、compactDiff
-    ├── js/             # test、eslint、tsc、packageList
+    ├── common/         # searchLike、readLike、listLike、diff、grepFilter
+    ├── git/            # status、diff、log、show、branch、extended、hostingCli(gh/glab)、graphite(gt)、compactDiff
+    ├── js/             # test、eslint、tsc、next、npm、packageList、prisma、prettier、playwright
     ├── python/         # pytest、ruff、mypy、pip
-    └── java/           # maven、gradle、javac
+    ├── java/           # maven、gradle、javac
+    ├── cloud/          # curl、wget、aws、psql、container(docker/kubectl)
+    └── system/         # ls、tree、read(cat)、wc、env、json、log、format、pipe
 ```
