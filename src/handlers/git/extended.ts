@@ -5,7 +5,6 @@ import type { CommandHandler, ParsedCommand, RawResult, TgOptions } from "../../
 import { makeFilteredResult } from "../base.js";
 
 const EXTENDED_GIT_HANDLERS = new Map([
-  ["add", "git-add"],
   ["commit", "git-commit"],
   ["push", "git-push"],
   ["pull", "git-pull"],
@@ -77,14 +76,31 @@ function filterWorktreeList(text: string): string {
     .join("\n");
 }
 
+// RTK: git/git.rs::run_add — `git add` with no args targets `.`; user args pass
+// through verbatim. RTK never parses git add's (silent) stdout for the count.
+export function buildAddArgs(args: string[]): string[] {
+  return args.length > 0 ? ["add", ...args] : ["add", "."];
+}
+
+// RTK: git/git.rs::run_add — after a successful add, RTK runs
+// `git diff --cached --stat --shortstat` and reports the last (shortstat) line as
+// `ok <shortstat>`. A no-op add (empty shortstat) stays SILENT, mirroring git, so
+// an agent can tell "staged N files" from "staged nothing".
+export function formatAddSummary(shortstatStdout: string): string {
+  if (shortstatStdout.trim() === "") return "";
+  const lines = shortstatStdout.split(/\r?\n/);
+  // Emulate Rust str::lines(): drop a single trailing empty entry from a final \n.
+  if (lines.length > 0 && lines[lines.length - 1] === "") lines.pop();
+  const last = (lines.length > 0 ? lines[lines.length - 1]! : "").trim();
+  return last === "" ? "ok" : `ok ${last}`;
+}
+
 function formatGitExtended(name: string, raw: RawResult, command: ParsedCommand): string {
   const text = combined(raw);
   const subcommand = command.args[0] ?? "";
   if (raw.exitCode !== 0 && !/nothing to commit|Everything up-to-date|Already up to date|No local changes/.test(text)) {
     return failure(command, raw);
   }
-
-  if (name === "git-add") return text ? `ok ${text.trim()}\n` : "";
 
   if (name === "git-commit") {
     if (/nothing to commit/.test(text)) return "ok (nothing to commit)\n";
@@ -154,6 +170,39 @@ function makeGitExtendedHandler(name: string, subcommand: string): CommandHandle
   };
 }
 
-export const gitExtendedHandlers: CommandHandler[] = [...EXTENDED_GIT_HANDLERS.entries()].map(([subcommand, name]) =>
-  makeGitExtendedHandler(name, subcommand),
-);
+// git-add needs a dedicated handler because, like RTK, it constructs more than
+// one child command: the add itself, then `git diff --cached --stat --shortstat`
+// to report the staged-file count.
+const gitAddHandler: CommandHandler = {
+  name: "git-add",
+  matches(command) {
+    return command.program === "git" && command.args[0] === "add";
+  },
+  async execute(command) {
+    const args = command.args.slice(1);
+    const result = await executeCommand({
+      ...command,
+      args: buildAddArgs(args),
+    });
+    if (result.exitCode !== 0) return result;
+    const stat = await executeCommand({
+      ...command,
+      args: ["diff", "--cached", "--stat", "--shortstat"],
+    });
+    return { ...result, auxStdout: stat.stdout };
+  },
+  async filter(raw, command, options: TgOptions) {
+    if (raw.exitCode !== 0) {
+      return makeFilteredResult(this.name, raw, failure(command, raw), options);
+    }
+    const summary = formatAddSummary(raw.auxStdout ?? "");
+    return makeFilteredResult(this.name, raw, summary ? `${summary}\n` : "", options);
+  },
+};
+
+export const gitExtendedHandlers: CommandHandler[] = [
+  gitAddHandler,
+  ...[...EXTENDED_GIT_HANDLERS.entries()].map(([subcommand, name]) =>
+    makeGitExtendedHandler(name, subcommand),
+  ),
+];

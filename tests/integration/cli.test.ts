@@ -331,8 +331,7 @@ describe("Git", () => {
 
       const result = runTg(["git", "diff"], dir);
       expect(result.status).toBe(0);
-      expect(result.stdout).toContain("f.txt |");
-      expect(result.stdout).toContain("--- Changes ---");
+      // RTK-aligned git-diff emits only the condensed changes (no diffstat header).
       expect(result.stdout).toContain("f.txt");
       expect(result.stdout).toContain("@@");
       expect(result.stdout).toContain("-line-0");

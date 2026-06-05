@@ -1,6 +1,6 @@
 import { executeCommand } from "../../executor.js";
 import type { CommandHandler, ParsedCommand, RawResult, TgOptions } from "../../types.js";
-import { makeFilteredResult } from "../base.js";
+import { makeFilteredResult, rawText } from "../base.js";
 
 // RTK: git/git.rs::uses_compact_status_path — empty args or any combination of
 // branch/short flags routes through the forced `--porcelain -b` compact path.
@@ -198,6 +198,13 @@ export const gitStatusHandler: CommandHandler = {
     const args = statusArgs(command);
 
     if (!usesCompactStatusPath(args)) {
+      // RTK: git.rs::run_status explicit-args path — on failure it prints git's
+      // stderr and surfaces the raw (empty) stdout WITHOUT minimal filtering.
+      // filter_status_with_args("") would collapse to "ok", masking the error,
+      // so on a non-zero exit return the raw streams verbatim.
+      if (raw.exitCode !== 0) {
+        return makeFilteredResult(this.name, raw, rawText(raw), options);
+      }
       return makeFilteredResult(this.name, raw, `${filterStatusWithArgs(raw.stdout)}\n`, options);
     }
 
@@ -213,6 +220,13 @@ export const gitStatusHandler: CommandHandler = {
       formatted = `${state}\n${formatted}`;
     }
 
-    return makeFilteredResult(this.name, raw, `${formatted}\n`, options);
+    // RTK: git.rs::run_status tracks savings against the plain `git status`
+    // capture (raw_output), not the compact `--porcelain -b` stdout. When the
+    // plain capture is available (real execution), use it as the savings/raw
+    // baseline so reported savings reflect human→compact, matching RTK. In the
+    // formatter-only test path auxStdout is absent, so fall back to `raw`.
+    const baseline: RawResult = human ? { ...raw, stdout: human, stderr: "", auxStdout: undefined } : raw;
+
+    return makeFilteredResult(this.name, baseline, `${formatted}\n`, options);
   },
 };
