@@ -57,4 +57,19 @@ describe("parseArgv", () => {
     expect(parsed.command?.program).toBe("mvn");
     expect(parsed.command?.args).toEqual(["-q", "test"]);
   });
+
+  test("'report' subcommand routes to report-ledger, not the legacy --report mode", () => {
+    const parsed = parseArgv(["report", "--json"]);
+
+    expect(parsed.mode).toBe("report-ledger");
+    // subArgs carries the flags after 'report'
+    expect(parsed.subArgs).toContain("--json");
+    // must NOT treat it as a shell command
+    expect(parsed.command).toBeUndefined();
+  });
+
+  test("'report' subcommand without flags also routes to report-ledger", () => {
+    const parsed = parseArgv(["report"]);
+    expect(parsed.mode).toBe("report-ledger");
+  });
 });

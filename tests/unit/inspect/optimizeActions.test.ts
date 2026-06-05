@@ -35,7 +35,6 @@ function action(overrides: Partial<OptimizeAction> = {}): OptimizeAction {
     after_tokens: 60,
     exposure_class: "on-invocation",
     ts: "2026-06-05T10:00:00.000Z",
-    file: "/repo/skill.md",
     ...overrides,
   };
 }
@@ -111,26 +110,41 @@ describe("summarizeOptimizer — a STATE diff, never accumulated", () => {
 describe("countFindingsReverted (ledger ④) — fires only on a true revert", () => {
   test("current hash back to before_hash → reverted", () => {
     const actions = [action({ before_hash: "ORIG", after_hash: "OPT" })];
-    expect(countFindingsReverted(actions, () => "ORIG")).toBe(1);
+    expect(countFindingsReverted(actions, new Set(["ORIG"]))).toBe(1);
   });
 
   test("current hash still at after_hash (applied) → not reverted", () => {
     const actions = [action({ before_hash: "ORIG", after_hash: "OPT" })];
-    expect(countFindingsReverted(actions, () => "OPT")).toBe(0);
+    expect(countFindingsReverted(actions, new Set(["OPT"]))).toBe(0);
   });
 
   test("current hash is something else (re-edited) → not reverted", () => {
     const actions = [action({ before_hash: "ORIG", after_hash: "OPT" })];
-    expect(countFindingsReverted(actions, () => "THIRD")).toBe(0);
+    expect(countFindingsReverted(actions, new Set(["THIRD"]))).toBe(0);
   });
 
   test("a no-op action (before == after) never counts as reverted", () => {
     const actions = [action({ before_hash: "SAME", after_hash: "SAME" })];
-    expect(countFindingsReverted(actions, () => "SAME")).toBe(0);
+    expect(countFindingsReverted(actions, new Set(["SAME"]))).toBe(0);
   });
 
-  test("missing/unreadable file is not a revert", () => {
+  test("no current hashes (inspect hasn't run) → not a revert", () => {
     const actions = [action({ before_hash: "ORIG", after_hash: "OPT" })];
-    expect(countFindingsReverted(actions, () => undefined)).toBe(0);
+    expect(countFindingsReverted(actions, new Set())).toBe(0);
+  });
+
+  test("older action before_hash matches but latest action after_hash is different — only latest counts", () => {
+    // surface was: ORIG → OPT → REVISED (three states). Current hash is ORIG (full revert).
+    // Only the LATEST action matters: after_hash=REVISED, so before_hash=OPT must appear in
+    // current hashes to register as a revert. ORIG appearing means the latest action was also
+    // reverted — before_hash of latest is OPT, not ORIG. So revert count = 0 here.
+    const actions = [
+      action({ before_hash: "ORIG", after_hash: "OPT", ts: "2026-06-05T10:00:00.000Z" }),
+      action({ before_hash: "OPT", after_hash: "REVISED", ts: "2026-06-05T11:00:00.000Z" }),
+    ];
+    // Current hash is ORIG — latest action's before_hash is OPT, not ORIG, so NOT reverted.
+    expect(countFindingsReverted(actions, new Set(["ORIG"]))).toBe(0);
+    // Current hash is OPT — matches latest action's before_hash → reverted.
+    expect(countFindingsReverted(actions, new Set(["OPT"]))).toBe(1);
   });
 });

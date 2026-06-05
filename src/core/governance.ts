@@ -55,15 +55,20 @@ function parseLines(text: string): GovernanceRecord[] {
   return text
     .split(/\r?\n/)
     .filter(Boolean)
-    .map((line) => JSON.parse(line) as GovernanceRecord);
+    .flatMap((line) => {
+      try {
+        return [JSON.parse(line) as GovernanceRecord];
+      } catch {
+        return [];
+      }
+    });
 }
 
 export async function readGovernance(cwd: string): Promise<GovernanceRecord[]> {
   try {
     return parseLines(await readFile(governanceFile(cwd), "utf8"));
-  } catch (error) {
-    if ((error as NodeJS.ErrnoException).code === "ENOENT") return [];
-    throw error;
+  } catch {
+    return [];
   }
 }
 

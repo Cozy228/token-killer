@@ -70,7 +70,6 @@ describe("loadLedgers — four independent ledgers, joined read-side", () => {
         after_tokens: 60,
         exposure_class: "on-invocation",
         ts: "2026-06-05T10:00:00.000Z",
-        file: "/repo/skill.md",
       },
     );
 
@@ -109,6 +108,26 @@ describe("loadLedgers — four independent ledgers, joined read-side", () => {
     expect(l.measured_command_savings).toMatchObject({ commands: 0 });
     expect(l.optimizer_deltas.surfaces).toEqual([]);
     expect(l.governance_opportunities.denied_large_reads).toBe(0);
+  });
+
+  test("corrupt governance.jsonl → empty ③ section, never a throw", async () => {
+    const file = join(root, ".token-killer", "projects", projectFingerprint(cwd), "governance.jsonl");
+    mkdirSync(dirname(file), { recursive: true });
+    writeFileSync(file, "not-json\n{broken\n");
+    const l = await loadLedgers({ scope: "project", cwd });
+    expect(l.governance_opportunities.denied_large_reads).toBe(0);
+    expect(l.governance_opportunities.estimate_kind).toBe("opportunity");
+  });
+
+  test("corrupt history.jsonl → ① and ④ show empty/zero, never a throw", async () => {
+    const file = historyFile(cwd);
+    mkdirSync(dirname(file), { recursive: true });
+    writeFileSync(file, "not-json\n");
+    const l = await loadLedgers({ scope: "project", cwd });
+    expect(l.measured_command_savings).toMatchObject({ commands: 0 });
+    const q = l.quality_guardrails;
+    expect("scope_na" in q).toBe(false);
+    if (!("scope_na" in q)) expect(q.commands).toBe(0);
   });
 });
 

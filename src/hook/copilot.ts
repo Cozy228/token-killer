@@ -23,7 +23,7 @@ const ALLOW: Decision = { decision: "allow" };
 // The host protocol JSON — only the wire fields. Internal ledger fields
 // (`governance_kind`, `estimated_tokens`) are recording metadata and must never
 // reach the host's decision payload.
-function toProtocol(d: Decision): Record<string, unknown> {
+export function toProtocol(d: Decision): Record<string, unknown> {
   const out: Record<string, unknown> = { decision: d.decision };
   if (d.rewritten_command !== undefined) out.rewritten_command = d.rewritten_command;
   if (d.reason !== undefined) out.reason = d.reason;

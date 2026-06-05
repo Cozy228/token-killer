@@ -211,7 +211,7 @@ export function renderText(ledgers: Ledgers): string {
   } else {
     for (const s of ledgers.optimizer_deltas.surfaces) {
       out.push(
-        `  ${s.surface}${s.file ? ` (${s.file})` : ""}: before ${s.before_tokens} · after ${s.after_tokens} · delta ${s.delta_tokens} · ${s.exposure_class}`,
+        `  ${s.surface}: before ${s.before_tokens} · after ${s.after_tokens} · delta ${s.delta_tokens} · ${s.exposure_class}`,
       );
     }
   }

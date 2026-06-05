@@ -1,7 +1,7 @@
 import { afterEach, beforeEach, describe, expect, test } from "vitest";
-import { existsSync, mkdtempSync, readFileSync, rmSync } from "node:fs";
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
-import { join } from "node:path";
+import { dirname, join } from "node:path";
 
 import { decide } from "../../../src/hook/copilot.js";
 import { normalize } from "../../../src/hook/normalize.js";
@@ -50,6 +50,23 @@ describe("governance store round-trip", () => {
   test("missing store reads as empty (fail-open)", async () => {
     expect(await readGovernance(cwd)).toEqual([]);
     expect(existsSync(governanceFile(cwd))).toBe(false);
+  });
+
+  test("corrupt store reads as empty, never a throw", async () => {
+    const file = governanceFile(cwd);
+    mkdirSync(dirname(file), { recursive: true });
+    writeFileSync(file, "not-json\n{broken\n");
+    await expect(readGovernance(cwd)).resolves.toEqual([]);
+  });
+
+  test("partially-corrupt store: good lines survive, bad lines are skipped", async () => {
+    const file = governanceFile(cwd);
+    mkdirSync(dirname(file), { recursive: true });
+    const good = JSON.stringify(gov({ kind: "denied_large_reads", decision: "deny", category: "read" }));
+    writeFileSync(file, `${good}\nnot-json\n${good}\n`);
+    const rows = await readGovernance(cwd);
+    expect(rows).toHaveLength(2);
+    expect(rows[0].kind).toBe("denied_large_reads");
   });
 });
 

@@ -1,6 +1,6 @@
 import { describe, expect, test } from "vitest";
 
-import { decide, decideFromStdin } from "../../../src/hook/copilot.js";
+import { decide, decideFromStdin, toProtocol } from "../../../src/hook/copilot.js";
 import { normalize } from "../../../src/hook/normalize.js";
 
 function pre(payload: Record<string, unknown>) {
@@ -55,6 +55,29 @@ describe("decide — non-preToolUse events allow (Slice 2 adds prompt/error)", (
   });
   test("userPromptSubmitted → allow", () => {
     expect(decide(normalize({ event: "userPromptSubmitted", prompt: "hi" })).decision).toBe("allow");
+  });
+});
+
+describe("toProtocol — internal ledger fields never reach the host wire JSON", () => {
+  test("strips governance_kind and estimated_tokens from a deny decision", () => {
+    const d = decide(
+      normalize({ event: "preToolUse", tool_name: "read_file", tool_input: { filePath: "node_modules/x/i.js" } }),
+    );
+    expect(d.governance_kind).toBeDefined();
+    const wire = toProtocol(d);
+    expect("governance_kind" in wire).toBe(false);
+    expect("estimated_tokens" in wire).toBe(false);
+    expect(wire.decision).toBe("deny");
+    expect(typeof wire.reason).toBe("string");
+  });
+
+  test("rewrite decision: toProtocol includes rewritten_command, no extras", () => {
+    const d = decide(normalize({ event: "preToolUse", toolName: "bash", toolArgs: JSON.stringify({ command: "git status" }) }));
+    const wire = toProtocol(d);
+    expect(wire.decision).toBe("rewrite");
+    expect(typeof wire.rewritten_command).toBe("string");
+    expect("governance_kind" in wire).toBe(false);
+    expect("estimated_tokens" in wire).toBe(false);
   });
 });
 
