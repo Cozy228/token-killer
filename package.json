@@ -1,11 +1,11 @@
 {
-  "name": "@company/tg",
+  "name": "@company/tk",
   "version": "0.1.0",
-  "description": "RTK-style token-saving command proxy.",
+  "description": "Token-saving command proxy.",
   "type": "module",
   "packageManager": "pnpm@11.5.0",
   "bin": {
-    "tg": "./dist/cli.js"
+    "tk": "./dist/cli.js"
   },
   "files": [
     "dist",
@@ -19,6 +19,8 @@
     "test:migration": "vitest run --config vitest.migration.config.ts",
     "test:migration:report": "vitest run --config vitest.migration.config.ts || true",
     "test:smoke": "bash tests/smoke/smoke.sh",
+    "test:atlas-dogfood": "bash scripts/atlas-dogfood.sh",
+    "test:windows-dogfood": "pwsh -NoProfile -File scripts/windows-dogfood.ps1",
     "test:check-presence": "bash scripts/check-test-presence.sh",
     "test:validate-docs": "bash scripts/validate-docs.sh",
     "test:install": "bash scripts/test-install.sh",

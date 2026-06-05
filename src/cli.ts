@@ -20,24 +20,24 @@ import { calculateSavings } from "./core/savings.js";
 import { maybeSaveRawOutput } from "./core/rawStore.js";
 import { formatStats } from "./core/stats.js";
 import { VERSION } from "./version.js";
-import type { CommandHandler, FilteredResult, ParsedCommand, RawResult, TgOptions } from "./types.js";
+import type { CommandHandler, FilteredResult, ParsedCommand, RawResult, TkOptions } from "./types.js";
 
 function help(): string {
   return [
-    "Usage: tg [tg flags] <command...>",
-    "       tg shim <install|uninstall|status>",
-    "       tg init [--host auto|copilot-cli|vscode] [--project] [--show] [--dry-run] [--uninstall]",
-    "       tg hook <copilot|check <command>>",
-    "       tg inspect [--json] [--since 7d] [--session <id>] [--input-type vscode|copilot-cli] [--repo-context]",
+    "Usage: tk [tk flags] <command...>",
+    "       tk shim <install|uninstall|status>",
+    "       tk init [--host auto|copilot-cli|vscode] [--project] [--show] [--dry-run] [--uninstall]",
+    "       tk hook <copilot|check <command>>",
+    "       tk inspect [--json] [--since 7d] [--session <id>] [--input-type vscode|copilot-cli] [--repo-context]",
     "                  [--advice] [--write-advice] [--telemetry-export] [--min-confidence n] [--min-occurrences n]",
     "                  [--project] [--user] [--copilot-context] [--surface instructions|prompts|agents|skills] [--fail-on info|warn|error]",
-    "       tg optimize context [--dry-run] [--write-advice] [--apply-safe] [--token-budget-block] [--surface <name>] [--project|--user]",
-    "       tg agentsmd <patch|restore>",
-    "       tg gain [--user] [--daily|--weekly|--monthly|--all] [--graph] [--history [n]]",
+    "       tk optimize context [--dry-run] [--write-advice] [--apply-safe] [--token-budget-block] [--surface <name>] [--project|--user]",
+    "       tk agentsmd <patch|restore>",
+    "       tk gain [--user] [--daily|--weekly|--monthly|--all] [--graph] [--history [n]]",
     "               [--failures] [--quota [-t <model>]] [--json|--csv|--format json|csv|text]",
-    "       tg config <init|show|path>",
-    "       tg report [--scope user|project|runtime] [--project|--user] [--since <date>] [--json]",
-    "       tg telemetry <enable|disable|status|preview|purge>",
+    "       tk config <init|show|path>",
+    "       tk report [--scope user|project|runtime] [--project|--user] [--since <date>] [--json]",
+    "       tk telemetry <enable|disable|status|preview|purge>",
     "",
     "Flags:",
     "  --raw                 print raw stdout/stderr",
@@ -54,7 +54,7 @@ function help(): string {
   ].join("\n");
 }
 
-async function recordRawPassthrough(raw: RawResult, options: TgOptions): Promise<void> {
+async function recordRawPassthrough(raw: RawResult, options: TkOptions): Promise<void> {
   const output = `${raw.stdout}${raw.stderr}`;
   const savings = calculateSavings(output, output);
   const rawOutputPath = await maybeSaveRawOutput(raw, options);
@@ -121,7 +121,7 @@ async function main(): Promise<number> {
     return runTelemetry(parsed.subArgs ?? []);
   }
   if (!parsed.command) {
-    process.stderr.write("tg: missing command\n");
+    process.stderr.write("tk: missing command\n");
     return 1;
   }
 
@@ -162,7 +162,7 @@ async function main(): Promise<number> {
 async function runCompress(
   handler: CommandHandler,
   command: ParsedCommand,
-  options: TgOptions,
+  options: TkOptions,
 ): Promise<number> {
   const raw = await handler.execute(command, options);
 

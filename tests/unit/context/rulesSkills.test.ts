@@ -13,7 +13,7 @@ let cwd: string;
 
 beforeEach(() => {
   registerAllRules();
-  root = mkdtempSync(join(tmpdir(), "tg-ctx-skills-"));
+  root = mkdtempSync(join(tmpdir(), "tk-ctx-skills-"));
   home = join(root, "home");
   cwd = join(root, "repo");
   mkdirSync(home, { recursive: true });

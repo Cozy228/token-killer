@@ -12,16 +12,16 @@ import {
   stateFile,
 } from "../../../src/telemetry/state.js";
 
-const previousHome = process.env.TOKEN_GUARD_HOME;
+const previousHome = process.env.TOKEN_KILLER_HOME;
 
 afterEach(() => {
-  if (previousHome === undefined) delete process.env.TOKEN_GUARD_HOME;
-  else process.env.TOKEN_GUARD_HOME = previousHome;
+  if (previousHome === undefined) delete process.env.TOKEN_KILLER_HOME;
+  else process.env.TOKEN_KILLER_HOME = previousHome;
 });
 
 async function withHome<T>(fn: () => Promise<T> | T): Promise<T> {
-  const home = await mkdtemp(path.join(tmpdir(), "tg-state-"));
-  process.env.TOKEN_GUARD_HOME = home;
+  const home = await mkdtemp(path.join(tmpdir(), "tk-state-"));
+  process.env.TOKEN_KILLER_HOME = home;
   try {
     return await fn();
   } finally {

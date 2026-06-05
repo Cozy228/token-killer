@@ -1,12 +1,12 @@
 import { executeCommand } from "../../executor.js";
-import type { CommandHandler, ParsedCommand, RawResult, TgOptions } from "../../types.js";
+import type { CommandHandler, ParsedCommand, RawResult, TkOptions } from "../../types.js";
 import { makeFilteredResult } from "../base.js";
 
 // RTK: system/ls.rs — parse `ls -la` long format into a compact listing:
 // dirs first (name + "/"), then files (name + human size), NOISE_DIRS filtered
 // unless -a, optional octal perms prefix with -l. The Rust summary line is only
 // emitted in interactive TTY mode (ls.rs::run is_terminal()); when piped (which
-// is how tg consumes output) only the entries are returned, so we mirror that.
+// is how tk consumes output) only the entries are returned, so we mirror that.
 
 // RTK: system/constants.rs::NOISE_DIRS.
 const NOISE_DIRS = [
@@ -264,7 +264,7 @@ export const lsHandler: CommandHandler = {
     };
     return executeCommand(rewritten, { LC_ALL: "C" });
   },
-  async filter(raw, command, options: TgOptions) {
+  async filter(raw, command, options: TkOptions) {
     return makeFilteredResult(this.name, raw, formatLs(raw, command), options);
   },
 };

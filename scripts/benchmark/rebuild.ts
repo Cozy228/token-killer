@@ -2,18 +2,18 @@
 /**
  * Fast rebuild: reuse existing VM, just transfer source and recompile.
  *
- * Ported from rtk/scripts/benchmark/rebuild.ts and adapted to tg conventions:
- * bun -> tsx, vmBuildRtk -> vmBuildTg (builds dist/cli.js via pnpm).
+ * Ported from rtk/scripts/benchmark/rebuild.ts and adapted to tk conventions:
+ * bun -> tsx, vmBuildRtk -> vmBuildTk (builds dist/cli.js via pnpm).
  *
  * Usage: pnpm exec tsx scripts/benchmark/rebuild.ts
  */
 
-import { vmEnsureReady, vmBuildTg } from "./lib/vm";
+import { vmEnsureReady, vmBuildTk } from "./lib/vm";
 
 const PROJECT_ROOT = new URL("../../", import.meta.url).pathname.replace(/\/$/, "");
 
 await vmEnsureReady();
-const info = await vmBuildTg(PROJECT_ROOT);
+const info = await vmBuildTk(PROJECT_ROOT);
 
 console.log(`\nRebuild complete:`);
 console.log(`  Version: ${info.version}`);

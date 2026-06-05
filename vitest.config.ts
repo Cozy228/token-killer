@@ -2,9 +2,9 @@ import { defineConfig } from "vitest/config";
 
 /**
  * Product tests only. Green means:
- * - Implemented tg commands work through the CLI integration path
+ * - Implemented tk commands work through the CLI integration path
  * - Implemented fixture-backed handlers preserve critical output
- * - Core tg parsing, routing, execution, and reporting helpers behave correctly
+ * - Core tk parsing, routing, execution, and reporting helpers behave correctly
  *
  * RTK migration debt and missing handler gates live in vitest.migration.config.ts.
  * Keeping the configs separate makes red/green signals meaningful instead of

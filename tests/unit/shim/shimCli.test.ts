@@ -5,8 +5,8 @@ import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { spawnSync } from "node:child_process";
 
-// Sandboxed end-to-end for `tg shim install|status|uninstall`. We point HOME at a
-// temp dir so the installer writes ~/.token-guard/shim and ~/.zshrc INSIDE the
+// Sandboxed end-to-end for `tk shim install|status|uninstall`. We point HOME at a
+// temp dir so the installer writes ~/.token-killer/shim and ~/.zshrc INSIDE the
 // sandbox — never the developer's real config.
 
 const repoRoot = join(dirname(fileURLToPath(import.meta.url)), "../../..");
@@ -20,12 +20,12 @@ function runTg(args: string[]) {
     cwd: repoRoot,
     encoding: "utf8",
     timeout: 20000,
-    env: { ...process.env, HOME: home, SHELL: "/bin/zsh", TOKEN_GUARD_HOME: join(home, ".token-guard") },
+    env: { ...process.env, HOME: home, SHELL: "/bin/zsh", TOKEN_KILLER_HOME: join(home, ".token-killer") },
   });
 }
 
 beforeEach(() => {
-  home = mkdtempSync(join(tmpdir(), "tg-shim-cli-"));
+  home = mkdtempSync(join(tmpdir(), "tk-shim-cli-"));
   writeFileSync(join(home, ".zshrc"), "export FOO=1\n");
 });
 
@@ -33,16 +33,16 @@ afterEach(() => {
   rmSync(home, { recursive: true, force: true });
 });
 
-describe("tg shim install/status/uninstall", () => {
+describe("tk shim install/status/uninstall", () => {
   test("install writes wrappers + manifest and patches the RC, then uninstall reverts", () => {
-    const shimGit = join(home, ".token-guard", "shim", "git");
+    const shimGit = join(home, ".token-killer", "shim", "git");
     const rc = join(home, ".zshrc");
 
     const install = runTg(["shim", "install"]);
     expect(install.status).toBe(0);
     expect(existsSync(shimGit)).toBe(true);
-    expect(existsSync(join(home, ".token-guard", "shim", "manifest.json"))).toBe(true);
-    expect(readFileSync(rc, "utf8")).toContain("token-guard shim");
+    expect(existsSync(join(home, ".token-killer", "shim", "manifest.json"))).toBe(true);
+    expect(readFileSync(rc, "utf8")).toContain("token-killer shim");
     // The probe should PASS: a shimmed `git` resolves into the shim dir.
     expect(install.stdout).toContain("probe");
 
@@ -52,7 +52,7 @@ describe("tg shim install/status/uninstall", () => {
 
     const uninstall = runTg(["shim", "uninstall"]);
     expect(uninstall.status).toBe(0);
-    expect(existsSync(join(home, ".token-guard", "shim"))).toBe(false);
+    expect(existsSync(join(home, ".token-killer", "shim"))).toBe(false);
     // RC restored byte-identically.
     expect(readFileSync(rc, "utf8")).toBe("export FOO=1\n");
   });

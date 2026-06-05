@@ -59,7 +59,7 @@ describe("RTK curl behavior", () => {
 
     expect(result.output).toMatch(/^x+\.\.\. \(1000 bytes total\)/);
     expect(result.output).toContain("bytes total");
-    expect(result.output).toMatch(/tg --raw/);
+    expect(result.output).toMatch(/tk --raw/);
     // RTK asserts the truncated content is < 600 chars (head 500 + small marker).
     expect(result.output.split("\n")[0]!.length).toBeLessThan(600);
 
@@ -108,7 +108,7 @@ describe("RTK curl behavior", () => {
   });
 
   // NOTE: the dual-stream failure case (stdout body + stderr diagnostic) is a
-  // DELIBERATE tg divergence from RTK — RTK's curl_cmd.rs:35-42 keeps only stderr
+  // DELIBERATE tk divergence from RTK — RTK's curl_cmd.rs:35-42 keeps only stderr
   // when it is non-empty, dropping the stdout body. That behavior is asserted in
   // curlProductBehavior.test.ts, NOT here, because this suite must only prove
   // RTK-faithful semantics. See docs/green-test-parity-audit.md (curl divergence).

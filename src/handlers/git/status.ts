@@ -1,5 +1,5 @@
 import { executeCommand } from "../../executor.js";
-import type { CommandHandler, ParsedCommand, RawResult, TgOptions } from "../../types.js";
+import type { CommandHandler, ParsedCommand, RawResult, TkOptions } from "../../types.js";
 import { makeFilteredResult, rawText } from "../base.js";
 
 // RTK: git/git.rs::uses_compact_status_path — empty args or any combination of
@@ -195,7 +195,7 @@ export const gitStatusHandler: CommandHandler = {
     return { ...porcelain, auxStdout: human.stdout };
   },
 
-  async filter(raw: RawResult, command, options: TgOptions) {
+  async filter(raw: RawResult, command, options: TkOptions) {
     const args = statusArgs(command);
 
     if (!usesCompactStatusPath(args)) {

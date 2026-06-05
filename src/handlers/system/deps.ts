@@ -1,14 +1,14 @@
 import { readFile } from "node:fs/promises";
 import path from "node:path";
 
-import type { CommandHandler, ParsedCommand, RawResult, TgOptions } from "../../types.js";
+import type { CommandHandler, ParsedCommand, RawResult, TkOptions } from "../../types.js";
 import { makeFilteredResult, rawText } from "../base.js";
 
 // RTK: system/deps.rs — `deps [path]` scans a directory for dependency manifests
 // (Cargo.toml, package.json, requirements.txt, pyproject.toml, go.mod) and emits a
 // compact per-ecosystem summary, dropping raw JSON/TOML noise.
 //
-// tg divergence from RTK (recorded in docs/align-rtk-divergences.md): the handler's
+// tk divergence from RTK (recorded in docs/align-rtk-divergences.md): the handler's
 // execute/filter split means filter summarizes the single manifest captured on
 // stdin/stdout rather than re-scanning every manifest in a directory, and the
 // Node.js section renders dev deps as "Dev (N):" with versions (RTK uses
@@ -184,7 +184,7 @@ function summarizeDeps(content: string): string {
   return content;
 }
 
-async function readPrimaryManifest(options: TgOptions): Promise<string> {
+async function readPrimaryManifest(options: TkOptions): Promise<string> {
   for (const manifest of MANIFESTS) {
     try {
       return await readFile(path.resolve(options.cwd, manifest), "utf8");
@@ -200,7 +200,7 @@ export const depsHandler: CommandHandler = {
   matches(command: ParsedCommand) {
     return command.program === "deps";
   },
-  async execute(command, options: TgOptions): Promise<RawResult> {
+  async execute(command, options: TkOptions): Promise<RawResult> {
     const pathArg = command.args.find((arg) => !arg.startsWith("-"));
     let content = "";
     if (pathArg) {

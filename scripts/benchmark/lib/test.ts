@@ -1,11 +1,11 @@
 /**
- * Test helpers for tg (token-guard) integration testing.
+ * Test helpers for tk (token-killer) integration testing.
  *
- * Ported from rtk/scripts/benchmark/lib/test.ts and adapted to tg conventions:
- * binary renamed rtk -> tg (TG_BIN), behavior otherwise identical.
+ * Ported from rtk/scripts/benchmark/lib/test.ts and adapted to tk conventions:
+ * binary renamed rtk -> tk (TK_BIN), behavior otherwise identical.
  */
 
-import { vmExec, TG_BIN } from "./vm";
+import { vmExec, TK_BIN } from "./vm";
 
 export type TestStatus = "PASS" | "FAIL" | "SKIP";
 
@@ -91,19 +91,19 @@ export async function testCmd(
 }
 
 /**
- * Test token savings: compare raw command output vs tg filtered output.
+ * Test token savings: compare raw command output vs tk filtered output.
  */
 export async function testSavings(
   name: string,
   rawCmd: string,
-  tgCmd: string,
+  tkCmd: string,
   targetPct: number,
 ): Promise<TestResult> {
   const raw = await vmExec(rawCmd);
-  const tg = await vmExec(tgCmd);
+  const tk = await vmExec(tkCmd);
 
   const rawSize = raw.stdout.length;
-  const tgSize = tg.stdout.length;
+  const tkSize = tk.stdout.length;
 
   if (rawSize === 0) {
     const result: TestResult = {
@@ -115,17 +115,17 @@ export async function testSavings(
     return result;
   }
 
-  const savings = Math.round(100 - (tgSize * 100) / rawSize);
+  const savings = Math.round(100 - (tkSize * 100) / rawSize);
 
   let status: TestStatus;
   let detail: string;
 
   if (savings >= targetPct) {
     status = "PASS";
-    detail = `raw=${rawSize}b filtered=${tgSize}b savings=${savings}% (target: >=${targetPct}%)`;
+    detail = `raw=${rawSize}b filtered=${tkSize}b savings=${savings}% (target: >=${targetPct}%)`;
   } else {
     status = "FAIL";
-    detail = `savings=${savings}% < target ${targetPct}% (raw=${rawSize}b filtered=${tgSize}b)`;
+    detail = `savings=${savings}% < target ${targetPct}% (raw=${rawSize}b filtered=${tkSize}b)`;
   }
 
   const result: TestResult = { name, status, detail, savings };
@@ -141,7 +141,7 @@ export async function testRewrite(
   expected: string,
 ): Promise<TestResult> {
   const escaped = input.replace(/'/g, "'\\''");
-  const { stdout } = await vmExec(`${TG_BIN} rewrite '${escaped}'`);
+  const { stdout } = await vmExec(`${TK_BIN} rewrite '${escaped}'`);
   const actual = stdout.trim();
 
   let status: TestStatus;

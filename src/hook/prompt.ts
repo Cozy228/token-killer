@@ -16,7 +16,7 @@ export type PromptThresholds = {
   blockTokens: number;
 };
 
-// Defaults mirror DESIGN §12.2 (no config loader exists yet; `tg config init` is
+// Defaults mirror DESIGN §12.2 (no config loader exists yet; `tk config init` is
 // planned). Callers may override for tests / future config wiring.
 export const DEFAULT_PROMPT_THRESHOLDS: PromptThresholds = {
   warnTokens: 4000,
@@ -58,6 +58,8 @@ export function governPrompt(
   if (tokens >= thresholds.blockTokens) {
     return {
       decision: "deny",
+      governance_kind: "denied_large_prompts",
+      estimated_tokens: tokens,
       reason: `Prompt is ~${tokens} tokens (over the ${thresholds.blockTokens} block threshold); split it into smaller, focused turns.`,
     };
   }
@@ -65,11 +67,16 @@ export function governPrompt(
   if (tokens >= thresholds.warnTokens) {
     return {
       decision: "suggest",
+      governance_kind: "suggested_large_prompts",
+      estimated_tokens: tokens,
       reason: `Prompt is ~${tokens} tokens (over the ${thresholds.warnTokens} warn threshold); consider trimming context.`,
       additional_context: `Large prompt (~${tokens} tokens) — trimming irrelevant context reduces cost and improves focus.`,
     };
   }
 
+  // Implementation-intent is a model-routing hint, NOT a prompt-size opportunity.
+  // It carries no `governance_kind`, so it is never written to governance.jsonl
+  // and never counted as `suggested_large_prompts` (§0.1.10 — counts stay honest).
   if (looksLikeImplementation(prompt)) {
     return {
       decision: "suggest",

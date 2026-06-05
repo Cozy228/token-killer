@@ -33,7 +33,7 @@ export type FilteredResult = {
   qualityStatus: "passed" | "inflated" | "empty_output";
 };
 
-export type TgOptions = {
+export type TkOptions = {
   raw: boolean;
   stats: boolean;
   verbose: boolean;
@@ -62,7 +62,7 @@ export type ParseMode =
 
 export type ParsedArgv = {
   mode: ParseMode;
-  options: TgOptions;
+  options: TkOptions;
   command?: ParsedCommand;
   // Trailing args for reserved subcommands (shim/init), passed through verbatim
   // to their own dispatcher instead of the command router.
@@ -72,16 +72,16 @@ export type ParsedArgv = {
 export interface CommandHandler {
   name: string;
   // The real external executables this handler fronts — the programs the shim
-  // wraps so `git`, `tsc`, … on the agent's PATH route into `tg`. Declared only
-  // on handlers that wrap an external tool; omitted on tg-native verbs (read,
+  // wraps so `git`, `tsc`, … on the agent's PATH route into `tk`. Declared only
+  // on handlers that wrap an external tool; omitted on tk-native verbs (read,
   // smart, summary, err, test, deps, json, log, pipe). The shim's wrapper set is
   // `dedupe(handlers.flatMap(h => h.programs ?? []))` (see src/shim/programs.ts).
   programs?: string[];
   matches(command: ParsedCommand): boolean;
-  execute(command: ParsedCommand, options: TgOptions): Promise<RawResult>;
+  execute(command: ParsedCommand, options: TkOptions): Promise<RawResult>;
   filter(
     raw: RawResult,
     command: ParsedCommand,
-    options: TgOptions,
+    options: TkOptions,
   ): Promise<FilteredResult>;
 }

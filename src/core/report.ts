@@ -1,7 +1,7 @@
-import type { TgOptions } from "../types.js";
+import type { TkOptions } from "../types.js";
 import { readHistory } from "./history.js";
 
-export async function buildReport(options: TgOptions): Promise<string> {
+export async function buildReport(options: TkOptions): Promise<string> {
   const records = await readHistory(options.cwd);
   const raw = records.reduce((sum, record) => sum + record.raw_tokens, 0);
   const output = records.reduce((sum, record) => sum + record.output_tokens, 0);

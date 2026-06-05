@@ -11,7 +11,7 @@ import {
 } from "../../../src/shim/path.js";
 
 describe("stripShimDir", () => {
-  const shim = "/home/u/.token-guard/shim";
+  const shim = "/home/u/.token-killer/shim";
 
   test("removes only exact shim-dir entries and preserves order", () => {
     const pathVar = ["/usr/local/bin", shim, "/usr/bin", "/bin"].join(delimiter);
@@ -31,7 +31,7 @@ describe("stripShimDir", () => {
   });
 
   test("does not remove unrelated dirs that merely share a prefix", () => {
-    const pathVar = ["/home/u/.token-guard/shimmer", "/usr/bin"].join(delimiter);
+    const pathVar = ["/home/u/.token-killer/shimmer", "/usr/bin"].join(delimiter);
     expect(stripShimDir(pathVar, shim)).toBe(pathVar);
   });
 });
@@ -40,10 +40,10 @@ describe("resolveReal + sentinel", () => {
   let tmp: string;
   let realDir: string;
   let shimDir: string;
-  const prevShim = process.env.TG_SHIM_DIR;
+  const prevShim = process.env.TK_SHIM_DIR;
 
   beforeAll(() => {
-    tmp = mkdtempSync(join(tmpdir(), "tg-shim-path-"));
+    tmp = mkdtempSync(join(tmpdir(), "tk-shim-path-"));
     realDir = join(tmp, "real");
     shimDir = join(tmp, "shim");
     mkdirSync(realDir);
@@ -51,13 +51,13 @@ describe("resolveReal + sentinel", () => {
     // The real tool, and a shim-dir wrapper of the same name.
     writeFileSync(join(realDir, "faketool"), "#!/bin/sh\necho real\n");
     chmodSync(join(realDir, "faketool"), 0o755);
-    writeFileSync(join(shimDir, "faketool"), "#!/bin/sh\nexec tg faketool \"$@\"\n");
+    writeFileSync(join(shimDir, "faketool"), "#!/bin/sh\nexec tk faketool \"$@\"\n");
     chmodSync(join(shimDir, "faketool"), 0o755);
   });
 
   afterAll(() => {
-    if (prevShim === undefined) delete process.env.TG_SHIM_DIR;
-    else process.env.TG_SHIM_DIR = prevShim;
+    if (prevShim === undefined) delete process.env.TK_SHIM_DIR;
+    else process.env.TK_SHIM_DIR = prevShim;
     rmSync(tmp, { recursive: true, force: true });
   });
 
@@ -70,23 +70,23 @@ describe("resolveReal + sentinel", () => {
   });
 
   test("sentinel passes when the real tool is reachable outside the shim dir", () => {
-    process.env.TG_SHIM_DIR = shimDir;
+    process.env.TK_SHIM_DIR = shimDir;
     expect(() => assertNoRecursion("faketool", realDir)).not.toThrow();
   });
 
   test("sentinel throws when the resolved tool lands inside the shim dir", () => {
-    process.env.TG_SHIM_DIR = shimDir;
+    process.env.TK_SHIM_DIR = shimDir;
     expect(() => assertNoRecursion("faketool", shimDir)).toThrow(ShimRecursionError);
   });
 
   test("sentinel throws when only the shim copy is reachable", () => {
-    process.env.TG_SHIM_DIR = shimDir;
+    process.env.TK_SHIM_DIR = shimDir;
     // Stripped path has no real tool, but the shim-dir copy still exists.
     expect(() => assertNoRecursion("faketool", join(tmp, "empty"))).toThrow(ShimRecursionError);
   });
 
-  test("sentinel is a no-op when TG_SHIM_DIR is unset", () => {
-    delete process.env.TG_SHIM_DIR;
+  test("sentinel is a no-op when TK_SHIM_DIR is unset", () => {
+    delete process.env.TK_SHIM_DIR;
     expect(() => assertNoRecursion("faketool", join(tmp, "empty"))).not.toThrow();
   });
 });

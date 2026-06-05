@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 #
-# test-install.sh — verify tg can be built, installed, and runs correctly
+# test-install.sh — verify tk can be built, installed, and runs correctly
 # Ported from RTK scripts/test-install.sh
 #
 set -euo pipefail
@@ -58,11 +58,11 @@ fi
 
 # ── Step 6: npm link round-trip ─────────────────────
 
-if npm link 2>/dev/null && tg --version >/dev/null 2>&1; then
-    pass "npm link && tg --version"
-    npm unlink -g @company/tg 2>/dev/null || true
+if npm link 2>/dev/null && tk --version >/dev/null 2>&1; then
+    pass "npm link && tk --version"
+    npm unlink -g @company/tk 2>/dev/null || true
 else
-    pass "npm link && tg --version  ${YELLOW}(optional — skipped)${NC}"
+    pass "npm link && tk --version  ${YELLOW}(optional — skipped)${NC}"
 fi
 
 # ── Report ──────────────────────────────────────────

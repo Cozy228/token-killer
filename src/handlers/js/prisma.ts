@@ -1,5 +1,5 @@
 import { executeCommand } from "../../executor.js";
-import type { CommandHandler, ParsedCommand, RawResult, TgOptions } from "../../types.js";
+import type { CommandHandler, ParsedCommand, RawResult, TkOptions } from "../../types.js";
 import { makeFilteredResult, rawText } from "../base.js";
 
 // RTK: js/prisma_cmd.rs — strips Prisma CLI ASCII art and verbose decoration,
@@ -309,7 +309,7 @@ export const prismaHandler: CommandHandler = {
   execute(command) {
     return executeCommand(command);
   },
-  async filter(raw, command, options: TgOptions) {
+  async filter(raw, command, options: TkOptions) {
     return makeFilteredResult(this.name, raw, formatPrisma(raw, command), options);
   },
 };

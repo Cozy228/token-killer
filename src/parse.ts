@@ -1,9 +1,9 @@
-import type { ParsedArgv, ParsedCommand, TgOptions } from "./types.js";
+import type { ParsedArgv, ParsedCommand, TkOptions } from "./types.js";
 
 const DEFAULT_MAX_LINES = 120;
 const DEFAULT_MAX_CHARS = 12000;
 
-function defaultOptions(): TgOptions {
+function defaultOptions(): TkOptions {
   return {
     raw: false,
     stats: false,
@@ -61,7 +61,7 @@ export function parseArgv(argv: string[]): ParsedArgv {
   let index = 0;
 
   const first = argv[0];
-  // `tg report` (the four-ledger read-side join, metrics-ledger §4) is a distinct
+  // `tk report` (the four-ledger read-side join, metrics-ledger §4) is a distinct
   // subcommand from the legacy `--report` flag (mode "report" → core/report.ts).
   if (first === "report") {
     return { mode: "report-ledger", options, subArgs: argv.slice(1) };

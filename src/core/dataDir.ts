@@ -11,11 +11,11 @@ function resolveProjectRoot(cwd: string): string {
   }
 }
 
-export function tokenGuardHome(): string {
-  if (process.env.TOKEN_GUARD_HOME) {
-    return path.resolve(process.env.TOKEN_GUARD_HOME);
+export function tokenKillerHome(): string {
+  if (process.env.TOKEN_KILLER_HOME) {
+    return path.resolve(process.env.TOKEN_KILLER_HOME);
   }
-  return path.join(os.homedir(), ".token-guard");
+  return path.join(os.homedir(), ".token-killer");
 }
 
 export function projectFingerprint(cwd: string): string {
@@ -25,7 +25,7 @@ export function projectFingerprint(cwd: string): string {
 }
 
 export function projectDataDir(cwd: string): string {
-  return path.join(tokenGuardHome(), "projects", projectFingerprint(cwd));
+  return path.join(tokenKillerHome(), "projects", projectFingerprint(cwd));
 }
 
 export function historyFile(cwd: string): string {
@@ -39,7 +39,7 @@ export function projectMetaFile(cwd: string): string {
 }
 
 export function projectMetaFileForFingerprint(fingerprint: string): string {
-  return path.join(tokenGuardHome(), "projects", fingerprint, "meta.json");
+  return path.join(tokenKillerHome(), "projects", fingerprint, "meta.json");
 }
 
 export function rawOutputDir(cwd: string): string {
@@ -53,5 +53,5 @@ export function rawOutputPathRelative(cwd: string, fileName: string): string {
 export function resolveStoredPath(storedPath: string): string {
   return path.isAbsolute(storedPath)
     ? storedPath
-    : path.join(tokenGuardHome(), storedPath);
+    : path.join(tokenKillerHome(), storedPath);
 }

@@ -26,10 +26,10 @@ describe("executeCommand", () => {
 
   test("reports command not found as exit code 127", async () => {
     const result = await executeCommand({
-      program: "tg-command-that-does-not-exist",
+      program: "tk-command-that-does-not-exist",
       args: [],
-      original: ["tg-command-that-does-not-exist"],
-      displayCommand: "tg-command-that-does-not-exist",
+      original: ["tk-command-that-does-not-exist"],
+      displayCommand: "tk-command-that-does-not-exist",
     });
 
     expect(result.exitCode).toBe(127);

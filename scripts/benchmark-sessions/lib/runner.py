@@ -1,9 +1,9 @@
 """
-End-to-end benchmark-session orchestrator for tg (token-guard).
+End-to-end benchmark-session orchestrator for tk (token-killer).
 
-Ported from rtk/scripts/benchmark-sessions/lib/runner.py and adapted to tg
-conventions: setup_rtk -> setup_tg, setup-rtk.sh -> setup-tg.sh,
-rtk_db -> tg_db, "RTK ON/OFF" -> "TG ON/OFF". Orchestration flow is otherwise
+Ported from rtk/scripts/benchmark-sessions/lib/runner.py and adapted to tk
+conventions: setup_rtk -> setup_tk, setup-rtk.sh -> setup-tk.sh,
+rtk_db -> tk_db, "RTK ON/OFF" -> "TK ON/OFF". Orchestration flow is otherwise
 identical.
 """
 
@@ -23,7 +23,7 @@ from .manifest import (
     TbTaskEntry,
     write_manifest,
 )
-from .session import run_all_sessions, setup_codebase, setup_tg
+from .session import run_all_sessions, setup_codebase, setup_tk
 from .terminal_bench import run_terminal_bench
 from .vm import create_vm_pool, destroy_vm_pool
 
@@ -54,7 +54,7 @@ def _session_to_entry(r) -> SessionEntry:
         group=r.group,
         stdout_json=f"{r.vm_name}-stdout.json",
         otel_log=f"{r.vm_name}-otel.log",
-        tg_db=f"{r.vm_name}-tracking.jsonl" if r.tg_db_path else None,
+        tk_db=f"{r.vm_name}-tracking.jsonl" if r.tk_db_path else None,
         exit_code=r.exit_code,
         error=r.error or None,
     )
@@ -97,7 +97,7 @@ async def run_benchmark(
     )
 
     try:
-        _print_step(1, total_steps, f"Creating {vms * 2} VMs ({vms} TG ON + {vms} TG OFF)")
+        _print_step(1, total_steps, f"Creating {vms * 2} VMs ({vms} TK ON + {vms} TK OFF)")
         vm_names = await create_vm_pool(vms, cloud_init)
         print(f"  VMs ready: {', '.join(vm_names)}")
 
@@ -111,12 +111,12 @@ async def run_benchmark(
         ))
         print("  Codebases deployed")
 
-        _print_step(3, total_steps, "Configuring tg on ON VMs")
-        setup_script = ROOT_DIR / "setup-tg.sh"
+        _print_step(3, total_steps, "Configuring tk on ON VMs")
+        setup_script = ROOT_DIR / "setup-tk.sh"
         on_vms = [n for n in vm_names if "-on-" in n]
         off_vms = [n for n in vm_names if "-off-" in n]
-        await asyncio.gather(*(setup_tg(vm, setup_script) for vm in on_vms))
-        print(f"  tg configured on {len(on_vms)} VMs")
+        await asyncio.gather(*(setup_tk(vm, setup_script) for vm in on_vms))
+        print(f"  tk configured on {len(on_vms)} VMs")
 
         _print_step(4, total_steps, f"Running Claude sessions (timeout: {task.timeout_minutes}min)")
         results = await run_all_sessions(vm_names, task, api_key, output_dir)

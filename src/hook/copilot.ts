@@ -1,9 +1,9 @@
-// Slice 1 — `tg hook copilot` dispatcher (DESIGN §3.1, §3.8).
+// Slice 1 — `tk hook copilot` dispatcher (DESIGN §3.1, §3.8).
 //
 // The configured command the host invokes (mirrors RTK's `rtk hook copilot`).
 // It reads a hook payload from stdin, normalizes it, dispatches by event, and for
-// `preToolUse` either rewrites a shell command (prepend `tg`) or governs a direct
-// tool. It ONLY prepends `tg`; the proxy compresses. No `modifiedResult`, ever.
+// `preToolUse` either rewrites a shell command (prepend `tk`) or governs a direct
+// tool. It ONLY prepends `tk`; the proxy compresses. No `modifiedResult`, ever.
 //
 // Fail-open (DESIGN §3.6, CONTEXT.md → Fail-open): any internal error resolves to
 // `{ "decision": "allow" }`. stdout carries ONLY the protocol JSON; diagnostics
@@ -16,8 +16,20 @@ import { rewriteCommand } from "./rewrite.js";
 import { governPrompt } from "./prompt.js";
 import { failureSourceAdapter, handleError } from "./error.js";
 import { recordHookFailure } from "../core/history.js";
+import { recordGovernance } from "../core/governance.js";
 
 const ALLOW: Decision = { decision: "allow" };
+
+// The host protocol JSON — only the wire fields. Internal ledger fields
+// (`governance_kind`, `estimated_tokens`) are recording metadata and must never
+// reach the host's decision payload.
+function toProtocol(d: Decision): Record<string, unknown> {
+  const out: Record<string, unknown> = { decision: d.decision };
+  if (d.rewritten_command !== undefined) out.rewritten_command = d.rewritten_command;
+  if (d.reason !== undefined) out.reason = d.reason;
+  if (d.additional_context !== undefined) out.additional_context = d.additional_context;
+  return out;
+}
 
 // Decide the governance verdict for a normalized event. Pure and total — no I/O;
 // history recording happens in the runtime entry, not here.
@@ -60,7 +72,7 @@ export function decideFromStdin(raw: string): Decision {
   try {
     return decide(normalizeStdin(raw));
   } catch (error) {
-    process.stderr.write(`tg hook copilot: ${error instanceof Error ? error.message : String(error)}\n`);
+    process.stderr.write(`tk hook copilot: ${error instanceof Error ? error.message : String(error)}\n`);
     return ALLOW;
   }
 }
@@ -87,11 +99,31 @@ async function recordFailureMetric(ev: ToolEvent): Promise<void> {
       exitCode: 1,
     });
   } catch (error) {
-    process.stderr.write(`tg hook copilot: failure-metric write skipped: ${error instanceof Error ? error.message : String(error)}\n`);
+    process.stderr.write(`tk hook copilot: failure-metric write skipped: ${error instanceof Error ? error.message : String(error)}\n`);
   }
 }
 
-// Runtime entry for `tg hook copilot`. Reads stdin, emits exactly one protocol
+// Best-effort ③ governance-event recording (metrics-ledger Gap C, §0.1.3). Writes
+// one governance.jsonl row per deny/suggest that carries a `governance_kind`.
+// `rewrite`/`allow` and the non-cost routing-hint suggest carry no kind, so they
+// are never written — the executed-rewrite exclusion is physical. Never throws.
+async function recordGovernanceMetric(ev: ToolEvent, decision: Decision): Promise<void> {
+  if (!decision.governance_kind) return;
+  if (decision.decision !== "deny" && decision.decision !== "suggest") return;
+  try {
+    await recordGovernance(ev.cwd ?? process.cwd(), {
+      ts: new Date().toISOString(),
+      kind: decision.governance_kind,
+      decision: decision.decision,
+      category: ev.category,
+      estimated_tokens: decision.estimated_tokens,
+    });
+  } catch (error) {
+    process.stderr.write(`tk hook copilot: governance-metric write skipped: ${error instanceof Error ? error.message : String(error)}\n`);
+  }
+}
+
+// Runtime entry for `tk hook copilot`. Reads stdin, emits exactly one protocol
 // JSON object on stdout, exits 0 (fail-open — never block the tool call).
 export async function runHookCopilot(): Promise<number> {
   let raw = "";
@@ -107,15 +139,18 @@ export async function runHookCopilot(): Promise<number> {
     ev = normalizeStdin(raw);
     decision = decide(ev);
   } catch (error) {
-    process.stderr.write(`tg hook copilot: ${error instanceof Error ? error.message : String(error)}\n`);
+    process.stderr.write(`tk hook copilot: ${error instanceof Error ? error.message : String(error)}\n`);
     ev = null;
     decision = ALLOW;
   }
 
-  process.stdout.write(JSON.stringify(decision));
+  process.stdout.write(JSON.stringify(toProtocol(decision)));
 
-  if (ev && ev.event === "errorOccurred") {
-    await recordFailureMetric(ev);
+  if (ev) {
+    await recordGovernanceMetric(ev, decision);
+    if (ev.event === "errorOccurred") {
+      await recordFailureMetric(ev);
+    }
   }
   return 0;
 }

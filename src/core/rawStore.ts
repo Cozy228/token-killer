@@ -1,7 +1,7 @@
 import { mkdir, writeFile } from "node:fs/promises";
 import path from "node:path";
 
-import type { RawResult, TgOptions } from "../types.js";
+import type { RawResult, TkOptions } from "../types.js";
 import { rawOutputDir, rawOutputPathRelative } from "./dataDir.js";
 import { safePathPart } from "./path.js";
 
@@ -14,7 +14,7 @@ function timestampForPath(date = new Date()): string {
 
 export async function maybeSaveRawOutput(
   raw: RawResult,
-  options: TgOptions,
+  options: TkOptions,
 ): Promise<string | undefined> {
   const rawText = `${raw.stdout}${raw.stderr}`;
   const shouldSave =

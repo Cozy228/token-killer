@@ -2,7 +2,7 @@ import { executeCommand } from "../../executor.js";
 import type { CommandHandler, ParsedCommand } from "../../types.js";
 import { makeFilteredResult, rawText } from "../base.js";
 
-// tg-only handler: rtk has no terraform support, so this is a pure addition rather
+// tk-only handler: rtk has no terraform support, so this is a pure addition rather
 // than an RTK port. Both subcommands are noise filters (retention-first): they drop
 // progress/banner lines that carry no decision value and keep the full actionable
 // body — no summarization, no "+N more" omission markers.

@@ -1,5 +1,5 @@
-// `tg agentsmd patch|restore` — compatibility alias (goal §"CLI contract",
-// §"Slice 6"). Manages the Token Guard token-budget marker block in the
+// `tk agentsmd patch|restore` — compatibility alias (goal §"CLI contract",
+// §"Slice 6"). Manages the Token Killer token-budget marker block in the
 // user-level instruction target. `patch` installs it (idempotent); `restore`
 // removes only the managed block.
 
@@ -15,6 +15,6 @@ export async function runAgentsmd(
   const sub = argv[0];
   if (sub === "patch") return applyMarkerBlock(home, "insert", nowMs);
   if (sub === "restore") return applyMarkerBlock(home, "remove", nowMs);
-  process.stderr.write(`tg agentsmd: expected 'patch' or 'restore', got '${sub ?? ""}'\n`);
+  process.stderr.write(`tk agentsmd: expected 'patch' or 'restore', got '${sub ?? ""}'\n`);
   return 1;
 }

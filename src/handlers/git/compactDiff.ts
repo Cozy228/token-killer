@@ -84,7 +84,7 @@ export function compactUnifiedDiff(diff: string, maxLines = 500): string {
   flushFileSummary();
 
   if (wasTruncated) {
-    result.push("[full diff: tg --raw git diff]");
+    result.push("[full diff: tk --raw git diff]");
   }
 
   return result.join("\n").trimStart();

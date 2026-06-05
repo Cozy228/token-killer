@@ -18,15 +18,15 @@ let cwd: string;
 
 beforeEach(() => {
   registerAllRules();
-  root = mkdtempSync(join(tmpdir(), "tg-ctx-opt-"));
+  root = mkdtempSync(join(tmpdir(), "tk-ctx-opt-"));
   home = join(root, "home");
   cwd = join(root, "repo");
   mkdirSync(home, { recursive: true });
   mkdirSync(cwd, { recursive: true });
-  process.env.TOKEN_GUARD_HOME = join(home, ".token-guard");
+  process.env.TOKEN_KILLER_HOME = join(home, ".token-killer");
 });
 afterEach(() => {
-  delete process.env.TOKEN_GUARD_HOME;
+  delete process.env.TOKEN_KILLER_HOME;
   rmSync(root, { recursive: true, force: true });
   vi.restoreAllMocks();
 });
@@ -95,7 +95,7 @@ describe("runOptimize --dry-run", () => {
     expect(out).toContain("--dry-run, scope = project");
     expect(out).toContain("always_on_bloat");
     // No advice file is written in dry-run.
-    expect(existsSync(join(home, ".token-guard", "advice", "context"))).toBe(false);
+    expect(existsSync(join(home, ".token-killer", "advice", "context"))).toBe(false);
   });
 
   test("hash mismatch suppresses a stale diff and asks for re-inspect", async () => {
@@ -111,12 +111,12 @@ describe("runOptimize --dry-run", () => {
     });
     restore();
     expect(code).toBe(0);
-    expect(calls.join("")).toContain("re-run `tg inspect`");
+    expect(calls.join("")).toContain("re-run `tk inspect`");
   });
 });
 
 describe("runOptimize --write-advice", () => {
-  test("writes user-scope advice to ~/.token-guard/advice/context/user.md without raw bodies", async () => {
+  test("writes user-scope advice to ~/.token-killer/advice/context/user.md without raw bodies", async () => {
     // Seed a user-level skill so static findings exist at user scope.
     const skill = join(home, ".claude", "skills", "deploy", "SKILL.md");
     mkdirSync(dirname(skill), { recursive: true });
@@ -131,7 +131,7 @@ describe("runOptimize --write-advice", () => {
     restore();
 
     expect(code).toBe(0);
-    const advicePath = join(home, ".token-guard", "advice", "context", "user.md");
+    const advicePath = join(home, ".token-killer", "advice", "context", "user.md");
     expect(existsSync(advicePath)).toBe(true);
     const content = readFileSync(advicePath, "utf8");
     expect(content).toContain("# Copilot Context Advice");

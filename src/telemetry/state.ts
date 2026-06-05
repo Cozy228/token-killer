@@ -1,13 +1,13 @@
-// Slice 3b — telemetry machine state (ADR 0004 §1). `~/.token-guard/
+// Slice 3b — telemetry machine state (ADR 0004 §1). `~/.token-killer/
 // telemetry-state.json` is INTERNAL, never hand-edited. It holds a once-generated
 // device salt; `device_hash = sha256(deviceSalt)` is the per-install anonymous id.
-// `tg telemetry purge` deletes this file (resetting the device_hash).
+// `tk telemetry purge` deletes this file (resetting the device_hash).
 
 import { createHash, randomBytes } from "node:crypto";
 import { existsSync, mkdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 
-import { tokenGuardHome } from "../core/dataDir.js";
+import { tokenKillerHome } from "../core/dataDir.js";
 
 export type TelemetryState = {
   deviceSalt: string; // 64 hex, generated once
@@ -16,7 +16,7 @@ export type TelemetryState = {
 };
 
 export function stateFile(): string {
-  return join(tokenGuardHome(), "telemetry-state.json");
+  return join(tokenKillerHome(), "telemetry-state.json");
 }
 
 function generateSalt(): string {

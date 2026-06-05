@@ -1,38 +1,62 @@
 # Goal: Ship Copilot Context Optimizer inspect + optimize
 
-Drive agent sessions that build Token Guard's static context optimizer for GitHub Copilot
+Drive agent sessions that build Token Killer's static context optimizer for GitHub Copilot
 workflows. This is not command-output compression. It diagnoses and improves the files that
 Copilot, VS Code, Claude, Gemini, and Codex may load as instructions, prompts, agents, or
 skills.
 
-**Architecture (locked — read this first).** There is exactly **one `tg inspect`** (DESIGN
+**Architecture (locked — read this first).** There is exactly **one `tk inspect`** (DESIGN
 §9), and it **runs all analyzers by default** — runtime (prompt/session/tool/input/output)
 *and* static context. The static context analysis this goal builds is **a set of analyzers
 inside that one inspect**, contributing `source = static_context` findings to the unified
-report. It is **NOT** a separate `tg inspect --copilot-context` scan command;
+report. It is **NOT** a separate `tk inspect --copilot-context` scan command;
 `--copilot-context`/`--surface`/`--project`/`--user` are only narrowing flags. Static context
-is **scope-aware** (ADR 0003): bare `tg inspect` reads **user-level** global context by
+is **scope-aware** (ADR 0003): bare `tk inspect` reads **user-level** global context by
 default (highest token leverage, runnable anywhere); `--project` selects the current repo;
 runtime analysis is orthogonal and always runs. The "context optimizer" is the **downstream
-consumer** `tg optimize context`: it reads inspect's findings and makes targeted modifications.
+consumer** `tk optimize context`: it reads inspect's findings and makes targeted modifications.
 
-The product shape is two-stage:
+The product shape is two-stage, and optimize itself has two layers:
 
-1. **Inspect** (the one `tg inspect`, DESIGN §9): read-only; static-context analyzers
+1. **Inspect** (the one `tk inspect`, DESIGN §9): read-only; static-context analyzers
    produce findings with evidence, severity, surface, confidence, and an explicit
    `fix_class`, merged into inspect's unified `Finding[]` report.
-2. **Optimize** (`tg optimize context`): consumes inspect's `source = static_context`
-   findings, applies only safe mechanical changes, and generates suggested diffs or advice
-   for everything that requires semantic or team workflow judgment. It first reads the
-   persisted inspect report (`~/.token-guard/projects/<fingerprint>/inspect/latest.json`);
+2. **Optimize** (`tk optimize context`): consumes inspect's `source = static_context`
+   findings, then separates work into:
+   - **Direct modify / restorable**: mechanical, reversible writes such as Token Killer
+     AGENTS/copilot-instructions marker blocks, Token Budget rules, high-confidence user-level
+     skill invocation flags, and user-level VS Code `chat.tools.compressOutput.enabled`.
+   - **Detect and advise**: findings that require semantic or team workflow judgment, including
+     instruction restructuring, prompt/agent extraction, and broader VS Code Copilot settings.
+   It first reads the
+   persisted inspect report (`~/.token-killer/projects/<fingerprint>/inspect/latest.json`);
    if absent it triggers a **full** inspect run (runtime + static context), so `latest.json`
    is always a complete report. To build each suggested diff it re-reads the live project
    file, validated against the finding's stored `body_hash` — no raw instruction body is ever
    persisted, and a hash mismatch prompts a re-inspect instead of emitting a stale diff.
 
+The direct managed instruction block is exactly:
+
+```markdown
+<!-- token-killer:start -->
+## Token Budget
+- Treat context as a limited budget; gather only what is needed to act safely.
+- Search before reading: use `rg` / `rg --files`, then open focused files or line ranges.
+- Prefer diffs, diagnostics, symbol hits, and targeted snippets over whole-file or full-log reads.
+- Avoid generated files, dependency folders, build outputs, lockfiles, and ignored paths unless required.
+- Cap command output and expand only when a specific missing detail is needed.
+- Do not reread unchanged files; cite the earlier read instead.
+- Stop exploring once there is enough context to implement or answer safely.
+- When running terminal commands for the agent, use `tk <original command>` when a `tk` handler exists; use raw commands only when exact output or interactivity is required.
+<!-- token-killer:end -->
+```
+
+Everything outside this managed block is advice unless another direct-restorable rule
+explicitly allows it.
+
 ## Source of truth
 
-- `docs/DESIGN.md` §4 and §5 define the product boundary; **§9 defines the one `tg inspect`**
+- `docs/DESIGN.md` §4 and §5 define the product boundary; **§9 defines the one `tk inspect`**
   (default-full) and §9.0 its unified `Finding` model — static context is a `source =
   static_context` analyzer inside it, and §10.5 defines the inspect → optimize consumer loop.
 - `docs/inspect-v1-design.md` defines the inspect posture: no source-code analysis, no
@@ -44,8 +68,32 @@ The product shape is two-stage:
   `.github/agents`.
 - Claude Code skill docs define skill-only metadata such as `disable-model-invocation`,
   `user-invocable`, `allowed-tools`, and progressive disclosure.
-- OpenAI prompt caching docs justify stable-prefix diagnostics, but Token Guard must not
+- OpenAI prompt caching docs justify stable-prefix diagnostics, but Token Killer must not
   claim provider token savings from local context cleanup.
+
+## RTK init prior art
+
+RTK's Copilot init has two relevant behaviors to copy, with Token Killer's user-level scope
+adjustment:
+
+- It writes a hook config that points Copilot `PreToolUse` at `rtk hook copilot`. The hook
+  only prefixes supported shell commands; the proxy handles compression.
+- It also upserts a guarded marker block into `copilot-instructions.md`, telling the agent
+  to prefix shell commands with `rtk`.
+- It writes the instruction block **before** hook config, so malformed instructions abort the
+  install without leaving a stale hook.
+- It preserves user content outside the marker block, updates stale marker content
+  idempotently, supports dry-run, and uninstall removes only RTK-managed content.
+- It does not touch third-party hook files.
+
+Token Killer follows the same pattern but changes defaults:
+
+- RTK project-scopes Copilot files under `.github/`; Token Killer defaults to **user-level**
+  writes and only writes project files under explicit `--project`.
+- The managed instruction block says `tk <original command>`, not `rtk`, and uses the
+  generic `## Token Budget` guidance below instead of a long command table.
+- Hook/shim delivery is handled by `tk init`; context optimizer only manages restorable
+  context/settings changes.
 
 ## Product stance
 
@@ -60,15 +108,34 @@ surface that can still enforce it:
 | Repeatable task workflow | `.github/prompts/*.prompt.md` |
 | Explicit persona + tool/model bundle | `.github/agents/*.agent.md` |
 | Claude-only reusable procedure | `SKILL.md` with progressive disclosure |
-| Token budget behavior | Token Guard managed marker block |
+| VS Code Copilot behavior toggle | user/workspace VS Code settings, usually advisory |
+| Token budget behavior | Token Killer managed marker block |
 
 Do not promise exact savings. Use "cost heuristic", "token pressure", "likely context
 waste", and "cacheability risk".
 
+## Copilot surface compatibility
+
+The optimizer must classify advice by Copilot surface instead of treating all files as one
+instruction blob:
+
+| Surface | Supported context | Token Killer action |
+|---------|-------------------|--------------------|
+| VS Code Chat / Agent | `.github/copilot-instructions.md`, `.github/instructions/*.instructions.md`, `AGENTS.md`, `CLAUDE.md`, prompt files, custom agents, skills, VS Code settings | inspect all relevant surfaces; direct apply only user-level marker/settings; advice for restructuring |
+| Copilot CLI | user/repo instructions, AGENTS-style files, hooks, custom agents depending on current CLI support | hook/shim delivery via `tk init`; context optimizer manages instruction blocks and advice |
+| Copilot code review | custom instructions, but with a 4,000-character per-file read limit | `copilot_review_truncation`; advise moving review-critical rules before char 4,000 |
+| Copilot cloud agent | repo/org instructions and custom agents, with feature support that differs from VS Code | adapter-specific advice; do not assume VS Code-only prompt/agent fields are supported |
+
+Rule priority and conflict handling matter more than raw length. GitHub/VS Code can combine
+multiple instruction layers in one request. Token Killer must flag duplicates and conflicts
+between personal, path-specific, repo-wide, agent, and org instructions; it must not silently
+choose a winner.
+
 ## Non-goals
 
-- No runtime command compression; that remains `tg <command>` and shim/hook delivery.
+- No runtime command compression; that remains `tk <command>` and shim/hook delivery.
 - No automatic project file rewrites in default mode.
+- No irreversible optimize action. Every direct modification must have a restore path.
 - No source-code analysis beyond metadata needed to classify context files.
 - No generation of new full `SKILL.md`, agent, or prompt files from scratch.
 - No deletion of user instructions, even if duplicated.
@@ -78,11 +145,11 @@ waste", and "cacheability risk".
 
 ## CLI contract
 
-Static context findings come out of the **one** `tg inspect`. Two **orthogonal** flag axes
+Static context findings come out of the **one** `tk inspect`. Two **orthogonal** flag axes
 narrow it (ADR 0003):
 
 - **Scope** (`--project` / `--user`) selects which static-context surfaces are read. The
-  default — bare `tg inspect`, runnable anywhere — is **user-level**, because global context
+  default — bare `tk inspect`, runnable anywhere — is **user-level**, because global context
   (`~/.claude/CLAUDE.md`, `~/.claude/skills`, `~/.copilot/copilot-instructions.md`) loads
   into *every* session and is the highest-leverage token cost. `--project` selects the
   current repo; pass both for both.
@@ -90,26 +157,28 @@ narrow it (ADR 0003):
   (session) analysis is orthogonal to scope and **always runs** unless `--copilot-context`
   turns it off.
 
-The new command this goal owns is `tg optimize context` (the consumer).
+The new command this goal owns is `tk optimize context` (the consumer).
 
 ```bash
-tg inspect                              # default: USER-level static context + runtime
-tg inspect --project                    # project static context + runtime
-tg inspect --project --user             # both scopes + runtime
-tg inspect --copilot-context            # narrow: static-context only (no runtime), user scope
-tg inspect --project --copilot-context  # narrow: static-context only, project scope
-tg inspect --surface instructions       # narrow further to one surface
-tg inspect --surface prompts
-tg inspect --surface agents
-tg inspect --surface skills
-tg inspect --json                       # unified Finding[] report
-tg inspect --fail-on <severity>         # opt-in: exit 4 if findings at/above this severity exist
+tk inspect                              # default: USER-level static context + runtime
+tk inspect --project                    # project static context + runtime
+tk inspect --project --user             # both scopes + runtime
+tk inspect --copilot-context            # narrow: static-context only (no runtime), user scope
+tk inspect --project --copilot-context  # narrow: static-context only, project scope
+tk inspect --surface instructions       # narrow further to one surface
+tk inspect --surface prompts
+tk inspect --surface agents
+tk inspect --surface skills
+tk inspect --json                       # unified Finding[] report
+tk inspect --fail-on <severity>         # opt-in: exit 4 if findings at/above this severity exist
 
-tg optimize context --dry-run           # read inspect findings → suggested diffs, no write
-tg optimize context --apply-safe
-tg optimize context --write-advice
-tg optimize context --surface skills --dry-run
-tg optimize context --token-budget-block --apply-safe
+tk optimize context --dry-run           # read inspect findings → suggested diffs, no write
+tk optimize context --apply-safe
+tk optimize context --restore
+tk optimize context --write-advice
+tk optimize context --surface skills --dry-run
+tk optimize context --vscode-settings --apply-safe
+tk optimize context --token-budget-block --apply-safe
 ```
 
 `--copilot-context` (static-only) is mutually exclusive with runtime-only flags
@@ -120,17 +189,17 @@ both axes.
 Compatibility aliases:
 
 ```bash
-tg skill scan
-tg skill optimize --dry-run
-tg agentsmd patch
-tg agentsmd restore
+tk skill scan
+tk skill optimize --dry-run
+tk agentsmd patch
+tk agentsmd restore
 ```
 
-Exit codes. `tg inspect` keeps the inspect-v1 table (ADR 0003); `--fail-on` adds an opt-in
+Exit codes. `tk inspect` keeps the inspect-v1 table (ADR 0003); `--fail-on` adds an opt-in
 code that does **not** reuse `2`. Findings never change the exit code on their own — inspect
 is diagnostic, not enforcement.
 
-`tg inspect`:
+`tk inspect`:
 
 | Code | Meaning |
 |------|---------|
@@ -140,7 +209,7 @@ is diagnostic, not enforcement.
 | 3 | Internal error |
 | 4 | Findings at/above `--fail-on` severity exist (only when `--fail-on` is passed) |
 
-`tg optimize context`:
+`tk optimize context`:
 
 | Code | Meaning |
 |------|---------|
@@ -163,12 +232,17 @@ export type ContextSurface =
   | "prompt_file"
   | "custom_agent"
   | "skill"
+  | "vscode_settings"
   | "stable_prefix";
 
 // Shared with runtime findings. "delivery" belongs to runtime findings (install shim/hook);
-// static-context findings only use the other four classes.
+// static-context findings use direct_restorable, suggested_diff, advisory, and non_goal.
 export type FixClass =
-  | "safe_mechanical" | "suggested_diff" | "advisory" | "delivery" | "non_goal";
+  | "direct_restorable"
+  | "suggested_diff"
+  | "advisory"
+  | "delivery"
+  | "non_goal";
 
 export type FindingSeverity = "info" | "warn" | "error";
 
@@ -194,13 +268,13 @@ export type ContextFinding = {
 ```
 
 These findings are written into the inspect report for their **scope bucket** (ADR 0003);
-`tg optimize context` reads the matching bucket:
+`tk optimize context` reads the matching bucket:
 
 ```text
-~/.token-guard/user-context/inspect/latest.json               # user-scope unified Finding[] report
-~/.token-guard/projects/<fingerprint>/inspect/latest.json     # project-scope unified Finding[] report
-~/.token-guard/advice/context/user.md                         # optimize --write-advice (user scope)
-~/.token-guard/advice/context/<fingerprint>.md                # optimize --write-advice (project scope)
+~/.token-killer/user-context/inspect/latest.json               # user-scope unified Finding[] report
+~/.token-killer/projects/<fingerprint>/inspect/latest.json     # project-scope unified Finding[] report
+~/.token-killer/advice/context/user.md                         # optimize --write-advice (user scope)
+~/.token-killer/advice/context/<fingerprint>.md                # optimize --write-advice (project scope)
 ```
 
 Do not store raw instruction bodies by default. Store file path, line range, type, counts,
@@ -210,8 +284,8 @@ hash, and short evidence snippets only.
 
 ```text
 src/context/
-  analyzer.ts            # static-context analyzer registered into tg inspect (emits ContextFinding[])
-  optimizeCli.ts         # `tg optimize context` consumer command (reads inspect findings)
+  analyzer.ts            # static-context analyzer registered into tk inspect (emits ContextFinding[])
+  optimizeCli.ts         # `tk optimize context` consumer command (reads inspect findings)
   discover.ts            # find supported context files
   parseMarkdown.ts       # frontmatter + markdown section parsing
   metrics.ts             # chars, estimated tokens, headings, hashes, line maps
@@ -219,6 +293,8 @@ src/context/
   advice.ts              # user-level advice writer
   patchPlan.ts           # safe patch/suggested diff planning
   applySafe.ts           # marker/frontmatter safe writes only
+  restore.ts             # restore managed marker blocks and settings/frontmatter backups
+  vscodeSettings.ts      # locate/read/plan VS Code user/workspace settings changes
   rules/
     alwaysOn.ts
     pathInstructions.ts
@@ -228,24 +304,25 @@ src/context/
     duplicates.ts
     conflicts.ts
     cacheability.ts
+    vscodeSettings.ts
 ```
 
 `src/context/` owns no `inspect` command. Instead it exposes a static-context **analyzer**
-that `tg inspect` (`src/inspect/`) calls on every run (scope-aware: user-level by default,
-project under `--project`), plus the `tg optimize context` consumer command. Keep the implementation independent from command
+that `tk inspect` (`src/inspect/`) calls on every run (scope-aware: user-level by default,
+project under `--project`), plus the `tk optimize context` consumer command. Keep the implementation independent from command
 handlers. It may reuse `src/core/dataDir.ts` for storage and `src/core/savings.ts` for rough
 token estimates, but it must not call the command pipeline. The optimize consumer reads
 inspect's persisted `inspect/latest.json` for the relevant scope bucket (project bucket by
 default; `--surface skills` user-level work reads the user bucket). When the bucket is
-absent it triggers a full inspect run for that scope (`tg inspect --project`, or `--user`) —
+absent it triggers a full inspect run for that scope (`tk inspect --project`, or `--user`) —
 it does not re-scan or re-rank on its own.
 
 ## Discovery
 
 `src/context/discover.ts` scans a bounded set of paths, split by **scope** (ADR 0003).
 
-User-level candidates — **the default scope** (bare `tg inspect`, or `--user`). Global
-context loads into every session, so it is scanned by default and `tg inspect` is runnable
+User-level candidates — **the default scope** (bare `tk inspect`, or `--user`). Global
+context loads into every session, so it is scanned by default and `tk inspect` is runnable
 anywhere, including outside any repo:
 
 ```text
@@ -253,6 +330,7 @@ $HOME/.claude/CLAUDE.md
 $HOME/.copilot/copilot-instructions.md
 $COPILOT_CUSTOM_INSTRUCTIONS_DIRS/**/{AGENTS.md,.github/instructions/**/*.instructions.md}
 $HOME/.claude/skills/*/SKILL.md
+VS Code user settings.json for the active platform/profile
 ```
 
 Project-level candidates — scanned only under `--project` (or `--project --user`), resolved
@@ -268,14 +346,15 @@ AGENTS.md
 CLAUDE.md
 GEMINI.md
 .claude/skills/*/SKILL.md
+.vscode/settings.json
 ```
 
 Persistence is split into two scope buckets so global findings are never duplicated across
 projects or left stale (ADR 0003):
 
 ```text
-~/.token-guard/user-context/inspect/latest.json        # user scope (no fingerprint)
-~/.token-guard/projects/<fingerprint>/inspect/latest.json   # project scope
+~/.token-killer/user-context/inspect/latest.json        # user scope (no fingerprint)
+~/.token-killer/projects/<fingerprint>/inspect/latest.json   # project scope
 ```
 
 Runtime findings (orthogonal to scope) are written into whichever bucket(s) a run produces.
@@ -288,7 +367,7 @@ Boundaries:
 
 - Never recurse through dependency, build, VCS, cache, or raw output directories:
   `node_modules`, `.git`, `dist`, `build`, `target`, `coverage`, `.next`,
-  `.token-guard`.
+  `.token-killer`.
 - Cap discovery at 200 files by default; emit `discovery_truncated` if exceeded.
 - `--repo-context` may include lightweight metadata from `README.md`, `package.json`, or
   `docs/`, but must not scan source files for code review.
@@ -335,9 +414,12 @@ Heuristics:
 
 Recommendation:
 
+- Keep always-on files for rules that are needed in almost every request.
 - Move path-specific rules to `.github/instructions/*.instructions.md`.
 - Move repeatable tasks to `.github/prompts/*.prompt.md`.
 - Move explicit persona/tool bundles to `.github/agents/*.agent.md`.
+- Remove or shorten "always be detailed", "always read external resources", and
+  "always include full explanations" style instructions unless they are hard team rules.
 
 Fix class: `suggested_diff` or `advisory`.
 
@@ -355,6 +437,8 @@ Recommendation:
 
 - Suggest a new or existing `.github/instructions/<name>.instructions.md` target with an
   `applyTo` glob.
+- Examples: React rules belong in `frontend.instructions.md`; migration rules belong in
+  `db-migrations.instructions.md`; they do not belong in repo-wide instructions.
 
 Fix class: `suggested_diff`. Do not auto-create the new file.
 
@@ -390,6 +474,8 @@ Recommendation:
 
 - Move the workflow to `.github/prompts/<name>.prompt.md`.
 - Keep only a one-line route in always-on instructions if needed.
+- Examples: code review, test generation, migration planning, README generation, release
+  notes, and PR descriptions are task templates, not always-on instructions.
 
 Fix class: `advisory` by default. Generating a prompt file changes workflow semantics.
 
@@ -412,7 +498,7 @@ Recommendation:
 
 Fix class:
 
-- `safe_mechanical` only for adding missing `description` inferred from file name when
+- `direct_restorable` only for adding missing `description` inferred from file name when
   `--apply-safe --surface prompts` is explicitly used.
 - otherwise `suggested_diff`.
 
@@ -432,6 +518,9 @@ Recommendation:
 
 - Make the agent explicit: one persona, one workflow family, narrow tools.
 - Move task templates to prompt files if the agent only wraps a single prompt.
+- Use custom agents for long-lived specialized roles that need tool restrictions, model
+  preference, handoffs, or a distinct persona; do not emulate those roles with always-on
+  instructions.
 
 Fix class: `advisory`.
 
@@ -457,7 +546,7 @@ Recommendation:
 Fix class:
 
 - `suggested_diff` by default.
-- `safe_mechanical` only for user-level skills when the rule has high confidence and
+- `direct_restorable` only for user-level skills when the rule has high confidence and
   `--apply-safe --surface skills` is explicit.
 
 ### 8. `skill_entrypoint_bloat`
@@ -491,6 +580,8 @@ Recommendation:
 - Keep the rule in the narrowest durable surface.
 - Replace duplicates with a short route/reference only when the target surface reliably
   loads that reference.
+- Treat root `AGENTS.md` as routing guidance: what to read, what to run, and what to avoid.
+  It should not copy README, ADRs, full test strategy, or review checklists verbatim.
 
 Fix class: `advisory` or `suggested_diff`. Never delete automatically.
 
@@ -508,6 +599,8 @@ Recommendation:
 
 - Report both file locations and the higher-priority surface when known.
 - Ask the user/team to choose the canonical rule.
+- Prefer a conflict finding over a compression finding when the same content is both long
+  and contradictory. A shorter contradiction is still harmful.
 
 Fix class: `advisory`.
 
@@ -525,6 +618,8 @@ Recommendation:
 
 - Move review-critical rules into the first 4,000 characters.
 - Use path-specific instructions when review rules only apply to certain files.
+- If the first 4,000 characters are preamble and the concrete review rules come later,
+  report this as ineffective for Copilot code review even if VS Code Chat can still see it.
 
 Fix class: `suggested_diff`. Do not auto-reorder.
 
@@ -544,7 +639,65 @@ Recommendation:
 - Move volatile content to advice/history.
 - Use stable headings and canonical ordering.
 
-Fix class: `suggested_diff` for Token Guard managed files, `advisory` for project files.
+Fix class: `suggested_diff` for Token Killer managed files, `advisory` for project files.
+
+### 13. `vscode_terminal_compression_disabled`
+
+Applies to VS Code user/workspace settings.
+
+Heuristic:
+
+- `chat.tools.compressOutput.enabled` is absent or not `true`
+
+Recommendation:
+
+- Set user-level `chat.tools.compressOutput.enabled: true`. VS Code documents this setting as
+  compressing large terminal output before sending it to the model to reduce context window
+  usage.
+
+Fix class:
+
+- `direct_restorable` for user-level VS Code settings.
+- `suggested_diff` for workspace settings.
+
+### 14. `vscode_context_surface_risk`
+
+Applies to VS Code user/workspace settings.
+
+Heuristics:
+
+- `chat.includeReferencedInstructions: true`
+- `chat.useNestedAgentsMdFiles: true`
+- `chat.useCustomizationsInParentRepositories: true`
+- `github.copilot.chat.additionalReadAccessFolders` is non-empty
+- `chat.mcp.discovery.enabled: true`
+- `github.copilot.chat.codesearch.enabled: true`
+- `github.copilot.chat.edits.suggestRelatedFilesFromGitHistory: true`
+- `chat.sendElementsToChat.attachCSS: true` or `chat.sendElementsToChat.attachImages: true`
+
+Recommendation:
+
+- Explain which context surface may expand and when it is worth keeping enabled. Do not
+  auto-disable these settings; they encode workflow preferences.
+
+Fix class: `advisory`.
+
+### 15. `vscode_agent_budget_risk`
+
+Applies to VS Code user/workspace settings.
+
+Heuristics:
+
+- `chat.agent.maxRequests > 15`
+- `github.copilot.chat.agent.autoFix: true` in strict token-control mode
+- broad MCP/tool settings that allow extra autonomous tool use
+
+Recommendation:
+
+- Suggest a lower request budget, typically 8-12 for token-control profiles.
+- Keep this advisory because it can reduce complex-task success.
+
+Fix class: `advisory`.
 
 ## Patch planning
 
@@ -560,34 +713,44 @@ export type ContextPatchPlan = {
 };
 
 export type ContextPatchOperation =
-  | { kind: "insert_marker_block"; path: string; marker: "token_budget" }
-  | { kind: "remove_marker_block"; path: string; marker: "token_budget" }
+  | { kind: "insert_marker_block"; path: string; marker: "token_killer" }
+  | { kind: "remove_marker_block"; path: string; marker: "token_killer" }
   | { kind: "frontmatter_set"; path: string; key: string; value: unknown }
+  | { kind: "vscode_setting_set"; path: string; key: string; value: unknown }
   | { kind: "suggested_diff"; path: string; diff: string };
 ```
 
-Only `insert_marker_block`, `remove_marker_block`, and explicit high-confidence
-user-level `frontmatter_set` are eligible for `applySafe`.
+Only `insert_marker_block`, `remove_marker_block`, explicit high-confidence user-level
+`frontmatter_set`, and user-level `vscode_setting_set` for
+`chat.tools.compressOutput.enabled: true` are eligible for direct apply.
 
-## Safe apply rules
+## Direct apply and restore rules
 
 `src/context/applySafe.ts` may write only when all conditions hold:
 
-- target is user-level, or target is a Token Guard managed marker block
-- operation has `fix_class === "safe_mechanical"`
-- a backup is written under `~/.token-guard/backups/context/<timestamp>/`
+- operation has `fix_class === "direct_restorable"`
+- a backup is written under `~/.token-killer/backups/context/<timestamp>/`
 - the patch can be reversed
 - the generated diff is printed
 
-Project files in the current repo are never modified by default. For project files,
-`--dry-run` prints a diff and `--write-advice` writes an advice artifact.
+Allowed direct modifications:
+
+| Direct operation | Default target | Restore behavior |
+|------------------|----------------|------------------|
+| Insert Token Killer `tk <command>` / Token Budget marker block | user-level AGENTS/copilot-instructions target | remove only the marker block |
+| Insert project marker block | only with explicit `--project` | remove only the marker block |
+| Add high-confidence skill invocation frontmatter | user-level skill and explicit `--surface skills` | restore backed-up original file |
+| Set `chat.tools.compressOutput.enabled: true` | VS Code user settings | restore original value, or delete key if absent before apply |
+
+Project semantic rewrites are never direct modifications. For project files, `--dry-run`
+prints a diff and `--write-advice` writes an advice artifact.
 
 ## Advice format
 
 Write Markdown advice to:
 
 ```text
-~/.token-guard/advice/context/<project_fingerprint>.md
+~/.token-killer/advice/context/<project_fingerprint>.md
 ```
 
 Shape:
@@ -610,13 +773,15 @@ Files scanned: <n>
 
 ## Safe applies available
 
-- Run `tg optimize context --token-budget-block --apply-safe` to install the managed token
+- Run `tk optimize context --token-budget-block --apply-safe` to install the managed token
   budget block in your user-level agent instructions.
+- Run `tk optimize context --vscode-settings --apply-safe` to enable VS Code terminal output
+  compression in user settings.
 ```
 
 ## Report format
 
-The static-context findings render as a section within `tg inspect`'s unified report
+The static-context findings render as a section within `tk inspect`'s unified report
 (not a standalone "Copilot Context Inspect" document). Default text groups by severity and
 fix class:
 
@@ -633,190 +798,225 @@ Findings: 6 (warn 4, info 2)
 [info] skill_invocation_policy ~/.claude/skills/deploy/SKILL.md:1
   Evidence: side-effect workflow lacks disable-model-invocation.
   Recommendation: Add disable-model-invocation: true.
-  Fix: suggested_diff
+  Fix: direct_restorable
+
+[info] vscode_terminal_compression_disabled ~/Library/Application Support/Code/User/settings.json
+  Evidence: chat.tools.compressOutput.enabled is absent.
+  Recommendation: Set chat.tools.compressOutput.enabled to true in user settings.
+  Fix: direct_restorable
 ```
 
 JSON output is inspect's unified `Finding[]` report (DESIGN §9.0); static-context findings
 are the entries with `source = "static_context"`.
 
-## Implementation slices
+## Remaining implementation work
 
-### Slice 1 — Discovery + parser + analyzer wired into `tg inspect`
+The baseline already has static-context discovery, parsing, metrics, report rendering,
+several finding rules, dry-run/advice output, and the first direct-apply path. Do not rebuild
+those pieces. Continue from the current code by tightening the contract below.
 
-Deliver:
+### Work item 1 — Rename legacy safe-apply semantics
 
-- `src/context/discover.ts`
-- `src/context/parseMarkdown.ts`
-- `src/context/metrics.ts`
-- `src/context/report.ts` (static-context view within inspect's report)
-- `src/context/analyzer.ts` registered into `tg inspect` so every run emits
-  `source = static_context` findings (no standalone `--copilot-context` *command* — only the
-  narrowing flag). Scope flags (`--project`/`--user`, default user) select which surfaces;
-  `--surface` narrows further.
+Current code still uses the old `safe_mechanical` fix class and `tk:token_budget` marker.
+Migrate it to the design contract:
+
+- Rename `safe_mechanical` to `direct_restorable` in context types, rule outputs, tests,
+  report text, patch planning, and apply filtering.
+- Rename marker constants to:
+  - start: `<!-- token-killer:start -->`
+  - end: `<!-- token-killer:end -->`
+- Support restore of legacy `<!-- tk:token_budget:* -->` blocks for one release, but new
+  writes must only emit the Token Killer marker.
+- Update the managed block text to the exact `## Token Budget` block in this goal.
 
 Tests:
 
-- `tg inspect` (no flag) includes **user-level** static-context findings in the unified report
-- `tg inspect --project` includes project static-context findings
-- `tg inspect --copilot-context` narrows to static-context findings only (no runtime)
-- discovers supported user/project files per scope
-- skips dependency/build/cache dirs
-- parses frontmatter and malformed frontmatter
-- line ranges remain stable
-- text and JSON report render
+- existing legacy marker can be removed by restore
+- insert writes only `token-killer:*` markers
+- repeated insert is idempotent and replaces stale Token Killer marker content
+- no code path still emits `safe_mechanical`
 
-Verification:
+### Work item 2 — Make optimizer interactive by default for mixed actions
+
+`tk optimize context` can become an interactive consumer because many findings are advice,
+not safe edits. The non-interactive flags remain available for automation.
+
+CLI behavior:
+
+```bash
+tk optimize context                 # interactive TTY flow when stdout is a TTY
+tk optimize context --dry-run        # non-interactive plan only
+tk optimize context --apply-safe     # non-interactive direct-restorable apply only
+tk optimize context --yes            # accept all direct_restorable actions; never applies advisory actions
+tk optimize context --restore        # interactive restore picker unless --all or --action-id is passed
+```
+
+Interactive flow:
+
+1. Load or trigger inspect for the selected scope.
+2. Group findings into:
+   - `Direct and restorable`
+   - `Suggested diffs`
+   - `Advice only`
+   - `Not applicable / stale`
+3. Show each direct action with target path, exact diff summary, restore method, and risk.
+4. Let the user choose:
+   - apply this
+   - skip this
+   - show full diff
+   - write advice instead
+   - quit without writing
+5. Apply only selected `direct_restorable` actions.
+6. Print restore commands and action ids after writes.
+
+Non-TTY behavior:
+
+- Without `--dry-run`, `--apply-safe`, `--write-advice`, `--restore`, or `--yes`, fail with a
+  short message telling the caller to choose a non-interactive mode.
+- Never prompt in CI.
+
+Tests:
+
+- TTY interactive flow can apply one selected action and skip another
+- non-TTY bare command fails without writing
+- `--yes` applies only `direct_restorable` operations
+- advisory and suggested-diff findings are never applied by `--yes`
+
+### Work item 3 — Direct-restorable action ledger and restore
+
+Direct modification must be restorable even when more than one file changes.
+
+Implement an action manifest under:
+
+```text
+~/.token-killer/optimize/actions/<action_id>.json
+```
+
+Manifest fields:
+
+```ts
+type OptimizeActionManifest = {
+  id: string;
+  created_at: string;
+  scope: "user" | "project";
+  command: string[];
+  operations: Array<{
+    kind: "marker_block" | "frontmatter" | "vscode_setting";
+    target: string;
+    before_hash: string | null;
+    after_hash: string;
+    backup_path?: string;
+    restore: "remove_marker" | "restore_backup" | "restore_vscode_setting";
+    original_setting_value?: unknown;
+    original_setting_existed?: boolean;
+  }>;
+};
+```
+
+Restore behavior:
+
+- `tk optimize context --restore --action-id <id>` restores one action.
+- `tk optimize context --restore --all` restores all Token Killer context optimizer actions in
+  reverse chronological order.
+- Bare `--restore` on a TTY opens an action picker.
+- Marker restore removes only the Token Killer marker block.
+- VS Code setting restore restores the old value, or deletes the key when it did not exist.
+- Backup restore must verify the current file hash before overwriting; if changed, refuse and
+  print the backup path.
+
+Tests:
+
+- action manifest is written after successful apply
+- failed operation does not leave a manifest claiming success
+- restore is idempotent
+- restore refuses hash-mismatched backup overwrite
+
+### Work item 4 — VS Code settings direct action plus advisory rules
+
+Add a VS Code settings adapter without turning it into a broad settings mutator.
+
+Direct action:
+
+- User settings only: set `chat.tools.compressOutput.enabled` to `true`.
+- Preserve JSONC comments and formatting when possible; otherwise use a stable JSONC writer.
+- Store original value/existence in the action manifest.
+
+Advisory-only findings:
+
+- `chat.includeReferencedInstructions`
+- `chat.useNestedAgentsMdFiles`
+- `chat.useCustomizationsInParentRepositories`
+- `github.copilot.chat.additionalReadAccessFolders`
+- `chat.mcp.discovery.enabled`
+- `github.copilot.chat.codesearch.enabled`
+- `github.copilot.chat.edits.suggestRelatedFilesFromGitHistory`
+- `chat.agent.maxRequests`
+- `github.copilot.chat.agent.autoFix`
+
+Tests:
+
+- user setting absent → direct_restorable finding and apply
+- user setting false → direct_restorable finding and apply
+- workspace setting false/absent → suggested diff only
+- broad context settings produce advisory findings only
+
+### Work item 5 — Skill invocation frontmatter direct action
+
+Keep this narrower than the scan findings.
+
+Direct action eligibility:
+
+- scope is user
+- surface is `skill`
+- finding type is `skill_invocation_policy`
+- confidence is high
+- operation only adds or updates one known frontmatter key
+- `--surface skills` is explicit, or the interactive picker selected that action
+
+Suggested keys:
+
+- side-effect workflow: `disable-model-invocation: true`
+- background-only knowledge: `user-invocable: false`
+- read-only skill: narrow `allowed-tools`
+
+Do not auto-apply project skills. Do not apply Claude-only frontmatter to Copilot prompts,
+agents, or instructions.
+
+### Work item 6 — Project marker writes require explicit scope and interaction
+
+Default writes stay user-level. Project marker writes are allowed only when all are true:
+
+- `--project` is passed
+- operation is the Token Killer marker block
+- command is interactive and the user selects the action, or non-interactive mode passes
+  `--apply-safe --project --yes`
+- target file is `.github/copilot-instructions.md` or root `AGENTS.md`
+
+Project semantic rewrites remain suggested diff/advice only.
+
+### Work item 7 — Verification commands
+
+Use focused verification while this is in progress:
 
 ```bash
 pnpm test:product -- context
-pnpm typecheck
-```
-
-### Slice 2 — Low-risk finding rules
-
-Deliver:
-
-- `always_on_bloat`
-- `path_instruction_overbreadth`
-- `prompt_metadata_gap`
-- `copilot_review_truncation`
-- `cacheability_churn`
-
-Tests:
-
-- fixture files for each supported surface
-- no finding for compact healthy examples
-- no crashes on malformed markdown
-
-Verification:
-
-```bash
-pnpm test:product -- context
-pnpm typecheck
-```
-
-### Slice 3 — Duplicate/conflict/task-surface rules
-
-Deliver:
-
-- `instruction_duplicate`
-- `instruction_conflict`
-- `conditional_rule_in_always_on`
-- `task_prompt_in_instruction`
-- `agent_overbreadth`
-
-Tests:
-
-- exact duplicates and near duplicates
-- curated conflict families
-- task workflows suggested as prompt files
-- no broad source-code scan
-
-Verification:
-
-```bash
-pnpm test:product -- context
-pnpm test:validate-docs
-```
-
-### Slice 4 — Skill adapter
-
-Deliver:
-
-- Claude skill parser support
-- `skill_invocation_policy`
-- `skill_entrypoint_bloat`
-- adapter labels so Claude-only fields are not treated as Copilot features
-
-Tests:
-
-- side-effect skill recommends `disable-model-invocation`
-- background knowledge skill recommends `user-invocable: false`
-- long entrypoint recommends progressive disclosure
-- project skill remains suggested/advisory only
-
-Verification:
-
-```bash
-pnpm test:product -- context
-pnpm typecheck
-```
-
-### Slice 5 — Optimize consumer: dry-run + advice writer
-
-`tg optimize context` is the **consumer**. It reads inspect's persisted
-`inspect/latest.json` for the relevant scope bucket (project bucket by default; the user
-bucket for `--surface skills` user-level work), filtering to `source = static_context`
-findings; if absent it triggers a full inspect for that scope (`tg inspect --project` or
-`--user`), then plans patches off those findings.
-
-Deliver:
-
-- `tg optimize context --dry-run`
-- `tg optimize context --write-advice`
-- `src/context/optimizeCli.ts` (reads inspect report → patch plan)
-- `src/context/patchPlan.ts`
-- `src/context/advice.ts`
-
-Tests:
-
-- consumes a persisted `inspect/latest.json`; triggers inspect when it is absent
-- only `source = static_context` findings drive patches
-- suggested diff includes line ranges and does not write files
-- advice file writes under `~/.token-guard/advice/context/`
-- no raw instruction body persisted
-
-Verification:
-
-```bash
-TOKEN_GUARD_HOME="$(mktemp -d)" pnpm test:product -- context
-pnpm typecheck
-```
-
-### Slice 6 — Safe apply + restore
-
-Deliver:
-
-- `tg optimize context --apply-safe`
-- `tg optimize context --token-budget-block --apply-safe`
-- `tg agentsmd patch`
-- `tg agentsmd restore`
-- user-level backups
-
-Allowed writes:
-
-- `$HOME/.copilot/copilot-instructions.md` Token Guard marker block
-- user-level `AGENTS.md` only when explicitly configured as a user instruction target
-- user-level Claude skills only for high-confidence frontmatter changes and explicit
-  `--surface skills`
-
-Tests:
-
-- marker insertion is idempotent
-- restore removes only Token Guard marker block
-- backup is created before write
-- project-level file refuses `--apply-safe`
-- frontmatter change preserves body and comments
-
-Verification:
-
-```bash
-TOKEN_GUARD_HOME="$(mktemp -d)" pnpm test:product -- context
+pnpm test:product -- inspect
 pnpm test:validate-docs
 pnpm typecheck
 ```
 
 ## Acceptance criteria
 
-- `tg inspect` (default-full) includes static-context findings; `tg inspect --copilot-context`
+- `tk inspect` (default-full) includes static-context findings; `tk inspect --copilot-context`
   narrows to them. Both are fully read-only.
 - All static-context findings carry `source = "static_context"`, file, evidence,
   recommendation, and `fix_class`, merged into inspect's unified report.
-- `tg optimize context` consumes inspect's persisted report (or triggers inspect when absent).
-- `tg optimize context --dry-run` never writes.
-- `tg optimize context --write-advice` writes only user-level advice.
-- `tg optimize context --apply-safe` refuses project-level semantic edits.
-- Token Guard managed marker block is idempotent and restorable.
+- `tk optimize context` consumes inspect's persisted report (or triggers inspect when absent).
+- `tk optimize context --dry-run` never writes.
+- `tk optimize context --write-advice` writes only user-level advice.
+- `tk optimize context --apply-safe` refuses project-level semantic edits.
+- Token Killer managed marker block is idempotent and restorable.
+- Direct VS Code settings writes are idempotent and restorable.
 - Claude-only skill metadata never appears as a Copilot recommendation.
 - The implementation does not scan source files for code review.
 - Tests cover healthy and unhealthy examples for every finding type.
@@ -830,5 +1030,5 @@ pnpm typecheck
 | Copilot surface support changes | adapter labels and source notes stay in findings |
 | Duplicate detection deletes useful local nuance | no automatic deletes |
 | Skill frontmatter breaks shared project skills | project skills are never safe-applied |
+| VS Code settings changes alter user workflow | only terminal compression is direct-applied by default; other settings are advisory |
 | Prompt cache claims are overstated | report cacheability risk only, never provider savings |
-

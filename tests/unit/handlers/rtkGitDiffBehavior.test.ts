@@ -5,7 +5,7 @@ import { expectRtkParity, filterRtkFixture } from "../../helpers/rtkCommandHarne
 // RTK oracle: git/diff_cmd.rs + system/pipe_cmd.rs::git_diff_wrapper —
 // `rtk git diff` filters the diff with `compact_diff(input, 200)` and emits only
 // the condensed per-file changes (header + hunks + `+N -M`), never a diffstat and
-// never live working-tree state. tg's git-diff filter must process ONLY the
+// never live working-tree state. tk's git-diff filter must process ONLY the
 // provided diff text; it must not shell out to `git diff --stat` (which reads the
 // real repo and previously inflated fixture output well past the raw size).
 describe("RTK git-diff behavior", () => {

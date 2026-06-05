@@ -1,18 +1,18 @@
 /**
- * Multipass VM management for tg (token-guard) integration testing.
+ * Multipass VM management for tk (token-killer) integration testing.
  *
- * Ported from rtk/scripts/benchmark/lib/vm.ts and adapted to tg conventions:
+ * Ported from rtk/scripts/benchmark/lib/vm.ts and adapted to tk conventions:
  *   - Bun's `$` shell helper replaced with Node child_process.
- *   - Build step builds the tg Node CLI (`pnpm install && pnpm build` -> dist/cli.js)
+ *   - Build step builds the tk Node CLI (`pnpm install && pnpm build` -> dist/cli.js)
  *     instead of a Rust `cargo build --release` binary.
  *   - "binary size" reporting now measures the built dist/cli.js artifact size.
- *   - VM/labels renamed rtk -> tg.
+ *   - VM/labels renamed rtk -> tk.
  */
 
 import { spawn } from "node:child_process";
 import { setTimeout as delay } from "node:timers/promises";
 
-const VM_NAME = "tg-test";
+const VM_NAME = "tk-test";
 const CLOUD_INIT = "scripts/benchmark/cloud-init.yaml";
 
 export interface VmInfo {
@@ -140,28 +140,28 @@ export async function vmWaitReady(maxWaitSec = 2400): Promise<boolean> {
   return false;
 }
 
-/** Transfer tg source and build the Node CLI (dist/cli.js) */
-export async function vmBuildTg(projectRoot: string): Promise<{
+/** Transfer tk source and build the Node CLI (dist/cli.js) */
+export async function vmBuildTk(projectRoot: string): Promise<{
   buildTime: number;
   binarySize: number;
   version: string;
 }> {
-  console.log("[vm] Transferring tg source...");
+  console.log("[vm] Transferring tk source...");
 
   // Create tarball excluding heavy dirs and macOS resource forks (._*)
   await runChecked("bash", [
     "-c",
-    `COPYFILE_DISABLE=1 tar czf /tmp/tg-src.tar.gz --exclude node_modules --exclude dist --exclude .git --exclude "index.html*" --exclude "._*" -C "${projectRoot}" .`,
+    `COPYFILE_DISABLE=1 tar czf /tmp/tk-src.tar.gz --exclude node_modules --exclude dist --exclude .git --exclude "index.html*" --exclude "._*" -C "${projectRoot}" .`,
   ]);
-  await vmTransfer("/tmp/tg-src.tar.gz", "/tmp/tg-src.tar.gz");
+  await vmTransfer("/tmp/tk-src.tar.gz", "/tmp/tk-src.tar.gz");
   await vmExec(
-    "mkdir -p /home/ubuntu/tg && cd /home/ubuntu/tg && tar xzf /tmp/tg-src.tar.gz",
+    "mkdir -p /home/ubuntu/tk && cd /home/ubuntu/tk && tar xzf /tmp/tk-src.tar.gz",
   );
 
-  console.log("[vm] Building tg (pnpm install && pnpm build)...");
+  console.log("[vm] Building tk (pnpm install && pnpm build)...");
   const start = Date.now();
   const { stdout, exitCode } = await vmExec(
-    "export PATH=$HOME/.local/share/pnpm:$PATH && cd /home/ubuntu/tg && pnpm install --frozen-lockfile && pnpm build 2>&1 | tail -5",
+    "export PATH=$HOME/.local/share/pnpm:$PATH && cd /home/ubuntu/tk && pnpm install --frozen-lockfile && pnpm build 2>&1 | tail -5",
     600_000,
   );
   const buildTime = Math.round((Date.now() - start) / 1000);
@@ -172,12 +172,12 @@ export async function vmBuildTg(projectRoot: string): Promise<{
 
   // "binary size" is the built dist/cli.js artifact size for the Node CLI.
   const { stdout: sizeStr } = await vmExec(
-    "stat -c%s /home/ubuntu/tg/dist/cli.js",
+    "stat -c%s /home/ubuntu/tk/dist/cli.js",
   );
   const binarySize = parseInt(sizeStr.trim(), 10);
 
   const { stdout: version } = await vmExec(
-    "node /home/ubuntu/tg/dist/cli.js --version",
+    "node /home/ubuntu/tk/dist/cli.js --version",
   );
 
   console.log(
@@ -209,7 +209,7 @@ export async function vmEnsureReady(): Promise<void> {
       const ready = await vmWaitReady();
       if (!ready) {
         throw new Error(
-          "Cloud-init timed out. Check: multipass exec tg-test -- cat /var/log/cloud-init-output.log",
+          "Cloud-init timed out. Check: multipass exec tk-test -- cat /var/log/cloud-init-output.log",
         );
       }
     }
@@ -223,12 +223,12 @@ export async function vmEnsureReady(): Promise<void> {
       const ready = await vmWaitReady();
       if (!ready) {
         throw new Error(
-          "Cloud-init timed out. Check: multipass exec tg-test -- cat /var/log/cloud-init-output.log",
+          "Cloud-init timed out. Check: multipass exec tk-test -- cat /var/log/cloud-init-output.log",
         );
       }
     }
   }
 }
 
-// The tg CLI is invoked as `node dist/cli.js`. TG_BIN is the launcher prefix.
-export const TG_BIN = "node /home/ubuntu/tg/dist/cli.js";
+// The tk CLI is invoked as `node dist/cli.js`. TK_BIN is the launcher prefix.
+export const TK_BIN = "node /home/ubuntu/tk/dist/cli.js";

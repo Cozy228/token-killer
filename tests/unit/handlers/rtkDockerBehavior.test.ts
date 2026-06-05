@@ -169,7 +169,7 @@ describe("RTK docker behavior", () => {
   });
 
   // RTK: cloud/container.rs::docker_ps + format_container_line_from_parts.
-  // tg receives the `--format "{{.ID}}\t{{.Names}}\t{{.Status}}\t{{.Image}}\t{{.Ports}}"`
+  // tk receives the `--format "{{.ID}}\t{{.Names}}\t{{.Status}}\t{{.Image}}\t{{.Ports}}"`
   // stdout RTK produces internally: id truncated to 12 chars, image last segment.
   test("docker ps shortens ids/images and brackets compacted ports", async () => {
     const result = await filterRtkOutput(

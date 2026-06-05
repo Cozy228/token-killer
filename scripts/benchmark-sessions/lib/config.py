@@ -1,7 +1,7 @@
 """
-Task configuration for tg (token-guard) benchmark sessions.
+Task configuration for tk (token-killer) benchmark sessions.
 
-Ported alongside rtk/scripts/benchmark-sessions/lib/runner.py and adapted to tg
+Ported alongside rtk/scripts/benchmark-sessions/lib/runner.py and adapted to tk
 conventions. Describes a benchmark task: the model under test, the codebase the
 Claude session operates on, and per-session limits.
 """

@@ -1,6 +1,6 @@
-# tg Testing & RTK Migration Audit
+# tk Testing & RTK Migration Audit
 
-Single reference for **what good tests are**, **what is wrong with the suite today**, and **what is still missing from RTK → tg migration**.
+Single reference for **what good tests are**, **what is wrong with the suite today**, and **what is still missing from RTK → tk migration**.
 
 Last audited: 2026-06-05
 
@@ -16,14 +16,14 @@ Last audited: 2026-06-05
 
 | Question | Answer |
 |----------|--------|
-| Is migration complete? | **No** — ~29 RTK command modules have no tg handler; migration suite is red by design. |
+| Is migration complete? | **No** — ~29 RTK command modules have no tk handler; migration suite is red by design. |
 | Do passing tests all follow testing principles? | **Mostly for product tests** — product handler coverage now runs through 47 real `fixtureCases`; migration red tests expose real gaps. |
 | Do passing tests reflect project reality? | **Partially** — core handlers work on selected real fixtures and narrow integration paths; not production-wide or RTK 1:1. |
 
 **Baseline**
 
 - RTK: **986** inline `#[test]` across **47** command modules (inventory only; not CI progress).
-- tg: **29** registered handlers in `src/handlers/index.ts`.
+- tk: **29** registered handlers in `src/handlers/index.ts`.
 - Product tests use fixture-backed handler coverage; synthetic handler `*.test.ts` files have been deleted after porting/debt capture.
 
 **Verdict:** Do not treat RTK `#[test]` counts, synthetic handler test counts, or `check-test-presence.sh` PASS as migration progress. **Automated gates + fixture-backed fidelity** are the bar.
@@ -43,14 +43,14 @@ Last audited: 2026-06-05
 
 ## 2. RTK testing organization & principles (reference)
 
-This section is the **source-of-truth summary** for how RTK tests are structured and what tg migration must mirror. tg should not invent a parallel testing philosophy.
+This section is the **source-of-truth summary** for how RTK tests are structured and what tk migration must mirror. tk should not invent a parallel testing philosophy.
 
 ### 2.1 Scale and layout
 
 | Metric | RTK today |
 |--------|-----------|
 | Command modules with tests | **47** files under `rtk/src/cmds/**` containing `#[cfg(test)]` |
-| Inline unit tests | **986** `#[test]` functions (inventory only — not tg CI progress) |
+| Inline unit tests | **986** `#[test]` functions (inventory only — not tk CI progress) |
 | Shared fixtures | `rtk/tests/fixtures/` — real command output captured from the shell |
 | Fixture-backed tests in modules | **~27** `include_str!(...)` call sites across command modules |
 
@@ -89,23 +89,23 @@ RTK uses a **layered** strategy documented in `CONTRIBUTING.md` and `cli-testing
 - **Fixture + savings tests** — `include_str!("../../../tests/fixtures/...")` → run filter → assert **critical strings kept** and **≥60% token savings** (whitespace token count).
 - **Invariant / issue tests** — document bugs (`issue #1436`) and overflow math so regressions are obvious.
 
-tg migration should follow the **intent** (real fixtures + critical content + savings where large), not cargo-insta mechanics.
+tk migration should follow the **intent** (real fixtures + critical content + savings where large), not cargo-insta mechanics.
 
 ### 2.3 Core principles
 
 From `CONTRIBUTING.md` design philosophy + `cli-testing.md` + `CODING_PRACTICES.md`:
 
-| Principle | RTK rule | tg equivalent |
+| Principle | RTK rule | tk equivalent |
 |-----------|----------|---------------|
 | **Correctness before compression** | Never drop paths, changed lines, error codes, failure names | `fixtureCases[].critical` + `forbidden` patterns in `fixtureContent.test.ts` |
 | **Real output, not synthetic** | Fixtures from `git log -20 > tests/fixtures/...`, not hand-written fake logs | Port `rtk/tests/fixtures/*` → `tests/fixtures/**`; ban hand-built stdout-only tests in CI |
 | **TDD** | Red → Green → Refactor; failing test before implementation | Port RTK `#[test]` intent first, then fix handler |
 | **Token savings verified** | ≥**60%** savings on large fixtures (80–90% targets per command in `cli-testing.md`) | `expectLargeSavings` / savings assertions **only with** critical-content checks |
 | **Never block the user** | Filter failure → warn + passthrough raw output | `pipeline.test.ts` fallback behavior |
-| **Respect explicit verbosity** | User flags like `--nocapture`, `-la` → do not over-compress | Flag-aware tests in RTK; tg must mirror per handler |
+| **Respect explicit verbosity** | User flags like `--nocapture`, `-la` → do not over-compress | Flag-aware tests in RTK; tk must mirror per handler |
 | **Edge cases required** | empty, malformed, unicode, ANSI, stderr-only | Each handler category in `cli-testing.md` Pattern: Edge Case Testing |
-| **Cross-platform** | `#[cfg(target_os = "...")]` for shell escaping | tg Node spawn — document macOS primary; integration in temp dirs |
-| **No silent truncation** | Lists capped at N must have tee/recovery hint | tg `--save-raw`, `--verbose` integration tests |
+| **Cross-platform** | `#[cfg(target_os = "...")]` for shell escaping | tk Node spawn — document macOS primary; integration in temp dirs |
+| **No silent truncation** | Lists capped at N must have tee/recovery hint | tk `--save-raw`, `--verbose` integration tests |
 
 ### 2.4 Test categories inside each RTK module
 
@@ -130,7 +130,7 @@ When reading `rtk/src/cmds/<module>.rs`, expect tests grouped like this (grep_cm
 4. Assert:
    - **Preservation** — failure lines, file paths, error codes still present.
    - **Savings** — `100.0 - (out_tokens / in_tokens * 100.0) >= 60.0`.
-5. For output-shape regressions, policy says add `assert_snapshot!` + `cargo insta review` (tg: use explicit `critical` strings or golden files if needed).
+5. For output-shape regressions, policy says add `assert_snapshot!` + `cargo insta review` (tk: use explicit `critical` strings or golden files if needed).
 
 **Anti-patterns explicitly forbidden in RTK docs:**
 
@@ -149,9 +149,9 @@ When reading `rtk/src/cmds/<module>.rs`, expect tests grouped like this (grep_cm
 | `scripts/validate-docs.sh` | README / hook consistency (not filter behavior) |
 | PR checklist | Snapshots reviewed, savings ≥60%, truncation has recovery hint |
 
-### 2.7 What tg must mirror (migration mapping)
+### 2.7 What tk must mirror (migration mapping)
 
-| RTK artifact | tg target | Notes |
+| RTK artifact | tk target | Notes |
 |--------------|-----------|-------|
 | One `#[test]` with real fixture + preservation | One row in `tests/helpers/fixtureCases.ts` | Name after RTK intent: `// RTK: test_parse_match_line_simple` |
 | `include_str!(fixtures/...)` | Same file under `tests/fixtures/**` | Copy or regenerate from same shell command |
@@ -159,9 +159,9 @@ When reading `rtk/src/cmds/<module>.rs`, expect tests grouped like this (grep_cm
 | `scripts/test-all.sh` case | `tests/integration/cli.test.ts` or `tests/smoke/smoke.sh` | E2E only; does not replace fixture fidelity |
 | Module without handler | `rtkDomainCaseParity` gap | Routing + fixtureCases required before ✅ |
 
-**Not RTK parity (tg-only, keep):** `maven`, `javac`, tg CLI flags (`parse.test.ts`), token math (`savings.test.ts`).
+**Not RTK parity (tk-only, keep):** `maven`, `javac`, tk CLI flags (`parse.test.ts`), token math (`savings.test.ts`).
 
-**Not meaningful for tg CI (do not copy):** counting 986 RTK tests as progress; synthetic vitest stdout strings without fixtures; file-existence-only gates.
+**Not meaningful for tk CI (do not copy):** counting 986 RTK tests as progress; synthetic vitest stdout strings without fixtures; file-existence-only gates.
 
 ### 2.8 What the ~986 tests are made of (composition, not a target count)
 
@@ -183,7 +183,7 @@ When reading `rtk/src/cmds/<module>.rs`, expect tests grouped like this (grep_cm
 | **J — Malformed input** | **~1+** | Unparseable lines → skip or passthrough, never panic | `grep_cmd` (`parse_match_line_malformed`) |
 | **K — Other unit / display** | **~143** | Icons, helpers, compile-time checks, issue invariants | `glab_cmd`, `gh_cmd` |
 
-**Fixture-backed filter tests (highest fidelity tier):** only **~27** `#[test]` blocks call `include_str!("../../../tests/fixtures/...")` today — concentrated in `gradlew_cmd.rs` (13), `glab_cmd.rs` (11), `binlog.rs` (2), `golangci_cmd.rs` (1). Most of the 986 never touch `tests/fixtures/`; they use **inline string literals** in the test body. tg should treat **real `tests/fixtures/**`** as the bar for agent-visible scenarios, not inline Rust strings copied verbatim.
+**Fixture-backed filter tests (highest fidelity tier):** only **~27** `#[test]` blocks call `include_str!("../../../tests/fixtures/...")` today — concentrated in `gradlew_cmd.rs` (13), `glab_cmd.rs` (11), `binlog.rs` (2), `golangci_cmd.rs` (1). Most of the 986 never touch `tests/fixtures/`; they use **inline string literals** in the test body. tk should treat **real `tests/fixtures/**`** as the bar for agent-visible scenarios, not inline Rust strings copied verbatim.
 
 **Per-module mix (examples):**
 
@@ -195,11 +195,11 @@ gh_cmd.rs (66):    passthrough 17 | format 18 | parse 14 | filter 10 | display 3
 pytest_cmd.rs (9): filter 8 | parse 1
 ```
 
-### 2.9 Unified tg coverage matrix (same dimensions as RTK)
+### 2.9 Unified tk coverage matrix (same dimensions as RTK)
 
-Every RTK module migration is **done** when tg covers **all applicable rows** for that handler — not when test count matches.
+Every RTK module migration is **done** when tk covers **all applicable rows** for that handler — not when test count matches.
 
-| RTK dimension | tg artifact | CI gate | tg today (honest) |
+| RTK dimension | tk artifact | CI gate | tk today (honest) |
 |---------------|-------------|---------|-------------------|
 | **A Filter output (large / failure)** | `fixtureCases` row: `fixture` + `command` + `critical[]` + optional `forbidden[]` | `fixtureContent.test.ts` | **47 rows** across registered handlers; still needs deeper per-handler variants |
 | **B Arg parse & routing** | `router.test.ts` + `rtkDomainCaseParity` sample command → handler name | verified / migration gate | **Partial** — routing only, not arg edge cases |
@@ -215,11 +215,11 @@ Every RTK module migration is **done** when tg covers **all applicable rows** fo
 | **Smoke E2E** | `cli.test.ts` / `smoke.sh` | integration | **~30** narrow scenarios |
 | **Parser-only (B/C, no agent diff)** | exported pure-helper units only when needed | future targeted unit files | Synthetic stdout-only handler tests deleted; add parser units only for real parser contracts |
 
-### 2.9.1 Dimension-level tg coverage (actual counts + verdict)
+### 2.9.1 Dimension-level tk coverage (actual counts + verdict)
 
-As of 2026-06-03, tg test cases classified against the same A–K dimensions:
+As of 2026-06-03, tk test cases classified against the same A–K dimensions:
 
-| Dimension | RTK ~count | tg actual | Coverage verdict | Gap |
+| Dimension | RTK ~count | tk actual | Coverage verdict | Gap |
 |-----------|-----------|-----------|------------------|-----|
 | **A — Filter output** | ~315 | ~75+ | ⚠️ Thin | 47 fixtureCases rows are high quality, but per-handler depth is still shallow vs RTK |
 | **B — Arg parse/routing** | ~230 | ~55 routing / 0 internal parse | ⚠️ Routing ok, parse untested | Handler-internal parse functions (`formatStatus`, `parseMatch`, …) tested only through filter() pipeline, not in isolation |
@@ -235,7 +235,7 @@ As of 2026-06-03, tg test cases classified against the same A–K dimensions:
 
 **Note on H:** The previous audit claimed grep -c/-l were covered by synthetic tests. Those tests were deleted; current coverage is real fixture-backed, including `rg --json`.
 
-**Naming / traceability:** each tg case should cite RTK source when porting:
+**Naming / traceability:** each tk case should cite RTK source when porting:
 
 ```typescript
 {
@@ -250,12 +250,12 @@ Or in unit tests: `// RTK: rtk/src/cmds/system/grep_cmd.rs test_parse_match_line
 
 1. List all `#[test]` / `fn test_*` in that `.rs` file (use `rg '#\[test\]' rtk/src/cmds/<module>.rs`).
 2. For each test, classify A–K above.
-3. Map to tg row: **fixtureCases** (if agent-visible) or **unit test** (if parser-only) or **N/A** (document why).
+3. Map to tk row: **fixtureCases** (if agent-visible) or **unit test** (if parser-only) or **N/A** (document why).
 4. Module ✅ when mapping table has **no open rows** and `rtkDomainCaseParity` gaps are `[]`.
 
-**Rough tg target size (derived from composition, not 986):**
+**Rough tk target size (derived from composition, not 986):**
 
-| tg bucket | Expected scale |
+| tk bucket | Expected scale |
 |-----------|----------------|
 | `fixtureCases` (dimension A + flag variants + edges F/G/H/J) | **~150–350 rows** repo-wide |
 | Handler unit tests (B/C/K parser-only) | **~200–500** if pure functions exported |
@@ -277,8 +277,8 @@ The migration suite (`vitest.migration.config.ts`) intentionally includes RTK mi
 | Tier | Examples | Follows P0/P1 principles? | Reflects real tool output? |
 |------|----------|---------------------------|----------------------------|
 | **A — Fidelity bar** | `fixtureContent.test.ts` → `fixtureCases` (47 scenarios) | **Yes** — `critical` / `forbidden` + `expectMeaningfulBody` | **Partial** — one or more real fixture paths per major handler |
-| **B — tg internals** | `savings`, `parse`, `router`, `pipeline`, `executor`, `ansi` | **Yes** for their scope | **N/A** (not handler filters) |
-| **C — E2E smoke** | `tests/integration/cli.test.ts` (~30 cases) | **Mostly** — real `spawn` of tg in temp dirs | **Partial** — narrow scenarios |
+| **B — tk internals** | `savings`, `parse`, `router`, `pipeline`, `executor`, `ansi` | **Yes** for their scope | **N/A** (not handler filters) |
+| **C — E2E smoke** | `tests/integration/cli.test.ts` (~30 cases) | **Mostly** — real `spawn` of tk in temp dirs | **Partial** — narrow scenarios |
 | **D — Migration/debt only** | Routing parity, fixture wiring, fixture corpus size, script path parity | **No** for product behavior | **No** — existence/routing ≠ correct compression |
 | **E — Deleted synthetic** | former `handlers/**/<name>.test.ts` files | Removed | Anti-pattern removed; replacement coverage is fixture-backed or explicit regression debt |
 
@@ -293,7 +293,7 @@ The migration suite (`vitest.migration.config.ts`) intentionally includes RTK mi
 7. **Fixture corpus gate narrowed** — RTK gradlew, glab, and golangci fixtures are ported; dotnet corpus-only gate was removed because dotnet has no handler yet and parity gates already track that gap.
 8. **Routing tests ≠ behavior** — routing-only coverage was removed as a standalone gate; `rtkDomainCaseParity` now keeps routing tied to fixture-backed handler coverage and stays red for unimplemented RTK modules.
 9. **Historical anti-pattern removed from handler tests** — savings-only and hand-built stdout handler tests were deleted; future coverage must use real fixtures or explicit parser-unit contracts.
-10. **RTK scale gap** — e.g. gradlew RTK **56** tests + **6** fixtures vs tg **11** tests + **1** fixture; **986** RTK inline tests vs a thin verified layer.
+10. **RTK scale gap** — e.g. gradlew RTK **56** tests + **6** fixtures vs tk **11** tests + **1** fixture; **986** RTK inline tests vs a thin verified layer.
 11. **Former `contracts.test.ts` empty edge case bug removed** — the no-op `critical: [""]` assertions were deleted with the synthetic contracts file.
 12. **Explicit machine-readable search output is covered** — `rg --json` now stays raw enough to preserve JSON fields; more grep/rg format variants still need parity work.
 
@@ -301,7 +301,7 @@ The migration suite (`vitest.migration.config.ts`) intentionally includes RTK mi
 
 - Core handlers can preserve **critical signal** on **selected real fixtures** (`tests/fixtures/**` → `fixtureCases`).
 - CLI works in **controlled integration** scenarios (`cli.test.ts`, smoke).
-- tg **routing table** and **core math/pipeline** are regression-tested.
+- tk **routing table** and **core math/pipeline** are regression-tested.
 
 They do **not** justify: migration complete, full command surface, or freedom from silent data loss on arbitrary tool output.
 
@@ -312,7 +312,7 @@ Merged from `docs/test-case-audit.md` (2026-06-03), **reconciled** with `vitest.
 
 | Verdict | Meaning | Action |
 |---------|---------|--------|
-| ✅ **Product keep** | In product suite; tests tg product behavior | Keep; extend with fixtureCases where gaps remain |
+| ✅ **Product keep** | In product suite; tests tk product behavior | Keep; extend with fixtureCases where gaps remain |
 | 🗑️ **Deleted synthetic** | Former inline stdout handler tests | Do not restore; add real fixtureCases or regression debt instead |
 | ⚠️ **Gate** | Migration / debt tracker, not filter behavior | Keep until migration complete; then merge or delete |
 | 🚦 **Migration only** | File existence, repo hygiene, or script parity debt | Keep out of product tests; keep in migration config while useful |
@@ -330,13 +330,13 @@ Merged from `docs/test-case-audit.md` (2026-06-03), **reconciled** with `vitest.
 
 | File | Product | What it tests | Action |
 |------|:--:|---------------|--------|
-| `tests/unit/parse.test.ts` | ✅ | `parseArgv()` — tg flags vs command flags (6) | Keep |
+| `tests/unit/parse.test.ts` | ✅ | `parseArgv()` — tk flags vs command flags (6) | Keep |
 | `tests/unit/router.test.ts` | ✅ | `routeCommand()` — handler routing table (32) | Keep; arg edge cases belong in fixtureCases |
 | `tests/unit/savings.test.ts` | ✅ | Token math, no negative savings (4) | Keep |
 | `tests/unit/pipeline.test.ts` | ✅ | `filterWithFallback()` on handler throw (1) | Keep |
 | `tests/unit/executor.test.ts` | ✅ | Real spawn, exit code, 127 (2) | Keep |
 | `tests/unit/core/ansi.test.ts` | ✅ | ANSI strip via generic handler (1) | Keep |
-| `tests/integration/cli.test.ts` | ✅ | E2E tg: ls/cat/git/rg/flags/report (~30) | Keep; primary smoke |
+| `tests/integration/cli.test.ts` | ✅ | E2E tk: ls/cat/git/rg/flags/report (~30) | Keep; primary smoke |
 | `tests/unit/handlers/fixtureContent.test.ts` | ✅ | **47 `fixtureCases`** on real fixtures | Keep; expand rows — this is the handler behavior bar |
 
 #### 3.5.2 🗑️ Deleted synthetic handler tests (23 files)
@@ -426,9 +426,9 @@ tests/
 
 | Gate | File | Enforces |
 |------|------|----------|
-| Product behavior suite | `vitest.config.ts` | Current implemented tg behavior only |
+| Product behavior suite | `vitest.config.ts` | Current implemented tk behavior only |
 | Fixture fidelity | `tests/unit/handlers/fixtureContent.test.ts` | Real fixture output preserves critical signal |
-| CLI E2E | `tests/integration/*.test.ts` | Real tg command invocation in temp dirs |
+| CLI E2E | `tests/integration/*.test.ts` | Real tk command invocation in temp dirs |
 | Core units | `tests/unit/{parse,router,savings,pipeline,executor}.test.ts`, `tests/unit/core/*.test.ts` | CLI parsing/routing/math/spawn/fallback behavior |
 
 ### 4.2 Migration and debt gates
@@ -452,9 +452,9 @@ tests/
 
 ---
 
-## 5. Handler correctness requirements (tg policy)
+## 5. Handler correctness requirements (tk policy)
 
-Scope: **currently registered handlers** in `src/handlers/index.ts`. Not a substitute for RTK module migration (§6–§11). Applies tg policy aligned with RTK principles in §2.
+Scope: **currently registered handlers** in `src/handlers/index.ts`. Not a substitute for RTK module migration (§6–§11). Applies tk policy aligned with RTK principles in §2.
 
 ### 5.1 Root cause
 
@@ -513,7 +513,7 @@ test("unrecognized grep output is not silently dropped", async () => {
 });
 ```
 
-RTK grep uses a canonical NUL-separated format; `None` on non-canonical lines is **not** a general tg passthrough guarantee — tg needs explicit contract tests.
+RTK grep uses a canonical NUL-separated format; `None` on non-canonical lines is **not** a general tk passthrough guarantee — tk needs explicit contract tests.
 
 ### 5.4 P1: Small output reasonableness
 
@@ -560,7 +560,7 @@ RTK grep uses a canonical NUL-separated format; `None` on non-canonical lines is
 
 Mirror RTK per-command categories; each must be **fixture-backed in `fixtureCases.ts`** to count as product fidelity coverage:
 
-| Pattern | tg expectation |
+| Pattern | tk expectation |
 |---------|----------------|
 | Format variants | Separate tests per output format |
 | Empty output | No throw; sensible message |
@@ -575,10 +575,10 @@ Synthetic global contracts were removed — add fixtureCases rows or regression-
 
 ---
 
-## 6. RTK module → tg handler map
+## 6. RTK module → tk handler map
 
 ```
-RTK file                                  tg handler                         tg coverage
+RTK file                                  tk handler                         tk coverage
 ────────────────────────────────────────────────────────────────────────────────────────────────────────────
 src/cmds/system/ls.rs                     listLike.ts                        fixtureCases + fixtureContent
 src/cmds/system/tree.rs                   listLike.ts                        fixtureCases + fixtureContent
@@ -616,15 +616,15 @@ src/cmds/cloud/*                          ─                                  �
 src/cmds/go/*                             ─                                  ─
 src/cmds/rust/*                           ─                                  ─
 src/cmds/ruby/*                           ─                                  ─
-(tg-only)                                 maven.ts, javac.ts, generic.ts     fixtureCases / core tests
+(tk-only)                                 maven.ts, javac.ts, generic.ts     fixtureCases / core tests
 ```
 
 ---
 
-## 7. RTK scripts → tg scripts
+## 7. RTK scripts → tk scripts
 
 ```
-RTK script                              tg script                          Status
+RTK script                              tk script                          Status
 ──────────────────────────────────────────────────────────────────────────────
 scripts/test-all.sh                     tests/smoke/smoke.sh                 ✅
 scripts/check-test-presence.sh          scripts/check-test-presence.sh      ✅
@@ -645,10 +645,10 @@ Out of scope unless product changes: `rtk-economics.sh`, `test-tracking.sh`, `te
 
 ## 8. RTK inline test inventory (selected gaps)
 
-Full RTK total: **986** `#[test]` in **47** modules. tg `test()` counts below are per-file mappings — **do not sum**.
+Full RTK total: **986** `#[test]` in **47** modules. tk `test()` counts below are per-file mappings — **do not sum**.
 
 ```
-RTK module              RTK #[test]   tg test()   State
+RTK module              RTK #[test]   tk test()   State
 ────────────────────────────────────────────────────────
 system/ls.rs                 29           11       partial via listLike
 system/read.rs                8            7       partial via readLike
@@ -665,11 +665,11 @@ dotnet/dotnet_cmd.rs         66            0       no handler
 rust/cargo_cmd.rs            48            0       no handler
 ```
 
-### RTK internal test categories → tg
+### RTK internal test categories → tk
 
-| RTK category | tg coverage |
+| RTK category | tk coverage |
 |--------------|-------------|
-| Argument parsing (find/grep/git) | ❓ `parse.test.ts` = tg flags only |
+| Argument parsing (find/grep/git) | ❓ `parse.test.ts` = tk flags only |
 | Grep format flags | ✅ partial in searchLike |
 | Diff compaction / hunk limits | ❓ diff handler fixture-backed; most diff_cmd inline tests unmigrated |
 | Git extended subcommands | ✅ handlers; ❓ fixtureCases incomplete |
@@ -679,12 +679,12 @@ rust/cargo_cmd.rs            48            0       no handler
 
 ---
 
-## 9. RTK fixtures → tg fixtures
+## 9. RTK fixtures → tk fixtures
 
 ```
-RTK / tg fixture area                    Status
+RTK / tk fixture area                    Status
 ─────────────────────────────────────────────────
-tests/fixtures/* (tg-owned, ~25 files)   ✅ on disk; subset in fixtureCases
+tests/fixtures/* (tk-owned, ~25 files)   ✅ on disk; subset in fixtureCases
 tests/fixtures/java/gradle*              ✅ RTK gradlew corpus ported
 tests/fixtures/dotnet/*                  N/A until dotnet handler exists
 tests/fixtures/go/golangci_v2_json.txt   ✅ ported
@@ -693,10 +693,10 @@ tests/fixtures/git/glab_*                ✅ RTK glab corpus ported
 
 ---
 
-## 10. RTK CI / config → tg
+## 10. RTK CI / config → tk
 
 ```
-RTK config                    tg equivalent                    Status
+RTK config                    tk equivalent                    Status
 ────────────────────────────────────────────────────────────────────
 .claude/rules/cli-testing.md  ─                                ❌
 .github/workflows/            ─                                ❌
@@ -722,7 +722,7 @@ handler fidelity              fixtureContent.test.ts          ✅ product
 | dotnet/cloud | ❌ | No handler |
 | go/rust/ruby | ⛔ | Out-of-scope — quarantined, excluded from parity gate |
 | gradlew fixtures | ✅ | RTK corpus ported |
-| tg-only maven/javac/generic | ✅ | No RTK module |
+| tk-only maven/javac/generic | ✅ | No RTK module |
 | Verified CI green | ❌ | Migration gates in §4 are still red |
 | Synthetic test debt | ✅ | 23 files deleted; guard remains |
 | benchmark TS + sessions + test-ruby | ❌ | rtkScriptParity |
@@ -738,7 +738,7 @@ handler fidelity              fixtureContent.test.ts          ✅ product
 
 ### Out-of-scope (excluded from the parity gate by decision)
 
-**Languages:** go, golangci-lint, cargo/rust runner, ruby (rake/rspec/rubocop) — tg
+**Languages:** go, golangci-lint, cargo/rust runner, ruby (rake/rspec/rubocop) — tk
 has decided not to migrate these toolchain runners. Their behavior tests are
 quarantined under `tests/out-of-scope/` and their modules are removed from
 `rtkExtendedCommandExpectations`, so `rtkDomainCaseParity` no longer reports them
@@ -746,7 +746,7 @@ as debt.
 
 ### Implemented but severely under-tested
 
-| Area | RTK | tg | Severity |
+| Area | RTK | tk | Severity |
 |------|-----|-----|----------|
 | gradlew | 56 tests, 6 fixtures | fixture corpus ported, behavior still shallow | **high** |
 | diff_cmd | 19 inline tests | fixture-backed two-file + stdin unified + overflow subset | **high** |
@@ -758,7 +758,7 @@ as debt.
 - **47 `fixtureCases`** fidelity scenarios
 - **Core** unit + **integration/cli** smoke path
 - **Ported** shell scripts (§7 ✅ rows)
-- **tg-owned** fixture files on disk; current known orphaned fixture wiring cleared
+- **tk-owned** fixture files on disk; current known orphaned fixture wiring cleared
 
 ---
 
@@ -832,7 +832,7 @@ Migration and testing are **complete** when:
 - [ ] `pnpm test:product` passes
 - [ ] `pnpm test:migration` passes
 - [ ] `pnpm test:ci` passes
-- [ ] **0** RTK command modules without tg handler + fixture-backed coverage
+- [ ] **0** RTK command modules without tk handler + fixture-backed coverage
 - [ ] **0** unported synthetic handler tests
 - [ ] Every registered handler: P0 fidelity + (where applicable) unknown-format + real fixture in `fixtureCases`
 - [ ] **Per RTK module:** coverage matrix §2.9 complete (every `#[test]` mapped to fixtureCases or unit test; no open rows)

@@ -65,12 +65,12 @@ describe("RTK find behavior", () => {
 
 // Architecture note: RTK's find REPLACES find — it walks the filesystem itself
 // with its own glob_match / parse_find_args, so its glob_match_* and
-// parse_native_find_* #[test]s cover that FS-walker. tg instead FILTERS the real
+// parse_native_find_* #[test]s cover that FS-walker. tk instead FILTERS the real
 // find command's output (grouping + cap + overflow), so those walker internals do
-// not exist in tg and are intentionally not ported as dead code. The tg-applicable
+// not exist in tk and are intentionally not ported as dead code. The tk-applicable
 // dimensions (grouping, uncapped overflow, empty message) are covered above.
 //
 // SCOPE DECISION (user-confirmed): the glob_match / parse_native_find dimension is
-// OUT-OF-SCOPE for tg — there is no tg-owned glob logic to test (GNU find does the
+// OUT-OF-SCOPE for tk — there is no tk-owned glob logic to test (GNU find does the
 // matching). Authoritative record: docs/green-test-parity-audit.md → D2. This is a
 // deliberate scope call, not an unwritten omission.

@@ -1,2 +1,2 @@
 To .
- * [new branch]      HEAD -> __tg_fixture_branch__
+ * [new branch]      HEAD -> __tk_fixture_branch__

@@ -1,12 +1,12 @@
 #cloud-config
-# tg (token-guard) Integration Test VM — Ubuntu 24.04
-# Installs all tools needed for comprehensive tg testing (~200 commands)
-# Ported from rtk/scripts/benchmark/cloud-init.yaml and adapted to tg conventions:
-#   - tg builds with Node/pnpm (no Rust toolchain); the Rust toolchain and the
+# tk (token-killer) Integration Test VM — Ubuntu 24.04
+# Installs all tools needed for comprehensive tk testing (~200 commands)
+# Ported from rtk/scripts/benchmark/cloud-init.yaml and adapted to tk conventions:
+#   - tk builds with Node/pnpm (no Rust toolchain); the Rust toolchain and the
 #     fake Rust test project were dropped.
-#   - pnpm is installed globally for building the tg CLI.
-#   - Labels renamed rtk -> tg.
-# Usage: multipass launch --name tg-test --cloud-init scripts/benchmark/cloud-init.yaml --cpus 2 --memory 4G --disk 20G 24.04
+#   - pnpm is installed globally for building the tk CLI.
+#   - Labels renamed rtk -> tk.
+# Usage: multipass launch --name tk-test --cloud-init scripts/benchmark/cloud-init.yaml --cpus 2 --memory 4G --disk 20G 24.04
 
 package_update: true
 package_upgrade: false
@@ -244,7 +244,7 @@ runcmd:
   - |
     su - ubuntu -c '
     mkdir -p /tmp/test-git && cd /tmp/test-git
-    git init && git config user.email "test@tg.dev" && git config user.name "tg Test"
+    git init && git config user.email "test@tk.dev" && git config user.name "tk Test"
     for i in $(seq 1 20); do echo "line $i" >> file.txt && git add file.txt && git commit -m "feat: commit number $i"; done
     echo "modified" >> file.txt && echo "new file" > new.txt
     '
@@ -292,6 +292,6 @@ runcmd:
   # Signal completion
   - touch /home/ubuntu/.cloud-init-complete
   - chown ubuntu:ubuntu /home/ubuntu/.cloud-init-complete
-  - echo "tg cloud-init setup complete" | tee /var/log/tg-setup.log
+  - echo "tk cloud-init setup complete" | tee /var/log/tk-setup.log
 
-final_message: "tg test VM ready in $UPTIME seconds"
+final_message: "tk test VM ready in $UPTIME seconds"

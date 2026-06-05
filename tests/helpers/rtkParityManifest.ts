@@ -47,7 +47,7 @@ export type MigrationGap =
       expectedHandler: string;
     };
 
-/** tg vitest file for each dedicated handler (when it exists). */
+/** tk vitest file for each dedicated handler (when it exists). */
 export const handlerTestFiles: Record<string, string> = {
   "list-like": "tests/unit/handlers/fixtureContent.test.ts",
   "read-like": "tests/unit/handlers/fixtureContent.test.ts",
@@ -319,8 +319,8 @@ export const rtkDomainModules: RtkModuleParity[] = [
  *
  * Go / Rust / Ruby toolchain runners (go_cmd, golangci_cmd, cargo_cmd,
  * rust/runner.rs, rake_cmd, rspec_cmd, rubocop_cmd) are intentionally
- * out-of-scope for tg and quarantined under tests/out-of-scope/. They are
- * deliberately excluded here so the parity gate does not report work tg has
+ * out-of-scope for tk and quarantined under tests/out-of-scope/. They are
+ * deliberately excluded here so the parity gate does not report work tk has
  * decided not to do. See docs/testing-and-migration-audit.md (out-of-scope RTK
  * dimensions).
  */
@@ -456,7 +456,7 @@ export function formatMigrationGapReport(gaps: MigrationGap[]): string {
   });
 
   const lines = [
-    `RTK → tg migration incomplete (${gaps.length} gaps; ${summary})`,
+    `RTK → tk migration incomplete (${gaps.length} gaps; ${summary})`,
     ...samples,
   ];
 

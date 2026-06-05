@@ -9,7 +9,7 @@ import { vscodeUserDir } from "../../../src/shim/hostConfig.js";
 let home: string;
 
 beforeEach(() => {
-  home = mkdtempSync(join(tmpdir(), "tg-inspect-src-"));
+  home = mkdtempSync(join(tmpdir(), "tk-inspect-src-"));
 });
 afterEach(() => {
   rmSync(home, { recursive: true, force: true });

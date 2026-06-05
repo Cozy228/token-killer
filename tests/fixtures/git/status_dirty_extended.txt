@@ -1,4 +1,4 @@
-## codex/token-guard-node-cli
+## codex/token-killer-node-cli
  D DESIGN.md
  M README.md
  M package.json

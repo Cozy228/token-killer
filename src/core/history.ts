@@ -3,13 +3,13 @@ import { readFileSync, readdirSync } from "node:fs";
 import { mkdir, readFile, readdir, writeFile } from "node:fs/promises";
 import path from "node:path";
 
-import type { FilteredResult, RawResult, TgOptions } from "../types.js";
+import type { FilteredResult, RawResult, TkOptions } from "../types.js";
 import {
   historyFile,
   projectFingerprint,
   projectMetaFile,
   projectMetaFileForFingerprint,
-  tokenGuardHome,
+  tokenKillerHome,
 } from "./dataDir.js";
 
 export type ProjectMeta = { label: string };
@@ -43,7 +43,7 @@ export type HistoryRecord = {
 export async function recordHistory(
   raw: RawResult,
   filtered: FilteredResult,
-  options: TgOptions,
+  options: TkOptions,
 ): Promise<void> {
   const file = historyFile(options.cwd);
   await mkdir(path.dirname(file), { recursive: true });
@@ -71,7 +71,7 @@ export async function recordHistory(
 }
 
 // Lazily record the project's display label (directory basename only — never the
-// full path) for `tg gain --user` (ADR 0004 §3). Best-effort and idempotent: the
+// full path) for `tk gain --user` (ADR 0004 §3). Best-effort and idempotent: the
 // `wx` flag writes only when absent, and any error (already present, unwritable) is
 // swallowed so the hot-path command is never broken.
 async function maybeWriteProjectMeta(cwd: string): Promise<void> {
@@ -147,12 +147,12 @@ function parseHistoryLines(text: string): HistoryRecord[] {
 }
 
 // User-level read (ADR 0004 §3): enumerate every project's history.jsonl under
-// ~/.token-guard/projects/*/. Best-effort — an unreadable directory or a corrupt
+// ~/.token-killer/projects/*/. Best-effort — an unreadable directory or a corrupt
 // file is skipped, never thrown. `gain --user` and the telemetry builder both feed
 // the rows into the pure aggregate.ts helpers. Each row still carries its own
 // project_fingerprint for grouping.
 export async function listProjectHistories(): Promise<HistoryRecord[]> {
-  const projectsDir = path.join(tokenGuardHome(), "projects");
+  const projectsDir = path.join(tokenKillerHome(), "projects");
   let entries: Dirent[];
   try {
     entries = await readdir(projectsDir, { withFileTypes: true });
@@ -177,7 +177,7 @@ export async function listProjectHistories(): Promise<HistoryRecord[]> {
 // Synchronous twin of listProjectHistories, for sync callers (the inspect runtime
 // stays synchronous). Same best-effort contract: unreadable stores are skipped.
 export function listProjectHistoriesSync(): HistoryRecord[] {
-  const projectsDir = path.join(tokenGuardHome(), "projects");
+  const projectsDir = path.join(tokenKillerHome(), "projects");
   let entries: Dirent[];
   try {
     entries = readdirSync(projectsDir, { withFileTypes: true });

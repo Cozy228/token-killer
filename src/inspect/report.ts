@@ -59,7 +59,7 @@ function pct(share: number): string {
 
 export function renderMarkdown(report: Report): string {
   const lines: string[] = [];
-  lines.push("# Token Guard Inspect");
+  lines.push("# Token Killer Inspect");
   lines.push("");
   lines.push(`- Input type: \`${report.inputType}\``);
   lines.push(`- Session inventory: ${report.session_inventory}`);

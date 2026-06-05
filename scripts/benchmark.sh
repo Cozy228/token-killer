@@ -1,14 +1,14 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-# ── Detect tg binary ────────────────────────────────────────────────
+# ── Detect tk binary ────────────────────────────────────────────────
 ROOT="$(pwd)"
 if [ -f "$ROOT/dist/cli.js" ]; then
-  TG="node $ROOT/dist/cli.js"
-elif command -v tg &> /dev/null; then
-  TG="$(command -v tg)"
+  TK="node $ROOT/dist/cli.js"
+elif command -v tk &> /dev/null; then
+  TK="$(command -v tk)"
 else
-  echo "Error: tg not found. Run 'pnpm build' or install tg globally."
+  echo "Error: tk not found. Run 'pnpm build' or install tk globally."
   exit 1
 fi
 
@@ -30,47 +30,47 @@ count_tokens() {
 
 # ── Global counters ─────────────────────────────────────────────────
 TOTAL_RAW=0
-TOTAL_TG=0
+TOTAL_TK=0
 GOOD_TESTS=0
 WARN_TESTS=0
 NEGATIVE_TESTS=0
 FAIL_TESTS=0
 
-# ── bench(name, raw_cmd, tg_cmd) ────────────────────────────────────
+# ── bench(name, raw_cmd, tk_cmd) ────────────────────────────────────
 bench() {
   local name="$1"
   local raw_cmd="$2"
-  local tg_cmd="$3"
+  local tk_cmd="$3"
 
-  local raw_out tg_out raw_tokens tg_tokens icon tag savings pct
+  local raw_out tk_out raw_tokens tk_tokens icon tag savings pct
 
   raw_out=$(eval "$raw_cmd" 2>/dev/null || true)
-  tg_out=$(eval "$tg_cmd" 2>/dev/null || true)
+  tk_out=$(eval "$tk_cmd" 2>/dev/null || true)
 
   raw_tokens=$(count_tokens "$raw_out")
-  tg_tokens=$(count_tokens "$tg_out")
+  tk_tokens=$(count_tokens "$tk_out")
 
   # --- classify ---
-  if [ -z "$tg_out" ] && [ -n "$raw_out" ]; then
+  if [ -z "$tk_out" ] && [ -n "$raw_out" ]; then
     icon="🔴"
     tag="FAIL"
     FAIL_TESTS=$((FAIL_TESTS + 1))
     TOTAL_RAW=$((TOTAL_RAW + raw_tokens))
-    TOTAL_TG=$((TOTAL_TG + raw_tokens))
-  elif [ "$tg_tokens" -gt "$raw_tokens" ] && [ "$raw_tokens" -gt 0 ]; then
+    TOTAL_TK=$((TOTAL_TK + raw_tokens))
+  elif [ "$tk_tokens" -gt "$raw_tokens" ] && [ "$raw_tokens" -gt 0 ]; then
     icon="🔴"
     tag="NEG"
     NEGATIVE_TESTS=$((NEGATIVE_TESTS + 1))
     TOTAL_RAW=$((TOTAL_RAW + raw_tokens))
-    TOTAL_TG=$((TOTAL_TG + tg_tokens))
-  elif [ "$raw_tokens" -gt 0 ] && [ "$tg_tokens" -eq "$raw_tokens" ]; then
+    TOTAL_TK=$((TOTAL_TK + tk_tokens))
+  elif [ "$raw_tokens" -gt 0 ] && [ "$tk_tokens" -eq "$raw_tokens" ]; then
     icon="⚠️ "
     tag="WARN"
     WARN_TESTS=$((WARN_TESTS + 1))
     TOTAL_RAW=$((TOTAL_RAW + raw_tokens))
-    TOTAL_TG=$((TOTAL_TG + tg_tokens))
+    TOTAL_TK=$((TOTAL_TK + tk_tokens))
   elif [ "$raw_tokens" -gt 0 ]; then
-    savings=$(( (raw_tokens - tg_tokens) * 100 / raw_tokens ))
+    savings=$(( (raw_tokens - tk_tokens) * 100 / raw_tokens ))
     if [ "$savings" -lt 60 ]; then
       icon="⚠️ "
       tag="WARN"
@@ -81,7 +81,7 @@ bench() {
       GOOD_TESTS=$((GOOD_TESTS + 1))
     fi
     TOTAL_RAW=$((TOTAL_RAW + raw_tokens))
-    TOTAL_TG=$((TOTAL_TG + tg_tokens))
+    TOTAL_TK=$((TOTAL_TK + tk_tokens))
   else
     icon="⏭️ "
     tag="SKIP"
@@ -93,11 +93,11 @@ bench() {
     printf "%s %-20s │ %6d → %6s (--)\n" "$icon" "$name" "$raw_tokens" "-"
   elif [ "$tag" != "SKIP" ]; then
     if [ "$raw_tokens" -gt 0 ]; then
-      pct=$(( (raw_tokens - tg_tokens) * 100 / raw_tokens ))
+      pct=$(( (raw_tokens - tk_tokens) * 100 / raw_tokens ))
     else
       pct=0
     fi
-    printf "%s %-20s │ %6d → %6d (%+d%%)\n" "$icon" "$name" "$raw_tokens" "$tg_tokens" "$pct"
+    printf "%s %-20s │ %6d → %6d (%+d%%)\n" "$icon" "$name" "$raw_tokens" "$tk_tokens" "$pct"
   else
     printf "%s %-20s │ %6s → %6s (--)\n" "$icon" "$name" "-" "-"
   fi
@@ -111,9 +111,9 @@ section() {
 
 # ══════════════════════════════════════════════════════════════════════
 echo ""
-printf "${BOLD}${CYAN}tg Benchmark${NC}\n"
+printf "${BOLD}${CYAN}tk Benchmark${NC}\n"
 echo "════════════════════════════════════════════════════════════════"
-printf "   %-20s │ %s\n" "TEST" "TOKENS (raw → tg)"
+printf "   %-20s │ %s\n" "TEST" "TOKENS (raw → tk)"
 echo "────────────────────────────────────────────────────────────────"
 
 # =====================
@@ -123,15 +123,15 @@ section "ls"
 
 bench "ls ." \
   "ls -la ." \
-  "$TG ls ."
+  "$TK ls ."
 
 bench "ls src/" \
   "ls -la src/" \
-  "$TG ls src/"
+  "$TK ls src/"
 
 bench "ls -la ." \
   "ls -la ." \
-  "$TG ls -la ."
+  "$TK ls -la ."
 
 # =====================
 # read / cat
@@ -141,19 +141,19 @@ section "read/cat"
 if [ -f "package.json" ]; then
   bench "cat package.json" \
     "cat package.json" \
-    "$TG cat package.json"
+    "$TK cat package.json"
 fi
 
 if [ -f "README.md" ]; then
   bench "cat README.md" \
     "cat README.md" \
-    "$TG cat README.md"
+    "$TK cat README.md"
 fi
 
 if [ -f "src/cli.ts" ]; then
   bench "cat src/cli.ts" \
     "cat src/cli.ts" \
-    "$TG cat src/cli.ts"
+    "$TK cat src/cli.ts"
 fi
 
 # =====================
@@ -163,11 +163,11 @@ section "find"
 
 bench "find src -name *.ts" \
   "find src -name '*.ts'" \
-  "$TG find src -name \"*.ts\""
+  "$TK find src -name \"*.ts\""
 
 bench "find . -name *.json" \
   "find . -name '*.json' -not -path './node_modules/*' -not -path './dist/*' -not -path './.git/*'" \
-  "$TG find . -name \"*.json\""
+  "$TK find . -name \"*.json\""
 
 # =====================
 # git
@@ -176,19 +176,19 @@ section "git"
 
 bench "git status" \
   "git status" \
-  "$TG git status"
+  "$TK git status"
 
 bench "git log -5" \
   "git --no-pager log -5" \
-  "$TG git log -5"
+  "$TK git log -5"
 
 bench "git diff" \
   "git --no-pager diff HEAD~1 2>/dev/null || echo ''" \
-  "$TG git diff"
+  "$TK git diff"
 
 bench "git branch" \
   "git --no-pager branch" \
-  "$TG git branch"
+  "$TK git branch"
 
 # =====================
 # grep
@@ -197,11 +197,11 @@ section "grep"
 
 bench "rg export src/" \
   "rg 'export' src/ 2>/dev/null || echo ''" \
-  "$TG rg export src/"
+  "$TK rg export src/"
 
 bench "grep -r import src/" \
   "grep -r 'import' src/ 2>/dev/null || echo ''" \
-  "$TG grep -r import src/"
+  "$TK grep -r import src/"
 
 # =====================
 # generic passthrough
@@ -210,11 +210,11 @@ section "generic passthrough"
 
 bench "echo hello" \
   "echo hello" \
-  "$TG echo hello"
+  "$TK echo hello"
 
 bench "node -e" \
   "node -e \"console.log('test')\"" \
-  "$TG node -e \"console.log('test')\""
+  "$TK node -e \"console.log('test')\""
 
 # =====================
 # npm / pnpm (conditional)
@@ -223,14 +223,14 @@ if command -v npm &> /dev/null; then
   section "npm"
   bench "npm list --depth=0" \
     "npm list --depth=0 2>&1 || true" \
-    "$TG npm list --depth=0"
+    "$TK npm list --depth=0"
 fi
 
 if command -v pnpm &> /dev/null; then
   section "pnpm"
   bench "pnpm list --depth=0" \
     "pnpm list --depth=0 2>&1 || true" \
-    "$TG pnpm list --depth=0"
+    "$TK pnpm list --depth=0"
 fi
 
 # =====================
@@ -240,7 +240,7 @@ if { command -v tsc &> /dev/null || [ -f "node_modules/.bin/tsc" ]; } && [ -f "t
   section "tsc"
   bench "tsc --noEmit" \
     "tsc --noEmit 2>&1 || true" \
-    "$TG tsc --noEmit"
+    "$TK tsc --noEmit"
 fi
 
 # =====================
@@ -298,21 +298,21 @@ PYEOF
     section "ruff"
     bench "ruff check ." \
       "ruff check . 2>&1 || true" \
-      "$TG ruff check ."
+      "$TK ruff check ."
   fi
 
   if $HAVE_PYTEST; then
     section "pytest"
     bench "pytest -v" \
       "pytest -v 2>&1 || true" \
-      "$TG pytest -v"
+      "$TK pytest -v"
   fi
 
   if $HAVE_PIP; then
     section "pip"
     bench "pip list" \
       "pip list 2>&1 || true" \
-      "$TG pip list"
+      "$TK pip list"
   fi
 
   cd "$ROOT"
@@ -329,7 +329,7 @@ if command -v javac &> /dev/null; then
   section "Java"
   bench "javac -version" \
     "javac -version 2>&1 || true" \
-    "$TG javac -version"
+    "$TK javac -version"
 else
   echo ""
   echo "⏭️  Java (javac not in PATH, skipped)"
@@ -345,7 +345,7 @@ TOTAL_TESTS=$((GOOD_TESTS + WARN_TESTS + NEGATIVE_TESTS + FAIL_TESTS))
 
 if [ "$TOTAL_TESTS" -gt 0 ]; then
   if [ "$TOTAL_RAW" -gt 0 ]; then
-    TOTAL_SAVED=$((TOTAL_RAW - TOTAL_TG))
+    TOTAL_SAVED=$((TOTAL_RAW - TOTAL_TK))
     TOTAL_SAVE_PCT=$((TOTAL_SAVED * 100 / TOTAL_RAW))
   else
     TOTAL_SAVED=0
@@ -357,7 +357,7 @@ if [ "$TOTAL_TESTS" -gt 0 ]; then
     "$GOOD_TESTS" "$WARN_TESTS" "$NEGATIVE_TESTS" "$FAIL_TESTS"
   echo ""
   printf "  Tokens: %d → %d  (${GREEN}-%d%%${NC})\n" \
-    "$TOTAL_RAW" "$TOTAL_TG" "$TOTAL_SAVE_PCT"
+    "$TOTAL_RAW" "$TOTAL_TK" "$TOTAL_SAVE_PCT"
   echo ""
 
   EXIT_CODE=0

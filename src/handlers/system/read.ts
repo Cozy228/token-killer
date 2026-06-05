@@ -1,12 +1,12 @@
 import { executeCommand } from "../../executor.js";
-import type { CommandHandler, ParsedCommand, RawResult, TgOptions } from "../../types.js";
+import type { CommandHandler, ParsedCommand, RawResult, TkOptions } from "../../types.js";
 import { makeFilteredResult } from "../base.js";
 import { type CompressionLevel, parseLevel } from "../common/level.js";
 
 // RTK: system/read.rs — read a file (here, the bytes a `cat <file>` produced),
 // apply a language-aware filter level, then a line window (max_lines/tail_lines),
 // optionally adding line numbers. Defaults (level=none, no window, no numbers)
-// return the content unchanged, matching read.rs::run with no flags. tg routes
+// return the content unchanged, matching read.rs::run with no flags. tk routes
 // `cat` here; RTK's own command is `read`, so we accept its flags too.
 
 // RTK: core/filter.rs::FilterLevel — none (NoFilter), minimal (strip comments),
@@ -257,7 +257,7 @@ function commentPatterns(lang: Language): CommentPatterns {
   }
 }
 
-// RTK: read.rs detects language from the file's extension (stdin → Unknown). tg's
+// RTK: read.rs detects language from the file's extension (stdin → Unknown). tk's
 // `cat` may receive several operands; mirror RTK's single-file model by keying off
 // the first real file operand's extension (the common single-file case).
 function detectLanguage(files: string[]): Language {
@@ -393,7 +393,7 @@ function applyLevelFilter(content: string, level: ReadLevel, lang: Language): st
   return filtered;
 }
 
-// RTK: read.rs reads the file bytes directly; tg shells to the system `cat`, so
+// RTK: read.rs reads the file bytes directly; tk shells to the system `cat`, so
 // execute() must pass ONLY the file operands (and stdin `-`) — never RTK's read
 // flags (--level/--max-lines/--tail-lines/--line-numbers), which `cat` would
 // reject. The filter still windows from the user's ORIGINAL args (see formatRead),
@@ -417,13 +417,13 @@ function formatRead(raw: RawResult, command: ParsedCommand): string {
 export const readHandler: CommandHandler = {
   name: "read",
   programs: ["cat"],
-  // tg maps `cat` onto RTK read semantics (system/read.rs); `read`/`type`/`less`
+  // tk maps `cat` onto RTK read semantics (system/read.rs); `read`/`type`/`less`
   // stay on the existing read-like handler, which owns stdin/multi-file execution.
   matches(command) {
     return command.program === "cat";
   },
   execute(command) {
-    // RTK: read.rs reads the file directly. tg shells to `cat`, passing only the
+    // RTK: read.rs reads the file directly. tk shells to `cat`, passing only the
     // file operands so RTK's read flags never reach the system binary; the filter
     // re-derives the window from the user's original args.
     const args = buildCatArgs(command.args);
@@ -435,7 +435,7 @@ export const readHandler: CommandHandler = {
     };
     return executeCommand(rewritten);
   },
-  async filter(raw, command, options: TgOptions) {
+  async filter(raw, command, options: TkOptions) {
     return makeFilteredResult(this.name, raw, formatRead(raw, command), options);
   },
 };

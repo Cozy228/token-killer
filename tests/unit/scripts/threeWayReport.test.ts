@@ -22,15 +22,15 @@ const result: CaseResult = {
   command: "cat long.txt",
   handler: "read-like",
   rawCmd: "cat long.txt",
-  tgCmd: "tg cat long.txt",
+  tkCmd: "tk cat long.txt",
   rtkCmd: "read long.txt",
   exitCode: 0,
   savingsGap: 0,
   raw: stats(longText.length),
-  tg: stats(longText.length),
+  tk: stats(longText.length),
   rtk: stats(longText.length),
   rawText: longText,
-  tgText: longText,
+  tkText: longText,
   rtkText: longText,
 };
 

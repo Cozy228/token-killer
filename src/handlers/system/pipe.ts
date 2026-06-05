@@ -1,9 +1,9 @@
 import { executeCommand } from "../../executor.js";
-import type { CommandHandler, ParsedCommand, RawResult, TgOptions } from "../../types.js";
+import type { CommandHandler, ParsedCommand, RawResult, TkOptions } from "../../types.js";
 import { makeFilteredResult } from "../base.js";
 
 // RTK: system/pipe_cmd.rs — `rtk pipe [filter]` reads stdin and runs a named or
-// auto-detected filter over arbitrary piped command output. In tg the command is
+// auto-detected filter over arbitrary piped command output. In tk the command is
 // invoked as `pipe <cmd> <args...>` and the filtered content is raw.stdout/stderr.
 //
 // This port faithfully reproduces the logic that lives inside pipe_cmd.rs itself:
@@ -169,7 +169,7 @@ function autoDetectFilter(input: string): PipeFilter {
   return identityFilter;
 }
 
-// RTK: in tg, raw.stdout/stderr is the piped content. The first arg (if present)
+// RTK: in tk, raw.stdout/stderr is the piped content. The first arg (if present)
 // is treated as the explicit filter name (RTK's `rtk pipe <filter>`); when absent
 // or not a locally-ported name, fall back to auto-detection.
 function pipeContent(raw: RawResult): string {
@@ -199,7 +199,7 @@ export const pipeHandler: CommandHandler = {
   execute(command) {
     return executeCommand(command);
   },
-  async filter(raw, command, options: TgOptions) {
+  async filter(raw, command, options: TkOptions) {
     return makeFilteredResult(this.name, raw, formatPipe(raw, command), options);
   },
 };

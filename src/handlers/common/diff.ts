@@ -2,7 +2,7 @@ import { readFile, stat } from "node:fs/promises";
 import path from "node:path";
 
 import { executeCommand } from "../../executor.js";
-import type { CommandHandler, ParsedCommand, RawResult, TgOptions } from "../../types.js";
+import type { CommandHandler, ParsedCommand, RawResult, TkOptions } from "../../types.js";
 import { makeFilteredResult } from "../base.js";
 
 type DiffChange =
@@ -147,7 +147,7 @@ function condenseUnifiedDiff(text: string): string {
   return output.join("\n");
 }
 
-async function diffInternally(command: ParsedCommand, options: TgOptions): Promise<RawResult | undefined> {
+async function diffInternally(command: ParsedCommand, options: TkOptions): Promise<RawResult | undefined> {
   const [oldPath, newPath] = fileArgs(command);
   if (!oldPath || !newPath) return undefined;
 

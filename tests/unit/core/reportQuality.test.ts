@@ -5,9 +5,9 @@ import { describe, expect, test } from "vitest";
 
 import { buildReport } from "../../../src/core/report.js";
 import { recordHistory } from "../../../src/core/history.js";
-import type { FilteredResult, RawResult, TgOptions } from "../../../src/types.js";
+import type { FilteredResult, RawResult, TkOptions } from "../../../src/types.js";
 
-function options(cwd: string): TgOptions {
+function options(cwd: string): TkOptions {
   return {
     raw: false,
     stats: false,
@@ -43,7 +43,7 @@ const filtered: FilteredResult = {
 
 describe("report quality metrics", () => {
   test("records and reports filter quality status counts", async () => {
-    const dir = await mkdtemp(path.join(tmpdir(), "tg-report-quality-"));
+    const dir = await mkdtemp(path.join(tmpdir(), "tk-report-quality-"));
     try {
       await recordHistory(raw, filtered, options(dir));
 

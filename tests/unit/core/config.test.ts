@@ -6,17 +6,17 @@ import { afterEach, describe, expect, test, vi } from "vitest";
 import { ConfigError, configPath, readConfig, writeConfigTemplate } from "../../../src/core/config.js";
 import { runConfig } from "../../../src/core/configCli.js";
 
-const previousHome = process.env.TOKEN_GUARD_HOME;
+const previousHome = process.env.TOKEN_KILLER_HOME;
 
 afterEach(() => {
   vi.restoreAllMocks();
-  if (previousHome === undefined) delete process.env.TOKEN_GUARD_HOME;
-  else process.env.TOKEN_GUARD_HOME = previousHome;
+  if (previousHome === undefined) delete process.env.TOKEN_KILLER_HOME;
+  else process.env.TOKEN_KILLER_HOME = previousHome;
 });
 
 async function withHome<T>(fn: (home: string) => Promise<T>): Promise<T> {
-  const home = await mkdtemp(path.join(tmpdir(), "tg-config-"));
-  process.env.TOKEN_GUARD_HOME = home;
+  const home = await mkdtemp(path.join(tmpdir(), "tk-config-"));
+  process.env.TOKEN_KILLER_HOME = home;
   try {
     return await fn(home);
   } finally {
@@ -65,7 +65,7 @@ describe("readConfig", () => {
   });
 });
 
-describe("tg config init", () => {
+describe("tk config init", () => {
   test("creates the closed-set template with both consents false", async () => {
     await withHome(async () => {
       vi.spyOn(process.stdout, "write").mockReturnValue(true);

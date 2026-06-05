@@ -58,7 +58,7 @@ describe("RTK tree behavior", () => {
       expect(fromLong).not.toContain("node_modules");
     });
 
-    // tg divergence G3: balanced (default) injects the native fan-out cap.
+    // tk divergence G3: balanced (default) injects the native fan-out cap.
     test("injects --filelimit by default (balanced)", () => {
       const args = buildTreeArgs(["."]);
       expect(args).toContain("--filelimit");
@@ -126,7 +126,7 @@ describe("RTK tree behavior", () => {
     });
   });
 
-  // tg divergence G3: filter_tree_output must PRESERVE tree's native
+  // tk divergence G3: filter_tree_output must PRESERVE tree's native
   // `[N entries exceeds filelimit, not opening dir]` marker — its strip condition
   // needs both "director" and "file", and the marker has "dir"/"file" but not
   // "director". A future edit must not regress this.

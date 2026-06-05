@@ -1,5 +1,5 @@
 import { executeCommand } from "../../executor.js";
-import type { CommandHandler, ParsedCommand, RawResult, TgOptions } from "../../types.js";
+import type { CommandHandler, ParsedCommand, RawResult, TkOptions } from "../../types.js";
 import { makeFilteredResult } from "../base.js";
 
 // RTK: git/gt_cmd.rs — Graphite (gt) stacking CLI output filters.
@@ -175,7 +175,7 @@ export const gtHandler: CommandHandler = {
   execute(command) {
     return executeCommand(command);
   },
-  async filter(raw, command, options: TgOptions) {
+  async filter(raw, command, options: TkOptions) {
     return makeFilteredResult(this.name, raw, formatGt(raw, command), options);
   },
 };

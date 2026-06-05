@@ -21,16 +21,16 @@ let cwd: string;
 
 beforeEach(() => {
   registerAllRules();
-  root = mkdtempSync(join(tmpdir(), "tg-ctx-apply-"));
+  root = mkdtempSync(join(tmpdir(), "tk-ctx-apply-"));
   home = join(root, "home");
   cwd = join(root, "repo");
   mkdirSync(home, { recursive: true });
   mkdirSync(cwd, { recursive: true });
-  process.env.TOKEN_GUARD_HOME = join(home, ".token-guard");
+  process.env.TOKEN_KILLER_HOME = join(home, ".token-killer");
 });
 afterEach(() => {
-  delete process.env.TOKEN_GUARD_HOME;
-  delete process.env.TG_USER_AGENT_INSTRUCTIONS;
+  delete process.env.TOKEN_KILLER_HOME;
+  delete process.env.TK_USER_AGENT_INSTRUCTIONS;
   rmSync(root, { recursive: true, force: true });
   vi.restoreAllMocks();
 });
@@ -58,11 +58,11 @@ describe("marker block helpers", () => {
   // Phase 3: the managed block names concrete, already-shipped read/rg/tree flags.
   test("managed block points at concrete read/rg/tree flags", () => {
     const block = insertMarkerBlock("");
-    expect(block).toContain("tg read --max-lines 200");
+    expect(block).toContain("tk read --max-lines 200");
     expect(block).toContain("--level aggressive");
-    expect(block).toContain("tg rg <pattern> <path>");
+    expect(block).toContain("tk rg <pattern> <path>");
     expect(block).toContain("--level minimal");
-    expect(block).toContain("tg tree <path>");
+    expect(block).toContain("tk tree <path>");
     expect(block).toContain("-L <n>");
     // Cacheable / marker-block constraints: ≤ 15 lines, no volatile content.
     expect(block.split("\n").length).toBeLessThanOrEqual(15);
@@ -79,7 +79,7 @@ describe("marker block helpers", () => {
   });
 });
 
-describe("tg agentsmd patch/restore", () => {
+describe("tk agentsmd patch/restore", () => {
   test("patch installs, backs up, and restore removes the managed block", async () => {
     const target = join(home, ".copilot", "copilot-instructions.md");
     mkdirSync(dirname(target), { recursive: true });
@@ -91,7 +91,7 @@ describe("tg agentsmd patch/restore", () => {
 
     expect(hasMarkerBlock(readFileSync(target, "utf8"))).toBe(true);
     // Backup of the pre-patch content exists.
-    const backupRoot = join(home, ".token-guard", "backups", "context");
+    const backupRoot = join(home, ".token-killer", "backups", "context");
     expect(existsSync(backupRoot)).toBe(true);
     expect(readdirSync(backupRoot).length).toBeGreaterThan(0);
 
@@ -151,7 +151,7 @@ describe("runOptimize --apply-safe", () => {
     // Body preserved.
     expect(after).toContain("Run the deploy and publish.");
     // Backup written.
-    const backupRoot = join(home, ".token-guard", "backups", "context");
+    const backupRoot = join(home, ".token-killer", "backups", "context");
     expect(existsSync(backupRoot)).toBe(true);
   });
 });

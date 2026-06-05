@@ -1,10 +1,10 @@
 import { routeCommand } from "../router.js";
-import type { FilteredResult, ParsedCommand, RawResult, TgOptions } from "../types.js";
+import type { FilteredResult, ParsedCommand, RawResult, TkOptions } from "../types.js";
 
 export async function filterWithGenericFallback(
   raw: RawResult,
   command: ParsedCommand,
-  options: TgOptions,
+  options: TkOptions,
   error: unknown,
 ): Promise<FilteredResult> {
   const generic = routeCommand({

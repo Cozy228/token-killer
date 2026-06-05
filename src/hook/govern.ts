@@ -10,6 +10,15 @@
 
 import type { ToolEvent } from "./normalize.js";
 
+// metrics-ledger ③: the four governance counters, named after the real Decision
+// enum (§0.1.9). `rewrite` is deliberately absent — an executed rewrite's saving
+// is already counted in ledger ① (the executed-rewrite exclusion, §0.1, anti-goal).
+export type GovernanceKind =
+  | "denied_large_reads"
+  | "suggested_broad_searches"
+  | "denied_large_prompts"
+  | "suggested_large_prompts";
+
 export type Decision = {
   decision: "allow" | "deny" | "rewrite" | "suggest";
   rewritten_command?: string;
@@ -17,6 +26,15 @@ export type Decision = {
   // A short hint the host injects into the turn (Copilot `additionalContext`).
   // Used by prompt governance and failure recovery; never carries source/log text.
   additional_context?: string;
+  // metrics-ledger ③ (Gap C): set ONLY on a recordable governance opportunity —
+  // a deny/suggest with a real avoided-cost meaning. Absent on `allow`, on
+  // `rewrite` (excluded from ③ physically), and on non-cost suggests (e.g. the
+  // model-routing hint). The hook runtime appends a governance.jsonl row iff this
+  // is present.
+  governance_kind?: GovernanceKind;
+  // Heuristic prompt magnitude (prompt governance only) folded into ③'s
+  // `avoided_tokens_estimate`. NEVER a measured saving; never sits beside ①.
+  estimated_tokens?: number;
 };
 
 // Deterministically-irrelevant directories whose contents almost never add
@@ -91,12 +109,14 @@ export function governDirectTool(ev: ToolEvent): Decision {
     if (path && isInDependencyDir(path)) {
       return {
         decision: "deny",
+        governance_kind: "denied_large_reads",
         reason: `${path} is inside a dependency/build directory (node_modules/dist/build/target/coverage/.git); reading it is high-cost and rarely adds evidence. Read source instead.`,
       };
     }
     if (path && isLockfile(path)) {
       return {
         decision: "deny",
+        governance_kind: "denied_large_reads",
         reason: `${path} is a lockfile; it is large and not human-evidence. Read the manifest (package.json/pyproject.toml) instead.`,
       };
     }
@@ -105,6 +125,7 @@ export function governDirectTool(ev: ToolEvent): Decision {
   if (ev.category === "search" && isRepoWideSearch(ev.toolInput)) {
     return {
       decision: "suggest",
+      governance_kind: "suggested_broad_searches",
       reason: "Repo-wide search is high-cost; scope it to a directory or file type and exclude generated dirs (node_modules, dist, .git).",
     };
   }

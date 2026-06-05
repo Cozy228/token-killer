@@ -1,9 +1,9 @@
 /**
- * Report generation for tg (token-guard) integration test results.
+ * Report generation for tk (token-killer) integration test results.
  *
- * Ported from rtk/scripts/benchmark/lib/report.ts and adapted to tg conventions:
+ * Ported from rtk/scripts/benchmark/lib/report.ts and adapted to tk conventions:
  *   - Bun.write replaced with Node fs/promises writeFile.
- *   - Labels renamed rtk -> tg. "Binary" line reports the dist/cli.js artifact size.
+ *   - Labels renamed rtk -> tk. "Binary" line reports the dist/cli.js artifact size.
  */
 
 import { writeFile } from "node:fs/promises";
@@ -26,7 +26,7 @@ export function generateReport(buildInfo: BuildInfo): string {
   const lines: string[] = [];
 
   lines.push("======================================================");
-  lines.push("        TG INTEGRATION TEST REPORT");
+  lines.push("        TK INTEGRATION TEST REPORT");
   lines.push("======================================================");
   lines.push("");
   lines.push(`Date:    ${new Date().toISOString()}`);

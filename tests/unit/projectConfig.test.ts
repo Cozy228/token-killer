@@ -10,12 +10,12 @@ const repoRoot = path.resolve(
 );
 
 const requiredRepoFiles = [
-  { name: "GitHub Actions CI workflow", tgPath: ".github/workflows/ci.yml" },
-  { name: "CLI testing guidelines", tgPath: "docs/cli-testing.md" },
+  { name: "GitHub Actions CI workflow", tkPath: ".github/workflows/ci.yml" },
+  { name: "CLI testing guidelines", tkPath: "docs/cli-testing.md" },
 ] as const;
 
 describe("repository CI and testing docs", () => {
-  test.each(requiredRepoFiles)("$name exists", async ({ tgPath }) => {
-    await expect(access(path.join(repoRoot, tgPath))).resolves.toBeUndefined();
+  test.each(requiredRepoFiles)("$name exists", async ({ tkPath }) => {
+    await expect(access(path.join(repoRoot, tkPath))).resolves.toBeUndefined();
   });
 });

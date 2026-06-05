@@ -5,7 +5,7 @@ import { compactUnifiedDiff } from "./compactDiff.js";
 
 // RTK: git/diff_cmd.rs + pipe_cmd.rs::git_diff_wrapper — `rtk git diff` filters
 // the diff with `compact_diff(input, 200)` and emits only the condensed changes
-// (per-file header + hunks + `+N -M`), no diffstat. tg mirrors this: the filter
+// (per-file header + hunks + `+N -M`), no diffstat. tk mirrors this: the filter
 // processes ONLY the provided diff text, never shelling out to `git diff --stat`
 // (which would read live working-tree state and corrupt fixture/stdin filtering).
 function formatDiff(text: string): string {

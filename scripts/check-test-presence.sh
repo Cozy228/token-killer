@@ -7,7 +7,7 @@ set -euo pipefail
 # synthetic handler unit tests; those are migration debt until ported/deleted.
 
 if [ "${1:-}" = "--self-test" ]; then
-    TMPFILE="src/handlers/_tg_check_self_test.ts"
+    TMPFILE="src/handlers/_tk_check_self_test.ts"
     echo "export const dummy = {};" > "$TMPFILE"
     trap 'rm -f "$TMPFILE"' EXIT
 

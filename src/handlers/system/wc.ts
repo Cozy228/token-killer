@@ -1,5 +1,5 @@
 import { executeCommand } from "../../executor.js";
-import type { CommandHandler, ParsedCommand, RawResult, TgOptions } from "../../types.js";
+import type { CommandHandler, ParsedCommand, RawResult, TkOptions } from "../../types.js";
 import { makeFilteredResult } from "../base.js";
 
 // RTK: system/wc_cmd.rs — strip redundant paths and alignment padding from wc.
@@ -152,7 +152,7 @@ export const wcHandler: CommandHandler = {
   execute(command) {
     return executeCommand(command);
   },
-  async filter(raw, command, options: TgOptions) {
+  async filter(raw, command, options: TkOptions) {
     return makeFilteredResult(this.name, raw, formatWc(raw, command), options);
   },
 };

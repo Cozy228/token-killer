@@ -17,13 +17,13 @@ describe("injection block", () => {
     const once = applyInjectionBlock("# My instructions\n");
     const twice = applyInjectionBlock(once);
     expect(twice).toBe(once);
-    expect(once.match(/>>> token-guard >>>/g)?.length).toBe(1);
+    expect(once.match(/>>> token-killer >>>/g)?.length).toBe(1);
   });
 
   test("preserves pre-existing content", () => {
     const result = applyInjectionBlock("# My instructions\n");
     expect(result).toContain("# My instructions");
-    expect(result).toContain("Prefix shell commands with `tg`");
+    expect(result).toContain("Prefix shell commands with `tk`");
   });
 
   test("remove restores content without the block", () => {
@@ -53,7 +53,7 @@ describe("injection targets", () => {
 describe("writeInjection round-trip", () => {
   let dir: string;
   beforeEach(() => {
-    dir = mkdtempSync(join(tmpdir(), "tg-inject-"));
+    dir = mkdtempSync(join(tmpdir(), "tk-inject-"));
   });
   afterEach(() => rmSync(dir, { recursive: true, force: true }));
 
@@ -61,9 +61,9 @@ describe("writeInjection round-trip", () => {
     const file = join(dir, "nested", "copilot-instructions.md");
     writeInjection(file);
     expect(existsSync(file)).toBe(true);
-    expect(readFileSync(file, "utf8")).toContain("Token Guard");
+    expect(readFileSync(file, "utf8")).toContain("Token Killer");
     unwriteInjection(file);
-    expect(readFileSync(file, "utf8")).not.toContain(">>> token-guard >>>");
+    expect(readFileSync(file, "utf8")).not.toContain(">>> token-killer >>>");
   });
 
   test("is idempotent against an existing file", () => {

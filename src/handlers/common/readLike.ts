@@ -2,7 +2,7 @@ import { readFile, stat } from "node:fs/promises";
 import path from "node:path";
 
 import { executeCommand } from "../../executor.js";
-import type { CommandHandler, ParsedCommand, RawResult, TgOptions } from "../../types.js";
+import type { CommandHandler, ParsedCommand, RawResult, TkOptions } from "../../types.js";
 import { makeFilteredResult } from "../base.js";
 
 const READ_PROGRAMS = new Set(["cat", "type", "less", "read"]);
@@ -129,7 +129,7 @@ function readStdin(): Promise<string> {
   });
 }
 
-async function readInternally(command: ParsedCommand, options: TgOptions): Promise<RawResult | undefined> {
+async function readInternally(command: ParsedCommand, options: TkOptions): Promise<RawResult | undefined> {
   const { files } = readOptions(command);
   if (files.length === 0) return undefined;
 

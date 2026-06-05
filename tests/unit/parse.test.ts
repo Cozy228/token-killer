@@ -3,7 +3,7 @@ import { describe, expect, test } from "vitest";
 import { parseArgv } from "../../src/parse.js";
 
 describe("parseArgv", () => {
-  test("parses tg stats flag without consuming original git flags", () => {
+  test("parses tk stats flag without consuming original git flags", () => {
     const parsed = parseArgv(["--stats", "git", "diff", "--", "src"]);
 
     expect(parsed.mode).toBe("command");

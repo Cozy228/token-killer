@@ -83,7 +83,7 @@ describe("RTK pytest behavior", () => {
     const listed = section.split("\n").filter((l) => l.trim().startsWith("XFAIL")).length;
     expect(listed).toBeLessThanOrEqual(10);
     expect(result.output).toContain("… +5 more");
-    expect(result.output).toMatch(/tg --raw/);
+    expect(result.output).toMatch(/tk --raw/);
   });
 
   // RTK: pytest_cmd.rs::test_filter_pytest_xfail_xpass — XPASS in particular is

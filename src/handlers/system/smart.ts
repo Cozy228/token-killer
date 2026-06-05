@@ -3,7 +3,7 @@ import type { CommandHandler } from "../../types.js";
 import { makeFilteredResult, rawText } from "../base.js";
 
 // RTK: system/local_llm.rs — `smart <file>` produces a local heuristic summary of a
-// file with no external model. In tg the summarizer emits a `Summary:` payload (and
+// file with no external model. In tk the summarizer emits a `Summary:` payload (and
 // optional `System prompt:` framing); the filter keeps only the summary signal and
 // strips the prompt boilerplate so the downstream context sees just the answer.
 function extractSummary(output: string): string {

@@ -90,7 +90,7 @@ describe("RTK diff behavior", () => {
   });
 });
 
-// RTK: diff_cmd.rs compute_diff invariants mapped to tg's LCS differ. tg uses LCS
+// RTK: diff_cmd.rs compute_diff invariants mapped to tk's LCS differ. tk uses LCS
 // rather than RTK's Jaccard-similarity modification detection, so similarity_* do
 // not map; the anti-truncation invariants do.
 describe("RTK diff compute (LCS) anti-truncation", () => {

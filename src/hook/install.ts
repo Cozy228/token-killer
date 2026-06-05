@@ -1,24 +1,24 @@
 // Slice 3 — Copilot hook config writer (DESIGN §3.1).
 //
-// This is NOT an installer command — installation is `tg init`'s job (there is no
-// `tg hook install`). This module is the config-writing routine that
-// `tg init --host copilot-cli` calls. It writes the host hook config that points
-// PreToolUse at `tg hook copilot`; the proxy does the compression.
+// This is NOT an installer command — installation is `tk init`'s job (there is no
+// `tk hook install`). This module is the config-writing routine that
+// `tk init --host copilot-cli` calls. It writes the host hook config that points
+// PreToolUse at `tk hook copilot`; the proxy does the compression.
 //
 // Scope (DESIGN §15, §3.0): user-level by default — `~/.copilot/hooks/
-// tg-rewrite.json`. The repo is written ONLY under `--project`
-// (`<cwd>/.github/hooks/tg-rewrite.json`). The file is dedicated and carries a
+// tk-rewrite.json`. The repo is written ONLY under `--project`
+// (`<cwd>/.github/hooks/tk-rewrite.json`). The file is dedicated and carries a
 // marker so uninstall removes only our file, never a user's.
 
 import { existsSync, mkdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { homedir } from "node:os";
 import { dirname, join } from "node:path";
 
-const CONFIG_FILENAME = "tg-rewrite.json";
+const CONFIG_FILENAME = "tk-rewrite.json";
 
 // Marker proving the file is ours (recoverable/marker-based). Sits beside `hooks`;
 // the host ignores unknown top-level keys.
-const MARKER = "token-guard";
+const MARKER = "token-killer";
 
 export type CopilotHookConfig = {
   managedBy: string;
@@ -35,7 +35,7 @@ export function buildCopilotHookConfig(): CopilotHookConfig {
   return {
     managedBy: MARKER,
     hooks: {
-      PreToolUse: [{ type: "command", command: "tg hook copilot", cwd: ".", timeout: 5 }],
+      PreToolUse: [{ type: "command", command: "tk hook copilot", cwd: ".", timeout: 5 }],
     },
   };
 }
@@ -57,7 +57,7 @@ export type HookConfigPlan = {
   contents: string;
 };
 
-// Compute what install WOULD do without writing — backs `tg init --dry-run`.
+// Compute what install WOULD do without writing — backs `tk init --dry-run`.
 export function planCopilotHookConfig(loc: ConfigLocation): HookConfigPlan {
   const path = copilotHookConfigPath(loc);
   const contents = serialize(buildCopilotHookConfig());

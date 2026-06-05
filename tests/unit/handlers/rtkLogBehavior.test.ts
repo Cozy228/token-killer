@@ -4,7 +4,7 @@ import { fileURLToPath } from "node:url";
 import { describe, expect, test } from "vitest";
 
 import { logHandler } from "../../../src/handlers/system/log.js";
-import type { TgOptions } from "../../../src/types.js";
+import type { TkOptions } from "../../../src/types.js";
 import {
   expectRtkParity,
   filterRtkFixture,
@@ -13,7 +13,7 @@ import {
 
 const repoRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "../../..");
 
-const execOptions: TgOptions = {
+const execOptions: TkOptions = {
   raw: false,
   stats: false,
   verbose: false,
@@ -161,7 +161,7 @@ describe("RTK log behavior", () => {
   });
 
   // RTK: log_cmd.rs::run_file — `log <file>` reads and summarizes the file's
-  // contents rather than proxying to the platform `log` tool. tg's execute() must
+  // contents rather than proxying to the platform `log` tool. tk's execute() must
   // read the file directly so the filter sees real log lines (not a macOS `log`
   // "Unknown subcommand" usage error, which would yield 0 errors/0 warnings).
   test("execute reads a log file argument instead of running the platform log tool", async () => {

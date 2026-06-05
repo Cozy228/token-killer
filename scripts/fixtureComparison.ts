@@ -7,7 +7,7 @@ import { fileURLToPath } from "node:url";
 
 import { filterWithFallback } from "../src/core/pipeline.js";
 import { routeCommand } from "../src/router.js";
-import type { ParsedCommand, RawResult, TgOptions } from "../src/types.js";
+import type { ParsedCommand, RawResult, TkOptions } from "../src/types.js";
 import { commandAvailable } from "./liveComparisonCases.js";
 
 const compareBinDir = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "compare-bin");
@@ -24,13 +24,13 @@ export type FixtureComparisonCase = {
   fixture: string;
   command: string[];
   exitCode?: number;
-  /** tg-only handler with no rtk filter: report rtk as raw passthrough (0% savings). */
+  /** tk-only handler with no rtk filter: report rtk as raw passthrough (0% savings). */
   rtkUnsupported?: boolean;
   /** rtk wrapper invocation (command/file/dir input) instead of stdin — see runRtkWrapperFixture. */
   rtkWrapper?: RtkWrapperSpec;
 };
 
-const defaultOptions: TgOptions = {
+const defaultOptions: TkOptions = {
   raw: false,
   stats: false,
   verbose: false,
@@ -294,7 +294,7 @@ export function runRtkWrapperFixture(
     return run([...spec.sub, fixturePath], `rtk ${spec.sub.join(" ")} ${fixture}`);
   }
   // dir-package: rtk deps scans a directory; stage the fixture as its package.json.
-  const dir = mkdtempSync(path.join(os.tmpdir(), "tg-deps-"));
+  const dir = mkdtempSync(path.join(os.tmpdir(), "tk-deps-"));
   try {
     copyFileSync(fixturePath, path.join(dir, "package.json"));
     return run([...spec.sub, dir], `rtk ${spec.sub.join(" ")} <tmpdir with ${path.basename(fixture)} as package.json>`);

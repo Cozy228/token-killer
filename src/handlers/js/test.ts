@@ -109,7 +109,7 @@ function parseTestJson(text: string): TestResult | undefined {
 }
 
 // RTK: vitest_cmd.rs::extract_stats_regex / extract_failures_regex (Tier 2) — recover
-// counts and failures from the human reporter when JSON is unavailable. tg also accepts
+// counts and failures from the human reporter when JSON is unavailable. tk also accepts
 // the Jest comma-style summary line ("Tests: 3 failed, 215 passed, 218 total"), which
 // RTK never sees because it forces --json for jest.
 const VITEST_TESTS_RE = /Tests\s+(?:(\d+)\s+failed\s*\|\s*)?(\d+)\s+passed/;

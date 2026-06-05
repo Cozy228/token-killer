@@ -1,5 +1,5 @@
 // Shared aggregation over measured history rows (ADR 0004 §3). PURE functions, no
-// I/O — `tg gain` output and the telemetry payload both derive from here so the two
+// I/O — `tk gain` output and the telemetry payload both derive from here so the two
 // can never diverge. This is ledger ① only: it sums measured command savings, never
 // invents estimates. I/O (reading the rows) lives in history.ts; these helpers take
 // the already-loaded HistoryRecord[].
@@ -166,7 +166,7 @@ export function byMonth(records: HistoryRecord[]): TimeBucket[] {
 }
 
 // Daily buckets for the last N calendar days (UTC), oldest first, with empty days
-// filled as zero buckets. Used by `tg gain --graph`, which renders empty days as the
+// filled as zero buckets. Used by `tk gain --graph`, which renders empty days as the
 // lowest block. `now` is injected for deterministic tests.
 export function lastNDays(
   records: HistoryRecord[],

@@ -1,15 +1,15 @@
 // User-level context advice writer (goal §"Advice format"). Writes Markdown to
-// ~/.token-guard/advice/context/<fingerprint>.md (project) or user.md (user).
+// ~/.token-killer/advice/context/<fingerprint>.md (project) or user.md (user).
 // Heuristic wording only — never claim provider token savings.
 
 import { mkdirSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 
-import { tokenGuardHome } from "../core/dataDir.js";
+import { tokenKillerHome } from "../core/dataDir.js";
 import type { ContextFinding, ContextScope } from "./types.js";
 
 export function contextAdviceDir(): string {
-  return join(tokenGuardHome(), "advice", "context");
+  return join(tokenKillerHome(), "advice", "context");
 }
 
 export function adviceFilePath(scope: ContextScope, fingerprint?: string): string {
@@ -60,7 +60,7 @@ export function renderContextAdvice(opts: {
     lines.push("## Safe applies available");
     lines.push("");
     lines.push(
-      "- Run `tg optimize context --token-budget-block --apply-safe` to install the managed token budget block in your user-level agent instructions.",
+      "- Run `tk optimize context --token-budget-block --apply-safe` to install the managed token budget block in your user-level agent instructions.",
     );
     lines.push("");
   }

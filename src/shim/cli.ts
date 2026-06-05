@@ -29,8 +29,8 @@ function err(line: string): void {
 }
 
 export type InstallShimOptions = {
-  // Which host configs to patch. `tg shim install` patches both available
-  // surfaces; `tg init` patches the one for the detected host.
+  // Which host configs to patch. `tk shim install` patches both available
+  // surfaces; `tk init` patches the one for the detected host.
   rc?: boolean;
   vscode?: boolean;
   quiet?: boolean;
@@ -47,7 +47,7 @@ export function installShim(opts: InstallShimOptions = {}): ProbeResult {
   const dir = shimDir();
   const programs = shimmablePrograms();
   installWrappers({ programs, installedAt: Date.now(), version: VERSION });
-  log(`token-guard shim installed: ${dir}`);
+  log(`token-killer shim installed: ${dir}`);
   log(`  wrappers: ${programs.length} (${programs.slice(0, 6).join(", ")}, …)`);
 
   if (rc) {
@@ -67,7 +67,7 @@ export function installShim(opts: InstallShimOptions = {}): ProbeResult {
       log(`  VS Code settings patched: ${settings}`);
     } catch {
       err(`  VS Code settings.json could not be parsed (comments?); patch it manually:`);
-      err(`    "terminal.integrated.env.*": { "TG_SHIM_DIR": "${dir}", "PATH": "${dir}${delimiter}\${env:PATH}" }`);
+      err(`    "terminal.integrated.env.*": { "TK_SHIM_DIR": "${dir}", "PATH": "${dir}${delimiter}\${env:PATH}" }`);
     }
   }
 
@@ -91,10 +91,10 @@ function uninstall(): number {
     try {
       unpatchVscodeSettings(settings, dir);
     } catch {
-      err(`  VS Code settings.json could not be parsed; remove the TG_SHIM_DIR/PATH keys manually.`);
+      err(`  VS Code settings.json could not be parsed; remove the TK_SHIM_DIR/PATH keys manually.`);
     }
   }
-  out(`token-guard shim removed: ${dir}`);
+  out(`token-killer shim removed: ${dir}`);
   return 0;
 }
 
@@ -104,7 +104,7 @@ function status(): number {
   const pathEntries = (process.env.PATH ?? "").split(delimiter);
   const index = pathEntries.indexOf(dir);
 
-  out(`token-guard shim status`);
+  out(`token-killer shim status`);
   out(`  dir:            ${dir}${existsSync(dir) ? "" : " (not installed)"}`);
   out(`  manifest:       ${manifest ? `v${manifest.version} schema ${manifest.schema}, ${manifest.programs.length} programs` : "absent"}`);
   out(`  on PATH:        ${index >= 0 ? `yes (position ${index})` : "no"}`);
@@ -126,7 +126,7 @@ export function runShim(argv: string[]): number {
     case undefined:
       return status();
     default:
-      err(`tg shim: unknown subcommand '${sub}' (expected install | uninstall | status)`);
+      err(`tk shim: unknown subcommand '${sub}' (expected install | uninstall | status)`);
       return 1;
   }
 }

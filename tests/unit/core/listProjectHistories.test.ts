@@ -3,16 +3,16 @@ import { tmpdir } from "node:os";
 import path from "node:path";
 import { afterEach, describe, expect, test } from "vitest";
 
-import { tokenGuardHome } from "../../../src/core/dataDir.js";
+import { tokenKillerHome } from "../../../src/core/dataDir.js";
 import { listProjectHistories, type HistoryRecord } from "../../../src/core/history.js";
 
-const previousHome = process.env.TOKEN_GUARD_HOME;
+const previousHome = process.env.TOKEN_KILLER_HOME;
 
 afterEach(() => {
   if (previousHome === undefined) {
-    delete process.env.TOKEN_GUARD_HOME;
+    delete process.env.TOKEN_KILLER_HOME;
   } else {
-    process.env.TOKEN_GUARD_HOME = previousHome;
+    process.env.TOKEN_KILLER_HOME = previousHome;
   }
 });
 
@@ -45,10 +45,10 @@ async function writeProjectHistory(home: string, fingerprint: string, rows: Hist
 
 describe("listProjectHistories", () => {
   test("returns [] when the home has no projects dir", async () => {
-    const home = await mkdtemp(path.join(tmpdir(), "tg-user-"));
-    process.env.TOKEN_GUARD_HOME = home;
+    const home = await mkdtemp(path.join(tmpdir(), "tk-user-"));
+    process.env.TOKEN_KILLER_HOME = home;
     try {
-      expect(tokenGuardHome()).toBe(home);
+      expect(tokenKillerHome()).toBe(home);
       expect(await listProjectHistories()).toEqual([]);
     } finally {
       await rm(home, { recursive: true, force: true });
@@ -56,8 +56,8 @@ describe("listProjectHistories", () => {
   });
 
   test("aggregates rows across every project, preserving fingerprints", async () => {
-    const home = await mkdtemp(path.join(tmpdir(), "tg-user-"));
-    process.env.TOKEN_GUARD_HOME = home;
+    const home = await mkdtemp(path.join(tmpdir(), "tk-user-"));
+    process.env.TOKEN_KILLER_HOME = home;
     try {
       await writeProjectHistory(home, "repo:aaaaaaaaaaaa", [row("repo:aaaaaaaaaaaa")]);
       await writeProjectHistory(home, "repo:bbbbbbbbbbbb", [
@@ -76,8 +76,8 @@ describe("listProjectHistories", () => {
   });
 
   test("skips a corrupt project store instead of throwing", async () => {
-    const home = await mkdtemp(path.join(tmpdir(), "tg-user-"));
-    process.env.TOKEN_GUARD_HOME = home;
+    const home = await mkdtemp(path.join(tmpdir(), "tk-user-"));
+    process.env.TOKEN_KILLER_HOME = home;
     try {
       await writeProjectHistory(home, "repo:aaaaaaaaaaaa", [row("repo:aaaaaaaaaaaa")]);
       const badDir = path.join(home, "projects", "repo:cccccccccccc");

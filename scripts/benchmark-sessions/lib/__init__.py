@@ -1,5 +1,5 @@
-"""tg (token-guard) benchmark-sessions support library.
+"""tk (token-killer) benchmark-sessions support library.
 
-Ported from rtk/scripts/benchmark-sessions/lib and adapted to tg conventions
-(setup_tg, tg ON/OFF groups, ~/.token-guard tracking output).
+Ported from rtk/scripts/benchmark-sessions/lib and adapted to tk conventions
+(setup_tk, tk ON/OFF groups, ~/.token-killer tracking output).
 """

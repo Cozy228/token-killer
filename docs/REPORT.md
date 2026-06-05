@@ -1,14 +1,14 @@
-# Token Guard — Three-Way Comparison Report
+# Token Killer — Three-Way Comparison Report
 
 Generated: 2026-06-02
-Project: `token-guard` (`/Users/ziyu/Workspace/token-guard`)
-Versions: `tg` 0.1.0 (Node.js) | `rtk` 0.42.0 (Rust)
+Project: `token-killer` (`/Users/ziyu/Workspace/token-killer`)
+Versions: `tk` 0.1.0 (Node.js) | `rtk` 0.42.0 (Rust)
 
 ---
 
 ## 1. Three-Way Savings Summary
 
-| Command | Raw chars | Raw lines | tg chars | tg lines | rtk chars | rtk lines | tg reduction | rtk reduction |
+| Command | Raw chars | Raw lines | tk chars | tk lines | rtk chars | rtk lines | tk reduction | rtk reduction |
 |---------|-----------|-----------|----------|----------|-----------|-----------|-------------|--------------|
 | `ls` | 138 | 12 | 226 | 15 | 216 | 14 | — (inflated) | — (inflated) |
 | `git status` | 535 | 21 | 351 | 19 | 223 | 14 | 34.4% | **58.3%** |
@@ -34,7 +34,7 @@ dist			pnpm-lock.yaml		src			tsdown.config.ts
 node_modules		pnpm-workspace.yaml	tests			vitest.config.ts
 ```
 
-**tg** (226 chars, 15 lines):
+**tk** (226 chars, 15 lines):
 ```
 .
 ├─ README.md
@@ -56,7 +56,7 @@ Skipped:
 **rtk** (216 chars, 14 lines):
 ```
 .ruff_cache/
-.tg/
+.tk/
 rtk/
 src/
 tests/
@@ -73,9 +73,9 @@ vitest.config.ts  133B
 Summary: 9 files, 5 dirs (2 .ts, 2 .yaml, 2 .json, 2 .md, 1 .gitignore)
 ```
 
-**Root cause**: Both tg and RTK inflate small `ls` output. RTK adds file sizes and a summary line; tg adds a tree view. For small directories, neither saves tokens — but RTK's approach (flat + sizes + summary) is more informative for the same cost. tg's tree view adds ASCII art characters (`├─`) that consume tokens without adding information.
+**Root cause**: Both tk and RTK inflate small `ls` output. RTK adds file sizes and a summary line; tk adds a tree view. For small directories, neither saves tokens — but RTK's approach (flat + sizes + summary) is more informative for the same cost. tk's tree view adds ASCII art characters (`├─`) that consume tokens without adding information.
 
-**Fix**: tg's `listLikeHandler` (`src/handlers/common/listLike.ts`) should detect when the output is already small (~< 200 chars) and pass through, or use a flat compact format like RTK's.
+**Fix**: tk's `listLikeHandler` (`src/handlers/common/listLike.ts`) should detect when the output is already small (~< 200 chars) and pass through, or use a flat compact format like RTK's.
 
 ---
 
@@ -83,7 +83,7 @@ Summary: 9 files, 5 dirs (2 .ts, 2 .yaml, 2 .json, 2 .md, 1 .gitignore)
 
 **Raw** (535 chars, 21 lines):
 ```
-On branch codex/token-guard-node-cli
+On branch codex/token-killer-node-cli
 Changes not staged for commit:
   (use "git add/rm <file>..." to update what will be committed)
   (use "git restore <file>..." to discard changes in working directory)
@@ -106,9 +106,9 @@ Untracked files:
 no changes added to commit (use "git add" and/or "git commit -a")
 ```
 
-**tg** (351 chars, 19 lines):
+**tk** (351 chars, 19 lines):
 ```
-Branch: codex/token-guard-node-cli
+Branch: codex/token-killer-node-cli
 Status: 2 modified, 0 staged, 11 untracked, 0 conflicts
 
 Modified:
@@ -131,7 +131,7 @@ Untracked:
 
 **rtk** (223 chars, 14 lines):
 ```
-* codex/token-guard-node-cli
+* codex/token-killer-node-cli
  D DESIGN.md
  M README.md
 ?? .gitignore
@@ -147,7 +147,7 @@ Untracked:
 ?? vitest.config.ts
 ```
 
-**Root cause**: tg's `gitStatusHandler` (`src/handlers/git/status.ts`) parses the full `git status` output and reformats it — but still lists every individual file with `- ` prefix. RTK uses git's short-status format (` D` = deleted, ` M` = modified, `??` = untracked), which is 58.3% smaller. tg's approach is essentially the same information presented with more markup.
+**Root cause**: tk's `gitStatusHandler` (`src/handlers/git/status.ts`) parses the full `git status` output and reformats it — but still lists every individual file with `- ` prefix. RTK uses git's short-status format (` D` = deleted, ` M` = modified, `??` = untracked), which is 58.3% smaller. tk's approach is essentially the same information presented with more markup.
 
 **Fix**: Use git's `--short` or `--porcelain` format as the base output format. The handler at `src/handlers/git/status.ts:formatStatus()` should detect whether output is short enough to pass through, and use single-character status prefixes instead of `- ` list items.
 
@@ -155,16 +155,16 @@ Untracked:
 
 ### 2.3 `cat package.json`
 
-**Raw, tg, rtk** — all identical (624 chars, 33 lines):
+**Raw, tk, rtk** — all identical (624 chars, 33 lines):
 
 ```json
 {
-  "name": "@company/tg",
+  "name": "@company/tk",
   ...
 }
 ```
 
-**Root cause**: All three pass through small files unchanged. tg's `readLikeHandler` (`src/handlers/common/readLike.ts`) has a 12,000-char threshold before it activates `summarizeLargeFile()`. RTK likely has a similar policy. This is correct behavior — small structured files shouldn't be mangled.
+**Root cause**: All three pass through small files unchanged. tk's `readLikeHandler` (`src/handlers/common/readLike.ts`) has a 12,000-char threshold before it activates `summarizeLargeFile()`. RTK likely has a similar policy. This is correct behavior — small structured files shouldn't be mangled.
 
 ---
 
@@ -179,7 +179,7 @@ src/core/rawStore.ts
 src/handlers/git/show.ts
 ```
 
-**tg** (25 chars, 2 lines):
+**tk** (25 chars, 2 lines):
 ```
 .
 ├─ src/ (39 files)
@@ -199,11 +199,11 @@ handlers/js/ eslint.ts packageList.ts test.ts tsc.ts
 handlers/python/ mypy.ts pip.ts pytest.ts ruff.ts
 ```
 
-**Root cause — tg is LOSING INFORMATION**: tg's `listLikeHandler.summarizeListing()` (`src/handlers/common/listLike.ts:79-107`) uses a simple algorithm: split each path, take the first component as a directory key, and count entries. Since all `find` results start with `src/`, everything collapses into `src/ (39 files)`. The entire subdirectory structure is lost.
+**Root cause — tk is LOSING INFORMATION**: tk's `listLikeHandler.summarizeListing()` (`src/handlers/common/listLike.ts:79-107`) uses a simple algorithm: split each path, take the first component as a directory key, and count entries. Since all `find` results start with `src/`, everything collapses into `src/ (39 files)`. The entire subdirectory structure is lost.
 
 RTK's approach is far more useful: it groups files by their immediate parent directory while keeping filenames. `39F 8D` means 39 files across 8 directories, then each directory lists its files.
 
-**Fix for tg**: The `summarizeListing()` function should:
+**Fix for tk**: The `summarizeListing()` function should:
 1. Build a full tree structure instead of just top-level grouping
 2. Preserve at least one level of subdirectory hierarchy
 3. Show the first ~40 files by name before collapsing
@@ -224,7 +224,7 @@ src/core/history.ts:export async function recordHistory(
 src/handlers/git/show.ts:export const gitShowHandler: CommandHandler = {
 ```
 
-**tg** (59 chars, 2 lines):
+**tk** (59 chars, 2 lines):
 ```
 Search: export
 Matches: 0 across 0 files, showing up to 80
@@ -237,13 +237,13 @@ src/core/history.ts:export type HistoryRecord = {
 ... (same 56 lines as raw)
 ```
 
-**Root cause — PARSING BUG**: tg's `searchLikeHandler.groupSearchOutput()` (`src/handlers/common/searchLike.ts:31-33`) uses regex `(.+?):(\d+):(.*)` to parse grep output. This expects `file:LINE_NUMBER:content` format.
+**Root cause — PARSING BUG**: tk's `searchLikeHandler.groupSearchOutput()` (`src/handlers/common/searchLike.ts:31-33`) uses regex `(.+?):(\d+):(.*)` to parse grep output. This expects `file:LINE_NUMBER:content` format.
 
 However, `grep -r` (without `-n`) outputs `file:content` — no line number. The regex fails to match, returning `undefined` for every line. The result is `total = 0`, `byFile.size = 0` → `"Matches: 0 across 0 files"`.
 
 RTK passes through the grep output directly for this size (56 lines is within its threshold). When the output is larger, RTK would group by file and show match counts.
 
-**Fix for tg**: The `parseMatch()` function at `searchLike.ts:18-34` needs two changes:
+**Fix for tk**: The `parseMatch()` function at `searchLike.ts:18-34` needs two changes:
 1. Add a fallback regex for `file:content` format (no line number):
    ```typescript
    const noLineMatch = line.match(/^(.+?):(.*)$/);
@@ -251,7 +251,7 @@ RTK passes through the grep output directly for this size (56 lines is within it
    ```
 2. Or better: detect the output format first and use the appropriate parser
 
-This is a **data-loss bug** — tg silently drops all grep results instead of filtering them.
+This is a **data-loss bug** — tk silently drops all grep results instead of filtering them.
 
 ---
 
@@ -259,27 +259,27 @@ This is a **data-loss bug** — tg silently drops all grep results instead of fi
 
 **Raw** (75 chars, 2 lines):
 ```
-0a15557 (HEAD -> codex/token-guard-node-cli, main) docs: add token guard product documentation
+0a15557 (HEAD -> codex/token-killer-node-cli, main) docs: add token killer product documentation
 368d1aa (origin/main) Initial commit
 ```
 
-**tg** (94 chars, 4 lines):
+**tk** (94 chars, 4 lines):
 ```
 Git Log
 Commits: 2
-0a15557 docs: add token guard product documentation
+0a15557 docs: add token killer product documentation
 368d1aa Initial commit
 ```
 
 **rtk** (75 chars, 2 lines) — identical to raw:
 ```
-0a15557 docs: add token guard product documentation
+0a15557 docs: add token killer product documentation
 368d1aa Initial commit
 ```
 
-**Root cause**: tg's `gitLogHandler.formatLog()` (`src/handlers/git/log.ts`) always adds a `Git Log` header and commit count, regardless of output size. When the log is already compact (2 commits with `--oneline`), the overhead makes the output larger. RTK detects that the output is already small and passes through unchanged.
+**Root cause**: tk's `gitLogHandler.formatLog()` (`src/handlers/git/log.ts`) always adds a `Git Log` header and commit count, regardless of output size. When the log is already compact (2 commits with `--oneline`), the overhead makes the output larger. RTK detects that the output is already small and passes through unchanged.
 
-tg also strips ref information (`HEAD -> codex/..., origin/main`) which can sometimes be useful.
+tk also strips ref information (`HEAD -> codex/..., origin/main`) which can sometimes be useful.
 
 **Fix**: The `formatLog()` function should:
 1. Check if the raw output is already under a threshold (< ~200 chars) and pass through
@@ -292,7 +292,7 @@ tg also strips ref information (`HEAD -> codex/..., origin/main`) which can some
 
 **Raw** (20,944 chars, 819 lines) — full unified diff, too large to inline.
 
-**tg** (209 chars, 11 lines):
+**tk** (209 chars, 11 lines):
 ```
 Git Diff Summary
 Files changed: 2, +70 -710
@@ -304,7 +304,7 @@ README.md (+70 -295)
 - hunk: @@ -1,321 +1,96 @@
 
 Large diff hidden.
-Use tg --raw git diff if full patch is required.
+Use tk --raw git diff if full patch is required.
 ```
 
 **rtk** (7,584 chars, 216 lines) — first part:
@@ -317,28 +317,28 @@ DESIGN.md | 417 --------------------------------------------------------------
 
 DESIGN.md
   @@ -1,417 +0,0 @@
-  -# Token Guard Design
+  -# Token Killer Design
   -
-  -本文档面向实现 Token Guard 的工程师和 AI Agent...
+  -本文档面向实现 Token Killer 的工程师和 AI Agent...
   ... (shows actual changed lines for each hunk)
   +0 -415
 
 README.md
   @@ -1,321 +1,96 @@
-  -# Token Guard
-  +# tg
+  -# Token Killer
+  +# tk
   ... (shows actual changed lines)
   +70 -295
 ```
 
-**Root cause**: tg's `gitDiffHandler` (`src/handlers/git/diff.ts`) produces a summary-only output — just hunk headers with no actual changed lines. RTK includes the actual changed lines, making it 36x larger but actually useful for reasoning about the diff.
+**Root cause**: tk's `gitDiffHandler` (`src/handlers/git/diff.ts`) produces a summary-only output — just hunk headers with no actual changed lines. RTK includes the actual changed lines, making it 36x larger but actually useful for reasoning about the diff.
 
-tg's approach saves more tokens (99% vs 64%) but the output is so minimal it may not contain enough information for an agent to work with. The trade-off:
+tk's approach saves more tokens (99% vs 64%) but the output is so minimal it may not contain enough information for an agent to work with. The trade-off:
 
-- **tg**: extreme compression, but agents may need to fall back to `--raw` to understand the diff
+- **tk**: extreme compression, but agents may need to fall back to `--raw` to understand the diff
 - **rtk**: moderate compression, includes enough context for most agent use cases
 
-**Fix**: tg could add a middle ground — show the first N changed lines per hunk, with a configurable limit. Currently `formatDiff()` only stores hunk headers (line 37-40 of `diff.ts`), discarding all actual content lines.
+**Fix**: tk could add a middle ground — show the first N changed lines per hunk, with a configurable limit. Currently `formatDiff()` only stores hunk headers (line 37-40 of `diff.ts`), discarding all actual content lines.
 
 ---
 
@@ -346,26 +346,26 @@ tg's approach saves more tokens (99% vs 64%) but the output is so minimal it may
 
 **Raw** (36 chars, 2 lines):
 ```
-* codex/token-guard-node-cli
+* codex/token-killer-node-cli
   main
 ```
 
-**tg** (96 chars, 5 lines):
+**tk** (96 chars, 5 lines):
 ```
-Current: codex/token-guard-node-cli
+Current: codex/token-killer-node-cli
 Branches: 2, showing 2
 
-* codex/token-guard-node-cli
+* codex/token-killer-node-cli
 - main
 ```
 
 **rtk** (36 chars, 2 lines) — identical to raw:
 ```
-* codex/token-guard-node-cli
+* codex/token-killer-node-cli
   main
 ```
 
-**Root cause**: Same pattern as `git log`. tg's `gitBranchHandler.formatBranch()` (`src/handlers/git/branch.ts`) always adds structured headers. With only 2 branches, the headers triple the output size. RTK passes through unchanged.
+**Root cause**: Same pattern as `git log`. tk's `gitBranchHandler.formatBranch()` (`src/handlers/git/branch.ts`) always adds structured headers. With only 2 branches, the headers triple the output size. RTK passes through unchanged.
 
 **Fix**: Apply the same threshold check — if fewer than ~5 branches, pass through raw output. Only add headers when there are enough branches to justify the structure.
 
@@ -385,19 +385,19 @@ Branches: 2, showing 2
 
 ---
 
-## 4. Pattern: RTK's Approach vs tg's Approach
+## 4. Pattern: RTK's Approach vs tk's Approach
 
-RTK consistently applies these principles that tg misses:
+RTK consistently applies these principles that tk misses:
 
-1. **Pass-through for small output**: RTK detects when output is already compact and passes it through unchanged. tg always reformats, adding overhead for short outputs.
+1. **Pass-through for small output**: RTK detects when output is already compact and passes it through unchanged. tk always reformats, adding overhead for short outputs.
 
-2. **Progressive compression**: RTK compresses proportionally to output size — small output stays small, large output gets compressed. tg applies uniform formatting regardless of scale.
+2. **Progressive compression**: RTK compresses proportionally to output size — small output stays small, large output gets compressed. tk applies uniform formatting regardless of scale.
 
-3. **Semantic grouping, not destruction**: RTK's `find` groups by parent directory while preserving filenames. tg collapses everything to `src/ (39 files)`.
+3. **Semantic grouping, not destruction**: RTK's `find` groups by parent directory while preserving filenames. tk collapses everything to `src/ (39 files)`.
 
-4. **Format-aware parsing**: RTK detects the actual output format (e.g., `--oneline`, `--short`) and adapts. tg assumes a single format that doesn't match all cases.
+4. **Format-aware parsing**: RTK detects the actual output format (e.g., `--oneline`, `--short`) and adapts. tk assumes a single format that doesn't match all cases.
 
-5. **Include the actual content**: RTK's `diff` includes changed lines; tg's only shows hunk headers. Compression that removes the information an agent needs just forces a `--raw` fallback.
+5. **Include the actual content**: RTK's `diff` includes changed lines; tk's only shows hunk headers. Compression that removes the information an agent needs just forces a `--raw` fallback.
 
 ---
 

@@ -50,15 +50,15 @@ export type CaseResult = {
   command: string;
   handler: string;
   rawCmd: string;
-  tgCmd: string;
+  tkCmd: string;
   rtkCmd: string;
   exitCode: number;
   savingsGap: number;
   raw: RowStats;
-  tg: RowStats;
+  tk: RowStats;
   rtk: RowStats;
   rawText: string;
-  tgText: string;
+  tkText: string;
   rtkText: string;
 };
 
@@ -67,13 +67,13 @@ type SkippedCase = {
   reason: string;
 };
 
-function resolveTgBin(): string {
+function resolveTkBin(): string {
   const built = path.join(repoRoot, "dist/cli.js");
   try {
     accessSync(built, constants.R_OK);
     return built;
   } catch {
-    throw new Error("tg binary not found. Run: pnpm build");
+    throw new Error("tk binary not found. Run: pnpm build");
   }
 }
 
@@ -148,11 +148,11 @@ function displayRtkText(result: CaseResult): string {
 }
 
 function displayTgText(result: CaseResult): string {
-  return result.tgText;
+  return result.tkText;
 }
 
-function savingsGap(result: Pick<CaseResult, "tg" | "rtk">): number {
-  return Math.abs(result.tg.savingsPct - result.rtk.savingsPct);
+function savingsGap(result: Pick<CaseResult, "tk" | "rtk">): number {
+  return Math.abs(result.tk.savingsPct - result.rtk.savingsPct);
 }
 
 export function partitionReportResults(
@@ -176,8 +176,8 @@ function sortBySavingsGap(results: CaseResult[]): CaseResult[] {
     if (right.savingsGap !== left.savingsGap) {
       return right.savingsGap - left.savingsGap;
     }
-    const leftTokenGap = Math.abs(left.tg.tokens - left.rtk.tokens);
-    const rightTokenGap = Math.abs(right.tg.tokens - right.rtk.tokens);
+    const leftTokenGap = Math.abs(left.tk.tokens - left.rtk.tokens);
+    const rightTokenGap = Math.abs(right.tk.tokens - right.rtk.tokens);
     if (rightTokenGap !== leftTokenGap) {
       return rightTokenGap - leftTokenGap;
     }
@@ -185,10 +185,10 @@ function sortBySavingsGap(results: CaseResult[]): CaseResult[] {
   });
 }
 
-function deltaTag(tgPct: number, rtkPct: number): string {
-  const diff = tgPct - rtkPct;
+function deltaTag(tkPct: number, rtkPct: number): string {
+  const diff = tkPct - rtkPct;
   if (Math.abs(diff) < 0.05) return "≈";
-  return diff > 0 ? `tg +${diff.toFixed(1)}pp` : `rtk +${Math.abs(diff).toFixed(1)}pp`;
+  return diff > 0 ? `tk +${diff.toFixed(1)}pp` : `rtk +${Math.abs(diff).toFixed(1)}pp`;
 }
 
 function rtkAvailable(): boolean {
@@ -200,36 +200,36 @@ function rtkAvailable(): boolean {
   }
 }
 
-function runLiveCase(testCase: LiveComparisonCase, tgBin: string): CaseResult {
+function runLiveCase(testCase: LiveComparisonCase, tkBin: string): CaseResult {
   const rawArgv = testCase.rawCommand ?? buildRawArgv(testCase.command);
-  const tgArgv = ["node", tgBin, ...testCase.command];
+  const tkArgv = ["node", tkBin, ...testCase.command];
   const rtkArgv = ["rtk", ...(testCase.rtkCommand ?? buildRtkArgv(testCase.command))];
   const handler = routeCommand(toParsed(testCase.command)).name;
 
   const cwd = testCase.cwd ?? repoRoot;
   const rawRun = runArgv(rawArgv, cwd);
-  const tgRun = runArgv(tgArgv, cwd);
+  const tkRun = runArgv(tkArgv, cwd);
   const rtkRun = runArgv(rtkArgv, cwd);
 
   const rawText = mergedOutput(rawRun);
-  const tgText = mergedOutput(tgRun);
+  const tkText = mergedOutput(tkRun);
   const rtkText = mergedOutput(rtkRun);
-  const { raw, filtered: tg } = statsFromBaseline(rawText, tgText);
+  const { raw, filtered: tk } = statsFromBaseline(rawText, tkText);
   const rtk = statsFromBaseline(rawText, rtkText).filtered;
   const result: CaseResult = {
     name: testCase.name,
     command: testCase.command.join(" "),
     handler,
     rawCmd: rawArgv.join(" "),
-    tgCmd: `tg ${testCase.command.join(" ")}`,
+    tkCmd: `tk ${testCase.command.join(" ")}`,
     rtkCmd: rtkArgv.slice(1).join(" "),
     exitCode: rawRun.exitCode,
     savingsGap: 0,
     raw,
-    tg,
+    tk,
     rtk,
     rawText,
-    tgText,
+    tkText,
     rtkText,
   };
   result.savingsGap = savingsGap(result);
@@ -240,9 +240,9 @@ async function runFixtureCase(testCase: FixtureComparisonCase): Promise<CaseResu
   const handler = routeCommand(toParsed(testCase.command)).name;
   const rawText = await readFixtureText(repoRoot, testCase.fixture);
   const exitCode = testCase.exitCode ?? 0;
-  const tgText = await filterTgFixture(testCase.command, rawText, exitCode, repoRoot);
+  const tkText = await filterTgFixture(testCase.command, rawText, exitCode, repoRoot);
 
-  // tg-only handlers (e.g. terraform) have no rtk filter: rtk would pass the raw
+  // tk-only handlers (e.g. terraform) have no rtk filter: rtk would pass the raw
   // output through unchanged, so model it as a raw passthrough (0% savings).
   let rtkText: string;
   let rtkCmd: string;
@@ -263,22 +263,22 @@ async function runFixtureCase(testCase: FixtureComparisonCase): Promise<CaseResu
     rtkCmd = `cat ${testCase.fixture} | rtk ${rtkArgv.join(" ")}`;
   }
 
-  const { raw, filtered: tg } = statsFromBaseline(rawText, tgText);
+  const { raw, filtered: tk } = statsFromBaseline(rawText, tkText);
   const rtk = statsFromBaseline(rawText, rtkText).filtered;
   const result: CaseResult = {
     name: `[fixture] ${testCase.name}`,
     command: testCase.command.join(" "),
     handler,
     rawCmd: `fixture: ${testCase.fixture}`,
-    tgCmd: `tg filter ${testCase.command.join(" ")}`,
+    tkCmd: `tk filter ${testCase.command.join(" ")}`,
     rtkCmd,
     exitCode,
     savingsGap: 0,
     raw,
-    tg,
+    tk,
     rtk,
     rawText,
-    tgText,
+    tkText,
     rtkText,
   };
   result.savingsGap = savingsGap(result);
@@ -295,49 +295,49 @@ export function renderReport(
 ): string {
   const generated = new Date().toISOString().slice(0, 10);
   const lines: string[] = [
-    "# tg vs rtk — Three-Way Comparison",
+    "# tk vs rtk — Three-Way Comparison",
     "",
     `Generated: ${generated}`,
-    `Project: \`token-guard\` (${repoRoot})`,
+    `Project: \`token-killer\` (${repoRoot})`,
     `Scope: ${results.length} cases with full outputs (${liveCount} live, ${fixtureCount} fixture-backed); ${omittedLarge.length} large cases stats-only (raw > ${REPORT_MAX_RAW_TOKENS} tokens)`,
     `rtk: ${rtkVersion}`,
     "",
     "**Method**",
     "- **raw (live)**: underlying command stdout+stderr (`git --no-pager` for git)",
     "- **raw (fixture)**: recorded stdout in `tests/fixtures/**`",
-    "- **tg (live)**: `node dist/cli.js <command>`",
-    "- **tg (fixture)**: handler filter on fixture stdout (same pipeline as product tests)",
+    "- **tk (live)**: `node dist/cli.js <command>`",
+    "- **tk (fixture)**: handler filter on fixture stdout (same pipeline as product tests)",
     "- **rtk (live)**: mapped native `rtk` subcommand",
     "- **rtk (fixture)**: `cat <fixture> | rtk …` when stdin filter exists (see per-case RTK cmd)",
     "- **rtk (wrapper)**: err/summary/deps/smart read a command/file/dir, so the fixture is fed via `rtk <sub> \"cat <fixture>\"`, `rtk smart <fixture>`, or `rtk deps <tmpdir>` (see per-case RTK cmd)",
-    "- **rtk (unsupported)**: tg-only handlers rtk has no filter for (e.g. terraform) are shown as rtk raw passthrough (0% savings)",
-    "- **savingsPct**: token estimate vs raw (`ceil(chars/4)`), same as tg core",
-    "- **Sort**: cases ordered by |tg savingsPct − rtk savingsPct| (largest gap first)",
+    "- **rtk (unsupported)**: tk-only handlers rtk has no filter for (e.g. terraform) are shown as rtk raw passthrough (0% savings)",
+    "- **savingsPct**: token estimate vs raw (`ceil(chars/4)`), same as tk core",
+    "- **Sort**: cases ordered by |tk savingsPct − rtk savingsPct| (largest gap first)",
     `- **Large outputs**: cases with raw > ${REPORT_MAX_RAW_TOKENS} tokens listed under “Omitted large outputs” (no full text)`,
     "",
     "## Summary",
     "",
-    "| # | Case | Handler | raw | tg | rtk | tg savings | rtk savings | Δ |",
+    "| # | Case | Handler | raw | tk | rtk | tk savings | rtk savings | Δ |",
     "|---:|---|---|---:|---:|---:|---:|---:|---:|",
   ];
 
   results.forEach((result, index) => {
     lines.push(
-      `| ${index + 1} | ${result.name.replace(/\|/g, "\\|")} | ${result.handler} | ${result.raw.tokens} | ${result.tg.tokens} | ${result.rtk.tokens} | ${result.tg.savingsPct}% | ${result.rtk.savingsPct}% | ${result.savingsGap.toFixed(1)}pp ${deltaTag(result.tg.savingsPct, result.rtk.savingsPct)} |`,
+      `| ${index + 1} | ${result.name.replace(/\|/g, "\\|")} | ${result.handler} | ${result.raw.tokens} | ${result.tk.tokens} | ${result.rtk.tokens} | ${result.tk.savingsPct}% | ${result.rtk.savingsPct}% | ${result.savingsGap.toFixed(1)}pp ${deltaTag(result.tk.savingsPct, result.rtk.savingsPct)} |`,
     );
   });
 
   const totalRaw = results.reduce((sum, row) => sum + row.raw.tokens, 0);
-  const totalTg = results.reduce((sum, row) => sum + row.tg.tokens, 0);
+  const totalTk = results.reduce((sum, row) => sum + row.tk.tokens, 0);
   const totalRtk = results.reduce((sum, row) => sum + row.rtk.tokens, 0);
-  const tgAggregatePct = totalRaw === 0 ? 0 : Number((((totalRaw - totalTg) / totalRaw) * 100).toFixed(1));
+  const tkAggregatePct = totalRaw === 0 ? 0 : Number((((totalRaw - totalTk) / totalRaw) * 100).toFixed(1));
   const rtkAggregatePct = totalRaw === 0 ? 0 : Number((((totalRaw - totalRtk) / totalRaw) * 100).toFixed(1));
 
   lines.push(
     "",
     `**Aggregate (token-weighted across ${results.length} cases with full outputs):**`,
     `- raw: ${totalRaw} tokens`,
-    `- tg: ${totalTg} tokens (${tgAggregatePct}% savings)`,
+    `- tk: ${totalTk} tokens (${tkAggregatePct}% savings)`,
     `- rtk: ${totalRtk} tokens (${rtkAggregatePct}% savings)`,
     "",
   );
@@ -348,12 +348,12 @@ export function renderReport(
       "",
       `Per-case dumps excluded when raw exceeds ${REPORT_MAX_RAW_TOKENS} tokens.`,
       "",
-      "| Case | Handler | raw | tg | rtk | tg savings | rtk savings | Δ |",
+      "| Case | Handler | raw | tk | rtk | tk savings | rtk savings | Δ |",
       "|---|---|---:|---:|---:|---:|---:|---:|",
     );
     for (const result of omittedLarge) {
       lines.push(
-        `| ${result.name.replace(/\|/g, "\\|")} | ${result.handler} | ${result.raw.tokens} | ${result.tg.tokens} | ${result.rtk.tokens} | ${result.tg.savingsPct}% | ${result.rtk.savingsPct}% | ${result.savingsGap.toFixed(1)}pp ${deltaTag(result.tg.savingsPct, result.rtk.savingsPct)} |`,
+        `| ${result.name.replace(/\|/g, "\\|")} | ${result.handler} | ${result.raw.tokens} | ${result.tk.tokens} | ${result.rtk.tokens} | ${result.tk.savingsPct}% | ${result.rtk.savingsPct}% | ${result.savingsGap.toFixed(1)}pp ${deltaTag(result.tk.savingsPct, result.rtk.savingsPct)} |`,
       );
     }
     lines.push("");
@@ -373,14 +373,14 @@ export function renderReport(
     lines.push(`### ${index + 1}. ${result.name}`);
     lines.push("");
     lines.push(`- Handler: \`${result.handler}\``);
-    lines.push(`- tg: \`${result.tgCmd}\``);
+    lines.push(`- tk: \`${result.tkCmd}\``);
     lines.push(`- raw: \`${result.rawCmd}\``);
     lines.push(`- rtk: \`${result.rtkCmd}\``);
     lines.push("");
     lines.push("| channel | chars | tokens | savingsPct |");
     lines.push("|---|---:|---:|---:|");
     lines.push(`| raw | ${result.raw.chars} | ${result.raw.tokens} | 0% |`);
-    lines.push(`| tg | ${result.tg.chars} | ${result.tg.tokens} | ${result.tg.savingsPct}% |`);
+    lines.push(`| tk | ${result.tk.chars} | ${result.tk.tokens} | ${result.tk.savingsPct}% |`);
     lines.push(`| rtk | ${result.rtk.chars} | ${result.rtk.tokens} | ${result.rtk.savingsPct}% |`);
     lines.push("");
     lines.push(`**raw** (${result.raw.chars} chars, ${result.raw.tokens} tokens):`);
@@ -388,7 +388,7 @@ export function renderReport(
     lines.push(safeCodeBlock(result.rawText, "text"));
     lines.push("");
     lines.push(
-      `**tg** (${result.tg.chars} chars, ${result.tg.tokens} tokens, ${result.tg.savingsPct}% savings):`,
+      `**tk** (${result.tk.chars} chars, ${result.tk.tokens} tokens, ${result.tk.savingsPct}% savings):`,
     );
     lines.push("");
     lines.push(safeCodeBlock(displayTgText(result), "text"));
@@ -412,7 +412,7 @@ async function main() {
   }
 
   const rtkVersion = execFileSync("rtk", ["--version"], { encoding: "utf8" }).trim();
-  const tgBin = resolveTgBin();
+  const tkBin = resolveTkBin();
   const cases: LiveComparisonCase[] = [...liveComparisonCases];
 
   const diffFixture = createDiffFixture();
@@ -440,7 +440,7 @@ async function main() {
       }
 
       process.stderr.write(`Running live: ${testCase.name}\n`);
-      results.push(runLiveCase(testCase, tgBin));
+      results.push(runLiveCase(testCase, tkBin));
       liveRan += 1;
     }
 

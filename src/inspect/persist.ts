@@ -1,20 +1,20 @@
 // Slice 5 — persistent inspect output (inspect-v1-design.md "Persistent Output").
-// Writes to the user-level `~/.token-guard/advice/` with STABLE file names that
+// Writes to the user-level `~/.token-killer/advice/` with STABLE file names that
 // overwrite prior files (no timestamped trend snapshots). Never the repo.
 
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 
-import { tokenGuardHome } from "../core/dataDir.js";
+import { tokenKillerHome } from "../core/dataDir.js";
 import type { Finding } from "./unified.js";
 
 export function adviceDir(): string {
-  return join(tokenGuardHome(), "advice");
+  return join(tokenKillerHome(), "advice");
 }
 
 // ── Scope-bucket inspect reports (ADR 0003, goal "Data model") ────────────────
 // The unified Finding[] report is persisted per scope so global findings are
-// never duplicated across projects or left stale. `tg optimize context` reads
+// never duplicated across projects or left stale. `tk optimize context` reads
 // the matching bucket.
 
 export type ScopeBucket =
@@ -31,13 +31,13 @@ export type InspectBucketReport = {
 };
 
 export function userContextInspectDir(): string {
-  return join(tokenGuardHome(), "user-context", "inspect");
+  return join(tokenKillerHome(), "user-context", "inspect");
 }
 
 export function projectInspectDir(fingerprint: string): string {
   // fingerprint is "repo:<hash>"; strip the prefix for a clean path segment.
   const hash = fingerprint.replace(/^repo:/, "");
-  return join(tokenGuardHome(), "projects", hash, "inspect");
+  return join(tokenKillerHome(), "projects", hash, "inspect");
 }
 
 export function inspectBucketDir(bucket: ScopeBucket): string {

@@ -1,6 +1,6 @@
-# Token Guard Telemetry
+# Token Killer Telemetry
 
-Token Guard ships **no telemetry by default**. Nothing leaves your machine unless you
+Token Killer ships **no telemetry by default**. Nothing leaves your machine unless you
 explicitly opt in *and* you are running an enterprise build whose operator baked in an
 endpoint. This document is the exact, field-by-field contract — what is collected, what
 can never be collected, how consent works, and how to delete your data.
@@ -9,16 +9,16 @@ Decided in [ADR 0004](./adr/0004-opt-in-network-telemetry-and-gain-parity.md).
 
 ## Two independent opt-ins
 
-Consent lives in `~/.token-guard/config.jsonc` (create it with `tg config init`). There
+Consent lives in `~/.token-killer/config.jsonc` (create it with `tk config init`). There
 are **two separate flags; neither implies the other**:
 
 | Flag | Default | Effect |
 |---|---|---|
-| `telemetryExport` | `false` | Write the aggregate payload to a **local file** (`~/.token-guard/advice/telemetry-export.json`). Never leaves the machine. |
+| `telemetryExport` | `false` | Write the aggregate payload to a **local file** (`~/.token-killer/advice/telemetry-export.json`). Never leaves the machine. |
 | `telemetry` | `false` | Opt in to **network upload** over the build-time endpoint. |
 
 Creating the config file is **not** itself opt-in — both flags default to `false`. You opt
-in by editing the file to `true`, or with `tg telemetry enable` (which sets `telemetry:
+in by editing the file to `true`, or with `tk telemetry enable` (which sets `telemetry:
 true` while preserving `telemetryExport`).
 
 Network upload happens only when **`telemetry: true` AND a non-empty build-time endpoint**
@@ -27,8 +27,8 @@ inert: an opted-in generic build writes the local file and warns, sending nothin
 
 ## When it sends
 
-A send is attempted **only at the end of `tg inspect` and `tg gain`** — the cold paths.
-It is **never** reachable from `tg <command>`; the hot path is sacred and a telemetry
+A send is attempted **only at the end of `tk inspect` and `tk gain`** — the cold paths.
+It is **never** reachable from `tk <command>`; the hot path is sacred and a telemetry
 error can never change a command's behavior or exit code.
 
 At most **one attempt per 23 hours**. `lastSentAt` is stamped *before* dispatch, so a down
@@ -56,7 +56,7 @@ surface even when rows contain it.
 - `tokens_saved_24h`, `tokens_saved_total`, `savings_pct`
 - `top_handlers` — handler **names** only, ≤5
 
-**Quality** (Token Guard's differentiator)
+**Quality** (Token Killer's differentiator)
 - `quality_status_counts` — counts over the four real statuses: `passed`, `inflated`,
   `empty_output`, `failure`
 - `fallback_count` — rows whose handler is the error-fallback
@@ -71,10 +71,10 @@ surface even when rows contain it.
 - `estimated_savings_usd_30d` — `tokens_saved_30d / 1e6 × price`. Price from the shared
   `src/core/pricing.ts`: default **$3 / Mtok** (Claude Sonnet input), with a `model →
   input $/Mtok` table (`opus` $15, `sonnet` $3, `haiku` $0.8, plus full model ids). This is
-  a labeled **estimate** (`estimate_kind: "heuristic"` in `tg gain --quota`), never a
+  a labeled **estimate** (`estimate_kind: "heuristic"` in `tk gain --quota`), never a
   measured token count.
 
-**Optional inspect aggregates** (present only on an `tg inspect`-triggered build, which has
+**Optional inspect aggregates** (present only on an `tk inspect`-triggered build, which has
 a fresh scan)
 - `inspect.tool_category_counts`, `inspect.recommendation_type_counts`,
   `inspect.source_coverage`
@@ -90,7 +90,7 @@ The allow-list is exhaustive; everything else is structurally impossible:
 
 ## Pricing reference
 
-`src/core/pricing.ts` is the single source for both `tg gain --quota` and
+`src/core/pricing.ts` is the single source for both `tk gain --quota` and
 `estimated_savings_usd_30d`:
 
 - Default constant: **$3 / Mtok** (Claude Sonnet input) — used for any row with no
@@ -101,12 +101,12 @@ The allow-list is exhaustive; everything else is structurally impossible:
 ## Consent commands
 
 ```bash
-tg config init                # create config.jsonc (both consents default false)
-tg telemetry enable           # set telemetry: true (network upload)
-tg telemetry disable          # set telemetry: false
-tg telemetry status           # show both consents, device_hash, first/last-sent
-tg telemetry preview          # print the EXACT payload that would be POSTed (never sends)
-tg telemetry purge            # delete telemetry-state.json (resets device_hash)
+tk config init                # create config.jsonc (both consents default false)
+tk telemetry enable           # set telemetry: true (network upload)
+tk telemetry disable          # set telemetry: false
+tk telemetry status           # show both consents, device_hash, first/last-sent
+tk telemetry preview          # print the EXACT payload that would be POSTed (never sends)
+tk telemetry purge            # delete telemetry-state.json (resets device_hash)
 ```
 
 `enable`/`disable`/`status`/`preview` **never send**. `preview` prints exactly what a send
@@ -115,13 +115,13 @@ would POST.
 ## Data controller & deletion
 
 For an enterprise build, the **data controller is the operator** who built the package with
-their `TG_TELEMETRY_ENDPOINT` and to whom the opted-in payloads are uploaded. The generic
+their `TK_TELEMETRY_ENDPOINT` and to whom the opted-in payloads are uploaded. The generic
 build uploads to no one.
 
 To stop and erase:
 
-1. `tg telemetry disable` (or set `telemetry: false`) — stops all uploads.
-2. `tg telemetry purge` — deletes `~/.token-guard/telemetry-state.json`, resetting the
+1. `tk telemetry disable` (or set `telemetry: false`) — stops all uploads.
+2. `tk telemetry purge` — deletes `~/.token-killer/telemetry-state.json`, resetting the
    `device_hash`. The next run that you opt back into will generate a fresh, unlinkable id.
 
 Server-side deletion of already-uploaded payloads is the operator's responsibility; contact

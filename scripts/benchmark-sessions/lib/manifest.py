@@ -1,8 +1,8 @@
 """
-Run manifest model for tg (token-guard) benchmark sessions.
+Run manifest model for tk (token-killer) benchmark sessions.
 
-Ported alongside rtk/scripts/benchmark-sessions/lib/runner.py and adapted to tg
-conventions: the per-session tracking artifact is tg's history (tg_db) rather
+Ported alongside rtk/scripts/benchmark-sessions/lib/runner.py and adapted to tk
+conventions: the per-session tracking artifact is tk's history (tk_db) rather
 than rtk's SQLite db. Serializes the manifest to manifest.json in the output
 directory.
 """
@@ -21,8 +21,8 @@ class SessionEntry:
     group: str
     stdout_json: str
     otel_log: str
-    # tg tracking history filename (None when tg was OFF for this VM).
-    tg_db: str | None = None
+    # tk tracking history filename (None when tk was OFF for this VM).
+    tk_db: str | None = None
     exit_code: int | None = None
     error: str | None = None
 

@@ -6,18 +6,18 @@ import { dirname, join } from "node:path";
 //  - shell RC (~/.zshrc, ~/.bashrc): a guarded, idempotent, byte-identically
 //    removable block. For Copilot CLI and plain terminals.
 //  - VS Code user settings.json: terminal.integrated.env.{osx,linux,windows}
-//    PATH prepend + TG_SHIM_DIR. Non-interactive run_in_terminal shells skip RC,
+//    PATH prepend + TK_SHIM_DIR. Non-interactive run_in_terminal shells skip RC,
 //    so VS Code MUST use terminal.integrated.env (lesson from the hook round).
 
 // ---------------------------------------------------------------------------
 // Shell RC block
 // ---------------------------------------------------------------------------
 
-const RC_START = "# >>> token-guard shim >>>";
-const RC_END = "# <<< token-guard shim <<<";
+const RC_START = "# >>> token-killer shim >>>";
+const RC_END = "# <<< token-killer shim <<<";
 // Matches the block plus the single bordering newlines patchRc writes, so
 // unpatch is byte-identical to the pre-patch state.
-const RC_BLOCK_RE = /\n?# >>> token-guard shim >>>[\s\S]*?# <<< token-guard shim <<<\n?/;
+const RC_BLOCK_RE = /\n?# >>> token-killer shim >>>[\s\S]*?# <<< token-killer shim <<<\n?/;
 
 function shQuote(value: string): string {
   return `'${value.replace(/'/g, `'\\''`)}'`;
@@ -26,8 +26,8 @@ function shQuote(value: string): string {
 export function rcBlock(shimDir: string): string {
   return [
     RC_START,
-    `export TG_SHIM_DIR=${shQuote(shimDir)}`,
-    `export PATH="$TG_SHIM_DIR:$PATH"`,
+    `export TK_SHIM_DIR=${shQuote(shimDir)}`,
+    `export PATH="$TK_SHIM_DIR:$PATH"`,
     RC_END,
   ].join("\n");
 }
@@ -79,7 +79,7 @@ export function vscodeSettingsPath(platform: NodeJS.Platform = process.platform,
 
 // Pure transform of a parsed settings object. Prepends shimDir to the per-OS
 // terminal env PATH (via VS Code's ${env:PATH} substitution) and sets
-// TG_SHIM_DIR. Idempotent: an existing shimDir entry is removed before
+// TK_SHIM_DIR. Idempotent: an existing shimDir entry is removed before
 // prepending, so re-running does not stack duplicates.
 export function applyVscodeEnv(
   settings: Record<string, unknown>,
@@ -97,7 +97,7 @@ export function applyVscodeEnv(
     .filter((entry) => entry !== "" && entry !== shimDir)
     .join(delim);
   env.PATH = rest ? `${shimDir}${delim}${rest}` : shimDir;
-  env.TG_SHIM_DIR = shimDir;
+  env.TK_SHIM_DIR = shimDir;
 
   return { ...settings, [key]: env };
 }
@@ -114,7 +114,7 @@ export function removeVscodeEnv(
   const env = { ...(settings[key] as Record<string, string> | undefined) };
   if (Object.keys(env).length === 0) return settings;
 
-  delete env.TG_SHIM_DIR;
+  delete env.TK_SHIM_DIR;
   if (typeof env.PATH === "string") {
     const rest = env.PATH
       .split(delim)

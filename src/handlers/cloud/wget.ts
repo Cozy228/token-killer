@@ -5,7 +5,7 @@ import { makeFilteredResult } from "../base.js";
 // RTK: cloud/wget_cmd.rs — compact wget: strips progress bars, emits a single
 // result line. RTK's `run` path captures wget's output (progress is written to
 // STDERR) and reduces it to "{compact_url} ok | {filename} | {size}" on success
-// or "{compact_url} FAILED: {error}" on failure. tg operates on already-captured
+// or "{compact_url} FAILED: {error}" on failure. tk operates on already-captured
 // raw output, so the same parsing is applied to raw.stderr / raw.stdout.
 
 function matchesWget(command: ParsedCommand): boolean {
@@ -184,7 +184,7 @@ export const wgetHandler: CommandHandler = {
     }
 
     // RTK: wget_cmd.rs::run success branch — "{compact_url} ok | {filename} |
-    // {size}". RTK reads the on-disk file size via std::fs::metadata; tg filters
+    // {size}". RTK reads the on-disk file size via std::fs::metadata; tk filters
     // already-captured output and has no downloaded file, so the size is parsed
     // from wget's own "saved [N/total]" summary when present, else unknown ("?").
     const filename = extractFilename(raw.stderr, url, rest);
@@ -195,7 +195,7 @@ export const wgetHandler: CommandHandler = {
 };
 
 // RTK: wget_cmd.rs::run reports the downloaded file's size from disk metadata.
-// tg has no file to stat, so it recovers the byte count from wget's terminal
+// tk has no file to stat, so it recovers the byte count from wget's terminal
 // "saved [<written>/<total>]" line (written to STDERR), falling back to 0 → "?".
 function parseSavedSize(stderr: string, stdout: string): number {
   const combined = `${stderr}\n${stdout}`;

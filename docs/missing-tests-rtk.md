@@ -24,13 +24,13 @@
 
 ## A. 测试面（全量 RTK 测试迁移缺口）
 
-目标不是“够实现开工”，而是把 RTK 的命令行为、parser/helper、内部纯函数、路径检测、mask util、fallback、script/smoke 等测试维度全量迁到 tg。迁移时按 tg 的测试层级落位：
+目标不是“够实现开工”，而是把 RTK 的命令行为、parser/helper、内部纯函数、路径检测、mask util、fallback、script/smoke 等测试维度全量迁到 tk。迁移时按 tk 的测试层级落位：
 
-- **Command behavior**：用户可见 stdout/stderr/input → tg 输出的正确率、压缩率、格式、passthrough 语义。
+- **Command behavior**：用户可见 stdout/stderr/input → tk 输出的正确率、压缩率、格式、passthrough 语义。
 - **Parser/helper unit**：mask、path compact、format detection、JSON fallback、match-line parsing、schema extraction 等内部正确性。
 - **CLI/script/smoke**：真实 CLI 参数、脚本入口、安装/运行 smoke。
 
-如果 tg 实现结构不同，不要求保留 RTK helper 名称；但 RTK `#[test]` 覆盖的行为或 invariant 必须有 tg 对应测试。
+如果 tk 实现结构不同，不要求保留 RTK helper 名称；但 RTK `#[test]` 覆盖的行为或 invariant 必须有 tk 对应测试。
 
 ### A1. Provenance / fixture 可信
 
@@ -79,9 +79,9 @@ RTK 源文件：git 相关 inline test 主要在 `rtk/src/cmds/git/git.rs`（75+
 
 ---
 
-### A4. 逐命令 RTK→tg 测试缺口（目标：每个 RTK `#[test]` 维度有 tg 对应测试）
+### A4. 逐命令 RTK→tk 测试缺口（目标：每个 RTK `#[test]` 维度有 tk 对应测试）
 
-> 以下 ✅ = 当前 tg 测试已覆盖该维度，⬜ = 需新增。
+> 以下 ✅ = 当前 tk 测试已覆盖该维度，⬜ = 需新增。
 > RTK 计数来自 `grep -c '#\[test\]' rtk/src/cmds/...`。
 > 迁移目标是全量覆盖 RTK `#[test]` 维度；parser/helper/internal utility 测试应落到 unit test，不必强行塞进 command behavior test。
 
@@ -235,6 +235,6 @@ RTK 源文件：git 相关 inline test 主要在 `rtk/src/cmds/git/git.rs`（75+
 6. **B1** — 按 domain 批量新 handler（每个 migration behavior 文件当 spec）
 7. **A5** — 脚本迁移
 
-**测试迁移完成判据：** RTK `#[test]` 维度都有 tg 对应测试；新增红测均代表真实 RTK 正确率、压缩率、格式、fallback、passthrough 或 script parity gap。
+**测试迁移完成判据：** RTK `#[test]` 维度都有 tk 对应测试；新增红测均代表真实 RTK 正确率、压缩率、格式、fallback、passthrough 或 script parity gap。
 
 **整体迁移完成判据：** `pnpm test:product` + `pnpm test:migration` 全绿，红绿代表 RTK 压缩率和正确率差距。

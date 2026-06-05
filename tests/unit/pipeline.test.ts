@@ -5,9 +5,9 @@ import { describe, expect, test } from "vitest";
 
 import { resolveStoredPath } from "../../src/core/dataDir.js";
 import { filterWithFallback } from "../../src/core/pipeline.js";
-import type { CommandHandler, ParsedCommand, RawResult, TgOptions } from "../../src/types.js";
+import type { CommandHandler, ParsedCommand, RawResult, TkOptions } from "../../src/types.js";
 
-function options(cwd: string): TgOptions {
+function options(cwd: string): TkOptions {
   return {
     raw: false,
     stats: false,
@@ -21,9 +21,9 @@ function options(cwd: string): TgOptions {
 
 describe("pipeline fallback", () => {
   test("falls back to generic raw-preserving output when a handler filter throws", async () => {
-    const dir = await mkdtemp(path.join(tmpdir(), "tg-fallback-"));
-    const tgHome = path.join(dir, "token-guard-data");
-    process.env.TOKEN_GUARD_HOME = tgHome;
+    const dir = await mkdtemp(path.join(tmpdir(), "tk-fallback-"));
+    const tkHome = path.join(dir, "token-killer-data");
+    process.env.TOKEN_KILLER_HOME = tkHome;
     const command: ParsedCommand = {
       program: "custom",
       args: [],
@@ -58,7 +58,7 @@ describe("pipeline fallback", () => {
       const rawLog = await readFile(resolveStoredPath(result.rawOutputPath!), "utf8");
       expect(rawLog).toContain("ERROR retained fallback line");
     } finally {
-      delete process.env.TOKEN_GUARD_HOME;
+      delete process.env.TOKEN_KILLER_HOME;
       await rm(dir, { recursive: true, force: true });
     }
   });

@@ -1,7 +1,7 @@
 # Green 测试 RTK Parity 审计（2026-06-05）
 
-> 一次性审计快照：评估 token-guard 当前 **green** 的 RTK→tg 迁移测试，能否作为
-> tg 正确性与压缩率达到 RTK 标准的**硬门禁（hard gate）**。
+> 一次性审计快照：评估 token-killer 当前 **green** 的 RTK→tk 迁移测试，能否作为
+> tk 正确性与压缩率达到 RTK 标准的**硬门禁（hard gate）**。
 > 迁移待办（"还要写哪些测试"）见 [`missing-tests-rtk.md`](./missing-tests-rtk.md)；本文件是
 > "现有绿测试质量判定"，两者职责互补、互相引用。
 >
@@ -35,7 +35,7 @@ RTK 计数口径：`grep -c "#\[test\]" rtk/src/cmds/<file>`（`src/cmds` 合计
 
 ## 总体结论（Verdict）
 
-**否。当前 green 迁移测试不能作为 tg 达到 RTK 正确性 + 压缩标准的硬门禁。**
+**否。当前 green 迁移测试不能作为 tk 达到 RTK 正确性 + 压缩标准的硬门禁。**
 
 它们能 gate 一部分 **留存 / 格式 / passthrough** 正确性，但**几乎不 gate 压缩**：当前绿的 migration 测试（未过滤口径约 87 条）中，没有任何一条对压缩率设硬门，且每命令普遍只有 1 条 happy-path，对照 RTK 956 个 `#[test]` 覆盖率极低。
 
@@ -56,7 +56,7 @@ RTK 计数口径：`grep -c "#\[test\]" rtk/src/cmds/<file>`（`src/cmds` 合计
   | `rtkGradleBehavior` | `240` | `gradle_build_warnings.txt` = **198 B** | 上限 > 原始，**允许输出膨胀**仍绿 |
   | `rtkGitStatusBehavior` (2) | `rawOutput.length` | — | 只禁增长 |
 
-- 对照 RTK：`gradlew_cmd.rs:1347 test_build_token_savings` 断言 `token_savings >= 70.0`（百分比、对真实规模 build log）；另有 `aws / curl / golangci / pipe / psql` 等数十个 `*_token_savings` 测试。**tg 一个都没迁。**
+- 对照 RTK：`gradlew_cmd.rs:1347 test_build_token_savings` 断言 `token_savings >= 70.0`（百分比、对真实规模 build log）；另有 `aws / curl / golangci / pipe / psql` 等数十个 `*_token_savings` 测试。**tk 一个都没迁。**
 
 ### S2 — 产品 fixture 套件结构上无法 gate 压缩
 
@@ -83,7 +83,7 @@ RTK `src/cmds` 共 **956** 个 `#[test]`。多数命令的 green 行为测试是
 ### F2 — `rtkTscBehavior` 分组测试的压缩上限 == 原始大小 【严重】
 - `tests/unit/handlers/rtkTscBehavior.test.ts`（"groups TypeScript errors by file"）
 - 问题：`maxOutputChars: 1235` == `tsc_many.txt` 字节数，只禁增长不证压缩。
-- RTK：`js/tsc_cmd.rs:222 test_filter_tsc_output`（去 `Found N errors` + 分组）。注：同文件 `every_error_message_shown` / `no_file_limit` 是 RTK 的**反截断 invariant**，tg 已覆盖且**应保留**（合法 retention 门）。
+- RTK：`js/tsc_cmd.rs:222 test_filter_tsc_output`（去 `Found N errors` + 分组）。注：同文件 `every_error_message_shown` / `no_file_limit` 是 RTK 的**反截断 invariant**，tk 已覆盖且**应保留**（合法 retention 门）。
 - 必需变更：把分组用例上限校准到压缩后真实体积（替换 raw summary + 分组本就有压缩），让上限真正卡在 < raw 的压缩比。
 
 ### F3 — `rtkCurlBehavior` 只测 JSON 透传，漏掉 RTK 截断压缩路径 【严重】
@@ -110,7 +110,7 @@ RTK `src/cmds` 共 **956** 个 `#[test]`。多数命令的 green 行为测试是
 
 ### F7 — `rtkFindBehavior` 只测 4 文件无溢出，漏 29 维含 cap 与 parser 【高】
 - `tests/unit/handlers/rtkFindBehavior.test.ts`（exact "4F 3D:"，provenance `system/find_cmd.rs:314`）
-- 问题：未触发 RTK cap / overflow。`find_cmd.rs` 实有 **29 个 `#[test]`**（测试函数名不以 `test_` 开头，易被漏数），大量是 parser/glob 不变量：`glob_match_*`、`parse_native_find_*`、`parse_rtk_syntax_*`，外加行为门 `find_respects_max`（cap）、`find_no_matches`、`find_gitignored_excluded`、`find_dotfile_pattern_includes_hidden`。tg 一个都没覆盖。
+- 问题：未触发 RTK cap / overflow。`find_cmd.rs` 实有 **29 个 `#[test]`**（测试函数名不以 `test_` 开头，易被漏数），大量是 parser/glob 不变量：`glob_match_*`、`parse_native_find_*`、`parse_rtk_syntax_*`，外加行为门 `find_respects_max`（cap）、`find_no_matches`、`find_gitignored_excluded`、`find_dotfile_pattern_includes_hidden`。tk 一个都没覆盖。
 - 必需变更：补超过 `--max` 的溢出 `+N more`（源码 `find_cmd.rs:349`）、空结果、maxdepth、hidden/gitignore 用例；glob / parse 纯函数落 unit test。
 
 ### F8 — `rtkPytestBehavior` 漏 caps + tee-hint 【高】
@@ -118,9 +118,9 @@ RTK `src/cmds` 共 **956** 个 `#[test]`。多数命令的 green 行为测试是
 - RTK：`python/pytest_cmd.rs`（9 tests）含 `:422 filter_pytest_xfail_caps_and_tee_hint`、`xfail_xpass`、`quiet_mode_failures`、`only_skipped`、`no_tests`、`all_pass`、`parse_summary_line`。
 - 必需变更：补 xfail 截断 + tee hint、全过、无测试、仅跳过用例；用真实 `pytest_failed.txt` / `pytest_passed.txt` fixture 替换 inline。
 
-### F9 — `rtkGitStatusBehavior` 的"压缩"只是剥掉 tg 自己的摘要头 【中】
+### F9 — `rtkGitStatusBehavior` 的"压缩"只是剥掉 tk 自己的摘要头 【中】
 - `tests/unit/handlers/rtkGitStatusBehavior.test.ts`（2 条，`maxOutputChars = rawOutput.length`）
-- 问题：`forbidden:[/^Branch:/,/^Modified:/]` 禁的是 tg 自创摘要格式，本质是 porcelain 透传 retention，无压缩；对照 `git.rs` 75 tests 覆盖极薄。这两条仍是有效的 unicode / rename / conflict **留存门**，但不是压缩门。
+- 问题：`forbidden:[/^Branch:/,/^Modified:/]` 禁的是 tk 自创摘要格式，本质是 porcelain 透传 retention，无压缩；对照 `git.rs` 75 tests 覆盖极薄。这两条仍是有效的 unicode / rename / conflict **留存门**，但不是压缩门。
 
 ### F10 — `rtkGitBranchBehavior` dedup 行为需核对 RTK provenance 【中】
 - `tests/unit/handlers/rtkGitBranchBehavior.test.ts`（exact，去 `remotes/origin/` 前缀并去重，保留 `release/v2`）
@@ -128,7 +128,7 @@ RTK `src/cmds` 共 **956** 个 `#[test]`。多数命令的 green 行为测试是
 - 必需变更：在用例上加 `// RTK: git.rs::<test>` 并核对去重 / 前缀规则一致。
 
 ### F11 — `fixtures.test.ts` / `rtkScriptParity` green 是 presence-only，非 parity 门 【信息】
-- "fixture X exists" / "corpus ≥N samples" / "script 有 tg counterpart" / "暴露在 package.json" —— 纯存在性。按审计原则**不计为 parity 证据**。未过滤口径下 `fixtures.test.ts` 28 绿 + `rtkScriptParity` 13 绿 = 41 条，占 ~87 绿的近半，**稀释了 migration 绿信号**，易被误读为"已迁很多"。
+- "fixture X exists" / "corpus ≥N samples" / "script 有 tk counterpart" / "暴露在 package.json" —— 纯存在性。按审计原则**不计为 parity 证据**。未过滤口径下 `fixtures.test.ts` 28 绿 + `rtkScriptParity` 13 绿 = 41 条，占 ~87 绿的近半，**稀释了 migration 绿信号**，易被误读为"已迁很多"。
 
 ### F12 — `fixtureRegressionDebt` 3 绿是合法 retention 回归门，但非压缩门 【信息】
 - `tests/unit/handlers/fixtureRegressionDebt.test.ts`：留存路径 / 计数、禁 `0 modified...`——有效回归门，归类 Partial，不能当压缩 parity。
@@ -176,10 +176,10 @@ RTK `src/cmds` 共 **956** 个 `#[test]`。多数命令的 green 行为测试是
 
 要让"migration 全绿 = parity"成立，先改判据：
 
-1. 每个 RTK `*_token_savings` / cap / truncation / overflow `#[test]` 都有 tg 对应断言（比率或精确压缩 shape），而非绝对上限占位。
+1. 每个 RTK `*_token_savings` / cap / truncation / overflow `#[test]` 都有 tk 对应断言（比率或精确压缩 shape），而非绝对上限占位。
 2. 把 `maxOutputChars` 占位（尤其 ≥ raw 的）替换为真实压缩约束。
 3. presence-only / fixture-existence / scriptParity 移出 parity 门。
-4. 每命令从 1 条扩到覆盖 RTK `#[test]` 行为维度（command behavior + parser/helper unit 分层），覆盖率可量化对账（RTK 956 维 vs tg 已覆盖维）。
+4. 每命令从 1 条扩到覆盖 RTK `#[test]` 行为维度（command behavior + parser/helper unit 分层），覆盖率可量化对账（RTK 956 维 vs tk 已覆盖维）。
 
 ---
 
@@ -199,9 +199,9 @@ RTK `src/cmds` 共 **956** 个 `#[test]`。多数命令的 green 行为测试是
 | F8 | pytest | 重写为 RTK `build_pytest_summary`（产品对齐 RTK，见 format-conflicts 决策）；xfail caps + tee hint + 全过/无测试/quiet/parse_summary 维 | `Pytest: N passed[, M failed…]` + `… +5 more` cap + `minSavingsRatio 0.4` |
 
 架构分歧（如实记录，非伪造 parity）：
-- **grep**：RTK 用 `-0` NUL 分隔自行调用 rg，tg 过滤真实命令已产出的冒号分隔输出 → tg 用冒号 parser；NUL 专属边界（Windows 盘符、`:digits:` 文件名）不适用。无行号输入解析失败回退透传。
-- **find**：RTK 自行遍历文件系统（glob_match/parse_native_find），tg 过滤真实 find 输出 → 这些 FS-walker 内部不在 tg，未移植为死代码；tg 覆盖输出压缩维（分组/cap/overflow/空消息）。
-- **curl/pytest tee**：RTK `force_tee_hint` 写 tee 文件，tg recovery 通道为 `tg --raw`。
+- **grep**：RTK 用 `-0` NUL 分隔自行调用 rg，tk 过滤真实命令已产出的冒号分隔输出 → tk 用冒号 parser；NUL 专属边界（Windows 盘符、`:digits:` 文件名）不适用。无行号输入解析失败回退透传。
+- **find**：RTK 自行遍历文件系统（glob_match/parse_native_find），tk 过滤真实 find 输出 → 这些 FS-walker 内部不在 tk，未移植为死代码；tk 覆盖输出压缩维（分组/cap/overflow/空消息）。
+- **curl/pytest tee**：RTK `force_tee_hint` 写 tee 文件，tk recovery 通道为 `tk --raw`。
 
 未做：
 - **F9/F10 git status/branch**：未在本批次（provenance 标注 + dedup 规则核对）。
@@ -215,14 +215,14 @@ RTK `src/cmds` 共 **956** 个 `#[test]`。多数命令的 green 行为测试是
 
 ## Codex 复审决策（2026-06-05，第二轮 P1）
 
-Codex stop-time 复审提出两条 P1，均落在 `/goal` 的"遇 RTK 与 tg product intent 冲突 / 架构需大改时停下来问"决策区。已与用户确认处置：
+Codex stop-time 复审提出两条 P1，均落在 `/goal` 的"遇 RTK 与 tk product intent 冲突 / 架构需大改时停下来问"决策区。已与用户确认处置：
 
-### D1 — curl 失败路径双流保留是 tg 刻意分歧，移出 parity 套件
-- **事实**：RTK `cloud/curl_cmd.rs:35-42` 失败时 `msg = stderr if non-empty else stdout`——stderr 非空即丢 stdout body。tg 故意两路都留（HTTP error body 常是 LLM 最需的诊断）。该分歧由 Codex 前两轮 review（#1 截断、#2 丢 body）推动产生。
+### D1 — curl 失败路径双流保留是 tk 刻意分歧，移出 parity 套件
+- **事实**：RTK `cloud/curl_cmd.rs:35-42` 失败时 `msg = stderr if non-empty else stdout`——stderr 非空即丢 stdout body。tk 故意两路都留（HTTP error body 常是 LLM 最需的诊断）。该分歧由 Codex 前两轮 review（#1 截断、#2 丢 body）推动产生。
 - **问题**：原 `rtkCurlBehavior.test.ts` 的 dual-stream 用例断言的是 RTK **不会**输出的语义，却挂在 RTK parity 套件里——green 在此证明了一个非 RTK 行为。
-- **决策（用户确认：保留分歧 + 移出 parity）**：`curl.ts` 实现不回退（继续两路保留）；该用例迁至新文件 `tests/unit/handlers/curlProductBehavior.test.ts`（登记进 `vitest.config.ts` 产品 include），明确标注为"tg product behavior, diverges from RTK"。`rtkCurlBehavior.test.ts` 仅保留 RTK 忠实用例（含单流失败用例——RTK 此时 `msg = stdout`，是忠实的）。parity 套件因此只证 RTK-faithful 语义。
+- **决策（用户确认：保留分歧 + 移出 parity）**：`curl.ts` 实现不回退（继续两路保留）；该用例迁至新文件 `tests/unit/handlers/curlProductBehavior.test.ts`（登记进 `vitest.config.ts` 产品 include），明确标注为"tk product behavior, diverges from RTK"。`rtkCurlBehavior.test.ts` 仅保留 RTK 忠实用例（含单流失败用例——RTK 此时 `msg = stdout`，是忠实的）。parity 套件因此只证 RTK-faithful 语义。
 
-### D2 — find 的 glob_match / parse_native_find 维度在 tg 正式 out-of-scope
-- **事实**：RTK `system/find_cmd.rs:398+` 的 `glob_match_*` / `parse_native_find_*` 测的是 RTK **自行遍历文件系统**的 FS-walker。tg 架构是**过滤真实 `find` 命令的输出**——glob 匹配由 GNU find 完成，tg 自身没有这段逻辑。
-- **问题**：`/goal` scope 点名了 "find … parser/glob invariants"，而我此前仅用一段测试注释把它判为 out-of-scope，属单方面缩小点名范围。两条出路中"映射成 tg CLI/integration 测试"不成立——那等于在测 GNU find 而非 tg。
-- **决策（用户确认：正式 out-of-scope）**：glob/parser 维度在 tg 架构下不存在，正式记为 out-of-scope（本条即该决策的权威记录，从测试注释升格）。tg 对 find 的 parity 责任限于**输出压缩维**：分组、cap、`+N more`（未截断总数）、空消息——均已覆盖（F7）。`rtkFindBehavior.test.ts` 底部的架构注释保留并指向本决策。
+### D2 — find 的 glob_match / parse_native_find 维度在 tk 正式 out-of-scope
+- **事实**：RTK `system/find_cmd.rs:398+` 的 `glob_match_*` / `parse_native_find_*` 测的是 RTK **自行遍历文件系统**的 FS-walker。tk 架构是**过滤真实 `find` 命令的输出**——glob 匹配由 GNU find 完成，tk 自身没有这段逻辑。
+- **问题**：`/goal` scope 点名了 "find … parser/glob invariants"，而我此前仅用一段测试注释把它判为 out-of-scope，属单方面缩小点名范围。两条出路中"映射成 tk CLI/integration 测试"不成立——那等于在测 GNU find 而非 tk。
+- **决策（用户确认：正式 out-of-scope）**：glob/parser 维度在 tk 架构下不存在，正式记为 out-of-scope（本条即该决策的权威记录，从测试注释升格）。tk 对 find 的 parity 责任限于**输出压缩维**：分组、cap、`+N more`（未截断总数）、空消息——均已覆盖（F7）。`rtkFindBehavior.test.ts` 底部的架构注释保留并指向本决策。

@@ -17,7 +17,7 @@ describe("shimmablePrograms (wrapper-set derivation)", () => {
     }
   });
 
-  test("excludes tg-native verbs (they front no external tool)", () => {
+  test("excludes tk-native verbs (they front no external tool)", () => {
     for (const verb of [
       "read", "smart", "summary", "err", "test", "deps", "json", "log", "pipe",
       "format", "package-list", "generic", "type", "dir",
@@ -26,8 +26,8 @@ describe("shimmablePrograms (wrapper-set derivation)", () => {
     }
   });
 
-  test("never wraps interpreters/shells or tg itself (F1 deny-set)", () => {
-    for (const program of ["node", "deno", "bun", "tsx", "python", "python3", "bash", "sh", "zsh", "pwsh", "tg"]) {
+  test("never wraps interpreters/shells or tk itself (F1 deny-set)", () => {
+    for (const program of ["node", "deno", "bun", "tsx", "python", "python3", "bash", "sh", "zsh", "pwsh", "tk"]) {
       expect(set.has(program), `must never wrap ${program}`).toBe(false);
     }
   });

@@ -3,7 +3,7 @@ import { describe, expect, test } from "vitest";
 import { expectRtkParity, filterRtkOutput } from "../../helpers/rtkCommandHarness.js";
 
 // RTK oracle: rtk/src/cmds/system/pipe_cmd.rs. `rtk pipe [filter]` runs a named or
-// auto-detected filter over arbitrary piped output. In tg the command is
+// auto-detected filter over arbitrary piped output. In tk the command is
 // `pipe <cmd> <args...>` and the filtered content is raw.stdout. Here args[0] is
 // the explicit RTK filter name (resolve_filter), and absent/unknown names fall to
 // auto_detect_filter. These tests mirror the locally-defined wrappers in

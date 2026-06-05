@@ -1,5 +1,5 @@
 // Shared pricing (ADR 0004 §4). The default constant is Claude Sonnet input
-// $/Mtok. BOTH `tg gain --quota` and the telemetry `estimated_savings_usd_30d`
+// $/Mtok. BOTH `tk gain --quota` and the telemetry `estimated_savings_usd_30d`
 // field import from here — there is no second price path. The constant and the
 // table are documented in docs/TELEMETRY.md. Unknown/typo model names fall back to
 // the default constant, never an error.

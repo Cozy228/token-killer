@@ -1,4 +1,4 @@
-// `tg optimize context` — the downstream CONSUMER of inspect (goal §"Slice 5").
+// `tk optimize context` — the downstream CONSUMER of inspect (goal §"Slice 5").
 // Reads inspect's persisted per-scope bucket (project by default; user for
 // --surface skills user-level work), filters to source = static_context, and
 // plans patches. Default mode is read-only; it triggers a full inspect when the
@@ -128,7 +128,7 @@ export async function runOptimize(
 ): Promise<number> {
   const args = parseOptimizeArgs(argv);
   if (args.error) {
-    process.stderr.write(`tg optimize: ${args.error}\n`);
+    process.stderr.write(`tk optimize: ${args.error}\n`);
     return 1;
   }
 
@@ -172,7 +172,7 @@ export async function runOptimize(
     printDryRun(findings, home, cwd, scope, bucketRef);
     return 0;
   } catch (error) {
-    process.stderr.write(`tg optimize: internal error: ${error instanceof Error ? error.message : String(error)}\n`);
+    process.stderr.write(`tk optimize: internal error: ${error instanceof Error ? error.message : String(error)}\n`);
     return 3;
   }
 }
@@ -198,7 +198,7 @@ function printDryRun(
   bucketRef: ScopeBucket,
 ): void {
   const out: string[] = [];
-  out.push(`# tg optimize context (--dry-run, scope = ${scope})`);
+  out.push(`# tk optimize context (--dry-run, scope = ${scope})`);
   out.push(`Reading findings from: ${inspectBucketPath(bucketRef)}`);
   out.push(`Static-context findings: ${findings.length}`);
   out.push("");
@@ -226,7 +226,7 @@ function renderOutcome(finding: ContextFinding, outcome: PlanOutcome, live: stri
     return [head, "  (file not found on disk — re-run inspect)"];
   }
   if (outcome.status === "hash_mismatch") {
-    return [head, "  (file changed since inspect — re-run `tg inspect` before optimizing; stale diff suppressed)"];
+    return [head, "  (file changed since inspect — re-run `tk inspect` before optimizing; stale diff suppressed)"];
   }
   if (outcome.status === "skipped") {
     return [head, `  (skipped: ${outcome.reason})`];
@@ -242,9 +242,9 @@ export function renderPlan(plan: ContextPatchPlan, live: string | undefined): st
     } else if (op.kind === "suggested_diff") {
       lines.push(...op.diff.split("\n").map((l) => `  ${l}`));
     } else if (op.kind === "insert_marker_block") {
-      lines.push(`  + insert Token Guard ${op.marker} marker block in ${op.path}`);
+      lines.push(`  + insert Token Killer ${op.marker} marker block in ${op.path}`);
     } else if (op.kind === "remove_marker_block") {
-      lines.push(`  - remove Token Guard ${op.marker} marker block from ${op.path}`);
+      lines.push(`  - remove Token Killer ${op.marker} marker block from ${op.path}`);
     } else if (op.kind === "frontmatter_set") {
       lines.push(`  + set ${op.key} = ${JSON.stringify(op.value)} in ${op.path}`);
     }

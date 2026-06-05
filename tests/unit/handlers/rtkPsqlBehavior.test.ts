@@ -172,7 +172,7 @@ describe("RTK psql behavior", () => {
 
 // GAPS (documented, not asserted here):
 // - test_filter_psql_passthrough (input "COPY 5\n" → unchanged): the harness
-//   asserts output != raw (no unfiltered passthrough), and tg's makeFilteredResult
+//   asserts output != raw (no unfiltered passthrough), and tk's makeFilteredResult
 //   inflation gate would also bounce a tiny passthrough back to raw. RTK's pure
 //   passthrough behaviour is verified directly in the Rust unit test; it cannot be
 //   asserted through the no-passthrough harness without weakening it.

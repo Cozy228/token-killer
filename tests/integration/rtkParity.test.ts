@@ -12,7 +12,7 @@ const repoRoot = path.resolve(
 );
 const cli = path.join(repoRoot, "src/cli.ts");
 
-function runTg(args: string[], cwd: string, input?: string, timeout = 15000) {
+function runTk(args: string[], cwd: string, input?: string, timeout = 15000) {
   return spawnSync("npx", ["tsx", cli, ...args], {
     cwd,
     input,
@@ -46,8 +46,8 @@ async function initGitRepo(prefix: string) {
 }
 
 describe("RTK-style CLI integration parity", () => {
-  test("tg grep -r preserves real grep output without line numbers", async () => {
-    const dir = await mkdtemp(path.join(tmpdir(), "tg-rtk-grep-"));
+  test("tk grep -r preserves real grep output without line numbers", async () => {
+    const dir = await mkdtemp(path.join(tmpdir(), "tk-rtk-grep-"));
     try {
       await writeFile(
         path.join(dir, "history.ts"),
@@ -58,7 +58,7 @@ describe("RTK-style CLI integration parity", () => {
         "export async function runPipeline() {}\n",
       );
 
-      const result = runTg(["grep", "-r", "export", "."], dir);
+      const result = runTk(["grep", "-r", "export", "."], dir);
 
       expect(result.status).toBe(0);
       expect(result.stdout).not.toMatch(/0 across 0 files/);
@@ -71,13 +71,13 @@ describe("RTK-style CLI integration parity", () => {
     }
   });
 
-  test("tg grep preserves RTK format-flag output shapes", async () => {
-    const dir = await mkdtemp(path.join(tmpdir(), "tg-rtk-grep-format-"));
+  test("tk grep preserves RTK format-flag output shapes", async () => {
+    const dir = await mkdtemp(path.join(tmpdir(), "tk-rtk-grep-format-"));
     try {
       await writeFile(path.join(dir, "with-import.ts"), "import fs from 'node:fs';\n");
       await writeFile(path.join(dir, "without-import.ts"), "export const value = 1;\n");
 
-      const filesWithoutMatch = runTg(
+      const filesWithoutMatch = runTk(
         ["grep", "-L", "import", "with-import.ts", "without-import.ts"],
         dir,
       );
@@ -90,12 +90,12 @@ describe("RTK-style CLI integration parity", () => {
       expect(filesWithoutMatch.stdout).not.toContain("Search:");
       expect(filesWithoutMatch.stdout).not.toContain("Matches:");
 
-      const onlyMatching = runTg(["grep", "-o", "import", "with-import.ts"], dir);
+      const onlyMatching = runTk(["grep", "-o", "import", "with-import.ts"], dir);
       const nativeOnlyMatching = nativeGrep(["-o", "import", "with-import.ts"], dir);
       expect(onlyMatching.status).toBe(0);
       expect(onlyMatching.stdout).toBe(nativeOnlyMatching.stdout);
 
-      const nullDelimited = runTg(
+      const nullDelimited = runTk(
         ["grep", "-Z", "-l", "import", "with-import.ts", "without-import.ts"],
         dir,
       );
@@ -110,8 +110,8 @@ describe("RTK-style CLI integration parity", () => {
     }
   });
 
-  test("tg git diff preserves changed lines from a real repository", async () => {
-    const dir = await initGitRepo("tg-rtk-diff-");
+  test("tk git diff preserves changed lines from a real repository", async () => {
+    const dir = await initGitRepo("tk-rtk-diff-");
     try {
       await writeFile(
         path.join(dir, "submit.ts"),
@@ -124,7 +124,7 @@ describe("RTK-style CLI integration parity", () => {
         "export async function submitOrder(payload) {\n  return api.submit({ ...payload, idempotencyKey })\n}\n",
       );
 
-      const result = runTg(["git", "diff"], dir);
+      const result = runTk(["git", "diff"], dir);
 
       expect(result.status).toBe(0);
       expect(result.stdout).toContain("-  return api.submit(payload)");
@@ -136,10 +136,10 @@ describe("RTK-style CLI integration parity", () => {
     }
   });
 
-  test("tg cat - preserves stdin content", async () => {
-    const dir = await mkdtemp(path.join(tmpdir(), "tg-rtk-stdin-"));
+  test("tk cat - preserves stdin content", async () => {
+    const dir = await mkdtemp(path.join(tmpdir(), "tk-rtk-stdin-"));
     try {
-      const result = runTg(
+      const result = runTk(
         ["cat", "-"],
         dir,
         "export function fromStdin() { return true; }\n",
@@ -153,8 +153,8 @@ describe("RTK-style CLI integration parity", () => {
     }
   }, 8000);
 
-  test("tg diff - condenses piped unified diff", async () => {
-    const dir = await mkdtemp(path.join(tmpdir(), "tg-rtk-diff-stdin-"));
+  test("tk diff - condenses piped unified diff", async () => {
+    const dir = await mkdtemp(path.join(tmpdir(), "tk-rtk-diff-stdin-"));
     try {
       const input = [
         "diff --git a/src/main.ts b/src/main.ts",
@@ -167,7 +167,7 @@ describe("RTK-style CLI integration parity", () => {
         "",
       ].join("\n");
 
-      const result = runTg(["diff", "-"], dir, input, 3000);
+      const result = runTk(["diff", "-"], dir, input, 3000);
 
       expect(result.status).toBe(0);
       expect(result.stdout).toContain("[file] src/main.ts (+1 -0)");

@@ -2,14 +2,14 @@ import { chmodSync, mkdirSync, readFileSync, rmSync, writeFileSync } from "node:
 import { realpathSync } from "node:fs";
 import { join } from "node:path";
 
-import { tokenGuardHome } from "../core/dataDir.js";
+import { tokenKillerHome } from "../core/dataDir.js";
 import { shimmablePrograms } from "./programs.js";
 
-// How a generated wrapper re-invokes tg. The wrapper calls tg by ABSOLUTE path
-// (never relying on `tg` being on PATH inside the shimmed shell) so a stripped
+// How a generated wrapper re-invokes tk. The wrapper calls tk by ABSOLUTE path
+// (never relying on `tk` being on PATH inside the shimmed shell) so a stripped
 // PATH cannot break it. In production this is `node /abs/dist/cli.js`; tests
 // inject the tsx-loader form.
-export type TgExec = { bin: string; args: string[] };
+export type TkExec = { bin: string; args: string[] };
 
 // Bump when the manifest shape or wrapper format changes.
 export const SHIM_MANIFEST_SCHEMA = 1;
@@ -20,20 +20,20 @@ export type ShimManifest = {
   dir: string;
   programs: string[];
   installedAt: number;
-  tg: TgExec;
+  tk: TkExec;
 };
 
-export function shimDir(home: string = tokenGuardHome()): string {
+export function shimDir(home: string = tokenKillerHome()): string {
   return join(home, "shim");
 }
 
-export function manifestPath(home: string = tokenGuardHome()): string {
+export function manifestPath(home: string = tokenKillerHome()): string {
   return join(shimDir(home), "manifest.json");
 }
 
-// Resolve how to re-invoke the currently-running tg as an absolute command.
+// Resolve how to re-invoke the currently-running tk as an absolute command.
 // Production: the cli entry is dist/cli.js, runnable by `node <entry>`.
-export function defaultTgExec(): TgExec {
+export function defaultTkExec(): TkExec {
   const entry = process.argv[1] ? safeRealpath(process.argv[1]) : "";
   return { bin: safeRealpath(process.execPath), args: entry ? [entry] : [] };
 }
@@ -51,23 +51,23 @@ function shQuote(value: string): string {
   return `'${value.replace(/'/g, `'\\''`)}'`;
 }
 
-// POSIX wrapper: `exec <tg...> <program> "$@"`. Forwards args and the exit code.
-export function posixWrapper(program: string, tg: TgExec): string {
-  const parts = [tg.bin, ...tg.args, program].map(shQuote).join(" ");
+// POSIX wrapper: `exec <tk...> <program> "$@"`. Forwards args and the exit code.
+export function posixWrapper(program: string, tk: TkExec): string {
+  const parts = [tk.bin, ...tk.args, program].map(shQuote).join(" ");
   return `#!/usr/bin/env sh\nexec ${parts} "$@"\n`;
 }
 
 // Windows wrapper: a .cmd that forwards args via %*. cmd.exe and PowerShell both
 // resolve `git` → `git.cmd` through PATHEXT.
-export function windowsWrapper(program: string, tg: TgExec): string {
-  const parts = [tg.bin, ...tg.args, program].map((v) => `"${v}"`).join(" ");
+export function windowsWrapper(program: string, tk: TkExec): string {
+  const parts = [tk.bin, ...tk.args, program].map((v) => `"${v}"`).join(" ");
   return `@${parts} %*\r\n`;
 }
 
 export type InstallOptions = {
   home?: string;
   programs?: string[];
-  tgExec?: TgExec;
+  tkExec?: TkExec;
   installedAt: number;
   version: string;
   platform?: NodeJS.Platform;
@@ -77,10 +77,10 @@ export type InstallOptions = {
 // manifest. Idempotent: re-running overwrites wrappers and prunes any wrapper no
 // longer in the program set.
 export function installWrappers(opts: InstallOptions): ShimManifest {
-  const home = opts.home ?? tokenGuardHome();
+  const home = opts.home ?? tokenKillerHome();
   const dir = shimDir(home);
   const programs = (opts.programs ?? shimmablePrograms()).slice().sort();
-  const tg = opts.tgExec ?? defaultTgExec();
+  const tk = opts.tkExec ?? defaultTkExec();
   const platform = opts.platform ?? process.platform;
   const isWindows = platform === "win32";
 
@@ -90,10 +90,10 @@ export function installWrappers(opts: InstallOptions): ShimManifest {
   mkdirSync(dir, { recursive: true });
   for (const program of programs) {
     if (isWindows) {
-      writeFileSync(join(dir, `${program}.cmd`), windowsWrapper(program, tg));
+      writeFileSync(join(dir, `${program}.cmd`), windowsWrapper(program, tk));
     } else {
       const file = join(dir, program);
-      writeFileSync(file, posixWrapper(program, tg));
+      writeFileSync(file, posixWrapper(program, tk));
       chmodSync(file, 0o755);
     }
   }
@@ -104,7 +104,7 @@ export function installWrappers(opts: InstallOptions): ShimManifest {
     dir,
     programs,
     installedAt: opts.installedAt,
-    tg,
+    tk,
   };
   writeFileSync(manifestPath(home), `${JSON.stringify(manifest, null, 2)}\n`);
   return manifest;
@@ -113,11 +113,11 @@ export function installWrappers(opts: InstallOptions): ShimManifest {
 function pruneWrappers(dir: string, _keep: string[], _isWindows: boolean): void {
   // Remove the entire shim dir contents we own (wrappers + manifest) so a
   // shrunk program set leaves nothing behind, then the caller rewrites. Safe
-  // because the dir holds only tg-generated files.
+  // because the dir holds only tk-generated files.
   rmSync(dir, { recursive: true, force: true });
 }
 
-export function readManifest(home: string = tokenGuardHome()): ShimManifest | null {
+export function readManifest(home: string = tokenKillerHome()): ShimManifest | null {
   try {
     return JSON.parse(readFileSync(manifestPath(home), "utf8")) as ShimManifest;
   } catch {
@@ -125,6 +125,6 @@ export function readManifest(home: string = tokenGuardHome()): ShimManifest | nu
   }
 }
 
-export function removeShimDir(home: string = tokenGuardHome()): void {
+export function removeShimDir(home: string = tokenKillerHome()): void {
   rmSync(shimDir(home), { recursive: true, force: true });
 }

@@ -9,7 +9,7 @@ import type { SourceDiscovery } from "../../../src/inspect/sources.js";
 let dir: string;
 
 beforeEach(() => {
-  dir = mkdtempSync(join(tmpdir(), "tg-inspect-scan-"));
+  dir = mkdtempSync(join(tmpdir(), "tk-inspect-scan-"));
 });
 afterEach(() => {
   rmSync(dir, { recursive: true, force: true });

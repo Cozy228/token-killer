@@ -1,5 +1,5 @@
 // Slice 4 — cold-path telemetry trigger (ADR 0004 §5). Called ONLY at the end of
-// `tg inspect` and `tg gain` — NEVER from `tg <cmd>` (the hot path is sacred). Any
+// `tk inspect` and `tk gain` — NEVER from `tk <cmd>` (the hot path is sacred). Any
 // error here is swallowed: telemetry must never change a command's behavior or exit
 // code. `now`/`runId`/`send`/`endpoint` are injectable so tests stay deterministic.
 
@@ -78,7 +78,7 @@ export function runColdPathTelemetry(params: DispatchParams): void {
 function writeLocalAndWarn(body: string): void {
   try {
     const path = writeTelemetryExport(body);
-    process.stderr.write(`tg: telemetry send unavailable; kept local export: ${path}\n`);
+    process.stderr.write(`tk: telemetry send unavailable; kept local export: ${path}\n`);
   } catch {
     // best-effort
   }

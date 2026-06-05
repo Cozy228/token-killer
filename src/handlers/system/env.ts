@@ -1,5 +1,5 @@
 import { executeCommand } from "../../executor.js";
-import type { CommandHandler, ParsedCommand, RawResult, TgOptions } from "../../types.js";
+import type { CommandHandler, ParsedCommand, RawResult, TkOptions } from "../../types.js";
 import { makeFilteredResult } from "../base.js";
 
 // RTK: system/env_cmd.rs — group interesting environment variables, mask
@@ -140,7 +140,7 @@ function formatEnv(stdout: string): string {
     } else if (isToolVar(key)) {
       toolVars.push(entry);
     } else if (isInterestingVar(key)) {
-      // RTK also keeps everything when a filter is supplied; tg has no filter arg.
+      // RTK also keeps everything when a filter is supplied; tk has no filter arg.
       otherVars.push(entry);
     }
   }
@@ -203,7 +203,7 @@ function formatEnv(stdout: string): string {
     cloudVars.length +
     toolVars.length +
     Math.min(otherVars.length, 20);
-  // RTK prints the summary only when no filter is supplied (always, for tg).
+  // RTK prints the summary only when no filter is supplied (always, for tk).
   lines.push(`\nTotal: ${total} vars (showing ${shown} relevant)`);
 
   return `${lines.join("\n")}\n`;
@@ -218,7 +218,7 @@ export const envHandler: CommandHandler = {
   execute(command) {
     return executeCommand(command);
   },
-  async filter(raw, _command, options: TgOptions) {
+  async filter(raw, _command, options: TkOptions) {
     return makeFilteredResult(this.name, raw, formatEnv(raw.stdout), options);
   },
 };

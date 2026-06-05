@@ -10,9 +10,9 @@ export type FixtureCase = {
   forbidden?: RegExp[];
   maxOutputGrowth?: number;
   /**
-   * Set for tg-only handlers (e.g. terraform) that rtk has no filter for. The
+   * Set for tk-only handlers (e.g. terraform) that rtk has no filter for. The
    * three-way report represents rtk as a raw passthrough (0% savings) for these
-   * cases instead of skipping them, surfacing the tg-only win in the main table.
+   * cases instead of skipping them, surfacing the tk-only win in the main table.
    */
   rtkUnsupported?: boolean;
   /**
@@ -128,7 +128,7 @@ export const fixtureCases: FixtureCase[] = [
     forbidden: [/drwx/, /staff/, /^total/m, /Jan  1/],
   },
   {
-    // RTK: system/read.rs — level "none" (default) returns full content; tg keeps
+    // RTK: system/read.rs — level "none" (default) returns full content; tk keeps
     // every source symbol so downstream parsing stays valid.
     name: "read keeps source symbols at the default filter level (RTK read.rs)",
     fixture: "tests/fixtures/common/cat_large_ts.txt",
@@ -159,7 +159,7 @@ export const fixtureCases: FixtureCase[] = [
     fixture: "tests/fixtures/git/status_dirty_extended.txt",
     command: ["git", "status"],
     critical: [
-      "* codex/token-guard-node-cli",
+      "* codex/token-killer-node-cli",
       " D DESIGN.md",
       " M README.md",
       " M package.json",
@@ -173,7 +173,7 @@ export const fixtureCases: FixtureCase[] = [
     fixture: "tests/fixtures/git/status_porcelain_branch_current.txt",
     command: ["git", "status", "--short", "--branch"],
     critical: [
-      "* codex/token-guard-node-cli",
+      "* codex/token-killer-node-cli",
       "docs/testing-and-migration-audit.md",
       "tests/helpers/fixtureCases.ts",
       "tests/unit/handlers/fixtureWiring.test.ts",
@@ -231,7 +231,7 @@ export const fixtureCases: FixtureCase[] = [
     command: ["git", "log"],
     critical: [
       "a1b2c3d4e5f6",
-      "feat: add token guard command proxy",
+      "feat: add token killer command proxy",
       "fix: handle edge case in parser",
       "Initial commit",
     ],
@@ -258,17 +258,17 @@ export const fixtureCases: FixtureCase[] = [
     name: "git-branch small output passes through branch names",
     fixture: "tests/fixtures/git/branch_small_current.txt",
     command: ["git", "branch"],
-    critical: ["* codex/token-guard-node-cli", "main"],
+    critical: ["* codex/token-killer-node-cli", "main"],
     forbidden: [/Branches:/, /Hidden:/],
     maxOutputGrowth: 10,
   },
   {
     name: "git-add preserves missing path failures",
     fixture: "tests/fixtures/git/add_missing_path.txt",
-    command: ["git", "add", "__tg_missing_fixture_file__"],
+    command: ["git", "add", "__tk_missing_fixture_file__"],
     exitCode: 128,
     critical: [
-      "fatal: pathspec '__tg_missing_fixture_file__'",
+      "fatal: pathspec '__tk_missing_fixture_file__'",
     ],
   },
   {
@@ -285,8 +285,8 @@ export const fixtureCases: FixtureCase[] = [
   {
     name: "git-push keeps dry-run pushed ref target",
     fixture: "tests/fixtures/git/push_dry_run_local.txt",
-    command: ["git", "push", "--dry-run", ".", "HEAD:refs/heads/__tg_fixture_branch__"],
-    critical: ["To .", "HEAD -> __tg_fixture_branch__"],
+    command: ["git", "push", "--dry-run", ".", "HEAD:refs/heads/__tk_fixture_branch__"],
+    critical: ["To .", "HEAD -> __tk_fixture_branch__"],
   },
   {
     name: "git-pull preserves unstaged-change failure",
@@ -301,7 +301,7 @@ export const fixtureCases: FixtureCase[] = [
   {
     name: "git-fetch preserves missing remote failure",
     fixture: "tests/fixtures/git/fetch_missing_remote.txt",
-    command: ["git", "fetch", "/tmp/__tg_missing_remote__", "main"],
+    command: ["git", "fetch", "/tmp/__tk_missing_remote__", "main"],
     exitCode: 128,
     critical: [
       "does not appear to be a git repository",
@@ -322,7 +322,7 @@ export const fixtureCases: FixtureCase[] = [
     fixture: "tests/fixtures/git/worktree_list.txt",
     command: ["git", "worktree", "list"],
     // RTK: git/git.rs::filter_worktree_list compacts $HOME to ~ (see rtkGitWorktreeBehavior).
-    critical: ["~/Workspace/token-guard", "codex/token-guard-node-cli"],
+    critical: ["~/Workspace/token-killer", "codex/token-killer-node-cli"],
   },
   {
     name: "gh repo view keeps repository identity and URL",
@@ -330,7 +330,7 @@ export const fixtureCases: FixtureCase[] = [
     command: ["gh", "repo", "view"],
     // RTK: gh_cmd.rs::format_repo_view — "owner/name", "[public]", stars/forks, url
     // (no default-branch line; shares the contract with rtkGhBehavior).
-    critical: ["Cozy228/token-guard", "[public]", "https://github.com/Cozy228/token-guard"],
+    critical: ["Cozy228/token-killer", "[public]", "https://github.com/Cozy228/token-killer"],
   },
   {
     name: "glab mr list keeps merge request identity and branches",
@@ -699,7 +699,7 @@ export const fixtureCases: FixtureCase[] = [
     name: "json compacts a package response with sorted keys",
     fixture: "tests/fixtures/system/json_package_response.json",
     command: ["json", "package.json"],
-    critical: ['name: "token-guard"', 'version: "0.1.0"', 'test: "vitest run"'],
+    critical: ['name: "token-killer"', 'version: "0.1.0"', 'test: "vitest run"'],
   },
   {
     // RTK: system/log_cmd.rs::analyze_logs — deduplicates repeated log lines into a
@@ -715,7 +715,7 @@ export const fixtureCases: FixtureCase[] = [
     ],
   },
   {
-    // tg-only handler: rtk has no terraform support. Strips state lock / refresh /
+    // tk-only handler: rtk has no terraform support. Strips state lock / refresh /
     // data-source read progress, the symbol legend, and the trailing -out note;
     // keeps the full resource action body and the plan summary line.
     name: "terraform plan keeps resource changes and plan summary",
@@ -736,7 +736,7 @@ export const fixtureCases: FixtureCase[] = [
     rtkUnsupported: true,
   },
   {
-    // tg-only handler: drops per-run progress and box borders, keeps failed runs,
+    // tk-only handler: drops per-run progress and box borders, keeps failed runs,
     // the error diagnostic, and the final Failure! summary.
     name: "terraform test keeps failed run and assertion",
     fixture: "tests/fixtures/terraform/test_failed.txt",

@@ -1,7 +1,7 @@
 # Layer 2 Hook Protocol Spike — Findings
 
 Empirical + documentation study of whether GitHub Copilot hosts actually honor the
-hook outputs Token Guard's Layer 2 depends on (command rewrite, tool-result
+hook outputs Token Killer's Layer 2 depends on (command rewrite, tool-result
 replacement, governance, fail-open). This gates the Layer 2 slice plan.
 
 - **Spike script (throwaway):** <https://gist.github.com/Cozy228/2068a2981779033cbf875c237bdaa19f>
@@ -132,8 +132,8 @@ at all** — at most they govern (allow/ask/deny/block) and inject context hints
 setting unlocks result replacement in the IDEs; it is not in their contract.
 
 > **But command-compression does not depend on `modifiedResult`.** Like RTK, Token
-> Guard compresses by running a wrapper (`tg <cmd>`) that emits less — the hook only
-> ever needed to *prepend* `tg`, never to replace a result. `modifiedResult` being
+> Guard compresses by running a wrapper (`tk <cmd>`) that emits less — the hook only
+> ever needed to *prepend* `tk`, never to replace a result. `modifiedResult` being
 > CLI-only therefore bounds **native-direct-tool** compression (read/grep/list), not
 > terminal-command compression, which a PATH shim delivers host-agnostically (§3).
 
@@ -168,13 +168,13 @@ setting unlocks result replacement in the IDEs; it is not in their contract.
   basic events do not fire (errors in `idea.log`). No "fixed in version X" exists. The
   IntelliJ negative is a platform gap, not a user-config error.
 
-## 3. Implications for Token Guard Layer 2
+## 3. Implications for Token Killer Layer 2
 
 **Two delivery layers (decoupled after Round 2):**
 
 - **Layer A — terminal-command compression (host-agnostic, via PATH shim).** Install
-  `tg`-wrapper shims (named `git`, `pnpm`, `npx`, `cargo`, …) ahead on `PATH`. Any host
-  that runs commands through a terminal hits the shim → real tool → `tg` handler
+  `tk`-wrapper shims (named `git`, `pnpm`, `npx`, `cargo`, …) ahead on `PATH`. Any host
+  that runs commands through a terminal hits the shim → real tool → `tk` handler
   compresses the output the model sees. No hook required. In VS Code this covers the
   **entire** command-execution surface: per the session report, `run_in_terminal` is
   ~32% of tool calls and **all** git/node/shell commands flow through it.
@@ -184,7 +184,7 @@ setting unlocks result replacement in the IDEs; it is not in their contract.
 
 | Host | Layer A (shim) | Layer B (hook) | Notes |
 |---|---|---|---|
-| **Copilot CLI** | ✅ shim or pretool rewrite to `tg <cmd>` | ✅ `modifiedResult` on native tools | Full capability; pretool is fail-closed, so internal fail-open must never crash. |
+| **Copilot CLI** | ✅ shim or pretool rewrite to `tk <cmd>` | ✅ `modifiedResult` on native tools | Full capability; pretool is fail-closed, so internal fail-open must never crash. |
 | **VS Code** | ✅ **shim** (all commands route via `run_in_terminal`) | ❌ no `modifiedResult` in contract; GitHub-format hooks did not execute, Claude-format only governs | Optional: `additionalContext` hints + deny/ask governance via Claude-format hook (works ≥1.118), if ever wanted. |
 | **IntelliJ IDEA** | ✅ **shim** (terminal commands) | ❌ hooks flaky/don't fire ([#1653](https://github.com/microsoft/copilot-intellij-feedback/issues/1653)) | Shim sidesteps the broken hook surface entirely. |
 
@@ -201,10 +201,10 @@ Consequences (revised — supersedes the round-1 "CLI-only headline"):
 - Shim contract to get right: transparent pass-through of exit code, stdin/TTY,
   arguments, and any output the model still needs; safe-by-default (never corrupt
   output); easy opt-out. Provide a zero-config fallback via an instruction file
-  (`.github/copilot-instructions.md`: "prefix commands with `tg`") for hosts where
+  (`.github/copilot-instructions.md`: "prefix commands with `tk`") for hosts where
   modifying `PATH` is undesirable.
-- `tg hook init` stays **Copilot-CLI-focused** (GitHub-hooks `~/.copilot/hooks/`); VS
-  Code/IntelliJ are served by `tg shim install` (PATH), not by hook config.
+- `tk hook init` stays **Copilot-CLI-focused** (GitHub-hooks `~/.copilot/hooks/`); VS
+  Code/IntelliJ are served by `tk shim install` (PATH), not by hook config.
 - Prompt-side governance is record-only + session-start injection; no host blocks a
   submitted prompt (see [CONTEXT.md](../CONTEXT.md) decisions).
 

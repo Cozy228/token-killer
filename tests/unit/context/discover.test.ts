@@ -8,7 +8,7 @@ import { discoverContextFiles } from "../../../src/context/discover.js";
 let root: string;
 
 beforeEach(() => {
-  root = mkdtempSync(join(tmpdir(), "tg-ctx-discover-"));
+  root = mkdtempSync(join(tmpdir(), "tk-ctx-discover-"));
 });
 afterEach(() => {
   rmSync(root, { recursive: true, force: true });

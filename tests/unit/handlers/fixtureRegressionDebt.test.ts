@@ -5,14 +5,14 @@ import { fileURLToPath } from "node:url";
 import { describe, expect, test } from "vitest";
 
 import { routeCommand } from "../../../src/router.js";
-import type { ParsedCommand, RawResult, TgOptions } from "../../../src/types.js";
+import type { ParsedCommand, RawResult, TkOptions } from "../../../src/types.js";
 
 const repoRoot = path.resolve(
   path.dirname(fileURLToPath(import.meta.url)),
   "../../..",
 );
 
-const options: TgOptions = {
+const options: TkOptions = {
   raw: false,
   stats: false,
   verbose: false,
@@ -70,7 +70,7 @@ describe("fixture-backed regression debt", () => {
       "-b",
     ]);
 
-    expect(result.output).toContain("codex/token-guard-node-cli");
+    expect(result.output).toContain("codex/token-killer-node-cli");
     expect(result.output).toContain("tests/helpers/fixtureCases.ts");
     expect(result.output).not.toContain("Branch: unknown");
   });

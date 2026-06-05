@@ -1,4 +1,4 @@
-import type { FilteredResult, RawResult, TgOptions } from "../types.js";
+import type { FilteredResult, RawResult, TkOptions } from "../types.js";
 import { calculateSavings } from "../core/savings.js";
 import { maybeSaveRawOutput } from "../core/rawStore.js";
 import { limitOutput } from "../core/outputLimit.js";
@@ -78,7 +78,7 @@ export function outputOmitsContent(output: string): boolean {
     return (
       /^\+\d+ more (matches|files|packages|errors|commits|branches|changed lines)$/.test(trimmed) ||
       /^\[\d+ more lines\]$/.test(trimmed) ||
-      /^more (lines|chars) \(use tg.*\)$/.test(trimmed) ||
+      /^more (lines|chars) \(use tk.*\)$/.test(trimmed) ||
       /^repetitive lines collapsed$/.test(trimmed) ||
       /^.*lines truncated\)$/.test(trimmed) ||
       /^\.\.\. \(more changes truncated\)$/.test(trimmed) ||
@@ -94,7 +94,7 @@ export async function makeFilteredResult(
   handler: string,
   raw: RawResult,
   output: string,
-  options: TgOptions,
+  options: TkOptions,
   filterError?: string,
 ): Promise<FilteredResult> {
   const unlimitedRaw = removeAnsi(rawText(raw));

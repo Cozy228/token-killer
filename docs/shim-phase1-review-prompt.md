@@ -1,7 +1,7 @@
 # Review prompt: SHIM delivery tier — Phase 1, with REAL host execution
 
-You are reviewing the **executor-correctness core** of Token Guard's shim delivery tier
-(`shim-delivery-goal.md` Phase 1). This is the layer that lets `tg <tool>` sit transparently
+You are reviewing the **executor-correctness core** of Token Killer's shim delivery tier
+(`shim-delivery-goal.md` Phase 1). This is the layer that lets `tk <tool>` sit transparently
 in front of real tools via a PATH shim, for hosts where Copilot hooks never fire.
 
 **Your review is not done until you have actually run the shim in front of real tools, in the
@@ -19,8 +19,8 @@ Figure out how to drive each host for real; do not substitute a unit test or a h
 | PowerShell | `pwsh` → `/opt/homebrew/bin/pwsh` |
 | Copilot CLI | `copilot` → `/opt/homebrew/bin/copilot`; config dir `~/.copilot/` exists |
 | VS Code user settings | `~/Library/Application Support/Code/User/settings.json` (no `code` CLI on PATH) |
-| `tg` binary | NOT on PATH; built artifact is `dist/cli.js` (`bin.tg` → `./dist/cli.js`) |
-| Installer | **Does not exist yet** — `tg shim install` / `tg init` are Phase 2/3, unbuilt. You build the harness by hand. |
+| `tk` binary | NOT on PATH; built artifact is `dist/cli.js` (`bin.tk` → `./dist/cli.js`) |
+| Installer | **Does not exist yet** — `tk shim install` / `tk init` are Phase 2/3, unbuilt. You build the harness by hand. |
 
 ## 1. What actually shipped in Phase 1 (the review surface)
 
@@ -34,12 +34,12 @@ Code-complete, with unit tests under `tests/unit/shim/`:
   not interactive.
 - `src/router.ts` — `routeSpecific(command)` (first non-generic match, else `null`).
 - `src/executor.ts` — `executePassthrough(command)` (stdio: inherit, exit-code only) +
-  `buildChildEnv` that strips `TG_SHIM_DIR` from the child PATH and calls `assertNoRecursion`.
+  `buildChildEnv` that strips `TK_SHIM_DIR` from the child PATH and calls `assertNoRecursion`.
 - `src/cli.ts` `main()` — the gate is wired: `--raw` unchanged; else `routeSpecific` + gate →
   compress or `executePassthrough`; compression errors fail toward passthrough.
 
-NOT shipped (out of scope for this review, but note the gap): `tg shim install/uninstall/status`,
-the manifest, automated PATH injection, the `status` interception probe, `tg init`.
+NOT shipped (out of scope for this review, but note the gap): `tk shim install/uninstall/status`,
+the manifest, automated PATH injection, the `status` interception probe, `tk init`.
 
 ## 2. Source of truth (read before judging behavior)
 
@@ -57,8 +57,8 @@ the manifest, automated PATH injection, the `status` interception probe, `tg ini
 Scrutinize, with a bias toward safety and cross-platform correctness:
 
 1. **Recursion guard correctness** (`assertNoRecursion`, `stripShimDir`, `resolveReal`). The
-   load-bearing invariant is *"tg behind the shim must never re-resolve to the wrapper."*
-   Probe the edges: symlinked shim dir; `TG_SHIM_DIR` with a trailing slash vs not; shim dir
+   load-bearing invariant is *"tk behind the shim must never re-resolve to the wrapper."*
+   Probe the edges: symlinked shim dir; `TK_SHIM_DIR` with a trailing slash vs not; shim dir
    appearing twice on PATH; a program that legitimately lives in a dir whose path is a *prefix*
    of the shim dir (the `startsWith(target + sep)` check); `PATHEXT`/case-insensitive Windows
    path; an absolute-path program (`/usr/bin/git`) bypassing resolution.
@@ -78,29 +78,29 @@ Scrutinize, with a bias toward safety and cross-platform correctness:
 
 ## 4. Build the harness and RUN it (no installer exists — make one by hand)
 
-### 4a. A `tg` launcher
+### 4a. A `tk` launcher
 
 ```sh
 pnpm build                                   # refresh dist/cli.js
 # absolute launcher the wrappers will call (avoids PATH-ordering confusion):
-mkdir -p /tmp/tg-review/bin
-printf '#!/bin/sh\nexec node %s/dist/cli.js "$@"\n' "$PWD" > /tmp/tg-review/bin/tg
-chmod +x /tmp/tg-review/bin/tg
+mkdir -p /tmp/tk-review/bin
+printf '#!/bin/sh\nexec node %s/dist/cli.js "$@"\n' "$PWD" > /tmp/tk-review/bin/tk
+chmod +x /tmp/tk-review/bin/tk
 ```
 
 ### 4b. A throwaway shim dir + wrappers (POSIX + pwsh)
 
 ```sh
-export TG_SHIM_DIR=/tmp/tg-review/shim
-mkdir -p "$TG_SHIM_DIR"
+export TK_SHIM_DIR=/tmp/tk-review/shim
+mkdir -p "$TK_SHIM_DIR"
 for prog in git ls grep cat node; do
-  printf '#!/usr/bin/env sh\nexec /tmp/tg-review/bin/tg %s "$@"\n' "$prog" > "$TG_SHIM_DIR/$prog"
-  chmod +x "$TG_SHIM_DIR/$prog"
+  printf '#!/usr/bin/env sh\nexec /tmp/tk-review/bin/tk %s "$@"\n' "$prog" > "$TK_SHIM_DIR/$prog"
+  chmod +x "$TK_SHIM_DIR/$prog"
 done
 ```
 
-The wrappers call `tg` by **absolute path**, exactly as the real installer is specced to
-(`shim-delivery-goal.md` Phase 2 step 3) — so interception depends only on `TG_SHIM_DIR` being
+The wrappers call `tk` by **absolute path**, exactly as the real installer is specced to
+(`shim-delivery-goal.md` Phase 2 step 3) — so interception depends only on `TK_SHIM_DIR` being
 first on PATH, which is the exact thing each host must prove.
 
 ### 4c. The behavior matrix to verify in EACH host
@@ -109,7 +109,7 @@ Prepend the shim dir, then confirm interception **and** the compress/passthrough
 
 | Probe | Expectation |
 |-------|-------------|
-| `command -v git` (or `Get-Command git`) | resolves into `$TG_SHIM_DIR`, **not** `/usr/bin/git` |
+| `command -v git` (or `Get-Command git`) | resolves into `$TK_SHIM_DIR`, **not** `/usr/bin/git` |
 | `git status \| cat` (non-TTY stdout, specific match) | **compressed** output |
 | `git status` typed at a TTY | **passthrough** full output (human watching) |
 | `git commit` (staged change, no `-m`) | **passthrough** — editor opens (stdio inherited) |
@@ -124,29 +124,29 @@ pty, or hand the user a one-line probe to run in a real interactive terminal and
 
 - **Fork-bomb guard test must be sandboxed.** To prove `assertNoRecursion` actually fires,
   construct the pathological case where the *only* `git` reachable is the shim copy (point PATH
-  at just `$TG_SHIM_DIR`). Run it under a hard cap so a regression cannot take the machine down:
-  `( ulimit -u 200; timeout 10 /tmp/tg-review/bin/tg git status )` — expect a one-line
+  at just `$TK_SHIM_DIR`). Run it under a hard cap so a regression cannot take the machine down:
+  `( ulimit -u 200; timeout 10 /tmp/tk-review/bin/tk git status )` — expect a one-line
   `ShimRecursionError`-derived message and a non-zero exit, **not** runaway processes.
 - **Editor hang:** for the `git commit` (no `-m`) passthrough test, set
   `GIT_EDITOR='sh -c "echo reviewed >> \"$1\"" --'` so the editor "opens", writes, and exits —
   proving stdio was inherited without blocking your session.
-- Always run probes against the throwaway repo / `/tmp/tg-review`, never the real project tree.
-- Tear down: `rm -rf /tmp/tg-review; unset TG_SHIM_DIR`.
+- Always run probes against the throwaway repo / `/tmp/tk-review`, never the real project tree.
+- Tear down: `rm -rf /tmp/tk-review; unset TK_SHIM_DIR`.
 
 ## 5. The load-bearing question (the real point of this review)
 
 `shim-delivery-goal.md` → *Most fragile assumption*: **the shim only delivers value if the host's
-non-interactive, agent-driven tool-shell honors the prepended `TG_SHIM_DIR`.** The hook tier
+non-interactive, agent-driven tool-shell honors the prepended `TK_SHIM_DIR`.** The hook tier
 already died because the agent's tool-shell ignored the injected surface. If PATH injection has the
 same failure mode, the shim tier is a no-op in that host and the product must fall to instruction
 injection. **Determine this empirically, per host:**
 
 1. **Plain zsh + pwsh (baseline):** prove interception works at all (4c). pwsh on macOS: prepend
-   with `$env:PATH = "$env:TG_SHIM_DIR" + [IO.Path]::PathSeparator + $env:PATH` and confirm
+   with `$env:PATH = "$env:TK_SHIM_DIR" + [IO.Path]::PathSeparator + $env:PATH` and confirm
    `Get-Command git` lands in the shim dir. (Wrappers are POSIX `sh`; pwsh on macOS runs them — if
    not, note that a `.ps1`/`.cmd` wrapper is needed, a finding for Phase 2.)
 3. **VS Code:** patch `terminal.integrated.env.osx` in the user `settings.json` to prepend
-   `TG_SHIM_DIR` and set it (idempotent, back the file up first). Then the question: does a VS Code
+   `TK_SHIM_DIR` and set it (idempotent, back the file up first). Then the question: does a VS Code
    **`run_in_terminal`** (non-interactive, agent) shell — not just a hand-opened integrated
    terminal — actually see that PATH? You likely cannot drive the VS Code agent headlessly: do
    what you can, then hand the user a precise copy-paste probe (`command -v git; echo "$PATH"`) to
@@ -154,7 +154,7 @@ injection. **Determine this empirically, per host:**
    interactive-terminal success from run_in_terminal success — only the latter matters.
 4. **Copilot CLI:** discover its non-interactive invocation (`copilot --help`; look for a
    one-shot/`-p`/exec flag) and actually make Copilot CLI execute the probe through its own
-   tool-shell with `TG_SHIM_DIR` exported. Report whether the shimmed `git` is what Copilot runs.
+   tool-shell with `TK_SHIM_DIR` exported. Report whether the shimmed `git` is what Copilot runs.
    If it can only be driven interactively, drive it interactively and observe.
 
 For each host report one of: **INTERCEPTS** (shim is viable), **IGNORES PATH** (shim is dead here →
@@ -162,12 +162,12 @@ injection tier), or **INCONCLUSIVE** (say exactly what blocked you and what you'
 
 ## 6. Adversarial / fail-open checks (must actually execute)
 
-- Break `tg` (e.g. point the launcher at a non-existent file) behind the shim → the command must
-  still… do what? Decide what "fail toward the real tool" *can* mean when `tg` itself is broken,
+- Break `tk` (e.g. point the launcher at a non-existent file) behind the shim → the command must
+  still… do what? Decide what "fail toward the real tool" *can* mean when `tk` itself is broken,
   and verify the code's actual behavior matches the guardrail claim. This is the worst case.
 - Feed a command whose handler throws during compression → assert passthrough fallback, real exit
   code, no crash.
-- `TG_SHIM_DIR` set but empty / nonexistent dir → no crash, sane behavior.
+- `TK_SHIM_DIR` set but empty / nonexistent dir → no crash, sane behavior.
 - Confirm **no project-repo writes** occur from any shim code path (guardrail: user-level only).
 
 ## 7. Run the existing suites
@@ -193,7 +193,7 @@ A review report with:
 
 - pnpm only. English in any code/test you add. Surgical — this is a review, not a rewrite; if you
   fix a bug, keep it isolated and call it out.
-- Never write into the project repo from a shim path; all harness state lives in `/tmp/tg-review`
+- Never write into the project repo from a shim path; all harness state lives in `/tmp/tk-review`
   and a backed-up copy of the VS Code user settings. Restore every host config you touch.
 - Be honest about what you could not drive headlessly. "INCONCLUSIVE + exact blocker + the probe I
   handed the user" is a valid, valuable result; a fabricated "works" is not.

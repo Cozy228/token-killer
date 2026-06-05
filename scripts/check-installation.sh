@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-# check-installation.sh — verify tg is properly installed with all dependencies
+# check-installation.sh — verify tk is properly installed with all dependencies
 # Ported from RTK scripts/check-installation.sh
 
 RED='\033[0;31m'
@@ -37,7 +37,7 @@ check_opt() {
     fi
 }
 
-echo "check-installation: verifying tg and dependencies..."
+echo "check-installation: verifying tk and dependencies..."
 echo ""
 
 # Step 1: node >= 20
@@ -47,38 +47,38 @@ check "node >= 20" bash -c 'node -e "process.exit(parseInt(process.versions.node
 # Step 2: pnpm
 check "pnpm available" bash -c 'command -v pnpm >/dev/null 2>&1'
 
-# Step 3: tg binary
+# Step 3: tk binary
 echo ""
-echo "--- tg binary ---"
-if command -v tg >/dev/null 2>&1; then
-    printf "  ${GREEN}PASS${NC}   tg (global command)\n"
+echo "--- tk binary ---"
+if command -v tk >/dev/null 2>&1; then
+    printf "  ${GREEN}PASS${NC}   tk (global command)\n"
     PASS=$((PASS + 1))
-    TG_CMD="tg"
+    TK_CMD="tk"
 elif [ -x "dist/cli.js" ] && node -e "" 2>/dev/null; then
-    printf "  ${GREEN}PASS${NC}   tg via node dist/cli.js\n"
+    printf "  ${GREEN}PASS${NC}   tk via node dist/cli.js\n"
     PASS=$((PASS + 1))
-    TG_CMD="node dist/cli.js"
+    TK_CMD="node dist/cli.js"
 else
-    printf "  ${RED}FAIL${NC}   tg binary not found\n"
+    printf "  ${RED}FAIL${NC}   tk binary not found\n"
     FAIL=$((FAIL + 1))
     EXIT_CODE=1
-    TG_CMD=""
+    TK_CMD=""
 fi
 
-# Step 4: tg --version
+# Step 4: tk --version
 echo ""
 echo "--- Version check ---"
-if [ -n "$TG_CMD" ]; then
-    if VERSION=$($TG_CMD --version 2>/dev/null || true); then
-        printf "  ${GREEN}PASS${NC}   tg version: %s\n" "$VERSION"
+if [ -n "$TK_CMD" ]; then
+    if VERSION=$($TK_CMD --version 2>/dev/null || true); then
+        printf "  ${GREEN}PASS${NC}   tk version: %s\n" "$VERSION"
         PASS=$((PASS + 1))
     else
-        printf "  ${RED}FAIL${NC}   tg --version failed\n"
+        printf "  ${RED}FAIL${NC}   tk --version failed\n"
         FAIL=$((FAIL + 1))
         EXIT_CODE=1
     fi
 else
-    printf "  ${RED}FAIL${NC}   tg --version skipped (no binary)\n"
+    printf "  ${RED}FAIL${NC}   tk --version skipped (no binary)\n"
     FAIL=$((FAIL + 1))
     EXIT_CODE=1
 fi
@@ -119,7 +119,7 @@ if [ "$EXIT_CODE" -ne 0 ]; then
     echo "check-installation: ${RED}FAILED${NC} — critical checks did not pass."
 else
     echo ""
-    echo "check-installation: ${GREEN}OK${NC} — tg is ready."
+    echo "check-installation: ${GREEN}OK${NC} — tk is ready."
 fi
 
 exit "$EXIT_CODE"

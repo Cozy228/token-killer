@@ -1,4 +1,4 @@
-// Slice 1 integration — static-context analyzers wired into the one `tg inspect`
+// Slice 1 integration — static-context analyzers wired into the one `tk inspect`
 // (goal §"CLI contract", ADR 0003). Verifies scope axes, the --copilot-context
 // narrowing flag, mutual exclusivity, and per-scope bucket persistence.
 
@@ -17,8 +17,8 @@ let home: string;
 let project: string;
 
 beforeEach(() => {
-  home = mkdtempSync(path.join(tmpdir(), "tg-ctx-home-"));
-  project = mkdtempSync(path.join(tmpdir(), "tg-ctx-proj-"));
+  home = mkdtempSync(path.join(tmpdir(), "tk-ctx-home-"));
+  project = mkdtempSync(path.join(tmpdir(), "tk-ctx-proj-"));
 });
 afterEach(() => {
   rmSync(home, { recursive: true, force: true });
@@ -31,7 +31,7 @@ function write(base: string, rel: string, content: string): void {
   writeFileSync(abs, content);
 }
 
-function runTg(args: string[], cwd = project) {
+function runTk(args: string[], cwd = project) {
   return spawnSync(process.execPath, ["--import", tsxLoader, cli, ...args], {
     cwd,
     encoding: "utf8",
@@ -40,17 +40,17 @@ function runTg(args: string[], cwd = project) {
       ...process.env,
       HOME: home,
       USERPROFILE: home,
-      TOKEN_GUARD_HOME: path.join(home, ".token-guard"),
+      TOKEN_KILLER_HOME: path.join(home, ".token-killer"),
     },
   });
 }
 
-describe("tg inspect — static context wiring", () => {
+describe("tk inspect — static context wiring", () => {
   test("--project --copilot-context narrows to static findings and exits 0", () => {
     write(project, ".github/copilot-instructions.md", "# Copilot\nproject rules\n");
     write(project, "AGENTS.md", "---\nbroken yaml\n---\n# Agents\n");
 
-    const r = runTg(["inspect", "--project", "--copilot-context"]);
+    const r = runTk(["inspect", "--project", "--copilot-context"]);
     expect(r.status).toBe(0);
     expect(r.stdout).toContain("source = static_context");
     // Malformed frontmatter surfaces as a finding.
@@ -61,18 +61,18 @@ describe("tg inspect — static context wiring", () => {
 
   test("--project --copilot-context --json emits a unified findings array", () => {
     write(project, "AGENTS.md", "---\nbroken yaml\n---\n# Agents\n");
-    const r = runTg(["inspect", "--project", "--copilot-context", "--json"]);
+    const r = runTk(["inspect", "--project", "--copilot-context", "--json"]);
     expect(r.status).toBe(0);
     const parsed = JSON.parse(r.stdout);
     expect(Array.isArray(parsed.findings)).toBe(true);
     expect(parsed.static_context.findings.some((f: { source: string }) => f.source === "static_context")).toBe(true);
   });
 
-  test("persists a project-scope bucket to ~/.token-guard/projects/<fp>/inspect/latest.json", () => {
+  test("persists a project-scope bucket to ~/.token-killer/projects/<fp>/inspect/latest.json", () => {
     write(project, "AGENTS.md", "# Agents\n");
-    const r = runTg(["inspect", "--project", "--copilot-context"]);
+    const r = runTk(["inspect", "--project", "--copilot-context"]);
     expect(r.status).toBe(0);
-    const projectsDir = path.join(home, ".token-guard", "projects");
+    const projectsDir = path.join(home, ".token-killer", "projects");
     expect(existsSync(projectsDir)).toBe(true);
     // Find the single bucket dir.
     const buckets = readdirSync(projectsDir);
@@ -85,20 +85,20 @@ describe("tg inspect — static context wiring", () => {
   });
 
   test("--copilot-context with a runtime-only flag is an invalid-arg error (exit 1)", () => {
-    const r = runTg(["inspect", "--copilot-context", "--since", "7d"]);
+    const r = runTk(["inspect", "--copilot-context", "--since", "7d"]);
     expect(r.status).toBe(1);
     expect(r.stderr).toContain("cannot be combined with runtime-only flags");
   });
 
   test("--surface skills on an empty user scope reports zero and exits 2", () => {
     // No user-level skills present → static empty, runtime empty → exit 2.
-    const r = runTg(["inspect", "--copilot-context", "--surface", "skills"]);
+    const r = runTk(["inspect", "--copilot-context", "--surface", "skills"]);
     expect(r.status).toBe(2);
   });
 
   test("--fail-on warn exits 4 when a warn finding exists", () => {
     write(project, "AGENTS.md", "---\nbroken yaml\n---\n# Agents\n");
-    const r = runTg(["inspect", "--project", "--copilot-context", "--fail-on", "warn"]);
+    const r = runTk(["inspect", "--project", "--copilot-context", "--fail-on", "warn"]);
     expect(r.status).toBe(4);
   });
 });

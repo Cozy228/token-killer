@@ -1,1 +1,1 @@
-/Users/ziyu/Workspace/token-guard  62d59ca [codex/token-guard-node-cli]
+/Users/ziyu/Workspace/token-killer  62d59ca [codex/token-killer-node-cli]

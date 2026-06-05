@@ -1,12 +1,12 @@
 """
-Claude session execution for tg (token-guard) benchmark sessions.
+Claude session execution for tk (token-killer) benchmark sessions.
 
-Ported alongside rtk/scripts/benchmark-sessions/lib/runner.py and adapted to tg
-conventions: setup_rtk -> setup_tg, the per-session tracking artifact is tg's
-history JSONL under ~/.token-guard (tg_db_path) rather than rtk's SQLite db.
+Ported alongside rtk/scripts/benchmark-sessions/lib/runner.py and adapted to tk
+conventions: setup_rtk -> setup_tk, the per-session tracking artifact is tk's
+history JSONL under ~/.token-killer (tk_db_path) rather than rtk's SQLite db.
 
-Each ON VM runs Claude Code with the tg command-rewrite hook installed; each OFF
-VM runs the same prompt without tg. Per-VM artifacts (stdout JSON, OTEL log, tg
+Each ON VM runs Claude Code with the tk command-rewrite hook installed; each OFF
+VM runs the same prompt without tk. Per-VM artifacts (stdout JSON, OTEL log, tk
 history) are pulled back into the output directory.
 """
 
@@ -21,8 +21,8 @@ from .vm import vm_exec, vm_exec_checked, vm_pull, vm_push
 
 REMOTE_CODEBASE_DIR = "/home/ubuntu/codebase"
 REMOTE_TARBALL = "/tmp/codebase.tar.gz"
-# tg writes its tracking history under ~/.token-guard (see src/core/dataDir.ts).
-REMOTE_TG_HOME = "/home/ubuntu/.token-guard"
+# tk writes its tracking history under ~/.token-killer (see src/core/dataDir.ts).
+REMOTE_TK_HOME = "/home/ubuntu/.token-killer"
 
 
 @dataclass
@@ -31,8 +31,8 @@ class SessionResult:
     group: str  # "on" or "off"
     exit_code: int | None = None
     error: str | None = None
-    # Local path to the pulled-back tg tracking history (None when tg was OFF).
-    tg_db_path: str | None = None
+    # Local path to the pulled-back tk tracking history (None when tk was OFF).
+    tk_db_path: str | None = None
     stdout_path: str | None = None
     otel_path: str | None = None
 
@@ -66,9 +66,9 @@ async def setup_codebase(
         )
 
 
-async def setup_tg(name: str, setup_script: Path) -> None:
-    """Install and enable tg (and its Claude Code hook) on an ON VM."""
-    remote_script = "/tmp/setup-tg.sh"
+async def setup_tk(name: str, setup_script: Path) -> None:
+    """Install and enable tk (and its Claude Code hook) on an ON VM."""
+    remote_script = "/tmp/setup-tk.sh"
     await vm_push(name, setup_script, remote_script)
     await vm_exec_checked(name, f"chmod +x {remote_script} && {remote_script}")
 
@@ -79,7 +79,7 @@ def _build_session_command(task: TaskConfig, api_key: str, group: str) -> str:
         f"export {k}={v};" for k, v in task.env.items()
     )
     timeout_s = task.timeout_minutes * 60
-    # On ON VMs the tg hook is already installed (setup_tg); on OFF VMs it is not.
+    # On ON VMs the tk hook is already installed (setup_tk); on OFF VMs it is not.
     return (
         f"cd {REMOTE_CODEBASE_DIR} && "
         f"export ANTHROPIC_API_KEY={api_key}; "
@@ -120,17 +120,17 @@ async def _run_session(
         result.stdout_path = str(stdout_local)
         result.otel_path = str(otel_local)
 
-        # ON VMs accumulated tg tracking history; pull it back too.
+        # ON VMs accumulated tk tracking history; pull it back too.
         if group == "on":
-            tg_db_local = output_dir / f"{name}-tracking.jsonl"
+            tk_db_local = output_dir / f"{name}-tracking.jsonl"
             code, _, _ = await vm_exec(
                 name,
-                f"cat {REMOTE_TG_HOME}/projects/*/history.jsonl 2>/dev/null "
-                f"> /tmp/tg-tracking.jsonl",
+                f"cat {REMOTE_TK_HOME}/projects/*/history.jsonl 2>/dev/null "
+                f"> /tmp/tk-tracking.jsonl",
             )
             if code == 0:
-                await vm_pull(name, "/tmp/tg-tracking.jsonl", tg_db_local)
-                result.tg_db_path = str(tg_db_local)
+                await vm_pull(name, "/tmp/tk-tracking.jsonl", tk_db_local)
+                result.tk_db_path = str(tk_db_local)
     except Exception as exc:  # noqa: BLE001 — record, do not abort the whole pool
         result.error = str(exc)
 

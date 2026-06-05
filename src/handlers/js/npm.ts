@@ -1,5 +1,5 @@
 import { executeCommand } from "../../executor.js";
-import type { CommandHandler, ParsedCommand, RawResult, TgOptions } from "../../types.js";
+import type { CommandHandler, ParsedCommand, RawResult, TkOptions } from "../../types.js";
 import { makeFilteredResult } from "../base.js";
 
 // RTK: js/npm_cmd.rs — filter `npm`/`npm run` output: strip the lifecycle banner
@@ -67,7 +67,7 @@ export const npmHandler: CommandHandler = {
     return executeCommand(command);
   },
 
-  async filter(raw, _command, options: TgOptions) {
+  async filter(raw, _command, options: TkOptions) {
     return makeFilteredResult(this.name, raw, formatNpm(raw), options);
   },
 };

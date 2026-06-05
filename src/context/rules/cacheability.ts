@@ -39,7 +39,7 @@ export const cacheabilityChurnRule: PerFileRule = {
     }
     if (count === 0) return [];
 
-    // Token Guard managed files can be safely rewritten; project files are advisory.
+    // Token Killer managed files can be safely rewritten; project files are advisory.
     const managed = af.file.scope === "user";
     return [
       buildFinding(af, {

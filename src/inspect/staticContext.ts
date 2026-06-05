@@ -1,7 +1,7 @@
 // Bridge: inspect → static-context analyzer (goal "Module layout"). Keeps
 // src/context independent of the inspect command — this module wires the analyzer
 // into the inspect run, splits findings by scope, and persists the per-scope
-// unified Finding[] buckets that `tg optimize context` consumes.
+// unified Finding[] buckets that `tk optimize context` consumes.
 
 import { analyzeContext, type AnalyzeResult } from "../context/analyzer.js";
 import { contextProjectFingerprint } from "../context/discover.js";

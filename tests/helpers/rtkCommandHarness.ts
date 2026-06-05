@@ -4,14 +4,14 @@ import { fileURLToPath } from "node:url";
 
 import { expect } from "vitest";
 import { routeCommand } from "../../src/router.js";
-import type { FilteredResult, ParsedCommand, RawResult, TgOptions } from "../../src/types.js";
+import type { FilteredResult, ParsedCommand, RawResult, TkOptions } from "../../src/types.js";
 
 const repoRoot = path.resolve(
   path.dirname(fileURLToPath(import.meta.url)),
   "../..",
 );
 
-const options: TgOptions = {
+const options: TkOptions = {
   raw: false,
   stats: false,
   verbose: false,
@@ -100,7 +100,7 @@ function allowsRtkPassthrough(commandArgs: string[], stdout: string): boolean {
     );
     if (levelNone) return true;
     // Format flags (-c/-l/-L/-o/-Z/--json) and context flags (-A/-B/-C and long
-    // forms) are genuine RTK retention paths: tg passes them through verbatim.
+    // forms) are genuine RTK retention paths: tk passes them through verbatim.
     return args.some(
       (arg) =>
         [

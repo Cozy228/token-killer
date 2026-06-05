@@ -172,10 +172,10 @@ describe("RTK gh behavior", () => {
     const result = await filterRtkOutput(
       ["gh", "repo", "view"],
       JSON.stringify({
-        name: "token-guard",
+        name: "token-killer",
         owner: { login: "Cozy228" },
         description: "",
-        url: "https://github.com/Cozy228/token-guard",
+        url: "https://github.com/Cozy228/token-killer",
         stargazerCount: 7,
         forkCount: 2,
         isPrivate: false,
@@ -183,12 +183,12 @@ describe("RTK gh behavior", () => {
     );
 
     expectRtkParity(result, {
-      critical: ["Cozy228/token-guard", "[public]", "7 stars | 2 forks", "https://github.com/Cozy228/token-guard"],
+      critical: ["Cozy228/token-killer", "[public]", "7 stars | 2 forks", "https://github.com/Cozy228/token-killer"],
       exact: [
-        "Cozy228/token-guard",
+        "Cozy228/token-killer",
         "  [public]",
         "  7 stars | 2 forks",
-        "  https://github.com/Cozy228/token-guard",
+        "  https://github.com/Cozy228/token-killer",
       ].join("\n"),
     });
   });

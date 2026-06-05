@@ -1,6 +1,6 @@
-# Token Guard Handler Compression Audit Prompt
+# Token Killer Handler Compression Audit Prompt
 
-Use this prompt to audit or propose compression algorithms for **Token Guard (`tg`)**: a command proxy that runs `tg <original command>`, captures stdout/stderr, compresses output for coding agents, then exits with the original exit code. Billing is per token; the goal is to shrink CLI evidence without breaking the agent's next action.
+Use this prompt to audit or propose compression algorithms for **Token Killer (`tk`)**: a command proxy that runs `tk <original command>`, captures stdout/stderr, compresses output for coding agents, then exits with the original exit code. Billing is per token; the goal is to shrink CLI evidence without breaking the agent's next action.
 
 This is **evidence projection**, not generic compression (not gzip, not free-form LLM summarization by default).
 
@@ -20,7 +20,7 @@ This is **evidence projection**, not generic compression (not gzip, not free-for
 - Filtered contains omission semantics → use raw. Detect lines matching:
   - `+N more matches|files|packages|errors|commits|branches|changed lines`
   - `[N more lines]`
-  - `more lines/chars (use tg …)`
+  - `more lines/chars (use tk …)`
   - `repetitive lines collapsed`
   - `lines truncated)`
   - `... (more changes truncated)`
@@ -101,7 +101,7 @@ For **each handler below**, produce:
 - Filter processes **only** provided stdout (fixture/stdin), never shells out to live `git diff --stat`.
 - If input is unified (`diff --git`): use compact unified algorithm (per-file header, hunks, `+N -M` per file).
 - If input is already `--stat` / `--numstat` (no `diff --git`): passthrough unchanged.
-- Structural handler: truncation allowed only with honest markers and `[full diff: tg --raw git diff]` (or equivalent).
+- Structural handler: truncation allowed only with honest markers and `[full diff: tk --raw git diff]` (or equivalent).
 - Lossless peels: drop `index` lines; optional drop context-only lines with no adjacent +/- in hunk.
 - Optional capture policy: no pathspec + huge output → consider default `--stat` / `--numstat` while path-scoped commands keep full diff.
 - Do not mislabel parse failures as empty diff.
@@ -138,7 +138,7 @@ For **each handler below**, produce:
 
 ---
 
-### `read` (`tg read`)
+### `read` (`tk read`)
 
 **Agent needs:** Same as read-like; `aggressive` only when opted in.
 
@@ -486,7 +486,7 @@ Answer **yes** from compressed output alone, without raw:
 
 1. What is the exit semantics (success/failure) and the primary error message if failed?
 2. Which file(s) and line(s) should the agent open next?
-3. What exact command should the agent rerun to get more detail (`tg --raw …`) if information is incomplete?
+3. What exact command should the agent rerun to get more detail (`tk --raw …`) if information is incomplete?
 
 If any answer is **no**, the proposal fails retention regardless of `savingsPct`.
 

@@ -4,7 +4,7 @@ import { makeFilteredResult } from "../base.js";
 
 // RTK: python/ruff_cmd.rs — `rtk ruff` forces `check --output-format=json` and
 // summarizes the parsed diagnostics (counts + rule codes + file:line locations),
-// capping the violation list so a noisy run collapses to a compact report. tg
+// capping the violation list so a noisy run collapses to a compact report. tk
 // mirrors the command rewrite (buildRuffArgs) and the JSON summary, while keeping
 // a text-format fallback for already-rendered ruff output (e.g. fixture stdin).
 

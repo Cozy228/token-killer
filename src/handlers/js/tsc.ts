@@ -11,8 +11,8 @@ type TscIssue = {
   notes: string[];
 };
 
-// tg divergence (recorded in docs/align-rtk-divergences.md): RTK's tsc_cmd.rs emits
-// a 39-char box-drawing separator under the summary line. tg drops this decorative
+// tk divergence (recorded in docs/align-rtk-divergences.md): RTK's tsc_cmd.rs emits
+// a 39-char box-drawing separator under the summary line. tk drops this decorative
 // rule for tsc so that `npx tsc`, which re-dispatches through this same filter, stays
 // within its tighter output budget. No tsc assertion pins the separator (unlike
 // mypy/pip/format, which keep theirs), and dropping it only improves compression.

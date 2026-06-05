@@ -9,27 +9,27 @@ import {
   historyFile,
   projectFingerprint,
   rawOutputPathRelative,
-  tokenGuardHome,
+  tokenKillerHome,
 } from "../../src/core/dataDir.js";
 
-const previousHome = process.env.TOKEN_GUARD_HOME;
+const previousHome = process.env.TOKEN_KILLER_HOME;
 
 afterEach(async () => {
   if (previousHome === undefined) {
-    delete process.env.TOKEN_GUARD_HOME;
+    delete process.env.TOKEN_KILLER_HOME;
   } else {
-    process.env.TOKEN_GUARD_HOME = previousHome;
+    process.env.TOKEN_KILLER_HOME = previousHome;
   }
 });
 
 describe("dataDir", () => {
-  test("stores project data under TOKEN_GUARD_HOME", async () => {
-    const home = await mkdtemp(path.join(tmpdir(), "tg-home-"));
-    process.env.TOKEN_GUARD_HOME = home;
+  test("stores project data under TOKEN_KILLER_HOME", async () => {
+    const home = await mkdtemp(path.join(tmpdir(), "tk-home-"));
+    process.env.TOKEN_KILLER_HOME = home;
     const cwd = path.join(home, "workspace");
     const fingerprint = projectFingerprint(cwd);
 
-    expect(tokenGuardHome()).toBe(home);
+    expect(tokenKillerHome()).toBe(home);
     expect(fingerprint).toMatch(/^repo:[a-f0-9]{12}$/);
     expect(historyFile(cwd)).toBe(
       path.join(home, "projects", fingerprint, "history.jsonl"),
@@ -41,17 +41,17 @@ describe("dataDir", () => {
     await rm(home, { recursive: true, force: true });
   });
 
-  test("spawn passes TOKEN_GUARD_HOME under vitest", () => {
-    const probe = spawnSync(process.execPath, ["-e", "console.log(process.env.TOKEN_GUARD_HOME || 'missing')"], {
+  test("spawn passes TOKEN_KILLER_HOME under vitest", () => {
+    const probe = spawnSync(process.execPath, ["-e", "console.log(process.env.TOKEN_KILLER_HOME || 'missing')"], {
       encoding: "utf8",
-      env: { ...process.env, TOKEN_GUARD_HOME: "/tmp/tg-probe-home" },
+      env: { ...process.env, TOKEN_KILLER_HOME: "/tmp/tk-probe-home" },
     });
-    expect(probe.stdout.trim()).toBe("/tmp/tg-probe-home");
+    expect(probe.stdout.trim()).toBe("/tmp/tk-probe-home");
   });
 
-  test("CLI subprocess respects TOKEN_GUARD_HOME", async () => {
-    const dir = await mkdtemp(path.join(tmpdir(), "tg-env-cli-"));
-    const tgHome = path.join(dir, "tg-data");
+  test("CLI subprocess respects TOKEN_KILLER_HOME", async () => {
+    const dir = await mkdtemp(path.join(tmpdir(), "tk-env-cli-"));
+    const tkHome = path.join(dir, "tk-data");
     const repoRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "../..");
     const cli = path.join(repoRoot, "src/cli.ts");
     await writeFile(path.join(dir, "sample.txt"), "hello\n");
@@ -62,12 +62,12 @@ describe("dataDir", () => {
       {
         cwd: dir,
         encoding: "utf8",
-        env: { ...process.env, TOKEN_GUARD_HOME: tgHome },
+        env: { ...process.env, TOKEN_KILLER_HOME: tkHome },
       },
     );
 
     expect(result.status, result.stderr || result.stdout).toBe(0);
-    process.env.TOKEN_GUARD_HOME = tgHome;
+    process.env.TOKEN_KILLER_HOME = tkHome;
     const expectedHistory = historyFile(dir);
     const history = await readFile(expectedHistory, "utf8");
     expect(history).toContain("cat sample.txt");

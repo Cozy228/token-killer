@@ -1,30 +1,30 @@
 #!/usr/bin/env bash
-# Install and enable tg (token-guard) on a benchmark "ON" VM.
+# Install and enable tk (token-killer) on a benchmark "ON" VM.
 #
 # Ported alongside scripts/benchmark-sessions/lib/runner.py (which pushes this
-# script to ON VMs and runs it). Adapted to tg conventions: builds the tg Node
+# script to ON VMs and runs it). Adapted to tk conventions: builds the tk Node
 # CLI from the deployed codebase and installs the Claude Code command-rewrite
-# hook so every command Claude runs is routed through tg.
+# hook so every command Claude runs is routed through tk.
 set -euo pipefail
 
 CODEBASE_DIR="${CODEBASE_DIR:-/home/ubuntu/codebase}"
 
-echo "[setup-tg] Installing pnpm (if missing)..."
+echo "[setup-tk] Installing pnpm (if missing)..."
 if ! command -v pnpm >/dev/null 2>&1; then
   curl -fsSL https://get.pnpm.io/install.sh | sh -
   export PATH="$HOME/.local/share/pnpm:$PATH"
 fi
 
-echo "[setup-tg] Building tg from $CODEBASE_DIR..."
+echo "[setup-tk] Building tk from $CODEBASE_DIR..."
 cd "$CODEBASE_DIR"
 pnpm install --frozen-lockfile
 pnpm build
 
-echo "[setup-tg] Linking tg globally..."
+echo "[setup-tk] Linking tk globally..."
 pnpm link --global
 
-echo "[setup-tg] Installing Claude Code command-rewrite hook..."
-# Route every Bash command Claude issues through `tg` so its output is filtered.
+echo "[setup-tk] Installing Claude Code command-rewrite hook..."
+# Route every Bash command Claude issues through `tk` so its output is filtered.
 HOOK_DIR="$HOME/.claude"
 mkdir -p "$HOOK_DIR"
 cat > "$HOOK_DIR/settings.json" <<'JSON'
@@ -34,7 +34,7 @@ cat > "$HOOK_DIR/settings.json" <<'JSON'
       {
         "matcher": "Bash",
         "hooks": [
-          { "type": "command", "command": "tg rewrite" }
+          { "type": "command", "command": "tk rewrite" }
         ]
       }
     ]
@@ -42,4 +42,4 @@ cat > "$HOOK_DIR/settings.json" <<'JSON'
 }
 JSON
 
-echo "[setup-tg] tg ready: $(tg --version)"
+echo "[setup-tk] tk ready: $(tk --version)"

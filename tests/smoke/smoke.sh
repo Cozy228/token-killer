@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 #
-# tg Smoke Test Suite
-# Ported from RTK scripts/test-all.sh — exercises every tg command.
+# tk Smoke Test Suite
+# Ported from RTK scripts/test-all.sh — exercises every tk command.
 # Exit code: number of failures (0 = all green)
 #
 set -euo pipefail
@@ -111,24 +111,24 @@ section() {
 
 # ── Preamble ─────────────────────────────────────────
 
-TG=""
+TK=""
 
-find_tg() {
+find_tk() {
     if [ -f "./dist/cli.js" ]; then
-        TG="node ./dist/cli.js"
-    elif command -v tg >/dev/null 2>&1; then
-        TG="tg"
+        TK="node ./dist/cli.js"
+    elif command -v tk >/dev/null 2>&1; then
+        TK="tk"
     else
-        echo "tg binary not found. Run: pnpm run build"
+        echo "tk binary not found. Run: pnpm run build"
         exit 1
     fi
 }
 
-find_tg
+find_tk
 
-printf "${BOLD}tg Smoke Test Suite${NC}\n"
-printf "Binary: %s\n" "$TG"
-printf "Version: %s\n" "$($TG --version 2>&1)"
+printf "${BOLD}tk Smoke Test Suite${NC}\n"
+printf "Binary: %s\n" "$TK"
+printf "Version: %s\n" "$($TK --version 2>&1)"
 printf "Date: %s\n" "$(date '+%Y-%m-%d %H:%M')"
 
 if ! git rev-parse --is-inside-work-tree >/dev/null 2>&1; then
@@ -140,42 +140,42 @@ fi
 
 section "Version & Help"
 
-assert_contains "tg --version" "0." $TG --version
-assert_contains "tg --help" "Usage:" $TG --help
+assert_contains "tk --version" "0." $TK --version
+assert_contains "tk --help" "Usage:" $TK --help
 
 # ── 2. Ls ────────────────────────────────────────────
 
 section "Ls"
 
-assert_ok      "tg ls ."                        $TG ls .
-assert_contains "tg ls shows files"             "package.json" $TG ls .
-assert_contains "tg ls skips node_modules"      "package.json" $TG ls .
-assert_not_contains "tg ls skips node_modules"  "node_modules" $TG ls .
-assert_ok      "tg ls src/"                     $TG ls src/
+assert_ok      "tk ls ."                        $TK ls .
+assert_contains "tk ls shows files"             "package.json" $TK ls .
+assert_contains "tk ls skips node_modules"      "package.json" $TK ls .
+assert_not_contains "tk ls skips node_modules"  "node_modules" $TK ls .
+assert_ok      "tk ls src/"                     $TK ls src/
 
 # ── 3. Read / Cat ────────────────────────────────────
 
 section "Read / Cat"
 
-assert_ok      "tg cat package.json"            $TG cat package.json
-assert_contains "tg cat shows name"             "@company/tg" $TG cat package.json
-assert_ok      "tg cat README.md"               $TG cat README.md
-assert_contains "tg cat README content"         "tg" $TG cat README.md
-assert_ok      "tg read aggressive"             $TG read --level aggressive tests/integration/cli.test.ts
-assert_contains "tg read shows symbols"         "Symbols:" $TG read --level aggressive tests/integration/cli.test.ts
+assert_ok      "tk cat package.json"            $TK cat package.json
+assert_contains "tk cat shows name"             "@company/tk" $TK cat package.json
+assert_ok      "tk cat README.md"               $TK cat README.md
+assert_contains "tk cat README content"         "tk" $TK cat README.md
+assert_ok      "tk read aggressive"             $TK read --level aggressive tests/integration/cli.test.ts
+assert_contains "tk read shows symbols"         "Symbols:" $TK read --level aggressive tests/integration/cli.test.ts
 
 # ── 4. Git ───────────────────────────────────────────
 
 section "Git"
 
-assert_ok      "tg git status"                  $TG git status
-assert_contains "tg git status branch"          "* " $TG git status
-assert_ok      "tg git log"                     $TG git log
-assert_ok      "tg git log -5"                  $TG git log -- -5
-assert_ok      "tg git diff"                    $TG git diff
-assert_ok      "tg git diff"                    $TG git diff
-assert_ok      "tg git branch"                  $TG git branch
-assert_contains "tg git branch current"         "*" $TG git branch
+assert_ok      "tk git status"                  $TK git status
+assert_contains "tk git status branch"          "* " $TK git status
+assert_ok      "tk git log"                     $TK git log
+assert_ok      "tk git log -5"                  $TK git log -- -5
+assert_ok      "tk git diff"                    $TK git diff
+assert_ok      "tk git diff"                    $TK git diff
+assert_ok      "tk git branch"                  $TK git branch
+assert_contains "tk git branch current"         "*" $TK git branch
 
 # ── 5. Diff ──────────────────────────────────────────
 
@@ -184,80 +184,80 @@ section "Diff"
 DIFF_DIR="$(mktemp -d)"
 printf "export const value = 1;\n" > "$DIFF_DIR/old.ts"
 printf "export const value = 1;\nexport const extra = 2;\n" > "$DIFF_DIR/new.ts"
-assert_ok       "tg diff files"                 $TG diff "$DIFF_DIR/old.ts" "$DIFF_DIR/new.ts"
-assert_contains "tg diff summary"               "+1 -0" $TG diff "$DIFF_DIR/old.ts" "$DIFF_DIR/new.ts"
-assert_contains "tg diff added line"            "export const extra = 2;" $TG diff "$DIFF_DIR/old.ts" "$DIFF_DIR/new.ts"
+assert_ok       "tk diff files"                 $TK diff "$DIFF_DIR/old.ts" "$DIFF_DIR/new.ts"
+assert_contains "tk diff summary"               "+1 -0" $TK diff "$DIFF_DIR/old.ts" "$DIFF_DIR/new.ts"
+assert_contains "tk diff added line"            "export const extra = 2;" $TK diff "$DIFF_DIR/old.ts" "$DIFF_DIR/new.ts"
 rm -rf "$DIFF_DIR"
 
 # ── 6. Grep / Search ─────────────────────────────────
 
 section "Grep / Search"
 
-assert_ok      "tg rg 'export' src/"            $TG rg "export" src/
-assert_ok      "tg grep -r 'export' src/"       $TG grep -r "export" src/
-assert_contains "tg rg shows matches"           "src/" $TG rg "import" src/
-assert_ok      "tg rg with path"                $TG rg "handler" src/handlers/
+assert_ok      "tk rg 'export' src/"            $TK rg "export" src/
+assert_ok      "tk grep -r 'export' src/"       $TK grep -r "export" src/
+assert_contains "tk rg shows matches"           "src/" $TK rg "import" src/
+assert_ok      "tk rg with path"                $TK rg "handler" src/handlers/
 
 # ── 7. Find ──────────────────────────────────────────
 
 section "Find"
 
-assert_ok      "tg find src -name '*.ts'"       $TG find src -name "*.ts"
+assert_ok      "tk find src -name '*.ts'"       $TK find src -name "*.ts"
 # listLike compacts a larger listing into the "NF MD:" header + per-directory
 # grouping ("core/ …", "handlers/ …"). Assert that directory-grouping header
 # (the "shows directories" signal) rather than a literal "src/" prefix, which only
 # survives in the small-input raw-passthrough mode.
-assert_contains "tg find shows directories"     "D:" $TG find src -name "*.ts"
+assert_contains "tk find shows directories"     "D:" $TK find src -name "*.ts"
 
 # ── 8. Generic passthrough ──────────────────────────
 
 section "Generic passthrough"
 
-assert_ok      "tg echo hello"                  $TG echo hello
-assert_contains "tg echo output"                "hello" $TG echo hello
-assert_ok      "tg node -e console.log"         $TG node -e "console.log('rtk-style')"
-assert_contains "tg node output"                "rtk-style" $TG node -e "console.log('rtk-style')"
+assert_ok      "tk echo hello"                  $TK echo hello
+assert_contains "tk echo output"                "hello" $TK echo hello
+assert_ok      "tk node -e console.log"         $TK node -e "console.log('rtk-style')"
+assert_contains "tk node output"                "rtk-style" $TK node -e "console.log('rtk-style')"
 
 # ── 9. Global flags ─────────────────────────────────
 
 section "Global flags"
 
-assert_contains "tg --stats shows savings"      "## Token Savings" $TG --stats ls .
-assert_contains "tg --verbose verbose"          "Token Savings" $TG --verbose ls .
-assert_ok      "tg --raw ls"                    $TG --raw ls .
-assert_contains "tg --raw raw output"           "package.json" $TG --raw ls .
-assert_ok      "tg --max-lines 5 ls"            $TG --max-lines 5 ls .
-assert_ok      "tg --max-chars 500 ls"          $TG --max-chars 500 ls .
-assert_ok      "tg --save-raw ls"               $TG --save-raw ls .
-assert_ok      "tg --no-save-raw ls"            $TG --no-save-raw ls .
+assert_contains "tk --stats shows savings"      "## Token Savings" $TK --stats ls .
+assert_contains "tk --verbose verbose"          "Token Savings" $TK --verbose ls .
+assert_ok      "tk --raw ls"                    $TK --raw ls .
+assert_contains "tk --raw raw output"           "package.json" $TK --raw ls .
+assert_ok      "tk --max-lines 5 ls"            $TK --max-lines 5 ls .
+assert_ok      "tk --max-chars 500 ls"          $TK --max-chars 500 ls .
+assert_ok      "tk --save-raw ls"               $TK --save-raw ls .
+assert_ok      "tk --no-save-raw ls"            $TK --no-save-raw ls .
 
 # ── 10. Report ───────────────────────────────────────
 
 section "Report"
 
-assert_ok      "tg --report"                    $TG --report
-assert_contains "tg --report title"             "Token Savings Report" $TG --report
-assert_ok      "tg --report --json"             $TG --report --json
-assert_contains "tg --report --json valid"      '"commands"' $TG --report --json
-assert_ok      "tg --report --csv"              $TG --report --csv
-assert_contains "tg --report --csv header"      "commands,raw_tokens" $TG --report --csv
+assert_ok      "tk --report"                    $TK --report
+assert_contains "tk --report title"             "Token Savings Report" $TK --report
+assert_ok      "tk --report --json"             $TK --report --json
+assert_contains "tk --report --json valid"      '"commands"' $TK --report --json
+assert_ok      "tk --report --csv"              $TK --report --csv
+assert_contains "tk --report --csv header"      "commands,raw_tokens" $TK --report --csv
 
 # ── 11. Error handling ──────────────────────────────
 
 section "Error handling"
 
-assert_fails   "tg (no command)"                $TG
-assert_exit    "tg exit code passthrough" 7     $TG node -e "process.exit(7)"
-assert_exit    "tg failed command" 1            $TG node -e "process.exit(1)"
+assert_fails   "tk (no command)"                $TK
+assert_exit    "tk exit code passthrough" 7     $TK node -e "process.exit(7)"
+assert_exit    "tk failed command" 1            $TK node -e "process.exit(1)"
 
 # ── 12. Tsc (conditional) ───────────────────────────
 
 section "Tsc (TypeScript)"
 
 if command -v tsc >/dev/null 2>&1; then
-    assert_ok   "tg tsc --noEmit"              $TG tsc --noEmit
+    assert_ok   "tk tsc --noEmit"              $TK tsc --noEmit
 else
-    skip_test "tg tsc" "tsc not installed"
+    skip_test "tk tsc" "tsc not installed"
 fi
 
 # ── 13. Python (conditional) ────────────────────────
@@ -265,27 +265,27 @@ fi
 section "Python (conditional)"
 
 if command -v pytest >/dev/null 2>&1; then
-    assert_ok   "tg pytest --version"           $TG pytest --version
+    assert_ok   "tk pytest --version"           $TK pytest --version
 else
-    skip_test "tg pytest" "pytest not installed"
+    skip_test "tk pytest" "pytest not installed"
 fi
 
 if command -v ruff >/dev/null 2>&1; then
-    assert_ok   "tg ruff --version"             $TG ruff --version
+    assert_ok   "tk ruff --version"             $TK ruff --version
 else
-    skip_test "tg ruff" "ruff not installed"
+    skip_test "tk ruff" "ruff not installed"
 fi
 
 if command -v pip >/dev/null 2>&1; then
-    assert_ok   "tg pip --version"              $TG pip --version
+    assert_ok   "tk pip --version"              $TK pip --version
 else
-    skip_test "tg pip" "pip not installed"
+    skip_test "tk pip" "pip not installed"
 fi
 
 if command -v mypy >/dev/null 2>&1; then
-    assert_ok   "tg mypy --version"             $TG mypy --version
+    assert_ok   "tk mypy --version"             $TK mypy --version
 else
-    skip_test "tg mypy" "mypy not installed"
+    skip_test "tk mypy" "mypy not installed"
 fi
 
 # ── 14. JS Testing (conditional) ────────────────────
@@ -293,15 +293,15 @@ fi
 section "JS Testing (conditional)"
 
 if command -v vitest >/dev/null 2>&1; then
-    assert_ok   "tg vitest --version"           $TG vitest --version
+    assert_ok   "tk vitest --version"           $TK vitest --version
 else
-    skip_test "tg vitest" "vitest not installed"
+    skip_test "tk vitest" "vitest not installed"
 fi
 
 if command -v jest >/dev/null 2>&1; then
-    assert_ok   "tg jest --version"             $TG jest --version
+    assert_ok   "tk jest --version"             $TK jest --version
 else
-    skip_test "tg jest" "jest not installed"
+    skip_test "tk jest" "jest not installed"
 fi
 
 # ── 15. ESLint (conditional) ────────────────────────
@@ -309,55 +309,55 @@ fi
 section "ESLint (conditional)"
 
 if command -v eslint >/dev/null 2>&1; then
-    assert_ok   "tg eslint --version"           $TG eslint --version
+    assert_ok   "tk eslint --version"           $TK eslint --version
 else
-    skip_test "tg eslint" "eslint not installed"
+    skip_test "tk eslint" "eslint not installed"
 fi
 
 # ── 16. Npm / Pnpm (conditional) ────────────────────
 
 section "Npm / Pnpm (conditional)"
 
-assert_ok      "tg npm --version"               $TG npm --version
-assert_contains "tg npm list"                   "packages" $TG npm list --depth=0 2>&1 || true
-assert_ok      "tg pnpm --version"              $TG pnpm --version
-assert_ok      "tg pnpm list"                   $TG pnpm list --depth=0 2>&1 || true
+assert_ok      "tk npm --version"               $TK npm --version
+assert_contains "tk npm list"                   "packages" $TK npm list --depth=0 2>&1 || true
+assert_ok      "tk pnpm --version"              $TK pnpm --version
+assert_ok      "tk pnpm list"                   $TK pnpm list --depth=0 2>&1 || true
 
 # ── 17. Java (conditional) ──────────────────────────
 
 section "Java (conditional)"
 
 if command -v mvn >/dev/null 2>&1; then
-    assert_ok "tg mvn --version"                $TG mvn --version
+    assert_ok "tk mvn --version"                $TK mvn --version
 else
-    skip_test "tg mvn" "maven not installed"
+    skip_test "tk mvn" "maven not installed"
 fi
 
 if command -v gradle >/dev/null 2>&1; then
-    assert_ok "tg gradle --version"             $TG gradle --version
+    assert_ok "tk gradle --version"             $TK gradle --version
 else
-    skip_test "tg gradle" "gradle not installed"
+    skip_test "tk gradle" "gradle not installed"
 fi
 
 if command -v javac >/dev/null 2>&1; then
-    assert_ok "tg javac -version"               $TG javac -version
+    assert_ok "tk javac -version"               $TK javac -version
 else
-    skip_test "tg javac" "javac not installed"
+    skip_test "tk javac" "javac not installed"
 fi
 
 # ── 18. Large output compression ────────────────────
 
 section "Large output passthrough"
 
-LARGE_OUT=$($TG node -e "for(let i=0;i<200;i++) console.log('line '+i)" 2>&1)
+LARGE_OUT=$($TK node -e "for(let i=0;i<200;i++) console.log('line '+i)" 2>&1)
 LARGE_OUT_LINES="$(printf "%s\n" "$LARGE_OUT" | wc -l | tr -d ' ')"
 if [ "$LARGE_OUT_LINES" -eq 200 ]; then
     PASS=$((PASS + 1))
-    printf "  ${GREEN}PASS${NC}  %s\n" "tg passes through large generic output"
+    printf "  ${GREEN}PASS${NC}  %s\n" "tk passes through large generic output"
 else
     FAIL=$((FAIL + 1))
-    FAILURES+=("tg passes through large generic output")
-    printf "  ${RED}FAIL${NC}  %s (expected 200 lines, got %s)\n" "tg passes through large generic output" "$LARGE_OUT_LINES"
+    FAILURES+=("tk passes through large generic output")
+    printf "  ${RED}FAIL${NC}  %s (expected 200 lines, got %s)\n" "tk passes through large generic output" "$LARGE_OUT_LINES"
 fi
 
 # ══════════════════════════════════════════════════════

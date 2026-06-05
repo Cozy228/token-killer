@@ -1,9 +1,9 @@
 import { describe, expect, test } from "vitest";
 
 import { genericHandler } from "../../../src/handlers/generic.js";
-import type { RawResult, TgOptions } from "../../../src/types.js";
+import type { RawResult, TkOptions } from "../../../src/types.js";
 
-const options: TgOptions = {
+const options: TkOptions = {
   raw: false,
   stats: false,
   verbose: false,

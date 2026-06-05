@@ -1,6 +1,6 @@
-# Token Guard
+# Token Killer
 
-Token Guard (`tg`) is a local Copilot cost-control companion. It reduces unconscious
+Token Killer (`tk`) is a local Copilot cost-control companion. It reduces unconscious
 token inflation in GitHub Copilot workflows through a command proxy, a hook runtime, and
 a read-only session scanner. This glossary fixes the project's canonical vocabulary; it
 is not a spec and carries no implementation detail.
@@ -8,7 +8,7 @@ is not a spec and carries no implementation detail.
 ## Surfaces
 
 **Command proxy**:
-The `tg <command>` entry point that runs a real command and compresses its output.
+The `tk <command>` entry point that runs a real command and compresses its output.
 _Avoid_: wrapper, RTK clone.
 
 **Hook runtime**:
@@ -17,7 +17,7 @@ before and after they run. Distinct from the command proxy.
 _Avoid_: plugin, middleware.
 
 **Inspect**:
-Token Guard's single read-only analysis entry, `tg inspect`, runnable anywhere. It runs
+Token Killer's single read-only analysis entry, `tk inspect`, runnable anywhere. It runs
 every analyzer over two evidence classes: [Runtime evidence](#evidence-classes) (local
 Copilot session history, always analyzed) and [Static context](#evidence-classes). Static
 context is [scope](#evidence-classes)-aware: the default scope is **user-level** global
@@ -39,14 +39,14 @@ _Avoid_: mode, channel, layer (overloaded with "Layer 2").
 
 **Shim**:
 A delivery tier that places per-tool wrapper executables (`git`, `git.cmd`, …) ahead of
-the real tools on the agent's PATH; each wrapper just calls `tg <tool> "$@"`. Host-agnostic
+the real tools on the agent's PATH; each wrapper just calls `tk <tool> "$@"`. Host-agnostic
 and deterministic (0-token, 100% coverage), unlike injection. The proxy, not the wrapper,
 decides whether to compress.
 _Avoid_: wrapper (the wrapper file is one part of the shim), RTK shim (RTK has none).
 
 **Instruction injection**:
 The lowest delivery tier: a `.github/copilot-instructions.md` (or equivalent) telling the
-model to prefix commands with `tg`. Relies on model compliance, so coverage is
+model to prefix commands with `tk`. Relies on model compliance, so coverage is
 probabilistic — the fallback when neither hook nor shim is available.
 _Avoid_: prompt hack, CLAUDE.md mode.
 
@@ -74,7 +74,7 @@ _Avoid_: TTY command, raw command.
 ## Hosts and dialects
 
 **Host**:
-A Copilot surface that invokes Token Guard hooks. The two in scope are Copilot CLI and
+A Copilot surface that invokes Token Killer hooks. The two in scope are Copilot CLI and
 VS Code Copilot Chat. GitHub Copilot hooks are one unified system shared across them.
 _Avoid_: editor, client, IDE.
 
@@ -133,11 +133,53 @@ filtering.
 _Avoid_: compression (when content may be dropped), summary.
 
 **Fail-open**:
-Token Guard's own stance: any internal parse/config/policy error resolves to `allow`,
+Token Killer's own stance: any internal parse/config/policy error resolves to `allow`,
 never a crash. Note the host's own failure mode may differ (Copilot CLI preToolUse is
 fail-closed on crash/timeout), so the runtime must catch internally and emit explicit
 `allow` rather than letting the process die.
 _Avoid_: safe mode, default-allow.
+
+## Metrics ledgers
+
+Token Killer's value accounting. Four separate accounts, shown side by side and **never
+summed**; honesty is the moat, so a measured number is never added to an estimated one.
+
+**Ledger**:
+One of the four independent value accounts Token Killer keeps: **measured command savings**
+(account ①), **optimizer deltas** (②), **governance opportunities** (③), and **quality
+guardrails** (④). Each is independently serializable and rendered as its own section; no
+ledger references another's totals. The read-side join is [Report](#metrics-ledgers).
+_Avoid_: total, score, value (as a single combined figure).
+
+**Report**:
+`tk report` — the read-only command that joins all four [Ledgers](#metrics-ledgers) into four
+separate sections with no grand total and no cross-ledger arithmetic. Distinct from
+[`tk gain`](#metrics-ledgers), which renders ledger ① alone. It owns no new storage; it reads
+the existing scattered stores.
+_Avoid_: dashboard, summary (it deliberately produces no single summary number).
+
+**Gain**:
+`tk gain` — the ledger-①-only analytics surface (RTK-`gain` parity): measured command
+savings over time, per-project, per-handler. The only place `saved_tokens` is a valid name.
+_Avoid_: report (that is the four-ledger superset).
+
+**estimate_kind**:
+The provenance tag every ledger figure carries: `measured` (a real diff or count) versus
+`opportunity` / `heuristic` (an estimate). It is what physically separates the accounts so a
+measured figure is never silently combined with an estimate.
+_Avoid_: confidence (a multiplier — banned in ②), accuracy.
+
+**exposure_class**:
+How often a [Context surface](#findings-and-optimization) loads, recorded as a **category and
+never a multiplier**: `always-on` (instructions/`AGENTS.md`/`CLAUDE.md`/stable prompt prefix),
+`path-scoped` (`*.instructions.md` with `applyTo`), `on-invocation` (prompts/agents/skills).
+The optimizer-delta ledger uses it to qualify a trim without manufacturing a `load_count`.
+_Avoid_: load_count, frequency, weight (it is none of these; it never multiplies a token total).
+
+**saved_tokens**:
+The measured `raw − delivered` token figure of a single compressed command. Reserved for
+ledger ① alone; no other ledger or output field may use this name.
+_Avoid_: reusing for estimates, optimizer deltas, or governance figures.
 
 ## Evidence and recovery
 
@@ -152,7 +194,7 @@ counted as provider token savings; never a model-input cache.
 _Avoid_: cache (unqualified).
 
 **User-level**:
-Scope of every Token Guard write — `~/.token-guard/` for data, `~/.copilot/hooks/` for
+Scope of every Token Killer write — `~/.token-killer/` for data, `~/.copilot/hooks/` for
 hook wiring. The project repository is never written.
 _Avoid_: global, local.
 
@@ -211,18 +253,18 @@ _Avoid_: ecosystem (use adapter), target (overloaded).
 How a finding may be acted on: `safe_mechanical` (user-level/managed marker writes only),
 `suggested_diff` (printed, never auto-written to project files), `advisory` (judgment call
 for the team), `delivery` (a runtime finding whose action is installing shim/hook via
-`tg init`), or `non_goal`.
+`tk init`), or `non_goal`.
 _Avoid_: severity (orthogonal), action.
 
 **Optimize**:
-The downstream consumer `tg optimize context`. It reads inspect's persisted unified report
+The downstream consumer `tk optimize context`. It reads inspect's persisted unified report
 (or triggers a full inspect when absent), takes only `source = static_context` findings, and
 applies safe mechanical fixes or emits suggested diffs/advice. Never a second scanner.
 _Avoid_: optimizer scan, fixer, rewriter (it does not rewrite project files by default).
 
 ## Compression operations and evidence classes
 
-These distinctions separate what `tg` always does from what RTK does that `tg` must
+These distinctions separate what `tk` always does from what RTK does that `tk` must
 not blindly inherit. RTK collapses all of it under one word, "truncation".
 
 **Noise-removal**:
@@ -230,12 +272,12 @@ Dropping output that does not change the agent's next action — ANSI, progress 
 spinners, repeated blank lines, decorative borders, the verbose list of *passed*
 tests, fully duplicate log lines, deterministically irrelevant directories
 (`node_modules`, `.git`, `dist`). Lossless with respect to evidence; always permitted.
-This is the core of `tg`'s [Projection](#decisions-and-output).
+This is the core of `tk`'s [Projection](#decisions-and-output).
 _Avoid_: truncation (the word hides whether evidence was dropped).
 
 **Evidence-capping**:
 Showing the first N items of an evidence set and marking the rest with an overflow marker
-(`+N more`, `[+N more]`, `[N more lines]`, bare `+N`). **Banned outright in `tg`** — it is
+(`+N more`, `[+N more]`, `[N more lines]`, bare `+N`). **Banned outright in `tk`** — it is
 the "fake completeness" PRINCIPLES.md forbids, and recovery does not redeem it. RTK's
 always-on `CAP_*` constants and every `+N more` marker are removed. The only over-budget
 reductions allowed are the **over-budget ladder** below.
@@ -279,7 +321,7 @@ _Avoid_: log output (ambiguous with the file-`log` handler), inventory, tail.
 **Lossless capture**:
 The rule that a handler's capture-time command rewrite may only make output *more*
 machine-readable (grep `-n`/`-H`, `docker ps --format`, `kubectl -o json`) and must
-never drop evidence before `tg` sees it. Injecting a lossy fetch limit (`logs --tail N`)
+never drop evidence before `tk` sees it. Injecting a lossy fetch limit (`logs --tail N`)
 is forbidden — it pre-truncates the very snapshot the [Recovery contract](#evidence-and-recovery)
 relies on, so no later channel can recover what was never captured.
 _Avoid_: capture filter (it does not filter, it must preserve).
@@ -291,11 +333,42 @@ dropping only repetition/formatting — e.g. "247 matches in 12 files" followed 
 not qualify; it discards location evidence.
 _Avoid_: summary, sample.
 
+## Reporting and telemetry
+
+**Ledger**:
+One of four value accounts Token Killer keeps separately — ① measured command savings,
+② optimizer deltas, ③ governance opportunities, ④ quality guardrails. Displayed side by
+side, **never summed**; honesty is the moat. The field `saved_tokens` names a quantity in
+ledger ① and nowhere else.
+_Avoid_: total value, combined savings, grand total.
+
+**Gain**:
+The user-facing savings-analytics command (`tk gain`), scoped to [ledger](#reporting-and-telemetry)
+① only — measured command savings read from `history.jsonl` (summary, per-project `--user`,
+time buckets, graph, history, failures, quota). It never sums across ledgers and never invents
+estimates. Distinct from `tk report`, the future four-ledger superset.
+_Avoid_: report (that is the four-ledger view), stats.
+
+**Device hash**:
+The anonymous, stable, purgeable install identifier carried only by opt-in network
+[telemetry](#reporting-and-telemetry) — `SHA-256` of a one-time random salt held in
+`telemetry-state.json`. It contains no hostname, username, or path, and exists so an
+enterprise operator can count installs and retention. `tk telemetry purge` resets it.
+_Avoid_: device id, machine id, installation id (the inspect-v1 disallowed term this supersedes).
+
+**Telemetry consent**:
+Two independent opt-ins, neither implying the other: `telemetryExport` (write the aggregate
+payload to a local file) and `telemetry` (upload it over the build-time endpoint). Network
+upload requires `telemetry` true **and** a non-empty baked-in endpoint; otherwise it writes
+the local file and warns. A user who enabled only local export is never silently upgraded to
+network upload.
+_Avoid_: telemetry flag (ambiguous between the two), tracking.
+
 **Recovery contract**:
 The condition that lets an overflow marker exist at all (per
 [PRINCIPLES.md](docs/PRINCIPLES.md) and the audit prompt): the same turn persists
 [Raw evidence](#evidence-and-recovery) **and** the compressed output names how to read
 it back. The inline pointer cites the **persisted snapshot file path** (the exact bytes
-the digest was derived from), not a `tg --raw <cmd>` re-run — a re-run re-executes the
+the digest was derived from), not a `tk --raw <cmd>` re-run — a re-run re-executes the
 command and can drift from what the agent is looking at once the repo changes mid-turn.
 _Avoid_: re-run pointer (it can drift); raw pointer alone (the persisted store must exist).

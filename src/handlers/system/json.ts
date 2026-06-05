@@ -1,16 +1,16 @@
 import { executeCommand } from "../../executor.js";
-import type { CommandHandler, ParsedCommand, RawResult, TgOptions } from "../../types.js";
+import type { CommandHandler, ParsedCommand, RawResult, TkOptions } from "../../types.js";
 import { makeFilteredResult } from "../base.js";
 
 // RTK: system/json_cmd.rs — inspect/compact JSON to save tokens on large payloads.
 //   `rtk json <file>` reads the file and, by default (no --schema/--keys-only),
 //   emits the compact form: sorted object keys with values, long strings
-//   truncated, arrays summarized. The tg handler mirrors this by compacting the
+//   truncated, arrays summarized. The tk handler mirrors this by compacting the
 //   JSON content carried in raw.stdout.
 //
 // Two RTK reductions are intentionally NOT reachable through this handler:
 //   - validate_json_extension(): RTK rejects toml/yaml/xml/csv/ini/env/txt before
-//     I/O. By the time tg sees raw.stdout the command already ran, so extension
+//     I/O. By the time tk sees raw.stdout the command already ran, so extension
 //     gating happens upstream; we mirror only the content compaction here.
 //   - filter_json_string() (--schema, types-only): a separate flag-gated path. The
 //     default `json <file>` invocation uses filter_json_compact, which is what we
@@ -138,7 +138,7 @@ function filterJsonCompact(jsonStr: string, maxDepth: number): string | undefine
   try {
     value = JSON.parse(jsonStr) as JsonValue;
   } catch {
-    return undefined; // RTK bails with "Failed to parse JSON"; tg falls back to raw.
+    return undefined; // RTK bails with "Failed to parse JSON"; tk falls back to raw.
   }
   return compactJson(value, 0, maxDepth);
 }
@@ -160,7 +160,7 @@ export const jsonHandler: CommandHandler = {
   execute(command) {
     return executeCommand(command);
   },
-  async filter(raw, _command, options: TgOptions) {
+  async filter(raw, _command, options: TkOptions) {
     const { output, error } = formatJson(raw);
     return makeFilteredResult(this.name, raw, output, options, error);
   },

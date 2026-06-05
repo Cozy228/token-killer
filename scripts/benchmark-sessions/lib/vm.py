@@ -1,12 +1,12 @@
 """
-Cloud VM pool management for tg (token-guard) benchmark sessions.
+Cloud VM pool management for tk (token-killer) benchmark sessions.
 
-Ported alongside rtk/scripts/benchmark-sessions/lib/runner.py and adapted to tg
-conventions (VM naming uses a "tg-bench" prefix; ON/OFF groups). Uses
-`gcloud compute` to provision a pool of ephemeral VMs, half running tg ON and
-half running tg OFF, then tears them down.
+Ported alongside rtk/scripts/benchmark-sessions/lib/runner.py and adapted to tk
+conventions (VM naming uses a "tk-bench" prefix; ON/OFF groups). Uses
+`gcloud compute` to provision a pool of ephemeral VMs, half running tk ON and
+half running tk OFF, then tears them down.
 
-VM naming: ``{PREFIX}-{group}-{index}`` (e.g. ``tg-bench-on-0``). The ``-on-`` /
+VM naming: ``{PREFIX}-{group}-{index}`` (e.g. ``tk-bench-on-0``). The ``-on-`` /
 ``-off-`` infixes are what runner.py uses to split the pool into groups.
 """
 
@@ -16,12 +16,12 @@ import asyncio
 import os
 from pathlib import Path
 
-VM_PREFIX = "tg-bench"
-ZONE = os.environ.get("TG_BENCH_ZONE", "us-central1-a")
-MACHINE_TYPE = os.environ.get("TG_BENCH_MACHINE_TYPE", "e2-standard-4")
-IMAGE_FAMILY = os.environ.get("TG_BENCH_IMAGE_FAMILY", "ubuntu-2404-lts-amd64")
-IMAGE_PROJECT = os.environ.get("TG_BENCH_IMAGE_PROJECT", "ubuntu-os-cloud")
-SSH_USER = os.environ.get("TG_BENCH_SSH_USER", "ubuntu")
+VM_PREFIX = "tk-bench"
+ZONE = os.environ.get("TK_BENCH_ZONE", "us-central1-a")
+MACHINE_TYPE = os.environ.get("TK_BENCH_MACHINE_TYPE", "e2-standard-4")
+IMAGE_FAMILY = os.environ.get("TK_BENCH_IMAGE_FAMILY", "ubuntu-2404-lts-amd64")
+IMAGE_PROJECT = os.environ.get("TK_BENCH_IMAGE_PROJECT", "ubuntu-os-cloud")
+SSH_USER = os.environ.get("TK_BENCH_SSH_USER", "ubuntu")
 
 
 async def _run(*args: str) -> tuple[int, str, str]:

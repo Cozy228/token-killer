@@ -1,5 +1,5 @@
 import { executeCommand } from "../../executor.js";
-import type { CommandHandler, ParsedCommand, RawResult, TgOptions } from "../../types.js";
+import type { CommandHandler, ParsedCommand, RawResult, TkOptions } from "../../types.js";
 import { makeFilteredResult, rawText } from "../base.js";
 
 // RTK: cloud/psql_cmd.rs — PostgreSQL client output compression. Detects table
@@ -168,9 +168,9 @@ export const psqlHandler: CommandHandler = {
     return executeCommand(command);
   },
 
-  async filter(raw: RawResult, _command, options: TgOptions) {
+  async filter(raw: RawResult, _command, options: TkOptions) {
     // RTK: cloud/psql_cmd.rs::run uses RunOptions::stdout_only() — only stdout is
-    // filtered. tg's rawText merges stdout+stderr; on the success path stderr is
+    // filtered. tk's rawText merges stdout+stderr; on the success path stderr is
     // empty, matching RTK. The filter operates on the merged raw text.
     return makeFilteredResult(this.name, raw, filterPsqlOutput(rawText(raw)), options);
   },

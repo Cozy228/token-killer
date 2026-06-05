@@ -1,14 +1,14 @@
-# Goal — Real-CLI command-construction parity (RTK → tg)
+# Goal — Real-CLI command-construction parity (RTK → tk)
 
 Status: **done** (this batch). Supersedes the P1 item in
-`/tmp/token-guard-rtk-migration-handoff.md`. Reply Chinese; code/comments English; PNPM.
+`/tmp/token-killer-rtk-migration-handoff.md`. Reply Chinese; code/comments English; PNPM.
 
 ## Why this exists
 
 The migration harness (`tests/helpers/rtkCommandHarness.ts`) only exercises
 `filter(stdout)` and **bypasses `execute()`**. Half of RTK's value is
 *command rewriting*: RTK forces `ls -la`, `git status --porcelain -b`,
-`docker ps --format ...`, `kubectl get pods -o json`, `curl -s`, etc. tg's
+`docker ps --format ...`, `kubectl get pods -o json`, `curl -s`, etc. tk's
 `executeCommand` runs the user's RAW command, so for any RTK-rewrite case the
 real CLI output isn't the shape `filter()` expects → it falls back to raw → NOT
 parity. "Migration green" proves *filter* parity, not *real-CLI* parity.
@@ -32,7 +32,7 @@ filter must keep seeing the user's args) → unit test asserting the built args.
 
 Command construction RTK performs (the child it actually spawns):
 
-| tg command | RTK spawns | RTK source |
+| tk command | RTK spawns | RTK source |
 |---|---|---|
 | `docker ps` | `docker ps --format "{{.ID}}\t{{.Names}}\t{{.Status}}\t{{.Image}}\t{{.Ports}}"` | container.rs:64 |
 | `docker ps -a` | `docker ps -a --format "{{.State}}\t{{.ID}}\t{{.Names}}\t{{.Status}}\t{{.Image}}\t{{.Ports}}"` | container.rs:118 |
@@ -46,7 +46,7 @@ Command construction RTK performs (the child it actually spawns):
 | `kubectl logs <pod>` | `kubectl logs --tail 100 <pod> <rest>` | container.rs:488 |
 | `git status` (compact path) | `git status --porcelain -b` | git.rs:70 |
 | `git branch` (list mode) | `git branch [-a if no list-flag] --no-color <args>` | git.rs:1334 |
-| `cat <file> [rtk-flags]` | RTK `read` reads file directly; tg shells to `cat` but must pass **only file operands** (no RTK flags) | read.rs |
+| `cat <file> [rtk-flags]` | RTK `read` reads file directly; tk shells to `cat` but must pass **only file operands** (no RTK flags) | read.rs |
 | `curl <args>` | `curl -s <args>` | curl_cmd.rs:20 |
 
 Dispatch guards (must mirror so execute & filter agree):
@@ -86,7 +86,7 @@ Dispatch guards (must mirror so execute & filter agree):
 
 ## Intentional divergences (do NOT "align" away — documented)
 
-- **`tg read`** keeps its richer product semantics (levels minimal/balanced/
+- **`tk read`** keeps its richer product semantics (levels minimal/balanced/
   aggressive, stdin `-`, multi-file, first-N window with ` | ` and NO
   `[N more lines]` marker) locked by `tests/integration/cli.test.ts`. RTK's
   `read` uses `smart_truncate` + `[N more lines]`. This is a product divergence

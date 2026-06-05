@@ -6,7 +6,7 @@ src/core/pipeline.ts:export async function runPipeline(
 src/core/savings.ts:export type Savings = {
 src/core/savings.ts:export function estimateTokens(text: string): number {
 src/core/savings.ts:export function calculateSavings(raw: string, output: string): Savings {
-src/core/report.ts:export async function buildReport(options: TgOptions): Promise<string> {
+src/core/report.ts:export async function buildReport(options: TkOptions): Promise<string> {
 src/handlers/index.ts:export const handlers: CommandHandler[] = [
 src/handlers/generic.ts:export const genericHandler: CommandHandler = {
 src/handlers/base.ts:export function rawText(raw: RawResult): string {
@@ -20,5 +20,5 @@ src/handlers/git/branch.ts:export const gitBranchHandler: CommandHandler = {
 src/types.ts:export type ParsedCommand = {
 src/types.ts:export type RawResult = {
 src/types.ts:export type FilteredResult = {
-src/types.ts:export type TgOptions = {
+src/types.ts:export type TkOptions = {
 src/types.ts:export interface CommandHandler {

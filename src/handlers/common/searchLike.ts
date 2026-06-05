@@ -56,14 +56,14 @@ function searchPattern(args: string[]): string {
 // RTK: grep_cmd.rs::run — RTK re-invokes the search with `-nH` so every match is
 // emitted as `file:line:content`, which is what the grouping parser needs. A raw
 // `grep -r pattern dir` omits line numbers (and, for a single file, the filename),
-// so tg cannot group it and falls back to passthrough (0% savings). Forcing `-n`
+// so tk cannot group it and falls back to passthrough (0% savings). Forcing `-n`
 // and `-H` restores the parseable shape, and the per-file / global caps then
 // compress a large recursive search.
 //
 // rg IS rewritten too (parity with RTK's real behavior): piped to a non-TTY, `rg`
 // OMITS line numbers by default, so its output is unparseable and falls back to
 // passthrough (0% savings). Forcing `-n -H --no-heading` restores
-// `file:line:content`. Deliberate divergence from RTK: tg does NOT add
+// `file:line:content`. Deliberate divergence from RTK: tk does NOT add
 // `--no-ignore-vcs` — it keeps rg's default .gitignore-respecting scope, which
 // yields less, more relevant output for an agent. Format flags (-c/-l/-L/-o/-Z/
 // --json) and context flags (-A/-B/-C) always pass through (see grepFilter).
@@ -140,7 +140,7 @@ export const searchLikeHandler: CommandHandler = {
     }
 
     // Recovery contract item 3: when matches are suppressed, name how to recover.
-    const recoveryHint = `# capped — \`tg --raw ${command.program} …\` for all, \`--level minimal\` for lossless`;
+    const recoveryHint = `# capped — \`tk --raw ${command.program} …\` for all, \`--level minimal\` for lossless`;
     const grouped = groupGrepOutput(raw.stdout, pattern, {
       ...grepOptionsForLevel(level),
       recoveryHint,

@@ -13,7 +13,7 @@ import { parseLevel, stripLevelFlags } from "../../../src/handlers/common/level.
 
 describe("RTK grep command construction", () => {
   // RTK: grep_cmd.rs::run — RTK searches with `-nH` so output is `file:line:content`.
-  // tg forces `-n -H` on grep invocations so a raw `grep -r` (no line numbers) can
+  // tk forces `-n -H` on grep invocations so a raw `grep -r` (no line numbers) can
   // be grouped instead of passed through verbatim.
   test("forces -n -H so grep output is groupable", () => {
     expect(buildGrepArgs("grep", ["-r", "import", "src/"])).toEqual([
@@ -33,7 +33,7 @@ describe("RTK grep command construction", () => {
   // Piped to a non-TTY, rg OMITS line numbers by default, so its raw output is
   // unparseable and falls back to passthrough (0% saved). Forcing -n -H
   // --no-heading restores `file:line:content` — parity with RTK's real behavior
-  // (grep_cmd.rs re-invokes the search itself). tg does NOT add --no-ignore-vcs
+  // (grep_cmd.rs re-invokes the search itself). tk does NOT add --no-ignore-vcs
   // (deliberate divergence — see docs/align-rtk-divergences.md).
   test("forces -n -H --no-heading so rg output is groupable", () => {
     expect(buildGrepArgs("rg", ["export", "src/"])).toEqual([
@@ -175,7 +175,7 @@ describe("RTK grep behavior", () => {
     });
   });
 
-  // rg piped to a non-TTY omits line numbers; tg now forces -nH so the SAME
+  // rg piped to a non-TTY omits line numbers; tk now forces -nH so the SAME
   // grouping/cap machinery compresses rg exactly like grep. Reuse the overflow
   // fixture as the `rg -nH` output shape.
   test("groups rg matches by file with the per-file cap and uncapped overflow", async () => {
@@ -321,10 +321,10 @@ describe("RTK grep level/-- parsing (edge cases)", () => {
 // --- Parser/helper unit dimensions (RTK grep_cmd.rs internal #[test]s) ---
 //
 // Architecture note: RTK parse_match_line keys off a NUL separator because RTK
-// invokes rg with `-0`; tg filters the user's already-colon-separated output, so
-// tg parses `file:line:content`. The RTK NUL-only cases (Windows drive paths,
+// invokes rg with `-0`; tk filters the user's already-colon-separated output, so
+// tk parses `file:line:content`. The RTK NUL-only cases (Windows drive paths,
 // filenames containing `:digits:`) are specific to that NUL contract and do not
-// apply to tg's colon input. The applicable invariants are ported below.
+// apply to tk's colon input. The applicable invariants are ported below.
 describe("RTK grep parse_match_line (colon-adapted)", () => {
   // RTK: test_parse_match_line_simple
   test("parses a simple file:line:content line", () => {
@@ -430,7 +430,7 @@ describe("RTK grep has_format_flag", () => {
 });
 
 describe("RTK grep groupGrepOutput fallback", () => {
-  // tg adaptation: lines that never parse (no -n line numbers) cannot be grouped,
+  // tk adaptation: lines that never parse (no -n line numbers) cannot be grouped,
   // so the grouper signals passthrough rather than dropping content.
   test("returns null when no line parses as a match", () => {
     const raw = "src/core/history.ts:export type Foo = {\nsrc/core/history.ts:export const bar = 1\n";

@@ -1,9 +1,9 @@
 import { describe, expect, test } from "vitest";
 
 import { tscHandler } from "../../../src/handlers/js/tsc.js";
-import type { ParsedCommand, RawResult, TgOptions } from "../../../src/types.js";
+import type { ParsedCommand, RawResult, TkOptions } from "../../../src/types.js";
 
-const options: TgOptions = {
+const options: TkOptions = {
   raw: false,
   stats: false,
   verbose: false,

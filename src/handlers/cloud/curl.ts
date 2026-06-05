@@ -3,7 +3,7 @@ import type { CommandHandler, ParsedCommand } from "../../types.js";
 import { makeFilteredResult, rawText } from "../base.js";
 
 // RTK: cloud/curl_cmd.rs::MAX_RESPONSE_SIZE — non-JSON bodies past this byte size
-// are truncated for the reader; the full body is recoverable via `tg --raw`.
+// are truncated for the reader; the full body is recoverable via `tk --raw`.
 const MAX_RESPONSE_SIZE = 500;
 
 function matchesCurl(command: ParsedCommand): boolean {
@@ -39,7 +39,7 @@ function truncateOnCharBoundary(text: string, maxBytes: number): string {
   return buf.subarray(0, end).toString("utf8");
 }
 
-// RTK: curl_cmd.rs::filter_curl_output. tg has no TTY plane — its filtered output
+// RTK: curl_cmd.rs::filter_curl_output. tk has no TTY plane — its filtered output
 // always feeds an LLM reader, so the truncation path is the equivalent of RTK's
 // is_tty=true branch. JSON / small bodies pass through unchanged.
 function formatCurl(raw: string): string {
@@ -51,10 +51,10 @@ function formatCurl(raw: string): string {
   }
 
   const head = truncateOnCharBoundary(trimmed, MAX_RESPONSE_SIZE);
-  // RTK emits "{head}... ({n} bytes total)" then a tee hint on the next line; tg's
-  // recovery channel is `tg --raw` rather than a tee file. The marker wording is
+  // RTK emits "{head}... ({n} bytes total)" then a tee hint on the next line; tk's
+  // recovery channel is `tk --raw` rather than a tee file. The marker wording is
   // kept clear of base.ts LOSSY_OMISSION_PATTERNS so the output is not bounced to raw.
-  return `${head}... (${byteLen} bytes total)\nResponse truncated; re-run with \`tg --raw\` to recover the full body.`;
+  return `${head}... (${byteLen} bytes total)\nResponse truncated; re-run with \`tk --raw\` to recover the full body.`;
 }
 
 export const curlHandler: CommandHandler = {
@@ -78,7 +78,7 @@ export const curlHandler: CommandHandler = {
   async filter(raw, _command, options) {
     // RTK: curl_cmd.rs::run — on failure curl is NOT filtered; the body is surfaced
     // verbatim because truncating it would destroy diagnostics. RTK prints only
-    // stderr-or-stdout; tg keeps BOTH (untruncated) because for curl the HTTP
+    // stderr-or-stdout; tk keeps BOTH (untruncated) because for curl the HTTP
     // response body lives on stdout (error pages, API error JSON) and is often the
     // most useful diagnostic — dropping it in favour of stderr would lose it.
     if (raw.exitCode !== 0) {

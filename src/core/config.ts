@@ -1,5 +1,5 @@
 // Slice 3a — the inspect-v1 config contract (ADR 0004 §1, inspect-v1-design.md).
-// `~/.token-guard/config.jsonc`: a JSONC file with a CLOSED allow-listed shape.
+// `~/.token-killer/config.jsonc`: a JSONC file with a CLOSED allow-listed shape.
 // A parse error or any out-of-shape field MUST exit 1 (inspect-v1 rule); a MISSING
 // file is fine and reads as defaults (config is optional). This module is the only
 // place that knows the config shape — consent (telemetryExport / telemetry) lives
@@ -9,7 +9,7 @@ import { readFileSync, writeFileSync } from "node:fs";
 import { mkdirSync } from "node:fs";
 import { dirname, join } from "node:path";
 
-import { tokenGuardHome } from "./dataDir.js";
+import { tokenKillerHome } from "./dataDir.js";
 
 export type TgConfig = {
   inputType?: "vscode" | "copilot-cli";
@@ -25,15 +25,15 @@ export type TgConfig = {
 export class ConfigError extends Error {}
 
 export function configPath(): string {
-  return join(tokenGuardHome(), "config.jsonc");
+  return join(tokenKillerHome(), "config.jsonc");
 }
 
-// The canonical closed-set template. `tg config init` and `tg telemetry
+// The canonical closed-set template. `tk config init` and `tk telemetry
 // enable|disable` regenerate the file from this — no comment-preserving edits.
 export function configTemplate(telemetry = false, telemetryExport = false): string {
   return [
     "{",
-    "  // token-guard config — closed set; unknown keys are rejected (exit 1).",
+    "  // token-killer config — closed set; unknown keys are rejected (exit 1).",
     "  // Edit values to opt in; creating this file is NOT itself opt-in.",
     '  "inputType": "vscode",',
     '  "defaultSince": "7d",',
@@ -144,8 +144,8 @@ export function readConfig(): TgConfig {
   return validate(parsed);
 }
 
-// Write the closed-set template. Used by `tg config init` (only if absent) and by
-// `tg telemetry enable|disable` (regenerate with the chosen consent values).
+// Write the closed-set template. Used by `tk config init` (only if absent) and by
+// `tk telemetry enable|disable` (regenerate with the chosen consent values).
 export function writeConfigTemplate(opts: { telemetry?: boolean; telemetryExport?: boolean } = {}): string {
   const path = configPath();
   mkdirSync(dirname(path), { recursive: true });

@@ -2,7 +2,7 @@ commit a1b2c3d4e5f6a7b8c9d0e1f2a3b4c5d6e7f8a9b0
 Author: Test User <test@example.com>
 Date:   Mon Jun 2 15:30:00 2026 +0800
 
-    feat: add token guard command proxy
+    feat: add token killer command proxy
 
 commit b2c3d4e5f6a7b8c9d0e1f2a3b4c5d6e7f8a9b0a1
 Author: Test User <test@example.com>

@@ -1,12 +1,12 @@
-# tg
+# tk
 
-`tg` is a TypeScript / Node.js command proxy inspired by RTK.
+`tk` is Token Killer: a local command proxy that kills noisy agent output without killing evidence.
 
 ```bash
-tg <original command> [...args]
+tk <original command> [...args]
 ```
 
-The command after `tg` is the command you would normally run. `tg` executes it, captures stdout/stderr/exit code, compresses output locally, records token savings, and exits with the original command exit code.
+The command after `tk` is the command you would normally run. `tk` executes it, captures stdout/stderr/exit code, compresses output locally, records token savings, and exits with the original command exit code.
 
 ## Principles
 
@@ -26,38 +26,38 @@ See [docs/PRINCIPLES.md](./docs/PRINCIPLES.md) for the product rationale and [do
 ## Usage
 
 ```bash
-tg git status
-tg git diff
-tg diff old.txt new.txt
-tg rg "submitOrder" src
-tg cat package.json
-tg read --level balanced src/cli.ts
-tg ls .
-tg npm test
-tg tsc --noEmit
-tg npx tsc --noEmit
-tg dotnet test
-tg deps
-tg err npm run build
-tg summary npm test
-tg smart src/main.ts
+tk git status
+tk git diff
+tk diff old.txt new.txt
+tk rg "submitOrder" src
+tk cat package.json
+tk read --level balanced src/cli.ts
+tk ls .
+tk npm test
+tk tsc --noEmit
+tk npx tsc --noEmit
+tk dotnet test
+tk deps
+tk err npm run build
+tk summary npm test
+tk smart src/main.ts
 ```
 
 ## Flags
 
 ```bash
-tg --raw <command...>
-tg --stats <command...>
-tg --verbose <command...>
-tg --max-lines 200 <command...>
-tg --max-chars 12000 <command...>
-tg --save-raw <command...>
-tg --no-save-raw <command...>
-tg --report
-tg --report --json
-tg --report --csv
-tg --help
-tg --version
+tk --raw <command...>
+tk --stats <command...>
+tk --verbose <command...>
+tk --max-lines 200 <command...>
+tk --max-chars 12000 <command...>
+tk --save-raw <command...>
+tk --no-save-raw <command...>
+tk --report
+tk --report --json
+tk --report --csv
+tk --help
+tk --version
 ```
 
 `## Token Savings` is not printed by default. It appears only with `--stats`, `--verbose`, or `--report`.
@@ -117,7 +117,7 @@ The built CLI preserves the shebang and is exposed through npm:
 ```json
 {
   "bin": {
-    "tg": "./dist/cli.js"
+    "tk": "./dist/cli.js"
   }
 }
 ```

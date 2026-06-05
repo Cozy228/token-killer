@@ -1,5 +1,5 @@
 import { executeCommand } from "../../executor.js";
-import type { CommandHandler, ParsedCommand, RawResult, TgOptions } from "../../types.js";
+import type { CommandHandler, ParsedCommand, RawResult, TkOptions } from "../../types.js";
 import { makeFilteredResult } from "../base.js";
 
 function text(raw: RawResult): string {
@@ -272,7 +272,7 @@ function makeHostingHandler(
         displayCommand: `${program} ${args.join(" ")}`,
       });
     },
-    async filter(raw, command, options: TgOptions) {
+    async filter(raw, command, options: TkOptions) {
       return makeFilteredResult(this.name, raw, formatter(raw, command), options);
     },
   };

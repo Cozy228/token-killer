@@ -1,15 +1,21 @@
 // Safe apply + restore (goal §"Safe apply rules", §"Slice 6"). Writes ONLY when:
-//  - target is user-level, or a Token Guard managed marker block, AND
+//  - target is user-level, or a Token Killer managed marker block, AND
 //  - the operation is fix_class === "safe_mechanical", AND
-//  - a reversible backup is written under ~/.token-guard/backups/context/<ts>/.
+//  - a reversible backup is written under ~/.token-killer/backups/context/<ts>/.
 // The generated diff is always printed. Project files are never modified.
 
 import { createHash } from "node:crypto";
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { basename, join } from "node:path";
 
-import { tokenGuardHome } from "../core/dataDir.js";
+import { tokenKillerHome } from "../core/dataDir.js";
 import { readInspectBucket, type ScopeBucket } from "../inspect/persist.js";
+import {
+  exposureForSurface,
+  recordOptimizeAction,
+} from "../inspect/optimizeActions.js";
+import { estimateTokens, hashText } from "./metrics.js";
+import { parseMarkdown } from "./parseMarkdown.js";
 import { readContextFile } from "./discover.js";
 import type { OptimizeArgs, OptimizeDeps } from "./optimizeCli.js";
 import {
@@ -21,26 +27,26 @@ import {
 import { planForFinding } from "./patchPlan.js";
 import type { ContextScope } from "./types.js";
 
-export const MARKER_START = "<!-- tg:token_budget:start -->";
-export const MARKER_END = "<!-- tg:token_budget:end -->";
+export const MARKER_START = "<!-- tk:token_budget:start -->";
+export const MARKER_END = "<!-- tk:token_budget:end -->";
 
 // Stable, cacheable managed block — no timestamps/IDs (cacheability_churn-clean),
 // ≤ 15 lines (DESIGN §5.3). Points at concrete, already-shipped read/rg/tree flags
 // instead of generic advice (docs/handler-compression-rg-tree-goal.md Phase 3).
 const MANAGED_BLOCK = [
   MARKER_START,
-  "## Token Guard — managed token budget",
-  "- Large files: `tg read --max-lines 200 <file>` (or `--level aggressive` for a symbol outline).",
-  "- Searches: `tg rg <pattern> <path>` scoped to a directory — tg caps results automatically; `--level minimal` keeps every match (deduped, lossless), `--raw` for verbatim.",
-  "- Structure: `tg tree <path>` — tg auto-caps oversized directories; `-L <n>` to go shallower.",
-  "- Prefer `tg <command>` for any high-output shell command to reduce token pressure.",
+  "## Token Killer — managed token budget",
+  "- Large files: `tk read --max-lines 200 <file>` (or `--level aggressive` for a symbol outline).",
+  "- Searches: `tk rg <pattern> <path>` scoped to a directory — tk caps results automatically; `--level minimal` keeps every match (deduped, lossless), `--raw` for verbatim.",
+  "- Structure: `tk tree <path>` — tk auto-caps oversized directories; `-L <n>` to go shallower.",
+  "- Prefer `tk <command>` for any high-output shell command to reduce token pressure.",
   MARKER_END,
 ].join("\n");
 
 // Default user-level instruction target; overridable so a user-level AGENTS.md
 // can be the explicit instruction target (goal "Allowed writes").
 export function userTargetPath(home: string): string {
-  const override = process.env.TG_USER_AGENT_INSTRUCTIONS;
+  const override = process.env.TK_USER_AGENT_INSTRUCTIONS;
   if (override && override.length > 0) return override;
   return join(home, ".copilot", "copilot-instructions.md");
 }
@@ -61,7 +67,7 @@ export function insertMarkerBlock(content: string): string {
   return `${content}${sep}${lead}${MANAGED_BLOCK}\n`;
 }
 
-// Removes only the Token Guard managed block; leaves all other content intact.
+// Removes only the Token Killer managed block; leaves all other content intact.
 export function removeMarkerBlock(content: string): string {
   if (!hasMarkerBlock(content)) return content;
   const start = content.indexOf(MARKER_START);
@@ -80,7 +86,7 @@ function backupTimestamp(nowMs: number): string {
 }
 
 export function writeBackup(path: string, content: string, nowMs: number): string {
-  const dir = join(tokenGuardHome(), "backups", "context", backupTimestamp(nowMs));
+  const dir = join(tokenKillerHome(), "backups", "context", backupTimestamp(nowMs));
   mkdirSync(dir, { recursive: true });
   const tag = createHash("sha256").update(path).digest("hex").slice(0, 6);
   const dest = join(dir, `${basename(path)}.${tag}`);
@@ -106,13 +112,13 @@ export function applyMarkerBlock(home: string, mode: "insert" | "remove", nowMs:
   const existing = existsSync(target) ? readFileSync(target, "utf8") : "";
 
   if (mode === "remove" && !hasMarkerBlock(existing)) {
-    process.stdout.write(`tg: no Token Guard managed block in ${target}\n`);
+    process.stdout.write(`tk: no Token Killer managed block in ${target}\n`);
     return 0;
   }
 
   const next = mode === "insert" ? insertMarkerBlock(existing) : removeMarkerBlock(existing);
   if (next === existing) {
-    process.stdout.write(`tg: ${target} already up to date (idempotent, no change)\n`);
+    process.stdout.write(`tk: ${target} already up to date (idempotent, no change)\n`);
     return 0;
   }
 
@@ -122,7 +128,7 @@ export function applyMarkerBlock(home: string, mode: "insert" | "remove", nowMs:
   }
   mkdirSync(join(target, ".."), { recursive: true });
   writeFileSync(target, next);
-  process.stdout.write(`${mode === "insert" ? "Installed" : "Removed"} Token Guard managed block in ${target}\n`);
+  process.stdout.write(`${mode === "insert" ? "Installed" : "Removed"} Token Killer managed block in ${target}\n`);
   process.stdout.write(`${miniDiff(target, existing, next)}\n`);
   return 0;
 }
@@ -171,7 +177,7 @@ export async function runApplySafe(
   const scope = resolveOptimizeScope(args);
   if (scope === "project") {
     process.stderr.write(
-      "tg optimize: --apply-safe refuses project-level edits. Use --dry-run or --write-advice; pass --user (or --surface skills) for user-level safe applies.\n",
+      "tk optimize: --apply-safe refuses project-level edits. Use --dry-run or --write-advice; pass --user (or --surface skills) for user-level safe applies.\n",
     );
     return 1;
   }
@@ -179,7 +185,7 @@ export async function runApplySafe(
   // Frontmatter safe applies require an explicit surface (goal rules 5 & 7).
   if (!args.surface) {
     process.stderr.write(
-      "tg optimize: --apply-safe needs an explicit --surface (e.g. --surface skills) for frontmatter changes.\n",
+      "tk optimize: --apply-safe needs an explicit --surface (e.g. --surface skills) for frontmatter changes.\n",
     );
     return 1;
   }
@@ -201,7 +207,7 @@ export async function runApplySafe(
     (f) => f.fix_class === "safe_mechanical",
   );
   if (findings.length === 0) {
-    process.stdout.write("tg optimize: no safe_mechanical frontmatter changes available for this surface.\n");
+    process.stdout.write("tk optimize: no safe_mechanical frontmatter changes available for this surface.\n");
     return 0;
   }
 
@@ -223,12 +229,34 @@ export async function runApplySafe(
     const backup = writeBackup(livePath, live, nowMs);
     writeFileSync(livePath, next);
     applied += 1;
+    // Ledger 2 (Gap B, section 0.1.5): one append-only record per applied action.
+    // before/after_hash are body_hashes (inspect's space, so ledger 4 revert
+    // detection works via re-scan with no stored path); before/after_tokens are
+    // whole-file (the loaded-context cost). delta = before - after is a measured
+    // diff; exposure_class is a category, never a multiplier. Best-effort - a
+    // ledger write must not abort the apply, and never leaks a path.
+    try {
+      recordOptimizeAction(
+        { scope: "user" },
+        {
+          surface: finding.surface,
+          before_hash: hashText(parseMarkdown(live).body),
+          after_hash: hashText(parseMarkdown(next).body),
+          before_tokens: estimateTokens(live),
+          after_tokens: estimateTokens(next),
+          exposure_class: exposureForSurface(finding.surface),
+          ts: new Date(nowMs).toISOString(),
+        },
+      );
+    } catch (error) {
+      process.stderr.write(`tk optimize: ledger 2 record skipped: ${error instanceof Error ? error.message : String(error)}\n`);
+    }
     process.stdout.write(`Applied ${finding.type} to ${finding.file} (set ${op.key})\n`);
     process.stdout.write(`Backup: ${backup}\n`);
     process.stdout.write(`${miniDiff(finding.file, live, next)}\n`);
   }
 
-  process.stdout.write(`tg optimize: applied ${applied} safe change(s).\n`);
+  process.stdout.write(`tk optimize: applied ${applied} safe change(s).\n`);
   return 0;
 }
 

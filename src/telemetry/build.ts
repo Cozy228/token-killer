@@ -15,7 +15,7 @@ const DAY_MS = 86_400_000;
 const LOW_SAVINGS_PCT = 20;
 
 // Optional inspect-derived aggregates (ADR 0004 §5): present only on an
-// `tg inspect`-triggered build (they require a fresh scan), absent on `tg gain`.
+// `tk inspect`-triggered build (they require a fresh scan), absent on `tk gain`.
 export type InspectAggregates = {
   tool_category_counts: Record<string, number>;
   recommendation_type_counts: Record<string, number>;
@@ -35,7 +35,7 @@ export type TelemetryPayload = {
   tokens_saved_total: number;
   savings_pct: number;
   top_handlers: string[]; // names only, ≤5
-  // quality (tg's differentiator over RTK)
+  // quality (tk's differentiator over RTK)
   quality_status_counts: Record<string, number>;
   fallback_count: number;
   parse_failure_24h: number;

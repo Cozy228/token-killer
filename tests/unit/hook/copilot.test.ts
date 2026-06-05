@@ -8,20 +8,20 @@ function pre(payload: Record<string, unknown>) {
 }
 
 describe("decide — preToolUse terminal rewrite", () => {
-  test("CLI bash git status → rewrite tg git status", () => {
+  test("CLI bash git status → rewrite tk git status", () => {
     const d = pre({ toolName: "bash", toolArgs: JSON.stringify({ command: "git status" }) });
     expect(d.decision).toBe("rewrite");
-    expect(d.rewritten_command).toBe("tg git status");
+    expect(d.rewritten_command).toBe("tk git status");
   });
 
   test("VS Code run_in_terminal npm test → rewrite", () => {
     const d = pre({ tool_name: "run_in_terminal", tool_input: { command: "npm test" } });
     expect(d.decision).toBe("rewrite");
-    expect(d.rewritten_command).toBe("tg npm test");
+    expect(d.rewritten_command).toBe("tk npm test");
   });
 
-  test("already-tg command → allow (pass)", () => {
-    const d = pre({ toolName: "bash", toolArgs: JSON.stringify({ command: "tg git status" }) });
+  test("already-tk command → allow (pass)", () => {
+    const d = pre({ toolName: "bash", toolArgs: JSON.stringify({ command: "tk git status" }) });
     expect(d.decision).toBe("allow");
   });
 

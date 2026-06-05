@@ -1,7 +1,7 @@
 import { homedir } from "node:os";
 
 import { executeCommand } from "../../executor.js";
-import type { CommandHandler, ParsedCommand, RawResult, TgOptions } from "../../types.js";
+import type { CommandHandler, ParsedCommand, RawResult, TkOptions } from "../../types.js";
 import { makeFilteredResult } from "../base.js";
 
 const EXTENDED_GIT_HANDLERS = new Map([
@@ -164,7 +164,7 @@ function makeGitExtendedHandler(name: string, subcommand: string): CommandHandle
     execute(command) {
       return executeCommand(command);
     },
-    async filter(raw, command, options: TgOptions) {
+    async filter(raw, command, options: TkOptions) {
       return makeFilteredResult(this.name, raw, formatGitExtended(this.name, raw, command), options);
     },
   };
@@ -191,7 +191,7 @@ const gitAddHandler: CommandHandler = {
     });
     return { ...result, auxStdout: stat.stdout };
   },
-  async filter(raw, command, options: TgOptions) {
+  async filter(raw, command, options: TkOptions) {
     if (raw.exitCode !== 0) {
       return makeFilteredResult(this.name, raw, failure(command, raw), options);
     }

@@ -191,7 +191,7 @@ export function buildRtkArgv(command: string[]): string[] {
 }
 
 export function createDiffFixture(): { dir: string; oldPath: string; newPath: string; cleanup: () => void } {
-  const dir = mkdtempSync(path.join(tmpdir(), "tg-compare-diff-"));
+  const dir = mkdtempSync(path.join(tmpdir(), "tk-compare-diff-"));
   const oldPath = path.join(dir, "old.ts");
   const newPath = path.join(dir, "new.ts");
   writeFileSync(oldPath, "export const value = 1;\n", "utf8");
@@ -371,7 +371,7 @@ export const liveComparisonCases: LiveComparisonCase[] = [
   },
   {
     name: "git-add: missing path",
-    command: ["git", "add", "__tg_missing_fixture_file__"],
+    command: ["git", "add", "__tk_missing_fixture_file__"],
     requires: ["git"],
   },
   {
@@ -381,7 +381,7 @@ export const liveComparisonCases: LiveComparisonCase[] = [
   },
   {
     name: "git-push: dry-run local",
-    command: ["git", "push", "--dry-run", ".", "HEAD:refs/heads/__tg_fixture_branch__"],
+    command: ["git", "push", "--dry-run", ".", "HEAD:refs/heads/__tk_fixture_branch__"],
     requires: ["git"],
   },
   {
@@ -391,7 +391,7 @@ export const liveComparisonCases: LiveComparisonCase[] = [
   },
   {
     name: "git-fetch: missing remote",
-    command: ["git", "fetch", "/tmp/__tg_missing_remote__", "main"],
+    command: ["git", "fetch", "/tmp/__tk_missing_remote__", "main"],
     requires: ["git"],
   },
   {
@@ -412,7 +412,7 @@ export const liveComparisonCases: LiveComparisonCase[] = [
 ];
 
 export function createDockerComposeFixture(): { dir: string; cleanup: () => void } {
-  const dir = mkdtempSync(path.join(tmpdir(), "tg-compare-docker-"));
+  const dir = mkdtempSync(path.join(tmpdir(), "tk-compare-docker-"));
   writeFileSync(
     path.join(dir, "docker-compose.yml"),
     [
@@ -456,7 +456,7 @@ export function createTscErrorFixture(): {
   filePath: string;
   cleanup: () => void;
 } {
-  const dir = mkdtempSync(path.join(tmpdir(), "tg-compare-tsc-"));
+  const dir = mkdtempSync(path.join(tmpdir(), "tk-compare-tsc-"));
   const filePath = path.join(dir, "broken.ts");
   writeFileSync(filePath, "const value: number = \"wrong\";\nexport { value };\n", "utf8");
   return {

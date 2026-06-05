@@ -7,7 +7,7 @@ import { describe, expect, test } from "vitest";
 import { expectMeaningfulBody } from "../../helpers/assertions.js";
 import { fixtureCases, toParsedCommand } from "../../helpers/fixtureCases.js";
 import { routeCommand } from "../../../src/router.js";
-import type { RawResult, TgOptions } from "../../../src/types.js";
+import type { RawResult, TkOptions } from "../../../src/types.js";
 
 const LOSSY_OMISSION_PATTERNS = [
   /\bHidden:/,
@@ -23,7 +23,7 @@ const repoRoot = path.resolve(
   "../../..",
 );
 
-const options: TgOptions = {
+const options: TkOptions = {
   raw: false,
   stats: false,
   verbose: false,

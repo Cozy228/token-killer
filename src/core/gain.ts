@@ -1,7 +1,7 @@
-// `tg gain` — RTK-parity savings analytics (ADR 0004 §4). Cold path, read-only,
+// `tk gain` — RTK-parity savings analytics (ADR 0004 §4). Cold path, read-only,
 // fail-open: a missing or corrupt store yields an empty section, never a crash.
 // Consumes the pure aggregate.ts helpers and the shared pricing.ts module. Leaves
-// core/report.ts (`tg --report`) untouched.
+// core/report.ts (`tk --report`) untouched.
 
 import {
   byDay,
@@ -105,7 +105,7 @@ export async function runGain(
 ): Promise<number> {
   const args = parseGainArgs(argv);
   if (args.error) {
-    process.stderr.write(`tg gain: ${args.error}\n`);
+    process.stderr.write(`tk gain: ${args.error}\n`);
     return 1;
   }
 

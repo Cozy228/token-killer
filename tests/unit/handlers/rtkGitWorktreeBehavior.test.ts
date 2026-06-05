@@ -40,7 +40,7 @@ describe("RTK git worktree behavior", () => {
     );
 
     expectRtkParity(result, {
-      critical: ["~/Workspace/token-guard", "62d59ca", "[codex/token-guard-node-cli]"],
+      critical: ["~/Workspace/token-killer", "62d59ca", "[codex/token-killer-node-cli]"],
       forbidden: [/\/Users\/ziyu\/Workspace/],
     });
   });

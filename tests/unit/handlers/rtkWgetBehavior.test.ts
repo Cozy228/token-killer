@@ -5,7 +5,7 @@ import { describe, expect, test } from "vitest";
 
 import { wgetHandler } from "../../../src/handlers/cloud/wget.js";
 import { expectRtkParity, type RtkParityResult } from "../../helpers/rtkCommandHarness.js";
-import type { ParsedCommand, RawResult, TgOptions } from "../../../src/types.js";
+import type { ParsedCommand, RawResult, TkOptions } from "../../../src/types.js";
 
 // wget is not yet registered in src/handlers/index.ts (registration is a shared
 // change reported back to the caller, not made here), so this suite drives the
@@ -14,7 +14,7 @@ import type { ParsedCommand, RawResult, TgOptions } from "../../../src/types.js"
 // same handler.
 const repoRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "../../..");
 
-const options: TgOptions = {
+const options: TkOptions = {
   raw: false,
   stats: false,
   verbose: false,

@@ -1,14 +1,14 @@
 // Slice 1 — Hook Rewrite Engine (DESIGN §3.8).
 //
 // A centralized command-rewrite registry over a raw shell command string. It is
-// RTK-style: a `rewrite` only PREPENDS `tg` (`git status` → `tg git status`);
-// nothing else changes. The `tg` proxy does the actual compression. The registry
+// RTK-style: a `rewrite` only PREPENDS `tk` (`git status` → `tk git status`);
+// nothing else changes. The `tk` proxy does the actual compression. The registry
 // never replaces a tool result.
 //
 // Decisions (DESIGN §3.8):
-//   - rewrite — the command, with `tg` prepended on each eligible segment
+//   - rewrite — the command, with `tk` prepended on each eligible segment
 //   - suggest — not rewritten, carries a hint
-//   - pass    — leave untouched (already `tg`, or a non-equivalent shell)
+//   - pass    — leave untouched (already `tk`, or a non-equivalent shell)
 //   - deny    — blocked with a reason (unused by the terminal path today; direct-
 //               tool denies live in govern.ts)
 //
@@ -152,7 +152,7 @@ function isMutating(parsed: ParsedCommand): boolean {
 
 function isEligible(tokens: string[]): boolean {
   if (tokens.length === 0) return false;
-  if (tokens[0] === "tg") return false; // already proxied — never nest
+  if (tokens[0] === "tk") return false; // already proxied — never nest
   const parsed = toParsed(tokens);
   return routeSpecific(parsed) !== null && !isInteractive(parsed) && !isMutating(parsed);
 }
@@ -169,7 +169,7 @@ function rejoin(segments: Segment[]): string {
 }
 
 // A heredoc (`<<`/`<<-`) or output redirect (`>`/`>>`) makes the rewrite non-
-// equivalent: the `tg` wrapper would not see the same I/O context. Pass instead.
+// equivalent: the `tk` wrapper would not see the same I/O context. Pass instead.
 // Conservative: any unquoted `<<`, `>`, or `>>` outside quotes → pass.
 function hasNonEquivalentRedirect(command: string): boolean {
   let quote: '"' | "'" | null = null;
@@ -215,7 +215,7 @@ export function rewriteCommand(raw: string): RewriteDecision {
     const tokens = tokenize(seg.text);
     if (!isEligible(tokens)) return seg;
     changed = true;
-    return { ...seg, text: `tg ${seg.text.trim()}` };
+    return { ...seg, text: `tk ${seg.text.trim()}` };
   });
 
   if (!changed) return { decision: "pass" };

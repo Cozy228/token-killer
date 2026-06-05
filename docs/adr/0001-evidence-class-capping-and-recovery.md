@@ -6,21 +6,21 @@ status: accepted
 
 ## Context
 
-`tg` inherited RTK's output filters wholesale, including RTK's **evidence-capping**:
+`tk` inherited RTK's output filters wholesale, including RTK's **evidence-capping**:
 fixed per-class caps (`CAP_ERRORS=20`, `CAP_WARNINGS=10`, `CAP_LIST=20`,
 `CAP_INVENTORY=50`, grep's `200`/`25`, pipe's `10`/`10`/`20`) that drop evidence
 beyond a count and leave an overflow marker (`+N more`, `[+N more]`, bare `+N`).
 RTK does this because its product KPI is 60–90% token savings (a release blocker);
 capping is a goal, not a side effect.
 
-`tg`'s product stance is the opposite — retention-first, "0% savings is valid,
+`tk`'s product stance is the opposite — retention-first, "0% savings is valid,
 mis-compression is the only failure" (PRINCIPLES.md). Two latent defects followed
 from the mismatch:
 
 1. The safety gate (`base.ts`) detects omission by **regex-sniffing the output prose**
-   for specific phrasings. `tg`'s own handlers emit `... +N more` / `[+N more]` / bare
-   `+N`, none of which match those patterns — so the gate is **blind to `tg`'s own
-   capping**. It only catches foreign/legacy phrasings no `tg` handler produces.
+   for specific phrasings. `tk`'s own handlers emit `... +N more` / `[+N more]` / bare
+   `+N`, none of which match those patterns — so the gate is **blind to `tk`'s own
+   capping**. It only catches foreign/legacy phrasings no `tk` handler produces.
 2. Overflow markers cite no recovery channel, and raw is auto-persisted only on
    `exit≠0` or `>20000` chars. A successful, mid-sized capped result (e.g. a 250-match
    grep) hides evidence with **no way to recover it** — the "fake completeness"
@@ -58,15 +58,15 @@ from the mismatch:
    lossless reduction (step 1), `replacement` is a complete-replacement summary (step 2).
    There is no "partial cap" kind, because `+N more` is banned. The gate trusts the
    declaration — it force-persists raw and asserts the pointer is present. The output-sniffing
-   regex is retired for `tg`'s own handlers and kept only as a defense against foreign
+   regex is retired for `tk`'s own handlers and kept only as a defense against foreign
    passthrough (where a `+N more` *must* trigger revert-to-raw).
 
 6. **Recovery is always a snapshot read-back, never a re-run.** The inline pointer names
-   the persisted snapshot **file path** (the exact bytes the digest came from). `tg` never
-   cites `tg --raw <cmd>` as a recovery channel: a re-run re-executes the command, which
+   the persisted snapshot **file path** (the exact bytes the digest came from). `tk` never
+   cites `tk --raw <cmd>` as a recovery channel: a re-run re-executes the command, which
    can **drift** once the repo changes mid-turn and is **unsafe for mutating commands** —
-   re-running `tg --raw curl -X POST …` re-sends the request. This retroactively corrects
-   the existing `tg --raw` recovery hints in `curl` and `compactDiff`.
+   re-running `tk --raw curl -X POST …` re-sends the request. This retroactively corrects
+   the existing `tk --raw` recovery hints in `curl` and `compactDiff`.
 
 7. **Universal delivery rule (the cross-class synthesis).** Below the token budget, every
    handler emits its full listing (zero loss). Over budget it runs the two-step ladder
@@ -94,7 +94,7 @@ from the mismatch:
 ## Considered alternatives
 
 - **Keep RTK caps + RTK byte-parity, accept the carve-out** (make the gate recognize
-  `tg`'s own markers and whitelist "capping handlers"). Rejected: it institutionalizes
+  `tk`'s own markers and whitelist "capping handlers"). Rejected: it institutionalizes
   hiding location evidence with no recovery, the exact PRINCIPLES.md anti-pattern.
 - **Zero evidence-capping anywhere** (full listing always). Rejected for huge outputs:
   unbounded token cost is the very problem caps existed to solve; a location-lossless
@@ -107,7 +107,7 @@ from the mismatch:
   existing "keep divergences, move out of parity suite" decision):
   - grep (`200`/`25`) and pipe (`10`/`10`/`20`) lose their location-class caps → two-tier;
   - `docker`/`kubectl`/`compose logs` drop the capture-time `--tail 100` → full fetch + dedup;
-  - `curl` and `compactDiff` swap their `tg --raw` re-run hint for a snapshot-file pointer.
+  - `curl` and `compactDiff` swap their `tk --raw` re-run hint for a snapshot-file pointer.
 - **Raw-save policy changes**: declared omission force-saves raw even on success and
   under the 20K threshold.
 - **Handler return contract** gains an optional structured `omission` field; only the
@@ -142,5 +142,5 @@ Verdict for every handler against the rules above. "Remove cap" = becomes full-b
 - **Every `+N more` / `[+N more]` / bare `+N` / `… +N more` marker is deleted** from:
   `grep`, `pipe`, `ruff`, `psql`, `pytest`, `find`, `aws`, `pip`, `packageList`, `next`,
   `env`, `prettier`, `branch`, `graphite`, `json`, `docker` ps/images/compose. None survive.
-- **Recovery-pointer fix (re-run → snapshot)**: `pytest` (`run with tg --raw …` hint),
+- **Recovery-pointer fix (re-run → snapshot)**: `pytest` (`run with tk --raw …` hint),
   `curl`, `compactDiff`.

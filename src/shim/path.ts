@@ -1,9 +1,9 @@
 import { accessSync, constants, existsSync, statSync } from "node:fs";
 import { delimiter, join, normalize, sep } from "node:path";
 
-// The shim places wrapper executables (a file named `git` that runs `tg git`)
-// ahead of the real tools on PATH. When `tg` then spawns the real tool it must
-// NOT re-resolve to the wrapper, or it would fork-bomb shim→tg→shim. This module
+// The shim places wrapper executables (a file named `git` that runs `tk git`)
+// ahead of the real tools on PATH. When `tk` then spawns the real tool it must
+// NOT re-resolve to the wrapper, or it would fork-bomb shim→tk→shim. This module
 // is the recursion guard (ADR 0002 §4): strip the shim dir from the child PATH
 // and sentinel-check that the resolved tool does not still land in the shim dir.
 
@@ -80,12 +80,12 @@ export function resolveReal(program: string, strippedPath: string): string | nul
   return null;
 }
 
-// Build the child PATH for a spawned real tool: strip TG_SHIM_DIR (if set) so we
+// Build the child PATH for a spawned real tool: strip TK_SHIM_DIR (if set) so we
 // never re-resolve to a wrapper. Returns the original PATH unchanged when no
-// shim dir is configured (the non-shim, plain-`tg` case).
+// shim dir is configured (the non-shim, plain-`tk` case).
 export function buildChildPath(): string {
   const pathVar = process.env.PATH ?? "";
-  const shimDir = process.env.TG_SHIM_DIR;
+  const shimDir = process.env.TK_SHIM_DIR;
   if (!shimDir) return pathVar;
   return stripShimDir(pathVar, shimDir);
 }
@@ -95,7 +95,7 @@ export function buildChildPath(): string {
 // program still exists — resolving the real tool is impossible without recursing,
 // so throw and let the caller fail toward a clear error instead of fork-bombing.
 export function assertNoRecursion(program: string, strippedPath: string): void {
-  const shimDir = process.env.TG_SHIM_DIR;
+  const shimDir = process.env.TK_SHIM_DIR;
   if (!shimDir) return;
   if (program.includes("/") || program.includes("\\")) return;
 
@@ -105,7 +105,7 @@ export function assertNoRecursion(program: string, strippedPath: string): void {
   if (resolved) {
     if (normalizeEntry(resolved).startsWith(target + sep) || normalizeEntry(resolved) === target) {
       throw new ShimRecursionError(
-        `tg: refusing to run ${program}: resolved inside shim dir (${shimDir})`,
+        `tk: refusing to run ${program}: resolved inside shim dir (${shimDir})`,
       );
     }
     return;
@@ -116,7 +116,7 @@ export function assertNoRecursion(program: string, strippedPath: string): void {
   const shimCopy = resolveReal(program, shimDir);
   if (shimCopy) {
     throw new ShimRecursionError(
-      `tg: cannot find real ${program} outside shim dir (${shimDir})`,
+      `tk: cannot find real ${program} outside shim dir (${shimDir})`,
     );
   }
   // Genuinely not found anywhere — let the spawn surface ENOENT/127 as usual.

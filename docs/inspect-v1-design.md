@@ -1,22 +1,22 @@
-# Token Guard Inspect Design
+# Token Killer Inspect Design
 
 ## Summary
 
-Token Guard is an independent local developer CLI for understanding Copilot agent workflow behavior, storage coverage, and cost-reduction opportunities.
+Token Killer is an independent local developer CLI for understanding Copilot agent workflow behavior, storage coverage, and cost-reduction opportunities.
 
 The analysis command is:
 
 ```text
-tg inspect
+tk inspect
 ```
 
-Token Guard is not part of Atlas. It does not live in the Atlas product boundary, does not provide a portal feature, and does not act as a governed knowledge layer. Atlas may be one repository whose workflow can be inspected, but Token Guard itself is a separate local tool.
+Token Killer is not part of Atlas. It does not live in the Atlas product boundary, does not provide a portal feature, and does not act as a governed knowledge layer. Atlas may be one repository whose workflow can be inspected, but Token Killer itself is a separate local tool.
 
 ## Product Boundary
 
-`tg inspect` is the local diagnostic surface inside Token Guard. Its job is to inspect local evidence about agent workflow behavior and produce actionable findings.
+`tk inspect` is the local diagnostic surface inside Token Killer. Its job is to inspect local evidence about agent workflow behavior and produce actionable findings.
 
-`tg inspect` is not:
+`tk inspect` is not:
 
 1. The runtime command rewriter
 2. The policy enforcement system
@@ -30,17 +30,17 @@ The design intentionally keeps inspect focused on local workflow evidence. It sh
 
 ## Command Model
 
-Token Guard has one executable:
+Token Killer has one executable:
 
 ```text
-tg
+tk
 ```
 
 The inspect design depends on two command areas:
 
 ```text
-tg inspect
-tg config init
+tk inspect
+tk config init
 ```
 
 inspect is for analysis. config is for user-level configuration management. Configuration initialization is intentionally not hidden under inspect, because inspect should remain an analysis command.
@@ -50,17 +50,17 @@ inspect is for analysis. config is for user-level configuration management. Conf
 Inspect supports:
 
 ```text
-tg inspect
-tg inspect --json
-tg inspect --since 7d
-tg inspect --session <id>
-tg inspect --input-type vscode
-tg inspect --input-type copilot-cli
-tg inspect --repo-context
-tg inspect --include-raw
-tg inspect --write-advice
-tg inspect --telemetry-export
-tg inspect --no-telemetry-export
+tk inspect
+tk inspect --json
+tk inspect --since 7d
+tk inspect --session <id>
+tk inspect --input-type vscode
+tk inspect --input-type copilot-cli
+tk inspect --repo-context
+tk inspect --include-raw
+tk inspect --write-advice
+tk inspect --telemetry-export
+tk inspect --no-telemetry-export
 ```
 
 Markdown is the default stdout format. `--json` switches stdout to JSON. Inspect does not need `--markdown` because Markdown is already the default.
@@ -98,7 +98,7 @@ Missing sources are normal. If VS Code transcript storage is absent, that is rep
 Repository context is opt-in:
 
 ```text
-tg inspect --repo-context
+tk inspect --repo-context
 ```
 
 When enabled, repository context is limited to lightweight metadata and durable guidance, such as:
@@ -113,7 +113,7 @@ Repository context must not become source-code analysis. It exists only to expla
 
 ## Evidence Model
 
-`tg inspect` normalizes local evidence into three categories.
+`tk inspect` normalizes local evidence into three categories.
 
 ### Shell Execution
 
@@ -193,12 +193,12 @@ Inspect scans Stable VS Code storage by default. Insiders, Codium, and other VS 
 
 ## Output Model
 
-By default, `tg inspect` writes Markdown to stdout and creates no files.
+By default, `tk inspect` writes Markdown to stdout and creates no files.
 
 JSON output is explicit:
 
 ```text
-tg inspect --json
+tk inspect --json
 ```
 
 JSON includes:
@@ -217,7 +217,7 @@ The JSON schema should be extensible for future source kinds, but inspect starts
 `--write-advice` writes to:
 
 ```text
-~/.token-guard/advice/
+~/.token-killer/advice/
 ```
 
 Persistent inspect output uses stable file names:
@@ -250,7 +250,7 @@ Recommendation findings do not cause non-zero exit codes. Inspect is diagnostic,
 
 ## Cost Semantics
 
-Token Guard provides cost heuristics, not exact token accounting.
+Token Killer provides cost heuristics, not exact token accounting.
 
 Evidence can include:
 
@@ -282,7 +282,7 @@ Default Markdown and JSON output must exclude Raw Evidence.
 Raw fields require:
 
 ```text
-tg inspect --include-raw
+tk inspect --include-raw
 ```
 
 `--include-raw` must not be enabled through user configuration. It must be a per-run explicit choice.
@@ -299,19 +299,19 @@ Telemetry export must never include Raw Evidence.
 > original scope) and `telemetry` (network upload). Neither implies the other. The
 > shipped payload is **schema "2"** ([TELEMETRY.md](./TELEMETRY.md)), history-derived
 > and always user-level; the inspect aggregates below become an optional add-on on an
-> `tg inspect`-triggered build. The rest of this section still holds.
+> `tk inspect`-triggered build. The rest of this section still holds.
 
 Telemetry Export is disabled by default.
 
 It can be enabled by:
 
-1. `tg inspect --telemetry-export`
+1. `tk inspect --telemetry-export`
 2. user-level configuration
 
 It can be disabled for one run by:
 
 ```text
-tg inspect --no-telemetry-export
+tk inspect --no-telemetry-export
 ```
 
 CLI flags override user configuration.
@@ -325,7 +325,7 @@ Allowed examples:
 1. tool category counts
 2. source coverage counts
 3. recommendation type counts
-4. Token Guard version
+4. Token Killer version
 5. platform
 6. duration bucket
 7. per-run random identifier
@@ -346,7 +346,7 @@ Telemetry does not correlate multiple runs from the same machine.
 
 Telemetry uploads to an endpoint provided by an enterprise build-time constant.
 
-The generic package must not hardcode a public endpoint. If no endpoint is configured, inspect writes `telemetry-export.json` in the user-level Token Guard data directory, emits a warning, and still completes the main inspect report.
+The generic package must not hardcode a public endpoint. If no endpoint is configured, inspect writes `telemetry-export.json` in the user-level Token Killer data directory, emits a warning, and still completes the main inspect report.
 
 Upload contract:
 
@@ -357,14 +357,14 @@ Upload contract:
 5. any 2xx status is success
 6. no retry by default
 
-Upload failure emits a warning, preserves the local telemetry payload, and does not fail `tg inspect`.
+Upload failure emits a warning, preserves the local telemetry payload, and does not fail `tk inspect`.
 
 ## User Configuration
 
 User configuration is stored at:
 
 ```text
-~\.token-guard\config.jsonc
+~\.token-killer\config.jsonc
 ```
 
 The format is JSONC.
@@ -392,10 +392,10 @@ If the configuration file exists but cannot be parsed or violates the allowed sh
 
 ### Config Initialization
 
-Token Guard provides:
+Token Killer provides:
 
 ```text
-tg config init
+tk config init
 ```
 
 It creates an example JSONC configuration file if one does not already exist.
@@ -429,16 +429,16 @@ Telemetry warnings do not change the exit code unless they are caused by invalid
 
 ## Packaging and Platform
 
-Token Guard is a single npm package:
+Token Killer is a single npm package:
 
 ```text
-token-guard
+token-killer
 ```
 
 It exposes the binary:
 
 ```text
-tg
+tk
 ```
 
 The project is developed with pnpm and TypeScript, then published as compiled JavaScript.
@@ -490,8 +490,8 @@ Context analysis recommends durable context improvements only. It does not edit 
 14. direct policy enforcement
 
 > **Superseded by [ADR 0003](adr/0003-inspect-default-full-static-context.md).** The
-> Copilot Context Optimizer makes default `tg inspect` read a curated set of **project
-> context files** (not source code) and write `~/.token-guard/projects/<fingerprint>/inspect/latest.json`
+> Copilot Context Optimizer makes default `tk inspect` read a curated set of **project
+> context files** (not source code) and write `~/.token-killer/projects/<fingerprint>/inspect/latest.json`
 > on every run. This narrows two promises above: "no default repository scan" (now a bounded
 > context-file read) and "no default file writes" (now a user-level report write; the project
 > repository is still never written). "No source-code analysis" and "no path-based source
@@ -502,22 +502,22 @@ Context analysis recommends durable context improvements only. It does not edit 
 1. Should inspect add trend snapshots and run comparison?
 2. Should inspect support VS Code Insiders and other VS Code-like storage roots?
 3. Should telemetry support authenticated enterprise upload?
-4. Should Token Guard support enterprise policy-controlled defaults?
+4. Should Token Killer support enterprise policy-controlled defaults?
 5. Should inspect support custom taxonomy configuration?
-6. Should Token Guard add `tg config set/get`?
+6. Should Token Killer add `tk config set/get`?
 7. Should inspect ingest Chronicle exports?
 
 ## Design Recommendation
 
-Proceed with `tg inspect` as the focused local diagnostic CLI inside the complete Token Guard product.
+Proceed with `tk inspect` as the focused local diagnostic CLI inside the complete Token Killer product.
 
 The public model should be:
 
 ```text
-token-guard package
-tg executable
-tg inspect analysis command
-tg config init configuration bootstrap
+token-killer package
+tk executable
+tk inspect analysis command
+tk config init configuration bootstrap
 ```
 
 The core product promise is evidence-based workflow insight with safe defaults: no default repository scan, no default file writes, no default raw evidence, no default telemetry export, and no claim of exact token accounting.

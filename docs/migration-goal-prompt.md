@@ -1,12 +1,12 @@
-# RTK → tg Migration Goal Prompt
+# RTK → tk Migration Goal Prompt
 
-Use this prompt to drive agent sessions that close the RTK → tg parity gap. Copy everything below the `---` line into a new task.
+Use this prompt to drive agent sessions that close the RTK → tk parity gap. Copy everything below the `---` line into a new task.
 
 ---
 
 ## Mission
 
-Complete the **RTK → tg migration** for the `token-guard` repo: every RTK command filter in `rtk/src/cmds/**` must have equivalent tg behavior in `src/handlers/**`, with **test parity** derived from RTK's inline `#[cfg(test)]` suites and fixtures.
+Complete the **RTK → tk migration** for the `token-killer` repo: every RTK command filter in `rtk/src/cmds/**` must have equivalent tk behavior in `src/handlers/**`, with **test parity** derived from RTK's inline `#[cfg(test)]` suites and fixtures.
 
 **Source of truth (behavior):** `rtk/src/cmds/**/*.rs`  
 **Target (implementation):** `src/handlers/**/*.ts`  
@@ -15,12 +15,12 @@ Complete the **RTK → tg migration** for the `token-guard` repo: every RTK comm
 
 **Current baseline:**
 - RTK: **986 inline `#[test]`** across 47 command modules
-- tg: registered handlers have fixture-backed product coverage through `fixtureCases`
+- tk: registered handlers have fixture-backed product coverage through `fixtureCases`
 - `pnpm test:product` is the green product gate for implemented behavior
 - `pnpm test:migration` is currently red: missing RTK module gaps, script parity gaps, and repo infrastructure gaps
 - `scripts/check-test-presence.sh` checks fixture-backed handler coverage and core test files — this is necessary but **not sufficient**
 
-**Non-negotiable:** A module is NOT migrated if tg only has generic passthrough or a comment like "no tg X handler". Each RTK command surface needs handler + dedicated tests + fixtures where RTK has them.
+**Non-negotiable:** A module is NOT migrated if tk only has generic passthrough or a comment like "no tk X handler". Each RTK command surface needs handler + dedicated tests + fixtures where RTK has them.
 **No fake green:** do not weaken assertions, move failing tests out of the suite, mark gaps as N/A, or replace real fixtures with synthetic stdout to make commands pass.
 
 ---
@@ -29,7 +29,7 @@ Complete the **RTK → tg migration** for the `token-guard` repo: every RTK comm
 
 For each `rtk/src/cmds/<area>/<module>.rs`:
 
-1. **Handler** — tg routes matching commands to a filter in `src/handlers/` (new file or extension of existing handler). Register in `src/handlers/index.ts` and `src/router`/`matches()` logic.
+1. **Handler** — tk routes matching commands to a filter in `src/handlers/` (new file or extension of existing handler). Register in `src/handlers/index.ts` and `src/router`/`matches()` logic.
 2. **Filter parity** — Output preserves RTK's critical information (paths, line numbers, error codes, exit semantics) while achieving comparable compression on large noisy output.
 3. **Test parity** — For every meaningful RTK `#[test]` in that module, add a real fixture-backed `fixtureCases` row or a targeted exported-parser unit test. Name tests after RTK intent when possible.
 4. **Fixtures** — Port RTK fixture files from `rtk/tests/fixtures/` to `tests/fixtures/<domain>/` when RTK uses file-backed samples.
@@ -43,7 +43,7 @@ For each `rtk/src/cmds/<area>/<module>.rs`:
 
 Mirror RTK's per-command test categories. Each handler test file should include cases for:
 
-| Pattern | RTK example | tg expectation |
+| Pattern | RTK example | tk expectation |
 |---------|-------------|----------------|
 | Format variants | `grep -r` vs `-rn` vs `rg --null` | Separate tests per output format |
 | Empty output | no matches / clean tree | No throw; sensible message |
@@ -67,7 +67,7 @@ For each module, follow this loop:
    - Identify filter function(s) and all #[test] blocks
    - List input stdout/stderr samples and expected filtered output
 
-2. Read existing tg handler + tests (if any)
+2. Read existing tk handler + tests (if any)
    - Note gaps vs RTK test list
 
 3. Write/extend tests FIRST
@@ -82,7 +82,7 @@ For each module, follow this loop:
 6. Mark module done in `docs/testing-and-migration-audit.md` §11 audit table
 ```
 
-When RTK merges multiple commands into one tg handler (e.g. ls + find → listLike), **all** RTK inline tests from both modules must be represented — either in the shared test file with describe blocks per command, or split if handlers diverge.
+When RTK merges multiple commands into one tk handler (e.g. ls + find → listLike), **all** RTK inline tests from both modules must be represented — either in the shared test file with describe blocks per command, or split if handlers diverge.
 
 ---
 
@@ -115,7 +115,7 @@ pnpm test:validate-docs
 
 These have handlers but severe test/behavior gaps:
 
-| RTK module | tg target | RTK tests | tg tests | Action |
+| RTK module | tk target | RTK tests | tk tests | Action |
 |------------|-----------|-----------|----------|--------|
 | `system/read.rs` | `readLike.ts` | 8 | 1 | stdin, tail, multi-file, binary, locale |
 | `system/grep_cmd.rs` | `searchLike.ts` | 23 | fixture-backed subset | explicit `--json`, `-c`, `-l`, `-L`, `-o`, BRE `\|` escape, grep -r without line numbers |
@@ -145,13 +145,13 @@ These have handlers but severe test/behavior gaps:
 
 - Port `rtk/scripts/benchmark/` TypeScript suite → `scripts/benchmark/`
 - Add `.github/workflows/ci.yml` running `pnpm test:ci`
-- Port or adapt `rtk/.claude/rules/cli-testing.md` for tg conventions
+- Port or adapt `rtk/.claude/rules/cli-testing.md` for tk conventions
 
 **Out of scope (unless product scope changes):** `rtk-economics.sh`, `test-tracking.sh`, `test-aristote.sh`, openclaw, hooks.
 
 ---
 
-## tg Conventions (match existing code)
+## tk Conventions (match existing code)
 
 - Handlers implement `CommandHandler`: `name`, `matches()`, `execute()`, `filter()`
 - Use `makeFilteredResult()` from `src/handlers/base.ts`
@@ -160,11 +160,11 @@ These have handlers but severe test/behavior gaps:
 - Keep files **under 500 lines** — split handlers if needed
 - English only in code, comments, tests, commit messages
 - Minimize scope: one RTK module (or coherent group) per PR/session
-- Do not remove tg-only handlers (`maven`, `javac`, `generic`) — keep their tests
+- Do not remove tk-only handlers (`maven`, `javac`, `generic`) — keep their tests
 
 ---
 
-## Reference: RTK module → tg mapping
+## Reference: RTK module → tk mapping
 
 ```
 IMPLEMENTED (deepen tests):
@@ -181,7 +181,7 @@ NOT IMPLEMENTED (need handler + tests):
   dotnet (4 modules), aws, curl, psql, wget, docker/kubectl
   go, golangci, cargo, ruby (3)
 
-TG-ONLY (keep):
+TK-ONLY (keep):
   maven, javac, generic
 ```
 
@@ -214,7 +214,7 @@ Done when: pnpm vitest run <test-file> && check-test-presence && validate-docs p
 ## Example: first session prompt (copy-paste ready)
 
 ```
-Migrate RTK → tg Phase 0: searchLike grep parity.
+Migrate RTK → tk Phase 0: searchLike grep parity.
 
 Read rtk/src/cmds/system/grep_cmd.rs — port all #[test] cases related to:
 - format flags: -c, -l, -L, -o, --null, --json
@@ -236,8 +236,8 @@ Verify: pnpm typecheck && pnpm test:product && pnpm test:check-presence && pnpm 
 
 Migration is complete when:
 
-- [ ] **0** RTK command modules lack tg handler + fixture-backed coverage
-- [ ] Every RTK `#[test]` in `rtk/src/cmds/**` has a documented tg equivalent (test name or comment linking `RTK: test_*`)
+- [ ] **0** RTK command modules lack tk handler + fixture-backed coverage
+- [ ] Every RTK `#[test]` in `rtk/src/cmds/**` has a documented tk equivalent (test name or comment linking `RTK: test_*`)
 - [ ] All RTK fixtures under `rtk/tests/fixtures/` ported or explicitly N/A with handler present
 - [ ] `docs/testing-and-migration-audit.md` §11 shows ✅ for all audit rows
 - [ ] `pnpm test:ci` passes in CI

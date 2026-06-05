@@ -1,54 +1,54 @@
-# tg vs rtk — Three-Way Comparison
+# tk vs rtk — Three-Way Comparison
 
 Generated: 2026-06-05
-Project: `token-guard` (/Users/ziyu/Workspace/token-guard)
+Project: `token-killer` (/Users/ziyu/Workspace/token-killer)
 Scope: 76 cases with full outputs (43 live, 39 fixture-backed); 6 large cases stats-only (raw > 3000 tokens)
 rtk: rtk 0.42.1
 
 **Method**
 - **raw (live)**: underlying command stdout+stderr (`git --no-pager` for git)
 - **raw (fixture)**: recorded stdout in `tests/fixtures/**`
-- **tg (live)**: `node dist/cli.js <command>`
-- **tg (fixture)**: handler filter on fixture stdout (same pipeline as product tests)
+- **tk (live)**: `node dist/cli.js <command>`
+- **tk (fixture)**: handler filter on fixture stdout (same pipeline as product tests)
 - **rtk (live)**: mapped native `rtk` subcommand
 - **rtk (fixture)**: `cat <fixture> | rtk …` when stdin filter exists (see per-case RTK cmd)
 - **rtk (wrapper)**: err/summary/deps/smart read a command/file/dir, so the fixture is fed via `rtk <sub> "cat <fixture>"`, `rtk smart <fixture>`, or `rtk deps <tmpdir>` (see per-case RTK cmd)
-- **rtk (unsupported)**: tg-only handlers rtk has no filter for (e.g. terraform) are shown as rtk raw passthrough (0% savings)
-- **savingsPct**: token estimate vs raw (`ceil(chars/4)`), same as tg core
-- **Sort**: cases ordered by |tg savingsPct − rtk savingsPct| (largest gap first)
+- **rtk (unsupported)**: tk-only handlers rtk has no filter for (e.g. terraform) are shown as rtk raw passthrough (0% savings)
+- **savingsPct**: token estimate vs raw (`ceil(chars/4)`), same as tk core
+- **Sort**: cases ordered by |tk savingsPct − rtk savingsPct| (largest gap first)
 - **Large outputs**: cases with raw > 3000 tokens listed under “Omitted large outputs” (no full text)
 
 ## Summary
 
-| # | Case | Handler | raw | tg | rtk | tg savings | rtk savings | Δ |
+| # | Case | Handler | raw | tk | rtk | tk savings | rtk savings | Δ |
 |---:|---|---|---:|---:|---:|---:|---:|---:|
 | 1 | git-commit: dry-run | git-commit | 664 | 664 | 1 | 0% | 99.8% | 99.8pp rtk +99.8pp |
-| 2 | wget: example.com head | wget | 132 | 6 | 132 | 95.5% | 0% | 95.5pp tg +95.5pp |
-| 3 | [fixture] kubectl get pods summarizes readiness and crashloop issues | kubectl | 147 | 29 | 147 | 80.3% | 0% | 80.3pp tg +80.3pp |
+| 2 | wget: example.com head | wget | 132 | 6 | 132 | 95.5% | 0% | 95.5pp tk +95.5pp |
+| 3 | [fixture] kubectl get pods summarizes readiness and crashloop issues | kubectl | 147 | 29 | 147 | 80.3% | 0% | 80.3pp tk +80.3pp |
 | 4 | git-stash: invalid ref | git-stash | 12 | 12 | 3 | 0% | 75% | 75.0pp rtk +75.0pp |
-| 5 | [fixture] terraform plan keeps resource changes and plan summary | terraform | 436 | 203 | 436 | 53.4% | 0% | 53.4pp tg +53.4pp |
+| 5 | [fixture] terraform plan keeps resource changes and plan summary | terraform | 436 | 203 | 436 | 53.4% | 0% | 53.4pp tk +53.4pp |
 | 6 | [fixture] psql table format emits tab-separated rows | psql | 91 | 48 | 1 | 47.3% | 98.9% | 51.6pp rtk +51.6pp |
 | 7 | [fixture] js-test keeps failed test and assertion from Vitest fixture | js-test | 49 | 46 | 21 | 6.1% | 57.1% | 51.0pp rtk +51.0pp |
 | 8 | [fixture] gt log keeps the stack graph but strips author emails | gt | 55 | 48 | 20 | 12.7% | 63.6% | 50.9pp rtk +50.9pp |
-| 9 | [fixture] terraform test keeps failed run and assertion | terraform | 132 | 77 | 132 | 41.7% | 0% | 41.7pp tg +41.7pp |
+| 9 | [fixture] terraform test keeps failed run and assertion | terraform | 132 | 77 | 132 | 41.7% | 0% | 41.7pp tk +41.7pp |
 | 10 | prettier: check package.json | generic | 17 | 17 | 10 | 0% | 41.2% | 41.2pp rtk +41.2pp |
 | 11 | [fixture] pip keeps package problems from fixture | pip | 32 | 46 | 19 | 0% | 40.6% | 40.6pp rtk +40.6pp |
-| 12 | [fixture] list-like keeps useful paths from real project listing | list-like | 31 | 21 | 45 | 32.3% | 0% | 32.3pp tg +32.3pp |
+| 12 | [fixture] list-like keeps useful paths from real project listing | list-like | 31 | 21 | 45 | 32.3% | 0% | 32.3pp tk +32.3pp |
 | 13 | [fixture] git-log keeps standard commit subjects | git-log | 119 | 84 | 47 | 29.4% | 60.5% | 31.1pp rtk +31.1pp |
-| 14 | eslint: eslint package.json | eslint | 126 | 8 | 39 | 93.7% | 69% | 24.7pp tg +24.7pp |
-| 15 | glab: mr list | glab | 128 | 106 | 128 | 17.2% | 0% | 17.2pp tg +17.2pp |
-| 16 | [fixture] smart keeps the summary payload without prompt boilerplate | smart | 20 | 9 | 12 | 55% | 40% | 15.0pp tg +15.0pp |
-| 17 | [fixture] find groups matches by directory like RTK | list-like | 16 | 14 | 23 | 12.5% | 0% | 12.5pp tg +12.5pp |
-| 18 | [fixture] js-test keeps failed Jest test name from fixture | js-test | 36 | 32 | 36 | 11.1% | 0% | 11.1pp tg +11.1pp |
-| 19 | format: format --check | format | 32 | 7 | 10 | 78.1% | 68.8% | 9.3pp tg +9.3pp |
+| 14 | eslint: eslint package.json | eslint | 126 | 8 | 39 | 93.7% | 69% | 24.7pp tk +24.7pp |
+| 15 | glab: mr list | glab | 128 | 106 | 128 | 17.2% | 0% | 17.2pp tk +17.2pp |
+| 16 | [fixture] smart keeps the summary payload without prompt boilerplate | smart | 20 | 9 | 12 | 55% | 40% | 15.0pp tk +15.0pp |
+| 17 | [fixture] find groups matches by directory like RTK | list-like | 16 | 14 | 23 | 12.5% | 0% | 12.5pp tk +12.5pp |
+| 18 | [fixture] js-test keeps failed Jest test name from fixture | js-test | 36 | 32 | 36 | 11.1% | 0% | 11.1pp tk +11.1pp |
+| 19 | format: format --check | format | 32 | 7 | 10 | 78.1% | 68.8% | 9.3pp tk +9.3pp |
 | 20 | [fixture] glab mr list keeps merge request identity and branches | glab | 2366 | 200 | 0 | 91.5% | 100% | 8.5pp rtk +8.5pp |
 | 21 | list-like: ls -la . | ls | 390 | 121 | 90 | 69% | 76.9% | 7.9pp rtk +7.9pp |
 | 22 | js-test: vitest run savings test | js-test | 53 | 8 | 5 | 84.9% | 90.6% | 5.7pp rtk +5.7pp |
-| 23 | [fixture] find small output keeps root files without excessive growth | list-like | 41 | 39 | 48 | 4.9% | 0% | 4.9pp tg +4.9pp |
-| 24 | [fixture] npx tsc routes through the TypeScript filter | npx | 309 | 292 | 302 | 5.5% | 2.3% | 3.2pp tg +3.2pp |
-| 25 | [fixture] tsc keeps TypeScript diagnostic codes from fixture | tsc | 309 | 292 | 302 | 5.5% | 2.3% | 3.2pp tg +3.2pp |
+| 23 | [fixture] find small output keeps root files without excessive growth | list-like | 41 | 39 | 48 | 4.9% | 0% | 4.9pp tk +4.9pp |
+| 24 | [fixture] npx tsc routes through the TypeScript filter | npx | 309 | 292 | 302 | 5.5% | 2.3% | 3.2pp tk +3.2pp |
+| 25 | [fixture] tsc keeps TypeScript diagnostic codes from fixture | tsc | 309 | 292 | 302 | 5.5% | 2.3% | 3.2pp tk +3.2pp |
 | 26 | [fixture] git-status keeps extended dirty status paths | git-status | 46 | 46 | 45 | 0% | 2.2% | 2.2pp rtk +2.2pp |
-| 27 | [fixture] deps summarizes a package.json manifest | deps | 52 | 33 | 34 | 36.5% | 34.6% | 1.9pp tg +1.9pp |
+| 27 | [fixture] deps summarizes a package.json manifest | deps | 52 | 33 | 34 | 36.5% | 34.6% | 1.9pp tk +1.9pp |
 | 28 | [fixture] git-diff keeps changed lines from real diff | git-diff | 64 | 46 | 45 | 28.1% | 29.7% | 1.6pp rtk +1.6pp |
 | 29 | json: json package.json | json | 0 | 6 | 277 | 0% | 0% | 0.0pp ≈ |
 | 30 | search-like: rg export src/ | search-like | 2540 | 2540 | 2647 | 0% | 0% | 0.0pp ≈ |
@@ -101,17 +101,17 @@ rtk: rtk 0.42.1
 
 **Aggregate (token-weighted across 76 cases with full outputs):**
 - raw: 14943 tokens
-- tg: 9900 tokens (33.7% savings)
+- tk: 9900 tokens (33.7% savings)
 - rtk: 9944 tokens (33.5% savings)
 
 ### Omitted large outputs (stats only)
 
 Per-case dumps excluded when raw exceeds 3000 tokens.
 
-| Case | Handler | raw | tg | rtk | tg savings | rtk savings | Δ |
+| Case | Handler | raw | tk | rtk | tk savings | rtk savings | Δ |
 |---|---|---:|---:|---:|---:|---:|---:|
-| git-diff: git diff HEAD~1 | git-diff | 53311 | 7653 | 8205 | 85.6% | 84.6% | 1.0pp tg +1.0pp |
-| ruff: ruff check src/handlers/index.ts | ruff | 24609 | 954 | 1164 | 96.1% | 95.3% | 0.8pp tg +0.8pp |
+| git-diff: git diff HEAD~1 | git-diff | 53311 | 7653 | 8205 | 85.6% | 84.6% | 1.0pp tk +1.0pp |
+| ruff: ruff check src/handlers/index.ts | ruff | 24609 | 954 | 1164 | 96.1% | 95.3% | 0.8pp tk +0.8pp |
 | list-like: tree . | tree | 37641 | 5272 | 5272 | 86% | 86% | 0.0pp ≈ |
 | pip: pip list | pip | 4295 | 1924 | 1924 | 55.2% | 55.2% | 0.0pp ≈ |
 | read-like: cat docs/DESIGN.md | read | 10994 | 10994 | 10994 | 0% | 0% | 0.0pp ≈ |
@@ -166,21 +166,21 @@ Per-case dumps excluded when raw exceeds 3000 tokens.
 ### 1. git-commit: dry-run
 
 - Handler: `git-commit`
-- tg: `tg git commit --dry-run`
+- tk: `tk git commit --dry-run`
 - raw: `git --no-pager commit --dry-run`
 - rtk: `git commit --dry-run`
 
 | channel | chars | tokens | savingsPct |
 |---|---:|---:|---:|
 | raw | 2655 | 664 | 0% |
-| tg | 2654 | 664 | 0% |
+| tk | 2654 | 664 | 0% |
 | rtk | 3 | 1 | 99.8% |
 
 **raw** (2655 chars, 664 tokens):
 
 ```text
-On branch codex/token-guard-node-cli
-Your branch is up to date with 'origin/codex/token-guard-node-cli'.
+On branch codex/token-killer-node-cli
+Your branch is up to date with 'origin/codex/token-killer-node-cli'.
 
 Changes to be committed:
   (use "git restore --staged <file>..." to unstage)
@@ -244,11 +244,11 @@ Untracked files:
 
 ```
 
-**tg** (2654 chars, 664 tokens, 0% savings):
+**tk** (2654 chars, 664 tokens, 0% savings):
 
 ```text
-On branch codex/token-guard-node-cli
-Your branch is up to date with 'origin/codex/token-guard-node-cli'.
+On branch codex/token-killer-node-cli
+Your branch is up to date with 'origin/codex/token-killer-node-cli'.
 
 Changes to be committed:
   (use "git restore --staged <file>..." to unstage)
@@ -323,14 +323,14 @@ ok
 ### 2. wget: example.com head
 
 - Handler: `wget`
-- tg: `tg wget -q -O - https://example.com/`
+- tk: `tk wget -q -O - https://example.com/`
 - raw: `wget -q -O - https://example.com/`
 - rtk: `wget -q -O - https://example.com/`
 
 | channel | chars | tokens | savingsPct |
 |---|---:|---:|---:|
 | raw | 528 | 132 | 0% |
-| tg | 24 | 6 | 95.5% |
+| tk | 24 | 6 | 95.5% |
 | rtk | 528 | 132 | 0% |
 
 **raw** (528 chars, 132 tokens):
@@ -340,7 +340,7 @@ ok
 
 ```
 
-**tg** (24 chars, 6 tokens, 95.5% savings):
+**tk** (24 chars, 6 tokens, 95.5% savings):
 
 ```text
 example.com/ ok | - | ?
@@ -359,14 +359,14 @@ example.com/ ok | - | ?
 ### 3. [fixture] kubectl get pods summarizes readiness and crashloop issues
 
 - Handler: `kubectl`
-- tg: `tg filter kubectl get pods`
+- tk: `tk filter kubectl get pods`
 - raw: `fixture: tests/fixtures/cloud/kubectl_get_pods.json`
 - rtk: `cat tests/fixtures/cloud/kubectl_get_pods.json | rtk kubectl get pods -o json`
 
 | channel | chars | tokens | savingsPct |
 |---|---:|---:|---:|
 | raw | 586 | 147 | 0% |
-| tg | 115 | 29 | 80.3% |
+| tk | 115 | 29 | 80.3% |
 | rtk | 586 | 147 | 0% |
 
 **raw** (586 chars, 147 tokens):
@@ -394,7 +394,7 @@ example.com/ ok | - | ?
 
 ```
 
-**tg** (115 chars, 29 tokens, 80.3% savings):
+**tk** (115 chars, 29 tokens, 80.3% savings):
 
 ```text
 3 pods: 1, 1 pending, 1 [x], 3 restarts
@@ -434,14 +434,14 @@ example.com/ ok | - | ?
 ### 4. git-stash: invalid ref
 
 - Handler: `git-stash`
-- tg: `tg git stash show stash@{999999}`
+- tk: `tk git stash show stash@{999999}`
 - raw: `git --no-pager stash show stash@{999999}`
 - rtk: `git stash show stash@{999999}`
 
 | channel | chars | tokens | savingsPct |
 |---|---:|---:|---:|
 | raw | 47 | 12 | 0% |
-| tg | 47 | 12 | 0% |
+| tk | 47 | 12 | 0% |
 | rtk | 12 | 3 | 75% |
 
 **raw** (47 chars, 12 tokens):
@@ -451,7 +451,7 @@ error: stash@{999999} is not a valid reference
 
 ```
 
-**tg** (47 chars, 12 tokens, 0% savings):
+**tk** (47 chars, 12 tokens, 0% savings):
 
 ```text
 error: stash@{999999} is not a valid reference
@@ -470,14 +470,14 @@ Empty stash
 ### 5. [fixture] terraform plan keeps resource changes and plan summary
 
 - Handler: `terraform`
-- tg: `tg filter terraform plan`
+- tk: `tk filter terraform plan`
 - raw: `fixture: tests/fixtures/terraform/plan_changes.txt`
 - rtk: `unsupported (rtk has no terraform filter; raw passthrough)`
 
 | channel | chars | tokens | savingsPct |
 |---|---:|---:|---:|
 | raw | 1742 | 436 | 0% |
-| tg | 812 | 203 | 53.4% |
+| tk | 812 | 203 | 53.4% |
 | rtk | 1742 | 436 | 0% |
 
 **raw** (1742 chars, 436 tokens):
@@ -535,7 +535,7 @@ guarantee to take exactly these actions if you run "terraform apply" now.
 
 ```
 
-**tg** (812 chars, 203 tokens, 53.4% savings):
+**tk** (812 chars, 203 tokens, 53.4% savings):
 
 ```text
 Terraform will perform the following actions:
@@ -629,14 +629,14 @@ guarantee to take exactly these actions if you run "terraform apply" now.
 ### 6. [fixture] psql table format emits tab-separated rows
 
 - Handler: `psql`
-- tg: `tg filter psql -c select * from users`
+- tk: `tk filter psql -c select * from users`
 - raw: `fixture: tests/fixtures/cloud/psql_table_users.txt`
 - rtk: `cat tests/fixtures/cloud/psql_table_users.txt | rtk psql -c select * from users`
 
 | channel | chars | tokens | savingsPct |
 |---|---:|---:|---:|
 | raw | 361 | 91 | 0% |
-| tg | 191 | 48 | 47.3% |
+| tk | 191 | 48 | 47.3% |
 | rtk | 1 | 1 | 98.9% |
 
 **raw** (361 chars, 91 tokens):
@@ -651,7 +651,7 @@ guarantee to take exactly these actions if you run "terraform apply" now.
 
 ```
 
-**tg** (191 chars, 48 tokens, 47.3% savings):
+**tk** (191 chars, 48 tokens, 47.3% savings):
 
 ```text
 id	name	email	status	created_at	role
@@ -672,14 +672,14 @@ id	name	email	status	created_at	role
 ### 7. [fixture] js-test keeps failed test and assertion from Vitest fixture
 
 - Handler: `js-test`
-- tg: `tg filter vitest run`
+- tk: `tk filter vitest run`
 - raw: `fixture: tests/fixtures/js/vitest_failed.txt`
 - rtk: `cat tests/fixtures/js/vitest_failed.txt | rtk pipe -f vitest`
 
 | channel | chars | tokens | savingsPct |
 |---|---:|---:|---:|
 | raw | 193 | 49 | 0% |
-| tg | 181 | 46 | 6.1% |
+| tk | 181 | 46 | 6.1% |
 | rtk | 82 | 21 | 57.1% |
 
 **raw** (193 chars, 49 tokens):
@@ -692,7 +692,7 @@ Tests  3 failed | 215 passed (218)
 
 ```
 
-**tg** (181 chars, 46 tokens, 6.1% savings):
+**tk** (181 chars, 46 tokens, 6.1% savings):
 
 ```text
 PASS (215) FAIL (3)
@@ -716,14 +716,14 @@ PASS (215) FAIL (3)
 ### 8. [fixture] gt log keeps the stack graph but strips author emails
 
 - Handler: `gt`
-- tg: `tg filter gt log`
+- tk: `tk filter gt log`
 - raw: `fixture: tests/fixtures/git/gt_log_stack.txt`
 - rtk: `cat tests/fixtures/git/gt_log_stack.txt | rtk gt log`
 
 | channel | chars | tokens | savingsPct |
 |---|---:|---:|---:|
 | raw | 220 | 55 | 0% |
-| tg | 189 | 48 | 12.7% |
+| tk | 189 | 48 | 12.7% |
 | rtk | 80 | 20 | 63.6% |
 
 **raw** (220 chars, 55 tokens):
@@ -741,7 +741,7 @@ PASS (215) FAIL (3)
 
 ```
 
-**tg** (189 chars, 48 tokens, 12.7% savings):
+**tk** (189 chars, 48 tokens, 12.7% savings):
 
 ```text
 ◉  abc1234 feat/add-auth 2d ago
@@ -762,7 +762,7 @@ PASS (215) FAIL (3)
 ◯ main
 │ 3 days ago
 │
-│ 0a15557 - docs: add token guard product documentation
+│ 0a15557 - docs: add token killer product documentation
 │
 
 ```
@@ -772,14 +772,14 @@ PASS (215) FAIL (3)
 ### 9. [fixture] terraform test keeps failed run and assertion
 
 - Handler: `terraform`
-- tg: `tg filter terraform test`
+- tk: `tk filter terraform test`
 - raw: `fixture: tests/fixtures/terraform/test_failed.txt`
 - rtk: `unsupported (rtk has no terraform filter; raw passthrough)`
 
 | channel | chars | tokens | savingsPct |
 |---|---:|---:|---:|
 | raw | 528 | 132 | 0% |
-| tg | 308 | 77 | 41.7% |
+| tk | 308 | 77 | 41.7% |
 | rtk | 528 | 132 | 0% |
 
 **raw** (528 chars, 132 tokens):
@@ -805,7 +805,7 @@ Failure! 1 passed, 1 failed.
 
 ```
 
-**tg** (308 chars, 77 tokens, 41.7% savings):
+**tk** (308 chars, 77 tokens, 41.7% savings):
 
 ```text
 run "rejects_invalid_cidr"... fail
@@ -847,14 +847,14 @@ Failure! 1 passed, 1 failed.
 ### 10. prettier: check package.json
 
 - Handler: `generic`
-- tg: `tg pnpm exec prettier --check package.json`
+- tk: `tk pnpm exec prettier --check package.json`
 - raw: `pnpm exec prettier --check package.json`
 - rtk: `prettier --check package.json`
 
 | channel | chars | tokens | savingsPct |
 |---|---:|---:|---:|
 | raw | 66 | 17 | 0% |
-| tg | 66 | 17 | 0% |
+| tk | 66 | 17 | 0% |
 | rtk | 40 | 10 | 41.2% |
 
 **raw** (66 chars, 17 tokens):
@@ -865,7 +865,7 @@ All matched files use Prettier code style!
 
 ```
 
-**tg** (66 chars, 17 tokens, 0% savings):
+**tk** (66 chars, 17 tokens, 0% savings):
 
 ```text
 Checking formatting...
@@ -885,14 +885,14 @@ Prettier: All files formatted correctly
 ### 11. [fixture] pip keeps package problems from fixture
 
 - Handler: `pip`
-- tg: `tg filter pip list`
+- tk: `tk filter pip list`
 - raw: `fixture: tests/fixtures/python/pip_list_large.txt`
 - rtk: `cat tests/fixtures/python/pip_list_large.txt | rtk pip list`
 
 | channel | chars | tokens | savingsPct |
 |---|---:|---:|---:|
 | raw | 128 | 32 | 0% |
-| tg | 183 | 46 | 0% |
+| tk | 183 | 46 | 0% |
 | rtk | 75 | 19 | 40.6% |
 
 **raw** (128 chars, 32 tokens):
@@ -907,7 +907,7 @@ missing-lib 0.0.0 missing
 
 ```
 
-**tg** (183 chars, 46 tokens, 0% savings):
+**tk** (183 chars, 46 tokens, 0% savings):
 
 ```text
 pip list: 1 packages
@@ -935,14 +935,14 @@ pip list (JSON parse failed: EOF while parsing a value at line 1 column 0)
 ### 12. [fixture] list-like keeps useful paths from real project listing
 
 - Handler: `list-like`
-- tg: `tg filter find .`
+- tk: `tk filter find .`
 - raw: `fixture: tests/fixtures/common/ls_large_project.txt`
 - rtk: `cat tests/fixtures/common/ls_large_project.txt | rtk pipe -f find`
 
 | channel | chars | tokens | savingsPct |
 |---|---:|---:|---:|
 | raw | 124 | 31 | 0% |
-| tg | 81 | 21 | 32.3% |
+| tk | 81 | 21 | 32.3% |
 | rtk | 180 | 45 | 0% |
 
 **raw** (124 chars, 31 tokens):
@@ -958,7 +958,7 @@ pip list (JSON parse failed: EOF while parsing a value at line 1 column 0)
 
 ```
 
-**tg** (81 chars, 21 tokens, 32.3% savings):
+**tk** (81 chars, 21 tokens, 32.3% savings):
 
 ```text
 5F 3D:
@@ -994,14 +994,14 @@ tests/unit/ parse.test.ts
 ### 13. [fixture] git-log keeps standard commit subjects
 
 - Handler: `git-log`
-- tg: `tg filter git log`
+- tk: `tk filter git log`
 - raw: `fixture: tests/fixtures/git/log_standard.txt`
 - rtk: `cat tests/fixtures/git/log_standard.txt | rtk pipe -f git-log`
 
 | channel | chars | tokens | savingsPct |
 |---|---:|---:|---:|
 | raw | 474 | 119 | 0% |
-| tg | 336 | 84 | 29.4% |
+| tk | 336 | 84 | 29.4% |
 | rtk | 185 | 47 | 60.5% |
 
 **raw** (474 chars, 119 tokens):
@@ -1011,7 +1011,7 @@ commit a1b2c3d4e5f6a7b8c9d0e1f2a3b4c5d6e7f8a9b0
 Author: Test User <test@example.com>
 Date:   Mon Jun 2 15:30:00 2026 +0800
 
-    feat: add token guard command proxy
+    feat: add token killer command proxy
 
 commit b2c3d4e5f6a7b8c9d0e1f2a3b4c5d6e7f8a9b0a1
 Author: Test User <test@example.com>
@@ -1027,12 +1027,12 @@ Date:   Sun Jun 1 12:00:00 2026 +0800
 
 ```
 
-**tg** (336 chars, 84 tokens, 29.4% savings):
+**tk** (336 chars, 84 tokens, 29.4% savings):
 
 ```text
 Git Log: 3 commits
 
-a1b2c3d4e5f6 feat: add token guard command proxy
+a1b2c3d4e5f6 feat: add token killer command proxy
   Test User <test@example.com> | Mon Jun 2 15:30:00 2026 +0800
 b2c3d4e5f6a7 fix: handle edge case in parser
   Test User <test@example.com> | Mon Jun 2 14:00:00 2026 +0800
@@ -1047,7 +1047,7 @@ c3d4e5f6a7b8 Initial commit
 commit a1b2c3d4e5f6a7b8c9d0e1f2a3b4c5d6e7f8a9b0
   Author: Test User <test@example.com>
   Date:   Mon Jun 2 15:30:00 2026 +0800
-  feat: add token guard command proxy
+  feat: add token killer command proxy
   [+8 lines omitted]
 ```
 
@@ -1056,14 +1056,14 @@ commit a1b2c3d4e5f6a7b8c9d0e1f2a3b4c5d6e7f8a9b0
 ### 14. eslint: eslint package.json
 
 - Handler: `eslint`
-- tg: `tg pnpm exec eslint package.json`
+- tk: `tk pnpm exec eslint package.json`
 - raw: `pnpm exec eslint package.json`
 - rtk: `lint package.json`
 
 | channel | chars | tokens | savingsPct |
 |---|---:|---:|---:|
 | raw | 502 | 126 | 0% |
-| tg | 30 | 8 | 93.7% |
+| tk | 30 | 8 | 93.7% |
 | rtk | 154 | 39 | 69% |
 
 **raw** (502 chars, 126 tokens):
@@ -1088,7 +1088,7 @@ https://eslint.org/chat/help to chat with the team.
 
 ```
 
-**tg** (30 chars, 8 tokens, 93.7% savings):
+**tk** (30 chars, 8 tokens, 93.7% savings):
 
 ```text
 ESLint: 0 problems in 0 files
@@ -1109,14 +1109,14 @@ ESLint output (JSON parse failed: EOF while parsing a value at line 1 column 0)
 ### 15. glab: mr list
 
 - Handler: `glab`
-- tg: `tg glab mr list`
+- tk: `tk glab mr list`
 - raw: `glab mr list`
 - rtk: `glab mr list`
 
 | channel | chars | tokens | savingsPct |
 |---|---:|---:|---:|
 | raw | 510 | 128 | 0% |
-| tg | 424 | 106 | 17.2% |
+| tk | 424 | 106 | 17.2% |
 | rtk | 510 | 128 | 0% |
 
 **raw** (510 chars, 128 tokens):
@@ -1133,7 +1133,7 @@ ESLint output (JSON parse failed: EOF while parsing a value at line 1 column 0)
 
 ```
 
-**tg** (424 chars, 106 tokens, 17.2% savings):
+**tk** (424 chars, 106 tokens, 17.2% savings):
 
 ```text
           
@@ -1165,14 +1165,14 @@ ESLint output (JSON parse failed: EOF while parsing a value at line 1 column 0)
 ### 16. [fixture] smart keeps the summary payload without prompt boilerplate
 
 - Handler: `smart`
-- tg: `tg filter smart src/main.rs`
+- tk: `tk filter smart src/main.rs`
 - raw: `fixture: tests/fixtures/system/smart_summary.txt`
 - rtk: `rtk smart tests/fixtures/system/smart_summary.txt`
 
 | channel | chars | tokens | savingsPct |
 |---|---:|---:|---:|
 | raw | 79 | 20 | 0% |
-| tg | 34 | 9 | 55% |
+| tk | 34 | 9 | 55% |
 | rtk | 46 | 12 | 40% |
 
 **raw** (79 chars, 20 tokens):
@@ -1183,7 +1183,7 @@ Summary: parser routes commands to handlers
 
 ```
 
-**tg** (34 chars, 9 tokens, 55% savings):
+**tk** (34 chars, 9 tokens, 55% savings):
 
 ```text
 parser routes commands to handlers
@@ -1202,14 +1202,14 @@ General purpose code file
 ### 17. [fixture] find groups matches by directory like RTK
 
 - Handler: `list-like`
-- tg: `tg filter find src -name *.ts`
+- tk: `tk filter find src -name *.ts`
 - raw: `fixture: tests/fixtures/common/find_src_ts.txt`
 - rtk: `cat tests/fixtures/common/find_src_ts.txt | rtk pipe -f find`
 
 | channel | chars | tokens | savingsPct |
 |---|---:|---:|---:|
 | raw | 63 | 16 | 0% |
-| tg | 54 | 14 | 12.5% |
+| tk | 54 | 14 | 12.5% |
 | rtk | 90 | 23 | 0% |
 
 **raw** (63 chars, 16 tokens):
@@ -1222,7 +1222,7 @@ src/parse.ts
 
 ```
 
-**tg** (54 chars, 14 tokens, 12.5% savings):
+**tk** (54 chars, 14 tokens, 12.5% savings):
 
 ```text
 4F 2D:
@@ -1251,14 +1251,14 @@ src/core/  (2)
 ### 18. [fixture] js-test keeps failed Jest test name from fixture
 
 - Handler: `js-test`
-- tg: `tg filter jest`
+- tk: `tk filter jest`
 - raw: `fixture: tests/fixtures/js/jest_failed.txt`
 - rtk: `cat tests/fixtures/js/jest_failed.txt | rtk pipe -f vitest`
 
 | channel | chars | tokens | savingsPct |
 |---|---:|---:|---:|
 | raw | 143 | 36 | 0% |
-| tg | 125 | 32 | 11.1% |
+| tk | 125 | 32 | 11.1% |
 | rtk | 143 | 36 | 0% |
 
 **raw** (143 chars, 36 tokens):
@@ -1271,7 +1271,7 @@ Tests: 3 failed, 215 passed, 218 total
 
 ```
 
-**tg** (125 chars, 32 tokens, 11.1% savings):
+**tk** (125 chars, 32 tokens, 11.1% savings):
 
 ```text
 PASS (215) FAIL (3)
@@ -1297,14 +1297,14 @@ Tests: 3 failed, 215 passed, 218 total
 ### 19. format: format --check
 
 - Handler: `format`
-- tg: `tg format --check`
+- tk: `tk format --check`
 - raw: `pnpm exec prettier --check package.json README.md src/cli.ts`
 - rtk: `format --check`
 
 | channel | chars | tokens | savingsPct |
 |---|---:|---:|---:|
 | raw | 125 | 32 | 0% |
-| tg | 26 | 7 | 78.1% |
+| tk | 26 | 7 | 78.1% |
 | rtk | 40 | 10 | 68.8% |
 
 **raw** (125 chars, 32 tokens):
@@ -1316,7 +1316,7 @@ Checking formatting...
 
 ```
 
-**tg** (26 chars, 7 tokens, 78.1% savings):
+**tk** (26 chars, 7 tokens, 78.1% savings):
 
 ```text
 format: command not found
@@ -1335,14 +1335,14 @@ Prettier: All files formatted correctly
 ### 20. [fixture] glab mr list keeps merge request identity and branches
 
 - Handler: `glab`
-- tg: `tg filter glab mr list`
+- tk: `tk filter glab mr list`
 - raw: `fixture: tests/fixtures/git/glab_mr_list_raw.json`
 - rtk: `cat tests/fixtures/git/glab_mr_list_raw.json | rtk glab mr list`
 
 | channel | chars | tokens | savingsPct |
 |---|---:|---:|---:|
 | raw | 9463 | 2366 | 0% |
-| tg | 798 | 200 | 91.5% |
+| tk | 798 | 200 | 91.5% |
 | rtk | 0 | 0 | 100% |
 
 **raw** (9463 chars, 2366 tokens):
@@ -1533,7 +1533,7 @@ Prettier: All files formatted correctly
 
 ````
 
-**tg** (798 chars, 200 tokens, 91.5% savings):
+**tk** (798 chars, 200 tokens, 91.5% savings):
 
 ```text
 Merge Requests
@@ -1561,14 +1561,14 @@ Merge Requests
 ### 21. list-like: ls -la .
 
 - Handler: `ls`
-- tg: `tg ls -la .`
+- tk: `tk ls -la .`
 - raw: `ls -la .`
 - rtk: `ls -la .`
 
 | channel | chars | tokens | savingsPct |
 |---|---:|---:|---:|
 | raw | 1559 | 390 | 0% |
-| tg | 483 | 121 | 69% |
+| tk | 483 | 121 | 69% |
 | rtk | 358 | 90 | 76.9% |
 
 **raw** (1559 chars, 390 tokens):
@@ -1583,7 +1583,7 @@ drwxr-xr-x  21 ziyu  staff    672  6月  5 11:44 .git
 drwxr-xr-x@  5 ziyu  staff    160  6月  5 08:32 .mypy_cache
 drwxr-xr-x@  6 ziyu  staff    192  6月  5 08:24 .pytest_cache
 drwxr-xr-x@  6 ziyu  staff    192  6月  5 11:01 .ruff_cache
-drwxr-xr-x@  4 ziyu  staff    128  6月  2 17:46 .tg
+drwxr-xr-x@  4 ziyu  staff    128  6月  2 17:46 .tk
 -rw-r--r--@  1 ziyu  staff   2429  6月  4 23:34 AGENTS.md
 -rw-r--r--@  1 ziyu  staff     18  6月  4 23:34 CLAUDE.md
 -rw-r--r--@  1 ziyu  staff   8525  6月  5 15:00 CONTEXT.md
@@ -1605,7 +1605,7 @@ drwxr-xr-x@  8 ziyu  staff    256  6月  5 11:26 tests
 
 ```
 
-**tg** (483 chars, 121 tokens, 69% savings):
+**tk** (483 chars, 121 tokens, 69% savings):
 
 ```text
 755  .claude/
@@ -1613,7 +1613,7 @@ drwxr-xr-x@  8 ziyu  staff    256  6月  5 11:26 tests
 755  .mypy_cache/
 755  .pytest_cache/
 755  .ruff_cache/
-755  .tg/
+755  .tk/
 755  dist/
 755  docs/
 755  node_modules/
@@ -1644,7 +1644,7 @@ drwxr-xr-x@  8 ziyu  staff    256  6月  5 11:26 tests
 .mypy_cache/
 .pytest_cache/
 .ruff_cache/
-.tg/
+.tk/
 dist/
 docs/
 node_modules/
@@ -1672,21 +1672,21 @@ vitest.migration.config.ts  512B
 ### 22. js-test: vitest run savings test
 
 - Handler: `js-test`
-- tg: `tg pnpm exec vitest run tests/unit/savings.test.ts`
+- tk: `tk pnpm exec vitest run tests/unit/savings.test.ts`
 - raw: `pnpm exec vitest run tests/unit/savings.test.ts`
 - rtk: `vitest run tests/unit/savings.test.ts`
 
 | channel | chars | tokens | savingsPct |
 |---|---:|---:|---:|
 | raw | 212 | 53 | 0% |
-| tg | 30 | 8 | 84.9% |
+| tk | 30 | 8 | 84.9% |
 | rtk | 18 | 5 | 90.6% |
 
 **raw** (212 chars, 53 tokens):
 
 ```text
 
- RUN  v4.1.8 /Users/ziyu/Workspace/token-guard
+ RUN  v4.1.8 /Users/ziyu/Workspace/token-killer
 
 
  Test Files  1 passed (1)
@@ -1697,7 +1697,7 @@ vitest.migration.config.ts  512B
 
 ```
 
-**tg** (30 chars, 8 tokens, 84.9% savings):
+**tk** (30 chars, 8 tokens, 84.9% savings):
 
 ```text
 PASS (4) FAIL (0)
@@ -1718,14 +1718,14 @@ PASS (4) FAIL (0)
 ### 23. [fixture] find small output keeps root files without excessive growth
 
 - Handler: `list-like`
-- tg: `tg filter find . -maxdepth 1 -type f`
+- tk: `tk filter find . -maxdepth 1 -type f`
 - raw: `fixture: tests/fixtures/common/find_small_root_files.txt`
 - rtk: `cat tests/fixtures/common/find_small_root_files.txt | rtk pipe -f find`
 
 | channel | chars | tokens | savingsPct |
 |---|---:|---:|---:|
 | raw | 162 | 41 | 0% |
-| tg | 155 | 39 | 4.9% |
+| tk | 155 | 39 | 4.9% |
 | rtk | 190 | 48 | 0% |
 
 **raw** (162 chars, 41 tokens):
@@ -1743,7 +1743,7 @@ PASS (4) FAIL (0)
 
 ```
 
-**tg** (155 chars, 39 tokens, 4.9% savings):
+**tk** (155 chars, 39 tokens, 4.9% savings):
 
 ```text
 9F 1D:
@@ -1775,14 +1775,14 @@ PASS (4) FAIL (0)
 ### 24. [fixture] npx tsc routes through the TypeScript filter
 
 - Handler: `npx`
-- tg: `tg filter npx tsc --noEmit`
+- tk: `tk filter npx tsc --noEmit`
 - raw: `fixture: tests/fixtures/js/tsc_many.txt`
 - rtk: `cat tests/fixtures/js/tsc_many.txt | rtk pipe -f tsc`
 
 | channel | chars | tokens | savingsPct |
 |---|---:|---:|---:|
 | raw | 1235 | 309 | 0% |
-| tg | 1166 | 292 | 5.5% |
+| tk | 1166 | 292 | 5.5% |
 | rtk | 1205 | 302 | 2.3% |
 
 **raw** (1235 chars, 309 tokens):
@@ -1805,7 +1805,7 @@ Found 12 errors in 6 files.
 
 ```
 
-**tg** (1166 chars, 292 tokens, 5.5% savings):
+**tk** (1166 chars, 292 tokens, 5.5% savings):
 
 ```text
 TypeScript: 12 errors in 6 files
@@ -1876,14 +1876,14 @@ src/auth/session.ts (2 errors)
 ### 25. [fixture] tsc keeps TypeScript diagnostic codes from fixture
 
 - Handler: `tsc`
-- tg: `tg filter tsc --noEmit`
+- tk: `tk filter tsc --noEmit`
 - raw: `fixture: tests/fixtures/js/tsc_many.txt`
 - rtk: `cat tests/fixtures/js/tsc_many.txt | rtk pipe -f tsc`
 
 | channel | chars | tokens | savingsPct |
 |---|---:|---:|---:|
 | raw | 1235 | 309 | 0% |
-| tg | 1166 | 292 | 5.5% |
+| tk | 1166 | 292 | 5.5% |
 | rtk | 1205 | 302 | 2.3% |
 
 **raw** (1235 chars, 309 tokens):
@@ -1906,7 +1906,7 @@ Found 12 errors in 6 files.
 
 ```
 
-**tg** (1166 chars, 292 tokens, 5.5% savings):
+**tk** (1166 chars, 292 tokens, 5.5% savings):
 
 ```text
 TypeScript: 12 errors in 6 files
@@ -1977,20 +1977,20 @@ src/order/api.ts (2 errors)
 ### 26. [fixture] git-status keeps extended dirty status paths
 
 - Handler: `git-status`
-- tg: `tg filter git status`
+- tk: `tk filter git status`
 - raw: `fixture: tests/fixtures/git/status_dirty_extended.txt`
 - rtk: `cat tests/fixtures/git/status_dirty_extended.txt | rtk pipe -f git-status`
 
 | channel | chars | tokens | savingsPct |
 |---|---:|---:|---:|
 | raw | 182 | 46 | 0% |
-| tg | 181 | 46 | 0% |
+| tk | 181 | 46 | 0% |
 | rtk | 180 | 45 | 2.2% |
 
 **raw** (182 chars, 46 tokens):
 
 ```text
-## codex/token-guard-node-cli
+## codex/token-killer-node-cli
  D DESIGN.md
  M README.md
  M package.json
@@ -2005,10 +2005,10 @@ src/order/api.ts (2 errors)
 
 ```
 
-**tg** (181 chars, 46 tokens, 0% savings):
+**tk** (181 chars, 46 tokens, 0% savings):
 
 ```text
-* codex/token-guard-node-cli
+* codex/token-killer-node-cli
  D DESIGN.md
  M README.md
  M package.json
@@ -2026,7 +2026,7 @@ src/order/api.ts (2 errors)
 **rtk** (180 chars, 45 tokens, 2.2% savings):
 
 ```text
-* codex/token-guard-node-cli
+* codex/token-killer-node-cli
  D DESIGN.md
  M README.md
  M package.json
@@ -2045,14 +2045,14 @@ src/order/api.ts (2 errors)
 ### 27. [fixture] deps summarizes a package.json manifest
 
 - Handler: `deps`
-- tg: `tg filter deps`
+- tk: `tk filter deps`
 - raw: `fixture: tests/fixtures/system/deps_package.json`
 - rtk: `rtk deps <tmpdir with deps_package.json as package.json>`
 
 | channel | chars | tokens | savingsPct |
 |---|---:|---:|---:|
 | raw | 206 | 52 | 0% |
-| tg | 129 | 33 | 36.5% |
+| tk | 129 | 33 | 36.5% |
 | rtk | 134 | 34 | 34.6% |
 
 **raw** (206 chars, 52 tokens):
@@ -2075,7 +2075,7 @@ src/order/api.ts (2 errors)
 
 ```
 
-**tg** (129 chars, 33 tokens, 36.5% savings):
+**tk** (129 chars, 33 tokens, 36.5% savings):
 
 ```text
 Node.js (package.json):
@@ -2106,14 +2106,14 @@ Node.js (package.json):
 ### 28. [fixture] git-diff keeps changed lines from real diff
 
 - Handler: `git-diff`
-- tg: `tg filter git diff`
+- tk: `tk filter git diff`
 - raw: `fixture: tests/fixtures/git/diff_large.txt`
 - rtk: `cat tests/fixtures/git/diff_large.txt | rtk pipe -f git-diff`
 
 | channel | chars | tokens | savingsPct |
 |---|---:|---:|---:|
 | raw | 253 | 64 | 0% |
-| tg | 183 | 46 | 28.1% |
+| tk | 183 | 46 | 28.1% |
 | rtk | 180 | 45 | 29.7% |
 
 **raw** (253 chars, 64 tokens):
@@ -2128,7 +2128,7 @@ diff --git a/src/order/submit.ts b/src/order/submit.ts
 
 ```
 
-**tg** (183 chars, 46 tokens, 28.1% savings):
+**tk** (183 chars, 46 tokens, 28.1% savings):
 
 ```text
 src/order/submit.ts
@@ -2156,14 +2156,14 @@ src/order/submit.ts
 ### 29. json: json package.json
 
 - Handler: `json`
-- tg: `tg json package.json`
+- tk: `tk json package.json`
 - raw: `json package.json`
 - rtk: `json package.json`
 
 | channel | chars | tokens | savingsPct |
 |---|---:|---:|---:|
 | raw | 0 | 0 | 0% |
-| tg | 24 | 6 | 0% |
+| tk | 24 | 6 | 0% |
 | rtk | 1105 | 277 | 0% |
 
 **raw** (0 chars, 0 tokens):
@@ -2172,7 +2172,7 @@ src/order/submit.ts
 
 ```
 
-**tg** (24 chars, 6 tokens, 0% savings):
+**tk** (24 chars, 6 tokens, 0% savings):
 
 ```text
 json: command not found
@@ -2185,7 +2185,7 @@ json: command not found
 {
   bin:
   {
-    tg: "./dist/cli.js"
+    tk: "./dist/cli.js"
   }
   dependencies:
   {
@@ -2207,7 +2207,7 @@ json: command not found
   }
   files:
   ["dist", "README.md"]
-  name: "@company/tg"
+  name: "@company/tk"
   packageManager: "pnpm@11.5.0"
   scripts:
   {
@@ -2235,14 +2235,14 @@ json: command not found
 ### 30. search-like: rg export src/
 
 - Handler: `search-like`
-- tg: `tg rg export src/`
+- tk: `tk rg export src/`
 - raw: `rg export src/`
 - rtk: `grep export src/`
 
 | channel | chars | tokens | savingsPct |
 |---|---:|---:|---:|
 | raw | 10159 | 2540 | 0% |
-| tg | 10159 | 2540 | 0% |
+| tk | 10159 | 2540 | 0% |
 | rtk | 10588 | 2647 | 0% |
 
 **raw** (10159 chars, 2540 tokens):
@@ -2287,7 +2287,7 @@ src/parse.ts:export function parseArgv(argv: string[]): ParsedArgv {
 src/types.ts:export type ParsedCommand = {
 src/types.ts:export type RawResult = {
 src/types.ts:export type FilteredResult = {
-src/types.ts:export type TgOptions = {
+src/types.ts:export type TkOptions = {
 src/types.ts:export type ParseMode = "command" | "report" | "help" | "version";
 src/types.ts:export type ParsedArgv = {
 src/types.ts:export interface CommandHandler {
@@ -2302,14 +2302,14 @@ src/handlers/js/prisma.ts:export const prismaHandler: CommandHandler = {
 src/handlers/js/tsc.ts:export const tscHandler: CommandHandler = {
 src/core/outputLimit.ts:export function limitLines(text: string, _maxLines: number): string {
 src/core/outputLimit.ts:export function limitChars(text: string, _maxChars: number): string {
-src/core/outputLimit.ts:export function limitOutput(text: string, _options: TgOptions): string {
+src/core/outputLimit.ts:export function limitOutput(text: string, _options: TkOptions): string {
 src/handlers/iac/terraform.ts:export const terraformHandler: CommandHandler = {
 src/handlers/js/packageList.ts:export const packageListHandler: CommandHandler = {
 src/core/ansi.ts:export function removeAnsi(text: string): string {
 src/handlers/js/next.ts:export function extractTime(line: string): string | undefined {
 src/handlers/js/next.ts:export const nextHandler: CommandHandler = {
 src/handlers/dotnet/dotnet.ts:export const dotnetHandler: CommandHandler = {
-src/core/report.ts:export async function buildReport(options: TgOptions): Promise<string> {
+src/core/report.ts:export async function buildReport(options: TkOptions): Promise<string> {
 src/handlers/js/eslint.ts:export const eslintHandler: CommandHandler = {
 src/handlers/common/listLike.ts:export const listLikeHandler: CommandHandler = {
 src/core/patterns.ts:export const IMPORTANT_PATTERN =
@@ -2323,7 +2323,7 @@ src/handlers/js/npm.ts:export const npmHandler: CommandHandler = {
 src/core/fallback.ts:export async function filterWithGenericFallback(
 src/handlers/common/diff.ts:export function lcsChanges(oldLines: string[], newLines: string[]): DiffChange[] {
 src/handlers/common/diff.ts:export const diffHandler: CommandHandler = {
-src/core/dataDir.ts:export function tokenGuardHome(): string {
+src/core/dataDir.ts:export function tokenKillerHome(): string {
 src/core/dataDir.ts:export function projectFingerprint(cwd: string): string {
 src/core/dataDir.ts:export function projectDataDir(cwd: string): string {
 src/core/dataDir.ts:export function historyFile(cwd: string): string {
@@ -2382,7 +2382,7 @@ src/handlers/system/testRunner.ts:export const testRunnerHandler: CommandHandler
 
 ```
 
-**tg** (10159 chars, 2540 tokens, 0% savings):
+**tk** (10159 chars, 2540 tokens, 0% savings):
 
 ```text
 src/handlers/git/show.ts:export const gitShowHandler: CommandHandler = {
@@ -2463,7 +2463,7 @@ src/parse.ts:export function parseArgv(argv: string[]): ParsedArgv {
 src/types.ts:export type ParsedCommand = {
 src/types.ts:export type RawResult = {
 src/types.ts:export type FilteredResult = {
-src/types.ts:export type TgOptions = {
+src/types.ts:export type TkOptions = {
 src/types.ts:export type ParseMode = "command" | "report" | "help" | "version";
 src/types.ts:export type ParsedArgv = {
 src/types.ts:export interface CommandHandler {
@@ -2471,14 +2471,14 @@ src/executor.ts:export function executeCommand(
 src/handlers/java/gradle.ts:export const gradleHandler: CommandHandler = {
 src/core/outputLimit.ts:export function limitLines(text: string, _maxLines: number): string {
 src/core/outputLimit.ts:export function limitChars(text: string, _maxChars: number): string {
-src/core/outputLimit.ts:export function limitOutput(text: string, _options: TgOptions): string {
+src/core/outputLimit.ts:export function limitOutput(text: string, _options: TkOptions): string {
 src/router.ts:export function routeCommand(command: ParsedCommand): CommandHandler {
 src/core/ansi.ts:export function removeAnsi(text: string): string {
 src/core/pipeline.ts:export type PipelineResult = {
 src/core/pipeline.ts:export async function runPipeline(
 src/core/pipeline.ts:export async function filterWithFallback(
 src/handlers/java/maven.ts:export const mavenHandler: CommandHandler = {
-src/core/dataDir.ts:export function tokenGuardHome(): string {
+src/core/dataDir.ts:export function tokenKillerHome(): string {
 src/core/dataDir.ts:export function projectFingerprint(cwd: string): string {
 src/core/dataDir.ts:export function projectDataDir(cwd: string): string {
 src/core/dataDir.ts:export function historyFile(cwd: string): string {
@@ -2507,7 +2507,7 @@ src/handlers/python/pytest.ts:export const pytestHandler: CommandHandler = {
 src/core/rawStore.ts:export async function maybeSaveRawOutput(
 src/handlers/js/npm.ts:export const npmHandler: CommandHandler = {
 src/handlers/js/packageList.ts:export const packageListHandler: CommandHandler = {
-src/core/report.ts:export async function buildReport(options: TgOptions): Promise<string> {
+src/core/report.ts:export async function buildReport(options: TkOptions): Promise<string> {
 src/handlers/js/next.ts:export function extractTime(line: string): string | undefined {
 src/handlers/js/next.ts:export const nextHandler: CommandHandler = {
 src/core/path.ts:export function safePathPart(value: string): string {
@@ -2525,7 +2525,7 @@ src/handlers/js/prettier.ts:export const prettierHandler: CommandHandler = {
 131 matches in 72 files:
 
 src/core/ansi.ts:3:export function removeAnsi(text: string): string {
-src/core/dataDir.ts:14:export function tokenGuardHome(): string {
+src/core/dataDir.ts:14:export function tokenKillerHome(): string {
 src/core/dataDir.ts:21:export function projectFingerprint(cwd: string): string {
 src/core/dataDir.ts:27:export function projectDataDir(cwd: string): string {
 src/core/dataDir.ts:31:export function historyFile(cwd: string): string {
@@ -2538,14 +2538,14 @@ src/core/history.ts:24:export async function recordHistory(
 src/core/history.ts:52:export async function readHistory(cwd: string): Promise<HistoryRecord[]> {
 src/core/outputLimit.ts:3:export function limitLines(text: string, _maxLines: number): string {
 src/core/outputLimit.ts:7:export function limitChars(text: string, _maxChars: number): string {
-src/core/outputLimit.ts:11:export function limitOutput(text: string, _options: TgOptions): string {
+src/core/outputLimit.ts:11:export function limitOutput(text: string, _options: TkOptions): string {
 src/core/path.ts:1:export function safePathPart(value: string): string {
 src/core/patterns.ts:1:export const IMPORTANT_PATTERN =
 src/core/pipeline.ts:5:export type PipelineResult = {
 src/core/pipeline.ts:10:export async function runPipeline(
 src/core/pipeline.ts:21:export async function filterWithFallback(
 src/core/rawStore.ts:15:export async function maybeSaveRawOutput(
-src/core/report.ts:4:export async function buildReport(options: TgOptions): Promise<string> {
+src/core/report.ts:4:export async function buildReport(options: TkOptions): Promise<string> {
 src/core/savings.ts:1:export type Savings = {
 src/core/savings.ts:10:export function estimateTokens(text: string): number {
 src/core/savings.ts:14:export function calculateSavings(raw: string, output: string): Savings {
@@ -2651,7 +2651,7 @@ src/router.ts:4:export function routeCommand(command: ParsedCommand): CommandHan
 src/types.ts:1:export type ParsedCommand = {
 src/types.ts:8:export type RawResult = {
 src/types.ts:21:export type FilteredResult = {
-src/types.ts:36:export type TgOptions = {
+src/types.ts:36:export type TkOptions = {
 src/types.ts:47:export type ParseMode = "command" | "report" | "help" | "version";
 src/types.ts:49:export type ParsedArgv = {
 src/types.ts:55:export interface CommandHandler {
@@ -2663,14 +2663,14 @@ src/types.ts:55:export interface CommandHandler {
 ### 31. [fixture] search-like keeps rg default format matches
 
 - Handler: `search-like`
-- tg: `tg filter rg pattern src`
+- tk: `tk filter rg pattern src`
 - raw: `fixture: tests/fixtures/common/rg_default_format.txt`
 - rtk: `cat tests/fixtures/common/rg_default_format.txt | rtk pipe -f rg`
 
 | channel | chars | tokens | savingsPct |
 |---|---:|---:|---:|
 | raw | 246 | 62 | 0% |
-| tg | 269 | 68 | 0% |
+| tk | 269 | 68 | 0% |
 | rtk | 340 | 85 | 0% |
 
 **raw** (246 chars, 62 tokens):
@@ -2679,18 +2679,18 @@ src/types.ts:55:export interface CommandHandler {
 src/core/history.ts:1:export type HistoryRecord = {
 src/core/pipeline.ts:2:export type PipelineResult = {
 src/core/savings.ts:3:export type Savings = {
-src/core/report.ts:4:export async function buildReport(options: TgOptions): Promise<string> {
+src/core/report.ts:4:export async function buildReport(options: TkOptions): Promise<string> {
 
 ```
 
-**tg** (269 chars, 68 tokens, 0% savings):
+**tk** (269 chars, 68 tokens, 0% savings):
 
 ```text
 4 matches in 4 files:
 
 src/core/history.ts:1:export type HistoryRecord = {
 src/core/pipeline.ts:2:export type PipelineResult = {
-src/core/report.ts:4:export async function buildReport(options: TgOptions): Promise<string> {
+src/core/report.ts:4:export async function buildReport(options: TkOptions): Promise<string> {
 src/core/savings.ts:3:export type Savings = {
 
 ```
@@ -2707,7 +2707,7 @@ src/core/savings.ts:3:export type Savings = {
      2: export type PipelineResult = {
 
 [file] src/core/report.ts (1):
-     4: export async function buildReport(options: TgOptions): Promise<string> {
+     4: export async function buildReport(options: TkOptions): Promise<string> {
 
 [file] src/core/savings.ts (1):
      3: export type Savings = {
@@ -2720,14 +2720,14 @@ src/core/savings.ts:3:export type Savings = {
 ### 32. [fixture] ruff keeps rule codes and file locations from fixture
 
 - Handler: `ruff`
-- tg: `tg filter ruff check .`
+- tk: `tk filter ruff check .`
 - raw: `fixture: tests/fixtures/python/ruff_many.txt`
 - rtk: `cat tests/fixtures/python/ruff_many.txt | rtk pipe -f ruff-check`
 
 | channel | chars | tokens | savingsPct |
 |---|---:|---:|---:|
 | raw | 193 | 49 | 0% |
-| tg | 193 | 49 | 0% |
+| tk | 193 | 49 | 0% |
 | rtk | 259 | 65 | 0% |
 
 **raw** (193 chars, 49 tokens):
@@ -2740,7 +2740,7 @@ Found 2 errors.
 
 ```
 
-**tg** (193 chars, 49 tokens, 0% savings):
+**tk** (193 chars, 49 tokens, 0% savings):
 
 ```text
 src/order/submit.py:42:5: F401 `os` imported but unused
@@ -2766,14 +2766,14 @@ Found 2 errors.
 ### 33. [fixture] search-like keeps rg matches from real output
 
 - Handler: `search-like`
-- tg: `tg filter rg submitOrder src`
+- tk: `tk filter rg submitOrder src`
 - raw: `fixture: tests/fixtures/common/rg_many_matches.txt`
 - rtk: `cat tests/fixtures/common/rg_many_matches.txt | rtk pipe -f rg`
 
 | channel | chars | tokens | savingsPct |
 |---|---:|---:|---:|
 | raw | 116 | 29 | 0% |
-| tg | 116 | 29 | 0% |
+| tk | 116 | 29 | 0% |
 | rtk | 170 | 43 | 0% |
 
 **raw** (116 chars, 29 tokens):
@@ -2784,7 +2784,7 @@ src/order/api.ts:88:return submitOrder(payload)
 
 ```
 
-**tg** (116 chars, 29 tokens, 0% savings):
+**tk** (116 chars, 29 tokens, 0% savings):
 
 ```text
 src/order/submit.ts:42:export async function submitOrder(payload) {
@@ -2811,14 +2811,14 @@ src/order/api.ts:88:return submitOrder(payload)
 ### 34. [fixture] summary digests a test run instead of replaying lines
 
 - Handler: `summary`
-- tg: `tg filter summary npm test`
+- tk: `tk filter summary npm test`
 - raw: `fixture: tests/fixtures/system/summary_test_run.txt`
 - rtk: `rtk summary 'cat tests/fixtures/system/summary_test_run.txt'`
 
 | channel | chars | tokens | savingsPct |
 |---|---:|---:|---:|
 | raw | 94 | 24 | 0% |
-| tg | 177 | 45 | 0% |
+| tk | 177 | 45 | 0% |
 | rtk | 228 | 57 | 0% |
 
 **raw** (94 chars, 24 tokens):
@@ -2831,7 +2831,7 @@ Snapshots: 0 total
 
 ```
 
-**tg** (177 chars, 45 tokens, 0% savings):
+**tk** (177 chars, 45 tokens, 0% savings):
 
 ```text
 [FAIL] Command: npm test
@@ -2849,7 +2849,7 @@ Test Results:
 **rtk** (228 chars, 57 tokens, 0% savings):
 
 ```text
-[ok] Command: cat '/Users/ziyu/Workspace/token-guard/tests/fixtures/sys...
+[ok] Command: cat '/Users/ziyu/Workspace/token-killer/tests/fixtures/sys...
    5 lines of output
 
 Test Results:
@@ -2867,28 +2867,28 @@ Test Results:
 ### 35. tsc: type error in temp file
 
 - Handler: `tsc`
-- tg: `tg pnpm exec tsc --noEmit --ignoreConfig /var/folders/q8/fmjf6hvs17j47yqnnpfqtg5h0000gn/T/tg-compare-tsc-LXRX8r/broken.ts`
-- raw: `pnpm exec tsc --noEmit --ignoreConfig /var/folders/q8/fmjf6hvs17j47yqnnpfqtg5h0000gn/T/tg-compare-tsc-LXRX8r/broken.ts`
-- rtk: `tsc --noEmit --ignoreConfig /var/folders/q8/fmjf6hvs17j47yqnnpfqtg5h0000gn/T/tg-compare-tsc-LXRX8r/broken.ts`
+- tk: `tk pnpm exec tsc --noEmit --ignoreConfig /var/folders/q8/fmjf6hvs17j47yqnnpfqtg5h0000gn/T/tk-compare-tsc-LXRX8r/broken.ts`
+- raw: `pnpm exec tsc --noEmit --ignoreConfig /var/folders/q8/fmjf6hvs17j47yqnnpfqtg5h0000gn/T/tk-compare-tsc-LXRX8r/broken.ts`
+- rtk: `tsc --noEmit --ignoreConfig /var/folders/q8/fmjf6hvs17j47yqnnpfqtg5h0000gn/T/tk-compare-tsc-LXRX8r/broken.ts`
 
 | channel | chars | tokens | savingsPct |
 |---|---:|---:|---:|
 | raw | 162 | 41 | 0% |
-| tg | 198 | 50 | 0% |
+| tk | 198 | 50 | 0% |
 | rtk | 234 | 59 | 0% |
 
 **raw** (162 chars, 41 tokens):
 
 ```text
-../../../../var/folders/q8/fmjf6hvs17j47yqnnpfqtg5h0000gn/T/tg-compare-tsc-LXRX8r/broken.ts(1,7): error TS2322: Type 'string' is not assignable to type 'number'.
+../../../../var/folders/q8/fmjf6hvs17j47yqnnpfqtg5h0000gn/T/tk-compare-tsc-LXRX8r/broken.ts(1,7): error TS2322: Type 'string' is not assignable to type 'number'.
 
 ```
 
-**tg** (198 chars, 50 tokens, 0% savings):
+**tk** (198 chars, 50 tokens, 0% savings):
 
 ```text
 TypeScript: 1 errors in 1 files
-../../../../var/folders/q8/fmjf6hvs17j47yqnnpfqtg5h0000gn/T/tg-compare-tsc-LXRX8r/broken.ts (1 errors)
+../../../../var/folders/q8/fmjf6hvs17j47yqnnpfqtg5h0000gn/T/tk-compare-tsc-LXRX8r/broken.ts (1 errors)
   L1: TS2322 Type 'string' is not assignable to type 'number'.
 
 ```
@@ -2896,7 +2896,7 @@ TypeScript: 1 errors in 1 files
 **rtk** (234 chars, 59 tokens, 0% savings):
 
 ```text
-../../../../var/folders/q8/fmjf6hvs17j47yqnnpfqtg5h0000gn/T/tg-compare-tsc-LXRX8r/broken.ts(1,7): error TS2322: Type 'string' is not assignable to type 'number'.
+../../../../var/folders/q8/fmjf6hvs17j47yqnnpfqtg5h0000gn/T/tk-compare-tsc-LXRX8r/broken.ts(1,7): error TS2322: Type 'string' is not assignable to type 'number'.
 ═══════════════════════════════════════
 TypeScript: 1 errors in 1 files
 
@@ -2907,14 +2907,14 @@ TypeScript: 1 errors in 1 files
 ### 36. diff: diff old.ts new.ts
 
 - Handler: `diff`
-- tg: `tg diff /var/folders/q8/fmjf6hvs17j47yqnnpfqtg5h0000gn/T/tg-compare-diff-FYcbsI/old.ts /var/folders/q8/fmjf6hvs17j47yqnnpfqtg5h0000gn/T/tg-compare-diff-FYcbsI/new.ts`
-- raw: `diff /var/folders/q8/fmjf6hvs17j47yqnnpfqtg5h0000gn/T/tg-compare-diff-FYcbsI/old.ts /var/folders/q8/fmjf6hvs17j47yqnnpfqtg5h0000gn/T/tg-compare-diff-FYcbsI/new.ts`
-- rtk: `diff /var/folders/q8/fmjf6hvs17j47yqnnpfqtg5h0000gn/T/tg-compare-diff-FYcbsI/old.ts /var/folders/q8/fmjf6hvs17j47yqnnpfqtg5h0000gn/T/tg-compare-diff-FYcbsI/new.ts`
+- tk: `tk diff /var/folders/q8/fmjf6hvs17j47yqnnpfqtg5h0000gn/T/tk-compare-diff-FYcbsI/old.ts /var/folders/q8/fmjf6hvs17j47yqnnpfqtg5h0000gn/T/tk-compare-diff-FYcbsI/new.ts`
+- raw: `diff /var/folders/q8/fmjf6hvs17j47yqnnpfqtg5h0000gn/T/tk-compare-diff-FYcbsI/old.ts /var/folders/q8/fmjf6hvs17j47yqnnpfqtg5h0000gn/T/tk-compare-diff-FYcbsI/new.ts`
+- rtk: `diff /var/folders/q8/fmjf6hvs17j47yqnnpfqtg5h0000gn/T/tk-compare-diff-FYcbsI/old.ts /var/folders/q8/fmjf6hvs17j47yqnnpfqtg5h0000gn/T/tk-compare-diff-FYcbsI/new.ts`
 
 | channel | chars | tokens | savingsPct |
 |---|---:|---:|---:|
 | raw | 30 | 8 | 0% |
-| tg | 196 | 49 | 0% |
+| tk | 196 | 49 | 0% |
 | rtk | 228 | 57 | 0% |
 
 **raw** (30 chars, 8 tokens):
@@ -2925,10 +2925,10 @@ TypeScript: 1 errors in 1 files
 
 ```
 
-**tg** (196 chars, 49 tokens, 0% savings):
+**tk** (196 chars, 49 tokens, 0% savings):
 
 ```text
-/var/folders/q8/fmjf6hvs17j47yqnnpfqtg5h0000gn/T/tg-compare-diff-FYcbsI/old.ts -> /var/folders/q8/fmjf6hvs17j47yqnnpfqtg5h0000gn/T/tg-compare-diff-FYcbsI/new.ts (+1 -0)
+/var/folders/q8/fmjf6hvs17j47yqnnpfqtg5h0000gn/T/tk-compare-diff-FYcbsI/old.ts -> /var/folders/q8/fmjf6hvs17j47yqnnpfqtg5h0000gn/T/tk-compare-diff-FYcbsI/new.ts (+1 -0)
 
 + export const extra = 2;
 
@@ -2937,7 +2937,7 @@ TypeScript: 1 errors in 1 files
 **rtk** (228 chars, 57 tokens, 0% savings):
 
 ```text
-/var/folders/q8/fmjf6hvs17j47yqnnpfqtg5h0000gn/T/tg-compare-diff-FYcbsI/old.ts → /var/folders/q8/fmjf6hvs17j47yqnnpfqtg5h0000gn/T/tg-compare-diff-FYcbsI/new.ts
+/var/folders/q8/fmjf6hvs17j47yqnnpfqtg5h0000gn/T/tk-compare-diff-FYcbsI/old.ts → /var/folders/q8/fmjf6hvs17j47yqnnpfqtg5h0000gn/T/tk-compare-diff-FYcbsI/new.ts
    +1 added, -0 removed, ~0 modified
 
 +   2 export const extra = 2;
@@ -2949,20 +2949,20 @@ TypeScript: 1 errors in 1 files
 ### 37. git-fetch: missing remote
 
 - Handler: `git-fetch`
-- tg: `tg git fetch /tmp/__tg_missing_remote__ main`
-- raw: `git --no-pager fetch /tmp/__tg_missing_remote__ main`
-- rtk: `git fetch /tmp/__tg_missing_remote__ main`
+- tk: `tk git fetch /tmp/__tk_missing_remote__ main`
+- raw: `git --no-pager fetch /tmp/__tk_missing_remote__ main`
+- rtk: `git fetch /tmp/__tk_missing_remote__ main`
 
 | channel | chars | tokens | savingsPct |
 |---|---:|---:|---:|
 | raw | 201 | 51 | 0% |
-| tg | 251 | 63 | 0% |
+| tk | 251 | 63 | 0% |
 | rtk | 220 | 55 | 0% |
 
 **raw** (201 chars, 51 tokens):
 
 ```text
-fatal: '/tmp/__tg_missing_remote__' does not appear to be a git repository
+fatal: '/tmp/__tk_missing_remote__' does not appear to be a git repository
 fatal: Could not read from remote repository.
 
 Please make sure you have the correct access rights
@@ -2970,11 +2970,11 @@ and the repository exists.
 
 ```
 
-**tg** (251 chars, 63 tokens, 0% savings):
+**tk** (251 chars, 63 tokens, 0% savings):
 
 ```text
-FAILED: git fetch /tmp/__tg_missing_remote__ main
-fatal: '/tmp/__tg_missing_remote__' does not appear to be a git repository
+FAILED: git fetch /tmp/__tk_missing_remote__ main
+fatal: '/tmp/__tk_missing_remote__' does not appear to be a git repository
 fatal: Could not read from remote repository.
 
 Please make sure you have the correct access rights
@@ -2986,7 +2986,7 @@ and the repository exists.
 
 ```text
 FAILED: git fetch
-fatal: '/tmp/__tg_missing_remote__' does not appear to be a git repository
+fatal: '/tmp/__tk_missing_remote__' does not appear to be a git repository
 fatal: Could not read from remote repository.
 
 Please make sure you have the correct access rights
@@ -3000,14 +3000,14 @@ and the repository exists.
 ### 38. tsc: tsc --noEmit clean project
 
 - Handler: `tsc`
-- tg: `tg tsc --noEmit`
+- tk: `tk tsc --noEmit`
 - raw: `pnpm exec tsc --noEmit`
 - rtk: `tsc --noEmit`
 
 | channel | chars | tokens | savingsPct |
 |---|---:|---:|---:|
 | raw | 0 | 0 | 0% |
-| tg | 0 | 0 | 0% |
+| tk | 0 | 0 | 0% |
 | rtk | 28 | 7 | 0% |
 
 **raw** (0 chars, 0 tokens):
@@ -3016,7 +3016,7 @@ and the repository exists.
 
 ```
 
-**tg** (0 chars, 0 tokens, 0% savings):
+**tk** (0 chars, 0 tokens, 0% savings):
 
 ```text
 
@@ -3034,27 +3034,27 @@ TypeScript: No errors found
 ### 39. git-add: missing path
 
 - Handler: `git-add`
-- tg: `tg git add __tg_missing_fixture_file__`
-- raw: `git --no-pager add __tg_missing_fixture_file__`
-- rtk: `git add __tg_missing_fixture_file__`
+- tk: `tk git add __tk_missing_fixture_file__`
+- raw: `git --no-pager add __tk_missing_fixture_file__`
+- rtk: `git add __tk_missing_fixture_file__`
 
 | channel | chars | tokens | savingsPct |
 |---|---:|---:|---:|
 | raw | 70 | 18 | 0% |
-| tg | 70 | 18 | 0% |
+| tk | 70 | 18 | 0% |
 | rtk | 87 | 22 | 0% |
 
 **raw** (70 chars, 18 tokens):
 
 ```text
-fatal: pathspec '__tg_missing_fixture_file__' did not match any files
+fatal: pathspec '__tk_missing_fixture_file__' did not match any files
 
 ```
 
-**tg** (70 chars, 18 tokens, 0% savings):
+**tk** (70 chars, 18 tokens, 0% savings):
 
 ```text
-fatal: pathspec '__tg_missing_fixture_file__' did not match any files
+fatal: pathspec '__tk_missing_fixture_file__' did not match any files
 
 ```
 
@@ -3062,7 +3062,7 @@ fatal: pathspec '__tg_missing_fixture_file__' did not match any files
 
 ```text
 FAILED: git add
-fatal: pathspec '__tg_missing_fixture_file__' did not match any files
+fatal: pathspec '__tk_missing_fixture_file__' did not match any files
 
 
 ```
@@ -3072,14 +3072,14 @@ fatal: pathspec '__tg_missing_fixture_file__' did not match any files
 ### 40. git-pull: ff-only local
 
 - Handler: `git-pull`
-- tg: `tg git pull --ff-only . HEAD`
+- tk: `tk git pull --ff-only . HEAD`
 - raw: `git --no-pager pull --ff-only . HEAD`
 - rtk: `git pull --ff-only . HEAD`
 
 | channel | chars | tokens | savingsPct |
 |---|---:|---:|---:|
 | raw | 157 | 40 | 0% |
-| tg | 157 | 40 | 0% |
+| tk | 157 | 40 | 0% |
 | rtk | 175 | 44 | 0% |
 
 **raw** (157 chars, 40 tokens):
@@ -3091,7 +3091,7 @@ error: Please commit or stash them.
 
 ```
 
-**tg** (157 chars, 40 tokens, 0% savings):
+**tk** (157 chars, 40 tokens, 0% savings):
 
 ```text
 error: cannot pull with rebase: You have unstaged changes.
@@ -3116,29 +3116,29 @@ error: Please commit or stash them.
 ### 41. git-push: dry-run local
 
 - Handler: `git-push`
-- tg: `tg git push --dry-run . HEAD:refs/heads/__tg_fixture_branch__`
-- raw: `git --no-pager push --dry-run . HEAD:refs/heads/__tg_fixture_branch__`
-- rtk: `git push --dry-run . HEAD:refs/heads/__tg_fixture_branch__`
+- tk: `tk git push --dry-run . HEAD:refs/heads/__tk_fixture_branch__`
+- raw: `git --no-pager push --dry-run . HEAD:refs/heads/__tk_fixture_branch__`
+- rtk: `git push --dry-run . HEAD:refs/heads/__tk_fixture_branch__`
 
 | channel | chars | tokens | savingsPct |
 |---|---:|---:|---:|
 | raw | 56 | 14 | 0% |
-| tg | 66 | 17 | 0% |
+| tk | 66 | 17 | 0% |
 | rtk | 81 | 21 | 0% |
 
 **raw** (56 chars, 14 tokens):
 
 ```text
 To .
- * [new branch]      HEAD -> __tg_fixture_branch__
+ * [new branch]      HEAD -> __tk_fixture_branch__
 
 ```
 
-**tg** (66 chars, 17 tokens, 0% savings):
+**tk** (66 chars, 17 tokens, 0% savings):
 
 ```text
 To .
- * [new branch]      HEAD -> __tg_fixture_branch__
+ * [new branch]      HEAD -> __tk_fixture_branch__
 ok pushed
 
 ```
@@ -3147,8 +3147,8 @@ ok pushed
 
 ```text
 To .
- * [new branch]      HEAD -> __tg_fixture_branch__
-ok __tg_fixture_branch__
+ * [new branch]      HEAD -> __tk_fixture_branch__
+ok __tk_fixture_branch__
 
 ```
 
@@ -3157,14 +3157,14 @@ ok __tg_fixture_branch__
 ### 42. [fixture] diff stdin condenses unified diff by file
 
 - Handler: `diff`
-- tg: `tg filter diff -`
+- tk: `tk filter diff -`
 - raw: `fixture: tests/fixtures/common/diff_unified_stdin.txt`
 - rtk: `cat tests/fixtures/common/diff_unified_stdin.txt | rtk diff -`
 
 | channel | chars | tokens | savingsPct |
 |---|---:|---:|---:|
 | raw | 386 | 97 | 0% |
-| tg | 112 | 28 | 71.1% |
+| tk | 112 | 28 | 71.1% |
 | rtk | 112 | 28 | 71.1% |
 
 **raw** (386 chars, 97 tokens):
@@ -3189,7 +3189,7 @@ index 3333333..4444444 100644
 
 ```
 
-**tg** (112 chars, 28 tokens, 71.1% savings):
+**tk** (112 chars, 28 tokens, 71.1% savings):
 
 ```text
 [file] src/main.ts (+1 -0)
@@ -3214,14 +3214,14 @@ index 3333333..4444444 100644
 ### 43. [fixture] diff stdin keeps all unified diff changes
 
 - Handler: `diff`
-- tg: `tg filter diff -`
+- tk: `tk filter diff -`
 - raw: `fixture: tests/fixtures/common/diff_unified_large.txt`
 - rtk: `cat tests/fixtures/common/diff_unified_large.txt | rtk diff -`
 
 | channel | chars | tokens | savingsPct |
 |---|---:|---:|---:|
 | raw | 279 | 70 | 0% |
-| tg | 221 | 56 | 20% |
+| tk | 221 | 56 | 20% |
 | rtk | 221 | 56 | 20% |
 
 **raw** (279 chars, 70 tokens):
@@ -3247,7 +3247,7 @@ index 1111111..2222222 100644
 
 ```
 
-**tg** (221 chars, 56 tokens, 20% savings):
+**tk** (221 chars, 56 tokens, 20% savings):
 
 ```text
 [file] config.yaml (+6 -6)
@@ -3292,14 +3292,14 @@ index 1111111..2222222 100644
 ### 44. [fixture] err keeps error blocks and drops info noise
 
 - Handler: `err`
-- tg: `tg filter err npm run build`
+- tk: `tk filter err npm run build`
 - raw: `fixture: tests/fixtures/system/err_build.txt`
 - rtk: `rtk err 'cat tests/fixtures/system/err_build.txt'`
 
 | channel | chars | tokens | savingsPct |
 |---|---:|---:|---:|
 | raw | 107 | 27 | 0% |
-| tg | 74 | 19 | 29.6% |
+| tk | 74 | 19 | 29.6% |
 | rtk | 75 | 19 | 29.6% |
 
 **raw** (107 chars, 27 tokens):
@@ -3313,7 +3313,7 @@ info: done
 
 ```
 
-**tg** (74 chars, 19 tokens, 29.6% savings):
+**tk** (74 chars, 19 tokens, 29.6% savings):
 
 ```text
 warning: deprecated option --legacy
@@ -3335,40 +3335,40 @@ error: build failed
 ### 45. [fixture] gh repo view keeps repository identity and URL
 
 - Handler: `gh`
-- tg: `tg filter gh repo view`
+- tk: `tk filter gh repo view`
 - raw: `fixture: tests/fixtures/git/gh_repo_view.json`
 - rtk: `cat tests/fixtures/git/gh_repo_view.json | rtk gh repo view`
 
 | channel | chars | tokens | savingsPct |
 |---|---:|---:|---:|
 | raw | 166 | 42 | 0% |
-| tg | 92 | 23 | 45.2% |
+| tk | 92 | 23 | 45.2% |
 | rtk | 92 | 23 | 45.2% |
 
 **raw** (166 chars, 42 tokens):
 
 ```text
-{"name":"token-guard","owner":{"login":"Cozy228"},"description":"","url":"https://github.com/Cozy228/token-guard","stargazerCount":0,"forkCount":0,"isPrivate":false}
+{"name":"token-killer","owner":{"login":"Cozy228"},"description":"","url":"https://github.com/Cozy228/token-killer","stargazerCount":0,"forkCount":0,"isPrivate":false}
 
 ```
 
-**tg** (92 chars, 23 tokens, 45.2% savings):
+**tk** (92 chars, 23 tokens, 45.2% savings):
 
 ```text
-Cozy228/token-guard
+Cozy228/token-killer
   [public]
   0 stars | 0 forks
-  https://github.com/Cozy228/token-guard
+  https://github.com/Cozy228/token-killer
 
 ```
 
 **rtk** (92 chars, 23 tokens, 45.2% savings):
 
 ```text
-Cozy228/token-guard
+Cozy228/token-killer
   [public]
   0 stars | 0 forks
-  https://github.com/Cozy228/token-guard
+  https://github.com/Cozy228/token-killer
 
 ```
 
@@ -3377,14 +3377,14 @@ Cozy228/token-guard
 ### 46. [fixture] git-log keeps commit subject from real log
 
 - Handler: `git-log`
-- tg: `tg filter git log`
+- tk: `tk filter git log`
 - raw: `fixture: tests/fixtures/git/log_many.txt`
 - rtk: `cat tests/fixtures/git/log_many.txt | rtk pipe -f git-log`
 
 | channel | chars | tokens | savingsPct |
 |---|---:|---:|---:|
 | raw | 122 | 31 | 0% |
-| tg | 122 | 31 | 0% |
+| tk | 122 | 31 | 0% |
 | rtk | 122 | 31 | 0% |
 
 **raw** (122 chars, 31 tokens):
@@ -3398,7 +3398,7 @@ Date:   Tue Jun 02 10:00:00 2026 +0800
 
 ```
 
-**tg** (122 chars, 31 tokens, 0% savings):
+**tk** (122 chars, 31 tokens, 0% savings):
 
 ```text
 commit abcdef1234567890
@@ -3423,20 +3423,20 @@ commit abcdef1234567890
 ### 47. [fixture] git-status keeps porcelain branch context
 
 - Handler: `git-status`
-- tg: `tg filter git status --short --branch`
+- tk: `tk filter git status --short --branch`
 - raw: `fixture: tests/fixtures/git/status_porcelain_branch_current.txt`
 - rtk: `cat tests/fixtures/git/status_porcelain_branch_current.txt | rtk pipe -f git-status`
 
 | channel | chars | tokens | savingsPct |
 |---|---:|---:|---:|
 | raw | 760 | 190 | 0% |
-| tg | 759 | 190 | 0% |
+| tk | 759 | 190 | 0% |
 | rtk | 758 | 190 | 0% |
 
 **raw** (760 chars, 190 tokens):
 
 ```text
-## codex/token-guard-node-cli...origin/codex/token-guard-node-cli
+## codex/token-killer-node-cli...origin/codex/token-killer-node-cli
  M docs/testing-and-migration-audit.md
  M package.json
  M tests/helpers/fixtureCases.ts
@@ -3458,10 +3458,10 @@ commit abcdef1234567890
 
 ```
 
-**tg** (759 chars, 190 tokens, 0% savings):
+**tk** (759 chars, 190 tokens, 0% savings):
 
 ```text
-* codex/token-guard-node-cli...origin/codex/token-guard-node-cli
+* codex/token-killer-node-cli...origin/codex/token-killer-node-cli
  M docs/testing-and-migration-audit.md
  M package.json
  M tests/helpers/fixtureCases.ts
@@ -3486,7 +3486,7 @@ commit abcdef1234567890
 **rtk** (758 chars, 190 tokens, 0% savings):
 
 ```text
-* codex/token-guard-node-cli...origin/codex/token-guard-node-cli
+* codex/token-killer-node-cli...origin/codex/token-killer-node-cli
  M docs/testing-and-migration-audit.md
  M package.json
  M tests/helpers/fixtureCases.ts
@@ -3512,14 +3512,14 @@ commit abcdef1234567890
 ### 48. [fixture] git-status keeps staged modified and untracked paths
 
 - Handler: `git-status`
-- tg: `tg filter git status`
+- tk: `tk filter git status`
 - raw: `fixture: tests/fixtures/git/status_dirty.txt`
 - rtk: `cat tests/fixtures/git/status_dirty.txt | rtk pipe -f git-status`
 
 | channel | chars | tokens | savingsPct |
 |---|---:|---:|---:|
 | raw | 81 | 21 | 0% |
-| tg | 80 | 20 | 4.8% |
+| tk | 80 | 20 | 4.8% |
 | rtk | 79 | 20 | 4.8% |
 
 **raw** (81 chars, 21 tokens):
@@ -3532,7 +3532,7 @@ A  src/cli.ts
 
 ```
 
-**tg** (80 chars, 20 tokens, 4.8% savings):
+**tk** (80 chars, 20 tokens, 4.8% savings):
 
 ```text
 * feature/token-proxy
@@ -3556,34 +3556,34 @@ A  src/cli.ts
 ### 49. [fixture] git-worktree keeps worktree path and branch
 
 - Handler: `git-worktree`
-- tg: `tg filter git worktree list`
+- tk: `tk filter git worktree list`
 - raw: `fixture: tests/fixtures/git/worktree_list.txt`
 - rtk: `cat tests/fixtures/git/worktree_list.txt | rtk git worktree list`
 
 | channel | chars | tokens | savingsPct |
 |---|---:|---:|---:|
 | raw | 72 | 18 | 0% |
-| tg | 61 | 16 | 11.1% |
+| tk | 61 | 16 | 11.1% |
 | rtk | 61 | 16 | 11.1% |
 
 **raw** (72 chars, 18 tokens):
 
 ```text
-/Users/ziyu/Workspace/token-guard  62d59ca [codex/token-guard-node-cli]
+/Users/ziyu/Workspace/token-killer  62d59ca [codex/token-killer-node-cli]
 
 ```
 
-**tg** (61 chars, 16 tokens, 11.1% savings):
+**tk** (61 chars, 16 tokens, 11.1% savings):
 
 ```text
-~/Workspace/token-guard 62d59ca [codex/token-guard-node-cli]
+~/Workspace/token-killer 62d59ca [codex/token-killer-node-cli]
 
 ```
 
 **rtk** (61 chars, 16 tokens, 11.1% savings):
 
 ```text
-~/Workspace/token-guard eccdcd5 [codex/token-guard-node-cli]
+~/Workspace/token-killer eccdcd5 [codex/token-killer-node-cli]
 
 ```
 
@@ -3592,14 +3592,14 @@ A  src/cli.ts
 ### 50. [fixture] js-test formats passing Vitest output like RTK
 
 - Handler: `js-test`
-- tg: `tg filter vitest run`
+- tk: `tk filter vitest run`
 - raw: `fixture: tests/fixtures/js/vitest_passed.txt`
 - rtk: `cat tests/fixtures/js/vitest_passed.txt | rtk pipe -f vitest`
 
 | channel | chars | tokens | savingsPct |
 |---|---:|---:|---:|
 | raw | 136 | 34 | 0% |
-| tg | 31 | 8 | 76.5% |
+| tk | 31 | 8 | 76.5% |
 | rtk | 30 | 8 | 76.5% |
 
 **raw** (136 chars, 34 tokens):
@@ -3615,7 +3615,7 @@ A  src/cli.ts
 
 ```
 
-**tg** (31 chars, 8 tokens, 76.5% savings):
+**tk** (31 chars, 8 tokens, 76.5% savings):
 
 ```text
 PASS (4) FAIL (0)
@@ -3637,14 +3637,14 @@ Time: 120ms
 ### 51. [fixture] log deduplicates repeated lines into a summary
 
 - Handler: `log`
-- tg: `tg filter log app.log`
+- tk: `tk filter log app.log`
 - raw: `fixture: tests/fixtures/system/app_repeated.log`
 - rtk: `cat tests/fixtures/system/app_repeated.log | rtk pipe -f log`
 
 | channel | chars | tokens | savingsPct |
 |---|---:|---:|---:|
 | raw | 592 | 148 | 0% |
-| tg | 390 | 98 | 33.8% |
+| tk | 390 | 98 | 33.8% |
 | rtk | 389 | 98 | 33.8% |
 
 **raw** (592 chars, 148 tokens):
@@ -3663,7 +3663,7 @@ Time: 120ms
 
 ```
 
-**tg** (390 chars, 98 tokens, 33.8% savings):
+**tk** (390 chars, 98 tokens, 33.8% savings):
 
 ```text
 Log Summary
@@ -3703,14 +3703,14 @@ Log Summary
 ### 52. [fixture] mypy keeps error codes and file locations from fixture
 
 - Handler: `mypy`
-- tg: `tg filter mypy src`
+- tk: `tk filter mypy src`
 - raw: `fixture: tests/fixtures/python/mypy_many.txt`
 - rtk: `cat tests/fixtures/python/mypy_many.txt | rtk pipe -f mypy`
 
 | channel | chars | tokens | savingsPct |
 |---|---:|---:|---:|
 | raw | 220 | 55 | 0% |
-| tg | 316 | 79 | 0% |
+| tk | 316 | 79 | 0% |
 | rtk | 315 | 79 | 0% |
 
 **raw** (220 chars, 55 tokens):
@@ -3722,7 +3722,7 @@ Found 2 errors in 2 files
 
 ```
 
-**tg** (316 chars, 79 tokens, 0% savings):
+**tk** (316 chars, 79 tokens, 0% savings):
 
 ```text
 mypy: 2 errors in 2 files
@@ -3756,14 +3756,14 @@ src/order/submit.py (1 errors)
 ### 53. [fixture] pipe grep groups matches by file
 
 - Handler: `pipe`
-- tg: `tg filter pipe grep`
+- tk: `tk filter pipe grep`
 - raw: `fixture: tests/fixtures/system/pipe_grep_matches.txt`
 - rtk: `cat tests/fixtures/system/pipe_grep_matches.txt | rtk pipe -f grep`
 
 | channel | chars | tokens | savingsPct |
 |---|---:|---:|---:|
 | raw | 338 | 85 | 0% |
-| tg | 335 | 84 | 1.2% |
+| tk | 335 | 84 | 1.2% |
 | rtk | 335 | 84 | 1.2% |
 
 **raw** (338 chars, 85 tokens):
@@ -3776,7 +3776,7 @@ src/cmds/git/handler.rs:40:    let result = process_request(ctx, &payload).await
 
 ```
 
-**tg** (335 chars, 84 tokens, 1.2% savings):
+**tk** (335 chars, 84 tokens, 1.2% savings):
 
 ```text
 4 matches in 2F:
@@ -3813,14 +3813,14 @@ src/cmds/git/handler.rs:40:    let result = process_request(ctx, &payload).await
 ### 54. [fixture] prettier check lists files needing formatting
 
 - Handler: `prettier`
-- tg: `tg filter prettier --check src`
+- tk: `tk filter prettier --check src`
 - raw: `fixture: tests/fixtures/js/prettier_check.txt`
 - rtk: `cat tests/fixtures/js/prettier_check.txt | rtk pipe -f prettier`
 
 | channel | chars | tokens | savingsPct |
 |---|---:|---:|---:|
 | raw | 237 | 60 | 0% |
-| tg | 236 | 59 | 1.7% |
+| tk | 236 | 59 | 1.7% |
 | rtk | 235 | 59 | 1.7% |
 
 **raw** (237 chars, 60 tokens):
@@ -3837,7 +3837,7 @@ Code style issues found in the above file(s). Forgot to run Prettier?
 
 ```
 
-**tg** (236 chars, 59 tokens, 1.7% savings):
+**tk** (236 chars, 59 tokens, 1.7% savings):
 
 ```text
 Prettier: 6 files need formatting
@@ -3869,14 +3869,14 @@ Prettier: 6 files need formatting
 ### 55. [fixture] pytest keeps failing test and assertion from fixture
 
 - Handler: `pytest`
-- tg: `tg filter pytest`
+- tk: `tk filter pytest`
 - raw: `fixture: tests/fixtures/python/pytest_failed.txt`
 - rtk: `cat tests/fixtures/python/pytest_failed.txt | rtk pipe -f pytest`
 
 | channel | chars | tokens | savingsPct |
 |---|---:|---:|---:|
 | raw | 880 | 220 | 0% |
-| tg | 351 | 88 | 60% |
+| tk | 351 | 88 | 60% |
 | rtk | 350 | 88 | 60% |
 
 **raw** (880 chars, 220 tokens):
@@ -3904,7 +3904,7 @@ FAILED tests/order/test_submit.py::test_duplicate_submit - AssertionError: expec
 
 ```
 
-**tg** (351 chars, 88 tokens, 60% savings):
+**tk** (351 chars, 88 tokens, 60% savings):
 
 ```text
 Pytest: 118 passed, 1 failed
@@ -3942,14 +3942,14 @@ Failures:
 ### 56. [fixture] pytest keeps passing summary from fixture
 
 - Handler: `pytest`
-- tg: `tg filter pytest`
+- tk: `tk filter pytest`
 - raw: `fixture: tests/fixtures/python/pytest_passed.txt`
 - rtk: `cat tests/fixtures/python/pytest_passed.txt | rtk pipe -f pytest`
 
 | channel | chars | tokens | savingsPct |
 |---|---:|---:|---:|
 | raw | 20 | 5 | 0% |
-| tg | 19 | 5 | 0% |
+| tk | 19 | 5 | 0% |
 | rtk | 18 | 5 | 0% |
 
 **raw** (20 chars, 5 tokens):
@@ -3959,7 +3959,7 @@ Failures:
 
 ```
 
-**tg** (19 chars, 5 tokens, 0% savings):
+**tk** (19 chars, 5 tokens, 0% savings):
 
 ```text
 Pytest: 118 passed
@@ -3977,14 +3977,14 @@ Pytest: 118 passed
 ### 57. [fixture] search-like keeps grep matches without line numbers
 
 - Handler: `search-like`
-- tg: `tg filter grep -r export src`
+- tk: `tk filter grep -r export src`
 - raw: `fixture: tests/fixtures/common/grep_no_line_numbers.txt`
 - rtk: `cat tests/fixtures/common/grep_no_line_numbers.txt | rtk pipe -f grep`
 
 | channel | chars | tokens | savingsPct |
 |---|---:|---:|---:|
 | raw | 1580 | 395 | 0% |
-| tg | 1580 | 395 | 0% |
+| tk | 1580 | 395 | 0% |
 | rtk | 1580 | 395 | 0% |
 
 **raw** (1580 chars, 395 tokens):
@@ -3998,7 +3998,7 @@ src/core/pipeline.ts:export async function runPipeline(
 src/core/savings.ts:export type Savings = {
 src/core/savings.ts:export function estimateTokens(text: string): number {
 src/core/savings.ts:export function calculateSavings(raw: string, output: string): Savings {
-src/core/report.ts:export async function buildReport(options: TgOptions): Promise<string> {
+src/core/report.ts:export async function buildReport(options: TkOptions): Promise<string> {
 src/handlers/index.ts:export const handlers: CommandHandler[] = [
 src/handlers/generic.ts:export const genericHandler: CommandHandler = {
 src/handlers/base.ts:export function rawText(raw: RawResult): string {
@@ -4012,12 +4012,12 @@ src/handlers/git/branch.ts:export const gitBranchHandler: CommandHandler = {
 src/types.ts:export type ParsedCommand = {
 src/types.ts:export type RawResult = {
 src/types.ts:export type FilteredResult = {
-src/types.ts:export type TgOptions = {
+src/types.ts:export type TkOptions = {
 src/types.ts:export interface CommandHandler {
 
 ```
 
-**tg** (1580 chars, 395 tokens, 0% savings):
+**tk** (1580 chars, 395 tokens, 0% savings):
 
 ```text
 src/core/history.ts:export type HistoryRecord = {
@@ -4028,7 +4028,7 @@ src/core/pipeline.ts:export async function runPipeline(
 src/core/savings.ts:export type Savings = {
 src/core/savings.ts:export function estimateTokens(text: string): number {
 src/core/savings.ts:export function calculateSavings(raw: string, output: string): Savings {
-src/core/report.ts:export async function buildReport(options: TgOptions): Promise<string> {
+src/core/report.ts:export async function buildReport(options: TkOptions): Promise<string> {
 src/handlers/index.ts:export const handlers: CommandHandler[] = [
 src/handlers/generic.ts:export const genericHandler: CommandHandler = {
 src/handlers/base.ts:export function rawText(raw: RawResult): string {
@@ -4042,7 +4042,7 @@ src/handlers/git/branch.ts:export const gitBranchHandler: CommandHandler = {
 src/types.ts:export type ParsedCommand = {
 src/types.ts:export type RawResult = {
 src/types.ts:export type FilteredResult = {
-src/types.ts:export type TgOptions = {
+src/types.ts:export type TkOptions = {
 src/types.ts:export interface CommandHandler {
 
 ```
@@ -4058,7 +4058,7 @@ src/core/pipeline.ts:export async function runPipeline(
 src/core/savings.ts:export type Savings = {
 src/core/savings.ts:export function estimateTokens(text: string): number {
 src/core/savings.ts:export function calculateSavings(raw: string, output: string): Savings {
-src/core/report.ts:export async function buildReport(options: TgOptions): Promise<string> {
+src/core/report.ts:export async function buildReport(options: TkOptions): Promise<string> {
 src/handlers/index.ts:export const handlers: CommandHandler[] = [
 src/handlers/generic.ts:export const genericHandler: CommandHandler = {
 src/handlers/base.ts:export function rawText(raw: RawResult): string {
@@ -4072,7 +4072,7 @@ src/handlers/git/branch.ts:export const gitBranchHandler: CommandHandler = {
 src/types.ts:export type ParsedCommand = {
 src/types.ts:export type RawResult = {
 src/types.ts:export type FilteredResult = {
-src/types.ts:export type TgOptions = {
+src/types.ts:export type TkOptions = {
 src/types.ts:export interface CommandHandler {
 
 ```
@@ -4082,14 +4082,14 @@ src/types.ts:export interface CommandHandler {
 ### 58. curl: httpbin json
 
 - Handler: `curl`
-- tg: `tg curl -s https://httpbin.org/json`
+- tk: `tk curl -s https://httpbin.org/json`
 - raw: `curl -s https://httpbin.org/json`
 - rtk: `curl -s https://httpbin.org/json`
 
 | channel | chars | tokens | savingsPct |
 |---|---:|---:|---:|
 | raw | 162 | 41 | 0% |
-| tg | 161 | 41 | 0% |
+| tk | 161 | 41 | 0% |
 | rtk | 161 | 41 | 0% |
 
 **raw** (162 chars, 41 tokens):
@@ -4104,7 +4104,7 @@ src/types.ts:export interface CommandHandler {
 
 ```
 
-**tg** (161 chars, 41 tokens, 0% savings):
+**tk** (161 chars, 41 tokens, 0% savings):
 
 ```text
 <html>
@@ -4133,14 +4133,14 @@ src/types.ts:export interface CommandHandler {
 ### 59. docker: compose ps (temp project)
 
 - Handler: `docker`
-- tg: `tg docker compose ps`
+- tk: `tk docker compose ps`
 - raw: `docker compose ps`
 - rtk: `docker compose ps`
 
 | channel | chars | tokens | savingsPct |
 |---|---:|---:|---:|
 | raw | 113 | 29 | 0% |
-| tg | 113 | 29 | 0% |
+| tk | 113 | 29 | 0% |
 | rtk | 114 | 29 | 0% |
 
 **raw** (113 chars, 29 tokens):
@@ -4150,7 +4150,7 @@ Cannot connect to the Docker daemon at unix:///Users/ziyu/.docker/run/docker.soc
 
 ```
 
-**tg** (113 chars, 29 tokens, 0% savings):
+**tk** (113 chars, 29 tokens, 0% savings):
 
 ```text
 Cannot connect to the Docker daemon at unix:///Users/ziyu/.docker/run/docker.sock. Is the docker daemon running?
@@ -4170,14 +4170,14 @@ Cannot connect to the Docker daemon at unix:///Users/ziyu/.docker/run/docker.soc
 ### 60. env: env snapshot
 
 - Handler: `env`
-- tg: `tg env`
+- tk: `tk env`
 - raw: `env`
 - rtk: `env`
 
 | channel | chars | tokens | savingsPct |
 |---|---:|---:|---:|
 | raw | 5698 | 1425 | 0% |
-| tg | 2360 | 590 | 58.6% |
+| tk | 2360 | 590 | 58.6% |
 | rtk | 2360 | 590 | 58.6% |
 
 **raw** (5698 chars, 1425 tokens):
@@ -4223,21 +4223,21 @@ SSH_AUTH_SOCK=/var/run/com.apple.launchd.CGAkIlQATn/Listeners
 CMUX_AGENT_LAUNCH_ARGV_B64=L1VzZXJzL3ppeXUvLmxvY2FsL2Jpbi9jbGF1ZGUA
 __CF_USER_TEXT_ENCODING=0x1F5:0x19:0x34
 PAGER=
-CMUX_AGENT_LAUNCH_CWD=/Users/ziyu/Workspace/token-guard
+CMUX_AGENT_LAUNCH_CWD=/Users/ziyu/Workspace/token-killer
 LSCOLORS=Gxfxcxdxbxegedabagacad
-PATH=./node_modules/.bin:/Users/ziyu/Workspace/token-guard/node_modules/.bin:/Applications/cmux.app/Contents/Resources/bin:/opt/homebrew/opt/openjdk@21/bin:/Users/ziyu/.antigravity/antigravity/bin:/Users/ziyu/Library/Android/sdk:/Users/ziyu/Library/pnpm/bin:/Users/ziyu/.bun/bin:/Users/ziyu/.pyenv/shims:/opt/homebrew/opt/ruby/bin:/opt/homebrew/opt/postgresql@17/bin:/Users/ziyu/.codeium/windsurf/bin:/opt/homebrew/opt/postgresql@17/bin:/Users/ziyu/.nvm/versions/node/v22.22.2/bin:/Users/ziyu/.nvm/versions/node/v22.22.2/bin:/Users/ziyu/.local/bin:/Library/Frameworks/Python.framework/Versions/3.13/bin:/opt/homebrew/bin:/opt/homebrew/sbin:/usr/local/bin:/System/Cryptexes/App/usr/bin:/usr/bin:/bin:/usr/sbin:/sbin:/var/run/com.apple.security.cryptexd/codex.system/bootstrap/usr/local/bin:/var/run/com.apple.security.cryptexd/codex.system/bootstrap/usr/bin:/var/run/com.apple.security.cryptexd/codex.system/bootstrap/usr/appleinternal/bin:/pkg/env/global/bin:/Library/Apple/usr/bin:/Users/ziyu/.cargo/bin:/Users/ziyu/.orbstack/bin:/Applications/极空间.app/Contents/Resources/app.asar.unpacked/bin/platform-tools:/Users/ziyu/.cache/lm-studio/bin:/Users/ziyu/.claude/plugins/cache/openai-codex/codex/1.0.4/bin
+PATH=./node_modules/.bin:/Users/ziyu/Workspace/token-killer/node_modules/.bin:/Applications/cmux.app/Contents/Resources/bin:/opt/homebrew/opt/openjdk@21/bin:/Users/ziyu/.antigravity/antigravity/bin:/Users/ziyu/Library/Android/sdk:/Users/ziyu/Library/pnpm/bin:/Users/ziyu/.bun/bin:/Users/ziyu/.pyenv/shims:/opt/homebrew/opt/ruby/bin:/opt/homebrew/opt/postgresql@17/bin:/Users/ziyu/.codeium/windsurf/bin:/opt/homebrew/opt/postgresql@17/bin:/Users/ziyu/.nvm/versions/node/v22.22.2/bin:/Users/ziyu/.nvm/versions/node/v22.22.2/bin:/Users/ziyu/.local/bin:/Library/Frameworks/Python.framework/Versions/3.13/bin:/opt/homebrew/bin:/opt/homebrew/sbin:/usr/local/bin:/System/Cryptexes/App/usr/bin:/usr/bin:/bin:/usr/sbin:/sbin:/var/run/com.apple.security.cryptexd/codex.system/bootstrap/usr/local/bin:/var/run/com.apple.security.cryptexd/codex.system/bootstrap/usr/bin:/var/run/com.apple.security.cryptexd/codex.system/bootstrap/usr/appleinternal/bin:/pkg/env/global/bin:/Library/Apple/usr/bin:/Users/ziyu/.cargo/bin:/Users/ziyu/.orbstack/bin:/Applications/极空间.app/Contents/Resources/app.asar.unpacked/bin/platform-tools:/Users/ziyu/.cache/lm-studio/bin:/Users/ziyu/.claude/plugins/cache/openai-codex/codex/1.0.4/bin
 CMUX_PORT=9130
 GHOSTTY_SHELL_FEATURES=cursor:blink,path,title
 CMUX_CLAUDE_HOOK_CMUX_BIN=/Applications/cmux.app/Contents/Resources/bin/cmux
 __CFBundleIdentifier=com.cmuxterm.app
 npm_command=exec
-PWD=/Users/ziyu/Workspace/token-guard
+PWD=/Users/ziyu/Workspace/token-killer
 CMUX_PORT_END=9139
 CMUX_NO_GIT_WATCH=
 CMUX_WORKSPACE_ID=7E263E2C-9923-4F07-823C-5B6D3735040B
 CMUX_SHELL_INTEGRATION=1
 LANG=zh_CN.UTF-8
-NODE_PATH=/Users/ziyu/Workspace/token-guard/node_modules/.pnpm/tsx@4.22.4/node_modules/tsx/node_modules:/Users/ziyu/Workspace/token-guard/node_modules/.pnpm/tsx@4.22.4/node_modules:/Users/ziyu/Workspace/token-guard/node_modules/.pnpm/node_modules
+NODE_PATH=/Users/ziyu/Workspace/token-killer/node_modules/.pnpm/tsx@4.22.4/node_modules/tsx/node_modules:/Users/ziyu/Workspace/token-killer/node_modules/.pnpm/tsx@4.22.4/node_modules:/Users/ziyu/Workspace/token-killer/node_modules/.pnpm/node_modules
 XPC_FLAGS=0x0
 CMUX_KIRO_NOTIFICATION_LEVEL=standard
 CMUX_LOAD_GHOSTTY_ZSH_INTEGRATION=1
@@ -4254,7 +4254,7 @@ HOMEBREW_PREFIX=/opt/homebrew
 CMUX_PORT_RANGE=10
 LESS=-R
 LOGNAME=ziyu
-PNPM_PACKAGE_NAME=@company/tg
+PNPM_PACKAGE_NAME=@company/tk
 XDG_DATA_DIRS=/Applications/cmux.app/Contents/Resources:/usr/local/share:/usr/share:/Applications/cmux.app/Contents/Resources/ghostty/..
 CODEX_COMPANION_SESSION_ID=09be39f0-e6ba-4831-989a-61c83acf0491
 GHOSTTY_BIN_DIR=/Applications/cmux.app/Contents/MacOS
@@ -4278,7 +4278,7 @@ NO_COLOR=1
 
 ```
 
-**tg** (2360 chars, 590 tokens, 58.6% savings):
+**tk** (2360 chars, 590 tokens, 58.6% savings):
 
 ```text
 PATH Variables:
@@ -4288,7 +4288,7 @@ PATH Variables:
   FPATH=/Users/ziyu/.oh-my-zsh/custom/plugins/zsh-syntax-h... (579 chars)
   INFOPATH=/opt/homebrew/share/info:
   MANPATH=/Users/ziyu/.nvm/versions/node/v22.22.2/share/man:... (190 chars)
-  NODE_PATH=/Users/ziyu/Workspace/token-guard/node_modules/.pn... (236 chars)
+  NODE_PATH=/Users/ziyu/Workspace/token-killer/node_modules/.pn... (236 chars)
   PATH (2 entries):
     ./node_modules/.bin
     /Users/ziyu/Workspace/token-gu... (1199 chars)
@@ -4299,7 +4299,7 @@ Language/Runtime:
   CMUX_BUNDLE_ID=com.cmuxterm.app
   NoDefaultCurrentDirectoryInExePath=1
   PNPM_HOME=/Users/ziyu/Library/pnpm
-  PNPM_PACKAGE_NAME=@company/tg
+  PNPM_PACKAGE_NAME=@company/tk
   __CFBundleIdentifier=com.cmuxterm.app
   npm_command=exec
   npm_config_user_agent=pnpm/11.5.0 npm/? node/v22.22.2 darwin arm64
@@ -4338,7 +4338,7 @@ Tools:
 Other:
   HOME=/Users/ziyu
   LANG=zh_CN.UTF-8
-  PWD=/Users/ziyu/Workspace/token-guard
+  PWD=/Users/ziyu/Workspace/token-killer
   USER=ziyu
 
 Total: 92 vars (showing 50 relevant)
@@ -4355,7 +4355,7 @@ PATH Variables:
   FPATH=/Users/ziyu/.oh-my-zsh/custom/plugins/zsh-syntax-h... (579 chars)
   INFOPATH=/opt/homebrew/share/info:
   MANPATH=/Users/ziyu/.nvm/versions/node/v22.22.2/share/man:... (190 chars)
-  NODE_PATH=/Users/ziyu/Workspace/token-guard/node_modules/.pn... (236 chars)
+  NODE_PATH=/Users/ziyu/Workspace/token-killer/node_modules/.pn... (236 chars)
   PATH (2 entries):
     ./node_modules/.bin
     /Users/ziyu/Workspace/token-gu... (1199 chars)
@@ -4366,7 +4366,7 @@ Language/Runtime:
   CMUX_BUNDLE_ID=com.cmuxterm.app
   NoDefaultCurrentDirectoryInExePath=1
   PNPM_HOME=/Users/ziyu/Library/pnpm
-  PNPM_PACKAGE_NAME=@company/tg
+  PNPM_PACKAGE_NAME=@company/tk
   __CFBundleIdentifier=com.cmuxterm.app
   npm_command=exec
   npm_config_user_agent=pnpm/11.5.0 npm/? node/v22.22.2 darwin arm64
@@ -4405,7 +4405,7 @@ Tools:
 Other:
   HOME=/Users/ziyu
   LANG=zh_CN.UTF-8
-  PWD=/Users/ziyu/Workspace/token-guard
+  PWD=/Users/ziyu/Workspace/token-killer
   USER=ziyu
 
 Total: 92 vars (showing 50 relevant)
@@ -4417,14 +4417,14 @@ Total: 92 vars (showing 50 relevant)
 ### 61. generic: echo hello
 
 - Handler: `generic`
-- tg: `tg echo hello`
+- tk: `tk echo hello`
 - raw: `echo hello`
 - rtk: `echo hello`
 
 | channel | chars | tokens | savingsPct |
 |---|---:|---:|---:|
 | raw | 6 | 2 | 0% |
-| tg | 6 | 2 | 0% |
+| tk | 6 | 2 | 0% |
 | rtk | 6 | 2 | 0% |
 
 **raw** (6 chars, 2 tokens):
@@ -4434,7 +4434,7 @@ hello
 
 ```
 
-**tg** (6 chars, 2 tokens, 0% savings):
+**tk** (6 chars, 2 tokens, 0% savings):
 
 ```text
 hello
@@ -4453,44 +4453,44 @@ hello
 ### 62. gh: gh repo view
 
 - Handler: `gh`
-- tg: `tg gh repo view`
+- tk: `tk gh repo view`
 - raw: `gh repo view`
 - rtk: `gh repo view`
 
 | channel | chars | tokens | savingsPct |
 |---|---:|---:|---:|
 | raw | 58 | 15 | 0% |
-| tg | 92 | 23 | 0% |
+| tk | 92 | 23 | 0% |
 | rtk | 92 | 23 | 0% |
 
 **raw** (58 chars, 15 tokens):
 
 ```text
-name:	Cozy228/token-guard
+name:	Cozy228/token-killer
 description:	
 --
-# token-guard
+# token-killer
 
 
 ```
 
-**tg** (92 chars, 23 tokens, 0% savings):
+**tk** (92 chars, 23 tokens, 0% savings):
 
 ```text
-Cozy228/token-guard
+Cozy228/token-killer
   [public]
   0 stars | 0 forks
-  https://github.com/Cozy228/token-guard
+  https://github.com/Cozy228/token-killer
 
 ```
 
 **rtk** (92 chars, 23 tokens, 0% savings):
 
 ```text
-Cozy228/token-guard
+Cozy228/token-killer
   [public]
   0 stars | 0 forks
-  https://github.com/Cozy228/token-guard
+  https://github.com/Cozy228/token-killer
 
 ```
 
@@ -4499,28 +4499,28 @@ Cozy228/token-guard
 ### 63. git-branch: git branch
 
 - Handler: `git-branch`
-- tg: `tg git branch`
+- tk: `tk git branch`
 - raw: `git --no-pager branch`
 - rtk: `git branch`
 
 | channel | chars | tokens | savingsPct |
 |---|---:|---:|---:|
 | raw | 36 | 9 | 0% |
-| tg | 36 | 9 | 0% |
+| tk | 36 | 9 | 0% |
 | rtk | 36 | 9 | 0% |
 
 **raw** (36 chars, 9 tokens):
 
 ```text
-* codex/token-guard-node-cli
+* codex/token-killer-node-cli
   main
 
 ```
 
-**tg** (36 chars, 9 tokens, 0% savings):
+**tk** (36 chars, 9 tokens, 0% savings):
 
 ```text
-* codex/token-guard-node-cli
+* codex/token-killer-node-cli
   main
 
 ```
@@ -4528,7 +4528,7 @@ Cozy228/token-guard
 **rtk** (36 chars, 9 tokens, 0% savings):
 
 ```text
-* codex/token-guard-node-cli
+* codex/token-killer-node-cli
   main
 
 ```
@@ -4538,14 +4538,14 @@ Cozy228/token-guard
 ### 64. git-log: git log --oneline -10
 
 - Handler: `git-log`
-- tg: `tg git log --oneline -10`
+- tk: `tk git log --oneline -10`
 - raw: `git --no-pager log --oneline -10`
 - rtk: `git log --oneline -10`
 
 | channel | chars | tokens | savingsPct |
 |---|---:|---:|---:|
 | raw | 764 | 191 | 0% |
-| tg | 764 | 191 | 0% |
+| tk | 764 | 191 | 0% |
 | rtk | 764 | 191 | 0% |
 
 **raw** (764 chars, 191 tokens):
@@ -4564,7 +4564,7 @@ bdef140 feat(git): add graphite (gt) handler and register all new handlers in in
 
 ```
 
-**tg** (764 chars, 191 tokens, 0% savings):
+**tk** (764 chars, 191 tokens, 0% savings):
 
 ```text
 eccdcd5 feat(handlers): align RTK compression for gh, glab, read, log, tree, grep, ruff
@@ -4601,14 +4601,14 @@ bdef140 feat(git): add graphite (gt) handler and register all new handlers in in
 ### 65. git-show: git show -1 --stat
 
 - Handler: `git-show`
-- tg: `tg git show -1 --stat`
+- tk: `tk git show -1 --stat`
 - raw: `git --no-pager show -1 --stat`
 - rtk: `git show -1 --stat`
 
 | channel | chars | tokens | savingsPct |
 |---|---:|---:|---:|
 | raw | 1257 | 315 | 0% |
-| tg | 1257 | 315 | 0% |
+| tk | 1257 | 315 | 0% |
 | rtk | 1257 | 315 | 0% |
 
 **raw** (1257 chars, 315 tokens):
@@ -4641,7 +4641,7 @@ Date:   Fri Jun 5 09:22:43 2026 +0800
 
 ```
 
-**tg** (1257 chars, 315 tokens, 0% savings):
+**tk** (1257 chars, 315 tokens, 0% savings):
 
 ```text
 commit eccdcd58a66b2e9fd347a7c16084bb5a205b77e7
@@ -4706,21 +4706,21 @@ Date:   Fri Jun 5 09:22:43 2026 +0800
 ### 66. git-status: git status
 
 - Handler: `git-status`
-- tg: `tg git status`
+- tk: `tk git status`
 - raw: `git --no-pager status`
 - rtk: `git status`
 
 | channel | chars | tokens | savingsPct |
 |---|---:|---:|---:|
 | raw | 2655 | 664 | 0% |
-| tg | 1779 | 445 | 33% |
+| tk | 1779 | 445 | 33% |
 | rtk | 1779 | 445 | 33% |
 
 **raw** (2655 chars, 664 tokens):
 
 ```text
-On branch codex/token-guard-node-cli
-Your branch is up to date with 'origin/codex/token-guard-node-cli'.
+On branch codex/token-killer-node-cli
+Your branch is up to date with 'origin/codex/token-killer-node-cli'.
 
 Changes to be committed:
   (use "git restore --staged <file>..." to unstage)
@@ -4784,10 +4784,10 @@ Untracked files:
 
 ```
 
-**tg** (1779 chars, 445 tokens, 33% savings):
+**tk** (1779 chars, 445 tokens, 33% savings):
 
 ```text
-* codex/token-guard-node-cli...origin/codex/token-guard-node-cli
+* codex/token-killer-node-cli...origin/codex/token-killer-node-cli
  M README.md
  M docs/DESIGN.md
  M docs/align-rtk-divergences.md
@@ -4837,7 +4837,7 @@ RM tests/unit/handlers/rtkRubocopBehavior.test.ts -> tests/out-of-scope/rtkRuboc
 **rtk** (1779 chars, 445 tokens, 33% savings):
 
 ```text
-* codex/token-guard-node-cli...origin/codex/token-guard-node-cli
+* codex/token-killer-node-cli...origin/codex/token-killer-node-cli
  M README.md
  M docs/DESIGN.md
  M docs/align-rtk-divergences.md
@@ -4889,34 +4889,34 @@ RM tests/unit/handlers/rtkRubocopBehavior.test.ts -> tests/out-of-scope/rtkRuboc
 ### 67. git-worktree: git worktree list
 
 - Handler: `git-worktree`
-- tg: `tg git worktree list`
+- tk: `tk git worktree list`
 - raw: `git --no-pager worktree list`
 - rtk: `git worktree list`
 
 | channel | chars | tokens | savingsPct |
 |---|---:|---:|---:|
 | raw | 72 | 18 | 0% |
-| tg | 61 | 16 | 11.1% |
+| tk | 61 | 16 | 11.1% |
 | rtk | 61 | 16 | 11.1% |
 
 **raw** (72 chars, 18 tokens):
 
 ```text
-/Users/ziyu/Workspace/token-guard  eccdcd5 [codex/token-guard-node-cli]
+/Users/ziyu/Workspace/token-killer  eccdcd5 [codex/token-killer-node-cli]
 
 ```
 
-**tg** (61 chars, 16 tokens, 11.1% savings):
+**tk** (61 chars, 16 tokens, 11.1% savings):
 
 ```text
-~/Workspace/token-guard eccdcd5 [codex/token-guard-node-cli]
+~/Workspace/token-killer eccdcd5 [codex/token-killer-node-cli]
 
 ```
 
 **rtk** (61 chars, 16 tokens, 11.1% savings):
 
 ```text
-~/Workspace/token-guard eccdcd5 [codex/token-guard-node-cli]
+~/Workspace/token-killer eccdcd5 [codex/token-killer-node-cli]
 
 ```
 
@@ -4925,14 +4925,14 @@ RM tests/unit/handlers/rtkRubocopBehavior.test.ts -> tests/out-of-scope/rtkRuboc
 ### 68. gt: gt log
 
 - Handler: `gt`
-- tg: `tg gt log`
+- tk: `tk gt log`
 - raw: `gt log`
 - rtk: `gt log`
 
 | channel | chars | tokens | savingsPct |
 |---|---:|---:|---:|
 | raw | 81 | 21 | 0% |
-| tg | 80 | 20 | 4.8% |
+| tk | 80 | 20 | 4.8% |
 | rtk | 80 | 20 | 4.8% |
 
 **raw** (81 chars, 21 tokens):
@@ -4941,18 +4941,18 @@ RM tests/unit/handlers/rtkRubocopBehavior.test.ts -> tests/out-of-scope/rtkRuboc
 ◯ main
 │ 3 days ago
 │ 
-│ 0a15557 - docs: add token guard product documentation
+│ 0a15557 - docs: add token killer product documentation
 │
 
 ```
 
-**tg** (80 chars, 20 tokens, 4.8% savings):
+**tk** (80 chars, 20 tokens, 4.8% savings):
 
 ```text
 ◯ main
 │ 3 days ago
 │
-│ 0a15557 - docs: add token guard product documentation
+│ 0a15557 - docs: add token killer product documentation
 │
 
 ```
@@ -4963,7 +4963,7 @@ RM tests/unit/handlers/rtkRubocopBehavior.test.ts -> tests/out-of-scope/rtkRuboc
 ◯ main
 │ 3 days ago
 │
-│ 0a15557 - docs: add token guard product documentation
+│ 0a15557 - docs: add token killer product documentation
 │
 
 ```
@@ -4973,14 +4973,14 @@ RM tests/unit/handlers/rtkRubocopBehavior.test.ts -> tests/out-of-scope/rtkRuboc
 ### 69. list-like: find src -name *.ts
 
 - Handler: `list-like`
-- tg: `tg find src -name *.ts`
+- tk: `tk find src -name *.ts`
 - raw: `find src -name *.ts`
 - rtk: `find src -name *.ts`
 
 | channel | chars | tokens | savingsPct |
 |---|---:|---:|---:|
 | raw | 1852 | 463 | 0% |
-| tg | 663 | 166 | 64.1% |
+| tk | 663 | 166 | 64.1% |
 | rtk | 663 | 166 | 64.1% |
 
 **raw** (1852 chars, 463 tokens):
@@ -5062,7 +5062,7 @@ src/handlers/git/show.ts
 
 ```
 
-**tg** (663 chars, 166 tokens, 64.1% savings):
+**tk** (663 chars, 166 tokens, 64.1% savings):
 
 ```text
 73F 12D:
@@ -5105,14 +5105,14 @@ handlers/js/ eslint.ts next.ts npm.ts packageList.ts playwright.ts
 ### 70. log: log repeated app fixture
 
 - Handler: `log`
-- tg: `tg log tests/fixtures/system/app_repeated.log`
+- tk: `tk log tests/fixtures/system/app_repeated.log`
 - raw: `log tests/fixtures/system/app_repeated.log`
 - rtk: `log tests/fixtures/system/app_repeated.log`
 
 | channel | chars | tokens | savingsPct |
 |---|---:|---:|---:|
 | raw | 732 | 183 | 0% |
-| tg | 390 | 98 | 46.4% |
+| tk | 390 | 98 | 46.4% |
 | rtk | 390 | 98 | 46.4% |
 
 **raw** (732 chars, 183 tokens):
@@ -5145,7 +5145,7 @@ further help:
 
 ```
 
-**tg** (390 chars, 98 tokens, 46.4% savings):
+**tk** (390 chars, 98 tokens, 46.4% savings):
 
 ```text
 Log Summary
@@ -5186,14 +5186,14 @@ Log Summary
 ### 71. mypy: mypy src/handlers/index.ts
 
 - Handler: `mypy`
-- tg: `tg mypy src/handlers/index.ts`
+- tk: `tk mypy src/handlers/index.ts`
 - raw: `mypy src/handlers/index.ts`
 - rtk: `mypy src/handlers/index.ts`
 
 | channel | chars | tokens | savingsPct |
 |---|---:|---:|---:|
 | raw | 117 | 30 | 0% |
-| tg | 129 | 33 | 0% |
+| tk | 129 | 33 | 0% |
 | rtk | 129 | 33 | 0% |
 
 **raw** (117 chars, 30 tokens):
@@ -5204,7 +5204,7 @@ Found 1 error in 1 file (errors prevented further checking)
 
 ```
 
-**tg** (129 chars, 33 tokens, 0% savings):
+**tk** (129 chars, 33 tokens, 0% savings):
 
 ```text
 mypy: 1 errors in 1 files
@@ -5229,14 +5229,14 @@ src/handlers/index.ts (1 errors)
 ### 72. package-list: pnpm list --depth=0
 
 - Handler: `package-list`
-- tg: `tg pnpm list --depth=0`
+- tk: `tk pnpm list --depth=0`
 - raw: `pnpm list --depth=0`
 - rtk: `pnpm list --depth=0`
 
 | channel | chars | tokens | savingsPct |
 |---|---:|---:|---:|
 | raw | 297 | 75 | 0% |
-| tg | 181 | 46 | 38.7% |
+| tk | 181 | 46 | 38.7% |
 | rtk | 181 | 46 | 38.7% |
 
 **raw** (297 chars, 75 tokens):
@@ -5244,7 +5244,7 @@ src/handlers/index.ts (1 errors)
 ```text
 Legend: production dependency, optional only, dev only
 
-@company/tg@0.1.0 /Users/ziyu/Workspace/token-guard
+@company/tk@0.1.0 /Users/ziyu/Workspace/token-killer
 │
 │   dependencies:
 ├── strip-ansi@7.2.0
@@ -5261,12 +5261,12 @@ Legend: production dependency, optional only, dev only
 
 ```
 
-**tg** (181 chars, 46 tokens, 38.7% savings):
+**tk** (181 chars, 46 tokens, 38.7% savings):
 
 ```text
 8 packages (2 prod / 6 dev)
 [prod]
-  @company/tg 0.1.0
+  @company/tk 0.1.0
   strip-ansi 7.2.0
 [dev]
   @types/node 25.9.1
@@ -5283,7 +5283,7 @@ Legend: production dependency, optional only, dev only
 ```text
 8 packages (2 prod / 6 dev)
 [prod]
-  @company/tg 0.1.0
+  @company/tk 0.1.0
   strip-ansi 7.2.0
 [dev]
   tsdown 0.22.1
@@ -5300,14 +5300,14 @@ Legend: production dependency, optional only, dev only
 ### 73. pytest: pytest --collect-only
 
 - Handler: `pytest`
-- tg: `tg pytest --collect-only -q tests/unit/savings.test.ts`
+- tk: `tk pytest --collect-only -q tests/unit/savings.test.ts`
 - raw: `pytest --collect-only -q tests/unit/savings.test.ts`
 - rtk: `pytest --collect-only -q tests/unit/savings.test.ts`
 
 | channel | chars | tokens | savingsPct |
 |---|---:|---:|---:|
 | raw | 143 | 36 | 0% |
-| tg | 27 | 7 | 80.6% |
+| tk | 27 | 7 | 80.6% |
 | rtk | 27 | 7 | 80.6% |
 
 **raw** (143 chars, 36 tokens):
@@ -5315,13 +5315,13 @@ Legend: production dependency, optional only, dev only
 ```text
 
 no tests collected in 0.00s
-ERROR: not found: /Users/ziyu/Workspace/token-guard/tests/unit/savings.test.ts
+ERROR: not found: /Users/ziyu/Workspace/token-killer/tests/unit/savings.test.ts
 (no match in any of [<Dir unit>])
 
 
 ```
 
-**tg** (27 chars, 7 tokens, 80.6% savings):
+**tk** (27 chars, 7 tokens, 80.6% savings):
 
 ```text
 Pytest: No tests collected
@@ -5340,27 +5340,27 @@ Pytest: No tests collected
 ### 74. read-like: cat package.json
 
 - Handler: `read`
-- tg: `tg cat package.json`
+- tk: `tk cat package.json`
 - raw: `cat package.json`
 - rtk: `read package.json`
 
 | channel | chars | tokens | savingsPct |
 |---|---:|---:|---:|
 | raw | 1277 | 320 | 0% |
-| tg | 1277 | 320 | 0% |
+| tk | 1277 | 320 | 0% |
 | rtk | 1277 | 320 | 0% |
 
 **raw** (1277 chars, 320 tokens):
 
 ```text
 {
-  "name": "@company/tg",
+  "name": "@company/tk",
   "version": "0.1.0",
   "description": "RTK-style token-saving command proxy.",
   "type": "module",
   "packageManager": "pnpm@11.5.0",
   "bin": {
-    "tg": "./dist/cli.js"
+    "tk": "./dist/cli.js"
   },
   "files": [
     "dist",
@@ -5398,17 +5398,17 @@ Pytest: No tests collected
 
 ```
 
-**tg** (1277 chars, 320 tokens, 0% savings):
+**tk** (1277 chars, 320 tokens, 0% savings):
 
 ```text
 {
-  "name": "@company/tg",
+  "name": "@company/tk",
   "version": "0.1.0",
   "description": "RTK-style token-saving command proxy.",
   "type": "module",
   "packageManager": "pnpm@11.5.0",
   "bin": {
-    "tg": "./dist/cli.js"
+    "tk": "./dist/cli.js"
   },
   "files": [
     "dist",
@@ -5450,13 +5450,13 @@ Pytest: No tests collected
 
 ```text
 {
-  "name": "@company/tg",
+  "name": "@company/tk",
   "version": "0.1.0",
   "description": "RTK-style token-saving command proxy.",
   "type": "module",
   "packageManager": "pnpm@11.5.0",
   "bin": {
-    "tg": "./dist/cli.js"
+    "tk": "./dist/cli.js"
   },
   "files": [
     "dist",
@@ -5499,14 +5499,14 @@ Pytest: No tests collected
 ### 75. read-like: cat src/cli.ts
 
 - Handler: `read`
-- tg: `tg cat src/cli.ts`
+- tk: `tk cat src/cli.ts`
 - raw: `cat src/cli.ts`
 - rtk: `read src/cli.ts`
 
 | channel | chars | tokens | savingsPct |
 |---|---:|---:|---:|
 | raw | 3271 | 818 | 0% |
-| tg | 3271 | 818 | 0% |
+| tk | 3271 | 818 | 0% |
 | rtk | 3271 | 818 | 0% |
 
 **raw** (3271 chars, 818 tokens):
@@ -5521,13 +5521,13 @@ import { recordHistory } from "./core/history.js";
 import { calculateSavings } from "./core/savings.js";
 import { maybeSaveRawOutput } from "./core/rawStore.js";
 import { formatStats } from "./core/stats.js";
-import type { FilteredResult, RawResult, TgOptions } from "./types.js";
+import type { FilteredResult, RawResult, TkOptions } from "./types.js";
 
 const VERSION = "0.1.0";
 
 function help(): string {
   return [
-    "Usage: tg [tg flags] <command...>",
+    "Usage: tk [tk flags] <command...>",
     "",
     "Flags:",
     "  --raw                 print raw stdout/stderr",
@@ -5544,7 +5544,7 @@ function help(): string {
   ].join("\n");
 }
 
-async function recordRawPassthrough(raw: RawResult, options: TgOptions): Promise<void> {
+async function recordRawPassthrough(raw: RawResult, options: TkOptions): Promise<void> {
   const output = `${raw.stdout}${raw.stderr}`;
   const savings = calculateSavings(output, output);
   const rawOutputPath = await maybeSaveRawOutput(raw, options);
@@ -5581,7 +5581,7 @@ async function main(): Promise<number> {
     return 0;
   }
   if (!parsed.command) {
-    process.stderr.write("tg: missing command\n");
+    process.stderr.write("tk: missing command\n");
     return 1;
   }
 
@@ -5626,7 +5626,7 @@ try {
 
 ```
 
-**tg** (3271 chars, 818 tokens, 0% savings):
+**tk** (3271 chars, 818 tokens, 0% savings):
 
 ```text
 #!/usr/bin/env node
@@ -5638,13 +5638,13 @@ import { recordHistory } from "./core/history.js";
 import { calculateSavings } from "./core/savings.js";
 import { maybeSaveRawOutput } from "./core/rawStore.js";
 import { formatStats } from "./core/stats.js";
-import type { FilteredResult, RawResult, TgOptions } from "./types.js";
+import type { FilteredResult, RawResult, TkOptions } from "./types.js";
 
 const VERSION = "0.1.0";
 
 function help(): string {
   return [
-    "Usage: tg [tg flags] <command...>",
+    "Usage: tk [tk flags] <command...>",
     "",
     "Flags:",
     "  --raw                 print raw stdout/stderr",
@@ -5661,7 +5661,7 @@ function help(): string {
   ].join("\n");
 }
 
-async function recordRawPassthrough(raw: RawResult, options: TgOptions): Promise<void> {
+async function recordRawPassthrough(raw: RawResult, options: TkOptions): Promise<void> {
   const output = `${raw.stdout}${raw.stderr}`;
   const savings = calculateSavings(output, output);
   const rawOutputPath = await maybeSaveRawOutput(raw, options);
@@ -5698,7 +5698,7 @@ async function main(): Promise<number> {
     return 0;
   }
   if (!parsed.command) {
-    process.stderr.write("tg: missing command\n");
+    process.stderr.write("tk: missing command\n");
     return 1;
   }
 
@@ -5755,13 +5755,13 @@ import { recordHistory } from "./core/history.js";
 import { calculateSavings } from "./core/savings.js";
 import { maybeSaveRawOutput } from "./core/rawStore.js";
 import { formatStats } from "./core/stats.js";
-import type { FilteredResult, RawResult, TgOptions } from "./types.js";
+import type { FilteredResult, RawResult, TkOptions } from "./types.js";
 
 const VERSION = "0.1.0";
 
 function help(): string {
   return [
-    "Usage: tg [tg flags] <command...>",
+    "Usage: tk [tk flags] <command...>",
     "",
     "Flags:",
     "  --raw                 print raw stdout/stderr",
@@ -5778,7 +5778,7 @@ function help(): string {
   ].join("\n");
 }
 
-async function recordRawPassthrough(raw: RawResult, options: TgOptions): Promise<void> {
+async function recordRawPassthrough(raw: RawResult, options: TkOptions): Promise<void> {
   const output = `${raw.stdout}${raw.stderr}`;
   const savings = calculateSavings(output, output);
   const rawOutputPath = await maybeSaveRawOutput(raw, options);
@@ -5815,7 +5815,7 @@ async function main(): Promise<number> {
     return 0;
   }
   if (!parsed.command) {
-    process.stderr.write("tg: missing command\n");
+    process.stderr.write("tk: missing command\n");
     return 1;
   }
 
@@ -5865,14 +5865,14 @@ try {
 ### 76. wc: wc README.md
 
 - Handler: `wc`
-- tg: `tg wc README.md`
+- tk: `tk wc README.md`
 - raw: `wc README.md`
 - rtk: `wc README.md`
 
 | channel | chars | tokens | savingsPct |
 |---|---:|---:|---:|
 | raw | 35 | 9 | 0% |
-| tg | 16 | 4 | 55.6% |
+| tk | 16 | 4 | 55.6% |
 | rtk | 16 | 4 | 55.6% |
 
 **raw** (35 chars, 9 tokens):
@@ -5882,7 +5882,7 @@ try {
 
 ```
 
-**tg** (16 chars, 4 tokens, 55.6% savings):
+**tk** (16 chars, 4 tokens, 55.6% savings):
 
 ```text
 123L 412W 2723B

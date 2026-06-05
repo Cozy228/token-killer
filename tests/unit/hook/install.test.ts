@@ -16,8 +16,8 @@ let home: string;
 let cwd: string;
 
 beforeEach(() => {
-  home = mkdtempSync(join(tmpdir(), "tg-hookcfg-home-"));
-  cwd = mkdtempSync(join(tmpdir(), "tg-hookcfg-proj-"));
+  home = mkdtempSync(join(tmpdir(), "tk-hookcfg-home-"));
+  cwd = mkdtempSync(join(tmpdir(), "tk-hookcfg-proj-"));
 });
 afterEach(() => {
   rmSync(home, { recursive: true, force: true });
@@ -25,25 +25,25 @@ afterEach(() => {
 });
 
 describe("config artifact (DESIGN §3.1)", () => {
-  test("matches the rtk-verified shape and points at tg hook copilot", () => {
+  test("matches the rtk-verified shape and points at tk hook copilot", () => {
     const config = buildCopilotHookConfig();
     expect(config.hooks.PreToolUse).toEqual([
-      { type: "command", command: "tg hook copilot", cwd: ".", timeout: 5 },
+      { type: "command", command: "tk hook copilot", cwd: ".", timeout: 5 },
     ]);
-    expect(config.managedBy).toBe("token-guard");
+    expect(config.managedBy).toBe("token-killer");
   });
 });
 
 describe("paths — user-level default, repo only under --project", () => {
-  test("user-level → ~/.copilot/hooks/tg-rewrite.json", () => {
+  test("user-level → ~/.copilot/hooks/tk-rewrite.json", () => {
     expect(copilotHookConfigPath({ project: false, home })).toBe(
-      join(home, ".copilot", "hooks", "tg-rewrite.json"),
+      join(home, ".copilot", "hooks", "tk-rewrite.json"),
     );
   });
 
-  test("project → <cwd>/.github/hooks/tg-rewrite.json", () => {
+  test("project → <cwd>/.github/hooks/tk-rewrite.json", () => {
     expect(copilotHookConfigPath({ project: true, cwd })).toBe(
-      join(cwd, ".github", "hooks", "tg-rewrite.json"),
+      join(cwd, ".github", "hooks", "tk-rewrite.json"),
     );
   });
 });
@@ -53,7 +53,7 @@ describe("install / plan / uninstall", () => {
     const plan = installCopilotHookConfig({ project: false, home });
     expect(plan.action).toBe("create");
     const written = JSON.parse(readFileSync(plan.path, "utf8"));
-    expect(written.hooks.PreToolUse[0].command).toBe("tg hook copilot");
+    expect(written.hooks.PreToolUse[0].command).toBe("tk hook copilot");
   });
 
   test("install is idempotent (second run → unchanged)", () => {
@@ -74,7 +74,7 @@ describe("install / plan / uninstall", () => {
     expect(existsSync(removed.path)).toBe(false);
   });
 
-  test("uninstall refuses to delete a non-tg hooks file (no marker)", () => {
+  test("uninstall refuses to delete a non-tk hooks file (no marker)", () => {
     const path = copilotHookConfigPath({ project: false, home });
     mkdirSync(join(home, ".copilot", "hooks"), { recursive: true });
     writeFileSync(path, JSON.stringify({ hooks: { PreToolUse: [] } }));

@@ -1,5 +1,5 @@
 // Static-context view formatting (goal "Report format"). Renders the
-// source = static_context findings as a SECTION within `tg inspect`'s report —
+// source = static_context findings as a SECTION within `tk inspect`'s report —
 // not a standalone document. Groups by severity; shows evidence + recommendation
 // + fix class. JSON output is the unified Finding[] (handled by the caller).
 

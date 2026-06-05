@@ -1,7 +1,7 @@
 // Unified finding model (DESIGN §9.0). Runtime and static-context analyzers
 // converge into a single Finding[]. Runtime findings carry aggregate metrics; static
 // context findings carry surface/file/lines (from src/context). The persisted
-// scope-bucket report is `{ ..., findings: Finding[] }`; `tg optimize context`
+// scope-bucket report is `{ ..., findings: Finding[] }`; `tk optimize context`
 // reads the bucket and filters to source = "static_context".
 
 import { createHash } from "node:crypto";
@@ -51,7 +51,7 @@ function opportunityToFinding(o: Opportunity): RuntimeFinding {
   let recommendation: string;
   let fix_class: RuntimeFinding["fix_class"] = "advisory";
   if (o.compressible) {
-    recommendation = `Route \`${o.key}\` through Token Guard (install shim/hook with \`tg init\`).`;
+    recommendation = `Route \`${o.key}\` through Token Killer (install shim/hook with \`tk init\`).`;
     fix_class = "delivery";
   } else if (o.governed_deny > 0) {
     recommendation = `Govern dependency-dir reads for \`${o.key}\` via a hook pretool deny.`;

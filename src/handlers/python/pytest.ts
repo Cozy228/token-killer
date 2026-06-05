@@ -156,8 +156,8 @@ function buildPytestSummary(summary: string, failures: string[], xfailLines: str
     }
     if (xfailLines.length > MAX_XFAIL) {
       result += `  … +${xfailLines.length - MAX_XFAIL} more\n`;
-      // RTK: force_tee_tail_hint — tg's recovery channel is `tg --raw`.
-      result += "  (run with `tg --raw` to see all expected-failure outcomes)\n";
+      // RTK: force_tee_tail_hint — tk's recovery channel is `tk --raw`.
+      result += "  (run with `tk --raw` to see all expected-failure outcomes)\n";
     }
   }
 
@@ -202,7 +202,7 @@ function buildPytestSummary(summary: string, failures: string[], xfailLines: str
 
   if (failures.length > MAX_PYTEST_FAILURES) {
     result += `\n… +${failures.length - MAX_PYTEST_FAILURES} more failures\n`;
-    result += "  (run with `tg --raw` to see all failures)\n";
+    result += "  (run with `tk --raw` to see all failures)\n";
   }
 
   return result.trim();

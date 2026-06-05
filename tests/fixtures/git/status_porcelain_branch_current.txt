@@ -1,4 +1,4 @@
-## codex/token-guard-node-cli...origin/codex/token-guard-node-cli
+## codex/token-killer-node-cli...origin/codex/token-killer-node-cli
  M docs/testing-and-migration-audit.md
  M package.json
  M tests/helpers/fixtureCases.ts

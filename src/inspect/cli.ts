@@ -1,4 +1,4 @@
-// Slice 4–5 — `tg inspect` entry (inspect-v1-design.md "Inspect Flags", "Exit
+// Slice 4–5 — `tk inspect` entry (inspect-v1-design.md "Inspect Flags", "Exit
 // Codes"). Read-only session scanner + advice generation.
 //
 // Exit codes: 0 ok (incl. warnings) · 1 user-input/config error · 2 no major
@@ -157,12 +157,12 @@ export function runInspect(
   try {
     opts = parseInspectArgs(argv);
   } catch (error) {
-    process.stderr.write(`tg inspect: ${error instanceof Error ? error.message : String(error)}\n`);
+    process.stderr.write(`tk inspect: ${error instanceof Error ? error.message : String(error)}\n`);
     return 3;
   }
 
   if (opts.error) {
-    process.stderr.write(`tg inspect: ${opts.error}\n`);
+    process.stderr.write(`tk inspect: ${opts.error}\n`);
     return 1;
   }
 
@@ -172,14 +172,14 @@ export function runInspect(
     const config = readConfig();
     if (!opts.telemetryExportExplicit) opts.telemetryExport = config.telemetryExport;
   } catch (error) {
-    process.stderr.write(`tg inspect: ${error instanceof Error ? error.message : String(error)}\n`);
+    process.stderr.write(`tk inspect: ${error instanceof Error ? error.message : String(error)}\n`);
     return 1;
   }
 
   // --copilot-context (static-only) is mutually exclusive with runtime-only flags.
   if (opts.copilotContext && (opts.since !== undefined || opts.session !== undefined || opts.inputTypeExplicit)) {
     process.stderr.write(
-      "tg inspect: --copilot-context (static-context only) cannot be combined with runtime-only flags (--since/--session/--input-type)\n",
+      "tk inspect: --copilot-context (static-context only) cannot be combined with runtime-only flags (--since/--session/--input-type)\n",
     );
     return 1;
   }
@@ -188,7 +188,7 @@ export function runInspect(
   if (opts.since !== undefined) {
     const duration = parseSince(opts.since);
     if (duration === undefined) {
-      process.stderr.write(`tg inspect: invalid --since '${opts.since}' (expected e.g. 7d, 24h, 30m)\n`);
+      process.stderr.write(`tk inspect: invalid --since '${opts.since}' (expected e.g. 7d, 24h, 30m)\n`);
       return 1;
     }
     sinceMs = nowMs - duration;
@@ -209,7 +209,7 @@ export function runInspect(
         result = scan(discovery, { sinceMs, session: opts.session });
       } else {
         process.stderr.write(
-          `tg inspect: no ${opts.inputType} session sources found (this is normal if the host stores transcripts elsewhere).\n`,
+          `tk inspect: no ${opts.inputType} session sources found (this is normal if the host stores transcripts elsewhere).\n`,
         );
       }
     }
@@ -223,7 +223,7 @@ export function runInspect(
     const staticEmpty = sc.result.files_scanned === 0;
     if (runtimeEmpty && staticEmpty) {
       process.stderr.write(
-        "tg inspect: no major source analyzable (no runtime session events and no static-context files found).\n",
+        "tk inspect: no major source analyzable (no runtime session events and no static-context files found).\n",
       );
       return 2;
     }
@@ -231,7 +231,7 @@ export function runInspect(
     const rtFindings = runtimeFindings(result);
     const unifiedFindings: Finding[] = [...rtFindings, ...staticFindings];
 
-    // Persist the per-scope unified Finding[] buckets that `tg optimize context`
+    // Persist the per-scope unified Finding[] buckets that `tk optimize context`
     // consumes (ADR 0003). Runtime findings are written into each produced bucket.
     persistScopeBuckets({
       scopes,
@@ -268,7 +268,7 @@ export function runInspect(
       findings: staticFindings,
     });
     const reportMarkdown = opts.copilotContext
-      ? `# Token Guard Inspect\n\n${staticSection}`
+      ? `# Token Killer Inspect\n\n${staticSection}`
       : `${renderMarkdown(report)}\n${staticSection}`;
 
     // Persist (stable names) before printing the confirmation.
@@ -298,7 +298,7 @@ export function runInspect(
         inspect: buildInspectAggregates(result, findings),
       });
       const path = writeTelemetryExport(`${JSON.stringify(telemetry, null, 2)}\n`);
-      process.stderr.write(`tg inspect: no telemetry endpoint configured; wrote local export: ${path}\n`);
+      process.stderr.write(`tk inspect: no telemetry endpoint configured; wrote local export: ${path}\n`);
     }
 
     // stdout report (skipped when --write-advice already printed a confirmation,
@@ -334,7 +334,7 @@ export function runInspect(
 
     return 0;
   } catch (error) {
-    process.stderr.write(`tg inspect: internal error: ${error instanceof Error ? error.message : String(error)}\n`);
+    process.stderr.write(`tk inspect: internal error: ${error instanceof Error ? error.message : String(error)}\n`);
     return 3;
   }
 }

@@ -12,14 +12,14 @@ import {
   unpatchVscodeSettings,
 } from "../../../src/shim/hostConfig.js";
 
-const SHIM = "/home/u/.token-guard/shim";
+const SHIM = "/home/u/.token-killer/shim";
 
 describe("shell RC block", () => {
   let dir: string;
   let rc: string;
 
   beforeEach(() => {
-    dir = mkdtempSync(join(tmpdir(), "tg-rc-"));
+    dir = mkdtempSync(join(tmpdir(), "tk-rc-"));
     rc = join(dir, ".zshrc");
   });
   afterEach(() => rmSync(dir, { recursive: true, force: true }));
@@ -31,15 +31,15 @@ describe("shell RC block", () => {
     patchRc(rc, SHIM);
     const twice = readFileSync(rc, "utf8");
     expect(twice).toBe(once);
-    expect(once.match(/token-guard shim/g)?.length).toBe(2); // start + end markers
+    expect(once.match(/token-killer shim/g)?.length).toBe(2); // start + end markers
   });
 
   test("block prepends the shim dir on PATH", () => {
     writeFileSync(rc, "export FOO=1\n");
     patchRc(rc, SHIM);
     const content = readFileSync(rc, "utf8");
-    expect(content).toContain(`export TG_SHIM_DIR='${SHIM}'`);
-    expect(content).toContain('export PATH="$TG_SHIM_DIR:$PATH"');
+    expect(content).toContain(`export TK_SHIM_DIR='${SHIM}'`);
+    expect(content).toContain('export PATH="$TK_SHIM_DIR:$PATH"');
   });
 
   test("uninstall restores byte-identical pre-state", () => {
@@ -60,10 +60,10 @@ describe("shell RC block", () => {
 });
 
 describe("VS Code settings env", () => {
-  test("prepends shim dir and sets TG_SHIM_DIR (linux)", () => {
+  test("prepends shim dir and sets TK_SHIM_DIR (linux)", () => {
     const result = applyVscodeEnv({}, SHIM, "linux") as Record<string, Record<string, string>>;
     const env = result["terminal.integrated.env.linux"]!;
-    expect(env.TG_SHIM_DIR).toBe(SHIM);
+    expect(env.TK_SHIM_DIR).toBe(SHIM);
     expect(env.PATH).toBe(`${SHIM}:\${env:PATH}`);
   });
 
@@ -82,7 +82,7 @@ describe("VS Code settings env", () => {
     expect(after["editor.fontSize"]).toBe(14);
     const env = after["terminal.integrated.env.linux"] as Record<string, string>;
     expect(env.MY_VAR).toBe("x");
-    expect(env.TG_SHIM_DIR).toBe(SHIM);
+    expect(env.TK_SHIM_DIR).toBe(SHIM);
   });
 
   test("remove restores an env that only held our keys", () => {
@@ -99,12 +99,12 @@ describe("VS Code settings env", () => {
   });
 
   test("file-level patch + unpatch round-trips a clean settings.json", () => {
-    const dir = mkdtempSync(join(tmpdir(), "tg-vscode-"));
+    const dir = mkdtempSync(join(tmpdir(), "tk-vscode-"));
     try {
       const settings = join(dir, "settings.json");
       writeFileSync(settings, `${JSON.stringify({ "editor.fontSize": 14 }, null, 2)}\n`);
       patchVscodeSettings(settings, SHIM, "linux");
-      expect(readFileSync(settings, "utf8")).toContain("TG_SHIM_DIR");
+      expect(readFileSync(settings, "utf8")).toContain("TK_SHIM_DIR");
       unpatchVscodeSettings(settings, SHIM, "linux");
       expect(JSON.parse(readFileSync(settings, "utf8"))).toEqual({ "editor.fontSize": 14 });
     } finally {

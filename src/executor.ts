@@ -18,16 +18,16 @@ function resolveExitCode(code: number | null, signal: NodeJS.Signals | null): nu
   return 1;
 }
 
-// Build the env passed to a spawned real tool. When TG_SHIM_DIR is set (running
+// Build the env passed to a spawned real tool. When TK_SHIM_DIR is set (running
 // behind the shim) the child PATH has the shim dir stripped so the real tool —
 // not the wrapper — is resolved, and the sentinel hard-errors if the only
 // reachable copy still lives in the shim dir (recursion guard, ADR 0002 §4).
-// Without TG_SHIM_DIR this is a no-op and plain `tg` behaves exactly as before.
+// Without TK_SHIM_DIR this is a no-op and plain `tk` behaves exactly as before.
 function buildChildEnv(
   program: string,
   extraEnv?: Record<string, string>,
 ): Record<string, string> | undefined {
-  const shimDir = process.env.TG_SHIM_DIR;
+  const shimDir = process.env.TK_SHIM_DIR;
   if (!shimDir) {
     return extraEnv ? { ...process.env, ...extraEnv } as Record<string, string> : undefined;
   }

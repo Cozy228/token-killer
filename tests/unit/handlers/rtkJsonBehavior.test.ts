@@ -4,7 +4,7 @@ import { expectRtkParity, filterRtkFixture, filterRtkOutput } from "../../helper
 
 // RTK oracle: rtk/src/cmds/system/json_cmd.rs.
 // `rtk json <file>` (no --schema/--keys-only) runs filter_json_compact ->
-// compact_json(value, 0, max_depth). These tests assert that the tg `json`
+// compact_json(value, 0, max_depth). These tests assert that the tk `json`
 // handler reproduces RTK's compaction across several independent dimensions:
 //   1. object key rendering (sorted keys, "key: value", nested objects indented)
 //   2. long-string truncation (compact_json String arm, s.len() > 80)
@@ -20,7 +20,7 @@ describe("RTK json behavior", () => {
     );
 
     // Keys are sorted (keys.sort()) and simple values render inline as "key: value".
-    expect(result.output).toContain('name: "token-guard"');
+    expect(result.output).toContain('name: "token-killer"');
     expect(result.output).toContain('version: "0.1.0"');
     expect(result.output).toContain("private: true");
 
@@ -51,7 +51,7 @@ describe("RTK json behavior", () => {
         `  description: "${"a".repeat(77)}..."`,
         "  files:",
         '  ["dist", ... +7 more]',
-        "  name: \"token-guard\"",
+        "  name: \"token-killer\"",
         "  private: true",
         "  scripts:",
         "  {",
@@ -62,7 +62,7 @@ describe("RTK json behavior", () => {
         "}",
       ].join("\n"),
       critical: [
-        'name: "token-guard"',
+        'name: "token-killer"',
         "dependencies:",
         'strip-ansi: "^7.2.0"',
         '["dist", ... +7 more]',

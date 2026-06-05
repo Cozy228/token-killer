@@ -17,9 +17,9 @@ rewrite where hooks fire, and (b) `CLAUDE.md` / instruction injection where they
 (e.g. native Windows). It therefore never faces the two problems a shim creates: spawn
 recursion and interactive-output capture.
 
-`tg`'s premise is reducing *unconscious* token inflation (CONTEXT.md). Instruction
+`tk`'s premise is reducing *unconscious* token inflation (CONTEXT.md). Instruction
 injection is conscious and probabilistic — it depends on the model remembering to prefix
-`tg`. That defeats the premise wherever it is the only path, which is exactly the user's
+`tk`. That defeats the premise wherever it is the only path, which is exactly the user's
 VS Code env.
 
 ## Decision
@@ -42,15 +42,15 @@ VS Code env.
    `git-commit` (`extended.ts` keys only on `args[0]`) yet opens an editor.
 
 4. **Recursion is prevented dynamically.** `executor.ts` strips the shim dir (located via
-   the `TG_SHIM_DIR` env written at install) from the child's PATH at spawn time, plus a
+   the `TK_SHIM_DIR` env written at install) from the child's PATH at spawn time, plus a
    sentinel that hard-errors if a resolved tool path still lands inside the shim dir.
 
-5. **One installer, `tg init`, auto-detects the host and wires the highest available
-   tier.** Copilot CLI → hook; VS Code → shim (`terminal.integrated.env` + `TG_SHIM_DIR`);
+5. **One installer, `tk init`, auto-detects the host and wires the highest available
+   tier.** Copilot CLI → hook; VS Code → shim (`terminal.integrated.env` + `TK_SHIM_DIR`);
    neither → instruction injection. The user runs one command and the tool picks the tier
    — the same auto-degrade logic as the runtime ladder. Modeled on `rtk init`'s surface
    (`-g` global, `--auto-patch` non-interactive, `--show` status, restart prompt). A
-   lower-level `tg shim install` may remain as an internal step / escape hatch.
+   lower-level `tk shim install` may remain as an internal step / escape hatch.
 
 ## Considered options
 
@@ -72,22 +72,22 @@ VS Code env.
 - The TTY gate makes the shim **invisible to humans**: a person typing a shimmed `git log`
   gets native output (TTY → passthrough), which also makes PATH injection safe on shared
   terminals.
-- Install must write `TG_SHIM_DIR` and prepend PATH per host — VS Code via
+- Install must write `TK_SHIM_DIR` and prepend PATH per host — VS Code via
   `terminal.integrated.env.{windows,osx,linux}` (RC files are skipped by non-interactive
   `run_in_terminal` shells), Copilot CLI / plain terminals via shell RC / `$PROFILE`.
 
-## Fail-open boundary (precondition: tg integrity)
+## Fail-open boundary (precondition: tk integrity)
 
-The "fail toward the real tool" guardrail is scoped to **tg-internal errors** — a handler
+The "fail toward the real tool" guardrail is scoped to **tk-internal errors** — a handler
 that throws, a compression bug, or `ShimRecursionError` all fall back to passthrough of the
-real tool. It is **not** a guarantee that survives a broken tg *binary*. Because the shim
-wrapper has already shadowed the real tool on PATH and handed control to tg, if the tg
+real tool. It is **not** a guarantee that survives a broken tk *binary*. Because the shim
+wrapper has already shadowed the real tool on PATH and handed control to tk, if the tk
 entrypoint itself is unrunnable (missing/corrupt `cli.js`, broken Node), the wrapper cannot
 fail open: there is no safe in-wrapper retry (blindly re-running the real tool could
-double-execute a mutating command). So **tg binary integrity is a precondition of the
-shim tier**, not something the guard can recover. Two mitigations: (1) wrappers invoke tg
+double-execute a mutating command). So **tk binary integrity is a precondition of the
+shim tier**, not something the guard can recover. Two mitigations: (1) wrappers invoke tk
 by the resolved **absolute** Node + `cli.js` path (never the shebang's PATH lookup), so a
-shimmed interpreter cannot hijack startup; (2) `tg shim status` runs a health check
+shimmed interpreter cannot hijack startup; (2) `tk shim status` runs a health check
 (interception probe + manifest read) the user can run to confirm the entrypoint resolves
 before relying on the shim. Interpreters/shells are also hard-excluded from the wrapper set
-(see `src/shim/programs.ts`) so tg's own runtime can never be shimmed.
+(see `src/shim/programs.ts`) so tk's own runtime can never be shimmed.

@@ -2,7 +2,7 @@ import { readFile } from "node:fs/promises";
 import path from "node:path";
 
 import { executeCommand } from "../../executor.js";
-import type { CommandHandler, ParsedCommand, RawResult, TgOptions } from "../../types.js";
+import type { CommandHandler, ParsedCommand, RawResult, TkOptions } from "../../types.js";
 import { makeFilteredResult } from "../base.js";
 
 // RTK: system/log_cmd.rs — deduplicate repeated log lines into a "Log Summary"
@@ -163,10 +163,10 @@ function formatLog(raw: RawResult): string {
 
 // RTK: log_cmd.rs::run_file — rtk's `log` is its own log-analysis command, not a
 // proxy to the platform `log` tool. `log <file>` reads the file's contents and
-// summarizes them. tg mirrors this: when an argument resolves to a readable file,
+// summarizes them. tk mirrors this: when an argument resolves to a readable file,
 // read it directly. Otherwise (e.g. macOS `log show`/`log stream` with no file
 // path) fall back to the real `log` command rather than guessing.
-async function readLogFile(command: ParsedCommand, options: TgOptions): Promise<RawResult | undefined> {
+async function readLogFile(command: ParsedCommand, options: TkOptions): Promise<RawResult | undefined> {
   const fileArg = command.args.find((arg) => !arg.startsWith("-"));
   if (!fileArg) return undefined;
   try {
@@ -188,10 +188,10 @@ export const logHandler: CommandHandler = {
   matches(command) {
     return command.program === "log";
   },
-  async execute(command, options: TgOptions) {
+  async execute(command, options: TkOptions) {
     return (await readLogFile(command, options)) ?? executeCommand(command);
   },
-  async filter(raw, command, options: TgOptions) {
+  async filter(raw, command, options: TkOptions) {
     return makeFilteredResult(this.name, raw, formatLog(raw), options);
   },
 };

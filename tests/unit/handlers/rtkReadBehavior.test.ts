@@ -9,7 +9,7 @@ import { buildCatArgs } from "../../../src/handlers/system/read.js";
 
 const repoRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "../../..");
 
-// RTK: read.rs reads the file bytes directly; tg shells to `cat`, so the real CLI
+// RTK: read.rs reads the file bytes directly; tk shells to `cat`, so the real CLI
 // path must pass ONLY the file operands — `cat` would reject RTK's read flags
 // (--level/--max-lines/--tail-lines/--line-numbers). The migration harness only
 // exercises filter(); these assert the execute() command-rewrite parity directly.
@@ -32,8 +32,8 @@ describe("RTK read command construction (buildCatArgs)", () => {
 });
 
 // RTK: system/read.rs — apply_line_window (tail_lines/max_lines) + optional line
-// numbers over file content. tg routes `cat` here; RTK's own command is `read`,
-// and tg accepts its flags (-m/--max-lines, --tail-lines, -n). The language-aware
+// numbers over file content. tk routes `cat` here; RTK's own command is `read`,
+// and tk accepts its flags (-m/--max-lines, --tail-lines, -n). The language-aware
 // filter influences smart_truncate's structural retention.
 
 describe("RTK read behavior", () => {

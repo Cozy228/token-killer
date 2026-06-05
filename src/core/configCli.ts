@@ -1,6 +1,6 @@
-// `tg config` dispatcher (Slice 3a). Today only `init`: non-interactive, never
+// `tk config` dispatcher (Slice 3a). Today only `init`: non-interactive, never
 // overwrites. Creating the file is NOT opt-in — both consent fields default to
-// false; the user opts in by editing to true or via `tg telemetry enable`.
+// false; the user opts in by editing to true or via `tk telemetry enable`.
 
 import { existsSync } from "node:fs";
 
@@ -12,7 +12,7 @@ export function runConfig(argv: string[]): number {
   if (sub === "init") {
     const path = configPath();
     if (existsSync(path)) {
-      process.stderr.write(`tg config: already exists at ${path}\n`);
+      process.stderr.write(`tk config: already exists at ${path}\n`);
       return 1;
     }
     writeConfigTemplate();
@@ -33,11 +33,11 @@ export function runConfig(argv: string[]): number {
     } catch (error) {
       // Parse / out-of-shape ⇒ exit 1 (inspect-v1 rule).
       const message = error instanceof ConfigError ? error.message : String(error);
-      process.stderr.write(`tg config: ${message}\n`);
+      process.stderr.write(`tk config: ${message}\n`);
       return 1;
     }
   }
 
-  process.stderr.write("tg config: usage: tg config <init|show|path>\n");
+  process.stderr.write("tk config: usage: tk config <init|show|path>\n");
   return 1;
 }

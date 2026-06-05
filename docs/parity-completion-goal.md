@@ -1,7 +1,7 @@
 # Goal: Finish RTK command-proxy parity (Track A)
 
 Drive agent sessions that turn the **migration parity track green** by implementing the
-remaining RTK command filters that `token-guard` still lacks. This is the near-term,
+remaining RTK command filters that `token-killer` still lacks. This is the near-term,
 test-pinned work: every item below already has a red test under
 `tests/unit/handlers/` (or `tests/unit/rtkScriptParity.test.ts`) that defines the
 exact expected behavior.
@@ -37,7 +37,7 @@ Do **not** weaken or fake-pass the kept tests below to compensate.
 
 ### Phase 1 — Generic wrapper filters (highest ROI, no ecosystem dependency)
 
-These are RTK meta-commands: `tg <wrapper> <real command>` runs the wrapped command
+These are RTK meta-commands: `tk <wrapper> <real command>` runs the wrapped command
 and applies a cross-cutting filter. New handlers in `src/handlers/system/` (or
 `src/handlers/generic/`), registered before `genericHandler`.
 
@@ -66,14 +66,14 @@ RTK sources: `rtk/src/cmds/dotnet/{dotnet_cmd,dotnet_trx,binlog,dotnet_format_re
 
 Port the remaining RTK scripts the parity test still expects (skip the Ruby smoke case):
 
-| Case | RTK path | tg path |
+| Case | RTK path | tk path |
 |------|----------|---------|
 | benchmark run entrypoint | `rtk/scripts/benchmark/run.ts` | `scripts/benchmark/run.ts` |
 | benchmark rebuild entrypoint | `rtk/scripts/benchmark/rebuild.ts` | `scripts/benchmark/rebuild.ts` |
 | benchmark cleanup entrypoint | `rtk/scripts/benchmark/cleanup.ts` | `scripts/benchmark/cleanup.ts` |
 | benchmark sessions runner | `rtk/scripts/benchmark-sessions/lib/runner.py` | `scripts/benchmark-sessions/lib/runner.py` |
 
-Adapt to tg conventions (pnpm, `tg` binary, `~/.token-guard` data dir). Do not copy
+Adapt to tk conventions (pnpm, `tk` binary, `~/.token-killer` data dir). Do not copy
 RTK-economics / aristote / openclaw scripts (out of scope per `migration-goal-prompt.md`).
 
 ## Definition of Done (per item)
@@ -103,4 +103,4 @@ RTK-economics / aristote / openclaw scripts (out of scope per `migration-goal-pr
 - One coherent item (or wrapper group) per session/commit. Surgical changes.
 - Never drop key diagnostics for compression: error codes, `file:line`, failing test
   names, counts.
-- Do not remove tg-only handlers (`maven`, `javac`, `generic`) or their tests.
+- Do not remove tk-only handlers (`maven`, `javac`, `generic`) or their tests.
