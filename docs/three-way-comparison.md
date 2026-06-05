@@ -2,7 +2,7 @@
 
 Generated: 2026-06-05
 Project: `token-guard` (/Users/ziyu/Workspace/token-guard)
-Scope: 69 cases with full outputs (43 live, 32 fixture-backed); 6 large cases stats-only (raw > 3000 tokens)
+Scope: 76 cases with full outputs (43 live, 39 fixture-backed); 6 large cases stats-only (raw > 3000 tokens)
 rtk: rtk 0.42.1
 
 **Method**
@@ -12,6 +12,8 @@ rtk: rtk 0.42.1
 - **tg (fixture)**: handler filter on fixture stdout (same pipeline as product tests)
 - **rtk (live)**: mapped native `rtk` subcommand
 - **rtk (fixture)**: `cat <fixture> | rtk …` when stdin filter exists (see per-case RTK cmd)
+- **rtk (wrapper)**: err/summary/deps/smart read a command/file/dir, so the fixture is fed via `rtk <sub> "cat <fixture>"`, `rtk smart <fixture>`, or `rtk deps <tmpdir>` (see per-case RTK cmd)
+- **rtk (unsupported)**: tg-only handlers rtk has no filter for (e.g. terraform) are shown as rtk raw passthrough (0% savings)
 - **savingsPct**: token estimate vs raw (`ceil(chars/4)`), same as tg core
 - **Sort**: cases ordered by |tg savingsPct − rtk savingsPct| (largest gap first)
 - **Large outputs**: cases with raw > 3000 tokens listed under “Omitted large outputs” (no full text)
@@ -20,80 +22,87 @@ rtk: rtk 0.42.1
 
 | # | Case | Handler | raw | tg | rtk | tg savings | rtk savings | Δ |
 |---:|---|---|---:|---:|---:|---:|---:|---:|
-| 1 | wget: example.com head | wget | 132 | 6 | 132 | 95.5% | 0% | 95.5pp tg +95.5pp |
-| 2 | [fixture] kubectl get pods summarizes readiness and crashloop issues | kubectl | 147 | 29 | 147 | 80.3% | 0% | 80.3pp tg +80.3pp |
-| 3 | git-stash: invalid ref | git-stash | 12 | 12 | 3 | 0% | 75% | 75.0pp rtk +75.0pp |
-| 4 | [fixture] psql table format emits tab-separated rows | psql | 91 | 48 | 1 | 47.3% | 98.9% | 51.6pp rtk +51.6pp |
-| 5 | [fixture] js-test keeps failed test and assertion from Vitest fixture | js-test | 49 | 46 | 21 | 6.1% | 57.1% | 51.0pp rtk +51.0pp |
-| 6 | [fixture] gt log keeps the stack graph but strips author emails | gt | 55 | 48 | 20 | 12.7% | 63.6% | 50.9pp rtk +50.9pp |
-| 7 | prettier: check package.json | generic | 17 | 17 | 10 | 0% | 41.2% | 41.2pp rtk +41.2pp |
-| 8 | [fixture] pip keeps package problems from fixture | pip | 32 | 46 | 19 | 0% | 40.6% | 40.6pp rtk +40.6pp |
-| 9 | [fixture] list-like keeps useful paths from real project listing | list-like | 31 | 21 | 45 | 32.3% | 0% | 32.3pp tg +32.3pp |
-| 10 | [fixture] git-log keeps standard commit subjects | git-log | 119 | 84 | 47 | 29.4% | 60.5% | 31.1pp rtk +31.1pp |
-| 11 | eslint: eslint package.json | eslint | 126 | 8 | 39 | 93.7% | 69% | 24.7pp tg +24.7pp |
-| 12 | glab: mr list | glab | 128 | 106 | 128 | 17.2% | 0% | 17.2pp tg +17.2pp |
-| 13 | [fixture] find groups matches by directory like RTK | list-like | 16 | 14 | 23 | 12.5% | 0% | 12.5pp tg +12.5pp |
-| 14 | [fixture] js-test keeps failed Jest test name from fixture | js-test | 36 | 32 | 36 | 11.1% | 0% | 11.1pp tg +11.1pp |
-| 15 | format: format --check | format | 32 | 7 | 10 | 78.1% | 68.8% | 9.3pp tg +9.3pp |
-| 16 | [fixture] glab mr list keeps merge request identity and branches | glab | 2366 | 200 | 0 | 91.5% | 100% | 8.5pp rtk +8.5pp |
-| 17 | list-like: ls -la . | ls | 376 | 116 | 86 | 69.1% | 77.1% | 8.0pp rtk +8.0pp |
-| 18 | js-test: vitest run savings test | js-test | 53 | 8 | 5 | 84.9% | 90.6% | 5.7pp rtk +5.7pp |
-| 19 | [fixture] find small output keeps root files without excessive growth | list-like | 41 | 39 | 48 | 4.9% | 0% | 4.9pp tg +4.9pp |
-| 20 | [fixture] git-status keeps extended dirty status paths | git-status | 46 | 46 | 45 | 0% | 2.2% | 2.2pp rtk +2.2pp |
-| 21 | [fixture] git-diff keeps changed lines from real diff | git-diff | 64 | 46 | 45 | 28.1% | 29.7% | 1.6pp rtk +1.6pp |
-| 22 | json: json package.json | json | 0 | 6 | 277 | 0% | 0% | 0.0pp ≈ |
-| 23 | search-like: rg export src/ | search-like | 2387 | 2387 | 2488 | 0% | 0% | 0.0pp ≈ |
-| 24 | [fixture] search-like keeps rg default format matches | search-like | 62 | 68 | 85 | 0% | 0% | 0.0pp ≈ |
-| 25 | [fixture] ruff keeps rule codes and file locations from fixture | ruff | 49 | 49 | 65 | 0% | 0% | 0.0pp ≈ |
-| 26 | [fixture] search-like keeps rg matches from real output | search-like | 29 | 29 | 43 | 0% | 0% | 0.0pp ≈ |
-| 27 | diff: diff old.ts new.ts | diff | 8 | 49 | 57 | 0% | 0% | 0.0pp ≈ |
-| 28 | git-fetch: missing remote | git-fetch | 51 | 63 | 55 | 0% | 0% | 0.0pp ≈ |
-| 29 | git-commit: dry-run | git-commit | 575 | 582 | 575 | 0% | 0% | 0.0pp ≈ |
-| 30 | tsc: tsc --noEmit clean project | tsc | 0 | 0 | 7 | 0% | 0% | 0.0pp ≈ |
-| 31 | git-pull: ff-only local | git-pull | 24 | 24 | 29 | 0% | 0% | 0.0pp ≈ |
-| 32 | git-add: missing path | git-add | 18 | 18 | 22 | 0% | 0% | 0.0pp ≈ |
-| 33 | git-push: dry-run local | git-push | 14 | 17 | 21 | 0% | 0% | 0.0pp ≈ |
-| 34 | tsc: type error in temp file | tsc | 41 | 60 | 59 | 0% | 0% | 0.0pp ≈ |
-| 35 | [fixture] diff stdin condenses unified diff by file | diff | 97 | 28 | 28 | 71.1% | 71.1% | 0.0pp ≈ |
-| 36 | [fixture] diff stdin keeps all unified diff changes | diff | 70 | 56 | 56 | 20% | 20% | 0.0pp ≈ |
-| 37 | [fixture] gh repo view keeps repository identity and URL | gh | 42 | 23 | 23 | 45.2% | 45.2% | 0.0pp ≈ |
-| 38 | [fixture] git-log keeps commit subject from real log | git-log | 31 | 31 | 31 | 0% | 0% | 0.0pp ≈ |
-| 39 | [fixture] git-status keeps porcelain branch context | git-status | 190 | 190 | 190 | 0% | 0% | 0.0pp ≈ |
-| 40 | [fixture] git-status keeps staged modified and untracked paths | git-status | 21 | 20 | 20 | 4.8% | 4.8% | 0.0pp ≈ |
-| 41 | [fixture] git-worktree keeps worktree path and branch | git-worktree | 18 | 16 | 16 | 11.1% | 11.1% | 0.0pp ≈ |
-| 42 | [fixture] js-test formats passing Vitest output like RTK | js-test | 34 | 8 | 8 | 76.5% | 76.5% | 0.0pp ≈ |
-| 43 | [fixture] log deduplicates repeated lines into a summary | log | 148 | 98 | 98 | 33.8% | 33.8% | 0.0pp ≈ |
-| 44 | [fixture] mypy keeps error codes and file locations from fixture | mypy | 55 | 79 | 79 | 0% | 0% | 0.0pp ≈ |
-| 45 | [fixture] pipe grep groups matches by file | pipe | 85 | 84 | 84 | 1.2% | 1.2% | 0.0pp ≈ |
-| 46 | [fixture] prettier check lists files needing formatting | prettier | 60 | 59 | 59 | 1.7% | 1.7% | 0.0pp ≈ |
-| 47 | [fixture] pytest keeps failing test and assertion from fixture | pytest | 220 | 88 | 88 | 60% | 60% | 0.0pp ≈ |
-| 48 | [fixture] pytest keeps passing summary from fixture | pytest | 5 | 5 | 5 | 0% | 0% | 0.0pp ≈ |
-| 49 | [fixture] search-like keeps grep matches without line numbers | search-like | 395 | 395 | 395 | 0% | 0% | 0.0pp ≈ |
-| 50 | [fixture] tsc keeps TypeScript diagnostic codes from fixture | tsc | 309 | 302 | 302 | 2.3% | 2.3% | 0.0pp ≈ |
-| 51 | curl: httpbin json | curl | 108 | 108 | 108 | 0% | 0% | 0.0pp ≈ |
-| 52 | docker: compose ps (temp project) | docker | 17 | 6 | 6 | 64.7% | 64.7% | 0.0pp ≈ |
-| 53 | env: env snapshot | env | 1748 | 846 | 846 | 51.6% | 51.6% | 0.0pp ≈ |
-| 54 | generic: echo hello | generic | 2 | 2 | 2 | 0% | 0% | 0.0pp ≈ |
-| 55 | gh: gh repo view | gh | 15 | 23 | 23 | 0% | 0% | 0.0pp ≈ |
-| 56 | git-branch: git branch | git-branch | 9 | 9 | 9 | 0% | 0% | 0.0pp ≈ |
-| 57 | git-log: git log --oneline -10 | git-log | 183 | 183 | 183 | 0% | 0% | 0.0pp ≈ |
-| 58 | git-show: git show -1 --stat | git-show | 206 | 206 | 206 | 0% | 0% | 0.0pp ≈ |
-| 59 | git-status: git status | git-status | 575 | 396 | 396 | 31.1% | 31.1% | 0.0pp ≈ |
-| 60 | git-worktree: git worktree list | git-worktree | 18 | 16 | 16 | 11.1% | 11.1% | 0.0pp ≈ |
-| 61 | gt: gt log | gt | 21 | 20 | 20 | 4.8% | 4.8% | 0.0pp ≈ |
-| 62 | list-like: find src -name *.ts | list-like | 404 | 158 | 158 | 60.9% | 60.9% | 0.0pp ≈ |
-| 63 | log: log repeated app fixture | log | 183 | 98 | 98 | 46.4% | 46.4% | 0.0pp ≈ |
-| 64 | mypy: mypy src/handlers/index.ts | mypy | 30 | 33 | 33 | 0% | 0% | 0.0pp ≈ |
-| 65 | package-list: pnpm list --depth=0 | package-list | 75 | 46 | 46 | 38.7% | 38.7% | 0.0pp ≈ |
-| 66 | pytest: pytest --collect-only | pytest | 36 | 7 | 7 | 80.6% | 80.6% | 0.0pp ≈ |
-| 67 | read-like: cat package.json | read | 320 | 320 | 320 | 0% | 0% | 0.0pp ≈ |
-| 68 | read-like: cat src/cli.ts | read | 818 | 818 | 818 | 0% | 0% | 0.0pp ≈ |
-| 69 | wc: wc README.md | wc | 9 | 4 | 4 | 55.6% | 55.6% | 0.0pp ≈ |
+| 1 | git-commit: dry-run | git-commit | 664 | 664 | 1 | 0% | 99.8% | 99.8pp rtk +99.8pp |
+| 2 | wget: example.com head | wget | 132 | 6 | 132 | 95.5% | 0% | 95.5pp tg +95.5pp |
+| 3 | [fixture] kubectl get pods summarizes readiness and crashloop issues | kubectl | 147 | 29 | 147 | 80.3% | 0% | 80.3pp tg +80.3pp |
+| 4 | git-stash: invalid ref | git-stash | 12 | 12 | 3 | 0% | 75% | 75.0pp rtk +75.0pp |
+| 5 | [fixture] terraform plan keeps resource changes and plan summary | terraform | 436 | 203 | 436 | 53.4% | 0% | 53.4pp tg +53.4pp |
+| 6 | [fixture] psql table format emits tab-separated rows | psql | 91 | 48 | 1 | 47.3% | 98.9% | 51.6pp rtk +51.6pp |
+| 7 | [fixture] js-test keeps failed test and assertion from Vitest fixture | js-test | 49 | 46 | 21 | 6.1% | 57.1% | 51.0pp rtk +51.0pp |
+| 8 | [fixture] gt log keeps the stack graph but strips author emails | gt | 55 | 48 | 20 | 12.7% | 63.6% | 50.9pp rtk +50.9pp |
+| 9 | [fixture] terraform test keeps failed run and assertion | terraform | 132 | 77 | 132 | 41.7% | 0% | 41.7pp tg +41.7pp |
+| 10 | prettier: check package.json | generic | 17 | 17 | 10 | 0% | 41.2% | 41.2pp rtk +41.2pp |
+| 11 | [fixture] pip keeps package problems from fixture | pip | 32 | 46 | 19 | 0% | 40.6% | 40.6pp rtk +40.6pp |
+| 12 | [fixture] list-like keeps useful paths from real project listing | list-like | 31 | 21 | 45 | 32.3% | 0% | 32.3pp tg +32.3pp |
+| 13 | [fixture] git-log keeps standard commit subjects | git-log | 119 | 84 | 47 | 29.4% | 60.5% | 31.1pp rtk +31.1pp |
+| 14 | eslint: eslint package.json | eslint | 126 | 8 | 39 | 93.7% | 69% | 24.7pp tg +24.7pp |
+| 15 | glab: mr list | glab | 128 | 106 | 128 | 17.2% | 0% | 17.2pp tg +17.2pp |
+| 16 | [fixture] smart keeps the summary payload without prompt boilerplate | smart | 20 | 9 | 12 | 55% | 40% | 15.0pp tg +15.0pp |
+| 17 | [fixture] find groups matches by directory like RTK | list-like | 16 | 14 | 23 | 12.5% | 0% | 12.5pp tg +12.5pp |
+| 18 | [fixture] js-test keeps failed Jest test name from fixture | js-test | 36 | 32 | 36 | 11.1% | 0% | 11.1pp tg +11.1pp |
+| 19 | format: format --check | format | 32 | 7 | 10 | 78.1% | 68.8% | 9.3pp tg +9.3pp |
+| 20 | [fixture] glab mr list keeps merge request identity and branches | glab | 2366 | 200 | 0 | 91.5% | 100% | 8.5pp rtk +8.5pp |
+| 21 | list-like: ls -la . | ls | 390 | 121 | 90 | 69% | 76.9% | 7.9pp rtk +7.9pp |
+| 22 | js-test: vitest run savings test | js-test | 53 | 8 | 5 | 84.9% | 90.6% | 5.7pp rtk +5.7pp |
+| 23 | [fixture] find small output keeps root files without excessive growth | list-like | 41 | 39 | 48 | 4.9% | 0% | 4.9pp tg +4.9pp |
+| 24 | [fixture] npx tsc routes through the TypeScript filter | npx | 309 | 292 | 302 | 5.5% | 2.3% | 3.2pp tg +3.2pp |
+| 25 | [fixture] tsc keeps TypeScript diagnostic codes from fixture | tsc | 309 | 292 | 302 | 5.5% | 2.3% | 3.2pp tg +3.2pp |
+| 26 | [fixture] git-status keeps extended dirty status paths | git-status | 46 | 46 | 45 | 0% | 2.2% | 2.2pp rtk +2.2pp |
+| 27 | [fixture] deps summarizes a package.json manifest | deps | 52 | 33 | 34 | 36.5% | 34.6% | 1.9pp tg +1.9pp |
+| 28 | [fixture] git-diff keeps changed lines from real diff | git-diff | 64 | 46 | 45 | 28.1% | 29.7% | 1.6pp rtk +1.6pp |
+| 29 | json: json package.json | json | 0 | 6 | 277 | 0% | 0% | 0.0pp ≈ |
+| 30 | search-like: rg export src/ | search-like | 2540 | 2540 | 2647 | 0% | 0% | 0.0pp ≈ |
+| 31 | [fixture] search-like keeps rg default format matches | search-like | 62 | 68 | 85 | 0% | 0% | 0.0pp ≈ |
+| 32 | [fixture] ruff keeps rule codes and file locations from fixture | ruff | 49 | 49 | 65 | 0% | 0% | 0.0pp ≈ |
+| 33 | [fixture] search-like keeps rg matches from real output | search-like | 29 | 29 | 43 | 0% | 0% | 0.0pp ≈ |
+| 34 | [fixture] summary digests a test run instead of replaying lines | summary | 24 | 45 | 57 | 0% | 0% | 0.0pp ≈ |
+| 35 | tsc: type error in temp file | tsc | 41 | 50 | 59 | 0% | 0% | 0.0pp ≈ |
+| 36 | diff: diff old.ts new.ts | diff | 8 | 49 | 57 | 0% | 0% | 0.0pp ≈ |
+| 37 | git-fetch: missing remote | git-fetch | 51 | 63 | 55 | 0% | 0% | 0.0pp ≈ |
+| 38 | tsc: tsc --noEmit clean project | tsc | 0 | 0 | 7 | 0% | 0% | 0.0pp ≈ |
+| 39 | git-add: missing path | git-add | 18 | 18 | 22 | 0% | 0% | 0.0pp ≈ |
+| 40 | git-pull: ff-only local | git-pull | 40 | 40 | 44 | 0% | 0% | 0.0pp ≈ |
+| 41 | git-push: dry-run local | git-push | 14 | 17 | 21 | 0% | 0% | 0.0pp ≈ |
+| 42 | [fixture] diff stdin condenses unified diff by file | diff | 97 | 28 | 28 | 71.1% | 71.1% | 0.0pp ≈ |
+| 43 | [fixture] diff stdin keeps all unified diff changes | diff | 70 | 56 | 56 | 20% | 20% | 0.0pp ≈ |
+| 44 | [fixture] err keeps error blocks and drops info noise | err | 27 | 19 | 19 | 29.6% | 29.6% | 0.0pp ≈ |
+| 45 | [fixture] gh repo view keeps repository identity and URL | gh | 42 | 23 | 23 | 45.2% | 45.2% | 0.0pp ≈ |
+| 46 | [fixture] git-log keeps commit subject from real log | git-log | 31 | 31 | 31 | 0% | 0% | 0.0pp ≈ |
+| 47 | [fixture] git-status keeps porcelain branch context | git-status | 190 | 190 | 190 | 0% | 0% | 0.0pp ≈ |
+| 48 | [fixture] git-status keeps staged modified and untracked paths | git-status | 21 | 20 | 20 | 4.8% | 4.8% | 0.0pp ≈ |
+| 49 | [fixture] git-worktree keeps worktree path and branch | git-worktree | 18 | 16 | 16 | 11.1% | 11.1% | 0.0pp ≈ |
+| 50 | [fixture] js-test formats passing Vitest output like RTK | js-test | 34 | 8 | 8 | 76.5% | 76.5% | 0.0pp ≈ |
+| 51 | [fixture] log deduplicates repeated lines into a summary | log | 148 | 98 | 98 | 33.8% | 33.8% | 0.0pp ≈ |
+| 52 | [fixture] mypy keeps error codes and file locations from fixture | mypy | 55 | 79 | 79 | 0% | 0% | 0.0pp ≈ |
+| 53 | [fixture] pipe grep groups matches by file | pipe | 85 | 84 | 84 | 1.2% | 1.2% | 0.0pp ≈ |
+| 54 | [fixture] prettier check lists files needing formatting | prettier | 60 | 59 | 59 | 1.7% | 1.7% | 0.0pp ≈ |
+| 55 | [fixture] pytest keeps failing test and assertion from fixture | pytest | 220 | 88 | 88 | 60% | 60% | 0.0pp ≈ |
+| 56 | [fixture] pytest keeps passing summary from fixture | pytest | 5 | 5 | 5 | 0% | 0% | 0.0pp ≈ |
+| 57 | [fixture] search-like keeps grep matches without line numbers | search-like | 395 | 395 | 395 | 0% | 0% | 0.0pp ≈ |
+| 58 | curl: httpbin json | curl | 41 | 41 | 41 | 0% | 0% | 0.0pp ≈ |
+| 59 | docker: compose ps (temp project) | docker | 29 | 29 | 29 | 0% | 0% | 0.0pp ≈ |
+| 60 | env: env snapshot | env | 1425 | 590 | 590 | 58.6% | 58.6% | 0.0pp ≈ |
+| 61 | generic: echo hello | generic | 2 | 2 | 2 | 0% | 0% | 0.0pp ≈ |
+| 62 | gh: gh repo view | gh | 15 | 23 | 23 | 0% | 0% | 0.0pp ≈ |
+| 63 | git-branch: git branch | git-branch | 9 | 9 | 9 | 0% | 0% | 0.0pp ≈ |
+| 64 | git-log: git log --oneline -10 | git-log | 191 | 191 | 191 | 0% | 0% | 0.0pp ≈ |
+| 65 | git-show: git show -1 --stat | git-show | 315 | 315 | 315 | 0% | 0% | 0.0pp ≈ |
+| 66 | git-status: git status | git-status | 664 | 445 | 445 | 33% | 33% | 0.0pp ≈ |
+| 67 | git-worktree: git worktree list | git-worktree | 18 | 16 | 16 | 11.1% | 11.1% | 0.0pp ≈ |
+| 68 | gt: gt log | gt | 21 | 20 | 20 | 4.8% | 4.8% | 0.0pp ≈ |
+| 69 | list-like: find src -name *.ts | list-like | 463 | 166 | 166 | 64.1% | 64.1% | 0.0pp ≈ |
+| 70 | log: log repeated app fixture | log | 183 | 98 | 98 | 46.4% | 46.4% | 0.0pp ≈ |
+| 71 | mypy: mypy src/handlers/index.ts | mypy | 30 | 33 | 33 | 0% | 0% | 0.0pp ≈ |
+| 72 | package-list: pnpm list --depth=0 | package-list | 75 | 46 | 46 | 38.7% | 38.7% | 0.0pp ≈ |
+| 73 | pytest: pytest --collect-only | pytest | 36 | 7 | 7 | 80.6% | 80.6% | 0.0pp ≈ |
+| 74 | read-like: cat package.json | read | 320 | 320 | 320 | 0% | 0% | 0.0pp ≈ |
+| 75 | read-like: cat src/cli.ts | read | 818 | 818 | 818 | 0% | 0% | 0.0pp ≈ |
+| 76 | wc: wc README.md | wc | 9 | 4 | 4 | 55.6% | 55.6% | 0.0pp ≈ |
 
-**Aggregate (token-weighted across 69 cases with full outputs):**
-- raw: 13784 tokens
-- tg: 9112 tokens (33.9% savings)
-- rtk: 9474 tokens (31.3% savings)
+**Aggregate (token-weighted across 76 cases with full outputs):**
+- raw: 14943 tokens
+- tg: 9900 tokens (33.7% savings)
+- rtk: 9944 tokens (33.5% savings)
 
 ### Omitted large outputs (stats only)
 
@@ -101,12 +110,12 @@ Per-case dumps excluded when raw exceeds 3000 tokens.
 
 | Case | Handler | raw | tg | rtk | tg savings | rtk savings | Δ |
 |---|---|---:|---:|---:|---:|---:|---:|
-| ruff: ruff check src/handlers/index.ts | ruff | 18634 | 960 | 1164 | 94.8% | 93.8% | 1.0pp tg +1.0pp |
-| git-diff: git diff HEAD~1 | git-diff | 198063 | 8040 | 8690 | 95.9% | 95.6% | 0.3pp tg +0.3pp |
-| list-like: tree . | tree | 37318 | 4949 | 4949 | 86.7% | 86.7% | 0.0pp ≈ |
-| pip: pip list | pip | 4283 | 1920 | 1920 | 55.2% | 55.2% | 0.0pp ≈ |
-| read-like: cat docs/DESIGN.md | read | 10303 | 10303 | 10303 | 0% | 0% | 0.0pp ≈ |
-| search-like: grep -r import src/ | search-like | 4776 | 4109 | 4109 | 14% | 14% | 0.0pp ≈ |
+| git-diff: git diff HEAD~1 | git-diff | 53311 | 7653 | 8205 | 85.6% | 84.6% | 1.0pp tg +1.0pp |
+| ruff: ruff check src/handlers/index.ts | ruff | 24609 | 954 | 1164 | 96.1% | 95.3% | 0.8pp tg +0.8pp |
+| list-like: tree . | tree | 37641 | 5272 | 5272 | 86% | 86% | 0.0pp ≈ |
+| pip: pip list | pip | 4295 | 1924 | 1924 | 55.2% | 55.2% | 0.0pp ≈ |
+| read-like: cat docs/DESIGN.md | read | 10994 | 10994 | 10994 | 0% | 0% | 0.0pp ≈ |
+| search-like: grep -r import src/ | search-like | 5536 | 4110 | 4110 | 25.8% | 25.8% | 0.0pp ≈ |
 
 ### Skipped cases
 
@@ -147,12 +156,171 @@ Per-case dumps excluded when raw exceeds 3000 tokens.
 - [fixture] wc single file compacts to L/W/B counts: no fixture-safe rtk stdin mapping
 - [fixture] env groups variables and masks secrets: no fixture-safe rtk stdin mapping
 - [fixture] json compacts a package response with sorted keys: no fixture-safe rtk stdin mapping
+- [fixture] test extracts cargo failures and summary: rtk test detects the framework from the executed command string; feeding fixture stdin via `cat` falls to the generic branch (not comparable)
+- [fixture] dotnet test keeps failures and strips restore boilerplate: rtk dotnet needs a real project / TRX file; no fixture stdin mapping
 
 ---
 
 ## Per-case outputs
 
-### 1. wget: example.com head
+### 1. git-commit: dry-run
+
+- Handler: `git-commit`
+- tg: `tg git commit --dry-run`
+- raw: `git --no-pager commit --dry-run`
+- rtk: `git commit --dry-run`
+
+| channel | chars | tokens | savingsPct |
+|---|---:|---:|---:|
+| raw | 2655 | 664 | 0% |
+| tg | 2654 | 664 | 0% |
+| rtk | 3 | 1 | 99.8% |
+
+**raw** (2655 chars, 664 tokens):
+
+```text
+On branch codex/token-guard-node-cli
+Your branch is up to date with 'origin/codex/token-guard-node-cli'.
+
+Changes to be committed:
+  (use "git restore --staged <file>..." to unstage)
+	renamed:    tests/unit/handlers/rtkCargoBehavior.test.ts -> tests/out-of-scope/rtkCargoBehavior.test.ts
+	renamed:    tests/unit/handlers/rtkGoBehavior.test.ts -> tests/out-of-scope/rtkGoBehavior.test.ts
+	renamed:    tests/unit/handlers/rtkGolangciBehavior.test.ts -> tests/out-of-scope/rtkGolangciBehavior.test.ts
+	renamed:    tests/unit/handlers/rtkRakeBehavior.test.ts -> tests/out-of-scope/rtkRakeBehavior.test.ts
+	renamed:    tests/unit/handlers/rtkRspecBehavior.test.ts -> tests/out-of-scope/rtkRspecBehavior.test.ts
+	renamed:    tests/unit/handlers/rtkRubocopBehavior.test.ts -> tests/out-of-scope/rtkRubocopBehavior.test.ts
+
+Changes not staged for commit:
+  (use "git add <file>..." to update what will be committed)
+  (use "git restore <file>..." to discard changes in working directory)
+	modified:   README.md
+	modified:   docs/DESIGN.md
+	modified:   docs/align-rtk-divergences.md
+	modified:   docs/three-way-comparison.md
+	modified:   scripts/check-test-presence.sh
+	modified:   scripts/fixtureComparison.ts
+	modified:   scripts/generate-three-way-report.ts
+	modified:   scripts/validate-docs.sh
+	modified:   src/handlers/base.ts
+	modified:   src/handlers/index.ts
+	modified:   src/handlers/js/tsc.ts
+	modified:   tests/helpers/fixtureCases.ts
+	modified:   tests/out-of-scope/rtkCargoBehavior.test.ts
+	modified:   tests/out-of-scope/rtkGoBehavior.test.ts
+	modified:   tests/out-of-scope/rtkGolangciBehavior.test.ts
+	modified:   tests/out-of-scope/rtkRakeBehavior.test.ts
+	modified:   tests/out-of-scope/rtkRspecBehavior.test.ts
+	modified:   tests/out-of-scope/rtkRubocopBehavior.test.ts
+	modified:   tests/smoke/smoke.sh
+	modified:   tests/unit/handlers/rtkSmartBehavior.test.ts
+	modified:   tests/unit/rtkScriptParity.test.ts
+
+Untracked files:
+  (use "git add <file>..." to include in what will be committed)
+	CONTEXT.md
+	docs/adr/
+	docs/layer2-hook-protocol-spike.md
+	docs/layer2-hooks-inspect-goal.md
+	docs/parity-completion-goal.md
+	scripts/benchmark-sessions/
+	scripts/benchmark/
+	src/handlers/dotnet/
+	src/handlers/iac/
+	src/handlers/system/deps.ts
+	src/handlers/system/err.ts
+	src/handlers/system/npx.ts
+	src/handlers/system/smart.ts
+	src/handlers/system/summary.ts
+	src/handlers/system/testRunner.ts
+	tests/fixtures/dotnet/
+	tests/fixtures/system/deps_package.json
+	tests/fixtures/system/err_build.txt
+	tests/fixtures/system/smart_summary.txt
+	tests/fixtures/system/summary_test_run.txt
+	tests/fixtures/system/test_cargo.txt
+	tests/fixtures/terraform/
+
+
+```
+
+**tg** (2654 chars, 664 tokens, 0% savings):
+
+```text
+On branch codex/token-guard-node-cli
+Your branch is up to date with 'origin/codex/token-guard-node-cli'.
+
+Changes to be committed:
+  (use "git restore --staged <file>..." to unstage)
+	renamed:    tests/unit/handlers/rtkCargoBehavior.test.ts -> tests/out-of-scope/rtkCargoBehavior.test.ts
+	renamed:    tests/unit/handlers/rtkGoBehavior.test.ts -> tests/out-of-scope/rtkGoBehavior.test.ts
+	renamed:    tests/unit/handlers/rtkGolangciBehavior.test.ts -> tests/out-of-scope/rtkGolangciBehavior.test.ts
+	renamed:    tests/unit/handlers/rtkRakeBehavior.test.ts -> tests/out-of-scope/rtkRakeBehavior.test.ts
+	renamed:    tests/unit/handlers/rtkRspecBehavior.test.ts -> tests/out-of-scope/rtkRspecBehavior.test.ts
+	renamed:    tests/unit/handlers/rtkRubocopBehavior.test.ts -> tests/out-of-scope/rtkRubocopBehavior.test.ts
+
+Changes not staged for commit:
+  (use "git add <file>..." to update what will be committed)
+  (use "git restore <file>..." to discard changes in working directory)
+	modified:   README.md
+	modified:   docs/DESIGN.md
+	modified:   docs/align-rtk-divergences.md
+	modified:   docs/three-way-comparison.md
+	modified:   scripts/check-test-presence.sh
+	modified:   scripts/fixtureComparison.ts
+	modified:   scripts/generate-three-way-report.ts
+	modified:   scripts/validate-docs.sh
+	modified:   src/handlers/base.ts
+	modified:   src/handlers/index.ts
+	modified:   src/handlers/js/tsc.ts
+	modified:   tests/helpers/fixtureCases.ts
+	modified:   tests/out-of-scope/rtkCargoBehavior.test.ts
+	modified:   tests/out-of-scope/rtkGoBehavior.test.ts
+	modified:   tests/out-of-scope/rtkGolangciBehavior.test.ts
+	modified:   tests/out-of-scope/rtkRakeBehavior.test.ts
+	modified:   tests/out-of-scope/rtkRspecBehavior.test.ts
+	modified:   tests/out-of-scope/rtkRubocopBehavior.test.ts
+	modified:   tests/smoke/smoke.sh
+	modified:   tests/unit/handlers/rtkSmartBehavior.test.ts
+	modified:   tests/unit/rtkScriptParity.test.ts
+
+Untracked files:
+  (use "git add <file>..." to include in what will be committed)
+	CONTEXT.md
+	docs/adr/
+	docs/layer2-hook-protocol-spike.md
+	docs/layer2-hooks-inspect-goal.md
+	docs/parity-completion-goal.md
+	scripts/benchmark-sessions/
+	scripts/benchmark/
+	src/handlers/dotnet/
+	src/handlers/iac/
+	src/handlers/system/deps.ts
+	src/handlers/system/err.ts
+	src/handlers/system/npx.ts
+	src/handlers/system/smart.ts
+	src/handlers/system/summary.ts
+	src/handlers/system/testRunner.ts
+	tests/fixtures/dotnet/
+	tests/fixtures/system/deps_package.json
+	tests/fixtures/system/err_build.txt
+	tests/fixtures/system/smart_summary.txt
+	tests/fixtures/system/summary_test_run.txt
+	tests/fixtures/system/test_cargo.txt
+	tests/fixtures/terraform/
+
+```
+
+**rtk** (3 chars, 1 tokens, 99.8% savings):
+
+```text
+ok
+
+```
+
+---
+
+### 2. wget: example.com head
 
 - Handler: `wget`
 - tg: `tg wget -q -O - https://example.com/`
@@ -188,7 +356,7 @@ example.com/ ok | - | ?
 
 ---
 
-### 2. [fixture] kubectl get pods summarizes readiness and crashloop issues
+### 3. [fixture] kubectl get pods summarizes readiness and crashloop issues
 
 - Handler: `kubectl`
 - tg: `tg filter kubectl get pods`
@@ -263,7 +431,7 @@ example.com/ ok | - | ?
 
 ---
 
-### 3. git-stash: invalid ref
+### 4. git-stash: invalid ref
 
 - Handler: `git-stash`
 - tg: `tg git stash show stash@{999999}`
@@ -299,7 +467,166 @@ Empty stash
 
 ---
 
-### 4. [fixture] psql table format emits tab-separated rows
+### 5. [fixture] terraform plan keeps resource changes and plan summary
+
+- Handler: `terraform`
+- tg: `tg filter terraform plan`
+- raw: `fixture: tests/fixtures/terraform/plan_changes.txt`
+- rtk: `unsupported (rtk has no terraform filter; raw passthrough)`
+
+| channel | chars | tokens | savingsPct |
+|---|---:|---:|---:|
+| raw | 1742 | 436 | 0% |
+| tg | 812 | 203 | 53.4% |
+| rtk | 1742 | 436 | 0% |
+
+**raw** (1742 chars, 436 tokens):
+
+```text
+Acquiring state lock. This may take a few moments...
+data.aws_caller_identity.current: Reading...
+data.aws_caller_identity.current: Read complete after 0s [id=123456789012]
+data.aws_region.current: Reading...
+data.aws_region.current: Read complete after 0s [id=us-east-1]
+random_pet.name: Refreshing state... [id=cute-mongoose]
+aws_s3_bucket.data: Refreshing state... [id=acme-data-bucket]
+aws_iam_role.lambda_exec: Refreshing state... [id=acme-lambda-exec]
+aws_lambda_function.api: Refreshing state... [id=acme-api]
+
+Terraform used the selected providers to generate the following execution
+plan. Resource actions are indicated with the following symbols:
+  + create
+  ~ update in-place
+  - destroy
+
+Terraform will perform the following actions:
+
+  # aws_instance.web will be created
+  + resource "aws_instance" "web" {
+      + ami                          = "ami-0abcd1234ef567890"
+      + instance_type                = "t3.micro"
+      + availability_zone            = (known after apply)
+      + id                           = (known after apply)
+      + tags                         = {
+          + "Name" = "web"
+        }
+    }
+
+  # aws_s3_bucket.data will be updated in-place
+  ~ resource "aws_s3_bucket" "data" {
+        id     = "acme-data-bucket"
+      ~ tags   = {
+          + "env" = "prod"
+        }
+    }
+
+  # random_pet.name will be destroyed
+  - resource "random_pet" "name" {
+      - id     = "cute-mongoose" -> null
+      - length = 2 -> null
+    }
+
+Plan: 1 to add, 1 to change, 1 to destroy.
+
+─────────────────────────────────────────────────────────────────────────────
+
+Note: You didn't use the -out option to save this plan, so Terraform can't
+guarantee to take exactly these actions if you run "terraform apply" now.
+
+```
+
+**tg** (812 chars, 203 tokens, 53.4% savings):
+
+```text
+Terraform will perform the following actions:
+
+  # aws_instance.web will be created
+  + resource "aws_instance" "web" {
+      + ami                          = "ami-0abcd1234ef567890"
+      + instance_type                = "t3.micro"
+      + availability_zone            = (known after apply)
+      + id                           = (known after apply)
+      + tags                         = {
+          + "Name" = "web"
+        }
+    }
+
+  # aws_s3_bucket.data will be updated in-place
+  ~ resource "aws_s3_bucket" "data" {
+        id     = "acme-data-bucket"
+      ~ tags   = {
+          + "env" = "prod"
+        }
+    }
+
+  # random_pet.name will be destroyed
+  - resource "random_pet" "name" {
+      - id     = "cute-mongoose" -> null
+      - length = 2 -> null
+    }
+
+Plan: 1 to add, 1 to change, 1 to destroy.
+
+```
+
+**rtk** (1742 chars, 436 tokens, 0% savings):
+
+```text
+Acquiring state lock. This may take a few moments...
+data.aws_caller_identity.current: Reading...
+data.aws_caller_identity.current: Read complete after 0s [id=123456789012]
+data.aws_region.current: Reading...
+data.aws_region.current: Read complete after 0s [id=us-east-1]
+random_pet.name: Refreshing state... [id=cute-mongoose]
+aws_s3_bucket.data: Refreshing state... [id=acme-data-bucket]
+aws_iam_role.lambda_exec: Refreshing state... [id=acme-lambda-exec]
+aws_lambda_function.api: Refreshing state... [id=acme-api]
+
+Terraform used the selected providers to generate the following execution
+plan. Resource actions are indicated with the following symbols:
+  + create
+  ~ update in-place
+  - destroy
+
+Terraform will perform the following actions:
+
+  # aws_instance.web will be created
+  + resource "aws_instance" "web" {
+      + ami                          = "ami-0abcd1234ef567890"
+      + instance_type                = "t3.micro"
+      + availability_zone            = (known after apply)
+      + id                           = (known after apply)
+      + tags                         = {
+          + "Name" = "web"
+        }
+    }
+
+  # aws_s3_bucket.data will be updated in-place
+  ~ resource "aws_s3_bucket" "data" {
+        id     = "acme-data-bucket"
+      ~ tags   = {
+          + "env" = "prod"
+        }
+    }
+
+  # random_pet.name will be destroyed
+  - resource "random_pet" "name" {
+      - id     = "cute-mongoose" -> null
+      - length = 2 -> null
+    }
+
+Plan: 1 to add, 1 to change, 1 to destroy.
+
+─────────────────────────────────────────────────────────────────────────────
+
+Note: You didn't use the -out option to save this plan, so Terraform can't
+guarantee to take exactly these actions if you run "terraform apply" now.
+
+```
+
+---
+
+### 6. [fixture] psql table format emits tab-separated rows
 
 - Handler: `psql`
 - tg: `tg filter psql -c select * from users`
@@ -342,7 +669,7 @@ id	name	email	status	created_at	role
 
 ---
 
-### 5. [fixture] js-test keeps failed test and assertion from Vitest fixture
+### 7. [fixture] js-test keeps failed test and assertion from Vitest fixture
 
 - Handler: `js-test`
 - tg: `tg filter vitest run`
@@ -386,7 +713,7 @@ PASS (215) FAIL (3)
 
 ---
 
-### 6. [fixture] gt log keeps the stack graph but strips author emails
+### 8. [fixture] gt log keeps the stack graph but strips author emails
 
 - Handler: `gt`
 - tg: `tg filter gt log`
@@ -442,7 +769,82 @@ PASS (215) FAIL (3)
 
 ---
 
-### 7. prettier: check package.json
+### 9. [fixture] terraform test keeps failed run and assertion
+
+- Handler: `terraform`
+- tg: `tg filter terraform test`
+- raw: `fixture: tests/fixtures/terraform/test_failed.txt`
+- rtk: `unsupported (rtk has no terraform filter; raw passthrough)`
+
+| channel | chars | tokens | savingsPct |
+|---|---:|---:|---:|
+| raw | 528 | 132 | 0% |
+| tg | 308 | 77 | 41.7% |
+| rtk | 528 | 132 | 0% |
+
+**raw** (528 chars, 132 tokens):
+
+```text
+tests/defaults.tftest.hcl... in progress
+  run "uses_default_cidr"... in progress
+  run "uses_default_cidr"... pass
+  run "rejects_invalid_cidr"... in progress
+  run "rejects_invalid_cidr"... fail
+╷
+│ Error: Invalid value for variable
+│
+│   on tests/defaults.tftest.hcl line 18, in run "rejects_invalid_cidr":
+│   18:     cidr_block = "not-a-cidr"
+│
+│ The cidr_block value must be valid CIDR notation, got "not-a-cidr".
+╵
+tests/defaults.tftest.hcl... tearing down
+tests/defaults.tftest.hcl... fail
+
+Failure! 1 passed, 1 failed.
+
+```
+
+**tg** (308 chars, 77 tokens, 41.7% savings):
+
+```text
+run "rejects_invalid_cidr"... fail
+Error: Invalid value for variable
+  on tests/defaults.tftest.hcl line 18, in run "rejects_invalid_cidr":
+  18:     cidr_block = "not-a-cidr"
+The cidr_block value must be valid CIDR notation, got "not-a-cidr".
+tests/defaults.tftest.hcl... fail
+
+Failure! 1 passed, 1 failed.
+
+```
+
+**rtk** (528 chars, 132 tokens, 0% savings):
+
+```text
+tests/defaults.tftest.hcl... in progress
+  run "uses_default_cidr"... in progress
+  run "uses_default_cidr"... pass
+  run "rejects_invalid_cidr"... in progress
+  run "rejects_invalid_cidr"... fail
+╷
+│ Error: Invalid value for variable
+│
+│   on tests/defaults.tftest.hcl line 18, in run "rejects_invalid_cidr":
+│   18:     cidr_block = "not-a-cidr"
+│
+│ The cidr_block value must be valid CIDR notation, got "not-a-cidr".
+╵
+tests/defaults.tftest.hcl... tearing down
+tests/defaults.tftest.hcl... fail
+
+Failure! 1 passed, 1 failed.
+
+```
+
+---
+
+### 10. prettier: check package.json
 
 - Handler: `generic`
 - tg: `tg pnpm exec prettier --check package.json`
@@ -480,7 +882,7 @@ Prettier: All files formatted correctly
 
 ---
 
-### 8. [fixture] pip keeps package problems from fixture
+### 11. [fixture] pip keeps package problems from fixture
 
 - Handler: `pip`
 - tg: `tg filter pip list`
@@ -530,7 +932,7 @@ pip list (JSON parse failed: EOF while parsing a value at line 1 column 0)
 
 ---
 
-### 9. [fixture] list-like keeps useful paths from real project listing
+### 12. [fixture] list-like keeps useful paths from real project listing
 
 - Handler: `list-like`
 - tg: `tg filter find .`
@@ -589,7 +991,7 @@ tests/unit/ parse.test.ts
 
 ---
 
-### 10. [fixture] git-log keeps standard commit subjects
+### 13. [fixture] git-log keeps standard commit subjects
 
 - Handler: `git-log`
 - tg: `tg filter git log`
@@ -651,7 +1053,7 @@ commit a1b2c3d4e5f6a7b8c9d0e1f2a3b4c5d6e7f8a9b0
 
 ---
 
-### 11. eslint: eslint package.json
+### 14. eslint: eslint package.json
 
 - Handler: `eslint`
 - tg: `tg pnpm exec eslint package.json`
@@ -698,13 +1100,13 @@ ESLint: 0 problems in 0 files
 ```text
 ESLint output (JSON parse failed: EOF while parsing a value at line 1 column 0)
 
-[full output: ~/Library/Application Support/rtk/tee/1780621430_lint.log]
+[full output: ~/Library/Application Support/rtk/tee/1780642816_lint.log]
 
 ```
 
 ---
 
-### 12. glab: mr list
+### 15. glab: mr list
 
 - Handler: `glab`
 - tg: `tg glab mr list`
@@ -760,7 +1162,44 @@ ESLint output (JSON parse failed: EOF while parsing a value at line 1 column 0)
 
 ---
 
-### 13. [fixture] find groups matches by directory like RTK
+### 16. [fixture] smart keeps the summary payload without prompt boilerplate
+
+- Handler: `smart`
+- tg: `tg filter smart src/main.rs`
+- raw: `fixture: tests/fixtures/system/smart_summary.txt`
+- rtk: `rtk smart tests/fixtures/system/smart_summary.txt`
+
+| channel | chars | tokens | savingsPct |
+|---|---:|---:|---:|
+| raw | 79 | 20 | 0% |
+| tg | 34 | 9 | 55% |
+| rtk | 46 | 12 | 40% |
+
+**raw** (79 chars, 20 tokens):
+
+```text
+System prompt: summarize this file
+Summary: parser routes commands to handlers
+
+```
+
+**tg** (34 chars, 9 tokens, 55% savings):
+
+```text
+parser routes commands to handlers
+```
+
+**rtk** (46 chars, 12 tokens, 40% savings):
+
+```text
+Data code (2 lines)
+General purpose code file
+
+```
+
+---
+
+### 17. [fixture] find groups matches by directory like RTK
 
 - Handler: `list-like`
 - tg: `tg filter find src -name *.ts`
@@ -809,7 +1248,7 @@ src/core/  (2)
 
 ---
 
-### 14. [fixture] js-test keeps failed Jest test name from fixture
+### 18. [fixture] js-test keeps failed Jest test name from fixture
 
 - Handler: `js-test`
 - tg: `tg filter jest`
@@ -855,7 +1294,7 @@ Tests: 3 failed, 215 passed, 218 total
 
 ---
 
-### 15. format: format --check
+### 19. format: format --check
 
 - Handler: `format`
 - tg: `tg format --check`
@@ -893,7 +1332,7 @@ Prettier: All files formatted correctly
 
 ---
 
-### 16. [fixture] glab mr list keeps merge request identity and branches
+### 20. [fixture] glab mr list keeps merge request identity and branches
 
 - Handler: `glab`
 - tg: `tg filter glab mr list`
@@ -1119,7 +1558,7 @@ Merge Requests
 
 ---
 
-### 17. list-like: ls -la .
+### 21. list-like: ls -la .
 
 - Handler: `ls`
 - tg: `tg ls -la .`
@@ -1128,36 +1567,37 @@ Merge Requests
 
 | channel | chars | tokens | savingsPct |
 |---|---:|---:|---:|
-| raw | 1501 | 376 | 0% |
-| tg | 461 | 116 | 69.1% |
-| rtk | 341 | 86 | 77.1% |
+| raw | 1559 | 390 | 0% |
+| tg | 483 | 121 | 69% |
+| rtk | 358 | 90 | 76.9% |
 
-**raw** (1501 chars, 376 tokens):
+**raw** (1559 chars, 390 tokens):
 
 ```text
-total 192
-drwxr-xr-x  26 ziyu  staff    832  6月  5 08:33 .
+total 216
+drwxr-xr-x  27 ziyu  staff    864  6月  5 15:00 .
 drwxr-xr-x@ 62 ziyu  staff   1984  6月  2 11:29 ..
-drwxr-xr-x@  3 ziyu  staff     96  6月  5 08:47 .claude
-drwxr-xr-x  22 ziyu  staff    704  6月  5 08:56 .git
+drwxr-xr-x@  3 ziyu  staff     96  6月  5 11:15 .claude
+drwxr-xr-x  21 ziyu  staff    672  6月  5 11:44 .git
 -rw-r--r--@  1 ziyu  staff     30  6月  2 18:10 .gitignore
 drwxr-xr-x@  5 ziyu  staff    160  6月  5 08:32 .mypy_cache
 drwxr-xr-x@  6 ziyu  staff    192  6月  5 08:24 .pytest_cache
-drwxr-xr-x@  5 ziyu  staff    160  6月  2 13:17 .ruff_cache
+drwxr-xr-x@  6 ziyu  staff    192  6月  5 11:01 .ruff_cache
 drwxr-xr-x@  4 ziyu  staff    128  6月  2 17:46 .tg
 -rw-r--r--@  1 ziyu  staff   2429  6月  4 23:34 AGENTS.md
 -rw-r--r--@  1 ziyu  staff     18  6月  4 23:34 CLAUDE.md
-drwxr-xr-x@  3 ziyu  staff     96  6月  5 09:03 dist
-drwxr-xr-x  14 ziyu  staff    448  6月  5 09:03 docs
+-rw-r--r--@  1 ziyu  staff   8525  6月  5 15:00 CONTEXT.md
+drwxr-xr-x@  3 ziyu  staff     96  6月  5 15:00 dist
+drwxr-xr-x  20 ziyu  staff    640  6月  5 13:38 docs
 drwxr-xr-x@ 18 ziyu  staff    576  6月  5 08:33 node_modules
--rw-r--r--@  1 ziyu  staff   1277  6月  5 08:32 package.json
--rw-r--r--@  1 ziyu  staff  55735  6月  5 08:32 pnpm-lock.yaml
+-rw-r--r--   1 ziyu  staff   1277  6月  5 09:24 package.json
+-rw-r--r--   1 ziyu  staff  55735  6月  5 09:24 pnpm-lock.yaml
 -rw-r--r--@  1 ziyu  staff     82  6月  2 17:02 pnpm-workspace.yaml
--rw-r--r--@  1 ziyu  staff   1784  6月  3 16:33 README.md
+-rw-r--r--@  1 ziyu  staff   2723  6月  5 11:38 README.md
 drwxr-xr-x  36 ziyu  staff   1152  6月  3 15:08 rtk
-drwxr-xr-x@ 12 ziyu  staff    384  6月  5 08:37 scripts
+drwxr-xr-x@ 14 ziyu  staff    448  6月  5 14:58 scripts
 drwxr-xr-x@  9 ziyu  staff    288  6月  5 08:24 src
-drwxr-xr-x@  7 ziyu  staff    224  6月  2 18:11 tests
+drwxr-xr-x@  8 ziyu  staff    256  6月  5 11:26 tests
 -rw-r--r--@  1 ziyu  staff    370  6月  2 16:59 tsconfig.json
 -rw-r--r--@  1 ziyu  staff    216  6月  2 17:05 tsdown.config.ts
 -rw-r--r--@  1 ziyu  staff   1037  6月  5 08:10 vitest.config.ts
@@ -1165,7 +1605,7 @@ drwxr-xr-x@  7 ziyu  staff    224  6月  2 18:11 tests
 
 ```
 
-**tg** (461 chars, 116 tokens, 69.1% savings):
+**tg** (483 chars, 121 tokens, 69% savings):
 
 ```text
 755  .claude/
@@ -1184,7 +1624,8 @@ drwxr-xr-x@  7 ziyu  staff    224  6月  2 18:11 tests
 644  .gitignore  30B
 644  AGENTS.md  2.4K
 644  CLAUDE.md  18B
-644  README.md  1.7K
+644  CONTEXT.md  8.3K
+644  README.md  2.7K
 644  package.json  1.2K
 644  pnpm-lock.yaml  54.4K
 644  pnpm-workspace.yaml  82B
@@ -1195,7 +1636,7 @@ drwxr-xr-x@  7 ziyu  staff    224  6月  2 18:11 tests
 
 ```
 
-**rtk** (341 chars, 86 tokens, 77.1% savings):
+**rtk** (358 chars, 90 tokens, 76.9% savings):
 
 ```text
 .claude/
@@ -1214,7 +1655,8 @@ tests/
 .gitignore  30B
 AGENTS.md  2.4K
 CLAUDE.md  18B
-README.md  1.7K
+CONTEXT.md  8.3K
+README.md  2.7K
 package.json  1.2K
 pnpm-lock.yaml  54.4K
 pnpm-workspace.yaml  82B
@@ -1227,7 +1669,7 @@ vitest.migration.config.ts  512B
 
 ---
 
-### 18. js-test: vitest run savings test
+### 22. js-test: vitest run savings test
 
 - Handler: `js-test`
 - tg: `tg pnpm exec vitest run tests/unit/savings.test.ts`
@@ -1249,8 +1691,8 @@ vitest.migration.config.ts  512B
 
  Test Files  1 passed (1)
       Tests  4 passed (4)
-   Start at  09:03:48
-   Duration  97ms (transform 19ms, setup 0ms, import 25ms, tests 2ms, environment 0ms)
+   Start at  15:00:14
+   Duration  90ms (transform 18ms, setup 0ms, import 23ms, tests 2ms, environment 0ms)
 
 
 ```
@@ -1260,7 +1702,7 @@ vitest.migration.config.ts  512B
 ```text
 PASS (4) FAIL (0)
 
-Time: 86ms
+Time: 75ms
 
 ```
 
@@ -1273,7 +1715,7 @@ PASS (4) FAIL (0)
 
 ---
 
-### 19. [fixture] find small output keeps root files without excessive growth
+### 23. [fixture] find small output keeps root files without excessive growth
 
 - Handler: `list-like`
 - tg: `tg filter find . -maxdepth 1 -type f`
@@ -1330,7 +1772,209 @@ PASS (4) FAIL (0)
 
 ---
 
-### 20. [fixture] git-status keeps extended dirty status paths
+### 24. [fixture] npx tsc routes through the TypeScript filter
+
+- Handler: `npx`
+- tg: `tg filter npx tsc --noEmit`
+- raw: `fixture: tests/fixtures/js/tsc_many.txt`
+- rtk: `cat tests/fixtures/js/tsc_many.txt | rtk pipe -f tsc`
+
+| channel | chars | tokens | savingsPct |
+|---|---:|---:|---:|
+| raw | 1235 | 309 | 0% |
+| tg | 1166 | 292 | 5.5% |
+| rtk | 1205 | 302 | 2.3% |
+
+**raw** (1235 chars, 309 tokens):
+
+```text
+src/order/submit.ts(42,7): error TS2322: Type 'string | undefined' is not assignable to type 'string'.
+src/order/submit.ts(58,3): error TS2345: Argument of type 'Order' is not assignable to parameter of type 'OrderInput'.
+src/order/api.ts(88,12): error TS2339: Property 'id' does not exist on type 'Order | undefined'.
+src/order/api.ts(91,5): error TS2322: Type 'number' is not assignable to type 'string'.
+src/cart/index.ts(12,9): error TS2554: Expected 2 arguments, but got 1.
+src/cart/index.ts(30,15): error TS2339: Property 'total' does not exist on type 'Cart'.
+src/auth/session.ts(15,5): error TS2322: Type 'null' is not assignable to type 'Session'.
+  Type 'null' is not assignable to type 'Session'.
+src/auth/session.ts(44,7): error TS2345: Argument of type 'undefined' is not assignable to parameter of type 'Token'.
+src/payment/stripe.ts(102,3): error TS2339: Property 'charge' does not exist on type 'StripeClient'.
+src/payment/stripe.ts(140,9): error TS2554: Expected 3 arguments, but got 2.
+src/components/Button.tsx(20,7): error TS2322: Type 'boolean' is not assignable to type 'string'.
+src/components/Button.tsx(33,11): error TS2339: Property 'onClick' does not exist on type 'ButtonProps'.
+Found 12 errors in 6 files.
+
+```
+
+**tg** (1166 chars, 292 tokens, 5.5% savings):
+
+```text
+TypeScript: 12 errors in 6 files
+Top codes: TS2322 (4x), TS2339 (4x), TS2345 (2x), TS2554 (2x)
+
+src/auth/session.ts (2 errors)
+  L15: TS2322 Type 'null' is not assignable to type 'Session'.
+    Type 'null' is not assignable to type 'Session'.
+  L44: TS2345 Argument of type 'undefined' is not assignable to parameter of type 'Token'.
+
+src/cart/index.ts (2 errors)
+  L12: TS2554 Expected 2 arguments, but got 1.
+  L30: TS2339 Property 'total' does not exist on type 'Cart'.
+
+src/components/Button.tsx (2 errors)
+  L20: TS2322 Type 'boolean' is not assignable to type 'string'.
+  L33: TS2339 Property 'onClick' does not exist on type 'ButtonProps'.
+
+src/order/api.ts (2 errors)
+  L88: TS2339 Property 'id' does not exist on type 'Order | undefined'.
+  L91: TS2322 Type 'number' is not assignable to type 'string'.
+
+src/order/submit.ts (2 errors)
+  L42: TS2322 Type 'string | undefined' is not assignable to type 'string'.
+  L58: TS2345 Argument of type 'Order' is not assignable to parameter of type 'OrderInput'.
+
+src/payment/stripe.ts (2 errors)
+  L102: TS2339 Property 'charge' does not exist on type 'StripeClient'.
+  L140: TS2554 Expected 3 arguments, but got 2.
+
+```
+
+**rtk** (1205 chars, 302 tokens, 2.3% savings):
+
+```text
+TypeScript: 12 errors in 6 files
+═══════════════════════════════════════
+Top codes: TS2339 (4x), TS2322 (4x), TS2554 (2x), TS2345 (2x)
+
+src/payment/stripe.ts (2 errors)
+  L102: TS2339 Property 'charge' does not exist on type 'StripeClient'.
+  L140: TS2554 Expected 3 arguments, but got 2.
+
+src/order/submit.ts (2 errors)
+  L42: TS2322 Type 'string | undefined' is not assignable to type 'string'.
+  L58: TS2345 Argument of type 'Order' is not assignable to parameter of type 'OrderInput'.
+
+src/cart/index.ts (2 errors)
+  L12: TS2554 Expected 2 arguments, but got 1.
+  L30: TS2339 Property 'total' does not exist on type 'Cart'.
+
+src/components/Button.tsx (2 errors)
+  L20: TS2322 Type 'boolean' is not assignable to type 'string'.
+  L33: TS2339 Property 'onClick' does not exist on type 'ButtonProps'.
+
+src/order/api.ts (2 errors)
+  L88: TS2339 Property 'id' does not exist on type 'Order | undefined'.
+  L91: TS2322 Type 'number' is not assignable to type 'string'.
+
+src/auth/session.ts (2 errors)
+  L15: TS2322 Type 'null' is not assignable to type 'Session'.
+    Type 'null' is not assignable to type 'Session'.
+  L44: TS2345 Argument of type 'undefined' is not assignable to parameter of type 'Token'.
+```
+
+---
+
+### 25. [fixture] tsc keeps TypeScript diagnostic codes from fixture
+
+- Handler: `tsc`
+- tg: `tg filter tsc --noEmit`
+- raw: `fixture: tests/fixtures/js/tsc_many.txt`
+- rtk: `cat tests/fixtures/js/tsc_many.txt | rtk pipe -f tsc`
+
+| channel | chars | tokens | savingsPct |
+|---|---:|---:|---:|
+| raw | 1235 | 309 | 0% |
+| tg | 1166 | 292 | 5.5% |
+| rtk | 1205 | 302 | 2.3% |
+
+**raw** (1235 chars, 309 tokens):
+
+```text
+src/order/submit.ts(42,7): error TS2322: Type 'string | undefined' is not assignable to type 'string'.
+src/order/submit.ts(58,3): error TS2345: Argument of type 'Order' is not assignable to parameter of type 'OrderInput'.
+src/order/api.ts(88,12): error TS2339: Property 'id' does not exist on type 'Order | undefined'.
+src/order/api.ts(91,5): error TS2322: Type 'number' is not assignable to type 'string'.
+src/cart/index.ts(12,9): error TS2554: Expected 2 arguments, but got 1.
+src/cart/index.ts(30,15): error TS2339: Property 'total' does not exist on type 'Cart'.
+src/auth/session.ts(15,5): error TS2322: Type 'null' is not assignable to type 'Session'.
+  Type 'null' is not assignable to type 'Session'.
+src/auth/session.ts(44,7): error TS2345: Argument of type 'undefined' is not assignable to parameter of type 'Token'.
+src/payment/stripe.ts(102,3): error TS2339: Property 'charge' does not exist on type 'StripeClient'.
+src/payment/stripe.ts(140,9): error TS2554: Expected 3 arguments, but got 2.
+src/components/Button.tsx(20,7): error TS2322: Type 'boolean' is not assignable to type 'string'.
+src/components/Button.tsx(33,11): error TS2339: Property 'onClick' does not exist on type 'ButtonProps'.
+Found 12 errors in 6 files.
+
+```
+
+**tg** (1166 chars, 292 tokens, 5.5% savings):
+
+```text
+TypeScript: 12 errors in 6 files
+Top codes: TS2322 (4x), TS2339 (4x), TS2345 (2x), TS2554 (2x)
+
+src/auth/session.ts (2 errors)
+  L15: TS2322 Type 'null' is not assignable to type 'Session'.
+    Type 'null' is not assignable to type 'Session'.
+  L44: TS2345 Argument of type 'undefined' is not assignable to parameter of type 'Token'.
+
+src/cart/index.ts (2 errors)
+  L12: TS2554 Expected 2 arguments, but got 1.
+  L30: TS2339 Property 'total' does not exist on type 'Cart'.
+
+src/components/Button.tsx (2 errors)
+  L20: TS2322 Type 'boolean' is not assignable to type 'string'.
+  L33: TS2339 Property 'onClick' does not exist on type 'ButtonProps'.
+
+src/order/api.ts (2 errors)
+  L88: TS2339 Property 'id' does not exist on type 'Order | undefined'.
+  L91: TS2322 Type 'number' is not assignable to type 'string'.
+
+src/order/submit.ts (2 errors)
+  L42: TS2322 Type 'string | undefined' is not assignable to type 'string'.
+  L58: TS2345 Argument of type 'Order' is not assignable to parameter of type 'OrderInput'.
+
+src/payment/stripe.ts (2 errors)
+  L102: TS2339 Property 'charge' does not exist on type 'StripeClient'.
+  L140: TS2554 Expected 3 arguments, but got 2.
+
+```
+
+**rtk** (1205 chars, 302 tokens, 2.3% savings):
+
+```text
+TypeScript: 12 errors in 6 files
+═══════════════════════════════════════
+Top codes: TS2339 (4x), TS2322 (4x), TS2554 (2x), TS2345 (2x)
+
+src/payment/stripe.ts (2 errors)
+  L102: TS2339 Property 'charge' does not exist on type 'StripeClient'.
+  L140: TS2554 Expected 3 arguments, but got 2.
+
+src/components/Button.tsx (2 errors)
+  L20: TS2322 Type 'boolean' is not assignable to type 'string'.
+  L33: TS2339 Property 'onClick' does not exist on type 'ButtonProps'.
+
+src/cart/index.ts (2 errors)
+  L12: TS2554 Expected 2 arguments, but got 1.
+  L30: TS2339 Property 'total' does not exist on type 'Cart'.
+
+src/auth/session.ts (2 errors)
+  L15: TS2322 Type 'null' is not assignable to type 'Session'.
+    Type 'null' is not assignable to type 'Session'.
+  L44: TS2345 Argument of type 'undefined' is not assignable to parameter of type 'Token'.
+
+src/order/submit.ts (2 errors)
+  L42: TS2322 Type 'string | undefined' is not assignable to type 'string'.
+  L58: TS2345 Argument of type 'Order' is not assignable to parameter of type 'OrderInput'.
+
+src/order/api.ts (2 errors)
+  L88: TS2339 Property 'id' does not exist on type 'Order | undefined'.
+  L91: TS2322 Type 'number' is not assignable to type 'string'.
+```
+
+---
+
+### 26. [fixture] git-status keeps extended dirty status paths
 
 - Handler: `git-status`
 - tg: `tg filter git status`
@@ -1398,7 +2042,68 @@ PASS (4) FAIL (0)
 
 ---
 
-### 21. [fixture] git-diff keeps changed lines from real diff
+### 27. [fixture] deps summarizes a package.json manifest
+
+- Handler: `deps`
+- tg: `tg filter deps`
+- raw: `fixture: tests/fixtures/system/deps_package.json`
+- rtk: `rtk deps <tmpdir with deps_package.json as package.json>`
+
+| channel | chars | tokens | savingsPct |
+|---|---:|---:|---:|
+| raw | 206 | 52 | 0% |
+| tg | 129 | 33 | 36.5% |
+| rtk | 134 | 34 | 34.6% |
+
+**raw** (206 chars, 52 tokens):
+
+```text
+{
+  "name": "demo-app",
+  "version": "1.2.0",
+  "dependencies": {
+    "react": "19.0.0",
+    "zod": "3.24.0"
+  },
+  "devDependencies": {
+    "vitest": "4.1.8"
+  },
+  "scripts": {
+    "test": "vitest"
+  }
+}
+
+```
+
+**tg** (129 chars, 33 tokens, 36.5% savings):
+
+```text
+Node.js (package.json):
+  demo-app @ 1.2.0
+  Dependencies (2):
+    react (19.0.0)
+    zod (3.24.0)
+  Dev (1):
+    vitest (4.1.8)
+
+```
+
+**rtk** (134 chars, 34 tokens, 34.6% savings):
+
+```text
+Node.js (package.json):
+  demo-app @ 1.2.0
+  Dependencies (2):
+    react (19.0.0)
+    zod (3.24.0)
+  Dev Dependencies (1):
+    vitest
+
+```
+
+---
+
+### 28. [fixture] git-diff keeps changed lines from real diff
 
 - Handler: `git-diff`
 - tg: `tg filter git diff`
@@ -1448,7 +2153,7 @@ src/order/submit.ts
 
 ---
 
-### 22. json: json package.json
+### 29. json: json package.json
 
 - Handler: `json`
 - tg: `tg json package.json`
@@ -1527,7 +2232,7 @@ json: command not found
 
 ---
 
-### 23. search-like: rg export src/
+### 30. search-like: rg export src/
 
 - Handler: `search-like`
 - tg: `tg rg export src/`
@@ -1536,140 +2241,11 @@ json: command not found
 
 | channel | chars | tokens | savingsPct |
 |---|---:|---:|---:|
-| raw | 9548 | 2387 | 0% |
-| tg | 9548 | 2387 | 0% |
-| rtk | 9949 | 2488 | 0% |
+| raw | 10159 | 2540 | 0% |
+| tg | 10159 | 2540 | 0% |
+| rtk | 10588 | 2647 | 0% |
 
-**raw** (9548 chars, 2387 tokens):
-
-```text
-src/handlers/git/show.ts:export const gitShowHandler: CommandHandler = {
-src/handlers/git/log.ts:export const gitLogHandler: CommandHandler = {
-src/handlers/git/extended.ts:export function buildAddArgs(args: string[]): string[] {
-src/handlers/git/extended.ts:export function formatAddSummary(shortstatStdout: string): string {
-src/handlers/git/extended.ts:export const gitExtendedHandlers: CommandHandler[] = [
-src/handlers/git/graphite.ts:export const gtHandler: CommandHandler = {
-src/handlers/git/hostingCli.ts:export function buildGhArgs(args: string[]): string[] {
-src/handlers/git/hostingCli.ts:export function buildGlabArgs(args: string[]): string[] {
-src/handlers/git/hostingCli.ts:export const ghHandler = makeHostingHandler("gh", buildGhArgs, formatGh);
-src/handlers/git/hostingCli.ts:export const glabHandler = makeHostingHandler("glab", buildGlabArgs, formatGlab);
-src/handlers/git/branch.ts:export function branchMode(rest: string[]): BranchMode {
-src/handlers/git/branch.ts:export function buildBranchArgs(args: string[]): string[] {
-src/handlers/git/branch.ts:export const gitBranchHandler: CommandHandler = {
-src/handlers/git/diff.ts:export const gitDiffHandler: CommandHandler = {
-src/handlers/git/compactDiff.ts:export function compactUnifiedDiff(diff: string, maxLines = 500): string {
-src/handlers/git/compactDiff.ts:export function extractDiffStatLines(text: string): string[] {
-src/handlers/git/status.ts:export function usesCompactStatusPath(args: string[]): boolean {
-src/handlers/git/status.ts:export function buildStatusArgs(args: string[]): string[] {
-src/handlers/git/status.ts:export function formatStatusOutput(porcelain: string, detached?: string): string {
-src/handlers/git/status.ts:export function extractStateHeader(raw: string): string | undefined {
-src/handlers/git/status.ts:export function extractDetachedHead(raw: string): string | undefined {
-src/handlers/git/status.ts:export function filterStatusWithArgs(output: string): string {
-src/handlers/git/status.ts:export const gitStatusHandler: CommandHandler = {
-src/handlers/index.ts:export const handlers: CommandHandler[] = [
-src/handlers/cloud/curl.ts:export function buildCurlArgs(args: string[]): string[] {
-src/handlers/cloud/curl.ts:export const curlHandler: CommandHandler = {
-src/handlers/cloud/aws.ts:export const awsHandler: CommandHandler = {
-src/handlers/generic.ts:export const genericHandler: CommandHandler = {
-src/handlers/cloud/psql.ts:export const psqlHandler: CommandHandler = {
-src/router.ts:export function routeCommand(command: ParsedCommand): CommandHandler {
-src/types.ts:export type ParsedCommand = {
-src/types.ts:export type RawResult = {
-src/types.ts:export type FilteredResult = {
-src/types.ts:export type TgOptions = {
-src/types.ts:export type ParseMode = "command" | "report" | "help" | "version";
-src/types.ts:export type ParsedArgv = {
-src/types.ts:export interface CommandHandler {
-src/handlers/cloud/container.ts:export function buildDockerArgs(args: string[]): string[] {
-src/handlers/cloud/container.ts:export function buildKubectlArgs(args: string[]): string[] {
-src/handlers/cloud/container.ts:export const dockerHandler: CommandHandler = {
-src/handlers/cloud/container.ts:export const kubectlHandler: CommandHandler = {
-src/handlers/cloud/wget.ts:export const wgetHandler: CommandHandler = {
-src/handlers/base.ts:export function rawText(raw: RawResult): string {
-src/handlers/base.ts:export function outputOmitsContent(output: string): boolean {
-src/handlers/base.ts:export async function makeFilteredResult(
-src/handlers/js/playwright.ts:export const playwrightHandler: CommandHandler = {
-src/handlers/js/tsc.ts:export const tscHandler: CommandHandler = {
-src/handlers/js/test.ts:export const jsTestHandler: CommandHandler = {
-src/handlers/js/npm.ts:export const npmHandler: CommandHandler = {
-src/parse.ts:export function parseArgv(argv: string[]): ParsedArgv {
-src/handlers/common/readLike.ts:      /^(import |from |export |function |const \w+\s*=|class |interface |type |def |package )/.test(
-src/handlers/common/readLike.ts:export const readLikeHandler: CommandHandler = {
-src/handlers/java/gradle.ts:export const gradleHandler: CommandHandler = {
-src/handlers/js/eslint.ts:export const eslintHandler: CommandHandler = {
-src/handlers/common/searchLike.ts:export function buildGrepArgs(program: string, userArgs: string[]): string[] {
-src/handlers/common/searchLike.ts:export const searchLikeHandler: CommandHandler = {
-src/handlers/js/packageList.ts:export const packageListHandler: CommandHandler = {
-src/handlers/js/prettier.ts:export const prettierHandler: CommandHandler = {
-src/handlers/java/javac.ts:export const javacHandler: CommandHandler = {
-src/handlers/java/maven.ts:export const mavenHandler: CommandHandler = {
-src/handlers/js/prisma.ts:export const prismaHandler: CommandHandler = {
-src/handlers/python/mypy.ts:export const mypyHandler: CommandHandler = {
-src/handlers/common/listLike.ts:export const listLikeHandler: CommandHandler = {
-src/handlers/common/diff.ts:export function lcsChanges(oldLines: string[], newLines: string[]): DiffChange[] {
-src/handlers/common/diff.ts:export const diffHandler: CommandHandler = {
-src/handlers/common/grepFilter.ts:export const GREP_MAX_LINE_LEN = 80;
-src/handlers/common/grepFilter.ts:export const GREP_MAX_RESULTS = 200;
-src/handlers/common/grepFilter.ts:export const GREP_MAX_PER_FILE = 25;
-src/handlers/common/grepFilter.ts:export type GrepMatch = { file: string; line: number; content: string };
-src/handlers/common/grepFilter.ts:export function hasFormatFlag(args: string[]): boolean {
-src/handlers/common/grepFilter.ts:export function parseMatchLine(line: string): GrepMatch | null {
-src/handlers/common/grepFilter.ts:export function compactPath(path: string): string {
-src/handlers/common/grepFilter.ts:export function cleanLine(line: string, maxLen: number, pattern: string): string {
-src/handlers/common/grepFilter.ts:export type GrepGroupOptions = {
-src/handlers/common/grepFilter.ts:export function groupGrepOutput(
-src/handlers/system/tree.ts:export function buildTreeArgs(userArgs: string[]): string[] {
-src/handlers/system/tree.ts:export const treeHandler: CommandHandler = {
-src/executor.ts:export function executeCommand(
-src/handlers/js/next.ts:export function extractTime(line: string): string | undefined {
-src/handlers/js/next.ts:export const nextHandler: CommandHandler = {
-src/handlers/python/pytest.ts:export const pytestHandler: CommandHandler = {
-src/handlers/python/pip.ts:export const pipHandler: CommandHandler = {
-src/handlers/system/pipe.ts:export const pipeHandler: CommandHandler = {
-src/handlers/python/ruff.ts:export function buildRuffArgs(userArgs: string[]): string[] {
-src/handlers/python/ruff.ts:export const ruffHandler: CommandHandler = {
-src/core/outputLimit.ts:export function limitLines(text: string, _maxLines: number): string {
-src/core/outputLimit.ts:export function limitChars(text: string, _maxChars: number): string {
-src/core/outputLimit.ts:export function limitOutput(text: string, _options: TgOptions): string {
-src/core/report.ts:export async function buildReport(options: TgOptions): Promise<string> {
-src/handlers/system/ls.ts:export function buildLsArgs(userArgs: string[]): string[] {
-src/handlers/system/ls.ts:export const lsHandler: CommandHandler = {
-src/core/history.ts:export type HistoryRecord = {
-src/core/history.ts:export async function recordHistory(
-src/core/history.ts:export async function readHistory(cwd: string): Promise<HistoryRecord[]> {
-src/core/rawStore.ts:export async function maybeSaveRawOutput(
-src/handlers/system/wc.ts:export const wcHandler: CommandHandler = {
-src/core/stats.ts:export function formatStats(result: {
-src/handlers/system/log.ts:export const logHandler: CommandHandler = {
-src/core/fallback.ts:export async function filterWithGenericFallback(
-src/core/path.ts:export function safePathPart(value: string): string {
-src/core/patterns.ts:export const IMPORTANT_PATTERN =
-src/handlers/system/read.ts:      trimmed.startsWith("export ") ||
-src/handlers/system/read.ts:export function buildCatArgs(args: string[]): string[] {
-src/handlers/system/read.ts:export const readHandler: CommandHandler = {
-src/core/savings.ts:export type Savings = {
-src/core/savings.ts:export function estimateTokens(text: string): number {
-src/core/savings.ts:export function calculateSavings(raw: string, output: string): Savings {
-src/core/pipeline.ts:export type PipelineResult = {
-src/core/pipeline.ts:export async function runPipeline(
-src/core/pipeline.ts:export async function filterWithFallback(
-src/core/text.ts:export function uniqueLines(lines: string[]): string[] {
-src/core/text.ts:export function ensureTrailingNewline(text: string): string {
-src/core/dataDir.ts:export function tokenGuardHome(): string {
-src/core/dataDir.ts:export function projectFingerprint(cwd: string): string {
-src/core/dataDir.ts:export function projectDataDir(cwd: string): string {
-src/core/dataDir.ts:export function historyFile(cwd: string): string {
-src/core/dataDir.ts:export function rawOutputDir(cwd: string): string {
-src/core/dataDir.ts:export function rawOutputPathRelative(cwd: string, fileName: string): string {
-src/core/dataDir.ts:export function resolveStoredPath(storedPath: string): string {
-src/core/ansi.ts:export function removeAnsi(text: string): string {
-src/handlers/system/env.ts:export const envHandler: CommandHandler = {
-src/handlers/system/json.ts:export const jsonHandler: CommandHandler = {
-src/handlers/system/format.ts:export const formatHandler: CommandHandler = {
-
-```
-
-**tg** (9548 chars, 2387 tokens, 0% savings):
+**raw** (10159 chars, 2540 tokens):
 
 ```text
 src/handlers/git/show.ts:export const gitShowHandler: CommandHandler = {
@@ -1703,9 +2279,147 @@ src/handlers/cloud/container.ts:export function buildDockerArgs(args: string[]):
 src/handlers/cloud/container.ts:export function buildKubectlArgs(args: string[]): string[] {
 src/handlers/cloud/container.ts:export const dockerHandler: CommandHandler = {
 src/handlers/cloud/container.ts:export const kubectlHandler: CommandHandler = {
+src/handlers/generic.ts:export const genericHandler: CommandHandler = {
+src/handlers/cloud/psql.ts:export const psqlHandler: CommandHandler = {
+src/handlers/cloud/wget.ts:export const wgetHandler: CommandHandler = {
+src/router.ts:export function routeCommand(command: ParsedCommand): CommandHandler {
+src/parse.ts:export function parseArgv(argv: string[]): ParsedArgv {
+src/types.ts:export type ParsedCommand = {
+src/types.ts:export type RawResult = {
+src/types.ts:export type FilteredResult = {
+src/types.ts:export type TgOptions = {
+src/types.ts:export type ParseMode = "command" | "report" | "help" | "version";
+src/types.ts:export type ParsedArgv = {
+src/types.ts:export interface CommandHandler {
+src/handlers/base.ts:export function rawText(raw: RawResult): string {
+src/handlers/base.ts:export function outputOmitsContent(output: string): boolean {
+src/handlers/base.ts:export async function makeFilteredResult(
+src/handlers/common/readLike.ts:      /^(import |from |export |function |const \w+\s*=|class |interface |type |def |package )/.test(
+src/handlers/common/readLike.ts:export const readLikeHandler: CommandHandler = {
+src/handlers/js/playwright.ts:export const playwrightHandler: CommandHandler = {
+src/executor.ts:export function executeCommand(
+src/handlers/js/prisma.ts:export const prismaHandler: CommandHandler = {
+src/handlers/js/tsc.ts:export const tscHandler: CommandHandler = {
+src/core/outputLimit.ts:export function limitLines(text: string, _maxLines: number): string {
+src/core/outputLimit.ts:export function limitChars(text: string, _maxChars: number): string {
+src/core/outputLimit.ts:export function limitOutput(text: string, _options: TgOptions): string {
+src/handlers/iac/terraform.ts:export const terraformHandler: CommandHandler = {
+src/handlers/js/packageList.ts:export const packageListHandler: CommandHandler = {
+src/core/ansi.ts:export function removeAnsi(text: string): string {
+src/handlers/js/next.ts:export function extractTime(line: string): string | undefined {
+src/handlers/js/next.ts:export const nextHandler: CommandHandler = {
+src/handlers/dotnet/dotnet.ts:export const dotnetHandler: CommandHandler = {
+src/core/report.ts:export async function buildReport(options: TgOptions): Promise<string> {
+src/handlers/js/eslint.ts:export const eslintHandler: CommandHandler = {
+src/handlers/common/listLike.ts:export const listLikeHandler: CommandHandler = {
+src/core/patterns.ts:export const IMPORTANT_PATTERN =
+src/core/history.ts:export type HistoryRecord = {
+src/core/history.ts:export async function recordHistory(
+src/core/history.ts:export async function readHistory(cwd: string): Promise<HistoryRecord[]> {
+src/handlers/js/test.ts:export const jsTestHandler: CommandHandler = {
+src/handlers/python/mypy.ts:export const mypyHandler: CommandHandler = {
+src/handlers/js/prettier.ts:export const prettierHandler: CommandHandler = {
+src/handlers/js/npm.ts:export const npmHandler: CommandHandler = {
+src/core/fallback.ts:export async function filterWithGenericFallback(
+src/handlers/common/diff.ts:export function lcsChanges(oldLines: string[], newLines: string[]): DiffChange[] {
+src/handlers/common/diff.ts:export const diffHandler: CommandHandler = {
+src/core/dataDir.ts:export function tokenGuardHome(): string {
+src/core/dataDir.ts:export function projectFingerprint(cwd: string): string {
+src/core/dataDir.ts:export function projectDataDir(cwd: string): string {
+src/core/dataDir.ts:export function historyFile(cwd: string): string {
+src/core/dataDir.ts:export function rawOutputDir(cwd: string): string {
+src/core/dataDir.ts:export function rawOutputPathRelative(cwd: string, fileName: string): string {
+src/core/dataDir.ts:export function resolveStoredPath(storedPath: string): string {
+src/handlers/common/grepFilter.ts:export const GREP_MAX_LINE_LEN = 80;
+src/handlers/common/grepFilter.ts:export const GREP_MAX_RESULTS = 200;
+src/handlers/common/grepFilter.ts:export const GREP_MAX_PER_FILE = 25;
+src/handlers/common/grepFilter.ts:export type GrepMatch = { file: string; line: number; content: string };
+src/handlers/common/grepFilter.ts:export function hasFormatFlag(args: string[]): boolean {
+src/handlers/common/grepFilter.ts:export function parseMatchLine(line: string): GrepMatch | null {
+src/handlers/common/grepFilter.ts:export function compactPath(path: string): string {
+src/handlers/common/grepFilter.ts:export function cleanLine(line: string, maxLen: number, pattern: string): string {
+src/handlers/common/grepFilter.ts:export type GrepGroupOptions = {
+src/handlers/common/grepFilter.ts:export function groupGrepOutput(
+src/handlers/python/ruff.ts:export function buildRuffArgs(userArgs: string[]): string[] {
+src/handlers/python/ruff.ts:export const ruffHandler: CommandHandler = {
+src/core/rawStore.ts:export async function maybeSaveRawOutput(
+src/core/path.ts:export function safePathPart(value: string): string {
+src/handlers/python/pytest.ts:export const pytestHandler: CommandHandler = {
+src/handlers/common/searchLike.ts:export function buildGrepArgs(program: string, userArgs: string[]): string[] {
+src/handlers/common/searchLike.ts:export const searchLikeHandler: CommandHandler = {
+src/handlers/python/pip.ts:export const pipHandler: CommandHandler = {
+src/handlers/java/gradle.ts:export const gradleHandler: CommandHandler = {
+src/core/stats.ts:export function formatStats(result: {
+src/handlers/system/tree.ts:export function buildTreeArgs(userArgs: string[]): string[] {
+src/handlers/system/tree.ts:export const treeHandler: CommandHandler = {
+src/handlers/java/maven.ts:export const mavenHandler: CommandHandler = {
+src/core/savings.ts:export type Savings = {
+src/core/savings.ts:export function estimateTokens(text: string): number {
+src/core/savings.ts:export function calculateSavings(raw: string, output: string): Savings {
+src/handlers/java/javac.ts:export const javacHandler: CommandHandler = {
+src/handlers/system/summary.ts:export const summaryHandler: CommandHandler = {
+src/core/text.ts:export function uniqueLines(lines: string[]): string[] {
+src/core/text.ts:export function ensureTrailingNewline(text: string): string {
+src/core/pipeline.ts:export type PipelineResult = {
+src/core/pipeline.ts:export async function runPipeline(
+src/core/pipeline.ts:export async function filterWithFallback(
+src/handlers/system/pipe.ts:export const pipeHandler: CommandHandler = {
+src/handlers/system/log.ts:export const logHandler: CommandHandler = {
+src/handlers/system/env.ts:export const envHandler: CommandHandler = {
+src/handlers/system/read.ts:      trimmed.startsWith("export ") ||
+src/handlers/system/read.ts:export function buildCatArgs(args: string[]): string[] {
+src/handlers/system/read.ts:export const readHandler: CommandHandler = {
+src/handlers/system/err.ts:export const errHandler: CommandHandler = {
+src/handlers/system/wc.ts:export const wcHandler: CommandHandler = {
+src/handlers/system/npx.ts:export const npxHandler: CommandHandler = {
+src/handlers/system/deps.ts:export const depsHandler: CommandHandler = {
+src/handlers/system/format.ts:export const formatHandler: CommandHandler = {
+src/handlers/system/json.ts:export const jsonHandler: CommandHandler = {
+src/handlers/system/smart.ts:export const smartHandler: CommandHandler = {
+src/handlers/system/ls.ts:export function buildLsArgs(userArgs: string[]): string[] {
+src/handlers/system/ls.ts:export const lsHandler: CommandHandler = {
+src/handlers/system/testRunner.ts:export const testRunnerHandler: CommandHandler = {
+
+```
+
+**tg** (10159 chars, 2540 tokens, 0% savings):
+
+```text
+src/handlers/git/show.ts:export const gitShowHandler: CommandHandler = {
+src/handlers/git/log.ts:export const gitLogHandler: CommandHandler = {
+src/handlers/git/extended.ts:export function buildAddArgs(args: string[]): string[] {
+src/handlers/git/extended.ts:export function formatAddSummary(shortstatStdout: string): string {
+src/handlers/git/extended.ts:export const gitExtendedHandlers: CommandHandler[] = [
+src/handlers/git/graphite.ts:export const gtHandler: CommandHandler = {
+src/handlers/git/hostingCli.ts:export function buildGhArgs(args: string[]): string[] {
+src/handlers/git/hostingCli.ts:export function buildGlabArgs(args: string[]): string[] {
+src/handlers/git/hostingCli.ts:export const ghHandler = makeHostingHandler("gh", buildGhArgs, formatGh);
+src/handlers/git/hostingCli.ts:export const glabHandler = makeHostingHandler("glab", buildGlabArgs, formatGlab);
+src/handlers/git/branch.ts:export function branchMode(rest: string[]): BranchMode {
+src/handlers/git/branch.ts:export function buildBranchArgs(args: string[]): string[] {
+src/handlers/git/branch.ts:export const gitBranchHandler: CommandHandler = {
+src/handlers/git/diff.ts:export const gitDiffHandler: CommandHandler = {
+src/handlers/git/compactDiff.ts:export function compactUnifiedDiff(diff: string, maxLines = 500): string {
+src/handlers/git/compactDiff.ts:export function extractDiffStatLines(text: string): string[] {
+src/handlers/git/status.ts:export function usesCompactStatusPath(args: string[]): boolean {
+src/handlers/git/status.ts:export function buildStatusArgs(args: string[]): string[] {
+src/handlers/git/status.ts:export function formatStatusOutput(porcelain: string, detached?: string): string {
+src/handlers/git/status.ts:export function extractStateHeader(raw: string): string | undefined {
+src/handlers/git/status.ts:export function extractDetachedHead(raw: string): string | undefined {
+src/handlers/git/status.ts:export function filterStatusWithArgs(output: string): string {
+src/handlers/git/status.ts:export const gitStatusHandler: CommandHandler = {
+src/handlers/index.ts:export const handlers: CommandHandler[] = [
+src/handlers/cloud/curl.ts:export function buildCurlArgs(args: string[]): string[] {
+src/handlers/cloud/curl.ts:export const curlHandler: CommandHandler = {
+src/handlers/cloud/aws.ts:export const awsHandler: CommandHandler = {
+src/handlers/cloud/container.ts:export function buildDockerArgs(args: string[]): string[] {
+src/handlers/cloud/container.ts:export function buildKubectlArgs(args: string[]): string[] {
+src/handlers/cloud/container.ts:export const dockerHandler: CommandHandler = {
+src/handlers/cloud/container.ts:export const kubectlHandler: CommandHandler = {
 src/handlers/cloud/psql.ts:export const psqlHandler: CommandHandler = {
 src/handlers/cloud/wget.ts:export const wgetHandler: CommandHandler = {
 src/handlers/generic.ts:export const genericHandler: CommandHandler = {
+src/handlers/iac/terraform.ts:export const terraformHandler: CommandHandler = {
 src/handlers/common/readLike.ts:      /^(import |from |export |function |const \w+\s*=|class |interface |type |def |package )/.test(
 src/handlers/common/readLike.ts:export const readLikeHandler: CommandHandler = {
 src/handlers/common/listLike.ts:export const listLikeHandler: CommandHandler = {
@@ -1726,19 +2440,26 @@ src/handlers/common/grepFilter.ts:export function groupGrepOutput(
 src/handlers/system/tree.ts:export function buildTreeArgs(userArgs: string[]): string[] {
 src/handlers/system/tree.ts:export const treeHandler: CommandHandler = {
 src/handlers/system/wc.ts:export const wcHandler: CommandHandler = {
+src/handlers/system/deps.ts:export const depsHandler: CommandHandler = {
 src/handlers/system/env.ts:export const envHandler: CommandHandler = {
 src/handlers/system/log.ts:export const logHandler: CommandHandler = {
+src/handlers/system/smart.ts:export const smartHandler: CommandHandler = {
 src/handlers/system/format.ts:export const formatHandler: CommandHandler = {
 src/handlers/system/ls.ts:export function buildLsArgs(userArgs: string[]): string[] {
 src/handlers/system/ls.ts:export const lsHandler: CommandHandler = {
+src/handlers/system/summary.ts:export const summaryHandler: CommandHandler = {
+src/handlers/system/npx.ts:export const npxHandler: CommandHandler = {
+src/handlers/system/err.ts:export const errHandler: CommandHandler = {
 src/handlers/system/json.ts:export const jsonHandler: CommandHandler = {
 src/handlers/system/pipe.ts:export const pipeHandler: CommandHandler = {
 src/handlers/system/read.ts:      trimmed.startsWith("export ") ||
 src/handlers/system/read.ts:export function buildCatArgs(args: string[]): string[] {
 src/handlers/system/read.ts:export const readHandler: CommandHandler = {
-src/handlers/java/gradle.ts:export const gradleHandler: CommandHandler = {
-src/handlers/java/javac.ts:export const javacHandler: CommandHandler = {
-src/handlers/java/maven.ts:export const mavenHandler: CommandHandler = {
+src/handlers/system/testRunner.ts:export const testRunnerHandler: CommandHandler = {
+src/handlers/base.ts:export function rawText(raw: RawResult): string {
+src/handlers/base.ts:export function outputOmitsContent(output: string): boolean {
+src/handlers/base.ts:export async function makeFilteredResult(
+src/parse.ts:export function parseArgv(argv: string[]): ParsedArgv {
 src/types.ts:export type ParsedCommand = {
 src/types.ts:export type RawResult = {
 src/types.ts:export type FilteredResult = {
@@ -1746,35 +2467,17 @@ src/types.ts:export type TgOptions = {
 src/types.ts:export type ParseMode = "command" | "report" | "help" | "version";
 src/types.ts:export type ParsedArgv = {
 src/types.ts:export interface CommandHandler {
-src/router.ts:export function routeCommand(command: ParsedCommand): CommandHandler {
-src/handlers/js/playwright.ts:export const playwrightHandler: CommandHandler = {
-src/handlers/base.ts:export function rawText(raw: RawResult): string {
-src/handlers/base.ts:export function outputOmitsContent(output: string): boolean {
-src/handlers/base.ts:export async function makeFilteredResult(
-src/handlers/python/ruff.ts:export function buildRuffArgs(userArgs: string[]): string[] {
-src/handlers/python/ruff.ts:export const ruffHandler: CommandHandler = {
-src/handlers/python/mypy.ts:export const mypyHandler: CommandHandler = {
-src/handlers/python/pytest.ts:export const pytestHandler: CommandHandler = {
-src/handlers/js/eslint.ts:export const eslintHandler: CommandHandler = {
-src/parse.ts:export function parseArgv(argv: string[]): ParsedArgv {
-src/handlers/js/next.ts:export function extractTime(line: string): string | undefined {
-src/handlers/js/next.ts:export const nextHandler: CommandHandler = {
 src/executor.ts:export function executeCommand(
-src/handlers/js/test.ts:export const jsTestHandler: CommandHandler = {
-src/handlers/js/tsc.ts:export const tscHandler: CommandHandler = {
-src/handlers/js/packageList.ts:export const packageListHandler: CommandHandler = {
-src/handlers/js/npm.ts:export const npmHandler: CommandHandler = {
-src/handlers/js/prettier.ts:export const prettierHandler: CommandHandler = {
-src/handlers/python/pip.ts:export const pipHandler: CommandHandler = {
+src/handlers/java/gradle.ts:export const gradleHandler: CommandHandler = {
 src/core/outputLimit.ts:export function limitLines(text: string, _maxLines: number): string {
 src/core/outputLimit.ts:export function limitChars(text: string, _maxChars: number): string {
 src/core/outputLimit.ts:export function limitOutput(text: string, _options: TgOptions): string {
-src/handlers/js/prisma.ts:export const prismaHandler: CommandHandler = {
-src/core/text.ts:export function uniqueLines(lines: string[]): string[] {
-src/core/text.ts:export function ensureTrailingNewline(text: string): string {
-src/core/savings.ts:export type Savings = {
-src/core/savings.ts:export function estimateTokens(text: string): number {
-src/core/savings.ts:export function calculateSavings(raw: string, output: string): Savings {
+src/router.ts:export function routeCommand(command: ParsedCommand): CommandHandler {
+src/core/ansi.ts:export function removeAnsi(text: string): string {
+src/core/pipeline.ts:export type PipelineResult = {
+src/core/pipeline.ts:export async function runPipeline(
+src/core/pipeline.ts:export async function filterWithFallback(
+src/handlers/java/maven.ts:export const mavenHandler: CommandHandler = {
 src/core/dataDir.ts:export function tokenGuardHome(): string {
 src/core/dataDir.ts:export function projectFingerprint(cwd: string): string {
 src/core/dataDir.ts:export function projectDataDir(cwd: string): string {
@@ -1782,26 +2485,44 @@ src/core/dataDir.ts:export function historyFile(cwd: string): string {
 src/core/dataDir.ts:export function rawOutputDir(cwd: string): string {
 src/core/dataDir.ts:export function rawOutputPathRelative(cwd: string, fileName: string): string {
 src/core/dataDir.ts:export function resolveStoredPath(storedPath: string): string {
+src/handlers/python/ruff.ts:export function buildRuffArgs(userArgs: string[]): string[] {
+src/handlers/python/ruff.ts:export const ruffHandler: CommandHandler = {
+src/handlers/dotnet/dotnet.ts:export const dotnetHandler: CommandHandler = {
+src/handlers/python/mypy.ts:export const mypyHandler: CommandHandler = {
+src/handlers/python/pip.ts:export const pipHandler: CommandHandler = {
 src/core/patterns.ts:export const IMPORTANT_PATTERN =
+src/handlers/java/javac.ts:export const javacHandler: CommandHandler = {
+src/core/text.ts:export function uniqueLines(lines: string[]): string[] {
+src/core/text.ts:export function ensureTrailingNewline(text: string): string {
+src/core/stats.ts:export function formatStats(result: {
 src/core/fallback.ts:export async function filterWithGenericFallback(
+src/handlers/js/tsc.ts:export const tscHandler: CommandHandler = {
+src/handlers/js/playwright.ts:export const playwrightHandler: CommandHandler = {
+src/core/savings.ts:export type Savings = {
+src/core/savings.ts:export function estimateTokens(text: string): number {
+src/core/savings.ts:export function calculateSavings(raw: string, output: string): Savings {
+src/handlers/js/test.ts:export const jsTestHandler: CommandHandler = {
+src/handlers/js/prisma.ts:export const prismaHandler: CommandHandler = {
+src/handlers/python/pytest.ts:export const pytestHandler: CommandHandler = {
+src/core/rawStore.ts:export async function maybeSaveRawOutput(
+src/handlers/js/npm.ts:export const npmHandler: CommandHandler = {
+src/handlers/js/packageList.ts:export const packageListHandler: CommandHandler = {
 src/core/report.ts:export async function buildReport(options: TgOptions): Promise<string> {
+src/handlers/js/next.ts:export function extractTime(line: string): string | undefined {
+src/handlers/js/next.ts:export const nextHandler: CommandHandler = {
 src/core/path.ts:export function safePathPart(value: string): string {
+src/handlers/js/eslint.ts:export const eslintHandler: CommandHandler = {
 src/core/history.ts:export type HistoryRecord = {
 src/core/history.ts:export async function recordHistory(
 src/core/history.ts:export async function readHistory(cwd: string): Promise<HistoryRecord[]> {
-src/core/rawStore.ts:export async function maybeSaveRawOutput(
-src/core/ansi.ts:export function removeAnsi(text: string): string {
-src/core/pipeline.ts:export type PipelineResult = {
-src/core/pipeline.ts:export async function runPipeline(
-src/core/pipeline.ts:export async function filterWithFallback(
-src/core/stats.ts:export function formatStats(result: {
+src/handlers/js/prettier.ts:export const prettierHandler: CommandHandler = {
 
 ```
 
-**rtk** (9949 chars, 2488 tokens, 0% savings):
+**rtk** (10588 chars, 2647 tokens, 0% savings):
 
 ```text
-123 matches in 64 files:
+131 matches in 72 files:
 
 src/core/ansi.ts:3:export function removeAnsi(text: string): string {
 src/core/dataDir.ts:14:export function tokenGuardHome(): string {
@@ -1833,8 +2554,8 @@ src/core/text.ts:1:export function uniqueLines(lines: string[]): string[] {
 src/core/text.ts:5:export function ensureTrailingNewline(text: string): string {
 src/executor.ts:5:export function executeCommand(
 src/handlers/base.ts:7:export function rawText(raw: RawResult): string {
-src/handlers/base.ts:59:export function outputOmitsContent(output: string): boolean {
-src/handlers/base.ts:77:export async function makeFilteredResult(
+src/handlers/base.ts:75:export function outputOmitsContent(output: string): boolean {
+src/handlers/base.ts:93:export async function makeFilteredResult(
 src/handlers/cloud/aws.ts:275:export const awsHandler: CommandHandler = {
 src/handlers/cloud/container.ts:436:export function buildDockerArgs(args: string[]): string[] {
 src/handlers/cloud/container.ts:483:export function buildKubectlArgs(args: string[]): string[] {
@@ -1859,8 +2580,9 @@ src/handlers/common/grepFilter.ts:97:export function groupGrepOutput(
 src/handlers/common/listLike.ts:211:export const listLikeHandler: CommandHandler = {
 src/handlers/common/readLike.ts:26:/^(import |from |export |function |const \w+\s*=|class |interface |type |def |pa...
 src/handlers/common/readLike.ts:219:export const readLikeHandler: CommandHandler = {
-src/handlers/common/searchLike.ts:18:export function buildGrepArgs(program: string, userArgs: string[]): string[] {
-src/handlers/common/searchLike.ts:24:export const searchLikeHandler: CommandHandler = {
+src/handlers/common/searchLike.ts:23:export function buildGrepArgs(program: string, userArgs: string[]): string[] {
+src/handlers/common/searchLike.ts:29:export const searchLikeHandler: CommandHandler = {
+src/handlers/dotnet/dotnet.ts:223:export const dotnetHandler: CommandHandler = {
 src/handlers/generic.ts:5:export const genericHandler: CommandHandler = {
 src/handlers/git/branch.ts:103:export function branchMode(rest: string[]): BranchMode {
 src/handlers/git/branch.ts:115:export function buildBranchArgs(args: string[]): string[] {
@@ -1873,9 +2595,9 @@ src/handlers/git/extended.ts:89:export function formatAddSummary(shortstatStdout
 src/handlers/git/extended.ts:203:export const gitExtendedHandlers: CommandHandler[] = [
 src/handlers/git/graphite.ts:169:export const gtHandler: CommandHandler = {
 src/handlers/git/hostingCli.ts:34:export function buildGhArgs(args: string[]): string[] {
-src/handlers/git/hostingCli.ts:66:export function buildGlabArgs(args: string[]): string[] {
-src/handlers/git/hostingCli.ts:278:export const ghHandler = makeHostingHandler("gh", buildGhArgs, formatGh);
-src/handlers/git/hostingCli.ts:279:export const glabHandler = makeHostingHandler("glab", buildGlabArgs, formatGlab)...
+src/handlers/git/hostingCli.ts:68:export function buildGlabArgs(args: string[]): string[] {
+src/handlers/git/hostingCli.ts:280:export const ghHandler = makeHostingHandler("gh", buildGhArgs, formatGh);
+src/handlers/git/hostingCli.ts:281:export const glabHandler = makeHostingHandler("glab", buildGlabArgs, formatGlab)...
 src/handlers/git/log.ts:107:export const gitLogHandler: CommandHandler = {
 src/handlers/git/show.ts:61:export const gitShowHandler: CommandHandler = {
 src/handlers/git/status.ts:9:export function usesCompactStatusPath(args: string[]): boolean {
@@ -1885,7 +2607,8 @@ src/handlers/git/status.ts:108:export function extractStateHeader(raw: string): 
 src/handlers/git/status.ts:130:export function extractDetachedHead(raw: string): string | undefined {
 src/handlers/git/status.ts:139:export function filterStatusWithArgs(output: string): string {
 src/handlers/git/status.ts:168:export const gitStatusHandler: CommandHandler = {
-src/handlers/index.ts:46:export const handlers: CommandHandler[] = [
+src/handlers/iac/terraform.ts:112:export const terraformHandler: CommandHandler = {
+src/handlers/index.ts:54:export const handlers: CommandHandler[] = [
 src/handlers/java/gradle.ts:21:export const gradleHandler: CommandHandler = {
 src/handlers/java/javac.ts:43:export const javacHandler: CommandHandler = {
 src/handlers/java/maven.ts:18:export const mavenHandler: CommandHandler = {
@@ -1898,22 +2621,28 @@ src/handlers/js/playwright.ts:177:export const playwrightHandler: CommandHandler
 src/handlers/js/prettier.ts:115:export const prettierHandler: CommandHandler = {
 src/handlers/js/prisma.ts:303:export const prismaHandler: CommandHandler = {
 src/handlers/js/test.ts:195:export const jsTestHandler: CommandHandler = {
-src/handlers/js/tsc.ts:104:export const tscHandler: CommandHandler = {
+src/handlers/js/tsc.ts:106:export const tscHandler: CommandHandler = {
 src/handlers/python/mypy.ts:112:export const mypyHandler: CommandHandler = {
 src/handlers/python/pip.ts:146:export const pipHandler: CommandHandler = {
 src/handlers/python/pytest.ts:211:export const pytestHandler: CommandHandler = {
 src/handlers/python/ruff.ts:153:export function buildRuffArgs(userArgs: string[]): string[] {
 src/handlers/python/ruff.ts:176:export const ruffHandler: CommandHandler = {
+src/handlers/system/deps.ts:198:export const depsHandler: CommandHandler = {
 src/handlers/system/env.ts:212:export const envHandler: CommandHandler = {
+src/handlers/system/err.ts:85:export const errHandler: CommandHandler = {
 src/handlers/system/format.ts:354:export const formatHandler: CommandHandler = {
 src/handlers/system/json.ts:155:export const jsonHandler: CommandHandler = {
 src/handlers/system/log.ts:186:export const logHandler: CommandHandler = {
 src/handlers/system/ls.ts:235:export function buildLsArgs(userArgs: string[]): string[] {
 src/handlers/system/ls.ts:251:export const lsHandler: CommandHandler = {
+src/handlers/system/npx.ts:21:export const npxHandler: CommandHandler = {
 src/handlers/system/pipe.ts:194:export const pipeHandler: CommandHandler = {
-src/handlers/system/read.ts:114:trimmed.startsWith("export ") ||
-src/handlers/system/read.ts:178:export function buildCatArgs(args: string[]): string[] {
-src/handlers/system/read.ts:193:export const readHandler: CommandHandler = {
+src/handlers/system/read.ts:115:trimmed.startsWith("export ") ||
+src/handlers/system/read.ts:400:export function buildCatArgs(args: string[]): string[] {
+src/handlers/system/read.ts:416:export const readHandler: CommandHandler = {
+src/handlers/system/smart.ts:34:export const smartHandler: CommandHandler = {
+src/handlers/system/summary.ts:239:export const summaryHandler: CommandHandler = {
+src/handlers/system/testRunner.ts:82:export const testRunnerHandler: CommandHandler = {
 src/handlers/system/tree.ts:45:export function buildTreeArgs(userArgs: string[]): string[] {
 src/handlers/system/tree.ts:94:export const treeHandler: CommandHandler = {
 src/handlers/system/wc.ts:146:export const wcHandler: CommandHandler = {
@@ -1931,7 +2660,7 @@ src/types.ts:55:export interface CommandHandler {
 
 ---
 
-### 24. [fixture] search-like keeps rg default format matches
+### 31. [fixture] search-like keeps rg default format matches
 
 - Handler: `search-like`
 - tg: `tg filter rg pattern src`
@@ -1988,7 +2717,7 @@ src/core/savings.ts:3:export type Savings = {
 
 ---
 
-### 25. [fixture] ruff keeps rule codes and file locations from fixture
+### 32. [fixture] ruff keeps rule codes and file locations from fixture
 
 - Handler: `ruff`
 - tg: `tg filter ruff check .`
@@ -2034,7 +2763,7 @@ Found 2 errors.
 
 ---
 
-### 26. [fixture] search-like keeps rg matches from real output
+### 33. [fixture] search-like keeps rg matches from real output
 
 - Handler: `search-like`
 - tg: `tg filter rg submitOrder src`
@@ -2079,12 +2808,108 @@ src/order/api.ts:88:return submitOrder(payload)
 
 ---
 
-### 27. diff: diff old.ts new.ts
+### 34. [fixture] summary digests a test run instead of replaying lines
+
+- Handler: `summary`
+- tg: `tg filter summary npm test`
+- raw: `fixture: tests/fixtures/system/summary_test_run.txt`
+- rtk: `rtk summary 'cat tests/fixtures/system/summary_test_run.txt'`
+
+| channel | chars | tokens | savingsPct |
+|---|---:|---:|---:|
+| raw | 94 | 24 | 0% |
+| tg | 177 | 45 | 0% |
+| rtk | 228 | 57 | 0% |
+
+**raw** (94 chars, 24 tokens):
+
+```text
+PASS src/a.test.ts
+FAIL src/b.test.ts
+Tests: 1 failed, 12 passed, 13 total
+Snapshots: 0 total
+
+```
+
+**tg** (177 chars, 45 tokens, 0% savings):
+
+```text
+[FAIL] Command: npm test
+   5 lines of output
+
+Test Results:
+   [ok] 12 passed
+   [FAIL] 1 failed
+
+   Failures:
+   • FAIL src/b.test.ts
+   • Tests: 1 failed, 12 passed, 13 total
+```
+
+**rtk** (228 chars, 57 tokens, 0% savings):
+
+```text
+[ok] Command: cat '/Users/ziyu/Workspace/token-guard/tests/fixtures/sys...
+   5 lines of output
+
+Test Results:
+   [ok] 12 passed
+   [FAIL] 1 failed
+
+   Failures:
+   • FAIL src/b.test.ts
+   • Tests: 1 failed, 12 passed, 13 total
+
+```
+
+---
+
+### 35. tsc: type error in temp file
+
+- Handler: `tsc`
+- tg: `tg pnpm exec tsc --noEmit --ignoreConfig /var/folders/q8/fmjf6hvs17j47yqnnpfqtg5h0000gn/T/tg-compare-tsc-LXRX8r/broken.ts`
+- raw: `pnpm exec tsc --noEmit --ignoreConfig /var/folders/q8/fmjf6hvs17j47yqnnpfqtg5h0000gn/T/tg-compare-tsc-LXRX8r/broken.ts`
+- rtk: `tsc --noEmit --ignoreConfig /var/folders/q8/fmjf6hvs17j47yqnnpfqtg5h0000gn/T/tg-compare-tsc-LXRX8r/broken.ts`
+
+| channel | chars | tokens | savingsPct |
+|---|---:|---:|---:|
+| raw | 162 | 41 | 0% |
+| tg | 198 | 50 | 0% |
+| rtk | 234 | 59 | 0% |
+
+**raw** (162 chars, 41 tokens):
+
+```text
+../../../../var/folders/q8/fmjf6hvs17j47yqnnpfqtg5h0000gn/T/tg-compare-tsc-LXRX8r/broken.ts(1,7): error TS2322: Type 'string' is not assignable to type 'number'.
+
+```
+
+**tg** (198 chars, 50 tokens, 0% savings):
+
+```text
+TypeScript: 1 errors in 1 files
+../../../../var/folders/q8/fmjf6hvs17j47yqnnpfqtg5h0000gn/T/tg-compare-tsc-LXRX8r/broken.ts (1 errors)
+  L1: TS2322 Type 'string' is not assignable to type 'number'.
+
+```
+
+**rtk** (234 chars, 59 tokens, 0% savings):
+
+```text
+../../../../var/folders/q8/fmjf6hvs17j47yqnnpfqtg5h0000gn/T/tg-compare-tsc-LXRX8r/broken.ts(1,7): error TS2322: Type 'string' is not assignable to type 'number'.
+═══════════════════════════════════════
+TypeScript: 1 errors in 1 files
+
+```
+
+---
+
+### 36. diff: diff old.ts new.ts
 
 - Handler: `diff`
-- tg: `tg diff /var/folders/q8/fmjf6hvs17j47yqnnpfqtg5h0000gn/T/tg-compare-diff-i0yWik/old.ts /var/folders/q8/fmjf6hvs17j47yqnnpfqtg5h0000gn/T/tg-compare-diff-i0yWik/new.ts`
-- raw: `diff /var/folders/q8/fmjf6hvs17j47yqnnpfqtg5h0000gn/T/tg-compare-diff-i0yWik/old.ts /var/folders/q8/fmjf6hvs17j47yqnnpfqtg5h0000gn/T/tg-compare-diff-i0yWik/new.ts`
-- rtk: `diff /var/folders/q8/fmjf6hvs17j47yqnnpfqtg5h0000gn/T/tg-compare-diff-i0yWik/old.ts /var/folders/q8/fmjf6hvs17j47yqnnpfqtg5h0000gn/T/tg-compare-diff-i0yWik/new.ts`
+- tg: `tg diff /var/folders/q8/fmjf6hvs17j47yqnnpfqtg5h0000gn/T/tg-compare-diff-FYcbsI/old.ts /var/folders/q8/fmjf6hvs17j47yqnnpfqtg5h0000gn/T/tg-compare-diff-FYcbsI/new.ts`
+- raw: `diff /var/folders/q8/fmjf6hvs17j47yqnnpfqtg5h0000gn/T/tg-compare-diff-FYcbsI/old.ts /var/folders/q8/fmjf6hvs17j47yqnnpfqtg5h0000gn/T/tg-compare-diff-FYcbsI/new.ts`
+- rtk: `diff /var/folders/q8/fmjf6hvs17j47yqnnpfqtg5h0000gn/T/tg-compare-diff-FYcbsI/old.ts /var/folders/q8/fmjf6hvs17j47yqnnpfqtg5h0000gn/T/tg-compare-diff-FYcbsI/new.ts`
 
 | channel | chars | tokens | savingsPct |
 |---|---:|---:|---:|
@@ -2103,7 +2928,7 @@ src/order/api.ts:88:return submitOrder(payload)
 **tg** (196 chars, 49 tokens, 0% savings):
 
 ```text
-/var/folders/q8/fmjf6hvs17j47yqnnpfqtg5h0000gn/T/tg-compare-diff-i0yWik/old.ts -> /var/folders/q8/fmjf6hvs17j47yqnnpfqtg5h0000gn/T/tg-compare-diff-i0yWik/new.ts (+1 -0)
+/var/folders/q8/fmjf6hvs17j47yqnnpfqtg5h0000gn/T/tg-compare-diff-FYcbsI/old.ts -> /var/folders/q8/fmjf6hvs17j47yqnnpfqtg5h0000gn/T/tg-compare-diff-FYcbsI/new.ts (+1 -0)
 
 + export const extra = 2;
 
@@ -2112,7 +2937,7 @@ src/order/api.ts:88:return submitOrder(payload)
 **rtk** (228 chars, 57 tokens, 0% savings):
 
 ```text
-/var/folders/q8/fmjf6hvs17j47yqnnpfqtg5h0000gn/T/tg-compare-diff-i0yWik/old.ts → /var/folders/q8/fmjf6hvs17j47yqnnpfqtg5h0000gn/T/tg-compare-diff-i0yWik/new.ts
+/var/folders/q8/fmjf6hvs17j47yqnnpfqtg5h0000gn/T/tg-compare-diff-FYcbsI/old.ts → /var/folders/q8/fmjf6hvs17j47yqnnpfqtg5h0000gn/T/tg-compare-diff-FYcbsI/new.ts
    +1 added, -0 removed, ~0 modified
 
 +   2 export const extra = 2;
@@ -2121,7 +2946,7 @@ src/order/api.ts:88:return submitOrder(payload)
 
 ---
 
-### 28. git-fetch: missing remote
+### 37. git-fetch: missing remote
 
 - Handler: `git-fetch`
 - tg: `tg git fetch /tmp/__tg_missing_remote__ main`
@@ -2172,197 +2997,7 @@ and the repository exists.
 
 ---
 
-### 29. git-commit: dry-run
-
-- Handler: `git-commit`
-- tg: `tg git commit --dry-run`
-- raw: `git --no-pager commit --dry-run`
-- rtk: `git commit --dry-run`
-
-| channel | chars | tokens | savingsPct |
-|---|---:|---:|---:|
-| raw | 2297 | 575 | 0% |
-| tg | 2326 | 582 | 0% |
-| rtk | 2297 | 575 | 0% |
-
-**raw** (2297 chars, 575 tokens):
-
-```text
-On branch codex/token-guard-node-cli
-Your branch is ahead of 'origin/codex/token-guard-node-cli' by 8 commits.
-  (use "git push" to publish your local commits)
-
-Changes not staged for commit:
-  (use "git add <file>..." to update what will be committed)
-  (use "git restore <file>..." to discard changes in working directory)
-	modified:   docs/three-way-comparison.md
-	modified:   package.json
-	modified:   pnpm-lock.yaml
-	modified:   scripts/generate-three-way-report.ts
-	modified:   scripts/liveComparisonCases.ts
-	modified:   src/handlers/cloud/container.ts
-	modified:   src/handlers/cloud/curl.ts
-	modified:   src/handlers/common/searchLike.ts
-	modified:   src/handlers/git/branch.ts
-	modified:   src/handlers/git/diff.ts
-	modified:   src/handlers/git/extended.ts
-	modified:   src/handlers/git/hostingCli.ts
-	modified:   src/handlers/git/status.ts
-	modified:   src/handlers/python/ruff.ts
-	modified:   src/handlers/system/log.ts
-	modified:   src/handlers/system/read.ts
-	modified:   src/handlers/system/tree.ts
-	modified:   tests/fixtures/git/status_dirty.txt
-	modified:   tests/fixtures/git/status_dirty_extended.txt
-	modified:   tests/integration/cli.test.ts
-	modified:   tests/unit/handlers/rtkCurlBehavior.test.ts
-	modified:   tests/unit/handlers/rtkDockerBehavior.test.ts
-	modified:   tests/unit/handlers/rtkGhBehavior.test.ts
-	modified:   tests/unit/handlers/rtkGitBranchBehavior.test.ts
-	modified:   tests/unit/handlers/rtkGitStatusBehavior.test.ts
-	modified:   tests/unit/handlers/rtkGlabBehavior.test.ts
-	modified:   tests/unit/handlers/rtkGrepBehavior.test.ts
-	modified:   tests/unit/handlers/rtkKubectlBehavior.test.ts
-	modified:   tests/unit/handlers/rtkLogBehavior.test.ts
-	modified:   tests/unit/handlers/rtkReadBehavior.test.ts
-	modified:   tests/unit/handlers/rtkRuffBehavior.test.ts
-	modified:   tests/unit/handlers/rtkTreeBehavior.test.ts
-	modified:   tests/unit/scripts/threeWayReport.test.ts
-
-Untracked files:
-  (use "git add <file>..." to include in what will be committed)
-	docs/align-rtk-divergences.md
-	docs/align-rtk-goal.md
-	docs/real-cli-parity-goal.md
-	scripts/compare-bin/
-	scripts/fixtureComparison.ts
-	tests/unit/handlers/rtkGitAddBehavior.test.ts
-	tests/unit/handlers/rtkGitDiffBehavior.test.ts
-
-no changes added to commit (use "git add" and/or "git commit -a")
-
-```
-
-**tg** (2326 chars, 582 tokens, 0% savings):
-
-```text
-FAILED: git commit --dry-run
-On branch codex/token-guard-node-cli
-Your branch is ahead of 'origin/codex/token-guard-node-cli' by 8 commits.
-  (use "git push" to publish your local commits)
-
-Changes not staged for commit:
-  (use "git add <file>..." to update what will be committed)
-  (use "git restore <file>..." to discard changes in working directory)
-	modified:   docs/three-way-comparison.md
-	modified:   package.json
-	modified:   pnpm-lock.yaml
-	modified:   scripts/generate-three-way-report.ts
-	modified:   scripts/liveComparisonCases.ts
-	modified:   src/handlers/cloud/container.ts
-	modified:   src/handlers/cloud/curl.ts
-	modified:   src/handlers/common/searchLike.ts
-	modified:   src/handlers/git/branch.ts
-	modified:   src/handlers/git/diff.ts
-	modified:   src/handlers/git/extended.ts
-	modified:   src/handlers/git/hostingCli.ts
-	modified:   src/handlers/git/status.ts
-	modified:   src/handlers/python/ruff.ts
-	modified:   src/handlers/system/log.ts
-	modified:   src/handlers/system/read.ts
-	modified:   src/handlers/system/tree.ts
-	modified:   tests/fixtures/git/status_dirty.txt
-	modified:   tests/fixtures/git/status_dirty_extended.txt
-	modified:   tests/integration/cli.test.ts
-	modified:   tests/unit/handlers/rtkCurlBehavior.test.ts
-	modified:   tests/unit/handlers/rtkDockerBehavior.test.ts
-	modified:   tests/unit/handlers/rtkGhBehavior.test.ts
-	modified:   tests/unit/handlers/rtkGitBranchBehavior.test.ts
-	modified:   tests/unit/handlers/rtkGitStatusBehavior.test.ts
-	modified:   tests/unit/handlers/rtkGlabBehavior.test.ts
-	modified:   tests/unit/handlers/rtkGrepBehavior.test.ts
-	modified:   tests/unit/handlers/rtkKubectlBehavior.test.ts
-	modified:   tests/unit/handlers/rtkLogBehavior.test.ts
-	modified:   tests/unit/handlers/rtkReadBehavior.test.ts
-	modified:   tests/unit/handlers/rtkRuffBehavior.test.ts
-	modified:   tests/unit/handlers/rtkTreeBehavior.test.ts
-	modified:   tests/unit/scripts/threeWayReport.test.ts
-
-Untracked files:
-  (use "git add <file>..." to include in what will be committed)
-	docs/align-rtk-divergences.md
-	docs/align-rtk-goal.md
-	docs/real-cli-parity-goal.md
-	scripts/compare-bin/
-	scripts/fixtureComparison.ts
-	tests/unit/handlers/rtkGitAddBehavior.test.ts
-	tests/unit/handlers/rtkGitDiffBehavior.test.ts
-
-no changes added to commit (use "git add" and/or "git commit -a")
-
-```
-
-**rtk** (2297 chars, 575 tokens, 0% savings):
-
-```text
-On branch codex/token-guard-node-cli
-Your branch is ahead of 'origin/codex/token-guard-node-cli' by 8 commits.
-  (use "git push" to publish your local commits)
-
-Changes not staged for commit:
-  (use "git add <file>..." to update what will be committed)
-  (use "git restore <file>..." to discard changes in working directory)
-	modified:   docs/three-way-comparison.md
-	modified:   package.json
-	modified:   pnpm-lock.yaml
-	modified:   scripts/generate-three-way-report.ts
-	modified:   scripts/liveComparisonCases.ts
-	modified:   src/handlers/cloud/container.ts
-	modified:   src/handlers/cloud/curl.ts
-	modified:   src/handlers/common/searchLike.ts
-	modified:   src/handlers/git/branch.ts
-	modified:   src/handlers/git/diff.ts
-	modified:   src/handlers/git/extended.ts
-	modified:   src/handlers/git/hostingCli.ts
-	modified:   src/handlers/git/status.ts
-	modified:   src/handlers/python/ruff.ts
-	modified:   src/handlers/system/log.ts
-	modified:   src/handlers/system/read.ts
-	modified:   src/handlers/system/tree.ts
-	modified:   tests/fixtures/git/status_dirty.txt
-	modified:   tests/fixtures/git/status_dirty_extended.txt
-	modified:   tests/integration/cli.test.ts
-	modified:   tests/unit/handlers/rtkCurlBehavior.test.ts
-	modified:   tests/unit/handlers/rtkDockerBehavior.test.ts
-	modified:   tests/unit/handlers/rtkGhBehavior.test.ts
-	modified:   tests/unit/handlers/rtkGitBranchBehavior.test.ts
-	modified:   tests/unit/handlers/rtkGitStatusBehavior.test.ts
-	modified:   tests/unit/handlers/rtkGlabBehavior.test.ts
-	modified:   tests/unit/handlers/rtkGrepBehavior.test.ts
-	modified:   tests/unit/handlers/rtkKubectlBehavior.test.ts
-	modified:   tests/unit/handlers/rtkLogBehavior.test.ts
-	modified:   tests/unit/handlers/rtkReadBehavior.test.ts
-	modified:   tests/unit/handlers/rtkRuffBehavior.test.ts
-	modified:   tests/unit/handlers/rtkTreeBehavior.test.ts
-	modified:   tests/unit/scripts/threeWayReport.test.ts
-
-Untracked files:
-  (use "git add <file>..." to include in what will be committed)
-	docs/align-rtk-divergences.md
-	docs/align-rtk-goal.md
-	docs/real-cli-parity-goal.md
-	scripts/compare-bin/
-	scripts/fixtureComparison.ts
-	tests/unit/handlers/rtkGitAddBehavior.test.ts
-	tests/unit/handlers/rtkGitDiffBehavior.test.ts
-
-no changes added to commit (use "git add" and/or "git commit -a")
-
-```
-
----
-
-### 30. tsc: tsc --noEmit clean project
+### 38. tsc: tsc --noEmit clean project
 
 - Handler: `tsc`
 - tg: `tg tsc --noEmit`
@@ -2396,48 +3031,7 @@ TypeScript: No errors found
 
 ---
 
-### 31. git-pull: ff-only local
-
-- Handler: `git-pull`
-- tg: `tg git pull --ff-only . HEAD`
-- raw: `git --no-pager pull --ff-only . HEAD`
-- rtk: `git pull --ff-only . HEAD`
-
-| channel | chars | tokens | savingsPct |
-|---|---:|---:|---:|
-| raw | 95 | 24 | 0% |
-| tg | 95 | 24 | 0% |
-| rtk | 113 | 29 | 0% |
-
-**raw** (95 chars, 24 tokens):
-
-```text
-error: cannot pull with rebase: You have unstaged changes.
-error: Please commit or stash them.
-
-```
-
-**tg** (95 chars, 24 tokens, 0% savings):
-
-```text
-error: cannot pull with rebase: You have unstaged changes.
-error: Please commit or stash them.
-
-```
-
-**rtk** (113 chars, 29 tokens, 0% savings):
-
-```text
-FAILED: git pull
-error: cannot pull with rebase: You have unstaged changes.
-error: Please commit or stash them.
-
-
-```
-
----
-
-### 32. git-add: missing path
+### 39. git-add: missing path
 
 - Handler: `git-add`
 - tg: `tg git add __tg_missing_fixture_file__`
@@ -2475,7 +3069,51 @@ fatal: pathspec '__tg_missing_fixture_file__' did not match any files
 
 ---
 
-### 33. git-push: dry-run local
+### 40. git-pull: ff-only local
+
+- Handler: `git-pull`
+- tg: `tg git pull --ff-only . HEAD`
+- raw: `git --no-pager pull --ff-only . HEAD`
+- rtk: `git pull --ff-only . HEAD`
+
+| channel | chars | tokens | savingsPct |
+|---|---:|---:|---:|
+| raw | 157 | 40 | 0% |
+| tg | 157 | 40 | 0% |
+| rtk | 175 | 44 | 0% |
+
+**raw** (157 chars, 40 tokens):
+
+```text
+error: cannot pull with rebase: You have unstaged changes.
+error: additionally, your index contains uncommitted changes.
+error: Please commit or stash them.
+
+```
+
+**tg** (157 chars, 40 tokens, 0% savings):
+
+```text
+error: cannot pull with rebase: You have unstaged changes.
+error: additionally, your index contains uncommitted changes.
+error: Please commit or stash them.
+
+```
+
+**rtk** (175 chars, 44 tokens, 0% savings):
+
+```text
+FAILED: git pull
+error: cannot pull with rebase: You have unstaged changes.
+error: additionally, your index contains uncommitted changes.
+error: Please commit or stash them.
+
+
+```
+
+---
+
+### 41. git-push: dry-run local
 
 - Handler: `git-push`
 - tg: `tg git push --dry-run . HEAD:refs/heads/__tg_fixture_branch__`
@@ -2516,48 +3154,7 @@ ok __tg_fixture_branch__
 
 ---
 
-### 34. tsc: type error in temp file
-
-- Handler: `tsc`
-- tg: `tg pnpm exec tsc --noEmit --ignoreConfig /var/folders/q8/fmjf6hvs17j47yqnnpfqtg5h0000gn/T/tg-compare-tsc-7YbkTy/broken.ts`
-- raw: `pnpm exec tsc --noEmit --ignoreConfig /var/folders/q8/fmjf6hvs17j47yqnnpfqtg5h0000gn/T/tg-compare-tsc-7YbkTy/broken.ts`
-- rtk: `tsc --noEmit --ignoreConfig /var/folders/q8/fmjf6hvs17j47yqnnpfqtg5h0000gn/T/tg-compare-tsc-7YbkTy/broken.ts`
-
-| channel | chars | tokens | savingsPct |
-|---|---:|---:|---:|
-| raw | 162 | 41 | 0% |
-| tg | 238 | 60 | 0% |
-| rtk | 234 | 59 | 0% |
-
-**raw** (162 chars, 41 tokens):
-
-```text
-../../../../var/folders/q8/fmjf6hvs17j47yqnnpfqtg5h0000gn/T/tg-compare-tsc-7YbkTy/broken.ts(1,7): error TS2322: Type 'string' is not assignable to type 'number'.
-
-```
-
-**tg** (238 chars, 60 tokens, 0% savings):
-
-```text
-TypeScript: 1 errors in 1 files
-═══════════════════════════════════════
-../../../../var/folders/q8/fmjf6hvs17j47yqnnpfqtg5h0000gn/T/tg-compare-tsc-7YbkTy/broken.ts (1 errors)
-  L1: TS2322 Type 'string' is not assignable to type 'number'.
-
-```
-
-**rtk** (234 chars, 59 tokens, 0% savings):
-
-```text
-../../../../var/folders/q8/fmjf6hvs17j47yqnnpfqtg5h0000gn/T/tg-compare-tsc-7YbkTy/broken.ts(1,7): error TS2322: Type 'string' is not assignable to type 'number'.
-═══════════════════════════════════════
-TypeScript: 1 errors in 1 files
-
-```
-
----
-
-### 35. [fixture] diff stdin condenses unified diff by file
+### 42. [fixture] diff stdin condenses unified diff by file
 
 - Handler: `diff`
 - tg: `tg filter diff -`
@@ -2614,7 +3211,7 @@ index 3333333..4444444 100644
 
 ---
 
-### 36. [fixture] diff stdin keeps all unified diff changes
+### 43. [fixture] diff stdin keeps all unified diff changes
 
 - Handler: `diff`
 - tg: `tg filter diff -`
@@ -2692,7 +3289,50 @@ index 1111111..2222222 100644
 
 ---
 
-### 37. [fixture] gh repo view keeps repository identity and URL
+### 44. [fixture] err keeps error blocks and drops info noise
+
+- Handler: `err`
+- tg: `tg filter err npm run build`
+- raw: `fixture: tests/fixtures/system/err_build.txt`
+- rtk: `rtk err 'cat tests/fixtures/system/err_build.txt'`
+
+| channel | chars | tokens | savingsPct |
+|---|---:|---:|---:|
+| raw | 107 | 27 | 0% |
+| tg | 74 | 19 | 29.6% |
+| rtk | 75 | 19 | 29.6% |
+
+**raw** (107 chars, 27 tokens):
+
+```text
+info: starting build
+warning: deprecated option --legacy
+error: build failed
+  at src/app.ts:10
+info: done
+
+```
+
+**tg** (74 chars, 19 tokens, 29.6% savings):
+
+```text
+warning: deprecated option --legacy
+error: build failed
+  at src/app.ts:10
+```
+
+**rtk** (75 chars, 19 tokens, 29.6% savings):
+
+```text
+warning: deprecated option --legacy
+error: build failed
+  at src/app.ts:10
+
+```
+
+---
+
+### 45. [fixture] gh repo view keeps repository identity and URL
 
 - Handler: `gh`
 - tg: `tg filter gh repo view`
@@ -2734,7 +3374,7 @@ Cozy228/token-guard
 
 ---
 
-### 38. [fixture] git-log keeps commit subject from real log
+### 46. [fixture] git-log keeps commit subject from real log
 
 - Handler: `git-log`
 - tg: `tg filter git log`
@@ -2780,7 +3420,7 @@ commit abcdef1234567890
 
 ---
 
-### 39. [fixture] git-status keeps porcelain branch context
+### 47. [fixture] git-status keeps porcelain branch context
 
 - Handler: `git-status`
 - tg: `tg filter git status --short --branch`
@@ -2869,7 +3509,7 @@ commit abcdef1234567890
 
 ---
 
-### 40. [fixture] git-status keeps staged modified and untracked paths
+### 48. [fixture] git-status keeps staged modified and untracked paths
 
 - Handler: `git-status`
 - tg: `tg filter git status`
@@ -2913,7 +3553,7 @@ A  src/cli.ts
 
 ---
 
-### 41. [fixture] git-worktree keeps worktree path and branch
+### 49. [fixture] git-worktree keeps worktree path and branch
 
 - Handler: `git-worktree`
 - tg: `tg filter git worktree list`
@@ -2943,13 +3583,13 @@ A  src/cli.ts
 **rtk** (61 chars, 16 tokens, 11.1% savings):
 
 ```text
-~/Workspace/token-guard ee2e7aa [codex/token-guard-node-cli]
+~/Workspace/token-guard eccdcd5 [codex/token-guard-node-cli]
 
 ```
 
 ---
 
-### 42. [fixture] js-test formats passing Vitest output like RTK
+### 50. [fixture] js-test formats passing Vitest output like RTK
 
 - Handler: `js-test`
 - tg: `tg filter vitest run`
@@ -2994,7 +3634,7 @@ Time: 120ms
 
 ---
 
-### 43. [fixture] log deduplicates repeated lines into a summary
+### 51. [fixture] log deduplicates repeated lines into a summary
 
 - Handler: `log`
 - tg: `tg filter log app.log`
@@ -3060,7 +3700,7 @@ Log Summary
 
 ---
 
-### 44. [fixture] mypy keeps error codes and file locations from fixture
+### 52. [fixture] mypy keeps error codes and file locations from fixture
 
 - Handler: `mypy`
 - tg: `tg filter mypy src`
@@ -3113,7 +3753,7 @@ src/order/submit.py (1 errors)
 
 ---
 
-### 45. [fixture] pipe grep groups matches by file
+### 53. [fixture] pipe grep groups matches by file
 
 - Handler: `pipe`
 - tg: `tg filter pipe grep`
@@ -3170,7 +3810,7 @@ src/cmds/git/handler.rs:40:    let result = process_request(ctx, &payload).await
 
 ---
 
-### 46. [fixture] prettier check lists files needing formatting
+### 54. [fixture] prettier check lists files needing formatting
 
 - Handler: `prettier`
 - tg: `tg filter prettier --check src`
@@ -3226,7 +3866,7 @@ Prettier: 6 files need formatting
 
 ---
 
-### 47. [fixture] pytest keeps failing test and assertion from fixture
+### 55. [fixture] pytest keeps failing test and assertion from fixture
 
 - Handler: `pytest`
 - tg: `tg filter pytest`
@@ -3299,7 +3939,7 @@ Failures:
 
 ---
 
-### 48. [fixture] pytest keeps passing summary from fixture
+### 56. [fixture] pytest keeps passing summary from fixture
 
 - Handler: `pytest`
 - tg: `tg filter pytest`
@@ -3334,7 +3974,7 @@ Pytest: 118 passed
 
 ---
 
-### 49. [fixture] search-like keeps grep matches without line numbers
+### 57. [fixture] search-like keeps grep matches without line numbers
 
 - Handler: `search-like`
 - tg: `tg filter grep -r export src`
@@ -3439,109 +4079,7 @@ src/types.ts:export interface CommandHandler {
 
 ---
 
-### 50. [fixture] tsc keeps TypeScript diagnostic codes from fixture
-
-- Handler: `tsc`
-- tg: `tg filter tsc --noEmit`
-- raw: `fixture: tests/fixtures/js/tsc_many.txt`
-- rtk: `cat tests/fixtures/js/tsc_many.txt | rtk pipe -f tsc`
-
-| channel | chars | tokens | savingsPct |
-|---|---:|---:|---:|
-| raw | 1235 | 309 | 0% |
-| tg | 1206 | 302 | 2.3% |
-| rtk | 1205 | 302 | 2.3% |
-
-**raw** (1235 chars, 309 tokens):
-
-```text
-src/order/submit.ts(42,7): error TS2322: Type 'string | undefined' is not assignable to type 'string'.
-src/order/submit.ts(58,3): error TS2345: Argument of type 'Order' is not assignable to parameter of type 'OrderInput'.
-src/order/api.ts(88,12): error TS2339: Property 'id' does not exist on type 'Order | undefined'.
-src/order/api.ts(91,5): error TS2322: Type 'number' is not assignable to type 'string'.
-src/cart/index.ts(12,9): error TS2554: Expected 2 arguments, but got 1.
-src/cart/index.ts(30,15): error TS2339: Property 'total' does not exist on type 'Cart'.
-src/auth/session.ts(15,5): error TS2322: Type 'null' is not assignable to type 'Session'.
-  Type 'null' is not assignable to type 'Session'.
-src/auth/session.ts(44,7): error TS2345: Argument of type 'undefined' is not assignable to parameter of type 'Token'.
-src/payment/stripe.ts(102,3): error TS2339: Property 'charge' does not exist on type 'StripeClient'.
-src/payment/stripe.ts(140,9): error TS2554: Expected 3 arguments, but got 2.
-src/components/Button.tsx(20,7): error TS2322: Type 'boolean' is not assignable to type 'string'.
-src/components/Button.tsx(33,11): error TS2339: Property 'onClick' does not exist on type 'ButtonProps'.
-Found 12 errors in 6 files.
-
-```
-
-**tg** (1206 chars, 302 tokens, 2.3% savings):
-
-```text
-TypeScript: 12 errors in 6 files
-═══════════════════════════════════════
-Top codes: TS2322 (4x), TS2339 (4x), TS2345 (2x), TS2554 (2x)
-
-src/auth/session.ts (2 errors)
-  L15: TS2322 Type 'null' is not assignable to type 'Session'.
-    Type 'null' is not assignable to type 'Session'.
-  L44: TS2345 Argument of type 'undefined' is not assignable to parameter of type 'Token'.
-
-src/cart/index.ts (2 errors)
-  L12: TS2554 Expected 2 arguments, but got 1.
-  L30: TS2339 Property 'total' does not exist on type 'Cart'.
-
-src/components/Button.tsx (2 errors)
-  L20: TS2322 Type 'boolean' is not assignable to type 'string'.
-  L33: TS2339 Property 'onClick' does not exist on type 'ButtonProps'.
-
-src/order/api.ts (2 errors)
-  L88: TS2339 Property 'id' does not exist on type 'Order | undefined'.
-  L91: TS2322 Type 'number' is not assignable to type 'string'.
-
-src/order/submit.ts (2 errors)
-  L42: TS2322 Type 'string | undefined' is not assignable to type 'string'.
-  L58: TS2345 Argument of type 'Order' is not assignable to parameter of type 'OrderInput'.
-
-src/payment/stripe.ts (2 errors)
-  L102: TS2339 Property 'charge' does not exist on type 'StripeClient'.
-  L140: TS2554 Expected 3 arguments, but got 2.
-
-```
-
-**rtk** (1205 chars, 302 tokens, 2.3% savings):
-
-```text
-TypeScript: 12 errors in 6 files
-═══════════════════════════════════════
-Top codes: TS2339 (4x), TS2322 (4x), TS2345 (2x), TS2554 (2x)
-
-src/order/submit.ts (2 errors)
-  L42: TS2322 Type 'string | undefined' is not assignable to type 'string'.
-  L58: TS2345 Argument of type 'Order' is not assignable to parameter of type 'OrderInput'.
-
-src/auth/session.ts (2 errors)
-  L15: TS2322 Type 'null' is not assignable to type 'Session'.
-    Type 'null' is not assignable to type 'Session'.
-  L44: TS2345 Argument of type 'undefined' is not assignable to parameter of type 'Token'.
-
-src/components/Button.tsx (2 errors)
-  L20: TS2322 Type 'boolean' is not assignable to type 'string'.
-  L33: TS2339 Property 'onClick' does not exist on type 'ButtonProps'.
-
-src/order/api.ts (2 errors)
-  L88: TS2339 Property 'id' does not exist on type 'Order | undefined'.
-  L91: TS2322 Type 'number' is not assignable to type 'string'.
-
-src/payment/stripe.ts (2 errors)
-  L102: TS2339 Property 'charge' does not exist on type 'StripeClient'.
-  L140: TS2554 Expected 3 arguments, but got 2.
-
-src/cart/index.ts (2 errors)
-  L12: TS2554 Expected 2 arguments, but got 1.
-  L30: TS2339 Property 'total' does not exist on type 'Cart'.
-```
-
----
-
-### 51. curl: httpbin json
+### 58. curl: httpbin json
 
 - Handler: `curl`
 - tg: `tg curl -s https://httpbin.org/json`
@@ -3550,94 +4088,49 @@ src/cart/index.ts (2 errors)
 
 | channel | chars | tokens | savingsPct |
 |---|---:|---:|---:|
-| raw | 429 | 108 | 0% |
-| tg | 429 | 108 | 0% |
-| rtk | 429 | 108 | 0% |
+| raw | 162 | 41 | 0% |
+| tg | 161 | 41 | 0% |
+| rtk | 161 | 41 | 0% |
 
-**raw** (429 chars, 108 tokens):
+**raw** (162 chars, 41 tokens):
 
 ```text
-{
-  "slideshow": {
-    "author": "Yours Truly", 
-    "date": "date of publication", 
-    "slides": [
-      {
-        "title": "Wake up to WonderWidgets!", 
-        "type": "all"
-      }, 
-      {
-        "items": [
-          "Why <em>WonderWidgets</em> are great", 
-          "Who <em>buys</em> WonderWidgets"
-        ], 
-        "title": "Overview", 
-        "type": "all"
-      }
-    ], 
-    "title": "Sample Slide Show"
-  }
-}
+<html>
+<head><title>503 Service Temporarily Unavailable</title></head>
+<body>
+<center><h1>503 Service Temporarily Unavailable</h1></center>
+</body>
+</html>
 
 ```
 
-**tg** (429 chars, 108 tokens, 0% savings):
+**tg** (161 chars, 41 tokens, 0% savings):
 
 ```text
-{
-  "slideshow": {
-    "author": "Yours Truly", 
-    "date": "date of publication", 
-    "slides": [
-      {
-        "title": "Wake up to WonderWidgets!", 
-        "type": "all"
-      }, 
-      {
-        "items": [
-          "Why <em>WonderWidgets</em> are great", 
-          "Who <em>buys</em> WonderWidgets"
-        ], 
-        "title": "Overview", 
-        "type": "all"
-      }
-    ], 
-    "title": "Sample Slide Show"
-  }
-}
+<html>
+<head><title>503 Service Temporarily Unavailable</title></head>
+<body>
+<center><h1>503 Service Temporarily Unavailable</h1></center>
+</body>
+</html>
 
 ```
 
-**rtk** (429 chars, 108 tokens, 0% savings):
+**rtk** (161 chars, 41 tokens, 0% savings):
 
 ```text
-{
-  "slideshow": {
-    "author": "Yours Truly", 
-    "date": "date of publication", 
-    "slides": [
-      {
-        "title": "Wake up to WonderWidgets!", 
-        "type": "all"
-      }, 
-      {
-        "items": [
-          "Why <em>WonderWidgets</em> are great", 
-          "Who <em>buys</em> WonderWidgets"
-        ], 
-        "title": "Overview", 
-        "type": "all"
-      }
-    ], 
-    "title": "Sample Slide Show"
-  }
-}
+<html>
+<head><title>503 Service Temporarily Unavailable</title></head>
+<body>
+<center><h1>503 Service Temporarily Unavailable</h1></center>
+</body>
+</html>
 
 ```
 
 ---
 
-### 52. docker: compose ps (temp project)
+### 59. docker: compose ps (temp project)
 
 - Handler: `docker`
 - tg: `tg docker compose ps`
@@ -3646,34 +4139,35 @@ src/cart/index.ts (2 errors)
 
 | channel | chars | tokens | savingsPct |
 |---|---:|---:|---:|
-| raw | 66 | 17 | 0% |
-| tg | 21 | 6 | 64.7% |
-| rtk | 21 | 6 | 64.7% |
+| raw | 113 | 29 | 0% |
+| tg | 113 | 29 | 0% |
+| rtk | 114 | 29 | 0% |
 
-**raw** (66 chars, 17 tokens):
+**raw** (113 chars, 29 tokens):
 
 ```text
-NAME      IMAGE     COMMAND   SERVICE   CREATED   STATUS    PORTS
+Cannot connect to the Docker daemon at unix:///Users/ziyu/.docker/run/docker.sock. Is the docker daemon running?
 
 ```
 
-**tg** (21 chars, 6 tokens, 64.7% savings):
+**tg** (113 chars, 29 tokens, 0% savings):
 
 ```text
-[compose] 0 services
+Cannot connect to the Docker daemon at unix:///Users/ziyu/.docker/run/docker.sock. Is the docker daemon running?
 
 ```
 
-**rtk** (21 chars, 6 tokens, 64.7% savings):
+**rtk** (114 chars, 29 tokens, 0% savings):
 
 ```text
-[compose] 0 services
+Cannot connect to the Docker daemon at unix:///Users/ziyu/.docker/run/docker.sock. Is the docker daemon running?
+
 
 ```
 
 ---
 
-### 53. env: env snapshot
+### 60. env: env snapshot
 
 - Handler: `env`
 - tg: `tg env`
@@ -3682,11 +4176,11 @@ NAME      IMAGE     COMMAND   SERVICE   CREATED   STATUS    PORTS
 
 | channel | chars | tokens | savingsPct |
 |---|---:|---:|---:|
-| raw | 6992 | 1748 | 0% |
-| tg | 3384 | 846 | 51.6% |
-| rtk | 3384 | 846 | 51.6% |
+| raw | 5698 | 1425 | 0% |
+| tg | 2360 | 590 | 58.6% |
+| rtk | 2360 | 590 | 58.6% |
 
-**raw** (6992 chars, 1748 tokens):
+**raw** (5698 chars, 1425 tokens):
 
 ```text
 NVM_INC=/Users/ziyu/.nvm/versions/node/v22.22.2/include/node
@@ -3699,114 +4193,92 @@ CMUX_SHELL_INTEGRATION_DIR=/Applications/cmux.app/Contents/Resources/shell-integ
 CLAUDE_CODE_ENTRYPOINT=cli
 CLAUDE_EFFORT=high
 CMUX_NO_PR_WATCH=
-GHOSTTY_SURFACE_ID=0x8a1cb43fdada22a5
-NODE=/Users/ziyu/.nvm/versions/node/v22.22.2/bin/node
+GHOSTTY_SURFACE_ID=0x4cb7bc8999ad185b
 ANDROID_HOME=/Users/ziyu/Library/Android/sdk
 PYENV_ROOT=/Users/ziyu/.pyenv
 NVM_CD_FLAGS=-q
-INIT_CWD=/Users/ziyu/Workspace/token-guard
 SHELL=/bin/zsh
 CMUX_BUNDLE_ID=com.cmuxterm.app
 TERM=xterm-256color
 HOMEBREW_BOTTLE_DOMAIN=https://mirrors.tuna.tsinghua.edu.cn/homebrew-bottles
 HOMEBREW_API_DOMAIN=https://mirrors.tuna.tsinghua.edu.cn/homebrew-bottles/api
 HOMEBREW_REPOSITORY=/opt/homebrew
-CMUX_PANEL_ID=5751FBD6-93E8-4D39-94BD-8C06AA3C8C2B
+CMUX_PANEL_ID=70D7681B-2A8C-4E29-85E3-197A4B088D5B
 TMPDIR=/var/folders/q8/fmjf6hvs17j47yqnnpfqtg5h0000gn/T/
 CMUX_SOCKET=
-npm_config_global_prefix=/Users/ziyu/.nvm/versions/node/v22.22.2
 TERM_PROGRAM_VERSION=1.3.2-issue-themes-broken-ctrl-np-+176bd550f
 FPATH=/Users/ziyu/.oh-my-zsh/custom/plugins/zsh-syntax-highlighting:/Users/ziyu/.oh-my-zsh/custom/plugins/zsh-autosuggestions:/Users/ziyu/.oh-my-zsh/plugins/git:/Users/ziyu/.oh-my-zsh/functions:/Users/ziyu/.oh-my-zsh/completions:/Users/ziyu/.oh-my-zsh/custom/functions:/Users/ziyu/.oh-my-zsh/custom/completions:/Users/ziyu/.oh-my-zsh/cache/completions:/Users/ziyu/.zsh/completions:/opt/homebrew/share/zsh/site-functions:/usr/local/share/zsh/site-functions:/usr/share/zsh/site-functions:/usr/share/zsh/5.9/functions:/Applications/OrbStack.app/Contents/MacOS/../Resources/completions/zsh
 HOMEBREW_AUTO_UPDATE_SECS=86400
-COLOR=0
-npm_config_registry=https://registry.npmmirror.com
-npm_config_noproxy=
 PNPM_HOME=/Users/ziyu/Library/pnpm
 ZSH=/Users/ziyu/.oh-my-zsh
-npm_config_local_prefix=/Users/ziyu/Workspace/token-guard
 AI_AGENT=claude-code_2-1-163_agent
 GIT_EDITOR=true
 NVM_DIR=/Users/ziyu/.nvm
 USER=ziyu
 LS_COLORS=di=1;36:ln=35:so=32:pi=33:ex=31:bd=34;46:cd=34;43:su=30;41:sg=30;46:tw=30;42:ow=30;43
 COMMAND_MODE=unix2003
-npm_config_globalconfig=/Users/ziyu/.nvm/versions/node/v22.22.2/etc/npmrc
 SCRCPY_SERVER_PATH=/Applications/极空间.app/Contents/Resources/app.asar.unpacked/bin/platform-tools/scrcpy-server
 CMUX_SUPPRESS_SUBAGENT_NOTIFICATIONS=1
 SSH_AUTH_SOCK=/var/run/com.apple.launchd.CGAkIlQATn/Listeners
 CMUX_AGENT_LAUNCH_ARGV_B64=L1VzZXJzL3ppeXUvLmxvY2FsL2Jpbi9jbGF1ZGUA
 __CF_USER_TEXT_ENCODING=0x1F5:0x19:0x34
-npm_execpath=/Users/ziyu/.nvm/versions/node/v22.22.2/lib/node_modules/npm/bin/npm-cli.js
 PAGER=
 CMUX_AGENT_LAUNCH_CWD=/Users/ziyu/Workspace/token-guard
 LSCOLORS=Gxfxcxdxbxegedabagacad
-PATH=/Users/ziyu/Workspace/token-guard/node_modules/.bin:/Users/ziyu/Workspace/token-guard/node_modules/.bin:/Users/ziyu/Workspace/node_modules/.bin:/Users/ziyu/node_modules/.bin:/Users/node_modules/.bin:/node_modules/.bin:/Users/ziyu/.nvm/versions/node/v22.22.2/lib/node_modules/npm/node_modules/@npmcli/run-script/lib/node-gyp-bin:/Applications/cmux.app/Contents/Resources/bin:/opt/homebrew/opt/openjdk@21/bin:/Users/ziyu/.antigravity/antigravity/bin:/Users/ziyu/Library/Android/sdk:/Users/ziyu/Library/pnpm/bin:/Users/ziyu/.bun/bin:/Users/ziyu/.pyenv/shims:/opt/homebrew/opt/ruby/bin:/opt/homebrew/opt/postgresql@17/bin:/Users/ziyu/.codeium/windsurf/bin:/opt/homebrew/opt/postgresql@17/bin:/Users/ziyu/.nvm/versions/node/v22.22.2/bin:/Users/ziyu/.nvm/versions/node/v22.22.2/bin:/Users/ziyu/.local/bin:/Library/Frameworks/Python.framework/Versions/3.13/bin:/opt/homebrew/bin:/opt/homebrew/sbin:/usr/local/bin:/System/Cryptexes/App/usr/bin:/usr/bin:/bin:/usr/sbin:/sbin:/var/run/com.apple.security.cryptexd/codex.system/bootstrap/usr/local/bin:/var/run/com.apple.security.cryptexd/codex.system/bootstrap/usr/bin:/var/run/com.apple.security.cryptexd/codex.system/bootstrap/usr/appleinternal/bin:/pkg/env/global/bin:/Library/Apple/usr/bin:/Users/ziyu/.cargo/bin:/Users/ziyu/.orbstack/bin:/Applications/极空间.app/Contents/Resources/app.asar.unpacked/bin/platform-tools:/Users/ziyu/.cache/lm-studio/bin:/Users/ziyu/.claude/plugins/cache/openai-codex/codex/1.0.4/bin
-CMUX_PORT=9140
+PATH=./node_modules/.bin:/Users/ziyu/Workspace/token-guard/node_modules/.bin:/Applications/cmux.app/Contents/Resources/bin:/opt/homebrew/opt/openjdk@21/bin:/Users/ziyu/.antigravity/antigravity/bin:/Users/ziyu/Library/Android/sdk:/Users/ziyu/Library/pnpm/bin:/Users/ziyu/.bun/bin:/Users/ziyu/.pyenv/shims:/opt/homebrew/opt/ruby/bin:/opt/homebrew/opt/postgresql@17/bin:/Users/ziyu/.codeium/windsurf/bin:/opt/homebrew/opt/postgresql@17/bin:/Users/ziyu/.nvm/versions/node/v22.22.2/bin:/Users/ziyu/.nvm/versions/node/v22.22.2/bin:/Users/ziyu/.local/bin:/Library/Frameworks/Python.framework/Versions/3.13/bin:/opt/homebrew/bin:/opt/homebrew/sbin:/usr/local/bin:/System/Cryptexes/App/usr/bin:/usr/bin:/bin:/usr/sbin:/sbin:/var/run/com.apple.security.cryptexd/codex.system/bootstrap/usr/local/bin:/var/run/com.apple.security.cryptexd/codex.system/bootstrap/usr/bin:/var/run/com.apple.security.cryptexd/codex.system/bootstrap/usr/appleinternal/bin:/pkg/env/global/bin:/Library/Apple/usr/bin:/Users/ziyu/.cargo/bin:/Users/ziyu/.orbstack/bin:/Applications/极空间.app/Contents/Resources/app.asar.unpacked/bin/platform-tools:/Users/ziyu/.cache/lm-studio/bin:/Users/ziyu/.claude/plugins/cache/openai-codex/codex/1.0.4/bin
+CMUX_PORT=9130
 GHOSTTY_SHELL_FEATURES=cursor:blink,path,title
-npm_package_json=/Users/ziyu/Workspace/token-guard/package.json
 CMUX_CLAUDE_HOOK_CMUX_BIN=/Applications/cmux.app/Contents/Resources/bin/cmux
 __CFBundleIdentifier=com.cmuxterm.app
-npm_config_init_module=/Users/ziyu/.npm-init.js
-npm_config_userconfig=/Users/ziyu/.npmrc
-PWD=/Users/ziyu/Workspace/token-guard
-CMUX_PORT_END=9149
 npm_command=exec
+PWD=/Users/ziyu/Workspace/token-guard
+CMUX_PORT_END=9139
 CMUX_NO_GIT_WATCH=
-CMUX_WORKSPACE_ID=1BB668DE-DBED-4D84-82BB-ACEC5D94E22F
+CMUX_WORKSPACE_ID=7E263E2C-9923-4F07-823C-5B6D3735040B
 CMUX_SHELL_INTEGRATION=1
-EDITOR=vi
-npm_lifecycle_event=npx
 LANG=zh_CN.UTF-8
-npm_package_name=@company/tg
 NODE_PATH=/Users/ziyu/Workspace/token-guard/node_modules/.pnpm/tsx@4.22.4/node_modules/tsx/node_modules:/Users/ziyu/Workspace/token-guard/node_modules/.pnpm/tsx@4.22.4/node_modules:/Users/ziyu/Workspace/token-guard/node_modules/.pnpm/node_modules
 XPC_FLAGS=0x0
-npm_config_npm_version=10.9.7
 CMUX_KIRO_NOTIFICATION_LEVEL=standard
-npm_package_engines_node=>=20
 CMUX_LOAD_GHOSTTY_ZSH_INTEGRATION=1
-npm_config_node_gyp=/Users/ziyu/.nvm/versions/node/v22.22.2/lib/node_modules/npm/node_modules/node-gyp/bin/node-gyp.js
+pnpm_config_verify_deps_before_run=false
 XPC_SERVICE_NAME=0
-npm_package_version=0.1.0
 PYENV_SHELL=zsh
 HOME=/Users/ziyu
-CMUX_TAB_ID=1BB668DE-DBED-4D84-82BB-ACEC5D94E22F
-SHLVL=3
-CMUX_CLAUDE_PID=72298
+CMUX_TAB_ID=7E263E2C-9923-4F07-823C-5B6D3735040B
+SHLVL=2
+CMUX_CLAUDE_PID=8030
 TERMINFO=/Applications/cmux.app/Contents/Resources/terminfo
 CLAUDE_CODE_EXECPATH=/Users/ziyu/.local/share/claude/versions/2.1.163
 HOMEBREW_PREFIX=/opt/homebrew
-npm_package_bin_tg=dist/cli.js
 CMUX_PORT_RANGE=10
 LESS=-R
 LOGNAME=ziyu
-npm_config_cache=/Users/ziyu/.npm
-npm_lifecycle_script=tsx
+PNPM_PACKAGE_NAME=@company/tg
 XDG_DATA_DIRS=/Applications/cmux.app/Contents/Resources:/usr/local/share:/usr/share:/Applications/cmux.app/Contents/Resources/ghostty/..
-CODEX_COMPANION_SESSION_ID=ec53f8ca-1800-49a7-8981-3b8e17129f89
+CODEX_COMPANION_SESSION_ID=09be39f0-e6ba-4831-989a-61c83acf0491
 GHOSTTY_BIN_DIR=/Applications/cmux.app/Contents/MacOS
 COREPACK_ENABLE_AUTO_PIN=0
 BUN_INSTALL=/Users/ziyu/.bun
 NVM_BIN=/Users/ziyu/.nvm/versions/node/v22.22.2/bin
-npm_config_user_agent=npm/10.9.7 node/v22.22.2 darwin arm64 workspaces/false
+npm_config_user_agent=pnpm/11.5.0 npm/? node/v22.22.2 darwin arm64
 INFOPATH=/opt/homebrew/share/info:
 HOMEBREW_CELLAR=/opt/homebrew/Cellar
 CMUX_SOCKET_PATH=/Users/ziyu/.local/state/cmux/cmux.sock
-CLAUDE_CODE_SESSION_ID=ec53f8ca-1800-49a7-8981-3b8e17129f89
+CLAUDE_CODE_SESSION_ID=09be39f0-e6ba-4831-989a-61c83acf0491
 CMUX_AGENT_LAUNCH_KIND=claude
 OSLogRateLimit=64
 CLAUDE_PLUGIN_DATA=/Users/ziyu/.claude/plugins/data/codex-openai-codex
 CMUX_AGENT_LAUNCH_EXECUTABLE=/Users/ziyu/.local/bin/claude
-CMUX_SURFACE_ID=5751FBD6-93E8-4D39-94BD-8C06AA3C8C2B
+CMUX_SURFACE_ID=70D7681B-2A8C-4E29-85E3-197A4B088D5B
 CLAUDECODE=1
 COLORTERM=truecolor
-npm_config_prefix=/Users/ziyu/.nvm/versions/node/v22.22.2
-npm_node_execpath=/Users/ziyu/.nvm/versions/node/v22.22.2/bin/node
 GIT_PAGER=
 NO_COLOR=1
 
 ```
 
-**tg** (3384 chars, 846 tokens, 51.6% savings):
+**tg** (2360 chars, 590 tokens, 58.6% savings):
 
 ```text
 PATH Variables:
@@ -3817,53 +4289,34 @@ PATH Variables:
   INFOPATH=/opt/homebrew/share/info:
   MANPATH=/Users/ziyu/.nvm/versions/node/v22.22.2/share/man:... (190 chars)
   NODE_PATH=/Users/ziyu/Workspace/token-guard/node_modules/.pn... (236 chars)
-  PATH (1 entries):
-    /Users/ziyu/Workspace/token-guard/node_modules/.bi... (1455 chars)
+  PATH (2 entries):
+    ./node_modules/.bin
+    /Users/ziyu/Workspace/token-gu... (1199 chars)
   SCRCPY_SERVER_PATH=/Applications/极空间.app/Contents/Resources/app.asar.unpacked/bin/platform-tools/scrcpy-server
 
 Language/Runtime:
   BUN_INSTALL=/Users/ziyu/.bun
   CMUX_BUNDLE_ID=com.cmuxterm.app
-  NODE=/Users/ziyu/.nvm/versions/node/v22.22.2/bin/node
   NoDefaultCurrentDirectoryInExePath=1
   PNPM_HOME=/Users/ziyu/Library/pnpm
+  PNPM_PACKAGE_NAME=@company/tg
   __CFBundleIdentifier=com.cmuxterm.app
   npm_command=exec
-  npm_config_cache=/Users/ziyu/.npm
-  npm_config_global_prefix=/Users/ziyu/.nvm/versions/node/v22.22.2
-  npm_config_globalconfig=/Users/ziyu/.nvm/versions/node/v22.22.2/etc/npmrc
-  npm_config_init_module=/Users/ziyu/.npm-init.js
-  npm_config_local_prefix=/Users/ziyu/Workspace/token-guard
-  npm_config_node_gyp=/Users/ziyu/.nvm/versions/node/v22.22.2/lib/node_modules/npm/node_modules/node-gyp/bin/node-gyp.js
-  npm_config_noproxy=
-  npm_config_npm_version=10.9.7
-  npm_config_prefix=/Users/ziyu/.nvm/versions/node/v22.22.2
-  npm_config_registry=https://registry.npmmirror.com
-  npm_config_user_agent=npm/10.9.7 node/v22.22.2 darwin arm64 workspaces/false
-  npm_config_userconfig=/Users/ziyu/.npmrc
-  npm_execpath=/Users/ziyu/.nvm/versions/node/v22.22.2/lib/node_modules/npm/bin/npm-cli.js
-  npm_lifecycle_event=npx
-  npm_lifecycle_script=tsx
-  npm_node_execpath=/Users/ziyu/.nvm/versions/node/v22.22.2/bin/node
-  npm_package_bin_tg=dist/cli.js
-  npm_package_engines_node=>=20
-  npm_package_json=/Users/ziyu/Workspace/token-guard/package.json
-  npm_package_name=@company/tg
-  npm_package_version=0.1.0
+  npm_config_user_agent=pnpm/11.5.0 npm/? node/v22.22.2 darwin arm64
+  pnpm_config_verify_deps_before_run=false
 
 Tools:
   CLAUDECODE=1
   CLAUDE_CODE_ENTRYPOINT=cli
-  CLAUDE_CODE_SESSION_ID=ec53f8ca-1800-49a7-8981-3b8e17129f89
+  CLAUDE_CODE_SESSION_ID=09be39f0-e6ba-4831-989a-61c83acf0491
   CLAUDE_EFFORT=high
   CLAUDE_PLUGIN_DATA=/Users/ziyu/.claude/plugins/data/codex-openai-codex
   CMUX_CLAUDE_HOOK_CMUX_BIN=/Applications/cmux.app/Contents/Resources/bin/cmux
-  CMUX_CLAUDE_PID=72298
+  CMUX_CLAUDE_PID=8030
   CMUX_NO_GIT_WATCH=
   CMUX_SHELL_INTEGRATION=1
   CMUX_SHELL_INTEGRATION_DIR=/Applications/cmux.app/Contents/Resources/shell-integration
   COLORTERM=truecolor
-  EDITOR=vi
   GHOSTTY_SHELL_FEATURES=cursor:blink,path,title
   GIT_EDITOR=true
   GIT_PAGER=
@@ -3888,11 +4341,11 @@ Other:
   PWD=/Users/ziyu/Workspace/token-guard
   USER=ziyu
 
-Total: 114 vars (showing 70 relevant)
+Total: 92 vars (showing 50 relevant)
 
 ```
 
-**rtk** (3384 chars, 846 tokens, 51.6% savings):
+**rtk** (2360 chars, 590 tokens, 58.6% savings):
 
 ```text
 PATH Variables:
@@ -3903,53 +4356,34 @@ PATH Variables:
   INFOPATH=/opt/homebrew/share/info:
   MANPATH=/Users/ziyu/.nvm/versions/node/v22.22.2/share/man:... (190 chars)
   NODE_PATH=/Users/ziyu/Workspace/token-guard/node_modules/.pn... (236 chars)
-  PATH (1 entries):
-    /Users/ziyu/Workspace/token-guard/node_modules/.bi... (1455 chars)
+  PATH (2 entries):
+    ./node_modules/.bin
+    /Users/ziyu/Workspace/token-gu... (1199 chars)
   SCRCPY_SERVER_PATH=/Applications/极空间.app/Contents/Resources/app.asar.unpacked/bin/platform-tools/scrcpy-server
 
 Language/Runtime:
   BUN_INSTALL=/Users/ziyu/.bun
   CMUX_BUNDLE_ID=com.cmuxterm.app
-  NODE=/Users/ziyu/.nvm/versions/node/v22.22.2/bin/node
   NoDefaultCurrentDirectoryInExePath=1
   PNPM_HOME=/Users/ziyu/Library/pnpm
+  PNPM_PACKAGE_NAME=@company/tg
   __CFBundleIdentifier=com.cmuxterm.app
   npm_command=exec
-  npm_config_cache=/Users/ziyu/.npm
-  npm_config_global_prefix=/Users/ziyu/.nvm/versions/node/v22.22.2
-  npm_config_globalconfig=/Users/ziyu/.nvm/versions/node/v22.22.2/etc/npmrc
-  npm_config_init_module=/Users/ziyu/.npm-init.js
-  npm_config_local_prefix=/Users/ziyu/Workspace/token-guard
-  npm_config_node_gyp=/Users/ziyu/.nvm/versions/node/v22.22.2/lib/node_modules/npm/node_modules/node-gyp/bin/node-gyp.js
-  npm_config_noproxy=
-  npm_config_npm_version=10.9.7
-  npm_config_prefix=/Users/ziyu/.nvm/versions/node/v22.22.2
-  npm_config_registry=https://registry.npmmirror.com
-  npm_config_user_agent=npm/10.9.7 node/v22.22.2 darwin arm64 workspaces/false
-  npm_config_userconfig=/Users/ziyu/.npmrc
-  npm_execpath=/Users/ziyu/.nvm/versions/node/v22.22.2/lib/node_modules/npm/bin/npm-cli.js
-  npm_lifecycle_event=npx
-  npm_lifecycle_script=tsx
-  npm_node_execpath=/Users/ziyu/.nvm/versions/node/v22.22.2/bin/node
-  npm_package_bin_tg=dist/cli.js
-  npm_package_engines_node=>=20
-  npm_package_json=/Users/ziyu/Workspace/token-guard/package.json
-  npm_package_name=@company/tg
-  npm_package_version=0.1.0
+  npm_config_user_agent=pnpm/11.5.0 npm/? node/v22.22.2 darwin arm64
+  pnpm_config_verify_deps_before_run=false
 
 Tools:
   CLAUDECODE=1
   CLAUDE_CODE_ENTRYPOINT=cli
-  CLAUDE_CODE_SESSION_ID=ec53f8ca-1800-49a7-8981-3b8e17129f89
+  CLAUDE_CODE_SESSION_ID=09be39f0-e6ba-4831-989a-61c83acf0491
   CLAUDE_EFFORT=high
   CLAUDE_PLUGIN_DATA=/Users/ziyu/.claude/plugins/data/codex-openai-codex
   CMUX_CLAUDE_HOOK_CMUX_BIN=/Applications/cmux.app/Contents/Resources/bin/cmux
-  CMUX_CLAUDE_PID=72298
+  CMUX_CLAUDE_PID=8030
   CMUX_NO_GIT_WATCH=
   CMUX_SHELL_INTEGRATION=1
   CMUX_SHELL_INTEGRATION_DIR=/Applications/cmux.app/Contents/Resources/shell-integration
   COLORTERM=truecolor
-  EDITOR=vi
   GHOSTTY_SHELL_FEATURES=cursor:blink,path,title
   GIT_EDITOR=true
   GIT_PAGER=
@@ -3974,13 +4408,13 @@ Other:
   PWD=/Users/ziyu/Workspace/token-guard
   USER=ziyu
 
-Total: 114 vars (showing 70 relevant)
+Total: 92 vars (showing 50 relevant)
 
 ```
 
 ---
 
-### 54. generic: echo hello
+### 61. generic: echo hello
 
 - Handler: `generic`
 - tg: `tg echo hello`
@@ -4016,7 +4450,7 @@ hello
 
 ---
 
-### 55. gh: gh repo view
+### 62. gh: gh repo view
 
 - Handler: `gh`
 - tg: `tg gh repo view`
@@ -4062,7 +4496,7 @@ Cozy228/token-guard
 
 ---
 
-### 56. git-branch: git branch
+### 63. git-branch: git branch
 
 - Handler: `git-branch`
 - tg: `tg git branch`
@@ -4101,7 +4535,7 @@ Cozy228/token-guard
 
 ---
 
-### 57. git-log: git log --oneline -10
+### 64. git-log: git log --oneline -10
 
 - Handler: `git-log`
 - tg: `tg git log --oneline -10`
@@ -4110,61 +4544,61 @@ Cozy228/token-guard
 
 | channel | chars | tokens | savingsPct |
 |---|---:|---:|---:|
-| raw | 729 | 183 | 0% |
-| tg | 729 | 183 | 0% |
-| rtk | 729 | 183 | 0% |
+| raw | 764 | 191 | 0% |
+| tg | 764 | 191 | 0% |
+| rtk | 764 | 191 | 0% |
 
-**raw** (729 chars, 183 tokens):
+**raw** (764 chars, 191 tokens):
 
 ```text
-ee2e7aa chore: update vitest config, check-test-presence script, and design docs
-a11dbbe test(handlers): add tests for new handlers and update existing ones
-a888637 test(helpers): enhance fixtureCases and rtkCommandHarness
-f736a9b test(fixtures): add fixtures for new handlers
-8e7f9a8 feat(git): add graphite (gt) handler and register all new handlers in index
-7dad17c feat(handlers): enhance common, git, js, python handlers and add new ones
-b59cda9 feat(handlers): add cloud and system handler subsystems
-6e60404 feat(core): add extraEnv to executor, auxStdout to types, and STRUCTURAL_HANDLERS guard
-cab7d9a chore: add agent behavioral guidelines for coding agents
-a79ac55 docs(reports): add copilot session tool-use analysis
+eccdcd5 feat(handlers): align RTK compression for gh, glab, read, log, tree, grep, ruff
+71fe846 feat(handlers/git): align RTK behavior for status, diff, branch, and extended
+1f820ae feat(handlers/cloud): align RTK command construction for docker, kubectl, curl
+c0a6ce4 feat(comparison): add fixture-backed three-way comparison infrastructure
+1450d03 docs: add product principles and RTK alignment goals
+fadd9ef chore: update vitest config, check-test-presence script, and design docs
+cc5c2cb test(handlers): add tests for new handlers and update existing ones
+4b29d3b test(helpers): enhance fixtureCases and rtkCommandHarness
+2e3d3d4 test(fixtures): add fixtures for new handlers
+bdef140 feat(git): add graphite (gt) handler and register all new handlers in index
 
 ```
 
-**tg** (729 chars, 183 tokens, 0% savings):
+**tg** (764 chars, 191 tokens, 0% savings):
 
 ```text
-ee2e7aa chore: update vitest config, check-test-presence script, and design docs
-a11dbbe test(handlers): add tests for new handlers and update existing ones
-a888637 test(helpers): enhance fixtureCases and rtkCommandHarness
-f736a9b test(fixtures): add fixtures for new handlers
-8e7f9a8 feat(git): add graphite (gt) handler and register all new handlers in index
-7dad17c feat(handlers): enhance common, git, js, python handlers and add new ones
-b59cda9 feat(handlers): add cloud and system handler subsystems
-6e60404 feat(core): add extraEnv to executor, auxStdout to types, and STRUCTURAL_HANDLERS guard
-cab7d9a chore: add agent behavioral guidelines for coding agents
-a79ac55 docs(reports): add copilot session tool-use analysis
+eccdcd5 feat(handlers): align RTK compression for gh, glab, read, log, tree, grep, ruff
+71fe846 feat(handlers/git): align RTK behavior for status, diff, branch, and extended
+1f820ae feat(handlers/cloud): align RTK command construction for docker, kubectl, curl
+c0a6ce4 feat(comparison): add fixture-backed three-way comparison infrastructure
+1450d03 docs: add product principles and RTK alignment goals
+fadd9ef chore: update vitest config, check-test-presence script, and design docs
+cc5c2cb test(handlers): add tests for new handlers and update existing ones
+4b29d3b test(helpers): enhance fixtureCases and rtkCommandHarness
+2e3d3d4 test(fixtures): add fixtures for new handlers
+bdef140 feat(git): add graphite (gt) handler and register all new handlers in index
 
 ```
 
-**rtk** (729 chars, 183 tokens, 0% savings):
+**rtk** (764 chars, 191 tokens, 0% savings):
 
 ```text
-ee2e7aa chore: update vitest config, check-test-presence script, and design docs
-a11dbbe test(handlers): add tests for new handlers and update existing ones
-a888637 test(helpers): enhance fixtureCases and rtkCommandHarness
-f736a9b test(fixtures): add fixtures for new handlers
-8e7f9a8 feat(git): add graphite (gt) handler and register all new handlers in index
-7dad17c feat(handlers): enhance common, git, js, python handlers and add new ones
-b59cda9 feat(handlers): add cloud and system handler subsystems
-6e60404 feat(core): add extraEnv to executor, auxStdout to types, and STRUCTURAL_HANDLERS guard
-cab7d9a chore: add agent behavioral guidelines for coding agents
-a79ac55 docs(reports): add copilot session tool-use analysis
+eccdcd5 feat(handlers): align RTK compression for gh, glab, read, log, tree, grep, ruff
+71fe846 feat(handlers/git): align RTK behavior for status, diff, branch, and extended
+1f820ae feat(handlers/cloud): align RTK command construction for docker, kubectl, curl
+c0a6ce4 feat(comparison): add fixture-backed three-way comparison infrastructure
+1450d03 docs: add product principles and RTK alignment goals
+fadd9ef chore: update vitest config, check-test-presence script, and design docs
+cc5c2cb test(handlers): add tests for new handlers and update existing ones
+4b29d3b test(helpers): enhance fixtureCases and rtkCommandHarness
+2e3d3d4 test(fixtures): add fixtures for new handlers
+bdef140 feat(git): add graphite (gt) handler and register all new handlers in index
 
 ```
 
 ---
 
-### 58. git-show: git show -1 --stat
+### 65. git-show: git show -1 --stat
 
 - Handler: `git-show`
 - tg: `tg git show -1 --stat`
@@ -4173,85 +4607,103 @@ a79ac55 docs(reports): add copilot session tool-use analysis
 
 | channel | chars | tokens | savingsPct |
 |---|---:|---:|---:|
-| raw | 824 | 206 | 0% |
-| tg | 824 | 206 | 0% |
-| rtk | 824 | 206 | 0% |
+| raw | 1257 | 315 | 0% |
+| tg | 1257 | 315 | 0% |
+| rtk | 1257 | 315 | 0% |
 
-**raw** (824 chars, 206 tokens):
+**raw** (1257 chars, 315 tokens):
 
 ```text
-commit ee2e7aa44924b9f3c38e6463965875df9f7fb848
+commit eccdcd58a66b2e9fd347a7c16084bb5a205b77e7
 Author: Cozy <cozy228@outlook.com>
-Date:   Fri Jun 5 08:25:30 2026 +0800
+Date:   Fri Jun 5 09:22:43 2026 +0800
 
-    chore: update vitest config, check-test-presence script, and design docs
+    feat(handlers): align RTK compression for gh, glab, read, log, tree, grep, ruff
     
-    - vitest.config.ts: include curlProductBehavior test
-    - scripts/check-test-presence.sh: add curl to known handlers list
-    - docs: update DESIGN.md and inspect-v1-design.md, add parity audit
-      and missing-tests-rtk docs
+    Whitelists gh/glab structural summaries, strengthens read/log/tree/ruff/grep
+    filters, and adds RTK behavior tests for each handler surface.
 
- docs/DESIGN.md                  |  51 +++++++--
- docs/green-test-parity-audit.md | 228 ++++++++++++++++++++++++++++++++++++++
- docs/inspect-v1-design.md       |  22 ++--
- docs/missing-tests-rtk.md       | 240 ++++++++++++++++++++++++++++++++++++++++
- scripts/check-test-presence.sh  |   2 +-
- vitest.config.ts                |   1 +
- 6 files changed, 524 insertions(+), 20 deletions(-)
+ src/handlers/base.ts                        |   8 +
+ src/handlers/common/searchLike.ts           |  29 +++-
+ src/handlers/git/hostingCli.ts              | 120 ++++++++++++-
+ src/handlers/python/ruff.ts                 | 157 +++++++++++++++--
+ src/handlers/system/log.ts                  |  29 +++-
+ src/handlers/system/read.ts                 | 261 ++++++++++++++++++++++++++--
+ src/handlers/system/tree.ts                 |  63 ++++++-
+ tests/unit/handlers/rtkGhBehavior.test.ts   | 124 +++++++++++++
+ tests/unit/handlers/rtkGlabBehavior.test.ts |  30 ++++
+ tests/unit/handlers/rtkGrepBehavior.test.ts |  26 +++
+ tests/unit/handlers/rtkLogBehavior.test.ts  |  41 +++++
+ tests/unit/handlers/rtkReadBehavior.test.ts |  62 +++++++
+ tests/unit/handlers/rtkRuffBehavior.test.ts |  54 ++++++
+ tests/unit/handlers/rtkTreeBehavior.test.ts |  25 +++
+ 14 files changed, 989 insertions(+), 40 deletions(-)
 
 ```
 
-**tg** (824 chars, 206 tokens, 0% savings):
+**tg** (1257 chars, 315 tokens, 0% savings):
 
 ```text
-commit ee2e7aa44924b9f3c38e6463965875df9f7fb848
+commit eccdcd58a66b2e9fd347a7c16084bb5a205b77e7
 Author: Cozy <cozy228@outlook.com>
-Date:   Fri Jun 5 08:25:30 2026 +0800
+Date:   Fri Jun 5 09:22:43 2026 +0800
 
-    chore: update vitest config, check-test-presence script, and design docs
+    feat(handlers): align RTK compression for gh, glab, read, log, tree, grep, ruff
     
-    - vitest.config.ts: include curlProductBehavior test
-    - scripts/check-test-presence.sh: add curl to known handlers list
-    - docs: update DESIGN.md and inspect-v1-design.md, add parity audit
-      and missing-tests-rtk docs
+    Whitelists gh/glab structural summaries, strengthens read/log/tree/ruff/grep
+    filters, and adds RTK behavior tests for each handler surface.
 
- docs/DESIGN.md                  |  51 +++++++--
- docs/green-test-parity-audit.md | 228 ++++++++++++++++++++++++++++++++++++++
- docs/inspect-v1-design.md       |  22 ++--
- docs/missing-tests-rtk.md       | 240 ++++++++++++++++++++++++++++++++++++++++
- scripts/check-test-presence.sh  |   2 +-
- vitest.config.ts                |   1 +
- 6 files changed, 524 insertions(+), 20 deletions(-)
+ src/handlers/base.ts                        |   8 +
+ src/handlers/common/searchLike.ts           |  29 +++-
+ src/handlers/git/hostingCli.ts              | 120 ++++++++++++-
+ src/handlers/python/ruff.ts                 | 157 +++++++++++++++--
+ src/handlers/system/log.ts                  |  29 +++-
+ src/handlers/system/read.ts                 | 261 ++++++++++++++++++++++++++--
+ src/handlers/system/tree.ts                 |  63 ++++++-
+ tests/unit/handlers/rtkGhBehavior.test.ts   | 124 +++++++++++++
+ tests/unit/handlers/rtkGlabBehavior.test.ts |  30 ++++
+ tests/unit/handlers/rtkGrepBehavior.test.ts |  26 +++
+ tests/unit/handlers/rtkLogBehavior.test.ts  |  41 +++++
+ tests/unit/handlers/rtkReadBehavior.test.ts |  62 +++++++
+ tests/unit/handlers/rtkRuffBehavior.test.ts |  54 ++++++
+ tests/unit/handlers/rtkTreeBehavior.test.ts |  25 +++
+ 14 files changed, 989 insertions(+), 40 deletions(-)
 
 ```
 
-**rtk** (824 chars, 206 tokens, 0% savings):
+**rtk** (1257 chars, 315 tokens, 0% savings):
 
 ```text
-commit ee2e7aa44924b9f3c38e6463965875df9f7fb848
+commit eccdcd58a66b2e9fd347a7c16084bb5a205b77e7
 Author: Cozy <cozy228@outlook.com>
-Date:   Fri Jun 5 08:25:30 2026 +0800
+Date:   Fri Jun 5 09:22:43 2026 +0800
 
-    chore: update vitest config, check-test-presence script, and design docs
+    feat(handlers): align RTK compression for gh, glab, read, log, tree, grep, ruff
     
-    - vitest.config.ts: include curlProductBehavior test
-    - scripts/check-test-presence.sh: add curl to known handlers list
-    - docs: update DESIGN.md and inspect-v1-design.md, add parity audit
-      and missing-tests-rtk docs
+    Whitelists gh/glab structural summaries, strengthens read/log/tree/ruff/grep
+    filters, and adds RTK behavior tests for each handler surface.
 
- docs/DESIGN.md                  |  51 +++++++--
- docs/green-test-parity-audit.md | 228 ++++++++++++++++++++++++++++++++++++++
- docs/inspect-v1-design.md       |  22 ++--
- docs/missing-tests-rtk.md       | 240 ++++++++++++++++++++++++++++++++++++++++
- scripts/check-test-presence.sh  |   2 +-
- vitest.config.ts                |   1 +
- 6 files changed, 524 insertions(+), 20 deletions(-)
+ src/handlers/base.ts                        |   8 +
+ src/handlers/common/searchLike.ts           |  29 +++-
+ src/handlers/git/hostingCli.ts              | 120 ++++++++++++-
+ src/handlers/python/ruff.ts                 | 157 +++++++++++++++--
+ src/handlers/system/log.ts                  |  29 +++-
+ src/handlers/system/read.ts                 | 261 ++++++++++++++++++++++++++--
+ src/handlers/system/tree.ts                 |  63 ++++++-
+ tests/unit/handlers/rtkGhBehavior.test.ts   | 124 +++++++++++++
+ tests/unit/handlers/rtkGlabBehavior.test.ts |  30 ++++
+ tests/unit/handlers/rtkGrepBehavior.test.ts |  26 +++
+ tests/unit/handlers/rtkLogBehavior.test.ts  |  41 +++++
+ tests/unit/handlers/rtkReadBehavior.test.ts |  62 +++++++
+ tests/unit/handlers/rtkRuffBehavior.test.ts |  54 ++++++
+ tests/unit/handlers/rtkTreeBehavior.test.ts |  25 +++
+ 14 files changed, 989 insertions(+), 40 deletions(-)
 
 ```
 
 ---
 
-### 59. git-status: git status
+### 66. git-status: git status
 
 - Handler: `git-status`
 - tg: `tg git status`
@@ -4260,165 +4712,181 @@ Date:   Fri Jun 5 08:25:30 2026 +0800
 
 | channel | chars | tokens | savingsPct |
 |---|---:|---:|---:|
-| raw | 2297 | 575 | 0% |
-| tg | 1581 | 396 | 31.1% |
-| rtk | 1581 | 396 | 31.1% |
+| raw | 2655 | 664 | 0% |
+| tg | 1779 | 445 | 33% |
+| rtk | 1779 | 445 | 33% |
 
-**raw** (2297 chars, 575 tokens):
+**raw** (2655 chars, 664 tokens):
 
 ```text
 On branch codex/token-guard-node-cli
-Your branch is ahead of 'origin/codex/token-guard-node-cli' by 8 commits.
-  (use "git push" to publish your local commits)
+Your branch is up to date with 'origin/codex/token-guard-node-cli'.
+
+Changes to be committed:
+  (use "git restore --staged <file>..." to unstage)
+	renamed:    tests/unit/handlers/rtkCargoBehavior.test.ts -> tests/out-of-scope/rtkCargoBehavior.test.ts
+	renamed:    tests/unit/handlers/rtkGoBehavior.test.ts -> tests/out-of-scope/rtkGoBehavior.test.ts
+	renamed:    tests/unit/handlers/rtkGolangciBehavior.test.ts -> tests/out-of-scope/rtkGolangciBehavior.test.ts
+	renamed:    tests/unit/handlers/rtkRakeBehavior.test.ts -> tests/out-of-scope/rtkRakeBehavior.test.ts
+	renamed:    tests/unit/handlers/rtkRspecBehavior.test.ts -> tests/out-of-scope/rtkRspecBehavior.test.ts
+	renamed:    tests/unit/handlers/rtkRubocopBehavior.test.ts -> tests/out-of-scope/rtkRubocopBehavior.test.ts
 
 Changes not staged for commit:
   (use "git add <file>..." to update what will be committed)
   (use "git restore <file>..." to discard changes in working directory)
+	modified:   README.md
+	modified:   docs/DESIGN.md
+	modified:   docs/align-rtk-divergences.md
 	modified:   docs/three-way-comparison.md
-	modified:   package.json
-	modified:   pnpm-lock.yaml
+	modified:   scripts/check-test-presence.sh
+	modified:   scripts/fixtureComparison.ts
 	modified:   scripts/generate-three-way-report.ts
-	modified:   scripts/liveComparisonCases.ts
-	modified:   src/handlers/cloud/container.ts
-	modified:   src/handlers/cloud/curl.ts
-	modified:   src/handlers/common/searchLike.ts
-	modified:   src/handlers/git/branch.ts
-	modified:   src/handlers/git/diff.ts
-	modified:   src/handlers/git/extended.ts
-	modified:   src/handlers/git/hostingCli.ts
-	modified:   src/handlers/git/status.ts
-	modified:   src/handlers/python/ruff.ts
-	modified:   src/handlers/system/log.ts
-	modified:   src/handlers/system/read.ts
-	modified:   src/handlers/system/tree.ts
-	modified:   tests/fixtures/git/status_dirty.txt
-	modified:   tests/fixtures/git/status_dirty_extended.txt
-	modified:   tests/integration/cli.test.ts
-	modified:   tests/unit/handlers/rtkCurlBehavior.test.ts
-	modified:   tests/unit/handlers/rtkDockerBehavior.test.ts
-	modified:   tests/unit/handlers/rtkGhBehavior.test.ts
-	modified:   tests/unit/handlers/rtkGitBranchBehavior.test.ts
-	modified:   tests/unit/handlers/rtkGitStatusBehavior.test.ts
-	modified:   tests/unit/handlers/rtkGlabBehavior.test.ts
-	modified:   tests/unit/handlers/rtkGrepBehavior.test.ts
-	modified:   tests/unit/handlers/rtkKubectlBehavior.test.ts
-	modified:   tests/unit/handlers/rtkLogBehavior.test.ts
-	modified:   tests/unit/handlers/rtkReadBehavior.test.ts
-	modified:   tests/unit/handlers/rtkRuffBehavior.test.ts
-	modified:   tests/unit/handlers/rtkTreeBehavior.test.ts
-	modified:   tests/unit/scripts/threeWayReport.test.ts
+	modified:   scripts/validate-docs.sh
+	modified:   src/handlers/base.ts
+	modified:   src/handlers/index.ts
+	modified:   src/handlers/js/tsc.ts
+	modified:   tests/helpers/fixtureCases.ts
+	modified:   tests/out-of-scope/rtkCargoBehavior.test.ts
+	modified:   tests/out-of-scope/rtkGoBehavior.test.ts
+	modified:   tests/out-of-scope/rtkGolangciBehavior.test.ts
+	modified:   tests/out-of-scope/rtkRakeBehavior.test.ts
+	modified:   tests/out-of-scope/rtkRspecBehavior.test.ts
+	modified:   tests/out-of-scope/rtkRubocopBehavior.test.ts
+	modified:   tests/smoke/smoke.sh
+	modified:   tests/unit/handlers/rtkSmartBehavior.test.ts
+	modified:   tests/unit/rtkScriptParity.test.ts
 
 Untracked files:
   (use "git add <file>..." to include in what will be committed)
-	docs/align-rtk-divergences.md
-	docs/align-rtk-goal.md
-	docs/real-cli-parity-goal.md
-	scripts/compare-bin/
-	scripts/fixtureComparison.ts
-	tests/unit/handlers/rtkGitAddBehavior.test.ts
-	tests/unit/handlers/rtkGitDiffBehavior.test.ts
+	CONTEXT.md
+	docs/adr/
+	docs/layer2-hook-protocol-spike.md
+	docs/layer2-hooks-inspect-goal.md
+	docs/parity-completion-goal.md
+	scripts/benchmark-sessions/
+	scripts/benchmark/
+	src/handlers/dotnet/
+	src/handlers/iac/
+	src/handlers/system/deps.ts
+	src/handlers/system/err.ts
+	src/handlers/system/npx.ts
+	src/handlers/system/smart.ts
+	src/handlers/system/summary.ts
+	src/handlers/system/testRunner.ts
+	tests/fixtures/dotnet/
+	tests/fixtures/system/deps_package.json
+	tests/fixtures/system/err_build.txt
+	tests/fixtures/system/smart_summary.txt
+	tests/fixtures/system/summary_test_run.txt
+	tests/fixtures/system/test_cargo.txt
+	tests/fixtures/terraform/
 
-no changes added to commit (use "git add" and/or "git commit -a")
-
-```
-
-**tg** (1581 chars, 396 tokens, 31.1% savings):
-
-```text
-* codex/token-guard-node-cli...origin/codex/token-guard-node-cli [ahead 8]
- M docs/three-way-comparison.md
- M package.json
- M pnpm-lock.yaml
- M scripts/generate-three-way-report.ts
- M scripts/liveComparisonCases.ts
- M src/handlers/cloud/container.ts
- M src/handlers/cloud/curl.ts
- M src/handlers/common/searchLike.ts
- M src/handlers/git/branch.ts
- M src/handlers/git/diff.ts
- M src/handlers/git/extended.ts
- M src/handlers/git/hostingCli.ts
- M src/handlers/git/status.ts
- M src/handlers/python/ruff.ts
- M src/handlers/system/log.ts
- M src/handlers/system/read.ts
- M src/handlers/system/tree.ts
- M tests/fixtures/git/status_dirty.txt
- M tests/fixtures/git/status_dirty_extended.txt
- M tests/integration/cli.test.ts
- M tests/unit/handlers/rtkCurlBehavior.test.ts
- M tests/unit/handlers/rtkDockerBehavior.test.ts
- M tests/unit/handlers/rtkGhBehavior.test.ts
- M tests/unit/handlers/rtkGitBranchBehavior.test.ts
- M tests/unit/handlers/rtkGitStatusBehavior.test.ts
- M tests/unit/handlers/rtkGlabBehavior.test.ts
- M tests/unit/handlers/rtkGrepBehavior.test.ts
- M tests/unit/handlers/rtkKubectlBehavior.test.ts
- M tests/unit/handlers/rtkLogBehavior.test.ts
- M tests/unit/handlers/rtkReadBehavior.test.ts
- M tests/unit/handlers/rtkRuffBehavior.test.ts
- M tests/unit/handlers/rtkTreeBehavior.test.ts
- M tests/unit/scripts/threeWayReport.test.ts
-?? docs/align-rtk-divergences.md
-?? docs/align-rtk-goal.md
-?? docs/real-cli-parity-goal.md
-?? scripts/compare-bin/
-?? scripts/fixtureComparison.ts
-?? tests/unit/handlers/rtkGitAddBehavior.test.ts
-?? tests/unit/handlers/rtkGitDiffBehavior.test.ts
 
 ```
 
-**rtk** (1581 chars, 396 tokens, 31.1% savings):
+**tg** (1779 chars, 445 tokens, 33% savings):
 
 ```text
-* codex/token-guard-node-cli...origin/codex/token-guard-node-cli [ahead 8]
+* codex/token-guard-node-cli...origin/codex/token-guard-node-cli
+ M README.md
+ M docs/DESIGN.md
+ M docs/align-rtk-divergences.md
  M docs/three-way-comparison.md
- M package.json
- M pnpm-lock.yaml
+ M scripts/check-test-presence.sh
+ M scripts/fixtureComparison.ts
  M scripts/generate-three-way-report.ts
- M scripts/liveComparisonCases.ts
- M src/handlers/cloud/container.ts
- M src/handlers/cloud/curl.ts
- M src/handlers/common/searchLike.ts
- M src/handlers/git/branch.ts
- M src/handlers/git/diff.ts
- M src/handlers/git/extended.ts
- M src/handlers/git/hostingCli.ts
- M src/handlers/git/status.ts
- M src/handlers/python/ruff.ts
- M src/handlers/system/log.ts
- M src/handlers/system/read.ts
- M src/handlers/system/tree.ts
- M tests/fixtures/git/status_dirty.txt
- M tests/fixtures/git/status_dirty_extended.txt
- M tests/integration/cli.test.ts
- M tests/unit/handlers/rtkCurlBehavior.test.ts
- M tests/unit/handlers/rtkDockerBehavior.test.ts
- M tests/unit/handlers/rtkGhBehavior.test.ts
- M tests/unit/handlers/rtkGitBranchBehavior.test.ts
- M tests/unit/handlers/rtkGitStatusBehavior.test.ts
- M tests/unit/handlers/rtkGlabBehavior.test.ts
- M tests/unit/handlers/rtkGrepBehavior.test.ts
- M tests/unit/handlers/rtkKubectlBehavior.test.ts
- M tests/unit/handlers/rtkLogBehavior.test.ts
- M tests/unit/handlers/rtkReadBehavior.test.ts
- M tests/unit/handlers/rtkRuffBehavior.test.ts
- M tests/unit/handlers/rtkTreeBehavior.test.ts
- M tests/unit/scripts/threeWayReport.test.ts
-?? docs/align-rtk-divergences.md
-?? docs/align-rtk-goal.md
-?? docs/real-cli-parity-goal.md
-?? scripts/compare-bin/
-?? scripts/fixtureComparison.ts
-?? tests/unit/handlers/rtkGitAddBehavior.test.ts
-?? tests/unit/handlers/rtkGitDiffBehavior.test.ts
+ M scripts/validate-docs.sh
+ M src/handlers/base.ts
+ M src/handlers/index.ts
+ M src/handlers/js/tsc.ts
+ M tests/helpers/fixtureCases.ts
+RM tests/unit/handlers/rtkCargoBehavior.test.ts -> tests/out-of-scope/rtkCargoBehavior.test.ts
+RM tests/unit/handlers/rtkGoBehavior.test.ts -> tests/out-of-scope/rtkGoBehavior.test.ts
+RM tests/unit/handlers/rtkGolangciBehavior.test.ts -> tests/out-of-scope/rtkGolangciBehavior.test.ts
+RM tests/unit/handlers/rtkRakeBehavior.test.ts -> tests/out-of-scope/rtkRakeBehavior.test.ts
+RM tests/unit/handlers/rtkRspecBehavior.test.ts -> tests/out-of-scope/rtkRspecBehavior.test.ts
+RM tests/unit/handlers/rtkRubocopBehavior.test.ts -> tests/out-of-scope/rtkRubocopBehavior.test.ts
+ M tests/smoke/smoke.sh
+ M tests/unit/handlers/rtkSmartBehavior.test.ts
+ M tests/unit/rtkScriptParity.test.ts
+?? CONTEXT.md
+?? docs/adr/
+?? docs/layer2-hook-protocol-spike.md
+?? docs/layer2-hooks-inspect-goal.md
+?? docs/parity-completion-goal.md
+?? scripts/benchmark-sessions/
+?? scripts/benchmark/
+?? src/handlers/dotnet/
+?? src/handlers/iac/
+?? src/handlers/system/deps.ts
+?? src/handlers/system/err.ts
+?? src/handlers/system/npx.ts
+?? src/handlers/system/smart.ts
+?? src/handlers/system/summary.ts
+?? src/handlers/system/testRunner.ts
+?? tests/fixtures/dotnet/
+?? tests/fixtures/system/deps_package.json
+?? tests/fixtures/system/err_build.txt
+?? tests/fixtures/system/smart_summary.txt
+?? tests/fixtures/system/summary_test_run.txt
+?? tests/fixtures/system/test_cargo.txt
+?? tests/fixtures/terraform/
+
+```
+
+**rtk** (1779 chars, 445 tokens, 33% savings):
+
+```text
+* codex/token-guard-node-cli...origin/codex/token-guard-node-cli
+ M README.md
+ M docs/DESIGN.md
+ M docs/align-rtk-divergences.md
+ M docs/three-way-comparison.md
+ M scripts/check-test-presence.sh
+ M scripts/fixtureComparison.ts
+ M scripts/generate-three-way-report.ts
+ M scripts/validate-docs.sh
+ M src/handlers/base.ts
+ M src/handlers/index.ts
+ M src/handlers/js/tsc.ts
+ M tests/helpers/fixtureCases.ts
+RM tests/unit/handlers/rtkCargoBehavior.test.ts -> tests/out-of-scope/rtkCargoBehavior.test.ts
+RM tests/unit/handlers/rtkGoBehavior.test.ts -> tests/out-of-scope/rtkGoBehavior.test.ts
+RM tests/unit/handlers/rtkGolangciBehavior.test.ts -> tests/out-of-scope/rtkGolangciBehavior.test.ts
+RM tests/unit/handlers/rtkRakeBehavior.test.ts -> tests/out-of-scope/rtkRakeBehavior.test.ts
+RM tests/unit/handlers/rtkRspecBehavior.test.ts -> tests/out-of-scope/rtkRspecBehavior.test.ts
+RM tests/unit/handlers/rtkRubocopBehavior.test.ts -> tests/out-of-scope/rtkRubocopBehavior.test.ts
+ M tests/smoke/smoke.sh
+ M tests/unit/handlers/rtkSmartBehavior.test.ts
+ M tests/unit/rtkScriptParity.test.ts
+?? CONTEXT.md
+?? docs/adr/
+?? docs/layer2-hook-protocol-spike.md
+?? docs/layer2-hooks-inspect-goal.md
+?? docs/parity-completion-goal.md
+?? scripts/benchmark-sessions/
+?? scripts/benchmark/
+?? src/handlers/dotnet/
+?? src/handlers/iac/
+?? src/handlers/system/deps.ts
+?? src/handlers/system/err.ts
+?? src/handlers/system/npx.ts
+?? src/handlers/system/smart.ts
+?? src/handlers/system/summary.ts
+?? src/handlers/system/testRunner.ts
+?? tests/fixtures/dotnet/
+?? tests/fixtures/system/deps_package.json
+?? tests/fixtures/system/err_build.txt
+?? tests/fixtures/system/smart_summary.txt
+?? tests/fixtures/system/summary_test_run.txt
+?? tests/fixtures/system/test_cargo.txt
+?? tests/fixtures/terraform/
 
 ```
 
 ---
 
-### 60. git-worktree: git worktree list
+### 67. git-worktree: git worktree list
 
 - Handler: `git-worktree`
 - tg: `tg git worktree list`
@@ -4434,27 +4902,27 @@ no changes added to commit (use "git add" and/or "git commit -a")
 **raw** (72 chars, 18 tokens):
 
 ```text
-/Users/ziyu/Workspace/token-guard  ee2e7aa [codex/token-guard-node-cli]
+/Users/ziyu/Workspace/token-guard  eccdcd5 [codex/token-guard-node-cli]
 
 ```
 
 **tg** (61 chars, 16 tokens, 11.1% savings):
 
 ```text
-~/Workspace/token-guard ee2e7aa [codex/token-guard-node-cli]
+~/Workspace/token-guard eccdcd5 [codex/token-guard-node-cli]
 
 ```
 
 **rtk** (61 chars, 16 tokens, 11.1% savings):
 
 ```text
-~/Workspace/token-guard ee2e7aa [codex/token-guard-node-cli]
+~/Workspace/token-guard eccdcd5 [codex/token-guard-node-cli]
 
 ```
 
 ---
 
-### 61. gt: gt log
+### 68. gt: gt log
 
 - Handler: `gt`
 - tg: `tg gt log`
@@ -4502,7 +4970,7 @@ no changes added to commit (use "git add" and/or "git commit -a")
 
 ---
 
-### 62. list-like: find src -name *.ts
+### 69. list-like: find src -name *.ts
 
 - Handler: `list-like`
 - tg: `tg find src -name *.ts`
@@ -4511,11 +4979,11 @@ no changes added to commit (use "git add" and/or "git commit -a")
 
 | channel | chars | tokens | savingsPct |
 |---|---:|---:|---:|
-| raw | 1616 | 404 | 0% |
-| tg | 631 | 158 | 60.9% |
-| rtk | 631 | 158 | 60.9% |
+| raw | 1852 | 463 | 0% |
+| tg | 663 | 166 | 64.1% |
+| rtk | 663 | 166 | 64.1% |
 
-**raw** (1616 chars, 404 tokens):
+**raw** (1852 chars, 463 tokens):
 
 ```text
 src/executor.ts
@@ -4553,13 +5021,20 @@ src/handlers/js/playwright.ts
 src/handlers/java/maven.ts
 src/handlers/java/javac.ts
 src/handlers/java/gradle.ts
+src/handlers/dotnet/dotnet.ts
 src/handlers/system/read.ts
+src/handlers/system/testRunner.ts
 src/handlers/system/pipe.ts
 src/handlers/system/json.ts
+src/handlers/system/err.ts
+src/handlers/system/npx.ts
+src/handlers/system/summary.ts
 src/handlers/system/ls.ts
 src/handlers/system/format.ts
+src/handlers/system/smart.ts
 src/handlers/system/log.ts
 src/handlers/system/env.ts
+src/handlers/system/deps.ts
 src/handlers/system/wc.ts
 src/handlers/system/tree.ts
 src/handlers/common/grepFilter.ts
@@ -4567,6 +5042,7 @@ src/handlers/common/searchLike.ts
 src/handlers/common/diff.ts
 src/handlers/common/listLike.ts
 src/handlers/common/readLike.ts
+src/handlers/iac/terraform.ts
 src/handlers/generic.ts
 src/handlers/cloud/wget.ts
 src/handlers/cloud/psql.ts
@@ -4586,43 +5062,47 @@ src/handlers/git/show.ts
 
 ```
 
-**tg** (631 chars, 158 tokens, 60.9% savings):
+**tg** (663 chars, 166 tokens, 64.1% savings):
 
 ```text
-65F 10D:
+73F 12D:
 
 ./ cli.ts executor.ts parse.ts router.ts types.ts
 core/ ansi.ts dataDir.ts fallback.ts history.ts outputLimit.ts path.ts patterns.ts pipeline.ts rawStore.ts report.ts savings.ts stats.ts text.ts
 handlers/ base.ts generic.ts index.ts
 handlers/cloud/ aws.ts container.ts curl.ts psql.ts wget.ts
 handlers/common/ diff.ts grepFilter.ts listLike.ts readLike.ts searchLike.ts
+handlers/dotnet/ dotnet.ts
 handlers/git/ branch.ts compactDiff.ts diff.ts extended.ts graphite.ts hostingCli.ts log.ts show.ts status.ts
+handlers/iac/ terraform.ts
 handlers/java/ gradle.ts javac.ts maven.ts
-handlers/js/ eslint.ts next.ts npm.ts packageList.ts playwright.ts prettier.ts prisma.ts
-+15 more
+handlers/js/ eslint.ts next.ts npm.ts packageList.ts playwright.ts
++23 more
 
 ```
 
-**rtk** (631 chars, 158 tokens, 60.9% savings):
+**rtk** (663 chars, 166 tokens, 64.1% savings):
 
 ```text
-65F 10D:
+73F 12D:
 
 ./ cli.ts executor.ts parse.ts router.ts types.ts
 core/ ansi.ts dataDir.ts fallback.ts history.ts outputLimit.ts path.ts patterns.ts pipeline.ts rawStore.ts report.ts savings.ts stats.ts text.ts
 handlers/ base.ts generic.ts index.ts
 handlers/cloud/ aws.ts container.ts curl.ts psql.ts wget.ts
 handlers/common/ diff.ts grepFilter.ts listLike.ts readLike.ts searchLike.ts
+handlers/dotnet/ dotnet.ts
 handlers/git/ branch.ts compactDiff.ts diff.ts extended.ts graphite.ts hostingCli.ts log.ts show.ts status.ts
+handlers/iac/ terraform.ts
 handlers/java/ gradle.ts javac.ts maven.ts
-handlers/js/ eslint.ts next.ts npm.ts packageList.ts playwright.ts prettier.ts prisma.ts
-+15 more
+handlers/js/ eslint.ts next.ts npm.ts packageList.ts playwright.ts
++23 more
 
 ```
 
 ---
 
-### 63. log: log repeated app fixture
+### 70. log: log repeated app fixture
 
 - Handler: `log`
 - tg: `tg log tests/fixtures/system/app_repeated.log`
@@ -4703,7 +5183,7 @@ Log Summary
 
 ---
 
-### 64. mypy: mypy src/handlers/index.ts
+### 71. mypy: mypy src/handlers/index.ts
 
 - Handler: `mypy`
 - tg: `tg mypy src/handlers/index.ts`
@@ -4746,7 +5226,7 @@ src/handlers/index.ts (1 errors)
 
 ---
 
-### 65. package-list: pnpm list --depth=0
+### 72. package-list: pnpm list --depth=0
 
 - Handler: `package-list`
 - tg: `tg pnpm list --depth=0`
@@ -4807,17 +5287,17 @@ Legend: production dependency, optional only, dev only
   strip-ansi 7.2.0
 [dev]
   tsdown 0.22.1
-  @types/node 25.9.1
-  typescript 6.0.3
-  prettier 3.8.3
-  tsx 4.22.4
   vitest 4.1.8
+  @types/node 25.9.1
+  prettier 3.8.3
+  typescript 6.0.3
+  tsx 4.22.4
 
 ```
 
 ---
 
-### 66. pytest: pytest --collect-only
+### 73. pytest: pytest --collect-only
 
 - Handler: `pytest`
 - tg: `tg pytest --collect-only -q tests/unit/savings.test.ts`
@@ -4857,7 +5337,7 @@ Pytest: No tests collected
 
 ---
 
-### 67. read-like: cat package.json
+### 74. read-like: cat package.json
 
 - Handler: `read`
 - tg: `tg cat package.json`
@@ -5016,7 +5496,7 @@ Pytest: No tests collected
 
 ---
 
-### 68. read-like: cat src/cli.ts
+### 75. read-like: cat src/cli.ts
 
 - Handler: `read`
 - tg: `tg cat src/cli.ts`
@@ -5382,7 +5862,7 @@ try {
 
 ---
 
-### 69. wc: wc README.md
+### 76. wc: wc README.md
 
 - Handler: `wc`
 - tg: `tg wc README.md`
@@ -5398,21 +5878,21 @@ try {
 **raw** (35 chars, 9 tokens):
 
 ```text
-     100     277    1784 README.md
+     123     412    2723 README.md
 
 ```
 
 **tg** (16 chars, 4 tokens, 55.6% savings):
 
 ```text
-100L 277W 1784B
+123L 412W 2723B
 
 ```
 
 **rtk** (16 chars, 4 tokens, 55.6% savings):
 
 ```text
-100L 277W 1784B
+123L 412W 2723B
 
 ```
 

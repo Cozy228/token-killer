@@ -1,5 +1,7 @@
 import { spawnSync } from "node:child_process";
+import { copyFileSync, mkdtempSync, rmSync } from "node:fs";
 import { readFile } from "node:fs/promises";
+import os from "node:os";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 
@@ -12,11 +14,20 @@ const compareBinDir = path.resolve(path.dirname(fileURLToPath(import.meta.url)),
 
 const STUB_PATH_PROGRAMS = new Set(["aws", "docker", "kubectl", "curl", "wget", "psql", "glab", "pip"]);
 
+export type RtkWrapperSpec = {
+  mode: "exec-cat" | "file-arg" | "dir-package";
+  sub: string[];
+};
+
 export type FixtureComparisonCase = {
   name: string;
   fixture: string;
   command: string[];
   exitCode?: number;
+  /** tg-only handler with no rtk filter: report rtk as raw passthrough (0% savings). */
+  rtkUnsupported?: boolean;
+  /** rtk wrapper invocation (command/file/dir input) instead of stdin — see runRtkWrapperFixture. */
+  rtkWrapper?: RtkWrapperSpec;
 };
 
 const defaultOptions: TgOptions = {
@@ -49,6 +60,12 @@ function hasExplicitGrepFormat(args: string[]): boolean {
 /** Map fixture-backed commands to an rtk invocation that reads filtered input from stdin. */
 export function buildRtkFixtureArgv(command: string[]): string[] | null {
   const [program, ...args] = command;
+
+  // npx <tool> re-dispatches to <tool>'s filter; map to the inner tool's rtk filter.
+  if (program === "npx") {
+    const [tool, ...toolArgs] = args;
+    return tool ? buildRtkFixtureArgv([tool, ...toolArgs]) : null;
+  }
 
   if (program === "pipe") {
     const filter = args[0];
@@ -109,8 +126,20 @@ export function buildRtkFixtureArgv(command: string[]): string[] | null {
 }
 
 export function skipFixtureReason(testCase: FixtureComparisonCase): string | null {
+  // Wrapper commands (err/summary/deps/smart) are compared via runRtkWrapperFixture.
+  if (testCase.rtkWrapper) return null;
+
   const rtkArgv = buildRtkFixtureArgv(testCase.command);
-  if (!rtkArgv) return "no fixture-safe rtk stdin mapping";
+  if (!rtkArgv) {
+    const [prog] = testCase.command;
+    if (prog === "test") {
+      return "rtk test detects the framework from the executed command string; feeding fixture stdin via `cat` falls to the generic branch (not comparable)";
+    }
+    if (prog === "dotnet") {
+      return "rtk dotnet needs a real project / TRX file; no fixture stdin mapping";
+    }
+    return "no fixture-safe rtk stdin mapping";
+  }
 
   const [program, ...args] = testCase.command;
   if (program === "rg" && args.includes("--json")) {
@@ -232,4 +261,44 @@ export function runRtkFixture(
     stderr: result.stderr ?? "",
     exitCode: result.status ?? 1,
   };
+}
+
+/**
+ * Run a native rtk *wrapper* command against a fixture. Unlike the stdin pipe
+ * filters, rtk's err/summary/deps/smart read a command/file/dir, so we feed the
+ * fixture three ways depending on the wrapper (see RtkWrapperSpec).
+ */
+export function runRtkWrapperFixture(
+  repoRoot: string,
+  fixture: string,
+  spec: RtkWrapperSpec,
+): { stdout: string; stderr: string; exitCode: number; rtkCmd: string } {
+  const fixturePath = path.join(repoRoot, fixture);
+  const env: NodeJS.ProcessEnv = { ...process.env, GIT_PAGER: "", PAGER: "", NO_COLOR: "1" };
+  const run = (argv: string[], rtkCmd: string) => {
+    const result = spawnSync("rtk", argv, { cwd: repoRoot, encoding: "utf8", env, maxBuffer: MAX_BUFFER });
+    return {
+      stdout: result.stdout ?? "",
+      stderr: result.stderr ?? "",
+      exitCode: result.status ?? 1,
+      rtkCmd,
+    };
+  };
+
+  if (spec.mode === "exec-cat") {
+    // rtk runs the given command; `cat <fixture>` makes the fixture its stdout.
+    const arg = `cat ${shellQuote(fixturePath)}`;
+    return run([...spec.sub, arg], `rtk ${spec.sub.join(" ")} ${shellQuote(`cat ${fixture}`)}`);
+  }
+  if (spec.mode === "file-arg") {
+    return run([...spec.sub, fixturePath], `rtk ${spec.sub.join(" ")} ${fixture}`);
+  }
+  // dir-package: rtk deps scans a directory; stage the fixture as its package.json.
+  const dir = mkdtempSync(path.join(os.tmpdir(), "tg-deps-"));
+  try {
+    copyFileSync(fixturePath, path.join(dir, "package.json"));
+    return run([...spec.sub, dir], `rtk ${spec.sub.join(" ")} <tmpdir with ${path.basename(fixture)} as package.json>`);
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
 }

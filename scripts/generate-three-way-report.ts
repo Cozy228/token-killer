@@ -11,6 +11,7 @@ import {
   filterTgFixture,
   readFixtureText,
   runRtkFixture,
+  runRtkWrapperFixture,
   skipFixtureReason,
   buildRtkFixtureArgv,
   type FixtureComparisonCase,
@@ -236,17 +237,32 @@ function runLiveCase(testCase: LiveComparisonCase, tgBin: string): CaseResult {
 }
 
 async function runFixtureCase(testCase: FixtureComparisonCase): Promise<CaseResult> {
-  const rtkArgv = buildRtkFixtureArgv(testCase.command);
-  if (!rtkArgv) {
-    throw new Error(`missing rtk argv for ${testCase.name}`);
-  }
-
   const handler = routeCommand(toParsed(testCase.command)).name;
   const rawText = await readFixtureText(repoRoot, testCase.fixture);
   const exitCode = testCase.exitCode ?? 0;
   const tgText = await filterTgFixture(testCase.command, rawText, exitCode, repoRoot);
-  const rtkRun = runRtkFixture(repoRoot, testCase.fixture, rtkArgv);
-  const rtkText = `${rtkRun.stdout}${rtkRun.stderr}`;
+
+  // tg-only handlers (e.g. terraform) have no rtk filter: rtk would pass the raw
+  // output through unchanged, so model it as a raw passthrough (0% savings).
+  let rtkText: string;
+  let rtkCmd: string;
+  if (testCase.rtkUnsupported) {
+    rtkText = rawText;
+    rtkCmd = "unsupported (rtk has no terraform filter; raw passthrough)";
+  } else if (testCase.rtkWrapper) {
+    const wrapperRun = runRtkWrapperFixture(repoRoot, testCase.fixture, testCase.rtkWrapper);
+    rtkText = `${wrapperRun.stdout}${wrapperRun.stderr}`;
+    rtkCmd = wrapperRun.rtkCmd;
+  } else {
+    const rtkArgv = buildRtkFixtureArgv(testCase.command);
+    if (!rtkArgv) {
+      throw new Error(`missing rtk argv for ${testCase.name}`);
+    }
+    const rtkRun = runRtkFixture(repoRoot, testCase.fixture, rtkArgv);
+    rtkText = `${rtkRun.stdout}${rtkRun.stderr}`;
+    rtkCmd = `cat ${testCase.fixture} | rtk ${rtkArgv.join(" ")}`;
+  }
+
   const { raw, filtered: tg } = statsFromBaseline(rawText, tgText);
   const rtk = statsFromBaseline(rawText, rtkText).filtered;
   const result: CaseResult = {
@@ -255,7 +271,7 @@ async function runFixtureCase(testCase: FixtureComparisonCase): Promise<CaseResu
     handler,
     rawCmd: `fixture: ${testCase.fixture}`,
     tgCmd: `tg filter ${testCase.command.join(" ")}`,
-    rtkCmd: `cat ${testCase.fixture} | rtk ${rtkArgv.join(" ")}`,
+    rtkCmd,
     exitCode,
     savingsGap: 0,
     raw,
@@ -293,6 +309,8 @@ export function renderReport(
     "- **tg (fixture)**: handler filter on fixture stdout (same pipeline as product tests)",
     "- **rtk (live)**: mapped native `rtk` subcommand",
     "- **rtk (fixture)**: `cat <fixture> | rtk …` when stdin filter exists (see per-case RTK cmd)",
+    "- **rtk (wrapper)**: err/summary/deps/smart read a command/file/dir, so the fixture is fed via `rtk <sub> \"cat <fixture>\"`, `rtk smart <fixture>`, or `rtk deps <tmpdir>` (see per-case RTK cmd)",
+    "- **rtk (unsupported)**: tg-only handlers rtk has no filter for (e.g. terraform) are shown as rtk raw passthrough (0% savings)",
     "- **savingsPct**: token estimate vs raw (`ceil(chars/4)`), same as tg core",
     "- **Sort**: cases ordered by |tg savingsPct − rtk savingsPct| (largest gap first)",
     `- **Large outputs**: cases with raw > ${REPORT_MAX_RAW_TOKENS} tokens listed under “Omitted large outputs” (no full text)`,
@@ -427,7 +445,7 @@ async function main() {
     }
 
     for (const testCase of fixtureCases) {
-      const reason = skipFixtureReason(testCase);
+      const reason = testCase.rtkUnsupported ? null : skipFixtureReason(testCase);
       if (reason) {
         skipped.push({ name: `[fixture] ${testCase.name}`, reason });
         process.stderr.write(`Skip fixture: ${testCase.name} (${reason})\n`);
