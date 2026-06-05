@@ -52,6 +52,14 @@ export async function runTelemetry(argv: string[], now: Date = new Date()): Prom
   }
 
   if (sub === "preview") {
+    // Validate the config surface like every other user-facing telemetry command:
+    // a parse / out-of-shape config exits 1 (closed-set discipline), even though
+    // preview itself reads no config values.
+    try {
+      readConfig();
+    } catch (error) {
+      return configError(error);
+    }
     const state = loadOrCreateState(now);
     const payload = buildTelemetry({
       records: await listProjectHistories(),

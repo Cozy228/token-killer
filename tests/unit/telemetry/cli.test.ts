@@ -106,6 +106,17 @@ describe("tk telemetry — config errors", () => {
     });
   });
 
+  test("a malformed config exits 1 on preview too (no payload leak)", async () => {
+    await withHome(async () => {
+      await writeFile(configPath(), '{ "telemetry": "yes" }');
+      const out = vi.spyOn(process.stdout, "write").mockReturnValue(true);
+      vi.spyOn(process.stderr, "write").mockReturnValue(true);
+      expect(await runTelemetry(["preview"])).toBe(1);
+      // must not have printed a payload
+      expect(out).not.toHaveBeenCalled();
+    });
+  });
+
   test("unknown subcommand exits 1", async () => {
     await withHome(async () => {
       vi.spyOn(process.stderr, "write").mockReturnValue(true);

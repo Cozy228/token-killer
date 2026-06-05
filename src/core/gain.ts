@@ -120,7 +120,7 @@ export async function runGain(
   if (args.format === "json") {
     process.stdout.write(`${JSON.stringify(buildGainJson(records, args, now), null, 2)}\n`);
   } else if (args.format === "csv") {
-    process.stdout.write(renderCsv(records, args));
+    process.stdout.write(renderCsv(records, args, now));
   } else {
     process.stdout.write(await renderText(records, args, now));
   }
@@ -178,8 +178,8 @@ function quotaObject(records: HistoryRecord[], override?: string) {
 
 // ── CSV ──────────────────────────────────────────────────────────────────────
 
-function renderCsv(records: HistoryRecord[], args: GainArgs): string {
-  const buckets = bucketsFor(records, args.bucketing, new Date(0));
+function renderCsv(records: HistoryRecord[], args: GainArgs, now: Date): string {
+  const buckets = bucketsFor(records, args.bucketing, now);
   if (buckets) {
     return [
       "key,commands,raw_tokens,saved_tokens,savings_pct",
