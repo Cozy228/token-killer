@@ -1,0 +1,143 @@
+import { afterEach, beforeEach, describe, expect, test, vi } from "vitest";
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, rmSync, writeFileSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { dirname, join } from "node:path";
+
+import { runInspect } from "../../../src/inspect/cli.js";
+import { registerAllRules } from "../../../src/context/rules/index.js";
+import {
+  hasMarkerBlock,
+  insertMarkerBlock,
+  removeMarkerBlock,
+  setFrontmatterKey,
+  userTargetPath,
+} from "../../../src/context/applySafe.js";
+import { runAgentsmd } from "../../../src/context/agentsmd.js";
+import { runOptimize } from "../../../src/context/optimizeCli.js";
+
+let root: string;
+let home: string;
+let cwd: string;
+
+beforeEach(() => {
+  registerAllRules();
+  root = mkdtempSync(join(tmpdir(), "tg-ctx-apply-"));
+  home = join(root, "home");
+  cwd = join(root, "repo");
+  mkdirSync(home, { recursive: true });
+  mkdirSync(cwd, { recursive: true });
+  process.env.TOKEN_GUARD_HOME = join(home, ".token-guard");
+});
+afterEach(() => {
+  delete process.env.TOKEN_GUARD_HOME;
+  delete process.env.TG_USER_AGENT_INSTRUCTIONS;
+  rmSync(root, { recursive: true, force: true });
+  vi.restoreAllMocks();
+});
+
+function silenceStdout() {
+  return vi.spyOn(process.stdout, "write").mockImplementation(() => true);
+}
+
+describe("marker block helpers", () => {
+  test("insertion is idempotent", () => {
+    const once = insertMarkerBlock("# Title\n\nbody\n");
+    const twice = insertMarkerBlock(once);
+    expect(once).toBe(twice);
+    expect(hasMarkerBlock(once)).toBe(true);
+  });
+
+  test("restore removes only the managed block", () => {
+    const original = "# Title\n\nkeep me\n";
+    const withBlock = insertMarkerBlock(original);
+    const restored = removeMarkerBlock(withBlock);
+    expect(restored).toContain("keep me");
+    expect(hasMarkerBlock(restored)).toBe(false);
+  });
+
+  test("setFrontmatterKey preserves body and comments", () => {
+    const content = ["---", "name: deploy", "# a yaml comment", "---", "# Heading", "body text"].join("\n");
+    const next = setFrontmatterKey(content, "disable-model-invocation", true);
+    expect(next).toContain("disable-model-invocation: true");
+    expect(next).toContain("# a yaml comment");
+    expect(next).toContain("body text");
+    expect(next).toContain("name: deploy");
+  });
+});
+
+describe("tg agentsmd patch/restore", () => {
+  test("patch installs, backs up, and restore removes the managed block", async () => {
+    const target = join(home, ".copilot", "copilot-instructions.md");
+    mkdirSync(dirname(target), { recursive: true });
+    writeFileSync(target, "# My rules\nBe concise.\n");
+
+    const s = silenceStdout();
+    expect(await runAgentsmd(["patch"], 1000, home)).toBe(0);
+    s.mockRestore();
+
+    expect(hasMarkerBlock(readFileSync(target, "utf8"))).toBe(true);
+    // Backup of the pre-patch content exists.
+    const backupRoot = join(home, ".token-guard", "backups", "context");
+    expect(existsSync(backupRoot)).toBe(true);
+    expect(readdirSync(backupRoot).length).toBeGreaterThan(0);
+
+    const s2 = silenceStdout();
+    expect(await runAgentsmd(["restore"], 2000, home)).toBe(0);
+    s2.mockRestore();
+    const after = readFileSync(target, "utf8");
+    expect(hasMarkerBlock(after)).toBe(false);
+    expect(after).toContain("Be concise.");
+  });
+
+  test("unknown subcommand → exit 1", async () => {
+    const s = silenceStdout();
+    expect(await runAgentsmd(["nope"], 1000, home)).toBe(1);
+    s.mockRestore();
+  });
+});
+
+describe("runOptimize --apply-safe", () => {
+  test("--token-budget-block installs the managed block at the user target", async () => {
+    const s = silenceStdout();
+    const code = await runOptimize(["context", "--token-budget-block", "--apply-safe"], 1000, home, cwd, {});
+    s.mockRestore();
+    expect(code).toBe(0);
+    expect(hasMarkerBlock(readFileSync(userTargetPath(home), "utf8"))).toBe(true);
+  });
+
+  test("refuses project-level safe applies", async () => {
+    const errSpy = vi.spyOn(process.stderr, "write").mockImplementation(() => true);
+    const code = await runOptimize(["context", "--apply-safe"], 1000, home, cwd, {});
+    errSpy.mockRestore();
+    expect(code).toBe(1);
+  });
+
+  test("applies a user-level skill frontmatter change with a backup", async () => {
+    const skill = join(home, ".claude", "skills", "deploy", "SKILL.md");
+    mkdirSync(dirname(skill), { recursive: true });
+    writeFileSync(skill, ["---", "name: deploy", "description: Deploy", "---", "# Deploy", "Run the deploy and publish."].join("\n"));
+
+    const trigger = vi.fn((_s: "user" | "project", h: string, c: string, n: number) => {
+      runInspect(["--user"], n, h, c);
+    });
+
+    const s = silenceStdout();
+    const code = await runOptimize(
+      ["context", "--user", "--surface", "skills", "--apply-safe"],
+      1000,
+      home,
+      cwd,
+      { triggerInspect: trigger },
+    );
+    s.mockRestore();
+
+    expect(code).toBe(0);
+    const after = readFileSync(skill, "utf8");
+    expect(after).toContain("disable-model-invocation: true");
+    // Body preserved.
+    expect(after).toContain("Run the deploy and publish.");
+    // Backup written.
+    const backupRoot = join(home, ".token-guard", "backups", "context");
+    expect(existsSync(backupRoot)).toBe(true);
+  });
+});
