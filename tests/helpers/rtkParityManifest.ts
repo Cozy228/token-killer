@@ -314,43 +314,17 @@ export const rtkDomainModules: RtkModuleParity[] = [
   },
 ];
 
-/** RTK modules outside the domain radar but still required for full migration. */
+/**
+ * RTK modules outside the domain radar but still required for full migration.
+ *
+ * Go / Rust / Ruby toolchain runners (go_cmd, golangci_cmd, cargo_cmd,
+ * rust/runner.rs, rake_cmd, rspec_cmd, rubocop_cmd) are intentionally
+ * out-of-scope for tg and quarantined under tests/out-of-scope/. They are
+ * deliberately excluded here so the parity gate does not report work tg has
+ * decided not to do. See docs/testing-and-migration-audit.md (out-of-scope RTK
+ * dimensions).
+ */
 export const rtkExtendedCommandExpectations: RtkCommandExpectation[] = [
-  {
-    rtkSource: "rtk/src/cmds/go/go_cmd.rs",
-    command: ["go", "test", "./..."],
-    expectedHandler: "go",
-  },
-  {
-    rtkSource: "rtk/src/cmds/go/golangci_cmd.rs",
-    command: ["golangci-lint", "run"],
-    expectedHandler: "golangci",
-  },
-  {
-    rtkSource: "rtk/src/cmds/rust/cargo_cmd.rs",
-    command: ["cargo", "test"],
-    expectedHandler: "cargo",
-  },
-  {
-    rtkSource: "rtk/src/cmds/rust/runner.rs",
-    command: ["rustc", "--version"],
-    expectedHandler: "rust-runner",
-  },
-  {
-    rtkSource: "rtk/src/cmds/ruby/rake_cmd.rs",
-    command: ["rake", "test"],
-    expectedHandler: "rake",
-  },
-  {
-    rtkSource: "rtk/src/cmds/ruby/rspec_cmd.rs",
-    command: ["rspec"],
-    expectedHandler: "rspec",
-  },
-  {
-    rtkSource: "rtk/src/cmds/ruby/rubocop_cmd.rs",
-    command: ["rubocop"],
-    expectedHandler: "rubocop",
-  },
   {
     rtkSource: "rtk/src/cmds/cloud/container.rs",
     command: ["kubectl", "logs", "deploy/api"],

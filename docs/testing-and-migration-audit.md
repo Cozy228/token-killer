@@ -2,9 +2,11 @@
 
 Single reference for **what good tests are**, **what is wrong with the suite today**, and **what is still missing from RTK → tg migration**.
 
-Last audited: 2026-06-03
+Last audited: 2026-06-05
 
-**Run gates:** `pnpm test:product` (uses `vitest.config.ts`) is the implemented-behavior fidelity suite and may turn red when a known implementation bug is promoted into fixture-backed coverage. `pnpm test:migration` (uses `vitest.migration.config.ts`) is expected to stay red until RTK migration/debt is complete. **`pnpm test:ci` must be all green before calling migration complete.**
+**Run gates:** `pnpm test:product` (uses `vitest.config.ts`) is the implemented-behavior fidelity suite and may turn red when a known implementation bug is promoted into fixture-backed coverage. `pnpm test:migration` (uses `vitest.migration.config.ts`) is expected to stay red until RTK migration/debt is complete.
+
+`pnpm test:ci` is the **blocking** quality gate: `test:product`, `test:install`, `check-test-presence`, `validate-docs`, and `smoke`. It does **not** block on migration debt — it ends by running `test:migration:report` (the migration suite with `|| true`) so debt stays **visible without falsely failing CI**. A green `test:ci` therefore means *product quality is sound*, **not** that migration is complete. Migration is complete only when `pnpm test:migration` itself is green.
 
 `scripts/check-test-presence.sh` checks fixture-backed handler coverage plus core test-pair presence — necessary, **not sufficient**.
 
@@ -717,7 +719,8 @@ handler fidelity              fixtureContent.test.ts          ✅ product
 | gh/glab | ❓ | Fixture-backed coverage exists; RTK depth not fully mapped |
 | js/python/java mapped handlers | ❓ | Core scenarios; not full RTK parity |
 | js prettier/next/playwright/prisma | ❌ | No handler |
-| dotnet/cloud/go/rust/ruby | ❌ | No handler |
+| dotnet/cloud | ❌ | No handler |
+| go/rust/ruby | ⛔ | Out-of-scope — quarantined, excluded from parity gate |
 | gradlew fixtures | ✅ | RTK corpus ported |
 | tg-only maven/javac/generic | ✅ | No RTK module |
 | Verified CI green | ❌ | Migration gates in §4 are still red |
@@ -725,14 +728,21 @@ handler fidelity              fixtureContent.test.ts          ✅ product
 | benchmark TS + sessions + test-ruby | ❌ | rtkScriptParity |
 | GitHub CI + cli-testing.md | ❌ | projectConfig |
 
-### Unacceptable gaps (28 RTK modules — no handler AND no migration test)
+### Unacceptable gaps (21 RTK modules — no handler AND no migration test)
 
 **Cloud:** aws, curl, psql, wget, docker/kubectl  
 **JS:** prettier, next, playwright, prisma  
-**Languages:** go, golangci-lint, cargo/rust runner, ruby (rake/rspec/rubocop)  
 **.NET:** dotnet_cmd, binlog, trx, format_report  
 **Git:** gt
 **System:** log, json, env, wc, format, pipe, local_llm  
+
+### Out-of-scope (excluded from the parity gate by decision)
+
+**Languages:** go, golangci-lint, cargo/rust runner, ruby (rake/rspec/rubocop) — tg
+has decided not to migrate these toolchain runners. Their behavior tests are
+quarantined under `tests/out-of-scope/` and their modules are removed from
+`rtkExtendedCommandExpectations`, so `rtkDomainCaseParity` no longer reports them
+as debt.
 
 ### Implemented but severely under-tested
 
