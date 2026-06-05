@@ -1,8 +1,9 @@
-import { mkdir, readFile, writeFile } from "node:fs/promises";
+import type { Dirent } from "node:fs";
+import { mkdir, readFile, readdir, writeFile } from "node:fs/promises";
 import path from "node:path";
 
 import type { FilteredResult, RawResult, TgOptions } from "../types.js";
-import { historyFile, projectFingerprint } from "./dataDir.js";
+import { historyFile, projectFingerprint, tokenGuardHome } from "./dataDir.js";
 
 export type HistoryRecord = {
   timestamp: string;
@@ -23,6 +24,11 @@ export type HistoryRecord = {
   // `shell` = the command proxy; `terminal_tool` / `direct_tool` = the Copilot hook
   // runtime; `prompt_context` = prompt governance.
   source_adapter?: string;
+  // Best-effort model id for per-model pricing (ADR 0004 §1). Populated only by the
+  // hook runtime where the delivery surface exposes it (normalize.ts parses it into
+  // ToolEvent.model). The shell command-proxy path has no model and leaves it absent;
+  // absent rows price at the default constant. Never inferred — absent is honest.
+  model?: string;
 };
 
 export async function recordHistory(
@@ -89,12 +95,44 @@ export async function recordHookFailure(params: {
 export async function readHistory(cwd: string): Promise<HistoryRecord[]> {
   try {
     const text = await readFile(historyFile(cwd), "utf8");
-    return text
-      .split(/\r?\n/)
-      .filter(Boolean)
-      .map((line) => JSON.parse(line) as HistoryRecord);
+    return parseHistoryLines(text);
   } catch (error) {
     if ((error as NodeJS.ErrnoException).code === "ENOENT") return [];
     throw error;
   }
+}
+
+function parseHistoryLines(text: string): HistoryRecord[] {
+  return text
+    .split(/\r?\n/)
+    .filter(Boolean)
+    .map((line) => JSON.parse(line) as HistoryRecord);
+}
+
+// User-level read (ADR 0004 §3): enumerate every project's history.jsonl under
+// ~/.token-guard/projects/*/. Best-effort — an unreadable directory or a corrupt
+// file is skipped, never thrown. `gain --user` and the telemetry builder both feed
+// the rows into the pure aggregate.ts helpers. Each row still carries its own
+// project_fingerprint for grouping.
+export async function listProjectHistories(): Promise<HistoryRecord[]> {
+  const projectsDir = path.join(tokenGuardHome(), "projects");
+  let entries: Dirent[];
+  try {
+    entries = await readdir(projectsDir, { withFileTypes: true });
+  } catch {
+    return [];
+  }
+
+  const records: HistoryRecord[] = [];
+  for (const entry of entries) {
+    if (!entry.isDirectory()) continue;
+    const file = path.join(projectsDir, entry.name, "history.jsonl");
+    try {
+      const text = await readFile(file, "utf8");
+      records.push(...parseHistoryLines(text));
+    } catch {
+      // skip unreadable / corrupt project store
+    }
+  }
+  return records;
 }
