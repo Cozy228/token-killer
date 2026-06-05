@@ -54,7 +54,8 @@ export type ParseMode =
   | "hook"
   | "inspect"
   | "optimize"
-  | "agentsmd";
+  | "agentsmd"
+  | "gain";
 
 export type ParsedArgv = {
   mode: ParseMode;

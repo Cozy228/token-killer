@@ -3,7 +3,15 @@ import { mkdir, readFile, readdir, writeFile } from "node:fs/promises";
 import path from "node:path";
 
 import type { FilteredResult, RawResult, TgOptions } from "../types.js";
-import { historyFile, projectFingerprint, tokenGuardHome } from "./dataDir.js";
+import {
+  historyFile,
+  projectFingerprint,
+  projectMetaFile,
+  projectMetaFileForFingerprint,
+  tokenGuardHome,
+} from "./dataDir.js";
+
+export type ProjectMeta = { label: string };
 
 export type HistoryRecord = {
   timestamp: string;
@@ -58,6 +66,34 @@ export async function recordHistory(
   };
 
   await writeFile(file, `${JSON.stringify(record)}\n`, { encoding: "utf8", flag: "a" });
+  await maybeWriteProjectMeta(options.cwd);
+}
+
+// Lazily record the project's display label (directory basename only — never the
+// full path) for `tg gain --user` (ADR 0004 §3). Best-effort and idempotent: the
+// `wx` flag writes only when absent, and any error (already present, unwritable) is
+// swallowed so the hot-path command is never broken.
+async function maybeWriteProjectMeta(cwd: string): Promise<void> {
+  try {
+    const meta: ProjectMeta = { label: path.basename(cwd) };
+    await writeFile(projectMetaFile(cwd), `${JSON.stringify(meta)}\n`, {
+      encoding: "utf8",
+      flag: "wx",
+    });
+  } catch {
+    // already written or unwritable — display-only, safe to skip
+  }
+}
+
+// Read a project's display label by fingerprint (for `gain --user`). Missing/corrupt
+// ⇒ undefined; the caller falls back to the short fingerprint hash.
+export async function readProjectMeta(fingerprint: string): Promise<ProjectMeta | undefined> {
+  try {
+    const text = await readFile(projectMetaFileForFingerprint(fingerprint), "utf8");
+    return JSON.parse(text) as ProjectMeta;
+  } catch {
+    return undefined;
+  }
 }
 
 // Record a hook-runtime tool failure (DESIGN §3.4, §8.1). Failure metrics ONLY —

@@ -10,6 +10,7 @@ import { runInspect } from "./inspect/cli.js";
 import { runOptimize } from "./context/optimizeCli.js";
 import { runAgentsmd } from "./context/agentsmd.js";
 import { buildReport } from "./core/report.js";
+import { runGain } from "./core/gain.js";
 import { runPipeline } from "./core/pipeline.js";
 import { recordHistory } from "./core/history.js";
 import { calculateSavings } from "./core/savings.js";
@@ -29,6 +30,8 @@ function help(): string {
     "                  [--project] [--user] [--copilot-context] [--surface instructions|prompts|agents|skills] [--fail-on info|warn|error]",
     "       tg optimize context [--dry-run] [--write-advice] [--apply-safe] [--token-budget-block] [--surface <name>] [--project|--user]",
     "       tg agentsmd <patch|restore>",
+    "       tg gain [--user] [--daily|--weekly|--monthly|--all] [--graph] [--history [n]]",
+    "               [--failures] [--quota [-t <model>]] [--json|--csv|--format json|csv|text]",
     "",
     "Flags:",
     "  --raw                 print raw stdout/stderr",
@@ -98,6 +101,9 @@ async function main(): Promise<number> {
   }
   if (parsed.mode === "agentsmd") {
     return runAgentsmd(parsed.subArgs ?? []);
+  }
+  if (parsed.mode === "gain") {
+    return runGain(parsed.subArgs ?? [], parsed.options.cwd);
   }
   if (!parsed.command) {
     process.stderr.write("tg: missing command\n");

@@ -32,6 +32,16 @@ export function historyFile(cwd: string): string {
   return path.join(projectDataDir(cwd), "history.jsonl");
 }
 
+// Local-display-only project label (ADR 0004 §3): basename, never the full path.
+// Lives next to the project's history.jsonl. Never enters telemetry.
+export function projectMetaFile(cwd: string): string {
+  return path.join(projectDataDir(cwd), "meta.json");
+}
+
+export function projectMetaFileForFingerprint(fingerprint: string): string {
+  return path.join(tokenGuardHome(), "projects", fingerprint, "meta.json");
+}
+
 export function rawOutputDir(cwd: string): string {
   return path.join(projectDataDir(cwd), "raw");
 }
