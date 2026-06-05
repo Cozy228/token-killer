@@ -35,4 +35,16 @@ describe("executeCommand", () => {
     expect(result.exitCode).toBe(127);
     expect(result.stderr).toContain("command not found");
   });
+
+  test("maps a signal death to 128 + signo (SIGTERM → 143)", async () => {
+    const script = "process.kill(process.pid, 'SIGTERM')";
+    const result = await executeCommand({
+      program: process.execPath,
+      args: ["-e", script],
+      original: [process.execPath, "-e", script],
+      displayCommand: "node -e kill-self",
+    });
+
+    expect(result.exitCode).toBe(143);
+  });
 });
