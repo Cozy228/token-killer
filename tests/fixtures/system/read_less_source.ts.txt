@@ -1,0 +1,16 @@
+import { api } from "./api";
+import { logger } from "./logger";
+
+export interface OrderPayload {
+  id: string;
+  amount: number;
+}
+
+export async function submitOrder(payload: OrderPayload) {
+  logger.info("submitting order", payload.id);
+  return api.submit(payload);
+}
+
+export function cancelOrder(id: string) {
+  return api.cancel(id);
+}

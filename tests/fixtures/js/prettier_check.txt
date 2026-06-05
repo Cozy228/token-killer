@@ -1,0 +1,8 @@
+Checking formatting...
+src/components/ui/button.tsx
+src/lib/auth/session.ts
+src/pages/dashboard.tsx
+src/pages/settings.tsx
+src/lib/api/client.ts
+src/lib/api/routes.ts
+Code style issues found in the above file(s). Forgot to run Prettier?

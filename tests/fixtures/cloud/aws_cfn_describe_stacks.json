@@ -1,0 +1,26 @@
+{
+  "Stacks": [
+    {
+      "StackId": "arn:aws:cloudformation:us-east-1:123456789012:stack/api-prod/abc-123",
+      "StackName": "api-prod",
+      "ChangeSetId": null,
+      "Description": "API production stack with a fairly long description field",
+      "Parameters": [{ "ParameterKey": "Env", "ParameterValue": "prod" }],
+      "CreationTime": "2024-01-15T10:30:00Z",
+      "LastUpdatedTime": "2024-02-20T14:00:00Z",
+      "RollbackConfiguration": {},
+      "StackStatus": "UPDATE_COMPLETE",
+      "DisableRollback": false,
+      "NotificationARNs": [],
+      "Capabilities": ["CAPABILITY_IAM"],
+      "Outputs": [
+        { "OutputKey": "ApiUrl", "OutputValue": "https://api.example.com", "Description": "url" },
+        { "OutputKey": "BucketName", "OutputValue": "my-bucket" }
+      ],
+      "Tags": [{ "Key": "team", "Value": "platform" }],
+      "EnableTerminationProtection": false,
+      "DriftInformation": { "StackDriftStatus": "NOT_CHECKED" }
+    }
+  ],
+  "ResponseMetadata": { "RequestId": "req-123", "HTTPStatusCode": 200 }
+}

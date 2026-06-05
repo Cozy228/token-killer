@@ -1,0 +1,19 @@
+{
+  "items": [
+    {
+      "metadata": { "namespace": "default", "name": "web-1" },
+      "status": { "phase": "Running", "containerStatuses": [{ "restartCount": 0 }] }
+    },
+    {
+      "metadata": { "namespace": "default", "name": "api-123" },
+      "status": {
+        "phase": "Unknown",
+        "containerStatuses": [{ "restartCount": 3, "state": { "waiting": { "reason": "CrashLoopBackOff" } } }]
+      }
+    },
+    {
+      "metadata": { "namespace": "batch", "name": "worker-7" },
+      "status": { "phase": "Pending", "containerStatuses": [{ "restartCount": 0 }] }
+    }
+  ]
+}

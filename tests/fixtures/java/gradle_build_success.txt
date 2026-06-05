@@ -1,0 +1,15 @@
+> Configure project :app
+> Task :app:preBuild UP-TO-DATE
+> Task :app:generateDebugBuildConfig UP-TO-DATE
+> Task :app:generateDebugResValues UP-TO-DATE
+> Task :app:generateDebugResources UP-TO-DATE
+> Task :app:mergeDebugResources UP-TO-DATE
+> Task :app:processDebugManifest UP-TO-DATE
+> Task :app:compileDebugKotlin UP-TO-DATE
+> Task :app:compileDebugJavaWithJavac UP-TO-DATE
+> Task :app:validateSigningDebug UP-TO-DATE
+> Task :app:packageDebug UP-TO-DATE
+> Task :app:assembleDebug UP-TO-DATE
+
+BUILD SUCCESSFUL in 1m 23s
+42 actionable tasks: 42 executed

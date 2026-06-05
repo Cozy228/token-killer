@@ -1,2 +1,14 @@
 src/order/submit.ts(42,7): error TS2322: Type 'string | undefined' is not assignable to type 'string'.
+src/order/submit.ts(58,3): error TS2345: Argument of type 'Order' is not assignable to parameter of type 'OrderInput'.
 src/order/api.ts(88,12): error TS2339: Property 'id' does not exist on type 'Order | undefined'.
+src/order/api.ts(91,5): error TS2322: Type 'number' is not assignable to type 'string'.
+src/cart/index.ts(12,9): error TS2554: Expected 2 arguments, but got 1.
+src/cart/index.ts(30,15): error TS2339: Property 'total' does not exist on type 'Cart'.
+src/auth/session.ts(15,5): error TS2322: Type 'null' is not assignable to type 'Session'.
+  Type 'null' is not assignable to type 'Session'.
+src/auth/session.ts(44,7): error TS2345: Argument of type 'undefined' is not assignable to parameter of type 'Token'.
+src/payment/stripe.ts(102,3): error TS2339: Property 'charge' does not exist on type 'StripeClient'.
+src/payment/stripe.ts(140,9): error TS2554: Expected 3 arguments, but got 2.
+src/components/Button.tsx(20,7): error TS2322: Type 'boolean' is not assignable to type 'string'.
+src/components/Button.tsx(33,11): error TS2339: Property 'onClick' does not exist on type 'ButtonProps'.
+Found 12 errors in 6 files.

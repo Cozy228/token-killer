@@ -1,0 +1,21 @@
+
+   ▲ Next.js 15.2.0
+
+   Creating an optimized production build ...
+✓ Compiled successfully
+✓ Linting and checking validity of types
+✓ Collecting page data
+○ /                            1.2 kB        132 kB
+● /dashboard                   2.5 kB        156 kB
+○ /api/auth                    0.5 kB         89 kB
+
+Route (app)                    Size     First Load JS
+┌ ○ /                          1.2 kB        132 kB
+├ ● /dashboard                 2.5 kB        156 kB
+└ ○ /api/auth                  0.5 kB         89 kB
+
+○  (Static)  prerendered as static content
+●  (SSG)     prerendered as static HTML
+λ  (Server)  server-side renders at runtime
+
+✓ Built in 34.2s

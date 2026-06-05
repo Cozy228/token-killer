@@ -2,7 +2,7 @@
   "name": "token-guard",
   "version": "0.1.0",
   "private": true,
-  "description": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+  "description": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
   "dependencies": {
     "strip-ansi": "^7.2.0"
   },
@@ -10,5 +10,5 @@
     "test": "vitest run",
     "typecheck": "tsc --noEmit"
   },
-  "files": ["dist", "README.md", "LICENSE", "CHANGELOG.md", "docs"]
+  "files": ["dist", "README.md", "LICENSE", "CHANGELOG.md", "docs", "src", "types", "bin"]
 }

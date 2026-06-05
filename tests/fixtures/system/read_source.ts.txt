@@ -1,0 +1,60 @@
+import { api } from "./api";
+import { logger } from "./logger";
+import type { Order, OrderPayload } from "./types";
+
+const RETRY_LIMIT = 3;
+const TIMEOUT_MS = 5000;
+const BASE_URL = "https://example.com/api";
+
+export type SubmitResult = {
+  ok: boolean;
+  order?: Order;
+  error?: string;
+};
+
+export async function submitOrder(payload: OrderPayload): Promise<SubmitResult> {
+  let attempt = 0;
+  while (attempt < RETRY_LIMIT) {
+    attempt += 1;
+    try {
+      const order = await api.submit(payload, { timeout: TIMEOUT_MS });
+      logger.info("order submitted", { id: order.id, attempt });
+      return { ok: true, order };
+    } catch (error) {
+      logger.warn("submit failed, retrying", { attempt });
+      if (attempt >= RETRY_LIMIT) {
+        return { ok: false, error: String(error) };
+      }
+    }
+  }
+  return { ok: false, error: "exhausted retries" };
+}
+
+export function validatePayload(payload: OrderPayload): string[] {
+  const errors: string[] = [];
+  if (!payload.id) {
+    errors.push("missing id");
+  }
+  if (!payload.items || payload.items.length === 0) {
+    errors.push("no items");
+  }
+  if (payload.total <= 0) {
+    errors.push("total must be positive");
+  }
+  return errors;
+}
+
+export function summarizeOrder(order: Order): string {
+  const lines = [
+    `Order ${order.id}`,
+    `Items: ${order.items.length}`,
+    `Total: ${order.total}`,
+  ];
+  return lines.join("\n");
+}
+
+export async function cancelOrder(id: string): Promise<boolean> {
+  const result = await api.cancel(id, { timeout: TIMEOUT_MS });
+  logger.info("order cancelled", { id });
+  return result.ok;
+}
