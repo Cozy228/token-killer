@@ -8,6 +8,21 @@ tg <original command> [...args]
 
 The command after `tg` is the command you would normally run. `tg` executes it, captures stdout/stderr/exit code, compresses output locally, records token savings, and exits with the original command exit code.
 
+## Principles
+
+1. Retention before compression.
+2. Raw output is always a valid result.
+3. Never hide actionable facts behind placeholders.
+4. Command-aware beats generic summarization.
+5. Compress structure and noise, not evidence.
+6. Full diffs, full matches, and source content are passthrough by default.
+7. Every handler must prove preservation or fall back to raw.
+8. High savings with wrong content is worse than zero savings.
+9. Evaluation is based on agent next-action equivalence.
+10. Deterministic, local, test-first.
+
+See [docs/PRINCIPLES.md](./docs/PRINCIPLES.md) for the product rationale and [docs/DESIGN.md](./docs/DESIGN.md) for the implementation contracts.
+
 ## Usage
 
 ```bash
