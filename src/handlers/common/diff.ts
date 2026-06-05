@@ -19,7 +19,7 @@ function splitLines(text: string): string[] {
   return lines;
 }
 
-function lcsChanges(oldLines: string[], newLines: string[]): DiffChange[] {
+export function lcsChanges(oldLines: string[], newLines: string[]): DiffChange[] {
   const common = Array.from({ length: oldLines.length + 1 }, () =>
     Array<number>(newLines.length + 1).fill(0),
   );
@@ -99,9 +99,17 @@ function flushUnifiedFile(
 ) {
   if (!currentFile || (added === 0 && removed === 0)) return;
 
+  // RTK: git/diff_cmd.rs::condense_unified_diff — every +/- line is shown in full
+  // (never truncated; users decide on this data). When the file has more than 10
+  // changes, a "... +N more" footer notes the size using the UNCAPPED total
+  // (total-10), not a capped count (overflow_count_accuracy / no_false_overflow).
   output.push(`[file] ${currentFile} (+${added} -${removed})`);
   for (const change of changes) {
     output.push(`  ${change}`);
+  }
+  const total = added + removed;
+  if (total > 10) {
+    output.push(`  ... +${total - 10} more`);
   }
 }
 

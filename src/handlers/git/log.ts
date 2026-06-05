@@ -13,11 +13,53 @@ function shortHash(hash: string): string {
   return hash.slice(0, 12);
 }
 
+const ONELINE_HEADER = /^[0-9a-f]{7,40}\s+\S/;
+
+// RTK: git.rs::filter_log_output — for the oneline/pretty log, each hash-prefixed line
+// starts a new commit; the lines beneath it are body. Keep up to 3 non-trailer body
+// lines indented under their commit, dropping Signed-off-by / Co-authored-by trailers.
+function formatOnelineLog(text: string): string {
+  const out: string[] = [];
+  let bodyCount = 0;
+  let omitted = 0;
+
+  const flushOmitted = () => {
+    if (omitted > 0) out.push(`  [+${omitted} lines omitted]`);
+    omitted = 0;
+  };
+
+  for (const rawLine of text.split(/\r?\n/)) {
+    const line = rawLine.trim();
+    if (line === "") continue;
+    if (ONELINE_HEADER.test(line)) {
+      flushOmitted();
+      out.push(line);
+      bodyCount = 0;
+      continue;
+    }
+    if (line.startsWith("Signed-off-by:") || line.startsWith("Co-authored-by:")) continue;
+    if (out.length === 0) continue; // body before any header — ignore
+    if (bodyCount < 3) {
+      out.push(`  ${line}`);
+      bodyCount += 1;
+    } else {
+      omitted += 1;
+    }
+  }
+  flushOmitted();
+
+  return `${out.join("\n")}\n`;
+}
+
 function formatLog(text: string): string {
   const rawLines = text.split(/\r?\n/).filter(Boolean);
   if (rawLines.length === 0) return "Git Log\nCommits: 0\n";
-  if (rawLines.length > 0 && rawLines.length <= 5 && rawLines.every((line) => /^[0-9a-f]{7,}\s+/.test(line))) {
-    return `${rawLines.join("\n")}\n`;
+
+  // Oneline/pretty log (hash-prefixed headers, optional body) — not the verbose
+  // "commit <hash>" form, which the block parser below handles.
+  const firstLine = rawLines[0] ?? "";
+  if (ONELINE_HEADER.test(firstLine) && !firstLine.startsWith("commit ")) {
+    return formatOnelineLog(text);
   }
 
   const commits: Commit[] = [];

@@ -1,3 +1,5 @@
+import { homedir } from "node:os";
+
 import { executeCommand } from "../../executor.js";
 import type { CommandHandler, ParsedCommand, RawResult, TgOptions } from "../../types.js";
 import { makeFilteredResult } from "../base.js";
@@ -34,6 +36,47 @@ function firstPushedRef(text: string): string | undefined {
   return text.match(/\s+[0-9a-f]+\.\.[0-9a-f]+\s+(\S+)\s+->\s+(\S+)/)?.[2];
 }
 
+// RTK: git/git.rs::filter_stash_list — strip the "WIP on <branch>:" / "On <branch>:"
+// prefix by keeping whatever follows the second ": " in each entry.
+function filterStashList(text: string): string {
+  return text
+    .split(/\r?\n/)
+    .filter((line) => line.trim() !== "")
+    .map((line) => {
+      const colon = line.indexOf(": ");
+      if (colon === -1) return line;
+      const index = line.slice(0, colon);
+      const rest = line.slice(colon + 2);
+      const second = rest.indexOf(": ");
+      const message = second === -1 ? rest.trim() : rest.slice(second + 2).trim();
+      return `${index}: ${message}`;
+    })
+    .join("\n");
+}
+
+// RTK: git/git.rs::filter_worktree_list — compact the leading path with ~ for $HOME
+// and normalize whitespace to single spaces (path hash [branch]).
+function filterWorktreeList(text: string): string {
+  const home = homedir();
+  return text
+    .split(/\r?\n/)
+    .filter((line) => line.trim() !== "")
+    .map((line) => {
+      const parts = line.trim().split(/\s+/);
+      if (parts.length >= 3) {
+        let path = parts[0]!;
+        if (home && path.startsWith(home)) {
+          path = `~${path.slice(home.length)}`;
+        }
+        const hash = parts[1];
+        const branch = parts.slice(2).join(" ");
+        return `${path} ${hash} ${branch}`;
+      }
+      return line;
+    })
+    .join("\n");
+}
+
 function formatGitExtended(name: string, raw: RawResult, command: ParsedCommand): string {
   const text = combined(raw);
   const subcommand = command.args[0] ?? "";
@@ -45,8 +88,10 @@ function formatGitExtended(name: string, raw: RawResult, command: ParsedCommand)
 
   if (name === "git-commit") {
     if (/nothing to commit/.test(text)) return "ok (nothing to commit)\n";
-    const match = text.match(/\[[^\s]+ ([0-9a-f]{7,})\]\s+(.+)/);
-    return match ? `ok ${match[1]} ${match[2]}\n` : `${text}\n`;
+    // RTK: git/git.rs run_commit — collapse to "ok <hash>" (7 chars), dropping the
+    // "[branch hash] subject" envelope AND the subject (RTK emits the hash only).
+    const match = text.match(/\[[^\]]*?([0-9a-f]{7,40})\]/);
+    return match ? `ok ${match[1]!.slice(0, 7)}\n` : `${text}\n`;
   }
 
   if (name === "git-push") {
@@ -64,15 +109,17 @@ function formatGitExtended(name: string, raw: RawResult, command: ParsedCommand)
   }
 
   if (name === "git-fetch") {
-    const refLines = text.split(/\r?\n/).filter((line) => /\[new .+?\]|\.\./.test(line));
-    return refLines.length > 0 ? `ok fetched (${refLines.length} new refs)\n${refLines.join("\n")}\n` : "ok fetched\n";
+    // RTK: git/git.rs::run_fetch — count refs via stderr lines containing "->" or
+    // "[new", collapse to "ok fetched (N new refs)" (the ref lines are dropped).
+    const newRefs = text.split(/\r?\n/).filter((line) => line.includes("->") || line.includes("[new")).length;
+    return newRefs > 0 ? `ok fetched (${newRefs} new refs)\n` : "ok fetched\n";
   }
 
   if (name === "git-stash") {
     const action = command.args[1] ?? "";
     if (action === "list") {
       if (!text) return "No stashes\n";
-      return `${text.replace(/stash@\{(\d+)\}: (?:WIP on \S+|On \S+): /g, "stash@{$1}: ")}\n`;
+      return `${filterStashList(text)}\n`;
     }
     if (action === "show") return `${text}\n`;
     if (/No local changes/.test(text)) return `${text}\n`;
@@ -81,8 +128,12 @@ function formatGitExtended(name: string, raw: RawResult, command: ParsedCommand)
   }
 
   if (name === "git-worktree") {
-    if (command.args[1] === "list") return `${text}\n`;
-    return "ok\n";
+    const action = command.args[1] ?? "";
+    if (["add", "remove", "prune", "lock", "unlock", "move"].includes(action)) {
+      return "ok\n";
+    }
+    // Default + explicit `list`: compact the worktree listing.
+    return `${filterWorktreeList(text)}\n`;
   }
 
   return `${text}\n`;

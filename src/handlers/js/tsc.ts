@@ -11,8 +11,19 @@ type TscIssue = {
   notes: string[];
 };
 
+// RTK: tsc_cmd.rs uses a 39-char box-drawing separator under the summary line.
+const TSC_SEPARATOR = "═".repeat(39);
+
 function matchesTsc(command: ParsedCommand): boolean {
   return command.program.includes("tsc") || command.original.includes("tsc");
+}
+
+// RTK: core/utils.rs::truncate — keep up to max chars, else 117 chars + "...".
+function truncate(text: string, maxLen: number): string {
+  const chars = [...text];
+  if (chars.length <= maxLen) return text;
+  if (maxLen < 3) return "...";
+  return `${chars.slice(0, maxLen - 3).join("")}...`;
 }
 
 function parseIssue(line: string): TscIssue | undefined {
@@ -28,6 +39,9 @@ function parseIssue(line: string): TscIssue | undefined {
   };
 }
 
+// RTK: tsc_cmd.rs::filter_tsc_output — group every diagnostic by file, show a
+// single compact "Top codes" summary, and emit one line per error. Mirrors RTK's
+// formatting (and compression) rather than duplicating a per-code breakdown.
 function formatTsc(text: string): string {
   const issues: TscIssue[] = [];
   for (const line of text.split(/\r?\n/)) {
@@ -38,27 +52,53 @@ function formatTsc(text: string): string {
     }
     if (/^\s{2,}\S/.test(line) && issues.length > 0) issues[issues.length - 1]!.notes.push(line.trim());
   }
-  const byCode = new Map<string, TscIssue[]>();
-  for (const issue of issues) {
-    const list = byCode.get(issue.code) ?? [];
-    list.push(issue);
-    byCode.set(issue.code, list);
-  }
+
   if (issues.length === 0) {
     const trimmed = text.trim();
+    // RTK: tsc_cmd.rs::filter_tsc_output / test_filter_no_errors — a clean run
+    // collapses the "Found 0 errors" chatter into a single status line.
+    if (/Found 0 errors/.test(trimmed)) return "TypeScript: No errors found\n";
     return trimmed ? `${trimmed}\n` : "";
   }
-  const out = [`TypeScript: ${issues.length} errors in ${new Set(issues.map((issue) => issue.file)).size} files`];
-  out.push("By code:", ...[...byCode.entries()].sort().map(([code, list]) => `- ${code}: ${list.length}`));
-  for (const [code, codeIssues] of [...byCode.entries()].sort()) {
-    const sortedIssues = [...codeIssues].sort((a, b) => a.file.localeCompare(b.file));
-    out.push("", code);
-    for (const issue of sortedIssues) {
-      out.push(`- ${issue.file}:${issue.line}:${issue.column} ${issue.message}`);
-      for (const note of issue.notes) out.push(`  ${note}`);
-    }
+
+  const byFile = new Map<string, TscIssue[]>();
+  for (const issue of issues) {
+    const list = byFile.get(issue.file) ?? [];
+    list.push(issue);
+    byFile.set(issue.file, list);
   }
-  return `${out.join("\n")}\n`;
+
+  const codeCounts = new Map<string, number>();
+  for (const issue of issues) codeCounts.set(issue.code, (codeCounts.get(issue.code) ?? 0) + 1);
+
+  const out: string[] = [
+    `TypeScript: ${issues.length} errors in ${byFile.size} files`,
+    TSC_SEPARATOR,
+  ];
+
+  // RTK: top error codes on one line, highest count first, capped at 5.
+  if (codeCounts.size > 1) {
+    const topCodes = [...codeCounts.entries()]
+      .sort((a, b) => b[1] - a[1] || a[0].localeCompare(b[0]))
+      .slice(0, 5)
+      .map(([code, count]) => `${code} (${count}x)`);
+    out.push(`Top codes: ${topCodes.join(", ")}`, "");
+  }
+
+  // RTK: files sorted by error count (most errors first); every error shown, no limit.
+  const filesSorted = [...byFile.entries()].sort(
+    (a, b) => b[1].length - a[1].length || a[0].localeCompare(b[0]),
+  );
+  for (const [file, fileIssues] of filesSorted) {
+    out.push(`${file} (${fileIssues.length} errors)`);
+    for (const issue of fileIssues) {
+      out.push(`  L${issue.line}: ${issue.code} ${truncate(issue.message, 120)}`);
+      for (const note of issue.notes) out.push(`    ${truncate(note, 120)}`);
+    }
+    out.push("");
+  }
+
+  return `${out.join("\n").trimEnd()}\n`;
 }
 
 export const tscHandler: CommandHandler = {

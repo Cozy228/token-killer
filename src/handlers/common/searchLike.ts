@@ -1,6 +1,7 @@
 import { executeCommand } from "../../executor.js";
 import type { CommandHandler } from "../../types.js";
 import { makeFilteredResult } from "../base.js";
+import { groupGrepOutput, hasFormatFlag } from "./grepFilter.js";
 
 const SEARCH_PROGRAMS = new Set(["rg", "grep"]);
 
@@ -20,9 +21,24 @@ export const searchLikeHandler: CommandHandler = {
   },
 
   async filter(raw, command, options) {
-    const output = raw.stdout.trim()
-      ? `${raw.stdout.trimEnd()}\n`
-      : `${raw.stderr || `0 matches for ${searchPattern(command.args)}`}\n`;
+    const pattern = searchPattern(command.args);
+
+    if (!raw.stdout.trim()) {
+      const output = `${raw.stderr || `0 matches for ${pattern}`}\n`;
+      return makeFilteredResult(this.name, raw, output, options);
+    }
+
+    // RTK: grep_cmd.rs — explicit format flags (-c/-l/-L/-o/-Z) already produce
+    // small output, so they pass through verbatim. Everything else is grouped by
+    // file and compressed; if no line parses as a match (e.g. grep without -n,
+    // rg --json), fall back to passthrough rather than drop content.
+    let output: string;
+    if (hasFormatFlag(command.args)) {
+      output = `${raw.stdout.trimEnd()}\n`;
+    } else {
+      output = groupGrepOutput(raw.stdout, pattern) ?? `${raw.stdout.trimEnd()}\n`;
+    }
+
     return makeFilteredResult(this.name, raw, output, options);
   },
 };

@@ -1,112 +1,168 @@
 import { executeCommand } from "../../executor.js";
-import type { CommandHandler } from "../../types.js";
+import type { CommandHandler, ParsedCommand, RawResult, TgOptions } from "../../types.js";
 import { makeFilteredResult } from "../base.js";
 
-type Section = "staged" | "modified" | "untracked" | "conflicts" | undefined;
+// RTK: git/git.rs::uses_compact_status_path — empty args or any combination of
+// branch/short flags routes through the forced `--porcelain -b` compact path.
+// Anything else (-uno, --porcelain alone, pathspecs) is treated as explicit and
+// passes through with minimal filtering.
+export function usesCompactStatusPath(args: string[]): boolean {
+  if (args.length === 0) return true;
 
-function shortLine(indexStatus: string, worktreeStatus: string, file: string): string {
-  return `${indexStatus}${worktreeStatus} ${file}`;
+  let sawBranch = false;
+  for (const arg of args) {
+    switch (arg) {
+      case "-b":
+      case "--branch":
+        sawBranch = true;
+        break;
+      case "-sb":
+      case "-bs":
+        return true;
+      case "-s":
+      case "--short":
+        break;
+      default:
+        return false;
+    }
+  }
+  return sawBranch;
 }
 
-function parseShortStatusLine(line: string) {
-  if (line.startsWith("## ")) {
-    const branch = line.slice(3).split("...")[0]?.trim();
-    return branch ? { branch } : undefined;
+// RTK: git/git.rs::build_status_command — compact path forces `status --porcelain -b`;
+// otherwise the user's args pass through verbatim.
+export function buildStatusArgs(args: string[]): string[] {
+  if (usesCompactStatusPath(args)) {
+    return ["status", "--porcelain", "-b"];
+  }
+  return ["status", ...args];
+}
+
+// RTK: git/git.rs::format_status_inner — render `--porcelain -b` output. The
+// branch line (`## main...origin/main`) becomes `* main...origin/main`; every
+// other porcelain line is preserved verbatim (no recategorising, no overflow
+// markers). A lone branch line means a clean tree.
+export function formatStatusOutput(porcelain: string, detached?: string): string {
+  const lines = porcelain.split(/\r?\n/).filter((line) => line.trim() !== "");
+
+  if (lines.length === 0) {
+    return "Clean working tree";
   }
 
-  if (!/^[ MADRCU?!][ MADRCU?!] /.test(line)) return undefined;
-  const indexStatus = line[0] ?? " ";
-  const worktreeStatus = line[1] ?? " ";
-  const file = line.slice(3).trim();
-  if (!file) return undefined;
-
-  if (indexStatus === "?" && worktreeStatus === "?") return { section: "untracked" as const, file };
-  if (indexStatus === "U" || worktreeStatus === "U" || (indexStatus === "A" && worktreeStatus === "A")) {
-    return { section: "conflicts" as const, file };
+  const output: string[] = [];
+  const first = lines[0]!;
+  if (first.startsWith("##")) {
+    let branch = first;
+    while (branch.startsWith("## ")) branch = branch.slice(3);
+    output.push(`* ${detached ?? branch}`);
+  } else {
+    output.push(first);
   }
-  if (indexStatus !== " ") return { section: "staged" as const, file };
-  if (worktreeStatus !== " ") return { section: "modified" as const, file };
 
+  for (const line of lines.slice(1)) {
+    output.push(line);
+  }
+
+  if (lines.length === 1 && lines[0]!.startsWith("##")) {
+    output.push("clean — nothing to commit");
+  }
+
+  return output.join("\n");
+}
+
+// RTK: git/git.rs::GitStatusState — compact in-progress summaries.
+const STATE_SUMMARIES: Array<{ test: (line: string) => boolean; summary: string }> = [
+  { test: (l) => l.includes("All conflicts fixed but you are still merging"), summary: "merge in progress. no conflicts" },
+  { test: (l) => l.includes("You have unmerged paths"), summary: "merge in progress. unresolved conflicts" },
+  { test: (l) => l.includes("You are currently cherry-picking"), summary: "cherry-pick in progress" },
+  { test: (l) => l.includes("You are currently reverting"), summary: "revert in progress" },
+  { test: (l) => l.includes("You are currently bisecting"), summary: "bisect in progress" },
+  { test: (l) => l.includes("You are in the middle of an am session"), summary: "am session in progress" },
+  { test: (l) => l.includes("You are in a sparse checkout"), summary: "sparse checkout enabled" },
+];
+
+// RTK: git/git.rs::REBASE_INDICATORS
+const REBASE_INDICATORS = [
+  "rebase in progress",
+  "You are currently rebasing",
+  "You are currently editing",
+  "You are currently splitting",
+  "Last command done",
+  "Next command to do",
+  "No commands remaining",
+];
+
+function detectStatusState(line: string): string | undefined {
+  for (const { test, summary } of STATE_SUMMARIES) {
+    if (test(line)) return summary;
+  }
+  if (REBASE_INDICATORS.some((indicator) => line.includes(indicator))) {
+    return "rebase in progress";
+  }
   return undefined;
 }
 
-function formatStatus(text: string): string {
-  let branch = "unknown";
-  let section: Section;
-  const statuses: string[] = [];
+// RTK: git/git.rs::extract_state_header — `--porcelain -b` drops git's rebase /
+// merge / cherry-pick / bisect / am / sparse state block. Recover a compact
+// summary from the plain-status capture, stopping at the file-change headers.
+export function extractStateHeader(raw: string): string | undefined {
+  const stoppers = [
+    "Changes to be committed:",
+    "Changes not staged for commit:",
+    "Untracked files:",
+    "Unmerged paths:",
+    "no changes added to commit",
+    "nothing to commit",
+    "nothing added to commit",
+  ];
 
-  for (const line of text.split(/\r?\n/)) {
+  for (const line of raw.split(/\r?\n/)) {
+    const stripped = line.trim();
+    if (stoppers.some((s) => stripped.startsWith(s))) break;
+    const state = detectStatusState(stripped);
+    if (state) return state;
+  }
+  return undefined;
+}
+
+// RTK: git/git.rs::extract_detached_head — porcelain collapses detached HEAD to
+// `## HEAD (no branch)`; recover the explicit `HEAD detached at <ref>` line.
+export function extractDetachedHead(raw: string): string | undefined {
+  return raw
+    .split(/\r?\n/)
+    .map((line) => line.trim())
+    .find((line) => line.startsWith("HEAD detached "));
+}
+
+// RTK: git/git.rs::filter_status_with_args — minimal filtering for explicit args:
+// drop git hints + empty lines, collapse a clean tree to its one-line summary.
+export function filterStatusWithArgs(output: string): string {
+  const result: string[] = [];
+
+  for (const line of output.split(/\r?\n/)) {
     const trimmed = line.trim();
-    const shortStatus = parseShortStatusLine(line);
-    if (shortStatus?.branch) {
-      branch = shortStatus.branch;
-      continue;
-    }
-    if (shortStatus?.section === "staged") {
-      statuses.push(line.slice(0, 3) + shortStatus.file);
-      continue;
-    }
-    if (shortStatus?.section === "modified") {
-      statuses.push(line.slice(0, 3) + shortStatus.file);
-      continue;
-    }
-    if (shortStatus?.section === "untracked") {
-      statuses.push(`?? ${shortStatus.file}`);
-      continue;
-    }
-    if (shortStatus?.section === "conflicts") {
-      statuses.push(line.slice(0, 3) + shortStatus.file);
-      continue;
-    }
-
-    if (trimmed.startsWith("On branch ")) {
-      branch = trimmed.replace("On branch ", "");
-      continue;
-    }
-    if (trimmed === "Changes to be committed:") {
-      section = "staged";
-      continue;
-    }
-    if (trimmed === "Changes not staged for commit:") {
-      section = "modified";
-      continue;
-    }
-    if (trimmed === "Untracked files:") {
-      section = "untracked";
-      continue;
-    }
-    if (trimmed.includes("unmerged paths")) {
-      section = "conflicts";
-      continue;
-    }
+    if (trimmed === "") continue;
     if (
-      !section ||
-      !trimmed ||
-      trimmed.startsWith("(") ||
-      trimmed.startsWith("use ") ||
-      trimmed.startsWith("no changes added") ||
-      trimmed.startsWith("nothing added to commit") ||
-      trimmed.startsWith("nothing to commit")
+      trimmed.startsWith('(use "git') ||
+      trimmed.startsWith("(create/copy files") ||
+      trimmed.includes('(use "git add') ||
+      trimmed.includes('(use "git restore')
     ) {
       continue;
     }
-
-    const match = trimmed.match(/^(new file|modified|deleted|renamed|both modified):\s+(.+)$/);
-    const status = match?.[1];
-    const file = match?.[2] ?? trimmed;
-    if (section === "staged") {
-      statuses.push(shortLine(status === "deleted" ? "D" : status === "modified" ? "M" : "A", " ", file));
+    if (trimmed.includes("nothing to commit") && trimmed.includes("working tree clean")) {
+      result.push(trimmed);
+      break;
     }
-    if (section === "modified") {
-      statuses.push(shortLine(" ", status === "deleted" ? "D" : "M", file));
-    }
-    if (section === "untracked") statuses.push(`?? ${file}`);
-    if (section === "conflicts") statuses.push(shortLine("U", "U", file));
+    result.push(line);
   }
 
-  const lines = [`* ${branch}`, ...statuses];
+  return result.length === 0 ? "ok" : result.join("\n");
+}
 
-  return `${lines.join("\n")}\n`;
+function statusArgs(command: ParsedCommand): string[] {
+  // command.args === ["status", ...rest]; RTK reasons about the trailing args.
+  return command.args.slice(1);
 }
 
 export const gitStatusHandler: CommandHandler = {
@@ -116,11 +172,47 @@ export const gitStatusHandler: CommandHandler = {
     return command.program === "git" && command.args[0] === "status";
   },
 
-  execute(command) {
-    return executeCommand(command);
+  async execute(command) {
+    const args = statusArgs(command);
+
+    if (!usesCompactStatusPath(args)) {
+      return executeCommand(command);
+    }
+
+    // RTK runs `git status --porcelain -b` for the compact formatted output and a
+    // plain `git status` (C locale, so the English state phrases parse) for the
+    // in-progress state / detached-HEAD recovery.
+    const porcelain = await executeCommand({
+      ...command,
+      args: ["status", "--porcelain", "-b"],
+      displayCommand: "git status --porcelain -b",
+    });
+    const human = await executeCommand(
+      { ...command, args: ["status", ...args] },
+      { LC_ALL: "C" },
+    );
+    return { ...porcelain, auxStdout: human.stdout };
   },
 
-  async filter(raw, _command, options) {
-    return makeFilteredResult(this.name, raw, formatStatus(raw.stdout || raw.stderr), options);
+  async filter(raw: RawResult, command, options: TgOptions) {
+    const args = statusArgs(command);
+
+    if (!usesCompactStatusPath(args)) {
+      return makeFilteredResult(this.name, raw, `${filterStatusWithArgs(raw.stdout)}\n`, options);
+    }
+
+    if (raw.exitCode !== 0 && /not a git repository/.test(raw.stderr)) {
+      return makeFilteredResult(this.name, raw, "Not a git repository\n", options);
+    }
+
+    const human = raw.auxStdout ?? "";
+    const detached = extractDetachedHead(human);
+    let formatted = formatStatusOutput(raw.stdout, detached);
+    const state = extractStateHeader(human);
+    if (state) {
+      formatted = `${state}\n${formatted}`;
+    }
+
+    return makeFilteredResult(this.name, raw, `${formatted}\n`, options);
   },
 };

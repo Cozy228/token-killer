@@ -117,6 +117,23 @@ function findRoot(command: ParsedCommand): string {
   return first && first !== "." ? cleanPath(first) : "";
 }
 
+// RTK: system/find_cmd.rs default max_results (parse_find_args → 50). tg filters
+// the real find's output rather than re-walking the filesystem, so it caps the
+// grouped listing at the same budget and reports the remainder as "+N more".
+const FIND_MAX_RESULTS = 50;
+
+// RTK: find_cmd.rs uses the -name/-iname glob as the effective_pattern shown in
+// the "0 for '<pattern>'" empty message (defaults to "*").
+function findPattern(command: ParsedCommand): string {
+  const args = command.args;
+  for (let i = 0; i < args.length; i += 1) {
+    if ((args[i] === "-name" || args[i] === "-iname") && args[i + 1]) {
+      return args[i + 1]!;
+    }
+  }
+  return "*";
+}
+
 function stripFindRoot(pathValue: string, root: string): string {
   const cleaned = cleanPath(pathValue);
   if (!root) return cleaned;
@@ -133,7 +150,8 @@ function summarizeFindOutput(text: string, command: ParsedCommand): string {
       .filter((line) => line && !line.split(/[\\/]+/).some((part) => SKIP_DIRS.has(part))),
   )].sort();
 
-  if (files.length === 0) return "\n";
+  // RTK: find_cmd.rs — empty result collapses to "0 for '<pattern>'".
+  if (files.length === 0) return `0 for '${findPattern(command)}'\n`;
 
   const byDir = new Map<string, string[]>();
   for (const file of files) {
@@ -147,11 +165,28 @@ function summarizeFindOutput(text: string, command: ParsedCommand): string {
   }
 
   const dirs = [...byDir.keys()].sort();
-  const lines = [`${files.length}F ${dirs.length}D:`, ""];
+  const totalFiles = files.length;
+  const lines = [`${totalFiles}F ${dirs.length}D:`, ""];
+
+  // RTK: find_cmd.rs:317-350 — fill the budget across sorted dirs, partial-show
+  // the dir that overflows, then emit "+N more" using the uncapped total.
+  let shown = 0;
   for (const dir of dirs) {
-    const entries = byDir.get(dir) ?? [];
-    lines.push(`${dir}/ ${entries.sort().join(" ")}`);
+    if (shown >= FIND_MAX_RESULTS) break;
+    const entries = (byDir.get(dir) ?? []).sort();
+    const remaining = FIND_MAX_RESULTS - shown;
+    if (entries.length <= remaining) {
+      lines.push(`${dir}/ ${entries.join(" ")}`);
+      shown += entries.length;
+    } else {
+      lines.push(`${dir}/ ${entries.slice(0, remaining).join(" ")}`);
+      shown += remaining;
+      break;
+    }
   }
+
+  if (shown < totalFiles) lines.push(`+${totalFiles - shown} more`);
+
   return `${lines.join("\n")}\n`;
 }
 
