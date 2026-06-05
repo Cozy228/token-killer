@@ -30,11 +30,11 @@ function parsed(command: string[]): ParsedCommand {
   };
 }
 
-function raw(command: string[], stdout: string, exitCode = 0): RawResult {
+function raw(command: string[], stdout: string, exitCode = 0, stderr = ""): RawResult {
   return {
     command: command.join(" "),
     stdout,
-    stderr: "",
+    stderr,
     exitCode,
     durationMs: 1,
   };
@@ -53,10 +53,11 @@ export async function filterRtkOutput(
   commandArgs: string[],
   stdout: string,
   exitCode = 0,
+  stderr = "",
 ) {
   const command = parsed(commandArgs);
   const handler = routeCommand(command);
-  const rawResult = raw(commandArgs, stdout, exitCode);
+  const rawResult = raw(commandArgs, stdout, exitCode, stderr);
   const result = await handler.filter(rawResult, command, options);
   assertNotUnfilteredPassthrough(commandArgs, stdout, result.output);
   return { ...result, rawOutput: stdout };
@@ -82,11 +83,14 @@ function allowsRtkPassthrough(commandArgs: string[], stdout: string): boolean {
   const trimmed = stdout.trim();
 
   if (program === "curl") {
-    return (
+    // RTK: cloud/curl_cmd.rs::filter_curl_output passes through unchanged when the
+    // body looks like top-level JSON OR is under MAX_RESPONSE_SIZE (500 bytes).
+    // Both are genuine RTK retention paths, not unfiltered-passthrough cheats.
+    const looksJson =
       (trimmed.startsWith("{") && trimmed.endsWith("}")) ||
       (trimmed.startsWith("[") && trimmed.endsWith("]")) ||
-      (trimmed.startsWith('"') && trimmed.endsWith('"'))
-    );
+      (trimmed.startsWith('"') && trimmed.endsWith('"'));
+    return looksJson || Buffer.byteLength(trimmed, "utf8") < 500;
   }
 
   if (program === "grep") {
@@ -107,8 +111,19 @@ export type RtkParityExpectation = {
   forbidden?: RegExp[];
   maxOutputChars?: number;
   minSavingsRatio?: number;
+  // RTK measures savings in whitespace-delimited tokens (count_tokens =
+  // s.split_whitespace().count()), e.g. gradlew_cmd.rs::test_build_token_savings
+  // asserts >= 70%. Use this to mirror an explicit RTK *_token_savings invariant.
+  minTokenSavingsRatio?: number;
   exact?: string;
 };
+
+// RTK: count_tokens(text) = text.split_whitespace().count() (see
+// rtk/.claude/rules/cli-testing.md and gradlew_cmd.rs token-savings tests).
+function countTokens(text: string): number {
+  const trimmed = text.trim();
+  return trimmed === "" ? 0 : trimmed.split(/\s+/).length;
+}
 
 export function expectRtkParity(
   result: RtkParityResult,
@@ -134,5 +149,15 @@ export function expectRtkParity(
     const rawChars = result.rawOutput.length;
     const savingsRatio = rawChars === 0 ? 0 : 1 - result.output.length / rawChars;
     expect(savingsRatio + Number.EPSILON).toBeGreaterThanOrEqual(expectation.minSavingsRatio);
+  }
+
+  if (expectation.minTokenSavingsRatio !== undefined) {
+    const rawTokens = countTokens(result.rawOutput);
+    const outTokens = countTokens(result.output);
+    const tokenSavings = rawTokens === 0 ? 0 : 1 - outTokens / rawTokens;
+    expect(
+      tokenSavings + Number.EPSILON,
+      `token savings ${(tokenSavings * 100).toFixed(1)}% (${outTokens}/${rawTokens} tokens) below required ${(expectation.minTokenSavingsRatio * 100).toFixed(1)}%`,
+    ).toBeGreaterThanOrEqual(expectation.minTokenSavingsRatio);
   }
 }
