@@ -13,12 +13,15 @@ import {
   type GainSummary,
   type TimeBucket,
 } from "./aggregate.js";
+import { randomUUID } from "node:crypto";
+
 import {
   listProjectHistories,
   readHistory,
   readProjectMeta,
   type HistoryRecord,
 } from "./history.js";
+import { runColdPathTelemetry, type DispatchParams } from "../telemetry/dispatch.js";
 import {
   DEFAULT_INPUT_PRICE_PER_MTOK,
   estimateSavingsUsd,
@@ -97,6 +100,8 @@ export async function runGain(
   argv: string[],
   cwd: string = process.cwd(),
   now: Date = new Date(),
+  // Cold-path telemetry trigger; injectable so tests stay deterministic/offline.
+  dispatchTelemetry: (params: DispatchParams) => void = runColdPathTelemetry,
 ): Promise<number> {
   const args = parseGainArgs(argv);
   if (args.error) {
@@ -114,14 +119,20 @@ export async function runGain(
 
   if (args.format === "json") {
     process.stdout.write(`${JSON.stringify(buildGainJson(records, args, now), null, 2)}\n`);
-    return 0;
-  }
-  if (args.format === "csv") {
+  } else if (args.format === "csv") {
     process.stdout.write(renderCsv(records, args));
-    return 0;
+  } else {
+    process.stdout.write(await renderText(records, args, now));
   }
 
-  process.stdout.write(await renderText(records, args, now));
+  // Cold-path telemetry (any output mode). ALWAYS user-level, independent of the
+  // gain scope above. Best-effort: never changes the exit code.
+  try {
+    const userRecords = args.user ? records : await listProjectHistories();
+    dispatchTelemetry({ records: userRecords, now, runId: randomUUID() });
+  } catch {
+    // telemetry must never break gain
+  }
   return 0;
 }
 

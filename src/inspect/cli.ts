@@ -17,6 +17,7 @@ import {
 import { readConfig } from "../core/config.js";
 import { listProjectHistoriesSync } from "../core/history.js";
 import { buildTelemetry } from "../telemetry/build.js";
+import { runColdPathTelemetry } from "../telemetry/dispatch.js";
 import { deviceHash, loadOrCreateState } from "../telemetry/state.js";
 import { VERSION } from "../version.js";
 import { renderStaticContextSection } from "../context/report.js";
@@ -310,6 +311,17 @@ export function runInspect(
         if (opts.advice) process.stdout.write(`\n${renderAdviceMarkdown(findings)}\n`);
       }
     }
+
+    // Cold-path NETWORK telemetry (ADR 0004 §5), gated on `telemetry` consent +
+    // a build-time endpoint. Separate from --telemetry-export (local consent)
+    // above. Always user-level; the scan contributes the optional inspect
+    // aggregates. Best-effort — never changes the exit code.
+    runColdPathTelemetry({
+      records: listProjectHistoriesSync(),
+      now: new Date(nowMs),
+      runId: randomUUID(),
+      inspect: result ? buildInspectAggregates(result, findings) : undefined,
+    });
 
     // --fail-on: opt-in non-zero exit (4, never reuses 2) when any finding is at
     // or above the requested severity. Findings never change the exit code on

@@ -833,6 +833,12 @@ Allowed aggregate fields:
 - Input prefix churn bucket.
 - Output family distribution.
 
+- `device_hash` — `sha256(deviceSalt)`, a per-install **anonymous** id (ADR 0004).
+  Allowed **only** for opt-in (`telemetry: true`) enterprise upload, where stable
+  cross-run correlation is intended. It is NOT a user, account, repo or session id;
+  `tg telemetry purge` deletes the salt and resets it. Absent from the local export
+  unless telemetry is opted in.
+
 Disallowed fields:
 
 - Raw commands or command arguments.
@@ -840,6 +846,12 @@ Disallowed fields:
 - Raw output snippets.
 - Raw prompt content.
 - Source code, logs or file content.
+
+> The shipped payload (schema "2", ADR 0004 §5) is a **subset** of the list above —
+> `handler` already names the compressor family, so `compressor_family_counts` /
+> `avg_compression_ratio_by_family` are dropped. The allow-list is enforced **in
+> code**: the builder physically constructs only allowed fields. See
+> [TELEMETRY.md](./TELEMETRY.md) for the exact field-by-field contract.
 
 ---
 

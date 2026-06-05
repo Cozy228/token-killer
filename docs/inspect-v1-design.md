@@ -291,6 +291,16 @@ Telemetry export must never include Raw Evidence.
 
 ## Telemetry Export
 
+> **Partially superseded by [ADR 0004](./adr/0004-opt-in-network-telemetry-and-gain-parity.md).**
+> Two points below are updated: (1) a stable **`device_hash`** (per-install,
+> anonymous, opt-in) is now permitted — "does not correlate multiple runs" no longer
+> holds for opted-in enterprise installs, which is the intended behavior; (2) consent
+> is split into two independent flags — `telemetryExport` (local file, this doc's
+> original scope) and `telemetry` (network upload). Neither implies the other. The
+> shipped payload is **schema "2"** ([TELEMETRY.md](./TELEMETRY.md)), history-derived
+> and always user-level; the inspect aggregates below become an optional add-on on an
+> `tg inspect`-triggered build. The rest of this section still holds.
+
 Telemetry Export is disabled by default.
 
 It can be enabled by:
