@@ -27,7 +27,9 @@ The product shape is two-stage:
 
 ## Source of truth
 
-- `docs/DESIGN.md` §4 and §5 define the product boundary.
+- `docs/DESIGN.md` §4 and §5 define the product boundary; **§9 defines the one `tg inspect`**
+  (default-full) and §9.0 its unified `Finding` model — static context is a `source =
+  static_context` analyzer inside it, and §10.5 defines the inspect → optimize consumer loop.
 - `docs/inspect-v1-design.md` defines the inspect posture: no source-code analysis, no
   exact token accounting, no project-level writes.
 - GitHub Copilot custom instruction docs define the supported Copilot surfaces:
@@ -110,7 +112,10 @@ Exit codes:
 
 ## Data model
 
-Add context optimizer types under `src/context/`.
+Add context optimizer types under `src/context/`. A static-context finding is the
+`source = "static_context"` slice of inspect's unified `Finding` (DESIGN §9.0) — it does
+**not** define its own report envelope. `ContextFinding` below is exactly that slice; the
+analyzers emit it and inspect merges it into the one `Finding[]` report.
 
 ```ts
 export type ContextSurface =
@@ -122,12 +127,19 @@ export type ContextSurface =
   | "skill"
   | "stable_prefix";
 
-export type FixClass = "safe_mechanical" | "suggested_diff" | "advisory" | "non_goal";
+// Shared with runtime findings. "delivery" belongs to runtime findings (install shim/hook);
+// static-context findings only use the other four classes.
+export type FixClass =
+  | "safe_mechanical" | "suggested_diff" | "advisory" | "delivery" | "non_goal";
 
 export type FindingSeverity = "info" | "warn" | "error";
 
+// The static_context view of inspect's Finding. id/severity/confidence/evidence/
+// recommendation/fix_class are shared with runtime findings; surface/file/lines/adapter are
+// the static-context locators. `source` is set to "static_context" when merged into inspect.
 export type ContextFinding = {
   id: string;
+  source: "static_context";
   type: ContextFindingType;
   severity: FindingSeverity;
   confidence: number;
@@ -140,23 +152,14 @@ export type ContextFinding = {
   fix_class: FixClass;
   adapter?: "copilot" | "vscode" | "claude" | "gemini" | "codex" | "generic";
 };
-
-export type ContextInspectReport = {
-  version: 1;
-  cwd: string;
-  project_fingerprint: string;
-  generated_at: string;
-  files_scanned: number;
-  findings: ContextFinding[];
-};
 ```
 
-Persist reports only when explicitly requested:
+These findings are written into the **one** inspect report (no separate `context-inspect`
+file). inspect persists it; `tg optimize context` reads it:
 
 ```text
-~/.token-guard/projects/<fingerprint>/context-inspect/latest.json
-~/.token-guard/projects/<fingerprint>/context-inspect/<timestamp>.json
-~/.token-guard/advice/context/<fingerprint>.md
+~/.token-guard/projects/<fingerprint>/inspect/latest.json     # unified inspect Finding[] report
+~/.token-guard/advice/context/<fingerprint>.md                # optimize --write-advice output
 ```
 
 Do not store raw instruction bodies by default. Store file path, line range, type, counts,
@@ -166,11 +169,12 @@ hash, and short evidence snippets only.
 
 ```text
 src/context/
-  cli.ts                 # inspect/optimize command dispatch
+  analyzer.ts            # static-context analyzer registered into tg inspect (emits ContextFinding[])
+  optimizeCli.ts         # `tg optimize context` consumer command (reads inspect findings)
   discover.ts            # find supported context files
   parseMarkdown.ts       # frontmatter + markdown section parsing
   metrics.ts             # chars, estimated tokens, headings, hashes, line maps
-  report.ts              # text/json report formatting
+  report.ts              # static-context view formatting (within inspect's report)
   advice.ts              # user-level advice writer
   patchPlan.ts           # safe patch/suggested diff planning
   applySafe.ts           # marker/frontmatter safe writes only
@@ -185,9 +189,13 @@ src/context/
     cacheability.ts
 ```
 
-Keep the implementation independent from command handlers. It may reuse
-`src/core/dataDir.ts` for storage and `src/core/savings.ts` for rough token estimates, but
-it must not call the command pipeline.
+`src/context/` owns no `inspect` command. Instead it exposes a static-context **analyzer**
+that `tg inspect` (`src/inspect/`) calls as part of its default-full run, plus the
+`tg optimize context` consumer command. Keep the implementation independent from command
+handlers. It may reuse `src/core/dataDir.ts` for storage and `src/core/savings.ts` for rough
+token estimates, but it must not call the command pipeline. The optimize consumer reads
+inspect's persisted `inspect/latest.json` (or triggers an inspect run when absent) — it does
+not re-scan or re-rank on its own.
 
 ## Discovery
 
@@ -547,10 +555,12 @@ Files scanned: <n>
 
 ## Report format
 
-Default text output should group by severity and fix class:
+The static-context findings render as a section within `tg inspect`'s unified report
+(not a standalone "Copilot Context Inspect" document). Default text groups by severity and
+fix class:
 
 ```text
-Copilot Context Inspect
+Static context  (source = static_context)
 Files scanned: 8
 Findings: 6 (warn 4, info 2)
 
@@ -565,22 +575,27 @@ Findings: 6 (warn 4, info 2)
   Fix: suggested_diff
 ```
 
-JSON output is the `ContextInspectReport` model.
+JSON output is inspect's unified `Finding[]` report (DESIGN §9.0); static-context findings
+are the entries with `source = "static_context"`.
 
 ## Implementation slices
 
-### Slice 1 — Discovery + parser + report shell
+### Slice 1 — Discovery + parser + analyzer wired into `tg inspect`
 
 Deliver:
 
 - `src/context/discover.ts`
 - `src/context/parseMarkdown.ts`
 - `src/context/metrics.ts`
-- `src/context/report.ts`
-- CLI entry for `tg inspect --copilot-context`
+- `src/context/report.ts` (static-context view within inspect's report)
+- `src/context/analyzer.ts` registered into `tg inspect` so the default-full run emits
+  `source = static_context` findings (no standalone `--copilot-context` *command* — only the
+  narrowing flag). `--surface` narrows which surfaces the analyzer scans.
 
 Tests:
 
+- `tg inspect` (no flag) includes static-context findings in the unified report
+- `tg inspect --copilot-context` narrows to static-context findings only
 - discovers supported project/user files
 - skips dependency/build/cache dirs
 - parses frontmatter and malformed frontmatter
@@ -664,17 +679,24 @@ pnpm test:product -- context
 pnpm typecheck
 ```
 
-### Slice 5 — Optimize dry-run + advice writer
+### Slice 5 — Optimize consumer: dry-run + advice writer
+
+`tg optimize context` is the **consumer**. It reads inspect's persisted
+`inspect/latest.json` (filtering to `source = static_context` findings); if absent it
+triggers an inspect run, then plans patches off those findings.
 
 Deliver:
 
 - `tg optimize context --dry-run`
 - `tg optimize context --write-advice`
+- `src/context/optimizeCli.ts` (reads inspect report → patch plan)
 - `src/context/patchPlan.ts`
 - `src/context/advice.ts`
 
 Tests:
 
+- consumes a persisted `inspect/latest.json`; triggers inspect when it is absent
+- only `source = static_context` findings drive patches
 - suggested diff includes line ranges and does not write files
 - advice file writes under `~/.token-guard/advice/context/`
 - no raw instruction body persisted
@@ -721,8 +743,11 @@ pnpm typecheck
 
 ## Acceptance criteria
 
-- `tg inspect --copilot-context` is fully read-only.
-- All findings include file, evidence, recommendation, and `fix_class`.
+- `tg inspect` (default-full) includes static-context findings; `tg inspect --copilot-context`
+  narrows to them. Both are fully read-only.
+- All static-context findings carry `source = "static_context"`, file, evidence,
+  recommendation, and `fix_class`, merged into inspect's unified report.
+- `tg optimize context` consumes inspect's persisted report (or triggers inspect when absent).
 - `tg optimize context --dry-run` never writes.
 - `tg optimize context --write-advice` writes only user-level advice.
 - `tg optimize context --apply-safe` refuses project-level semantic edits.
