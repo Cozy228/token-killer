@@ -26,6 +26,59 @@ function hasRawJsonFlag(command: ParsedCommand): boolean {
   return command.args.includes("--json") || command.args.includes("--output") || command.args.includes("-F");
 }
 
+// RTK: gh_cmd.rs — RTK never trusts gh's human table output; it re-runs the
+// command with `--json <fields>` (per subcommand) and filters the JSON. When the
+// user already passes `--json` they want raw gh JSON, so RTK passes through.
+const GH_VIEW_PASSTHROUGH = ["--jq", "--web", "--comments"];
+
+export function buildGhArgs(args: string[]): string[] {
+  if (args.includes("--json")) return args; // RTK: gh_cmd.rs::has_json_flag
+  const [resource, action, ...rest] = args;
+
+  if (resource === "pr" && action === "list") {
+    return ["pr", "list", "--json", "number,title,state,author,updatedAt", ...rest];
+  }
+  if (resource === "pr" && action === "view") {
+    if (rest.some((a) => GH_VIEW_PASSTHROUGH.includes(a))) return args;
+    // RTK extracts the id and appends extra args after --json; gh accepts the id
+    // and flags in any order, so passing `rest` ahead of --json is equivalent.
+    return ["pr", "view", ...rest, "--json", "number,title,state,author,body,url,mergeable,reviews,statusCheckRollup"];
+  }
+  if (resource === "issue" && action === "list") {
+    return ["issue", "list", "--json", "number,title,state,author", ...rest];
+  }
+  if (resource === "issue" && action === "view") {
+    if (rest.some((a) => GH_VIEW_PASSTHROUGH.includes(a))) return args;
+    return ["issue", "view", ...rest, "--json", "number,title,state,author,body,url"];
+  }
+  if (resource === "run" && action === "list") {
+    return ["run", "list", "--json", "databaseId,name,status,conclusion,createdAt", "--limit", "10", ...rest];
+  }
+  if (resource === "repo" && action === "view") {
+    return ["repo", "view", ...rest, "--json", "name,owner,description,url,stargazerCount,forkCount,isPrivate"];
+  }
+  return args;
+}
+
+// RTK: glab_cmd.rs — list/view inject `-F json`; an explicit `--output`/`-F`/
+// `--json` (or a browser/comment view flag) means passthrough.
+const GLAB_OUTPUT_FLAGS = ["--output", "-F", "--json"];
+const GLAB_VIEW_PASSTHROUGH = ["--web", "--comments", "--output", "-F"];
+
+export function buildGlabArgs(args: string[]): string[] {
+  if (args.some((a) => GLAB_OUTPUT_FLAGS.includes(a))) return args;
+  const [resource, action, ...rest] = args;
+
+  if (resource === "mr" && action === "list") {
+    return ["mr", "list", "-F", "json", ...rest];
+  }
+  if (resource === "mr" && action === "view") {
+    if (rest.some((a) => GLAB_VIEW_PASSTHROUGH.includes(a))) return args;
+    return ["mr", "view", ...rest, "-F", "json"];
+  }
+  return args;
+}
+
 // RTK: core/utils.rs::truncate — char-based, "(max-3 chars)..." when over max.
 function truncate(s: string, max: number): string {
   const chars = [...s];
@@ -102,10 +155,53 @@ function formatGh(raw: RawResult, command: ParsedCommand): string {
       .join("\n")}\n`;
   }
   if (resource === "issue" && action === "list" && Array.isArray(json)) {
-    return `${json.map((issue) => `#${issue.number} ${issue.title} ${(issue.labels ?? []).map((label: any) => label.name).join(",")}`).join("\n")}\n`;
+    // RTK: gh_cmd.rs::format_issue_list — "Issues\n  [open] #N title" (no labels;
+    // RTK only fetches number,title,state,author), capped at CAP_LIST.
+    const rows = json.map(
+      (issue) =>
+        `  ${(issue.state ?? "???") === "OPEN" ? "[open]" : "[closed]"} #${issue.number ?? 0} ${truncate(issue.title ?? "???", 60)}`,
+    );
+    return formatList("Issues", "No Issues", rows);
+  }
+  if (resource === "issue" && action === "view" && json) {
+    // RTK: gh_cmd.rs::format_issue_view.
+    const icon = (json.state ?? "???") === "OPEN" ? "[open]" : "[closed]";
+    const out = [
+      `${icon} Issue #${json.number ?? 0}: ${json.title ?? "???"}`,
+      `  Author: @${json.author?.login ?? "???"}`,
+      `  Status: ${json.state ?? "???"}`,
+      `  URL: ${json.url ?? ""}`,
+    ];
+    const body = typeof json.body === "string" ? json.body : "";
+    if (body !== "") {
+      const filtered = stripMarkdownNoise(body);
+      if (filtered !== "") {
+        out.push("", "  Description:");
+        for (const line of filtered.split(/\r?\n/)) out.push(`    ${line}`);
+      } else {
+        out.push("", "  Description: (body contained only badges/images/comments)");
+      }
+    }
+    return `${out.join("\n")}\n`;
   }
   if (resource === "run" && action === "list" && Array.isArray(json)) {
-    return `${json.map((run) => `${run.databaseId} ${run.workflowName} ${run.status}/${run.conclusion} ${run.headBranch} ${run.displayTitle}`).join("\n")}\n`;
+    // RTK: gh_cmd.rs::format_run_list — "Workflow Runs\n  <icon> <name> [<id>]".
+    const rows = json.map((run) => {
+      const status = run.status ?? "???";
+      const conclusion = run.conclusion ?? "";
+      const icon =
+        conclusion === "success"
+          ? "[ok]"
+          : conclusion === "failure"
+          ? "[FAIL]"
+          : conclusion === "cancelled"
+          ? "[X]"
+          : status === "in_progress"
+          ? "[time]"
+          : "[pending]";
+      return `  ${icon} ${truncate(run.name ?? "???", 50)} [${run.databaseId ?? 0}]`;
+    });
+    return `Workflow Runs\n${rows.join("\n")}\n`;
   }
   if (resource === "repo" && action === "view" && json) {
     // RTK: gh_cmd.rs::format_repo_view.
@@ -154,14 +250,26 @@ function formatGlab(raw: RawResult, command: ParsedCommand): string {
   return `${rawText}\n`;
 }
 
-function makeHostingHandler(program: "gh" | "glab", formatter: (raw: RawResult, command: ParsedCommand) => string): CommandHandler {
+function makeHostingHandler(
+  program: "gh" | "glab",
+  buildArgs: (args: string[]) => string[],
+  formatter: (raw: RawResult, command: ParsedCommand) => string,
+): CommandHandler {
   return {
     name: program,
     matches(command) {
       return command.program === program;
     },
     execute(command) {
-      return executeCommand(command);
+      // RTK re-runs the command with an injected JSON output flag so the filter
+      // works on structured data instead of gh/glab's human table.
+      const args = buildArgs(command.args);
+      if (args === command.args) return executeCommand(command);
+      return executeCommand({
+        ...command,
+        args,
+        displayCommand: `${program} ${args.join(" ")}`,
+      });
     },
     async filter(raw, command, options: TgOptions) {
       return makeFilteredResult(this.name, raw, formatter(raw, command), options);
@@ -169,5 +277,5 @@ function makeHostingHandler(program: "gh" | "glab", formatter: (raw: RawResult, 
   };
 }
 
-export const ghHandler = makeHostingHandler("gh", formatGh);
-export const glabHandler = makeHostingHandler("glab", formatGlab);
+export const ghHandler = makeHostingHandler("gh", buildGhArgs, formatGh);
+export const glabHandler = makeHostingHandler("glab", buildGlabArgs, formatGlab);

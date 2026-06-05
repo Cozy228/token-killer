@@ -40,7 +40,15 @@ export function rawText(raw: RawResult): string {
 // `* <branch>` and, on a clean tree, appends `clean — nothing to commit`; on a
 // one-line porcelain capture that reformat can exceed raw, but RTK always emits
 // it, so it must not be bounced back to the opaque porcelain string.
+// gh / glab (RTK gh_cmd.rs / glab_cmd.rs) reformat gh/glab JSON into a compact
+// human summary that RTK always emits. On an EMPTY list the "No Pull Requests" /
+// "No Issues" / "No Merge Requests" summary is larger than the raw `[]`, and the
+// "  … +N more" cap marker matches the content-omission guard — but RTK always
+// emits these, so they must not be bounced back to the raw JSON (which would leak
+// an opaque `[]` / array on empty state).
 const STRUCTURAL_HANDLERS = new Set([
+  "gh",
+  "glab",
   "git-status",
   "git-diff",
   "diff",

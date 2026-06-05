@@ -1,5 +1,6 @@
 import { describe, expect, test } from "vitest";
 
+import { buildTreeArgs } from "../../../src/handlers/system/tree.js";
 import { expectRtkParity, filterRtkFixture, filterRtkOutput } from "../../helpers/rtkCommandHarness.js";
 
 // RTK: system/tree.rs::filter_tree_output — strip the trailing
@@ -7,6 +8,30 @@ import { expectRtkParity, filterRtkFixture, filterRtkOutput } from "../../helper
 // (├──/└──/│), and remove trailing empty lines.
 
 describe("RTK tree behavior", () => {
+  // RTK: tree.rs::run — the bulk of tree savings comes from rewriting the
+  // invocation with `-I <noise>` so heavy directories never reach the renderer.
+  describe("buildTreeArgs command construction", () => {
+    test("injects the noise -I exclusion ahead of the user path", () => {
+      const args = buildTreeArgs(["."]);
+      expect(args[0]).toBe("-I");
+      expect(args[1]).toContain("node_modules");
+      expect(args[1]).toContain(".git");
+      expect(args[1]).toContain("dist");
+      // The user's original args are preserved after the injected exclusion.
+      expect(args[args.length - 1]).toBe(".");
+    });
+
+    test("does not inject -I when the user passes -a/--all", () => {
+      expect(buildTreeArgs(["-a", "."])).toEqual(["-a", "."]);
+      expect(buildTreeArgs(["--all"])).toEqual(["--all"]);
+    });
+
+    test("respects a user-supplied ignore pattern", () => {
+      expect(buildTreeArgs(["-I", "foo", "."])).toEqual(["-I", "foo", "."]);
+      expect(buildTreeArgs(["--ignore=foo"])).toEqual(["--ignore=foo"]);
+    });
+  });
+
   // RTK: tree.rs::test_filter_removes_summary + test_filter_preserves_structure.
   test("removes the summary line while preserving hierarchy structure", async () => {
     const result = await filterRtkFixture(["tree", "."], "tests/fixtures/common/tree_with_summary.txt");

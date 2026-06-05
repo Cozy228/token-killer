@@ -8,8 +8,9 @@ import { makeFilteredResult } from "../base.js";
 // return the content unchanged, matching read.rs::run with no flags. tg routes
 // `cat` here; RTK's own command is `read`, so we accept its flags too.
 
-// RTK: core/filter.rs::Language — only the extensions that influence smart_truncate
-// matter here; everything else is Unknown (no special handling).
+// RTK: core/filter.rs::FilterLevel — none (NoFilter), minimal (strip comments),
+// aggressive (keep only signatures/imports/decls). The language-aware comment
+// stripping lives in minimalFilter/aggressiveFilter below.
 type ReadLevel = "none" | "minimal" | "aggressive";
 
 type ReadOptions = {
@@ -41,14 +42,13 @@ function parsePositiveInt(value: string | undefined): number | undefined {
   return Number.isFinite(parsed) && parsed >= 0 ? parsed : undefined;
 }
 
-function readOptions(command: ParsedCommand): ReadOptions {
+function readOptions(args: string[]): ReadOptions {
   const files: string[] = [];
   let level: ReadLevel = "none";
   let maxLines: number | undefined;
   let tailLines: number | undefined;
   let lineNumbers = false;
 
-  const args = command.args;
   for (let index = 0; index < args.length; index += 1) {
     const arg = args[index];
     if (arg === "--level" || arg === "-l") {
@@ -171,14 +171,245 @@ function formatWithLineNumbers(content: string): string {
   return out;
 }
 
+// RTK: core/filter.rs::Language — only Python (docstrings) and Data (no comment
+// stripping) need distinct branches; JS/TS/Go/C/C++/Java all share the C-style
+// comment patterns, so they collapse into one "c-like" group here.
+type Language = "rust" | "python" | "c-like" | "ruby" | "shell" | "data" | "unknown";
+
+type CommentPatterns = {
+  line?: string;
+  blockStart?: string;
+  blockEnd?: string;
+  docLine?: string;
+  docBlockStart?: string;
+};
+
+// RTK: core/filter.rs::Language::from_extension.
+function languageFromExtension(ext: string): Language {
+  switch (ext.toLowerCase()) {
+    case "rs":
+      return "rust";
+    case "py":
+    case "pyw":
+      return "python";
+    case "js":
+    case "mjs":
+    case "cjs":
+    case "ts":
+    case "tsx":
+    case "go":
+    case "c":
+    case "h":
+    case "cpp":
+    case "cc":
+    case "cxx":
+    case "hpp":
+    case "hh":
+    case "java":
+      return "c-like";
+    case "rb":
+      return "ruby";
+    case "sh":
+    case "bash":
+    case "zsh":
+      return "shell";
+    case "json":
+    case "jsonc":
+    case "json5":
+    case "yaml":
+    case "yml":
+    case "toml":
+    case "xml":
+    case "csv":
+    case "tsv":
+    case "graphql":
+    case "gql":
+    case "sql":
+    case "md":
+    case "markdown":
+    case "txt":
+    case "env":
+    case "lock":
+      return "data";
+    default:
+      return "unknown";
+  }
+}
+
+// RTK: core/filter.rs::Language::comment_patterns.
+function commentPatterns(lang: Language): CommentPatterns {
+  switch (lang) {
+    case "rust":
+      return { line: "//", blockStart: "/*", blockEnd: "*/", docLine: "///", docBlockStart: "/**" };
+    case "python":
+      return { line: "#", blockStart: '"""', blockEnd: '"""', docBlockStart: '"""' };
+    case "c-like":
+      return { line: "//", blockStart: "/*", blockEnd: "*/", docBlockStart: "/**" };
+    case "ruby":
+      return { line: "#", blockStart: "=begin", blockEnd: "=end" };
+    case "shell":
+      return { line: "#" };
+    case "data":
+      return {};
+    case "unknown":
+      return { line: "//", blockStart: "/*", blockEnd: "*/" };
+  }
+}
+
+// RTK: read.rs detects language from the file's extension (stdin → Unknown). tg's
+// `cat` may receive several operands; mirror RTK's single-file model by keying off
+// the first real file operand's extension (the common single-file case).
+function detectLanguage(files: string[]): Language {
+  const file = files.find((f) => f !== "-");
+  if (file === undefined) return "unknown";
+  const base = file.split(/[/\\]/).pop() ?? file;
+  const dot = base.lastIndexOf(".");
+  if (dot <= 0) return "unknown"; // no extension, or a leading-dot dotfile
+  return languageFromExtension(base.slice(dot + 1));
+}
+
+// Mirror Rust `str::lines()`: split on `\n`, strip a trailing `\r`, and drop the
+// final empty segment a trailing newline would otherwise yield.
+function rustLines(content: string): string[] {
+  const parts = content.split("\n");
+  if (parts.length > 0 && parts[parts.length - 1] === "") parts.pop();
+  return parts.map((l) => (l.endsWith("\r") ? l.slice(0, -1) : l));
+}
+
+// RTK: core/filter.rs::MinimalFilter — strip block comments and single-line
+// comments (keeping doc comments and Python docstrings), normalize 3+ blank lines
+// to 2, then trim.
+function minimalFilter(content: string, lang: Language): string {
+  const p = commentPatterns(lang);
+  const out: string[] = [];
+  let inBlockComment = false;
+  let inDocstring = false;
+
+  for (const line of rustLines(content)) {
+    const trimmed = line.trim();
+
+    if (p.blockStart !== undefined && p.blockEnd !== undefined) {
+      const docOpener = p.docBlockStart ?? "###";
+      if (!inDocstring && trimmed.includes(p.blockStart) && !trimmed.startsWith(docOpener)) {
+        inBlockComment = true;
+      }
+      if (inBlockComment) {
+        if (trimmed.includes(p.blockEnd)) inBlockComment = false;
+        continue;
+      }
+    }
+
+    // RTK keeps Python docstrings in minimal mode.
+    if (lang === "python" && trimmed.startsWith('"""')) {
+      inDocstring = !inDocstring;
+      out.push(line);
+      continue;
+    }
+    if (inDocstring) {
+      out.push(line);
+      continue;
+    }
+
+    if (p.line !== undefined && trimmed.startsWith(p.line)) {
+      // Keep doc comments (e.g. Rust `///`); drop ordinary line comments.
+      if (p.docLine !== undefined && trimmed.startsWith(p.docLine)) {
+        out.push(line);
+      }
+      continue;
+    }
+
+    out.push(trimmed === "" ? "" : line);
+  }
+
+  const joined = out.length > 0 ? `${out.join("\n")}\n` : "";
+  return joined.replace(/\n{3,}/g, "\n\n").trim();
+}
+
+// RTK: core/filter.rs::AggressiveFilter — over a minimal pass, keep imports,
+// declaration signatures, top-level const/static/let, and only the opening/closing
+// braces of implementation bodies (replacing the body with a "// ... implementation"
+// marker). Data formats are never code-filtered (minimal only).
+function aggressiveFilter(content: string, lang: Language): string {
+  if (lang === "data") return minimalFilter(content, lang);
+
+  const minimal = minimalFilter(content, lang);
+  const out: string[] = [];
+  let braceDepth = 0;
+  let inImplBody = false;
+
+  for (const line of rustLines(minimal)) {
+    const trimmed = line.trim();
+
+    if (IMPORT_PATTERN.test(trimmed)) {
+      out.push(line);
+      continue;
+    }
+    if (FUNC_SIGNATURE.test(trimmed)) {
+      out.push(line);
+      inImplBody = true;
+      braceDepth = 0;
+      continue;
+    }
+
+    const open = (trimmed.match(/\{/g) ?? []).length;
+    const close = (trimmed.match(/\}/g) ?? []).length;
+
+    if (inImplBody) {
+      braceDepth += open;
+      braceDepth -= close;
+      if (braceDepth <= 1 && (trimmed === "{" || trimmed === "}" || trimmed.endsWith("{"))) {
+        out.push(line);
+      }
+      if (braceDepth <= 0) {
+        inImplBody = false;
+        if (trimmed !== "" && trimmed !== "}") {
+          out.push("    // ... implementation");
+        }
+      }
+      continue;
+    }
+
+    if (
+      trimmed.startsWith("const ") ||
+      trimmed.startsWith("static ") ||
+      trimmed.startsWith("let ") ||
+      trimmed.startsWith("pub const ") ||
+      trimmed.startsWith("pub static ")
+    ) {
+      out.push(line);
+    }
+  }
+
+  return out.join("\n").trim();
+}
+
+// RTK: read.rs::run — apply the filter level, then fall back to raw content if the
+// filter emptied a non-empty file (the safety guard), before the line window runs.
+function applyLevelFilter(content: string, level: ReadLevel, lang: Language): string {
+  if (level === "none") return content;
+  const filtered = level === "aggressive" ? aggressiveFilter(content, lang) : minimalFilter(content, lang);
+  if (filtered.trim() === "" && content.trim() !== "") return content;
+  return filtered;
+}
+
+// RTK: read.rs reads the file bytes directly; tg shells to the system `cat`, so
+// execute() must pass ONLY the file operands (and stdin `-`) — never RTK's read
+// flags (--level/--max-lines/--tail-lines/--line-numbers), which `cat` would
+// reject. The filter still windows from the user's ORIGINAL args (see formatRead),
+// so the RTK semantics are applied to `cat`'s raw bytes.
+export function buildCatArgs(args: string[]): string[] {
+  return readOptions(args).files;
+}
+
 function formatRead(raw: RawResult, command: ParsedCommand): string {
   const content = raw.stdout;
-  const options = readOptions(command);
+  const options = readOptions(command.args);
 
-  // RTK: read.rs filter levels. Level "none" (NoFilter) returns content as-is;
-  // tg keeps full content for minimal/aggressive too (the line window below is
-  // the compaction lever the migration suite exercises), preserving the source.
-  const windowed = applyLineWindow(content, options);
+  // RTK: read.rs::run order — language-aware filter level first (strips comments /
+  // boilerplate), THEN the line window, THEN optional line numbers.
+  const lang = detectLanguage(options.files);
+  const filtered = applyLevelFilter(content, options.level, lang);
+  const windowed = applyLineWindow(filtered, options);
   return options.lineNumbers ? formatWithLineNumbers(windowed) : windowed;
 }
 
@@ -190,7 +421,17 @@ export const readHandler: CommandHandler = {
     return command.program === "cat";
   },
   execute(command) {
-    return executeCommand(command);
+    // RTK: read.rs reads the file directly. tg shells to `cat`, passing only the
+    // file operands so RTK's read flags never reach the system binary; the filter
+    // re-derives the window from the user's original args.
+    const args = buildCatArgs(command.args);
+    const rewritten: ParsedCommand = {
+      ...command,
+      args,
+      original: ["cat", ...args],
+      displayCommand: `cat ${args.join(" ")}`,
+    };
+    return executeCommand(rewritten);
   },
   async filter(raw, command, options: TgOptions) {
     return makeFilteredResult(this.name, raw, formatRead(raw, command), options);

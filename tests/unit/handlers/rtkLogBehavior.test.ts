@@ -1,10 +1,27 @@
+import path from "node:path";
+import { fileURLToPath } from "node:url";
+
 import { describe, expect, test } from "vitest";
 
+import { logHandler } from "../../../src/handlers/system/log.js";
+import type { TgOptions } from "../../../src/types.js";
 import {
   expectRtkParity,
   filterRtkFixture,
   filterRtkOutput,
 } from "../../helpers/rtkCommandHarness.js";
+
+const repoRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "../../..");
+
+const execOptions: TgOptions = {
+  raw: false,
+  stats: false,
+  verbose: false,
+  maxLines: 120,
+  maxChars: 12000,
+  saveRaw: false,
+  cwd: repoRoot,
+};
 
 // RTK oracle: rtk/src/cmds/system/log_cmd.rs::analyze_logs and its #[test]s.
 // `rtk log` (program === "log") deduplicates structurally-identical log lines into
@@ -141,5 +158,29 @@ describe("RTK log behavior", () => {
     // The original 150-codepoint message must not survive in full.
     expect([...errMsg].length).toBe(150);
     expect(result.output).not.toContain(errMsg);
+  });
+
+  // RTK: log_cmd.rs::run_file — `log <file>` reads and summarizes the file's
+  // contents rather than proxying to the platform `log` tool. tg's execute() must
+  // read the file directly so the filter sees real log lines (not a macOS `log`
+  // "Unknown subcommand" usage error, which would yield 0 errors/0 warnings).
+  test("execute reads a log file argument instead of running the platform log tool", async () => {
+    const command = {
+      program: "log",
+      args: ["tests/fixtures/system/app_repeated.log"],
+      original: ["log", "tests/fixtures/system/app_repeated.log"],
+      displayCommand: "log tests/fixtures/system/app_repeated.log",
+    };
+    const raw = await logHandler.execute(command, execOptions);
+    expect(raw.exitCode).toBe(0);
+    expect(raw.stdout).toContain("ERROR: Connection failed");
+    expect(raw.stdout).not.toMatch(/Unknown subcommand|usage:/i);
+
+    const result = await logHandler.filter(raw, command, execOptions);
+    expect(result.output).toContain("[error] 4 errors (2 unique)");
+    expect(result.output).toContain("[warn] 3 warnings (2 unique)");
+    expect(result.output).toContain("[info] 3 info messages");
+    // The macOS-log-confusion bug produced an all-zero summary; guard against it.
+    expect(result.output).not.toContain("0 errors (0 unique)");
   });
 });

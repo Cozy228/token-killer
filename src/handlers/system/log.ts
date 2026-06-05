@@ -1,3 +1,6 @@
+import { readFile } from "node:fs/promises";
+import path from "node:path";
+
 import { executeCommand } from "../../executor.js";
 import type { CommandHandler, ParsedCommand, RawResult, TgOptions } from "../../types.js";
 import { makeFilteredResult } from "../base.js";
@@ -158,13 +161,35 @@ function formatLog(raw: RawResult): string {
   return `${analyzeLogs(raw.stdout)}\n`;
 }
 
+// RTK: log_cmd.rs::run_file — rtk's `log` is its own log-analysis command, not a
+// proxy to the platform `log` tool. `log <file>` reads the file's contents and
+// summarizes them. tg mirrors this: when an argument resolves to a readable file,
+// read it directly. Otherwise (e.g. macOS `log show`/`log stream` with no file
+// path) fall back to the real `log` command rather than guessing.
+async function readLogFile(command: ParsedCommand, options: TgOptions): Promise<RawResult | undefined> {
+  const fileArg = command.args.find((arg) => !arg.startsWith("-"));
+  if (!fileArg) return undefined;
+  try {
+    const content = await readFile(path.resolve(options.cwd, fileArg), "utf8");
+    return {
+      command: command.displayCommand,
+      stdout: content,
+      stderr: "",
+      exitCode: 0,
+      durationMs: 0,
+    };
+  } catch {
+    return undefined;
+  }
+}
+
 export const logHandler: CommandHandler = {
   name: "log",
   matches(command) {
     return command.program === "log";
   },
-  execute(command) {
-    return executeCommand(command);
+  async execute(command, options: TgOptions) {
+    return (await readLogFile(command, options)) ?? executeCommand(command);
   },
   async filter(raw, command, options: TgOptions) {
     return makeFilteredResult(this.name, raw, formatLog(raw), options);

@@ -1,8 +1,30 @@
 import { describe, expect, test } from "vitest";
 
 import { expectRtkParity, filterRtkOutput } from "../../helpers/rtkCommandHarness.js";
+import { buildGlabArgs } from "../../../src/handlers/git/hostingCli.js";
 
 describe("RTK glab behavior", () => {
+  // RTK: glab_cmd.rs — list/view re-run with `-F json`; an explicit
+  // `--output`/`-F`/`--json` (or a view's --web/--comments) means passthrough.
+  describe("child command construction (-F json injection)", () => {
+    test("mr list injects -F json", () => {
+      expect(buildGlabArgs(["mr", "list"])).toEqual(["mr", "list", "-F", "json"]);
+    });
+
+    test("mr view injects -F json after the user args", () => {
+      expect(buildGlabArgs(["mr", "view", "42"])).toEqual(["mr", "view", "42", "-F", "json"]);
+    });
+
+    test("explicit -F passes through untouched", () => {
+      const args = ["mr", "list", "-F", "yaml"];
+      expect(buildGlabArgs(args)).toBe(args);
+    });
+
+    test("an mr view with --web is a passthrough, not a JSON re-run", () => {
+      const args = ["mr", "view", "42", "--web"];
+      expect(buildGlabArgs(args)).toBe(args);
+    });
+  });
   // RTK: glab_cmd.rs::format_mr_list — "Merge Requests\n  [open] !iid <title> (<author>)".
   test("renders the MR list with state icons and authors", async () => {
     const result = await filterRtkOutput(
@@ -24,6 +46,14 @@ describe("RTK glab behavior", () => {
         "  [open] !8 update deps (bob)",
       ].join("\n"),
     });
+  });
+
+  // RTK: format_mr_list — an empty list emits "No Merge Requests" and must NEVER
+  // fall back to the raw `[]` JSON envelope.
+  test("empty mr list renders the No-… summary, not raw []", async () => {
+    const result = await filterRtkOutput(["glab", "mr", "list"], "[]");
+    expect(result.output.trim()).toBe("No Merge Requests");
+    expect(result.output).not.toContain("[]");
   });
 
   // RTK: format_mr_list caps the listing at CAP_LIST (20) with "  … +N more".

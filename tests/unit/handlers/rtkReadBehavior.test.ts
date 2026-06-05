@@ -5,8 +5,31 @@ import { fileURLToPath } from "node:url";
 import { describe, expect, test } from "vitest";
 
 import { expectRtkParity, filterRtkOutput } from "../../helpers/rtkCommandHarness.js";
+import { buildCatArgs } from "../../../src/handlers/system/read.js";
 
 const repoRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "../../..");
+
+// RTK: read.rs reads the file bytes directly; tg shells to `cat`, so the real CLI
+// path must pass ONLY the file operands — `cat` would reject RTK's read flags
+// (--level/--max-lines/--tail-lines/--line-numbers). The migration harness only
+// exercises filter(); these assert the execute() command-rewrite parity directly.
+describe("RTK read command construction (buildCatArgs)", () => {
+  test("drops RTK read flags and keeps only the file operands", () => {
+    expect(buildCatArgs(["--max-lines", "2", "src/main.ts"])).toEqual(["src/main.ts"]);
+    expect(buildCatArgs(["-m", "5", "--tail-lines", "3", "-n", "a.ts", "b.ts"])).toEqual([
+      "a.ts",
+      "b.ts",
+    ]);
+  });
+  test("drops --level (and its value) and -l", () => {
+    expect(buildCatArgs(["--level=aggressive", "file.rs"])).toEqual(["file.rs"]);
+    expect(buildCatArgs(["-l", "minimal", "file.rs"])).toEqual(["file.rs"]);
+  });
+  test("keeps the stdin operand `-`", () => {
+    expect(buildCatArgs(["-"])).toEqual(["-"]);
+    expect(buildCatArgs(["--max-lines", "10", "-"])).toEqual(["-"]);
+  });
+});
 
 // RTK: system/read.rs — apply_line_window (tail_lines/max_lines) + optional line
 // numbers over file content. tg routes `cat` here; RTK's own command is `read`,
@@ -76,6 +99,45 @@ describe("RTK read behavior", () => {
     expect(result.output).toMatch(/^ ?1 │ /m);
     // Full content is retained (line numbers only annotate).
     expect(result.output).toContain("cancelOrder");
+  });
+});
+
+// RTK: core/filter.rs::MinimalFilter / AggressiveFilter — `cat` carries the
+// RTK-faithful read port (goal: docs/real-cli-parity-goal.md), so the level flag
+// must actually strip comments/boilerplate, language-aware. Verified byte-for-byte
+// against the `rtk read` binary on the same input.
+describe("RTK read level filtering", () => {
+  const source = [
+    'import { api } from "./api";',
+    "// ordinary comment should be dropped",
+    "/** doc block stays (RTK keeps single-line /** */) */",
+    "export function submitOrder(payload) {",
+    '  const key = "k"; // trailing inline comment is kept',
+    "  return api.submit(key);",
+    "}",
+    "",
+  ].join("\n");
+
+  test("--level minimal drops ordinary line comments but keeps code and doc blocks", async () => {
+    const result = await filterRtkOutput(["cat", "--level", "minimal", "order.ts"], source);
+
+    expect(result.output).not.toContain("ordinary comment should be dropped");
+    expect(result.output).toContain('import { api } from "./api";');
+    expect(result.output).toContain("export function submitOrder(payload)");
+    expect(result.output).toContain("return api.submit(key);");
+    // A trailing inline comment is not a line-start comment, so the line stays.
+    expect(result.output).toContain('const key = "k";');
+  });
+
+  test("--level aggressive keeps imports/decls and drops bodies", async () => {
+    const result = await filterRtkOutput(["cat", "--level", "aggressive", "order.ts"], source);
+
+    expect(result.output).toContain('import { api } from "./api";');
+    // RTK's FUNC_SIGNATURE regex does not match `export function`, so the body is
+    // dropped and only the top-level const declaration survives — faithful parity.
+    expect(result.output).toContain('const key = "k";');
+    expect(result.output).not.toContain("return api.submit(key);");
+    expect(result.output).not.toContain("ordinary comment");
   });
 });
 

@@ -8,6 +8,32 @@ import {
   hasFormatFlag,
   parseMatchLine,
 } from "../../../src/handlers/common/grepFilter.js";
+import { buildGrepArgs } from "../../../src/handlers/common/searchLike.js";
+
+describe("RTK grep command construction", () => {
+  // RTK: grep_cmd.rs::run — RTK searches with `-nH` so output is `file:line:content`.
+  // tg forces `-n -H` on grep invocations so a raw `grep -r` (no line numbers) can
+  // be grouped instead of passed through verbatim.
+  test("forces -n -H so grep output is groupable", () => {
+    expect(buildGrepArgs("grep", ["-r", "import", "src/"])).toEqual([
+      "-n",
+      "-H",
+      "-r",
+      "import",
+      "src/",
+    ]);
+  });
+
+  test("leaves format-flag grep invocations untouched", () => {
+    expect(buildGrepArgs("grep", ["-c", "import", "src/"])).toEqual(["-c", "import", "src/"]);
+    expect(buildGrepArgs("grep", ["-l", "import", "src/"])).toEqual(["-l", "import", "src/"]);
+  });
+
+  test("does not rewrite rg (line-numbered by default; -r means --replace)", () => {
+    const args = ["export", "src/"];
+    expect(buildGrepArgs("rg", args)).toBe(args);
+  });
+});
 
 describe("RTK grep behavior", () => {
   // --- Retention: explicit format flags pass through (RTK has_format_flag) ---
