@@ -1,0 +1,11 @@
+.
+├── packages
+│   ├── app  [30 entries exceeds filelimit, not opening dir]
+│   ├── core
+│   │   ├── index.ts
+│   │   └── utils.ts
+│   └── ui
+│       └── button.tsx
+└── README.md
+
+5 directories, 4 files
