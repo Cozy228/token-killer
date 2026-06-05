@@ -19,6 +19,10 @@ export type HistoryRecord = {
   project_fingerprint?: string;
   raw_output_path?: string;
   quality_status?: string;
+  // Future-lineage field (DESIGN §8.1): which delivery surface produced this row.
+  // `shell` = the command proxy; `terminal_tool` / `direct_tool` = the Copilot hook
+  // runtime; `prompt_context` = prompt governance.
+  source_adapter?: string;
 };
 
 export async function recordHistory(
@@ -33,6 +37,7 @@ export async function recordHistory(
     timestamp: new Date().toISOString(),
     command: raw.command,
     handler: filtered.handler,
+    source_adapter: "shell",
     project_fingerprint: projectFingerprint(options.cwd),
     raw_chars: filtered.rawChars,
     output_chars: filtered.outputChars,
@@ -44,6 +49,38 @@ export async function recordHistory(
     duration_ms: raw.durationMs,
     raw_output_path: filtered.rawOutputPath,
     quality_status: filtered.qualityStatus,
+  };
+
+  await writeFile(file, `${JSON.stringify(record)}\n`, { encoding: "utf8", flag: "a" });
+}
+
+// Record a hook-runtime tool failure (DESIGN §3.4, §8.1). Failure metrics ONLY —
+// never the failed command text, paths, or error output (privacy: §8.3). Best-
+// effort; the caller wraps it so a write error can never break the fail-open hook.
+export async function recordHookFailure(params: {
+  cwd: string;
+  sourceAdapter: "terminal_tool" | "direct_tool";
+  handler: string;
+  exitCode: number;
+}): Promise<void> {
+  const file = historyFile(params.cwd);
+  await mkdir(path.dirname(file), { recursive: true });
+
+  const record: HistoryRecord = {
+    timestamp: new Date().toISOString(),
+    command: "", // never store the failed command text
+    handler: params.handler,
+    source_adapter: params.sourceAdapter,
+    project_fingerprint: projectFingerprint(params.cwd),
+    raw_chars: 0,
+    output_chars: 0,
+    raw_tokens: 0,
+    output_tokens: 0,
+    saved_tokens: 0,
+    savings_pct: 0,
+    exit_code: params.exitCode,
+    duration_ms: 0,
+    quality_status: "failure",
   };
 
   await writeFile(file, `${JSON.stringify(record)}\n`, { encoding: "utf8", flag: "a" });
