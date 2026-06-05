@@ -14,6 +14,7 @@ import {
   renderAdviceMarkdown,
   type AdviceFinding,
 } from "./advice.js";
+import { readConfig } from "../core/config.js";
 import { renderStaticContextSection } from "../context/report.js";
 import type { ContextFinding, ContextScope, FindingSeverity } from "../context/types.js";
 import { writeAdviceArtifacts, writeTelemetryExport } from "./persist.js";
@@ -36,7 +37,8 @@ type InspectArgs = {
   repoContext: boolean;
   advice: boolean;
   writeAdvice: boolean;
-  telemetryExport: boolean; // default off; CLI flag overrides (no config yet)
+  telemetryExport: boolean; // default from config.jsonc; CLI flag overrides
+  telemetryExportExplicit: boolean; // true once --telemetry-export/--no- seen
   minConfidence: number;
   minOccurrences: number;
   // Static-context scope/analyzer axes (ADR 0003).
@@ -64,6 +66,7 @@ export function parseInspectArgs(argv: string[]): InspectArgs {
     advice: false,
     writeAdvice: false,
     telemetryExport: false,
+    telemetryExportExplicit: false,
     minConfidence: DEFAULT_ADVICE_OPTIONS.minConfidence,
     minOccurrences: DEFAULT_ADVICE_OPTIONS.minOccurrences,
     scopeUser: false,
@@ -83,8 +86,10 @@ export function parseInspectArgs(argv: string[]): InspectArgs {
       args.writeAdvice = true;
     } else if (token === "--telemetry-export") {
       args.telemetryExport = true;
+      args.telemetryExportExplicit = true;
     } else if (token === "--no-telemetry-export") {
       args.telemetryExport = false;
+      args.telemetryExportExplicit = true;
     } else if (token === "--input-type") {
       const value = argv[i + 1];
       i += 1;
@@ -154,6 +159,16 @@ export function runInspect(
 
   if (opts.error) {
     process.stderr.write(`tg inspect: ${opts.error}\n`);
+    return 1;
+  }
+
+  // Config provides the telemetryExport default; a CLI flag still overrides it.
+  // A parse / out-of-shape config is a user-config error → exit 1 (inspect-v1).
+  try {
+    const config = readConfig();
+    if (!opts.telemetryExportExplicit) opts.telemetryExport = config.telemetryExport;
+  } catch (error) {
+    process.stderr.write(`tg inspect: ${error instanceof Error ? error.message : String(error)}\n`);
     return 1;
   }
 

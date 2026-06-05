@@ -51,6 +51,7 @@ const RESERVED_SUBCOMMANDS = new Set<ParsedArgv["mode"]>([
   "optimize",
   "agentsmd",
   "gain",
+  "config",
 ]);
 
 export function parseArgv(argv: string[]): ParsedArgv {

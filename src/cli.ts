@@ -11,6 +11,7 @@ import { runOptimize } from "./context/optimizeCli.js";
 import { runAgentsmd } from "./context/agentsmd.js";
 import { buildReport } from "./core/report.js";
 import { runGain } from "./core/gain.js";
+import { runConfig } from "./core/configCli.js";
 import { runPipeline } from "./core/pipeline.js";
 import { recordHistory } from "./core/history.js";
 import { calculateSavings } from "./core/savings.js";
@@ -32,6 +33,7 @@ function help(): string {
     "       tg agentsmd <patch|restore>",
     "       tg gain [--user] [--daily|--weekly|--monthly|--all] [--graph] [--history [n]]",
     "               [--failures] [--quota [-t <model>]] [--json|--csv|--format json|csv|text]",
+    "       tg config <init|show|path>",
     "",
     "Flags:",
     "  --raw                 print raw stdout/stderr",
@@ -104,6 +106,9 @@ async function main(): Promise<number> {
   }
   if (parsed.mode === "gain") {
     return runGain(parsed.subArgs ?? [], parsed.options.cwd);
+  }
+  if (parsed.mode === "config") {
+    return runConfig(parsed.subArgs ?? []);
   }
   if (!parsed.command) {
     process.stderr.write("tg: missing command\n");
