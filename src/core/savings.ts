@@ -1,3 +1,7 @@
+import { estimateTokens } from "./tokens.js";
+
+export { estimateTokens };
+
 export type Savings = {
   rawChars: number;
   outputChars: number;
@@ -6,10 +10,6 @@ export type Savings = {
   savedTokens: number;
   savingsPct: number;
 };
-
-export function estimateTokens(text: string): number {
-  return Math.ceil(text.length / 4);
-}
 
 export function calculateSavings(raw: string, output: string): Savings {
   const rawChars = raw.length;

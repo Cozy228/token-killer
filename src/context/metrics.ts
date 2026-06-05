@@ -3,6 +3,10 @@
 
 import { createHash } from "node:crypto";
 
+import { estimateTokens } from "../core/tokens.js";
+
+export { estimateTokens };
+
 export type BodyMetrics = {
   char_count: number;
   estimated_tokens: number;
@@ -12,11 +16,6 @@ export type BodyMetrics = {
   link_count: number;
   body_hash: string;
 };
-
-// Rough token estimate shared with the runtime savings heuristic.
-export function estimateTokens(text: string): number {
-  return Math.ceil(text.length / 4);
-}
 
 export function hashText(text: string): string {
   return createHash("sha256").update(text).digest("hex").slice(0, 16);
