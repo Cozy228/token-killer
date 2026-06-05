@@ -1,5 +1,7 @@
 import { spawn } from "node:child_process";
+import { existsSync } from "node:fs";
 import { constants as osConstants } from "node:os";
+import { delimiter, join } from "node:path";
 
 import { assertNoRecursion, buildChildPath } from "./shim/path.js";
 import type { ParsedCommand, RawResult } from "./types.js";
@@ -36,6 +38,68 @@ function buildChildEnv(
   return { ...process.env, ...extraEnv, PATH: strippedPath } as Record<string, string>;
 }
 
+// Windows-only: resolve a bare program name to a full path honoring PATHEXT.
+// Node's spawn (like Rust's Command::new — see rtk core/utils.rs resolve_binary)
+// does NOT search PATHEXT, so `spawn("pnpm")` fails even when `pnpm.CMD` is on
+// PATH. We resolve against the CHILD's PATH (already shim-stripped when running
+// behind the shim, so we never resolve into a shim wrapper). Returns the bare
+// name unchanged on non-Windows, when the name already contains a path
+// separator, or when nothing is found — in which case spawn fails open to the
+// existing ENOENT → 127 path.
+export function resolveProgram(program: string, pathValue: string | undefined): string {
+  if (process.platform !== "win32") return program;
+  if (program.includes("\\") || program.includes("/")) return program;
+  const dirs = (pathValue ?? "").split(delimiter).filter(Boolean);
+  const exts = (process.env.PATHEXT ?? ".COM;.EXE;.BAT;.CMD")
+    .split(";")
+    .map((ext) => ext.trim())
+    .filter(Boolean);
+  for (const dir of dirs) {
+    for (const ext of exts) {
+      const candidate = join(dir, program + ext);
+      if (existsSync(candidate)) return candidate;
+    }
+  }
+  return program;
+}
+
+function isBatchScript(file: string): boolean {
+  const lower = file.toLowerCase();
+  return lower.endsWith(".cmd") || lower.endsWith(".bat");
+}
+
+// Minimal cmd.exe token quoting — wrap tokens with whitespace or cmd
+// metacharacters in double quotes (doubling any embedded quote). Combined with
+// the outer `"..."` + `/s` below, cmd strips the outer pair and parses the rest
+// literally. Sufficient for the argv we proxy (flags, paths); not a general
+// shell-escaping library.
+function cmdQuote(token: string): string {
+  if (token.length > 0 && !/[\s"^&|<>()%!]/.test(token)) return token;
+  return `"${token.replace(/"/g, '""')}"`;
+}
+
+// Resolve the actual spawn target. On Windows a resolved .cmd/.bat must go
+// through ComSpec: CreateProcess can't execute a batch script and Node refuses
+// .bat/.cmd without a shell (CVE-2024-27980). Everything else — plain .exe and
+// all non-Windows — spawns directly with the resolved path.
+export function buildSpawnTarget(
+  program: string,
+  args: string[],
+  pathValue: string | undefined,
+): { file: string; args: string[]; windowsVerbatimArguments: boolean } {
+  const resolved = resolveProgram(program, pathValue);
+  if (process.platform === "win32" && isBatchScript(resolved)) {
+    const comspec = process.env.ComSpec || "cmd.exe";
+    const line = [resolved, ...args].map(cmdQuote).join(" ");
+    return {
+      file: comspec,
+      args: ["/d", "/s", "/c", `"${line}"`],
+      windowsVerbatimArguments: true,
+    };
+  }
+  return { file: resolved, args, windowsVerbatimArguments: false };
+}
+
 export function executeCommand(
   command: ParsedCommand,
   // Optional extra environment variables merged over process.env. RTK rewrites
@@ -45,12 +109,18 @@ export function executeCommand(
 ): Promise<RawResult> {
   const started = Date.now();
   const env = buildChildEnv(command.program, extraEnv);
+  const target = buildSpawnTarget(
+    command.program,
+    command.args,
+    env?.PATH ?? process.env.PATH,
+  );
 
   return new Promise((resolve) => {
-    const child = spawn(command.program, command.args, {
+    const child = spawn(target.file, target.args, {
       cwd: process.cwd(),
       shell: false,
       windowsHide: true,
+      windowsVerbatimArguments: target.windowsVerbatimArguments,
       ...(env ? { env } : {}),
     });
 
@@ -106,13 +176,19 @@ export function executePassthrough(
   opts: PassthroughOptions = {},
 ): Promise<number> {
   const env = buildChildEnv(command.program, opts.extraEnv);
+  const target = buildSpawnTarget(
+    command.program,
+    command.args,
+    env?.PATH ?? process.env.PATH,
+  );
 
   return new Promise((resolve) => {
-    const child = spawn(command.program, command.args, {
+    const child = spawn(target.file, target.args, {
       cwd: opts.cwd ?? process.cwd(),
       shell: false,
       stdio: "inherit",
       windowsHide: true,
+      windowsVerbatimArguments: target.windowsVerbatimArguments,
       ...(env ? { env } : {}),
     });
 

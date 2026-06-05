@@ -155,6 +155,16 @@ async function main(): Promise<number> {
   try {
     return await runCompress(handler, command, parsed.options);
   } catch (error) {
+    // The fail-open is silent by design (never surface compression noise to the
+    // agent). TK_DEBUG opens a window into WHY a command fell back to passthrough
+    // — essential for diagnosing platform-specific compress-path failures.
+    if (process.env.TK_DEBUG) {
+      process.stderr.write(
+        `tk debug: compress failed for "${command.displayCommand}": ${
+          error instanceof Error ? (error.stack ?? error.message) : String(error)
+        }\n`,
+      );
+    }
     return await failOpenPassthrough(command, error);
   }
 }

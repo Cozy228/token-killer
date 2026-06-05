@@ -24,8 +24,20 @@ export function projectFingerprint(cwd: string): string {
   return `repo:${hash}`;
 }
 
+// Render a fingerprint (logical id `repo:<hash>`) into a filesystem-safe path
+// segment. `repo:<hash>` is the canonical id used for display/telemetry, but its
+// colon is ILLEGAL in a Windows path component (reserved for the drive letter /
+// NTFS alternate data streams), so `mkdir projects\repo:<hash>` throws ENOENT and
+// every history write — hence every compression — silently fails open to
+// passthrough. On POSIX the colon is a valid filename char, so this is a no-op
+// and existing on-disk layout is untouched. We only neutralise characters
+// Windows actually rejects, keeping the segment stable per platform.
+export function fingerprintSegment(fingerprint: string): string {
+  return process.platform === "win32" ? fingerprint.replace(/:/g, "-") : fingerprint;
+}
+
 export function projectDataDir(cwd: string): string {
-  return path.join(tokenKillerHome(), "projects", projectFingerprint(cwd));
+  return path.join(tokenKillerHome(), "projects", fingerprintSegment(projectFingerprint(cwd)));
 }
 
 export function historyFile(cwd: string): string {
@@ -39,7 +51,7 @@ export function projectMetaFile(cwd: string): string {
 }
 
 export function projectMetaFileForFingerprint(fingerprint: string): string {
-  return path.join(tokenKillerHome(), "projects", fingerprint, "meta.json");
+  return path.join(tokenKillerHome(), "projects", fingerprintSegment(fingerprint), "meta.json");
 }
 
 export function rawOutputDir(cwd: string): string {
@@ -47,7 +59,7 @@ export function rawOutputDir(cwd: string): string {
 }
 
 export function rawOutputPathRelative(cwd: string, fileName: string): string {
-  return path.join("projects", projectFingerprint(cwd), "raw", fileName);
+  return path.join("projects", fingerprintSegment(projectFingerprint(cwd)), "raw", fileName);
 }
 
 export function resolveStoredPath(storedPath: string): string {
