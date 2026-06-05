@@ -1,6 +1,104 @@
 import { describe, expect, test } from "vitest";
 
 import { expectRtkParity, filterRtkOutput } from "../../helpers/rtkCommandHarness.js";
+import { buildDockerArgs } from "../../../src/handlers/cloud/container.js";
+
+// RTK: container.rs command construction — the real CLI path rewrites each handled
+// subcommand into a fixed `--format`/`--tail` invocation so the headerless,
+// tab-separated shape the formatter parses is guaranteed. The migration harness
+// only exercises filter(); these assert the execute() command-rewrite directly.
+describe("RTK docker command construction (buildDockerArgs)", () => {
+  test("docker ps forces the ID/Names/Status/Image/Ports --format template", () => {
+    expect(buildDockerArgs(["ps"])).toEqual([
+      "ps",
+      "--format",
+      "{{.ID}}\t{{.Names}}\t{{.Status}}\t{{.Image}}\t{{.Ports}}",
+    ]);
+  });
+  test("docker ps -a prepends State and keeps -a", () => {
+    expect(buildDockerArgs(["ps", "-a"])).toEqual([
+      "ps",
+      "-a",
+      "--format",
+      "{{.State}}\t{{.ID}}\t{{.Names}}\t{{.Status}}\t{{.Image}}\t{{.Ports}}",
+    ]);
+  });
+  test("docker images forces the Repository:Tag/Size --format template", () => {
+    expect(buildDockerArgs(["images"])).toEqual([
+      "images",
+      "--format",
+      "{{.Repository}}:{{.Tag}}\t{{.Size}}",
+    ]);
+  });
+  test("docker compose ps forces the Name/Image/Status/Ports template, preserving -a", () => {
+    expect(buildDockerArgs(["compose", "ps"])).toEqual([
+      "compose",
+      "ps",
+      "--format",
+      "{{.Name}}\t{{.Image}}\t{{.Status}}\t{{.Ports}}",
+    ]);
+    expect(buildDockerArgs(["compose", "ps", "-a"])).toEqual([
+      "compose",
+      "ps",
+      "-a",
+      "--format",
+      "{{.Name}}\t{{.Image}}\t{{.Status}}\t{{.Ports}}",
+    ]);
+  });
+  test("docker compose logs caps the stream with --tail 100 and keeps the service", () => {
+    expect(buildDockerArgs(["compose", "logs"])).toEqual(["compose", "logs", "--tail", "100"]);
+    expect(buildDockerArgs(["compose", "logs", "web"])).toEqual([
+      "compose",
+      "logs",
+      "--tail",
+      "100",
+      "web",
+    ]);
+  });
+  test("docker logs caps the stream with --tail 100", () => {
+    expect(buildDockerArgs(["logs", "api"])).toEqual(["logs", "--tail", "100", "api"]);
+  });
+  test("docker logs picks the container, not a value-flag's argument", () => {
+    // `--since 1h` consumes `1h`; the container is the following positional `web`.
+    expect(buildDockerArgs(["logs", "--since", "1h", "web"])).toEqual([
+      "logs",
+      "--tail",
+      "100",
+      "web",
+    ]);
+    expect(buildDockerArgs(["logs", "-n", "50", "web"])).toEqual(["logs", "--tail", "100", "web"]);
+    // `--tail=50` carries its own value inline — no following token to skip.
+    expect(buildDockerArgs(["logs", "--tail=50", "web"])).toEqual(["logs", "--tail", "100", "web"]);
+  });
+  test("compose logs picks the service, not a value-flag's argument", () => {
+    expect(buildDockerArgs(["compose", "logs", "--since", "1h", "web"])).toEqual([
+      "compose",
+      "logs",
+      "--tail",
+      "100",
+      "web",
+    ]);
+    // compose logs shares docker's `-n`/`--tail` alias, so `-n 50` consumes `50`.
+    expect(buildDockerArgs(["compose", "logs", "-n", "50", "web"])).toEqual([
+      "compose",
+      "logs",
+      "--tail",
+      "100",
+      "web",
+    ]);
+    expect(buildDockerArgs(["compose", "logs", "--index", "2", "web"])).toEqual([
+      "compose",
+      "logs",
+      "--tail",
+      "100",
+      "web",
+    ]);
+  });
+  test("compose build and unhandled subcommands pass through unchanged", () => {
+    expect(buildDockerArgs(["compose", "build"])).toEqual(["compose", "build"]);
+    expect(buildDockerArgs(["pull", "nginx"])).toEqual(["pull", "nginx"]);
+  });
+});
 
 describe("RTK docker behavior", () => {
   // RTK: cloud/container.rs::format_compose_ps + test_format_compose_ps_basic /

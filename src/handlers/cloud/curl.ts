@@ -10,6 +10,15 @@ function matchesCurl(command: ParsedCommand): boolean {
   return command.program === "curl";
 }
 
+// RTK: curl_cmd.rs::run — RTK always prepends `-s` (silent: no progress meter,
+// which curl writes to stderr and would otherwise pollute the captured stream),
+// then forwards the user's args verbatim. The migration harness bypasses
+// execute(), so this construction helper (and its unit test) guards the real-CLI
+// command shape.
+export function buildCurlArgs(args: string[]): string[] {
+  return ["-s", ...args];
+}
+
 // RTK: curl_cmd.rs::filter_curl_output — a top-level JSON document. Mid-stream
 // truncation would produce invalid JSON (#1536), so JSON always passes through.
 function looksLikeJson(trimmed: string): boolean {
@@ -54,7 +63,15 @@ export const curlHandler: CommandHandler = {
   matches: matchesCurl,
 
   execute(command) {
-    return executeCommand(command);
+    // RTK: curl_cmd.rs prepends `-s` before spawning curl; never mutate the
+    // original command so the filter keeps seeing the user's args.
+    const args = buildCurlArgs(command.args);
+    return executeCommand({
+      ...command,
+      args,
+      original: ["curl", ...args],
+      displayCommand: `curl ${args.join(" ")}`,
+    });
   },
 
   async filter(raw, _command, options) {

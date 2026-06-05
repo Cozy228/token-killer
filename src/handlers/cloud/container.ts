@@ -392,8 +392,131 @@ function requestsRawOutput(args: string[]): boolean {
   );
 }
 
-function firstNonFlag(args: string[]): string {
-  return args.find((a) => !a.startsWith("-")) ?? "";
+// RTK: container.rs — the Go-template strings RTK passes to `docker --format`.
+// Fields are tab-separated; the formatters above split on "\t". These MUST be
+// real tab characters so the spawned `docker` produces the shape the filter
+// expects (the migration harness bypasses execute(), so only these construction
+// helpers — and their unit tests — guard the real-CLI command shape).
+const DOCKER_PS_FORMAT = "{{.ID}}\t{{.Names}}\t{{.Status}}\t{{.Image}}\t{{.Ports}}";
+const DOCKER_PS_ALL_FORMAT =
+  "{{.State}}\t{{.ID}}\t{{.Names}}\t{{.Status}}\t{{.Image}}\t{{.Ports}}";
+const DOCKER_IMAGES_FORMAT = "{{.Repository}}:{{.Tag}}\t{{.Size}}";
+const DOCKER_COMPOSE_PS_FORMAT = "{{.Name}}\t{{.Image}}\t{{.Status}}\t{{.Ports}}";
+// RTK: docker_logs / kubectl_logs / run_compose_logs all cap the stream at 100.
+const LOGS_TAIL = "100";
+
+// docker/compose `logs` accept options that consume the FOLLOWING token as their
+// value (`--tail 50`, `--since 1h`, …). The container/service is the first
+// positional operand; a naive "first non-dash token" scan would grab such a
+// value (e.g. the `50` in `docker logs --tail 50 web`), so skip a value-flag's
+// argument while searching. The `--flag=value` form carries its own value inline
+// and needs no skip. RTK parses these via clap so the operand is unambiguous;
+// this restores the same operand identification on tg's flag-tolerant path.
+const DOCKER_LOGS_VALUE_FLAGS = new Set(["--since", "--until", "--tail", "-n"]);
+// compose logs shares docker logs' `-n`/`--tail` alias and adds `--index`.
+const COMPOSE_LOGS_VALUE_FLAGS = new Set(["--since", "--until", "--tail", "-n", "--index"]);
+
+function firstLogsOperand(args: string[], valueFlags: Set<string>): string | undefined {
+  for (let index = 0; index < args.length; index += 1) {
+    const arg = args[index]!;
+    if (arg.startsWith("-")) {
+      if (valueFlags.has(arg)) index += 1;
+      continue;
+    }
+    return arg;
+  }
+  return undefined;
+}
+
+// RTK: container.rs docker_ps/docker_images/run_compose_ps/docker_logs command
+// construction — RTK does not forward the user's flags; it rewrites each handled
+// subcommand into a fixed `--format`/`--tail` invocation so its formatter has a
+// stable, headerless tab-separated shape to parse. Unhandled docker subcommands
+// pass through unchanged.
+export function buildDockerArgs(args: string[]): string[] {
+  const sub = args[0];
+
+  if (sub === "ps") {
+    const all = args.includes("-a") || args.includes("--all");
+    return all
+      ? ["ps", "-a", "--format", DOCKER_PS_ALL_FORMAT]
+      : ["ps", "--format", DOCKER_PS_FORMAT];
+  }
+
+  if (sub === "images") {
+    return ["images", "--format", DOCKER_IMAGES_FORMAT];
+  }
+
+  if (sub === "compose") {
+    const action = args[1];
+    if (action === "ps") {
+      const all = args.includes("-a") || args.includes("--all");
+      const out = ["compose", "ps"];
+      if (all) out.push("-a");
+      out.push("--format", DOCKER_COMPOSE_PS_FORMAT);
+      return out;
+    }
+    if (action === "logs") {
+      const svc = firstLogsOperand(args.slice(2), COMPOSE_LOGS_VALUE_FLAGS);
+      const out = ["compose", "logs", "--tail", LOGS_TAIL];
+      if (svc !== undefined) out.push(svc);
+      return out;
+    }
+    // compose build (and anything else) is a passthrough in RTK.
+    return args;
+  }
+
+  if (sub === "logs") {
+    const container = firstLogsOperand(args.slice(1), DOCKER_LOGS_VALUE_FLAGS);
+    if (container !== undefined) return ["logs", "--tail", LOGS_TAIL, container];
+    return args;
+  }
+
+  return args;
+}
+
+// RTK: container.rs kubectl_pods/kubectl_services/kubectl_logs command
+// construction. `get pods|services` (incl. aliases) is rewritten to `-o json`
+// with the user's remaining args appended — unless a raw-output flag is present,
+// in which case RTK passes through. `logs <pod>` gains `--tail 100`. The
+// resource is the FIRST token after `get` (positional), matching kubectl_get_target.
+export function buildKubectlArgs(args: string[]): string[] {
+  if (args[0] === "get") {
+    const afterGet = args.slice(1);
+    const resource = afterGet[0];
+    const rest = afterGet.slice(1);
+    if (resource !== undefined && !resource.startsWith("-") && !requestsRawOutput(rest)) {
+      if (resource === "po" || resource === "pod" || resource === "pods") {
+        return ["get", "pods", "-o", "json", ...rest];
+      }
+      if (resource === "svc" || resource === "service" || resource === "services") {
+        return ["get", "services", "-o", "json", ...rest];
+      }
+    }
+    return args;
+  }
+
+  if (args[0] === "logs") {
+    const after = args.slice(1);
+    const pod = after[0];
+    if (pod !== undefined) {
+      return ["logs", "--tail", LOGS_TAIL, pod, ...after.slice(1)];
+    }
+    return args;
+  }
+
+  return args;
+}
+
+// RTK: build a rewritten command without mutating the original — the filter must
+// keep seeing the user's args to drive its dispatch (mirrors ls.ts::execute).
+function rewriteCommand(command: ParsedCommand, args: string[]): ParsedCommand {
+  return {
+    ...command,
+    args,
+    original: [command.program, ...args],
+    displayCommand: `${command.program} ${args.join(" ")}`,
+  };
 }
 
 // RTK: cloud/container.rs::run / run_compose_* / run_kubectl_get dispatch. tg
@@ -430,7 +553,9 @@ function formatDocker(args: string[], raw: string): string {
   }
 
   if (sub === "logs") {
-    const container = args.slice(1).find((a) => !a.startsWith("-")) ?? "";
+    // Identify the container the same way buildDockerArgs does so the header
+    // label matches the stream actually fetched (skip value-flag arguments).
+    const container = firstLogsOperand(args.slice(1), DOCKER_LOGS_VALUE_FLAGS) ?? "";
     return formatDockerLogs(container, raw);
   }
 
@@ -446,12 +571,14 @@ function parseKubectlJson(raw: string): unknown | null {
 }
 
 function formatKubectl(args: string[], raw: string): string {
-  // RTK: kubectl get <pods|services> dispatch via kubectl_get_target aliases.
+  // RTK: kubectl get <pods|services> dispatch via kubectl_get_target — the
+  // resource is the FIRST token after `get` (positional), rest is everything
+  // after it. Mirrors buildKubectlArgs so execute() and filter() agree.
   if (args[0] === "get") {
-    const rest = args.slice(1);
-    const resource = firstNonFlag(rest);
-    const resourceArgs = rest.filter((a) => a !== resource);
-    if (!requestsRawOutput(resourceArgs)) {
+    const afterGet = args.slice(1);
+    const resource = afterGet[0];
+    const rest = afterGet.slice(1);
+    if (resource !== undefined && !resource.startsWith("-") && !requestsRawOutput(rest)) {
       if (resource === "po" || resource === "pod" || resource === "pods") {
         const json = parseKubectlJson(raw);
         return json === null ? raw : formatKubectlPods(json);
@@ -486,7 +613,9 @@ export const dockerHandler: CommandHandler = {
   matches: matchesDocker,
 
   execute(command) {
-    return executeCommand(command);
+    // RTK: container.rs rewrites each handled subcommand into a fixed
+    // `--format`/`--tail` invocation before spawning docker.
+    return executeCommand(rewriteCommand(command, buildDockerArgs(command.args)));
   },
 
   async filter(raw, command, options) {
@@ -505,7 +634,9 @@ export const kubectlHandler: CommandHandler = {
   matches: matchesKubectl,
 
   execute(command) {
-    return executeCommand(command);
+    // RTK: container.rs rewrites `get pods|services` to `-o json` and `logs` to
+    // `--tail 100` before spawning kubectl.
+    return executeCommand(rewriteCommand(command, buildKubectlArgs(command.args)));
   },
 
   async filter(raw, command, options) {

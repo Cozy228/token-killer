@@ -1,6 +1,26 @@
 import { describe, expect, test } from "vitest";
 
 import { expectRtkParity, filterRtkFixture, filterRtkOutput } from "../../helpers/rtkCommandHarness.js";
+import { buildCurlArgs } from "../../../src/handlers/cloud/curl.js";
+
+// RTK: curl_cmd.rs::run command construction — the real CLI path must prepend
+// `-s` so the progress meter never pollutes the captured body. The migration
+// harness only exercises filter(); these assert the execute() rewrite directly.
+describe("RTK curl command construction (buildCurlArgs)", () => {
+  test("prepends -s ahead of the user's args", () => {
+    expect(buildCurlArgs(["https://example.com"])).toEqual(["-s", "https://example.com"]);
+  });
+  test("preserves the user's flags and order verbatim after -s", () => {
+    expect(buildCurlArgs(["-X", "POST", "-d", "k=v", "https://api.test"])).toEqual([
+      "-s",
+      "-X",
+      "POST",
+      "-d",
+      "k=v",
+      "https://api.test",
+    ]);
+  });
+});
 
 describe("RTK curl behavior", () => {
   // RTK: cloud/curl_cmd.rs::test_filter_curl_large_json_object_passthrough — a

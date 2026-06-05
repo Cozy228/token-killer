@@ -1,6 +1,59 @@
 import { describe, expect, test } from "vitest";
 
 import { expectRtkParity, filterRtkOutput } from "../../helpers/rtkCommandHarness.js";
+import { buildKubectlArgs } from "../../../src/handlers/cloud/container.js";
+
+// RTK: container.rs command construction — `get pods|services` (incl. po/pod/svc/
+// service aliases) is rewritten to `-o json` and `logs <pod>` gains `--tail 100`,
+// unless a raw-output flag forces passthrough. The resource is the FIRST token
+// after `get` (positional). The migration harness only exercises filter(); these
+// assert the execute() command-rewrite directly.
+describe("RTK kubectl command construction (buildKubectlArgs)", () => {
+  test("get pods (and aliases) rewrite to `get pods -o json`", () => {
+    expect(buildKubectlArgs(["get", "pods"])).toEqual(["get", "pods", "-o", "json"]);
+    expect(buildKubectlArgs(["get", "po"])).toEqual(["get", "pods", "-o", "json"]);
+    expect(buildKubectlArgs(["get", "pod"])).toEqual(["get", "pods", "-o", "json"]);
+  });
+  test("get services (and aliases) rewrite to `get services -o json`", () => {
+    expect(buildKubectlArgs(["get", "services"])).toEqual(["get", "services", "-o", "json"]);
+    expect(buildKubectlArgs(["get", "svc"])).toEqual(["get", "services", "-o", "json"]);
+    expect(buildKubectlArgs(["get", "service"])).toEqual(["get", "services", "-o", "json"]);
+  });
+  test("the user's remaining args (e.g. -n) are appended after -o json", () => {
+    expect(buildKubectlArgs(["get", "pods", "-n", "prod"])).toEqual([
+      "get",
+      "pods",
+      "-o",
+      "json",
+      "-n",
+      "prod",
+    ]);
+  });
+  test("a raw-output request (-o/-w/--show-labels) forces passthrough", () => {
+    expect(buildKubectlArgs(["get", "pods", "-o", "wide"])).toEqual(["get", "pods", "-o", "wide"]);
+    expect(buildKubectlArgs(["get", "pods", "-w"])).toEqual(["get", "pods", "-w"]);
+    expect(buildKubectlArgs(["get", "pods", "--show-labels"])).toEqual([
+      "get",
+      "pods",
+      "--show-labels",
+    ]);
+  });
+  test("logs <pod> caps the stream with --tail 100, preserving trailing args", () => {
+    expect(buildKubectlArgs(["logs", "mypod"])).toEqual(["logs", "--tail", "100", "mypod"]);
+    expect(buildKubectlArgs(["logs", "mypod", "-c", "app"])).toEqual([
+      "logs",
+      "--tail",
+      "100",
+      "mypod",
+      "-c",
+      "app",
+    ]);
+  });
+  test("unhandled resources and subcommands pass through unchanged", () => {
+    expect(buildKubectlArgs(["get", "deployments"])).toEqual(["get", "deployments"]);
+    expect(buildKubectlArgs(["describe", "pod", "x"])).toEqual(["describe", "pod", "x"]);
+  });
+});
 
 describe("RTK kubectl behavior", () => {
   // RTK: cloud/container.rs::format_kubectl_pods — Running/Pending/Failed counts
