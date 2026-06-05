@@ -93,9 +93,37 @@ function allowsRtkPassthrough(commandArgs: string[], stdout: string): boolean {
     return looksJson || Buffer.byteLength(trimmed, "utf8") < 500;
   }
 
-  if (program === "grep") {
-    return args.some((arg) =>
-      ["-c", "--count", "-l", "--files-with-matches", "-L", "--files-without-match", "-o", "--only-matching", "-Z", "--null"].includes(arg),
+  if (program === "grep" || program === "rg") {
+    // `--level none` is an explicit opt-out (= --raw): verbatim passthrough.
+    const levelNone = args.some(
+      (arg, i) => (arg === "--level" && args[i + 1] === "none") || arg === "--level=none",
+    );
+    if (levelNone) return true;
+    // Format flags (-c/-l/-L/-o/-Z/--json) and context flags (-A/-B/-C and long
+    // forms) are genuine RTK retention paths: tg passes them through verbatim.
+    return args.some(
+      (arg) =>
+        [
+          "-c",
+          "--count",
+          "-l",
+          "--files-with-matches",
+          "-L",
+          "--files-without-match",
+          "-o",
+          "--only-matching",
+          "-Z",
+          "--null",
+          "--json",
+          "-A",
+          "-B",
+          "-C",
+          "--after-context",
+          "--before-context",
+          "--context",
+        ].includes(arg) ||
+        /^-[ABC]\d+$/.test(arg) ||
+        /^--(after-context|before-context|context)=/.test(arg),
     );
   }
 

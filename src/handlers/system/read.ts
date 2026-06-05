@@ -1,6 +1,7 @@
 import { executeCommand } from "../../executor.js";
 import type { CommandHandler, ParsedCommand, RawResult, TgOptions } from "../../types.js";
 import { makeFilteredResult } from "../base.js";
+import { type CompressionLevel, parseLevel } from "../common/level.js";
 
 // RTK: system/read.rs — read a file (here, the bytes a `cat <file>` produced),
 // apply a language-aware filter level, then a line window (max_lines/tail_lines),
@@ -10,8 +11,11 @@ import { makeFilteredResult } from "../base.js";
 
 // RTK: core/filter.rs::FilterLevel — none (NoFilter), minimal (strip comments),
 // aggressive (keep only signatures/imports/decls). The language-aware comment
-// stripping lives in minimalFilter/aggressiveFilter below.
-type ReadLevel = "none" | "minimal" | "aggressive";
+// stripping lives in minimalFilter/aggressiveFilter below. read uses the shared
+// CompressionLevel vocabulary but honors only this subset (no "balanced"); see
+// src/handlers/common/level.ts.
+const READ_LEVELS = ["none", "minimal", "aggressive"] as const satisfies readonly CompressionLevel[];
+type ReadLevel = (typeof READ_LEVELS)[number];
 
 type ReadOptions = {
   level: ReadLevel;
@@ -29,13 +33,6 @@ const FUNC_SIGNATURE =
 
 // RTK: read.rs flag parsing (clap) — -l/--level, -m/--max-lines, --tail-lines,
 // -n/--line-numbers. Positional non-flag args are files.
-function parseReadLevel(value: string | undefined): ReadLevel | undefined {
-  if (value === "none" || value === "minimal" || value === "aggressive") {
-    return value;
-  }
-  return undefined;
-}
-
 function parsePositiveInt(value: string | undefined): number | undefined {
   if (value === undefined) return undefined;
   const parsed = Number.parseInt(value, 10);
@@ -44,7 +41,13 @@ function parsePositiveInt(value: string | undefined): number | undefined {
 
 function readOptions(args: string[]): ReadOptions {
   const files: string[] = [];
-  let level: ReadLevel = "none";
+  // Shared --level parser (read honors `-l` as level; rg/tree do not). The loop
+  // below only needs to SKIP the level flag + value so it is not read as a file.
+  const level = parseLevel(args, {
+    fallback: "none",
+    allowed: READ_LEVELS,
+    shortFlag: true,
+  }) as ReadLevel;
   let maxLines: number | undefined;
   let tailLines: number | undefined;
   let lineNumbers = false;
@@ -52,12 +55,10 @@ function readOptions(args: string[]): ReadOptions {
   for (let index = 0; index < args.length; index += 1) {
     const arg = args[index];
     if (arg === "--level" || arg === "-l") {
-      level = parseReadLevel(args[index + 1]) ?? level;
       index += 1;
       continue;
     }
     if (arg?.startsWith("--level=")) {
-      level = parseReadLevel(arg.slice("--level=".length)) ?? level;
       continue;
     }
     if (arg === "--max-lines" || arg === "-m") {

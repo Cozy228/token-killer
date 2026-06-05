@@ -1,29 +1,105 @@
 import { executeCommand } from "../../executor.js";
 import type { CommandHandler, ParsedCommand } from "../../types.js";
 import { makeFilteredResult } from "../base.js";
-import { groupGrepOutput, hasFormatFlag } from "./grepFilter.js";
+import {
+  type GrepGroupOptions,
+  groupGrepOutput,
+  hasContextFlag,
+  hasFormatFlag,
+} from "./grepFilter.js";
+import { type CompressionLevel, parseLevel, stripLevelFlags } from "./level.js";
 
 const SEARCH_PROGRAMS = new Set(["rg", "grep"]);
 
+// Common rg/grep flags whose FOLLOWING arg is a value, not the search pattern.
+// Conservative list — only used to keep `cleanLine`'s centering word honest, so
+// an omission degrades to head-truncation, never to dropped content.
+const VALUE_FLAGS = new Set([
+  "-f",
+  "--file",
+  "-g",
+  "--glob",
+  "--iglob",
+  "-t",
+  "--type",
+  "-T",
+  "--type-not",
+  "-m",
+  "--max-count",
+  "-M",
+  "--max-columns",
+  "--sort",
+  "--sortr",
+]);
+
+// Best-effort pattern extraction for centering long lines. `-e/--regexp` and the
+// `--` delimiter explicitly designate the pattern; otherwise return the first
+// positional that is not a flag or a valued flag's argument.
 function searchPattern(args: string[]): string {
-  return args.find((arg) => !arg.startsWith("-")) ?? "";
+  for (let index = 0; index < args.length; index += 1) {
+    const arg = args[index];
+    if (arg === undefined) continue;
+    // After `--`, the next token is the (possibly dash-leading) pattern.
+    if (arg === "--") return args[index + 1] ?? "";
+    if (arg === "-e" || arg === "--regexp") return args[index + 1] ?? "";
+    if (arg.startsWith("--regexp=")) return arg.slice("--regexp=".length);
+    if (VALUE_FLAGS.has(arg)) {
+      index += 1; // skip this flag's value
+      continue;
+    }
+    if (arg.startsWith("-")) continue;
+    return arg;
+  }
+  return "";
 }
 
 // RTK: grep_cmd.rs::run — RTK re-invokes the search with `-nH` so every match is
 // emitted as `file:line:content`, which is what the grouping parser needs. A raw
 // `grep -r pattern dir` omits line numbers (and, for a single file, the filename),
 // so tg cannot group it and falls back to passthrough (0% savings). Forcing `-n`
-// and `-H` on `grep` invocations restores the parseable shape, and the per-file /
-// global caps then compress a large recursive grep.
+// and `-H` restores the parseable shape, and the per-file / global caps then
+// compress a large recursive search.
 //
-// rg is intentionally left untouched: when its match set is below the grouping
-// caps (the common case), re-running with `-n` only adds line-number prefixes that
-// are absent from the raw `rg` baseline, inflating the comparison instead of
-// compressing it. rtk likewise gets ~0% on plain `rg`, so passthrough is parity.
+// rg IS rewritten too (parity with RTK's real behavior): piped to a non-TTY, `rg`
+// OMITS line numbers by default, so its output is unparseable and falls back to
+// passthrough (0% savings). Forcing `-n -H --no-heading` restores
+// `file:line:content`. Deliberate divergence from RTK: tg does NOT add
+// `--no-ignore-vcs` — it keeps rg's default .gitignore-respecting scope, which
+// yields less, more relevant output for an agent. Format flags (-c/-l/-L/-o/-Z/
+// --json) and context flags (-A/-B/-C) always pass through (see grepFilter).
 export function buildGrepArgs(program: string, userArgs: string[]): string[] {
-  if (program !== "grep" || hasFormatFlag(userArgs)) return userArgs;
-  // Duplicate -n/-H are harmless to grep, so prepend unconditionally.
-  return ["-n", "-H", ...userArgs];
+  const cleaned = stripLevelFlags(userArgs);
+  if (hasContextFlag(cleaned) || hasFormatFlag(cleaned)) return cleaned;
+  // `--level none` is the verbatim opt-out (= --raw): run the user's ORIGINAL
+  // command, do NOT inject -n/-H — otherwise the "passthrough" output carries
+  // line numbers the raw invocation never produced.
+  if (parseLevel(userArgs, { fallback: "balanced" }) === "none") return cleaned;
+  // Duplicate -n/-H/--no-heading are harmless to grep/rg, so prepend unconditionally.
+  if (program === "grep") return ["-n", "-H", ...cleaned];
+  if (program === "rg") return ["-n", "-H", "--no-heading", ...cleaned];
+  return cleaned;
+}
+
+// Map the shared --level dial onto the grouping caps. `none` is handled before
+// grouping (passthrough). Each step adds a layer; lower levels never drop more.
+function grepOptionsForLevel(level: CompressionLevel): GrepGroupOptions {
+  switch (level) {
+    case "minimal":
+      // Layer 1 only: dedup + grouping, caps disabled — every match kept, lossless.
+      return {
+        dedupe: true,
+        maxLen: Number.POSITIVE_INFINITY,
+        maxResults: Number.POSITIVE_INFINITY,
+        perFile: Number.POSITIVE_INFINITY,
+      };
+    case "aggressive":
+      // Layer 3: per-file count + one sample line.
+      return { dedupe: true, aggregate: true };
+    case "balanced":
+    default:
+      // Layers 1-2: dedup + default caps (per-file 25 / global 200 / 80-char window).
+      return { dedupe: true };
+  }
 }
 
 export const searchLikeHandler: CommandHandler = {
@@ -36,7 +112,6 @@ export const searchLikeHandler: CommandHandler = {
 
   execute(command) {
     const args = buildGrepArgs(command.program, command.args);
-    if (args === command.args) return executeCommand(command);
     const rewritten: ParsedCommand = {
       ...command,
       args,
@@ -47,23 +122,30 @@ export const searchLikeHandler: CommandHandler = {
   },
 
   async filter(raw, command, options) {
-    const pattern = searchPattern(command.args);
+    const cleanedArgs = stripLevelFlags(command.args);
+    const pattern = searchPattern(cleanedArgs);
 
     if (!raw.stdout.trim()) {
       const output = `${raw.stderr || `0 matches for ${pattern}`}\n`;
       return makeFilteredResult(this.name, raw, output, options);
     }
 
-    // RTK: grep_cmd.rs — explicit format flags (-c/-l/-L/-o/-Z) already produce
-    // small output, so they pass through verbatim. Everything else is grouped by
-    // file and compressed; if no line parses as a match (e.g. grep without -n,
-    // rg --json), fall back to passthrough rather than drop content.
-    let output: string;
-    if (hasFormatFlag(command.args)) {
-      output = `${raw.stdout.trimEnd()}\n`;
-    } else {
-      output = groupGrepOutput(raw.stdout, pattern) ?? `${raw.stdout.trimEnd()}\n`;
+    // RTK: grep_cmd.rs — explicit format flags (-c/-l/-L/-o/-Z/--json) already
+    // produce small/structured output and context flags (-A/-B/-C) were an explicit
+    // request for surrounding lines, so both pass through verbatim. `--level none`
+    // is an explicit opt-out (= --raw).
+    const level = parseLevel(command.args, { fallback: "balanced" });
+    if (hasFormatFlag(cleanedArgs) || hasContextFlag(cleanedArgs) || level === "none") {
+      return makeFilteredResult(this.name, raw, `${raw.stdout.trimEnd()}\n`, options);
     }
+
+    // Recovery contract item 3: when matches are suppressed, name how to recover.
+    const recoveryHint = `# capped — \`tg --raw ${command.program} …\` for all, \`--level minimal\` for lossless`;
+    const grouped = groupGrepOutput(raw.stdout, pattern, {
+      ...grepOptionsForLevel(level),
+      recoveryHint,
+    });
+    const output = grouped ?? `${raw.stdout.trimEnd()}\n`;
 
     return makeFilteredResult(this.name, raw, output, options);
   },

@@ -1,6 +1,6 @@
 import { describe, expect, test } from "vitest";
 
-import { expectRtkParity, filterRtkFixture } from "../../helpers/rtkCommandHarness.js";
+import { expectRtkParity, filterRtkFixture, filterRtkOutput } from "../../helpers/rtkCommandHarness.js";
 import {
   cleanLine,
   compactPath,
@@ -9,6 +9,7 @@ import {
   parseMatchLine,
 } from "../../../src/handlers/common/grepFilter.js";
 import { buildGrepArgs } from "../../../src/handlers/common/searchLike.js";
+import { parseLevel, stripLevelFlags } from "../../../src/handlers/common/level.js";
 
 describe("RTK grep command construction", () => {
   // RTK: grep_cmd.rs::run — RTK searches with `-nH` so output is `file:line:content`.
@@ -29,9 +30,71 @@ describe("RTK grep command construction", () => {
     expect(buildGrepArgs("grep", ["-l", "import", "src/"])).toEqual(["-l", "import", "src/"]);
   });
 
-  test("does not rewrite rg (line-numbered by default; -r means --replace)", () => {
-    const args = ["export", "src/"];
-    expect(buildGrepArgs("rg", args)).toBe(args);
+  // Piped to a non-TTY, rg OMITS line numbers by default, so its raw output is
+  // unparseable and falls back to passthrough (0% saved). Forcing -n -H
+  // --no-heading restores `file:line:content` — parity with RTK's real behavior
+  // (grep_cmd.rs re-invokes the search itself). tg does NOT add --no-ignore-vcs
+  // (deliberate divergence — see docs/align-rtk-divergences.md).
+  test("forces -n -H --no-heading so rg output is groupable", () => {
+    expect(buildGrepArgs("rg", ["export", "src/"])).toEqual([
+      "-n",
+      "-H",
+      "--no-heading",
+      "export",
+      "src/",
+    ]);
+  });
+
+  test("strips --level before invoking the real binary", () => {
+    expect(buildGrepArgs("rg", ["--level", "minimal", "export", "src/"])).toEqual([
+      "-n",
+      "-H",
+      "--no-heading",
+      "export",
+      "src/",
+    ]);
+    expect(buildGrepArgs("grep", ["--level=balanced", "-r", "import", "src/"])).toEqual([
+      "-n",
+      "-H",
+      "-r",
+      "import",
+      "src/",
+    ]);
+  });
+
+  test("leaves context-flag invocations untouched (no rewrite, no grouping)", () => {
+    expect(buildGrepArgs("rg", ["-A", "2", "export", "src/"])).toEqual(["-A", "2", "export", "src/"]);
+    expect(buildGrepArgs("rg", ["-C3", "export", "src/"])).toEqual(["-C3", "export", "src/"]);
+  });
+
+  // --level none is the verbatim opt-out (= --raw): run the ORIGINAL command, do
+  // NOT inject -n/-H, so the passthrough output has no line numbers the raw
+  // invocation never produced.
+  test("does not inject -n/-H when --level none (verbatim opt-out)", () => {
+    expect(buildGrepArgs("rg", ["--level", "none", "needle", "src"])).toEqual(["needle", "src"]);
+    expect(buildGrepArgs("grep", ["--level=none", "-r", "needle", "src"])).toEqual([
+      "-r",
+      "needle",
+      "src",
+    ]);
+  });
+
+  // `--` ends option parsing: a literal `--level` pattern (and its neighbours)
+  // must survive into the rewritten command, never be stripped as the dial.
+  test("preserves a literal --level pattern after -- (no arg drop)", () => {
+    expect(buildGrepArgs("rg", ["--", "--level", "src"])).toEqual([
+      "-n",
+      "-H",
+      "--no-heading",
+      "--",
+      "--level",
+      "src",
+    ]);
+  });
+
+  test("leaves format-flag rg invocations untouched", () => {
+    expect(buildGrepArgs("rg", ["-c", "export", "src/"])).toEqual(["-c", "export", "src/"]);
+    expect(buildGrepArgs("rg", ["--json", "export", "src/"])).toEqual(["--json", "export", "src/"]);
   });
 });
 
@@ -111,6 +174,148 @@ describe("RTK grep behavior", () => {
       maxOutputChars: 2200,
     });
   });
+
+  // rg piped to a non-TTY omits line numbers; tg now forces -nH so the SAME
+  // grouping/cap machinery compresses rg exactly like grep. Reuse the overflow
+  // fixture as the `rg -nH` output shape.
+  test("groups rg matches by file with the per-file cap and uncapped overflow", async () => {
+    const result = await filterRtkFixture(
+      ["rg", "submitOrder", "src"],
+      "tests/fixtures/common/rg_overflow_matches.txt",
+    );
+
+    expect(result.output).toContain("69 matches in 2 files:");
+    expect(result.output).toContain("src/order/submit.ts:25:");
+    expect(result.output).not.toContain("src/order/submit.ts:26:");
+    expect(result.output).toContain("[+42 more]");
+  });
+});
+
+describe("RTK grep --level dial + lossless dedup", () => {
+  // Layer 1 — identical-content lines collapse into one entry carrying every
+  // line number (lossless: counts unchanged, all line numbers preserved).
+  test("collapses identical lines into a line-number list", () => {
+    const stdout = [
+      "src/a.ts:5:import {X} from './x'",
+      "src/a.ts:50:import {X} from './x'",
+      "src/a.ts:88:import {X} from './x'",
+    ].join("\n");
+    const grouped = groupGrepOutput(stdout, "import");
+    expect(grouped).toContain("3 matches in 1 files:");
+    expect(grouped).toContain("src/a.ts:5,50,88:import {X} from './x'");
+    // All three counted, nothing suppressed.
+    expect(grouped).not.toContain("more]");
+  });
+
+  // --level minimal: caps disabled — every match kept (deduped), no overflow,
+  // no recovery hint.
+  test("minimal keeps every match with no cap and no recovery hint", async () => {
+    const result = await filterRtkFixture(
+      ["rg", "--level", "minimal", "submitOrder", "src"],
+      "tests/fixtures/common/rg_overflow_matches.txt",
+    );
+    expect(result.output).toContain("src/order/submit.ts:67:");
+    expect(result.output).not.toContain("[+");
+    expect(result.output).not.toContain("# capped");
+  });
+
+  // --level balanced (default): per-file cap at 25, uncapped overflow, recovery hint.
+  test("balanced caps per file and surfaces a recovery hint", async () => {
+    const result = await filterRtkFixture(
+      ["rg", "--level", "balanced", "submitOrder", "src"],
+      "tests/fixtures/common/rg_overflow_matches.txt",
+    );
+    expect(result.output).toContain("src/order/submit.ts:25:");
+    expect(result.output).not.toContain("src/order/submit.ts:26:");
+    expect(result.output).toContain("[+42 more]");
+    expect(result.output).toContain("# capped");
+    expect(result.output).toContain("--level minimal");
+  });
+
+  // --level aggressive: per-file count + one sample line only.
+  test("aggressive shows a per-file count and a single sample", async () => {
+    const result = await filterRtkFixture(
+      ["rg", "--level", "aggressive", "submitOrder", "src"],
+      "tests/fixtures/common/rg_overflow_matches.txt",
+    );
+    expect(result.output).toContain("src/order/submit.ts: 67 matches");
+    expect(result.output).toContain("src/order/submit.ts:1:const handler1 = submitOrder(payload1);");
+    // Only the first sample — the 25th match is no longer shown.
+    expect(result.output).not.toContain("src/order/submit.ts:25:");
+    expect(result.output).toContain("# capped");
+  });
+
+  // --level none: explicit opt-out (= --raw) — verbatim passthrough.
+  test("none passes the raw output through unchanged", async () => {
+    const result = await filterRtkOutput(
+      ["rg", "--level", "none", "submitOrder", "src"],
+      "src/order/api.ts:88:return submitOrder(payload)\n",
+    );
+    expect(result.output.trim()).toBe("src/order/api.ts:88:return submitOrder(payload)");
+    expect(result.output).not.toContain("matches in");
+  });
+});
+
+describe("RTK grep retention guards (rg)", () => {
+  // Context flags: the user asked for surrounding lines, so neither rewrite nor
+  // group — pass through, with no dropped context lines and no inflated count.
+  test("context-flag rg passes through unchanged (no grouping)", async () => {
+    const stdout = [
+      "src/a.ts:10:export const x = 1",
+      "src/a.ts-11-const y = 2",
+      "src/a.ts-12-const z = 3",
+    ].join("\n");
+    const result = await filterRtkOutput(["rg", "-A", "2", "export", "src/"], stdout);
+    expect(result.output.trim()).toBe(stdout.trim());
+    expect(result.output).not.toContain("more]");
+    expect(result.output).not.toContain("matches in");
+  });
+
+  // Format-flag rg (-c) output is already small — pass through verbatim.
+  test("format-flag rg passes through unchanged", async () => {
+    const result = await filterRtkOutput(["rg", "-c", "export", "src/"], "src/a.ts:3\nsrc/b.ts:1\n");
+    expect(result.output.trim()).toBe("src/a.ts:3\nsrc/b.ts:1");
+  });
+
+  // A non-parseable rg output (no -n line numbers) cannot be grouped — the
+  // grouper signals passthrough rather than dropping content.
+  test("non-parseable rg output falls back to passthrough", () => {
+    const raw = "src/a.ts:export const x\nsrc/b.ts:export const y\n";
+    expect(groupGrepOutput(raw, "export")).toBeNull();
+  });
+
+  // #3: a valued flag's argument (e.g. -g <glob>) must not be mistaken for the
+  // search pattern, or cleanLine centers on the wrong word and head-truncates the
+  // real match out of a long line.
+  test("centers long lines on the real pattern, not a -g glob value", async () => {
+    const longLine = `src/a.ts:1:${"x".repeat(90)} submitOrder(payload)`;
+    const result = await filterRtkOutput(["rg", "-g", "*.ts", "submitOrder", "src"], `${longLine}\n`);
+    expect(result.output).toContain("submitOrder");
+  });
+});
+
+describe("RTK grep level/-- parsing (edge cases)", () => {
+  // #2: `--` ends option parsing — a literal `--level` token after it is NOT the dial.
+  test("parseLevel ignores --level after a -- delimiter", () => {
+    expect(parseLevel(["--", "--level", "minimal", "src"], { fallback: "balanced" })).toBe("balanced");
+    expect(parseLevel(["--level", "minimal", "src"], { fallback: "balanced" })).toBe("minimal");
+  });
+
+  test("stripLevelFlags preserves everything after -- verbatim", () => {
+    expect(stripLevelFlags(["--", "--level", "src"])).toEqual(["--", "--level", "src"]);
+    expect(stripLevelFlags(["--level", "minimal", "src"])).toEqual(["src"]);
+  });
+
+  // #4: aggressive emits TWO lines per file, so the global line budget (200) must
+  // bind at ~100 files — otherwise aggressive prints more than balanced.
+  test("aggregate caps the emitted-line budget across many files", () => {
+    const lines: string[] = [];
+    for (let i = 1; i <= 130; i += 1) lines.push(`src/f${i}.ts:1:match ${i}`);
+    const grouped = groupGrepOutput(lines.join("\n"), "match", { aggregate: true, dedupe: true })!;
+    const headers = grouped.split("\n").filter((l) => /: 1 matches$/.test(l));
+    expect(headers.length).toBeLessThanOrEqual(100);
+    expect(grouped).toContain("[+30 more]");
+  });
 });
 
 // --- Parser/helper unit dimensions (RTK grep_cmd.rs internal #[test]s) ---
@@ -144,6 +349,16 @@ describe("RTK grep parse_match_line (colon-adapted)", () => {
   // RTK: test_parse_match_line_empty_content
   test("parses empty content", () => {
     expect(parseMatchLine("file.rs:7:")).toEqual({ file: "file.rs", line: 7, content: "" });
+  });
+
+  // Windows drive path: the line-number anchor (`:\d+:`) splits on the first
+  // colon followed by digits, so `C:` stays inside the file path.
+  test("parses a Windows drive-letter path", () => {
+    expect(parseMatchLine("C:\\src\\a.ts:12:export const x")).toEqual({
+      file: "C:\\src\\a.ts",
+      line: 12,
+      content: "export const x",
+    });
   });
 
   // RTK: test_parse_match_line_malformed_returns_none — lines without a

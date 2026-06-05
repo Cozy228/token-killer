@@ -70,6 +70,23 @@ the migration contract; the difference from RTK is intentional and minor.
 | `dotnet format` | tg accepts both camelCase (`filePath`/`changes`/`lineNumber`/`formatDescription`) and RTK PascalCase report keys. | The migration fixture uses camelCase; accepting both keeps the handler robust to either reporter shape. |
 | `test` (go branch) | RTK's `runner.rs` has cargo/pytest/jest/**go** framework branches. tg does NOT port the Go branch (Go is an out-of-scope ecosystem — see §E). This also removes RTK's latent bug: `"cargo test"` *contains* the substring `"go test"` (car+"go test"), so RTK runs `cargo test` through BOTH the cargo and go branches — duplicating every failure line and folding the `test result:` summary into the FAILURES block. With no go branch, `cargo test` is classified cleanly. The cargo branch itself stays because the in-scope `rtkTestBehavior` fixture is `test cargo test`. | Scope (Go out-of-scope) + correctness. The single-failure Phase-1 fixture did not exercise the duplication; it surfaced under a realistic multi-failure run. |
 
+## G. rg / tree compression divergences (recorded 2026-06-05)
+
+From `docs/handler-compression-rg-tree-goal.md`. Phase 1 *aligns* tg to RTK's real
+rg behavior (RTK re-invokes the search with `-nH0`; tg forces `-n -H --no-heading`
+so piped rg is groupable instead of 0%-savings passthrough). The three rows below
+are deliberate tg divergences layered on top of that alignment.
+
+| # | Handler | tg behavior | RTK behavior | Why tg diverges |
+|---|---------|-------------|--------------|-----------------|
+| G1 | `rg` | Does NOT force `--no-ignore-vcs`; keeps rg's default `.gitignore`-respecting scope. | `grep_cmd.rs::run` forces `--no-ignore-vcs` to mimic `grep -r`. | A `.gitignore`-respecting search yields less, more relevant output for an agent; forcing VCS-ignored files back in re-inflates the very output we compress. |
+| G2 | `rg` / `grep` | Layer-1 lossless identical-line dedup: lines with identical trimmed content collapse to one `file:5,50,88: <content>` entry (every line number kept). Runs before caps so repetitive searches shrink without reaching the lossy tier. | RTK never dedups. | Lossless token win on repetitive searches (`import`, `console.log`, generated code); reduces how often the per-file cap is hit. `totalMatches` still counts raw match lines, so `[+N more]` stays the true suppressed count. |
+| G3 | `tree` | Injects `--filelimit <N>` (default 25) unless the user passed `--filelimit`/`-a`. | `tree.rs` does only `-I` noise-pruning + summary strip; no fan-out cap. | A large monorepo's pruned tree is still ~12k tokens; the native `--filelimit` collapses only oversized dirs while preserving full depth + structure (count marker kept). |
+
+All three honor the recorded "keep intentional tg divergences, but record them here"
+decision; G1 also honors "align to RTK on conflict" because the *baseline* rg
+rewrite matches RTK — only the deliberate extras above diverge.
+
 ## Aggregate note (why weighted tg savings reads 33.9%, not ≥34.5%)
 
 The goal's acceptance #4 quotes a "current 34.5%" baseline. After this batch the

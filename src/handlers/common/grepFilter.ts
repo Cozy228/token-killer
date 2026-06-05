@@ -17,6 +17,9 @@ export type GrepMatch = { file: string; line: number; content: string };
 
 // RTK: grep_cmd.rs::has_format_flag — these flags produce already-small output
 // (counts, file lists, only-matching, NUL), so RTK passes them through verbatim.
+// tg extension: `--json` (rg) emits structured records that the colon parser
+// would half-read, so it joins the passthrough guard — a JSON-shaped rg output is
+// never half-parsed.
 const FORMAT_FLAGS = new Set([
   "-c",
   "--count",
@@ -28,10 +31,35 @@ const FORMAT_FLAGS = new Set([
   "--only-matching",
   "-Z",
   "--null",
+  "--json",
 ]);
 
 export function hasFormatFlag(args: string[]): boolean {
   return args.some((arg) => FORMAT_FLAGS.has(arg));
+}
+
+// Context flags (-A/-B/-C and long forms) mean the user asked for the surrounding
+// lines verbatim. Grouping would drop the dash-separated context lines (they fail
+// the colon parser) AND inflate the overflow count, destroying exactly what was
+// requested — so an invocation carrying one passes through unchanged.
+const CONTEXT_FLAGS = new Set([
+  "-A",
+  "-B",
+  "-C",
+  "--after-context",
+  "--before-context",
+  "--context",
+]);
+
+export function hasContextFlag(args: string[]): boolean {
+  return args.some((arg) => {
+    if (CONTEXT_FLAGS.has(arg)) return true;
+    // -A2 / -B3 / -C1 attached-value forms.
+    if (/^-[ABC]\d+$/.test(arg)) return true;
+    // --after-context=N / --before-context=N / --context=N.
+    if (/^--(after-context|before-context|context)=/.test(arg)) return true;
+    return false;
+  });
 }
 
 // RTK: grep_cmd.rs::parse_match_line — adapted to tg's colon-separated input.
@@ -88,7 +116,39 @@ export type GrepGroupOptions = {
   maxLen?: number;
   maxResults?: number;
   perFile?: number;
+  // Layer 1: collapse identical-content lines within a file into one entry that
+  // lists every line number (lossless). On by default; `none`/passthrough never
+  // reaches here. `minimal` keeps it on with caps disabled.
+  dedupe?: boolean;
+  // Aggressive tier: render each file as a count + one sample line (most lossy,
+  // but the count is preserved — recovery contract item 1).
+  aggregate?: boolean;
+  // Recovery contract item 3: appended when any detail was suppressed.
+  recoveryHint?: string;
 };
+
+// Layer 1 — lossless identical-line dedup. Lines whose TRIMMED content is
+// identical collapse into one entry carrying all their line numbers; only the
+// repeated content bytes are removed (cleanLine already trims for display, so no
+// shown information is lost). Deliberate divergence from RTK, which never dedups.
+type GrepEntry = { lines: number[]; content: string };
+
+function dedupeMatches(matches: GrepMatch[]): GrepEntry[] {
+  const byContent = new Map<string, GrepEntry>();
+  const order: GrepEntry[] = [];
+  for (const match of matches) {
+    const key = match.content.trim();
+    let entry = byContent.get(key);
+    if (entry === undefined) {
+      entry = { lines: [], content: match.content };
+      byContent.set(key, entry);
+      order.push(entry);
+    }
+    entry.lines.push(match.line);
+  }
+  for (const entry of order) entry.lines.sort((a, b) => a - b);
+  return order;
+}
 
 // RTK: grep_cmd.rs::run default path (lines 104-150). Returns the grouped,
 // compressed listing, or null when no line parses as a match — the caller then
@@ -102,10 +162,13 @@ export function groupGrepOutput(
   const maxLen = options.maxLen ?? GREP_MAX_LINE_LEN;
   const maxResults = options.maxResults ?? GREP_MAX_RESULTS;
   const perFile = options.perFile ?? GREP_MAX_PER_FILE;
+  const dedupe = options.dedupe ?? true;
+  const aggregate = options.aggregate ?? false;
 
   const lines = stdout.split(/\r?\n/).filter((line) => line.length > 0);
   // RTK counts every emitted line as a match for the overflow total; it never
   // caps this count before subtracting `shown` (test_grep_overflow_uses_uncapped_total).
+  // Dedup keeps this as raw match lines so `[+N more]` stays the true count.
   const totalMatches = lines.length;
 
   const byFile = new Map<string, GrepMatch[]>();
@@ -121,20 +184,62 @@ export function groupGrepOutput(
 
   const out: string[] = [`${totalMatches} matches in ${byFile.size} files:`, ""];
 
-  let shown = 0;
+  // matchesShown counts raw matches represented in the output (a deduped entry
+  // listing 3 line numbers represents 3 shown matches); entriesShown is the
+  // emitted-line budget for the global cap. suppressed drives the recovery hint.
+  let matchesShown = 0;
+  let entriesShown = 0;
+  let suppressed = false;
   const files = [...byFile.entries()].sort((a, b) => (a[0] < b[0] ? -1 : a[0] > b[0] ? 1 : 0));
   for (const [file, matches] of files) {
-    if (shown >= maxResults) break;
+    if (entriesShown >= maxResults) {
+      suppressed = true;
+      break;
+    }
     const fileDisplay = compactPath(file);
-    for (const { line, content } of matches.slice(0, perFile)) {
-      if (shown >= maxResults) break;
-      out.push(`${fileDisplay}:${line}:${cleanLine(content, maxLen, pattern)}`);
-      shown += 1;
+
+    if (aggregate) {
+      // Layer 3 — per-file count + one sample. The count preserves how much was
+      // dropped; matchesShown advances by the full count so it is not re-counted
+      // as overflow, and `suppressed` flags that detail was dropped.
+      const first = matches[0]!;
+      out.push(`${fileDisplay}: ${matches.length} matches`);
+      out.push(`  ${fileDisplay}:${first.line}:${cleanLine(first.content, maxLen, pattern)}`);
+      matchesShown += matches.length;
+      // Each aggregate file emits TWO lines (count + sample), so it must consume
+      // two units of the emitted-line budget — otherwise aggressive could print
+      // more lines than balanced on a many-file search (cap would bind at 2x).
+      entriesShown += 2;
+      suppressed = true;
+      continue;
+    }
+
+    const entries = dedupe
+      ? dedupeMatches(matches)
+      : matches.map((m) => ({ lines: [m.line], content: m.content }));
+
+    let perFileShown = 0;
+    for (const entry of entries) {
+      if (entriesShown >= maxResults || perFileShown >= perFile) {
+        suppressed = true;
+        break;
+      }
+      out.push(`${fileDisplay}:${entry.lines.join(",")}:${cleanLine(entry.content, maxLen, pattern)}`);
+      matchesShown += entry.lines.length;
+      entriesShown += 1;
+      perFileShown += 1;
     }
   }
 
   // RTK: overflow uses the uncapped total — the true suppressed count.
-  if (totalMatches > shown) out.push(`[+${totalMatches - shown} more]`);
+  if (totalMatches > matchesShown) {
+    out.push(`[+${totalMatches - matchesShown} more]`);
+    suppressed = true;
+  }
+
+  if (suppressed && options.recoveryHint !== undefined) {
+    out.push(options.recoveryHint);
+  }
 
   return `${out.join("\n")}\n`;
 }
