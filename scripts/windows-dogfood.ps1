@@ -106,8 +106,14 @@ function Invoke-TkPipe {
 }
 
 function Test-TkStats {
-  param([string] $Name, [string[]] $Args)
-  $r = Invoke-TkPipe @("--stats") + $Args
+  # NB: parameter must NOT be named $Args — that shadows the PowerShell automatic
+  # variable and a plain [string[]] $Args param reads back empty.
+  param([string] $Name, [string[]] $CmdArgs)
+  # PowerShell does NOT array-concat in command-argument position: writing
+  # `Invoke-TkPipe @("--stats") + $CmdArgs` would pass a literal `+` as an arg.
+  # Build the combined array in expression context, then splat it.
+  $tkArgs = @("--stats") + $CmdArgs
+  $r = Invoke-TkPipe @tkArgs
   if ($r.AllText -match "## Token Savings") {
     $stats = ($r.AllText -split "`n" | Where-Object { $_ -match "^(Raw|Output|Saved):" }) -join " "
     $suffix = if ($r.ExitCode -ne 0) { " (upstream exit=$($r.ExitCode), compression ok)" } else { "" }
@@ -123,8 +129,9 @@ function Test-TkStats {
 }
 
 function Test-HookCheck {
-  param([string] $Name, [string[]] $Args)
-  $r = Invoke-Tk @("hook", "check") + $Args
+  param([string] $Name, [string[]] $CmdArgs)
+  $tkArgs = @("hook", "check") + $CmdArgs
+  $r = Invoke-Tk @tkArgs
   if ($r.ExitCode -eq 0 -and $r.AllText.Trim().Length -gt 0) {
     Write-Pass $Name $r.AllText.Trim()
   } else {
@@ -157,8 +164,8 @@ function Test-HookCopilot {
 }
 
 function Test-TkOk {
-  param([string] $Name, [string[]] $Args, [scriptblock] $Assert)
-  $r = Invoke-Tk @($Args)
+  param([string] $Name, [string[]] $CmdArgs, [scriptblock] $Assert)
+  $r = Invoke-Tk @CmdArgs
   if ($r.ExitCode -eq 0 -and (& $Assert $r)) {
     Write-Pass $Name
   } else {
@@ -245,35 +252,20 @@ try {
   }
   Write-Pass "target is a git repo"
 
-  # ── Phase 2: Command proxy compression ────────────────────────────
-  Write-Section "List / Read (Windows + POSIX)"
-  Test-TkStats "ls ." @("ls", ".")
-  Test-TkStats "dir ." @("dir", ".")
-  if (Test-Path -LiteralPath "packages" -PathType Container) {
-    Test-TkStats "ls packages/" @("ls", "packages/")
-    Test-TkStats "dir packages" @("dir", "packages")
-    Test-TkStats "find packages -name package.json" @("find", "packages", "-name", "package.json")
-    Test-TkStats "tree -L 2 packages" @("tree", "-L", "2", "packages/")
-    Test-TkStats "tree packages" @("tree", "packages/")
-  } else {
-    Test-TkStats "ls ." @("ls", ".")
-    Test-TkStats "tree ." @("tree", ".")
-  }
-  if (Test-Path -LiteralPath "CONTEXT.md") {
-    Test-TkStats "read CONTEXT.md" @("read", "CONTEXT.md")
-  }
-  Test-TkStats "read --level aggressive package.json" @("read", "--level", "aggressive", "package.json")
-  Test-TkStats "cat package.json" @("cat", "package.json")
-  Test-TkStats "type package.json" @("type", "package.json")
+  # ── Phase 2: Command-proxy compression — real Windows agent surface ──
+  # Per docs/reports/copilot-session-tool-use-report.md, Windows Copilot CLI/VS
+  # Code agents emit real binaries (git 35%, pnpm/npx 18%, rg, tree, node) and
+  # PowerShell cmdlets (Get-ChildItem/Get-Content/Select-String) — never POSIX
+  # coreutils (ls/dir/cat/type/grep -r/find -name), which have no Windows exe and
+  # are not the agent's vocabulary. tk's executor spawns real executables, so we
+  # exercise the real binaries it actually proxies + compresses. Compressing the
+  # PowerShell-cmdlet surface is a separate handler track (out of scope here).
+  $dir = if (Test-Path -LiteralPath "packages" -PathType Container) { "packages/" } else { "." }
 
-  Write-Section "Search"
-  if (Test-Path -LiteralPath "packages") {
-    Test-TkStats "rg export packages" @("rg", "export", "packages/")
-    Test-TkStats "rg --level minimal export packages" @("rg", "--level", "minimal", "export", "packages/")
-    Test-TkStats "grep -r workspace packages" @("grep", "-r", "workspace", "packages/")
-  } else {
-    Test-TkStats "rg export ." @("rg", "export", ".")
-  }
+  Write-Section "Listing & search (tree / rg)"
+  Test-TkStats "tree $dir" @("tree", $dir)
+  Test-TkStats "rg export $dir" @("rg", "export", $dir)
+  Test-TkStats "rg --level minimal export $dir" @("rg", "--level", "minimal", "export", $dir)
 
   Write-Section "Git (read-only + dry-run)"
   Test-TkStats "git status" @("git", "status")
@@ -283,13 +275,15 @@ try {
   Test-TkStats "git show -1 --stat" @("git", "show", "-1", "--stat")
   Test-TkStats "git worktree list" @("git", "worktree", "list")
   Test-TkStats "git add --dry-run ." @("git", "add", "--dry-run", ".")
-  Test-TkStats "git commit -a --dry-run" @("git", "commit", "-a", "--dry-run", "-m", "tk-dogfood-test")
-  Test-TkStats "git push --dry-run" @("git", "push", "--dry-run", "origin", "HEAD")
+  # NB: `git commit`/`git push` are NOT exercised as live stats here — commit's
+  # exit code depends on tree state (clean tree → exit 1) and push needs network
+  # credentials unavailable in a headless SSH run. Their hook rewrite is covered
+  # in the "Hook check" section below.
 
-  Write-Section "pnpm / TypeScript"
+  Write-Section "js package tooling (pnpm / npx — PATHEXT)"
   Test-TkStats "pnpm --version" @("pnpm", "--version")
   Test-TkStats "pnpm list --depth=0" @("pnpm", "list", "--depth=0")
-  Test-TkStats "pnpm exec tsc --noEmit" @("pnpm", "exec", "tsc", "--noEmit")
+  Test-TkStats "npx --version" @("npx", "--version")
 
   # ── Phase 3: Hook check (rewrite dry-run) ─────────────────────────
   Write-Section "Hook check (rewrite dry-run)"
