@@ -1,6 +1,11 @@
 import { describe, expect, test } from "vitest";
 
-import { renderReport, type CaseResult } from "../../../scripts/generate-three-way-report.js";
+import {
+  partitionReportResults,
+  renderReport,
+  REPORT_MAX_RAW_TOKENS,
+  type CaseResult,
+} from "../../../scripts/generate-three-way-report.js";
 
 function stats(chars: number) {
   return {
@@ -31,13 +36,29 @@ const result: CaseResult = {
 
 describe("three-way report", () => {
   test("renders complete outputs without omission markers", () => {
-    const report = renderReport([result], [], "rtk test");
+    const report = renderReport([result], [], "rtk test", 1, 0);
 
     expect(report).toContain("line 1");
     expect(report).toContain("line 80");
-    expect(report).not.toMatch(/\bomitted\b/);
     expect(report).not.toMatch(/\btruncated\b/);
     expect(report).not.toMatch(/\bmore lines\b/);
     expect(report).not.toMatch(/passthrough .* omitted/);
+  });
+
+  test("moves huge raw outputs to stats-only section", () => {
+    const huge: CaseResult = {
+      ...result,
+      name: "tree .",
+      raw: { chars: 149128, tokens: REPORT_MAX_RAW_TOKENS + 1, savingsPct: 0 },
+      rawText: "x".repeat(1000),
+    };
+    const { reported, omittedLarge } = partitionReportResults([result, huge]);
+    expect(reported).toHaveLength(1);
+    expect(omittedLarge).toHaveLength(1);
+
+    const report = renderReport(reported, [], "rtk test", 1, 0, omittedLarge);
+    expect(report).toContain("Omitted large outputs");
+    expect(report).toContain("tree .");
+    expect(report).not.toContain("x".repeat(1000));
   });
 });

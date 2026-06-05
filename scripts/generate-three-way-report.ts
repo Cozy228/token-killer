@@ -8,21 +8,35 @@ import { calculateSavings } from "../src/core/savings.js";
 import { routeCommand } from "../src/router.js";
 import type { ParsedCommand } from "../src/types.js";
 import {
+  filterTgFixture,
+  readFixtureText,
+  runRtkFixture,
+  skipFixtureReason,
+  buildRtkFixtureArgv,
+  type FixtureComparisonCase,
+} from "./fixtureComparison.js";
+import {
   buildRawArgv,
   buildRtkArgv,
   createDiffFixture,
+  createDockerComposeFixture,
   createTscErrorFixture,
   diffComparisonCase,
+  dockerComposeComparisonCase,
   ghComparisonCase,
   liveComparisonCases,
   skipReason,
   tscErrorComparisonCase,
   type LiveComparisonCase,
 } from "./liveComparisonCases.js";
+import { fixtureCases } from "../tests/helpers/fixtureCases.js";
 
 const repoRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 const outputPath = path.join(repoRoot, "docs/three-way-comparison.md");
 const MAX_BUFFER = 20 * 1024 * 1024;
+
+/** Cases with raw token count above this appear in summary only, not in per-case dumps or aggregate. */
+export const REPORT_MAX_RAW_TOKENS = 3000;
 
 type RowStats = {
   chars: number;
@@ -140,6 +154,22 @@ function savingsGap(result: Pick<CaseResult, "tg" | "rtk">): number {
   return Math.abs(result.tg.savingsPct - result.rtk.savingsPct);
 }
 
+export function partitionReportResults(
+  results: CaseResult[],
+  maxRawTokens = REPORT_MAX_RAW_TOKENS,
+): { reported: CaseResult[]; omittedLarge: CaseResult[] } {
+  const reported: CaseResult[] = [];
+  const omittedLarge: CaseResult[] = [];
+  for (const result of results) {
+    if (result.raw.tokens > maxRawTokens) {
+      omittedLarge.push(result);
+    } else {
+      reported.push(result);
+    }
+  }
+  return { reported, omittedLarge };
+}
+
 function sortBySavingsGap(results: CaseResult[]): CaseResult[] {
   return [...results].sort((left, right) => {
     if (right.savingsGap !== left.savingsGap) {
@@ -175,9 +205,10 @@ function runLiveCase(testCase: LiveComparisonCase, tgBin: string): CaseResult {
   const rtkArgv = ["rtk", ...(testCase.rtkCommand ?? buildRtkArgv(testCase.command))];
   const handler = routeCommand(toParsed(testCase.command)).name;
 
-  const rawRun = runArgv(rawArgv);
-  const tgRun = runArgv(tgArgv);
-  const rtkRun = runArgv(rtkArgv);
+  const cwd = testCase.cwd ?? repoRoot;
+  const rawRun = runArgv(rawArgv, cwd);
+  const tgRun = runArgv(tgArgv, cwd);
+  const rtkRun = runArgv(rtkArgv, cwd);
 
   const rawText = mergedOutput(rawRun);
   const tgText = mergedOutput(tgRun);
@@ -204,22 +235,67 @@ function runLiveCase(testCase: LiveComparisonCase, tgBin: string): CaseResult {
   return result;
 }
 
-export function renderReport(results: CaseResult[], skipped: SkippedCase[], rtkVersion: string): string {
+async function runFixtureCase(testCase: FixtureComparisonCase): Promise<CaseResult> {
+  const rtkArgv = buildRtkFixtureArgv(testCase.command);
+  if (!rtkArgv) {
+    throw new Error(`missing rtk argv for ${testCase.name}`);
+  }
+
+  const handler = routeCommand(toParsed(testCase.command)).name;
+  const rawText = await readFixtureText(repoRoot, testCase.fixture);
+  const exitCode = testCase.exitCode ?? 0;
+  const tgText = await filterTgFixture(testCase.command, rawText, exitCode, repoRoot);
+  const rtkRun = runRtkFixture(repoRoot, testCase.fixture, rtkArgv);
+  const rtkText = `${rtkRun.stdout}${rtkRun.stderr}`;
+  const { raw, filtered: tg } = statsFromBaseline(rawText, tgText);
+  const rtk = statsFromBaseline(rawText, rtkText).filtered;
+  const result: CaseResult = {
+    name: `[fixture] ${testCase.name}`,
+    command: testCase.command.join(" "),
+    handler,
+    rawCmd: `fixture: ${testCase.fixture}`,
+    tgCmd: `tg filter ${testCase.command.join(" ")}`,
+    rtkCmd: `cat ${testCase.fixture} | rtk ${rtkArgv.join(" ")}`,
+    exitCode,
+    savingsGap: 0,
+    raw,
+    tg,
+    rtk,
+    rawText,
+    tgText,
+    rtkText,
+  };
+  result.savingsGap = savingsGap(result);
+  return result;
+}
+
+export function renderReport(
+  results: CaseResult[],
+  skipped: SkippedCase[],
+  rtkVersion: string,
+  liveCount: number,
+  fixtureCount: number,
+  omittedLarge: CaseResult[] = [],
+): string {
   const generated = new Date().toISOString().slice(0, 10);
   const lines: string[] = [
-    "# tg vs rtk — Three-Way Comparison (live repo)",
+    "# tg vs rtk — Three-Way Comparison",
     "",
     `Generated: ${generated}`,
     `Project: \`token-guard\` (${repoRoot})`,
-    `Scope: ${results.length} live commands in repo root (handler-aligned)`,
+    `Scope: ${results.length} cases with full outputs (${liveCount} live, ${fixtureCount} fixture-backed); ${omittedLarge.length} large cases stats-only (raw > ${REPORT_MAX_RAW_TOKENS} tokens)`,
     `rtk: ${rtkVersion}`,
     "",
     "**Method**",
-    "- **raw**: underlying command stdout+stderr (`git --no-pager` for git)",
-    "- **tg**: `node dist/cli.js <command>` (same argv as handler routing)",
-    "- **rtk**: mapped native `rtk` subcommand (see per-case RTK cmd)",
+    "- **raw (live)**: underlying command stdout+stderr (`git --no-pager` for git)",
+    "- **raw (fixture)**: recorded stdout in `tests/fixtures/**`",
+    "- **tg (live)**: `node dist/cli.js <command>`",
+    "- **tg (fixture)**: handler filter on fixture stdout (same pipeline as product tests)",
+    "- **rtk (live)**: mapped native `rtk` subcommand",
+    "- **rtk (fixture)**: `cat <fixture> | rtk …` when stdin filter exists (see per-case RTK cmd)",
     "- **savingsPct**: token estimate vs raw (`ceil(chars/4)`), same as tg core",
     "- **Sort**: cases ordered by |tg savingsPct − rtk savingsPct| (largest gap first)",
+    `- **Large outputs**: cases with raw > ${REPORT_MAX_RAW_TOKENS} tokens listed under “Omitted large outputs” (no full text)`,
     "",
     "## Summary",
     "",
@@ -241,12 +317,29 @@ export function renderReport(results: CaseResult[], skipped: SkippedCase[], rtkV
 
   lines.push(
     "",
-    "**Aggregate (token-weighted across live cases):**",
+    `**Aggregate (token-weighted across ${results.length} cases with full outputs):**`,
     `- raw: ${totalRaw} tokens`,
     `- tg: ${totalTg} tokens (${tgAggregatePct}% savings)`,
     `- rtk: ${totalRtk} tokens (${rtkAggregatePct}% savings)`,
     "",
   );
+
+  if (omittedLarge.length > 0) {
+    lines.push(
+      "### Omitted large outputs (stats only)",
+      "",
+      `Per-case dumps excluded when raw exceeds ${REPORT_MAX_RAW_TOKENS} tokens.`,
+      "",
+      "| Case | Handler | raw | tg | rtk | tg savings | rtk savings | Δ |",
+      "|---|---|---:|---:|---:|---:|---:|---:|",
+    );
+    for (const result of omittedLarge) {
+      lines.push(
+        `| ${result.name.replace(/\|/g, "\\|")} | ${result.handler} | ${result.raw.tokens} | ${result.tg.tokens} | ${result.rtk.tokens} | ${result.tg.savingsPct}% | ${result.rtk.savingsPct}% | ${result.savingsGap.toFixed(1)}pp ${deltaTag(result.tg.savingsPct, result.rtk.savingsPct)} |`,
+      );
+    }
+    lines.push("");
+  }
 
   if (skipped.length > 0) {
     lines.push("### Skipped cases", "");
@@ -306,35 +399,58 @@ async function main() {
 
   const diffFixture = createDiffFixture();
   const tscFixture = createTscErrorFixture();
+  const dockerFixture = createDockerComposeFixture();
   cases.push(diffComparisonCase(diffFixture.oldPath, diffFixture.newPath));
   cases.push(tscErrorComparisonCase(tscFixture.filePath));
+  cases.push(dockerComposeComparisonCase(dockerFixture.dir));
 
   const ghCase = ghComparisonCase();
   if (ghCase) cases.push(ghCase);
 
   const results: CaseResult[] = [];
   const skipped: SkippedCase[] = [];
+  let liveRan = 0;
+  let fixtureRan = 0;
 
   try {
     for (const testCase of cases) {
       const reason = skipReason(testCase);
       if (reason) {
         skipped.push({ name: testCase.name, reason });
-        process.stderr.write(`Skip: ${testCase.name} (${reason})\n`);
+        process.stderr.write(`Skip live: ${testCase.name} (${reason})\n`);
         continue;
       }
 
-      process.stderr.write(`Running: ${testCase.name}\n`);
+      process.stderr.write(`Running live: ${testCase.name}\n`);
       results.push(runLiveCase(testCase, tgBin));
+      liveRan += 1;
+    }
+
+    for (const testCase of fixtureCases) {
+      const reason = skipFixtureReason(testCase);
+      if (reason) {
+        skipped.push({ name: `[fixture] ${testCase.name}`, reason });
+        process.stderr.write(`Skip fixture: ${testCase.name} (${reason})\n`);
+        continue;
+      }
+
+      process.stderr.write(`Running fixture: ${testCase.name}\n`);
+      results.push(await runFixtureCase(testCase));
+      fixtureRan += 1;
     }
   } finally {
     diffFixture.cleanup();
     tscFixture.cleanup();
+    dockerFixture.cleanup();
   }
 
-  const report = renderReport(sortBySavingsGap(results), skipped, rtkVersion);
+  const sorted = sortBySavingsGap(results);
+  const { reported, omittedLarge } = partitionReportResults(sorted);
+  const report = renderReport(reported, skipped, rtkVersion, liveRan, fixtureRan, omittedLarge);
   await writeFile(outputPath, report, "utf8");
-  process.stderr.write(`Wrote ${outputPath} (${results.length} cases, ${skipped.length} skipped)\n`);
+  process.stderr.write(
+    `Wrote ${outputPath} (${reported.length} full + ${omittedLarge.length} stats-only, ${skipped.length} skipped)\n`,
+  );
 }
 
 if (process.argv[1] && path.resolve(process.argv[1]) === fileURLToPath(import.meta.url)) {
