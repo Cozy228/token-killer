@@ -1,4 +1,5 @@
 import type { Dirent } from "node:fs";
+import { readFileSync, readdirSync } from "node:fs";
 import { mkdir, readFile, readdir, writeFile } from "node:fs/promises";
 import path from "node:path";
 
@@ -166,6 +167,30 @@ export async function listProjectHistories(): Promise<HistoryRecord[]> {
     try {
       const text = await readFile(file, "utf8");
       records.push(...parseHistoryLines(text));
+    } catch {
+      // skip unreadable / corrupt project store
+    }
+  }
+  return records;
+}
+
+// Synchronous twin of listProjectHistories, for sync callers (the inspect runtime
+// stays synchronous). Same best-effort contract: unreadable stores are skipped.
+export function listProjectHistoriesSync(): HistoryRecord[] {
+  const projectsDir = path.join(tokenGuardHome(), "projects");
+  let entries: Dirent[];
+  try {
+    entries = readdirSync(projectsDir, { withFileTypes: true });
+  } catch {
+    return [];
+  }
+
+  const records: HistoryRecord[] = [];
+  for (const entry of entries) {
+    if (!entry.isDirectory()) continue;
+    const file = path.join(projectsDir, entry.name, "history.jsonl");
+    try {
+      records.push(...parseHistoryLines(readFileSync(file, "utf8")));
     } catch {
       // skip unreadable / corrupt project store
     }

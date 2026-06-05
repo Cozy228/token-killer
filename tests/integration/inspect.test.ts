@@ -138,7 +138,10 @@ describe("tg inspect --advice / --write-advice / --telemetry-export (Slice 5)", 
     const telemetry = JSON.parse(
       readFileSync(path.join(home, ".token-guard", "advice", "telemetry-export.json"), "utf8"),
     );
-    expect(telemetry.toolCategoryCounts).toBeDefined();
+    // Payload v2 (ADR 0004 §5): history-derived aggregates + optional inspect bits.
+    expect(telemetry.schema).toBe("2");
+    expect(telemetry).toHaveProperty("device_hash");
+    expect(telemetry.inspect?.tool_category_counts).toBeDefined();
     // No raw evidence in telemetry.
     expect(JSON.stringify(telemetry)).not.toContain("git status");
   });

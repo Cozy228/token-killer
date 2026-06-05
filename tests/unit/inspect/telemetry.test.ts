@@ -1,6 +1,6 @@
 import { describe, expect, test } from "vitest";
 
-import { buildTelemetry } from "../../../src/inspect/telemetry.js";
+import { buildInspectAggregates } from "../../../src/inspect/telemetry.js";
 import type { AdviceFinding } from "../../../src/inspect/advice.js";
 import type { Opportunity, ScanResult } from "../../../src/inspect/scan.js";
 
@@ -41,20 +41,13 @@ const findings: AdviceFinding[] = [
   { type: "shell-noise", title: "t", detail: "d", occurrences: 5, confidence: 0.8, recommendation: "r" },
 ];
 
-describe("buildTelemetry — allow-listed aggregates only", () => {
-  const t = buildTelemetry(scan, findings, 1234, "run-abc");
+describe("buildInspectAggregates — allow-listed aggregates only", () => {
+  const t = buildInspectAggregates(scan, findings);
 
   test("carries category counts, coverage, recommendation type counts", () => {
-    expect(t.toolCategoryCounts).toEqual({ execute_adjacent: 5, read: 2 });
-    expect(t.sourceCoverage).toEqual({ sessionInventory: 9, transcriptCoverage: 3, toolEvents: 7 });
-    expect(t.recommendationTypeCounts).toEqual({ delivery: 1, "shell-noise": 1 });
-  });
-
-  test("includes version, platform, duration bucket, per-run id", () => {
-    expect(typeof t.version).toBe("string");
-    expect(t.platform).toBe(process.platform);
-    expect(t.durationBucket).toBe("<2s");
-    expect(t.runId).toBe("run-abc");
+    expect(t.tool_category_counts).toEqual({ execute_adjacent: 5, read: 2 });
+    expect(t.source_coverage).toEqual({ session_inventory: 9, transcript_coverage: 3, tool_events: 7 });
+    expect(t.recommendation_type_counts).toEqual({ delivery: 1, "shell-noise": 1 });
   });
 
   test("contains NO raw evidence (no command keys / tool labels)", () => {

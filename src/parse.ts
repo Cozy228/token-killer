@@ -52,6 +52,7 @@ const RESERVED_SUBCOMMANDS = new Set<ParsedArgv["mode"]>([
   "agentsmd",
   "gain",
   "config",
+  "telemetry",
 ]);
 
 export function parseArgv(argv: string[]): ParsedArgv {
@@ -60,6 +61,11 @@ export function parseArgv(argv: string[]): ParsedArgv {
   let index = 0;
 
   const first = argv[0];
+  // `tg report` (the four-ledger read-side join, metrics-ledger §4) is a distinct
+  // subcommand from the legacy `--report` flag (mode "report" → core/report.ts).
+  if (first === "report") {
+    return { mode: "report-ledger", options, subArgs: argv.slice(1) };
+  }
   if (first !== undefined && RESERVED_SUBCOMMANDS.has(first as ParsedArgv["mode"])) {
     return { mode: first as ParsedArgv["mode"], options, subArgs: argv.slice(1) };
   }

@@ -10,8 +10,10 @@ import { runInspect } from "./inspect/cli.js";
 import { runOptimize } from "./context/optimizeCli.js";
 import { runAgentsmd } from "./context/agentsmd.js";
 import { buildReport } from "./core/report.js";
+import { runReport } from "./core/ledger.js";
 import { runGain } from "./core/gain.js";
 import { runConfig } from "./core/configCli.js";
+import { runTelemetry } from "./telemetry/cli.js";
 import { runPipeline } from "./core/pipeline.js";
 import { recordHistory } from "./core/history.js";
 import { calculateSavings } from "./core/savings.js";
@@ -34,6 +36,8 @@ function help(): string {
     "       tg gain [--user] [--daily|--weekly|--monthly|--all] [--graph] [--history [n]]",
     "               [--failures] [--quota [-t <model>]] [--json|--csv|--format json|csv|text]",
     "       tg config <init|show|path>",
+    "       tg report [--scope user|project|runtime] [--project|--user] [--since <date>] [--json]",
+    "       tg telemetry <enable|disable|status|preview|purge>",
     "",
     "Flags:",
     "  --raw                 print raw stdout/stderr",
@@ -86,6 +90,9 @@ async function main(): Promise<number> {
     process.stdout.write(await buildReport(parsed.options));
     return 0;
   }
+  if (parsed.mode === "report-ledger") {
+    return runReport(parsed.subArgs ?? []);
+  }
   if (parsed.mode === "shim") {
     return runShim(parsed.subArgs ?? []);
   }
@@ -109,6 +116,9 @@ async function main(): Promise<number> {
   }
   if (parsed.mode === "config") {
     return runConfig(parsed.subArgs ?? []);
+  }
+  if (parsed.mode === "telemetry") {
+    return runTelemetry(parsed.subArgs ?? []);
   }
   if (!parsed.command) {
     process.stderr.write("tg: missing command\n");

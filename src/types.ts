@@ -47,6 +47,7 @@ export type TgOptions = {
 export type ParseMode =
   | "command"
   | "report"
+  | "report-ledger"
   | "help"
   | "version"
   | "shim"
@@ -56,7 +57,8 @@ export type ParseMode =
   | "optimize"
   | "agentsmd"
   | "gain"
-  | "config";
+  | "config"
+  | "telemetry";
 
 export type ParsedArgv = {
   mode: ParseMode;

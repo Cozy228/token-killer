@@ -15,6 +15,10 @@ import {
   type AdviceFinding,
 } from "./advice.js";
 import { readConfig } from "../core/config.js";
+import { listProjectHistoriesSync } from "../core/history.js";
+import { buildTelemetry } from "../telemetry/build.js";
+import { deviceHash, loadOrCreateState } from "../telemetry/state.js";
+import { VERSION } from "../version.js";
 import { renderStaticContextSection } from "../context/report.js";
 import type { ContextFinding, ContextScope, FindingSeverity } from "../context/types.js";
 import { writeAdviceArtifacts, writeTelemetryExport } from "./persist.js";
@@ -23,7 +27,7 @@ import { buildReport, renderJson, renderMarkdown } from "./report.js";
 import { parseSince, scan, type ScanResult } from "./scan.js";
 import { discoverSources, type InputType } from "./sources.js";
 import { persistScopeBuckets, runStaticContext } from "./staticContext.js";
-import { buildTelemetry } from "./telemetry.js";
+import { buildInspectAggregates } from "./telemetry.js";
 import { runtimeFindings, type Finding } from "./unified.js";
 
 type FailOnSeverity = "info" | "warn" | "error";
@@ -148,7 +152,6 @@ export function runInspect(
   home: string = homedir(),
   cwd: string = process.cwd(),
 ): number {
-  const startMs = nowMs;
   let opts: InspectArgs;
   try {
     opts = parseInspectArgs(argv);
@@ -281,7 +284,18 @@ export function runInspect(
     // package → write locally + warn; never fail the run (spec). Runtime-derived,
     // so skipped under --copilot-context where no runtime scan ran.
     if (opts.telemetryExport && result) {
-      const telemetry = buildTelemetry(result, findings, Math.max(0, Date.now() - startMs), randomUUID());
+      // Payload v2 is ALWAYS user-level (ADR 0004 §5); the inspect scan only
+      // contributes the optional inspect aggregates.
+      const state = loadOrCreateState(new Date(nowMs));
+      const telemetry = buildTelemetry({
+        records: listProjectHistoriesSync(),
+        version: VERSION,
+        deviceHash: deviceHash(state),
+        firstSeenAt: state.firstSeenAt,
+        now: new Date(nowMs),
+        runId: randomUUID(),
+        inspect: buildInspectAggregates(result, findings),
+      });
       const path = writeTelemetryExport(`${JSON.stringify(telemetry, null, 2)}\n`);
       process.stderr.write(`tg inspect: no telemetry endpoint configured; wrote local export: ${path}\n`);
     }
