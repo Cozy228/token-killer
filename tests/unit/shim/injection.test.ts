@@ -1,0 +1,77 @@
+import { afterEach, beforeEach, describe, expect, test } from "vitest";
+import { existsSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
+
+import {
+  applyInjectionBlock,
+  projectInjectionPath,
+  removeInjectionBlock,
+  unwriteInjection,
+  userInjectionPath,
+  writeInjection,
+} from "../../../src/shim/injection.js";
+
+describe("injection block", () => {
+  test("idempotent: applying twice yields one block", () => {
+    const once = applyInjectionBlock("# My instructions\n");
+    const twice = applyInjectionBlock(once);
+    expect(twice).toBe(once);
+    expect(once.match(/>>> token-guard >>>/g)?.length).toBe(1);
+  });
+
+  test("preserves pre-existing content", () => {
+    const result = applyInjectionBlock("# My instructions\n");
+    expect(result).toContain("# My instructions");
+    expect(result).toContain("Prefix shell commands with `tg`");
+  });
+
+  test("remove restores content without the block", () => {
+    const original = "# My instructions\n";
+    expect(removeInjectionBlock(applyInjectionBlock(original))).toBe("# My instructions\n");
+  });
+});
+
+describe("injection targets", () => {
+  test("Copilot CLI user-level path is under ~/.copilot", () => {
+    expect(userInjectionPath("copilot-cli", "/home/u")).toBe(
+      "/home/u/.copilot/copilot-instructions.md",
+    );
+  });
+
+  test("VS Code user-level path is under the VS Code user dir", () => {
+    expect(userInjectionPath("vscode", "/home/u", "/home/u/.config/Code/User")).toBe(
+      "/home/u/.config/Code/User/copilot-instructions.md",
+    );
+  });
+
+  test("project path is .github/copilot-instructions.md in the repo", () => {
+    expect(projectInjectionPath("/repo")).toBe("/repo/.github/copilot-instructions.md");
+  });
+});
+
+describe("writeInjection round-trip", () => {
+  let dir: string;
+  beforeEach(() => {
+    dir = mkdtempSync(join(tmpdir(), "tg-inject-"));
+  });
+  afterEach(() => rmSync(dir, { recursive: true, force: true }));
+
+  test("creates the file (and parent dirs) then unwrite removes the block", () => {
+    const file = join(dir, "nested", "copilot-instructions.md");
+    writeInjection(file);
+    expect(existsSync(file)).toBe(true);
+    expect(readFileSync(file, "utf8")).toContain("Token Guard");
+    unwriteInjection(file);
+    expect(readFileSync(file, "utf8")).not.toContain(">>> token-guard >>>");
+  });
+
+  test("is idempotent against an existing file", () => {
+    const file = join(dir, "copilot-instructions.md");
+    writeFileSync(file, "# Existing\n");
+    writeInjection(file);
+    const once = readFileSync(file, "utf8");
+    writeInjection(file);
+    expect(readFileSync(file, "utf8")).toBe(once);
+  });
+});
