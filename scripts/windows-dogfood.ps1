@@ -384,7 +384,7 @@ try {
   $inspectOut = Join-Path $TmpDir "inspect.out"
   $inspect = Invoke-Tk @("inspect", "--project", "--copilot-context")
   $inspect.AllText | Set-Content -LiteralPath $inspectOut
-  if ($inspect.ExitCode -eq 0 -or $inspect.AllText -match "Token Guard Inspect") {
+  if ($inspect.ExitCode -eq 0 -or $inspect.AllText -match "Token Killer Inspect") {
     Write-Pass "inspect --project --copilot-context"
     (Get-Content -LiteralPath $inspectOut | Select-Object -First 10) | ForEach-Object { Write-Host "        $_" }
   } else {

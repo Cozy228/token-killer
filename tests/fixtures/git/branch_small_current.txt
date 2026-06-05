@@ -1,2 +1,2 @@
-* codex/token-killer-node-cli
+* token-killer-node-cli
   main

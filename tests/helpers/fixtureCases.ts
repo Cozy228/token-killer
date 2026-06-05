@@ -159,7 +159,7 @@ export const fixtureCases: FixtureCase[] = [
     fixture: "tests/fixtures/git/status_dirty_extended.txt",
     command: ["git", "status"],
     critical: [
-      "* codex/token-killer-node-cli",
+      "* token-killer-node-cli",
       " D DESIGN.md",
       " M README.md",
       " M package.json",
@@ -173,7 +173,7 @@ export const fixtureCases: FixtureCase[] = [
     fixture: "tests/fixtures/git/status_porcelain_branch_current.txt",
     command: ["git", "status", "--short", "--branch"],
     critical: [
-      "* codex/token-killer-node-cli",
+      "* token-killer-node-cli",
       "docs/testing-and-migration-audit.md",
       "tests/helpers/fixtureCases.ts",
       "tests/unit/handlers/fixtureWiring.test.ts",
@@ -258,7 +258,7 @@ export const fixtureCases: FixtureCase[] = [
     name: "git-branch small output passes through branch names",
     fixture: "tests/fixtures/git/branch_small_current.txt",
     command: ["git", "branch"],
-    critical: ["* codex/token-killer-node-cli", "main"],
+    critical: ["* token-killer-node-cli", "main"],
     forbidden: [/Branches:/, /Hidden:/],
     maxOutputGrowth: 10,
   },
@@ -322,7 +322,7 @@ export const fixtureCases: FixtureCase[] = [
     fixture: "tests/fixtures/git/worktree_list.txt",
     command: ["git", "worktree", "list"],
     // RTK: git/git.rs::filter_worktree_list compacts $HOME to ~ (see rtkGitWorktreeBehavior).
-    critical: ["~/Workspace/token-killer", "codex/token-killer-node-cli"],
+    critical: ["~/Workspace/token-killer", "token-killer-node-cli"],
   },
   {
     name: "gh repo view keeps repository identity and URL",
