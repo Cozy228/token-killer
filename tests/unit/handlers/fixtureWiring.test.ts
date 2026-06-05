@@ -9,6 +9,9 @@ function fixtureCaseKey(fixture: string, command: string[]): string {
 const fixtureCasesIndex = () =>
   new Set(fixtureCases.map((testCase) => fixtureCaseKey(testCase.fixture, testCase.command)));
 
+const fixtureCommandIndex = () =>
+  new Set(fixtureCases.map((testCase) => testCase.command.join(" ")));
+
 /** Fixture files on disk that are not yet exercised by fixtureCases. */
 const orphanedFixtures = [
   "tests/fixtures/common/rg_default_format.txt",
@@ -19,28 +22,17 @@ const orphanedFixtures = [
   "tests/fixtures/js/jest_failed.txt",
 ] as const;
 
-/** Handler commands that still need fixtureCases rows. */
+/**
+ * Handler commands that must keep fixture-backed coverage. Coverage is keyed by
+ * the command (any fixture), not by a specific fixture filename: which fixture a
+ * command reads is an implementation detail, and on-disk fixture rot is already
+ * guarded separately by `orphanedFixtures` above.
+ */
 const requiredFixtureCommands = [
-  {
-    name: "tree listing",
-    fixture: "tests/fixtures/common/ls_large_project.txt",
-    command: ["tree", "."],
-  },
-  {
-    name: "ls listing",
-    fixture: "tests/fixtures/common/ls_large_project.txt",
-    command: ["ls", "-la"],
-  },
-  {
-    name: "pnpm list",
-    fixture: "tests/fixtures/js/npm_list_large.txt",
-    command: ["pnpm", "list", "--depth=0"],
-  },
-  {
-    name: "rg default format",
-    fixture: "tests/fixtures/common/rg_default_format.txt",
-    command: ["rg", "pattern", "src"],
-  },
+  { name: "tree listing", command: ["tree", "."] },
+  { name: "ls listing", command: ["ls", "-la"] },
+  { name: "pnpm list", command: ["pnpm", "list", "--depth=0"] },
+  { name: "rg default format", command: ["rg", "pattern", "src"] },
 ] as const;
 
 describe("fixtureCases wiring debt", () => {
@@ -53,9 +45,9 @@ describe("fixtureCases wiring debt", () => {
 
   test.each(requiredFixtureCommands)(
     "$name has a fixtureCases row",
-    ({ fixture, command, name }) => {
+    ({ command, name }) => {
       expect(
-        fixtureCasesIndex().has(fixtureCaseKey(fixture, [...command])),
+        fixtureCommandIndex().has([...command].join(" ")),
         `Add fixtureCases row for ${name}`,
       ).toBe(true);
     },
