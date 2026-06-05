@@ -632,16 +632,18 @@ tg agentsmd restore        # 移除 tg 追加的用户级内容
 使用 HTML comment marker 标记块，保证可识别和可恢复：
 
 ```markdown
-<!-- tg:start -->
-## Token budget guidance
-
-- Prefer selected code, current diff, diagnostics, and failing errors over broad repository scans.
-- Use `tg rg`, `tg cat`, and `tg npm test` before raw commands that produce long output; use `tg read --level aggressive` only when you explicitly want a symbol outline of a large file.
-- Ask before reading more than 3 additional files.
-- Avoid dependency folders, generated files, build outputs, and lockfiles unless explicitly requested.
-- Keep plans and explanations short; use patches for implementation.
-<!-- tg:end -->
+<!-- tg:token_budget:start -->
+## Token Guard — managed token budget
+- Large files: `tg read --max-lines 200 <file>` (or `--level aggressive` for a symbol outline).
+- Searches: `tg rg <pattern> <path>` scoped to a directory — tg caps results automatically; `--level minimal` keeps every match (deduped, lossless), `--raw` for verbatim.
+- Structure: `tg tree <path>` — tg auto-caps oversized directories; `-L <n>` to go shallower.
+- Prefer `tg <command>` for any high-output shell command to reduce token pressure.
+<!-- tg:token_budget:end -->
 ```
+
+The block points at concrete, already-shipped flags (the `--level` dial shared by
+`read`/`rg`/`tree`) rather than generic advice. It stays ≤ 15 lines with no
+volatile content so it remains cacheable (`cacheability_churn`-clean).
 
 ### 5.3 设计约束
 

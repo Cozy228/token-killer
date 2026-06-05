@@ -55,6 +55,20 @@ describe("marker block helpers", () => {
     expect(hasMarkerBlock(restored)).toBe(false);
   });
 
+  // Phase 3: the managed block names concrete, already-shipped read/rg/tree flags.
+  test("managed block points at concrete read/rg/tree flags", () => {
+    const block = insertMarkerBlock("");
+    expect(block).toContain("tg read --max-lines 200");
+    expect(block).toContain("--level aggressive");
+    expect(block).toContain("tg rg <pattern> <path>");
+    expect(block).toContain("--level minimal");
+    expect(block).toContain("tg tree <path>");
+    expect(block).toContain("-L <n>");
+    // Cacheable / marker-block constraints: ≤ 15 lines, no volatile content.
+    expect(block.split("\n").length).toBeLessThanOrEqual(15);
+    expect(block).not.toMatch(/\d{4}-\d{2}-\d{2}|\d{2}:\d{2}:\d{2}/);
+  });
+
   test("setFrontmatterKey preserves body and comments", () => {
     const content = ["---", "name: deploy", "# a yaml comment", "---", "# Heading", "body text"].join("\n");
     const next = setFrontmatterKey(content, "disable-model-invocation", true);

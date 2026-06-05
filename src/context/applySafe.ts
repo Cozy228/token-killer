@@ -24,13 +24,16 @@ import type { ContextScope } from "./types.js";
 export const MARKER_START = "<!-- tg:token_budget:start -->";
 export const MARKER_END = "<!-- tg:token_budget:end -->";
 
-// Stable, cacheable managed block — no timestamps/IDs (cacheability_churn-clean).
+// Stable, cacheable managed block — no timestamps/IDs (cacheability_churn-clean),
+// ≤ 15 lines (DESIGN §5.3). Points at concrete, already-shipped read/rg/tree flags
+// instead of generic advice (docs/handler-compression-rg-tree-goal.md Phase 3).
 const MANAGED_BLOCK = [
   MARKER_START,
   "## Token Guard — managed token budget",
-  "- Prefer `tg <command>` for high-output shell commands to reduce token pressure.",
-  "- Read focused line ranges instead of whole files when possible.",
-  "- Narrow searches to specific paths rather than repo-wide scans.",
+  "- Large files: `tg read --max-lines 200 <file>` (or `--level aggressive` for a symbol outline).",
+  "- Searches: `tg rg <pattern> <path>` scoped to a directory — tg caps results automatically; `--level minimal` keeps every match (deduped, lossless), `--raw` for verbatim.",
+  "- Structure: `tg tree <path>` — tg auto-caps oversized directories; `-L <n>` to go shallower.",
+  "- Prefer `tg <command>` for any high-output shell command to reduce token pressure.",
   MARKER_END,
 ].join("\n");
 
