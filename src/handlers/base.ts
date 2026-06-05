@@ -56,6 +56,13 @@ const STRUCTURAL_HANDLERS = new Set([
   "glab",
   "git-status",
   "git-diff",
+  // git-show shares git-diff's compaction (compactUnifiedDiff): on a large commit
+  // it deliberately drops diff context and appends a "... (more changes truncated)"
+  // recovery marker — exactly the content-omission shape the inflation gate bounces
+  // back to raw. Without this exemption `git show <commit>` degraded to ~5-18%
+  // savings vs ~96% for the identical `git diff` payload. It is a structural
+  // reformat like git-diff, so it must not be second-guessed.
+  "git-show",
   "diff",
   "tsc",
   "mypy",

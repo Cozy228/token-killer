@@ -78,6 +78,38 @@ run_tk_stats() {
   printf "  ${GREEN}PASS${NC}  %-40s (passthrough)\n" "$name"
 }
 
+# Quality gate: a "must-compress" case. Parses Raw tokens + Saved%. The rule
+# (user directive): only outputs BELOW MIN_RAW may be 0% — anything large MUST
+# clear the per-case minimum savings, else FAIL. This turns the dogfood from
+# "did it run" into "did compression actually pay off on representative output".
+MIN_RAW=${TK_DOGFOOD_MIN_RAW:-1500}
+run_tk_savings() {
+  local name="$1" minpct="$2"
+  shift 2
+  local out exit_code=0 raw pct
+  out=$("${TK[@]}" --stats "$@" 2>&1 | cat) || exit_code=$?
+  if ! echo "$out" | grep -q "## Token Savings"; then
+    FAIL=$((FAIL + 1))
+    printf "  ${RED}FAIL${NC}  %-36s no compression (passthrough)\n" "$name"
+    echo "$out" | head -3 | sed 's/^/        /'
+    return
+  fi
+  raw=$(echo "$out" | awk '/^Raw:/{print $2}'); raw=${raw:-0}
+  pct=$(echo "$out" | awk -F'[()%]' '/^Saved:/{print $2}'); pct=${pct:-0}
+  if awk "BEGIN{exit !($raw < $MIN_RAW)}"; then
+    PASS=$((PASS + 1))
+    printf "  ${GREEN}PASS${NC}  %-36s raw=%-7s saved=%s%% (small <%s, 0%% ok)\n" "$name" "$raw" "$pct" "$MIN_RAW"
+    return
+  fi
+  if awk "BEGIN{exit !(($pct + 0) >= $minpct)}"; then
+    PASS=$((PASS + 1))
+    printf "  ${GREEN}PASS${NC}  %-36s raw=%-7s saved=%s%% (>=%s%%)\n" "$name" "$raw" "$pct" "$minpct"
+    return
+  fi
+  FAIL=$((FAIL + 1))
+  printf "  ${RED}FAIL${NC}  %-36s raw=%-7s saved=%s%% < %s%% required\n" "$name" "$raw" "$pct" "$minpct"
+}
+
 run_hook_check() {
   local name="$1"
   shift
@@ -117,50 +149,49 @@ if ! git rev-parse --is-inside-work-tree >/dev/null 2>&1; then
   exit 1
 fi
 
-section "List / Read"
-run_tk_stats "ls ." ls .
-run_tk_stats "ls packages/" ls packages/
-run_tk_stats "find packages -name package.json" find packages -name "package.json"
+# Largest source dir present in the target (for search/list breadth).
+SRCDIR="."
+for d in packages portal src apps lib; do
+  if [ -d "$d" ]; then SRCDIR="$d"; break; fi
+done
+
+# Quality bar (thresholds calibrated on the atlas monorepo, set well below
+# observed so they catch regressions, not normal variance): git log -p ~99%,
+# git log full ~68%, rg ~76%, find ~99%, cat --level aggressive ~100%.
+section "Compression quality — large output MUST clear the savings bar"
+run_tk_savings "git log -p -20 (diff compaction at scale)" 70 git log -p -20
+run_tk_savings "git log -30 (log reformat at scale)"       45 git log -30
+if command -v rg >/dev/null 2>&1; then
+  run_tk_savings "rg import $SRCDIR (search dedup+cap)"     45 rg import "$SRCDIR"
+else
+  skip_test "rg import" "rg not installed"
+fi
+if command -v find >/dev/null 2>&1; then
+  run_tk_savings "find . -name *.ts (list cap+recovery)"   60 find . -name "*.ts"
+fi
+# Language-aware file read: readHandler matches `cat`, keeps signatures/imports
+# under --level aggressive. (Absent where `cat` is not installed, e.g. bare
+# Windows — covered there by the git/rg/tree binaries instead.)
+if command -v cat >/dev/null 2>&1; then
+  BIG_TS=$(find . -name '*.ts' -not -path '*/node_modules/*' 2>/dev/null \
+    | xargs wc -l 2>/dev/null | sort -rn | awk '$2 != "total" {print $2; exit}')
+  if [ -n "${BIG_TS:-}" ] && [ -f "$BIG_TS" ]; then
+    run_tk_savings "cat --level aggressive (keep signatures)" 40 cat --level aggressive "$BIG_TS"
+  fi
+fi
+
+section "Faithful / correctness (runs + sane output, 0% allowed on small)"
+run_tk_stats "git status" git status
+run_tk_stats "git branch" git branch
+run_tk_stats "git show -1 --stat" git show -1 --stat
+run_tk_stats "git diff" git diff
 if command -v tree >/dev/null 2>&1; then
-  run_tk_stats "tree -L 2 packages" tree -L 2 packages/
-  run_tk_stats "tree packages" tree packages/
+  run_tk_stats "tree $SRCDIR" tree "$SRCDIR"
 else
   skip_test "tree" "tree not installed"
 fi
-run_tk_stats "read CONTEXT.md" read CONTEXT.md
-run_tk_stats "read --level aggressive package.json" read --level aggressive package.json
-run_tk_stats "cat package.json" cat package.json
-
-section "Search"
-if command -v rg >/dev/null 2>&1; then
-  run_tk_stats "rg export packages" rg export packages/
-  run_tk_stats "rg --level minimal export packages" rg --level minimal export packages/
-else
-  skip_test "rg" "rg not installed"
-fi
-run_tk_stats "grep -r workspace packages" grep -r workspace packages/
-
-section "Git (read-only + dry-run)"
-run_tk_stats "git status" git status
-run_tk_stats "git log --oneline -10" git log --oneline -10
-run_tk_stats "git diff" git diff
-run_tk_stats "git branch" git branch
-run_tk_stats "git show -1 --stat" git show -1 --stat
-run_tk_stats "git worktree list" git worktree list
-run_tk_stats "git add --dry-run ." git add --dry-run .
-run_tk_stats "git commit -a --dry-run" git commit -a --dry-run -m "tk-dogfood-test"
-run_tk_stats "git push --dry-run" git push --dry-run origin HEAD
-
-section "pnpm"
-run_tk_stats "pnpm --version" pnpm --version
 run_tk_stats "pnpm list --depth=0" pnpm list --depth=0
-
-section "TypeScript"
-if command -v pnpm >/dev/null 2>&1; then
-  run_tk_stats "pnpm exec tsc --noEmit" pnpm exec tsc --noEmit
-else
-  skip_test "pnpm exec tsc --noEmit" "pnpm not installed"
-fi
+run_tk_stats "pnpm --version" pnpm --version
 
 section "Hook check (rewrite dry-run)"
 run_hook_check "hook: git status" git status

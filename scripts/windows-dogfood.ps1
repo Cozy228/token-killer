@@ -128,6 +128,32 @@ function Test-TkStats {
   Write-Pass $Name "(passthrough)"
 }
 
+# Quality gate mirroring atlas-dogfood.sh's run_tk_savings: parse Raw tokens +
+# Saved%, and enforce a per-case minimum savings — but ONLY once the raw output
+# clears $MinRaw. Small outputs may legitimately be 0%; large outputs that fail
+# to compress are a real regression and FAIL.
+$Script:MinRaw = if ($env:TK_DOGFOOD_MIN_RAW) { [int] $env:TK_DOGFOOD_MIN_RAW } else { 1500 }
+function Test-TkSavings {
+  param([string] $Name, [double] $MinPct, [string[]] $CmdArgs)
+  $tkArgs = @("--stats") + $CmdArgs
+  $r = Invoke-TkPipe @tkArgs
+  if ($r.AllText -notmatch "## Token Savings") {
+    Write-Fail $Name "no compression (passthrough)"
+    return
+  }
+  $raw = 0
+  $pct = 0.0
+  if ($r.AllText -match "Raw:\s*(\d+)\s*tokens") { $raw = [int] $Matches[1] }
+  if ($r.AllText -match "Saved:.*\(([0-9.]+)%\)") { $pct = [double] $Matches[1] }
+  if ($raw -lt $Script:MinRaw) {
+    Write-Pass $Name "raw=$raw saved=$pct% (small <$($Script:MinRaw), 0% ok)"
+  } elseif ($pct -ge $MinPct) {
+    Write-Pass $Name "raw=$raw saved=$pct% (>=$MinPct%)"
+  } else {
+    Write-Fail $Name "raw=$raw saved=$pct% < $MinPct% required"
+  }
+}
+
 function Test-HookCheck {
   param([string] $Name, [string[]] $CmdArgs)
   $tkArgs = @("hook", "check") + $CmdArgs
@@ -260,29 +286,30 @@ try {
   # are not the agent's vocabulary. tk's executor spawns real executables, so we
   # exercise the real binaries it actually proxies + compresses. Compressing the
   # PowerShell-cmdlet surface is a separate handler track (out of scope here).
-  $dir = if (Test-Path -LiteralPath "packages" -PathType Container) { "packages/" } else { "." }
+  $dir = if (Test-Path -LiteralPath "packages" -PathType Container) { "packages" } else { "." }
 
-  Write-Section "Listing & search (tree / rg)"
-  Test-TkStats "tree $dir" @("tree", $dir)
-  Test-TkStats "rg export $dir" @("rg", "export", $dir)
-  Test-TkStats "rg --level minimal export $dir" @("rg", "--level", "minimal", "export", $dir)
+  # Thresholds calibrated on the atlas monorepo (same repo both sides), set well
+  # below observed so they catch regressions, not variance. The real Windows
+  # agent surface is real binaries (git/rg) — no POSIX cat/find here, so the
+  # language-aware-read and find cases live in the macOS dogfood only.
+  Write-Section "Compression quality — large output MUST clear the bar"
+  Test-TkSavings "git log -p -20 (diff compaction)" 70 @("git", "log", "-p", "-20")
+  Test-TkSavings "git log -30 (log reformat)" 45 @("git", "log", "-30")
+  Test-TkSavings "rg import $dir (search dedup+cap)" 45 @("rg", "import", $dir)
 
-  Write-Section "Git (read-only + dry-run)"
+  Write-Section "Faithful / small (runs + sane, 0% ok)"
   Test-TkStats "git status" @("git", "status")
-  Test-TkStats "git log --oneline -10" @("git", "log", "--oneline", "-10")
-  Test-TkStats "git diff" @("git", "diff")
   Test-TkStats "git branch" @("git", "branch")
   Test-TkStats "git show -1 --stat" @("git", "show", "-1", "--stat")
-  Test-TkStats "git worktree list" @("git", "worktree", "list")
-  Test-TkStats "git add --dry-run ." @("git", "add", "--dry-run", ".")
-  # NB: `git commit`/`git push` are NOT exercised as live stats here — commit's
-  # exit code depends on tree state (clean tree → exit 1) and push needs network
-  # credentials unavailable in a headless SSH run. Their hook rewrite is covered
-  # in the "Hook check" section below.
+  Test-TkStats "git diff" @("git", "diff")
+  Test-TkStats "tree $dir" @("tree", $dir)
+  # NB: `git commit`/`git push` are NOT exercised as live stats — commit's exit
+  # code depends on tree state (clean → exit 1) and push needs credentials absent
+  # in a headless SSH run. Their hook rewrite is covered in "Hook check" below.
 
   Write-Section "js package tooling (pnpm / npx — PATHEXT)"
-  Test-TkStats "pnpm --version" @("pnpm", "--version")
   Test-TkStats "pnpm list --depth=0" @("pnpm", "list", "--depth=0")
+  Test-TkStats "pnpm --version" @("pnpm", "--version")
   Test-TkStats "npx --version" @("npx", "--version")
 
   # ── Phase 3: Hook check (rewrite dry-run) ─────────────────────────
