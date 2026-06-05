@@ -479,6 +479,14 @@ Context analysis recommends durable context improvements only. It does not edit 
 13. native executable packaging
 14. direct policy enforcement
 
+> **Superseded by [ADR 0003](adr/0003-inspect-default-full-static-context.md).** The
+> Copilot Context Optimizer makes default `tg inspect` read a curated set of **project
+> context files** (not source code) and write `~/.token-guard/projects/<fingerprint>/inspect/latest.json`
+> on every run. This narrows two promises above: "no default repository scan" (now a bounded
+> context-file read) and "no default file writes" (now a user-level report write; the project
+> repository is still never written). "No source-code analysis" and "no path-based source
+> scans" remain fully in force.
+
 ## Future Questions
 
 1. Should inspect add trend snapshots and run comparison?

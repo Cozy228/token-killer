@@ -10,9 +10,11 @@ skills.
 *and* static context. The static context analysis this goal builds is **a set of analyzers
 inside that one inspect**, contributing `source = static_context` findings to the unified
 report. It is **NOT** a separate `tg inspect --copilot-context` scan command;
-`--copilot-context`/`--surface` are only narrowing flags. The "context optimizer" is the
-**downstream consumer** `tg optimize context`: it reads inspect's findings and makes
-targeted modifications.
+`--copilot-context`/`--surface`/`--project`/`--user` are only narrowing flags. Static context
+is **scope-aware** (ADR 0003): bare `tg inspect` reads **user-level** global context by
+default (highest token leverage, runnable anywhere); `--project` selects the current repo;
+runtime analysis is orthogonal and always runs. The "context optimizer" is the **downstream
+consumer** `tg optimize context`: it reads inspect's findings and makes targeted modifications.
 
 The product shape is two-stage:
 
@@ -23,7 +25,10 @@ The product shape is two-stage:
    findings, applies only safe mechanical changes, and generates suggested diffs or advice
    for everything that requires semantic or team workflow judgment. It first reads the
    persisted inspect report (`~/.token-guard/projects/<fingerprint>/inspect/latest.json`);
-   if absent it triggers an inspect run.
+   if absent it triggers a **full** inspect run (runtime + static context), so `latest.json`
+   is always a complete report. To build each suggested diff it re-reads the live project
+   file, validated against the finding's stored `body_hash` — no raw instruction body is ever
+   persisted, and a hash mismatch prompts a re-inspect instead of emitting a stale diff.
 
 ## Source of truth
 
@@ -73,18 +78,32 @@ waste", and "cacheability risk".
 
 ## CLI contract
 
-Static context findings come out of the **one** `tg inspect` (default-full). The flags below
-only **narrow** which analyzers run; with no flag, `tg inspect` already includes static
-context. The new command this goal owns is `tg optimize context` (the consumer).
+Static context findings come out of the **one** `tg inspect`. Two **orthogonal** flag axes
+narrow it (ADR 0003):
+
+- **Scope** (`--project` / `--user`) selects which static-context surfaces are read. The
+  default — bare `tg inspect`, runnable anywhere — is **user-level**, because global context
+  (`~/.claude/CLAUDE.md`, `~/.claude/skills`, `~/.copilot/copilot-instructions.md`) loads
+  into *every* session and is the highest-leverage token cost. `--project` selects the
+  current repo; pass both for both.
+- **Analyzer type** (`--copilot-context`) narrows to static-context analyzers only. Runtime
+  (session) analysis is orthogonal to scope and **always runs** unless `--copilot-context`
+  turns it off.
+
+The new command this goal owns is `tg optimize context` (the consumer).
 
 ```bash
-tg inspect                              # default: runs ALL analyzers incl. static context
-tg inspect --copilot-context            # narrow: static-context analyzers only
+tg inspect                              # default: USER-level static context + runtime
+tg inspect --project                    # project static context + runtime
+tg inspect --project --user             # both scopes + runtime
+tg inspect --copilot-context            # narrow: static-context only (no runtime), user scope
+tg inspect --project --copilot-context  # narrow: static-context only, project scope
 tg inspect --surface instructions       # narrow further to one surface
 tg inspect --surface prompts
 tg inspect --surface agents
 tg inspect --surface skills
 tg inspect --json                       # unified Finding[] report
+tg inspect --fail-on <severity>         # opt-in: exit 4 if findings at/above this severity exist
 
 tg optimize context --dry-run           # read inspect findings → suggested diffs, no write
 tg optimize context --apply-safe
@@ -92,6 +111,11 @@ tg optimize context --write-advice
 tg optimize context --surface skills --dry-run
 tg optimize context --token-budget-block --apply-safe
 ```
+
+`--copilot-context` (static-only) is mutually exclusive with runtime-only flags
+(`--since`, `--session`, `--input-type`): passing them together is an invalid-argument error
+(exit 1), never a silent no-op. The scope flags (`--project` / `--user`) compose freely with
+both axes.
 
 Compatibility aliases:
 
@@ -102,13 +126,27 @@ tg agentsmd patch
 tg agentsmd restore
 ```
 
-Exit codes:
+Exit codes. `tg inspect` keeps the inspect-v1 table (ADR 0003); `--fail-on` adds an opt-in
+code that does **not** reuse `2`. Findings never change the exit code on their own — inspect
+is diagnostic, not enforcement.
+
+`tg inspect`:
+
+| Code | Meaning |
+|------|---------|
+| 0 | Report generated (including reports with warnings) |
+| 1 | User input or configuration error |
+| 2 | No major source analyzable — **runtime AND static context both empty** (not "session storage absent" alone) |
+| 3 | Internal error |
+| 4 | Findings at/above `--fail-on` severity exist (only when `--fail-on` is passed) |
+
+`tg optimize context`:
 
 | Code | Meaning |
 |------|---------|
 | 0 | Completed; no blocking errors |
 | 1 | Invalid CLI arguments or unsafe apply request |
-| 2 | Findings exist above configured threshold, when `--fail-on` is used |
+| 3 | Internal error |
 
 ## Data model
 
@@ -151,15 +189,18 @@ export type ContextFinding = {
   recommendation: string;
   fix_class: FixClass;
   adapter?: "copilot" | "vscode" | "claude" | "gemini" | "codex" | "generic";
+  scope?: "user" | "project"; // which scope produced it; drives report sectioning + bucket
 };
 ```
 
-These findings are written into the **one** inspect report (no separate `context-inspect`
-file). inspect persists it; `tg optimize context` reads it:
+These findings are written into the inspect report for their **scope bucket** (ADR 0003);
+`tg optimize context` reads the matching bucket:
 
 ```text
-~/.token-guard/projects/<fingerprint>/inspect/latest.json     # unified inspect Finding[] report
-~/.token-guard/advice/context/<fingerprint>.md                # optimize --write-advice output
+~/.token-guard/user-context/inspect/latest.json               # user-scope unified Finding[] report
+~/.token-guard/projects/<fingerprint>/inspect/latest.json     # project-scope unified Finding[] report
+~/.token-guard/advice/context/user.md                         # optimize --write-advice (user scope)
+~/.token-guard/advice/context/<fingerprint>.md                # optimize --write-advice (project scope)
 ```
 
 Do not store raw instruction bodies by default. Store file path, line range, type, counts,
@@ -190,18 +231,32 @@ src/context/
 ```
 
 `src/context/` owns no `inspect` command. Instead it exposes a static-context **analyzer**
-that `tg inspect` (`src/inspect/`) calls as part of its default-full run, plus the
-`tg optimize context` consumer command. Keep the implementation independent from command
+that `tg inspect` (`src/inspect/`) calls on every run (scope-aware: user-level by default,
+project under `--project`), plus the `tg optimize context` consumer command. Keep the implementation independent from command
 handlers. It may reuse `src/core/dataDir.ts` for storage and `src/core/savings.ts` for rough
 token estimates, but it must not call the command pipeline. The optimize consumer reads
-inspect's persisted `inspect/latest.json` (or triggers an inspect run when absent) — it does
-not re-scan or re-rank on its own.
+inspect's persisted `inspect/latest.json` for the relevant scope bucket (project bucket by
+default; `--surface skills` user-level work reads the user bucket). When the bucket is
+absent it triggers a full inspect run for that scope (`tg inspect --project`, or `--user`) —
+it does not re-scan or re-rank on its own.
 
 ## Discovery
 
-`src/context/discover.ts` scans a bounded set of paths from `cwd` and user-level locations.
+`src/context/discover.ts` scans a bounded set of paths, split by **scope** (ADR 0003).
 
-Project-level candidates:
+User-level candidates — **the default scope** (bare `tg inspect`, or `--user`). Global
+context loads into every session, so it is scanned by default and `tg inspect` is runnable
+anywhere, including outside any repo:
+
+```text
+$HOME/.claude/CLAUDE.md
+$HOME/.copilot/copilot-instructions.md
+$COPILOT_CUSTOM_INSTRUCTIONS_DIRS/**/{AGENTS.md,.github/instructions/**/*.instructions.md}
+$HOME/.claude/skills/*/SKILL.md
+```
+
+Project-level candidates — scanned only under `--project` (or `--project --user`), resolved
+from `cwd`:
 
 ```text
 .github/copilot-instructions.md
@@ -215,13 +270,19 @@ GEMINI.md
 .claude/skills/*/SKILL.md
 ```
 
-User-level candidates:
+Persistence is split into two scope buckets so global findings are never duplicated across
+projects or left stale (ADR 0003):
 
 ```text
-$HOME/.copilot/copilot-instructions.md
-$COPILOT_CUSTOM_INSTRUCTIONS_DIRS/**/{AGENTS.md,.github/instructions/**/*.instructions.md}
-$HOME/.claude/skills/*/SKILL.md
+~/.token-guard/user-context/inspect/latest.json        # user scope (no fingerprint)
+~/.token-guard/projects/<fingerprint>/inspect/latest.json   # project scope
 ```
+
+Runtime findings (orthogonal to scope) are written into whichever bucket(s) a run produces.
+Project fingerprint: hash of git identity — the `git remote origin` URL when present, else
+the `git` toplevel absolute path — falling back to a hash of the absolute `cwd` outside a git
+repo. Only the hash is stored, never the raw path. Two clones of the same remote share one
+report.
 
 Boundaries:
 
@@ -588,15 +649,17 @@ Deliver:
 - `src/context/parseMarkdown.ts`
 - `src/context/metrics.ts`
 - `src/context/report.ts` (static-context view within inspect's report)
-- `src/context/analyzer.ts` registered into `tg inspect` so the default-full run emits
+- `src/context/analyzer.ts` registered into `tg inspect` so every run emits
   `source = static_context` findings (no standalone `--copilot-context` *command* — only the
-  narrowing flag). `--surface` narrows which surfaces the analyzer scans.
+  narrowing flag). Scope flags (`--project`/`--user`, default user) select which surfaces;
+  `--surface` narrows further.
 
 Tests:
 
-- `tg inspect` (no flag) includes static-context findings in the unified report
-- `tg inspect --copilot-context` narrows to static-context findings only
-- discovers supported project/user files
+- `tg inspect` (no flag) includes **user-level** static-context findings in the unified report
+- `tg inspect --project` includes project static-context findings
+- `tg inspect --copilot-context` narrows to static-context findings only (no runtime)
+- discovers supported user/project files per scope
 - skips dependency/build/cache dirs
 - parses frontmatter and malformed frontmatter
 - line ranges remain stable
@@ -682,8 +745,10 @@ pnpm typecheck
 ### Slice 5 — Optimize consumer: dry-run + advice writer
 
 `tg optimize context` is the **consumer**. It reads inspect's persisted
-`inspect/latest.json` (filtering to `source = static_context` findings); if absent it
-triggers an inspect run, then plans patches off those findings.
+`inspect/latest.json` for the relevant scope bucket (project bucket by default; the user
+bucket for `--surface skills` user-level work), filtering to `source = static_context`
+findings; if absent it triggers a full inspect for that scope (`tg inspect --project` or
+`--user`), then plans patches off those findings.
 
 Deliver:
 

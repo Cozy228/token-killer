@@ -17,9 +17,13 @@ before and after they run. Distinct from the command proxy.
 _Avoid_: plugin, middleware.
 
 **Inspect**:
-The read-only `tg inspect` scanner over local Copilot session evidence. Diagnostic only,
-never enforcement.
-_Avoid_: audit, monitor.
+Token Guard's single read-only analysis entry, `tg inspect`, runnable anywhere. It runs
+every analyzer over two evidence classes: [Runtime evidence](#evidence-classes) (local
+Copilot session history, always analyzed) and [Static context](#evidence-classes). Static
+context is [scope](#evidence-classes)-aware: the default scope is **user-level** global
+context; `--project` selects the current repo. Diagnostic only, never enforcement; it
+produces one unified set of [Findings](#findings-and-optimization).
+_Avoid_: audit, monitor, session scanner (it is no longer session-only).
 
 ## Delivery
 
@@ -151,6 +155,70 @@ _Avoid_: cache (unqualified).
 Scope of every Token Guard write — `~/.token-guard/` for data, `~/.copilot/hooks/` for
 hook wiring. The project repository is never written.
 _Avoid_: global, local.
+
+## Evidence classes
+
+The two evidence classes [Inspect](#surfaces) covers. Both flow into one unified
+[Finding](#findings-and-optimization) set; `source` distinguishes them.
+
+**Runtime evidence**:
+Local Copilot session history and tool-call records — the behavioral evidence inspect has
+always scanned (terminal commands, direct tool reads/searches, prompt/output volume).
+Findings carry `source = runtime` and aggregate metrics.
+_Avoid_: session evidence (now one class of two), telemetry.
+
+**Static context**:
+The context **surfaces** Copilot loads into the model as instructions, prompts, agents, or
+skills — read from files, not session storage. Findings carry `source = static_context` and a
+[Context surface](#findings-and-optimization) locator. Reading these files is not source-code
+analysis; only curated context files are read, never arbitrary source.
+_Avoid_: repo context (that is the opt-in lightweight-metadata add-on), source scan.
+
+**Scope**:
+Which static-context files Inspect reads. **User scope** (the default) is global context that
+loads into every session — `~/.claude/CLAUDE.md`, `~/.claude/skills`,
+`~/.copilot/copilot-instructions.md`; it is the default because it has the highest token
+leverage. **Project scope** (`--project`) is the current repo's `.github/**`, `AGENTS.md`,
+`CLAUDE.md`, `GEMINI.md`. The two persist to separate buckets so global findings are never
+duplicated per project. [Runtime evidence](#evidence-classes) is orthogonal to scope and
+always analyzed.
+_Avoid_: level, global/local (overloaded — use user/project scope).
+
+## Findings and optimization
+
+**Finding**:
+One unified diagnostic record inspect emits, across both [evidence classes](#evidence-classes).
+Carries `id`, `source`, `type`, `severity`, `confidence`, `evidence`, `recommendation`, and
+a [Fix class](#findings-and-optimization). The persisted unified report is what
+[Optimize](#findings-and-optimization) consumes.
+_Avoid_: recommendation (one of its fields), issue, warning.
+
+**Context surface**:
+The narrowest place a static-context rule belongs — `.github/copilot-instructions.md`
+(always-on), `.github/instructions/*.instructions.md` (path-specific), `.github/prompts`,
+`.github/agents`, a Claude skill, or the stable prompt prefix. The optimizer's stance is to
+move each rule to the narrowest surface that still enforces it.
+_Avoid_: file, location, layer.
+
+**Adapter**:
+The ecosystem a single finding's mechanism belongs to (`copilot`, `claude`, `gemini`,
+`codex`, `generic`). Tagged per finding by the surface/mechanism, never by file name — so a
+shared `AGENTS.md` carries `generic` bloat findings yet `copilot` findings for Copilot-only
+mechanisms like `applyTo`. A Claude-only skill field is never recommended as a Copilot feature.
+_Avoid_: ecosystem (use adapter), target (overloaded).
+
+**Fix class**:
+How a finding may be acted on: `safe_mechanical` (user-level/managed marker writes only),
+`suggested_diff` (printed, never auto-written to project files), `advisory` (judgment call
+for the team), `delivery` (a runtime finding whose action is installing shim/hook via
+`tg init`), or `non_goal`.
+_Avoid_: severity (orthogonal), action.
+
+**Optimize**:
+The downstream consumer `tg optimize context`. It reads inspect's persisted unified report
+(or triggers a full inspect when absent), takes only `source = static_context` findings, and
+applies safe mechanical fixes or emits suggested diffs/advice. Never a second scanner.
+_Avoid_: optimizer scan, fixer, rewriter (it does not rewrite project files by default).
 
 ## Compression operations and evidence classes
 
