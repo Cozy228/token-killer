@@ -1,6 +1,6 @@
 import { describe, expect, test } from "vitest";
 
-import { expectRtkParity, filterRtkOutput } from "../../helpers/rtkCommandHarness.js";
+import { expectRtkParity, filterRtkOutput } from "../helpers/rtkCommandHarness.js";
 
 describe("RTK rake behavior", () => {
   test("summarizes minitest pass counts", async () => {

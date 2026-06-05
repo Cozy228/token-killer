@@ -1,6 +1,6 @@
 import { describe, expect, test } from "vitest";
 
-import { expectRtkParity, filterRtkOutput } from "../../helpers/rtkCommandHarness.js";
+import { expectRtkParity, filterRtkOutput } from "../helpers/rtkCommandHarness.js";
 
 describe("RTK rubocop behavior", () => {
   test("keeps offense file, line, and cop while stripping inspection chatter", async () => {

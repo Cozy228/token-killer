@@ -36,6 +36,40 @@ the gain is marginal and tg's form is at least as informative.
 If a later pass wants #11's extra compression, do it without dropping commit
 subjects (the goal's "never drop key diagnostics" rule applies).
 
+## E. Out-of-scope ecosystems (scope decision 2026-06-05)
+
+Go, Rust, and Ruby are **out of product scope** for token-guard. Their RTK
+command filters are intentionally NOT ported, and their parity tests are
+quarantined out of the migration suite so `pnpm test:migration` can go green
+without them. A future "complete RTK parity" pass must **not** re-add these by
+mistake.
+
+| Ecosystem | RTK commands (not ported) | Quarantined test |
+|-----------|---------------------------|------------------|
+| Go | `go`, `golangci-lint` | `tests/out-of-scope/rtkGoBehavior.test.ts`, `rtkGolangciBehavior.test.ts` |
+| Rust | `cargo` (`cargo test` summary) | `tests/out-of-scope/rtkCargoBehavior.test.ts` |
+| Ruby | `rake`, `rspec`, `rubocop` | `tests/out-of-scope/rtkRakeBehavior.test.ts`, `rtkRspecBehavior.test.ts`, `rtkRubocopBehavior.test.ts` |
+
+The six tests were moved from `tests/unit/handlers/` to `tests/out-of-scope/`
+(excluded from `vitest.migration.config.ts` and `vitest.config.ts`). The
+`ruby smoke script` row (`rtk/scripts/test-ruby.sh` → `scripts/test-ruby.sh`) was
+dropped from `rtkScriptParity.test.ts`'s `pendingScriptPorts`.
+
+Note: the generic `err <cmd>` / `test <cmd>` wrappers (RTK `rust/runner.rs`) ARE
+in scope and ported — they are ecosystem-neutral meta-commands, not Rust filters.
+
+## F. Phase-1/2 handler format divergences (recorded 2026-06-05)
+
+These accompany the new generic-wrapper and dotnet handlers. tg's form satisfies
+the migration contract; the difference from RTK is intentional and minor.
+
+| Handler | Difference from RTK | Why |
+|---------|---------------------|-----|
+| `deps` (Node) | RTK renders dev deps as `Dev Dependencies (N):` with names only; tg uses `Dev (N):` with versions (symmetric with the prod section, matching the Cargo section's `Dev (N):`). Also, tg summarizes the single manifest captured on stdin/stdout rather than re-scanning every manifest in a directory (the execute/filter split). | Keeps prod/dev shapes symmetric and versioned; the migration test pins `Dev (1):` + `vitest (4.1.8)`. |
+| `tsc` | tg drops RTK's decorative 39-char `═` separator under the summary line. | `npx tsc` re-dispatches through this same filter and must stay within a tighter output budget; no tsc assertion pins the separator (mypy/pip/format keep theirs), and dropping it only improves compression. |
+| `dotnet format` | tg accepts both camelCase (`filePath`/`changes`/`lineNumber`/`formatDescription`) and RTK PascalCase report keys. | The migration fixture uses camelCase; accepting both keeps the handler robust to either reporter shape. |
+| `test` (go branch) | RTK's `runner.rs` has cargo/pytest/jest/**go** framework branches. tg does NOT port the Go branch (Go is an out-of-scope ecosystem — see §E). This also removes RTK's latent bug: `"cargo test"` *contains* the substring `"go test"` (car+"go test"), so RTK runs `cargo test` through BOTH the cargo and go branches — duplicating every failure line and folding the `test result:` summary into the FAILURES block. With no go branch, `cargo test` is classified cleanly. The cargo branch itself stays because the in-scope `rtkTestBehavior` fixture is `test cargo test`. | Scope (Go out-of-scope) + correctness. The single-failure Phase-1 fixture did not exercise the duplication; it surfaced under a realistic multi-failure run. |
+
 ## Aggregate note (why weighted tg savings reads 33.9%, not ≥34.5%)
 
 The goal's acceptance #4 quotes a "current 34.5%" baseline. After this batch the

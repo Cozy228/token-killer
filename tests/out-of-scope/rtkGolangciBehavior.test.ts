@@ -1,6 +1,6 @@
 import { describe, expect, test } from "vitest";
 
-import { expectRtkParity, filterRtkOutput } from "../../helpers/rtkCommandHarness.js";
+import { expectRtkParity, filterRtkOutput } from "../helpers/rtkCommandHarness.js";
 
 describe("RTK golangci-lint behavior", () => {
   test("keeps linter findings with file, line, and rule", async () => {

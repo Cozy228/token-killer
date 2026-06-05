@@ -1,6 +1,6 @@
 import { describe, expect, test } from "vitest";
 
-import { expectRtkParity, filterRtkOutput } from "../../helpers/rtkCommandHarness.js";
+import { expectRtkParity, filterRtkOutput } from "../helpers/rtkCommandHarness.js";
 
 describe("RTK go behavior", () => {
   test("keeps package failures and strips successful package noise", async () => {

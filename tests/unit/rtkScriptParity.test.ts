@@ -76,11 +76,9 @@ const pendingScriptPorts = [
     rtkPath: "rtk/scripts/benchmark-sessions/lib/runner.py",
     tgPath: "scripts/benchmark-sessions/lib/runner.py",
   },
-  {
-    name: "ruby smoke script",
-    rtkPath: "rtk/scripts/test-ruby.sh",
-    tgPath: "scripts/test-ruby.sh",
-  },
+  // The Ruby smoke script (rtk/scripts/test-ruby.sh) is intentionally NOT ported:
+  // Ruby is an out-of-scope ecosystem (see docs/align-rtk-divergences.md →
+  // "Out-of-scope ecosystems"). Do not re-add it in a future parity pass.
 ] as const;
 
 describe("RTK script parity", () => {
