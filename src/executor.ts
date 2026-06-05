@@ -2,7 +2,13 @@ import { spawn } from "node:child_process";
 
 import type { ParsedCommand, RawResult } from "./types.js";
 
-export function executeCommand(command: ParsedCommand): Promise<RawResult> {
+export function executeCommand(
+  command: ParsedCommand,
+  // Optional extra environment variables merged over process.env. RTK rewrites
+  // some commands with a stable locale (e.g. ls runs under LC_ALL=C so English
+  // month names parse) — handlers pass that through here.
+  extraEnv?: Record<string, string>,
+): Promise<RawResult> {
   const started = Date.now();
 
   return new Promise((resolve) => {
@@ -10,6 +16,7 @@ export function executeCommand(command: ParsedCommand): Promise<RawResult> {
       cwd: process.cwd(),
       shell: false,
       windowsHide: true,
+      ...(extraEnv ? { env: { ...process.env, ...extraEnv } } : {}),
     });
 
     const stdout: Buffer[] = [];

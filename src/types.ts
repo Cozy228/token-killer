@@ -11,6 +11,11 @@ export type RawResult = {
   stderr: string;
   exitCode: number;
   durationMs: number;
+  // Optional secondary capture for handlers that, like RTK, run more than one
+  // child command. git status runs `--porcelain -b` for the formatted output
+  // (stdout) and a plain `git status` for in-progress state / detached-HEAD
+  // detection (auxStdout). Not part of the savings baseline.
+  auxStdout?: string;
 };
 
 export type FilteredResult = {

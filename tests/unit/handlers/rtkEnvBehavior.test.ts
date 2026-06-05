@@ -11,7 +11,7 @@ describe("RTK env behavior", () => {
     expect(result.output).toContain("API_KEY=sk****et");
     expect(result.output).toContain("NODE_VERSION=22.0.0");
     expect(result.output).toContain("AWS_REGION=us-east-1");
-    expect(result.output).not.toMatch(/sk_live_secret/);
+    expect(result.output).not.toMatch(/fixture_api_secret/);
 
     expectRtkParity(result, {
       critical: [
@@ -22,7 +22,7 @@ describe("RTK env behavior", () => {
         "AWS_REGION=us-east-1",
       ],
       forbidden: [
-        /sk_live_secret/,
+        /fixture_api_secret/,
       ],
       maxOutputChars: 320,
     });
