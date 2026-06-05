@@ -415,6 +415,7 @@ function formatRead(raw: RawResult, command: ParsedCommand): string {
 
 export const readHandler: CommandHandler = {
   name: "read",
+  programs: ["cat"],
   // tg maps `cat` onto RTK read semantics (system/read.rs); `read`/`type`/`less`
   // stay on the existing read-like handler, which owns stdin/multi-file execution.
   matches(command) {

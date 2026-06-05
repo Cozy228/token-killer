@@ -20,6 +20,7 @@ function innerCommand(command: ParsedCommand): ParsedCommand {
 
 export const npxHandler: CommandHandler = {
   name: "npx",
+  programs: ["npx"],
   matches(command) {
     // Only re-dispatch when there is an inner tool that is not `npx` itself.
     return command.program === "npx" && command.args.length > 0 && command.args[0] !== "npx";

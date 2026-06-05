@@ -158,6 +158,7 @@ function filterPsqlOutput(output: string): string {
 
 export const psqlHandler: CommandHandler = {
   name: "psql",
+  programs: ["psql"],
 
   matches(command: ParsedCommand) {
     return command.program === "psql";

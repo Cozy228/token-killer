@@ -80,6 +80,7 @@ function formatEslint(text: string): string {
 
 export const eslintHandler: CommandHandler = {
   name: "eslint",
+  programs: ["eslint"],
 
   matches: matchesEslint,
 

@@ -257,6 +257,7 @@ function makeHostingHandler(
 ): CommandHandler {
   return {
     name: program,
+    programs: [program],
     matches(command) {
       return command.program === program;
     },

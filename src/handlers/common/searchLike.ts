@@ -28,6 +28,7 @@ export function buildGrepArgs(program: string, userArgs: string[]): string[] {
 
 export const searchLikeHandler: CommandHandler = {
   name: "search-like",
+  programs: ["rg", "grep"],
 
   matches(command) {
     return SEARCH_PROGRAMS.has(command.program);

@@ -105,6 +105,7 @@ function formatTsc(text: string): string {
 
 export const tscHandler: CommandHandler = {
   name: "tsc",
+  programs: ["tsc"],
 
   matches: matchesTsc,
 

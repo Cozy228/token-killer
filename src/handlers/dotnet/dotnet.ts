@@ -222,6 +222,7 @@ function formatDotnet(command: ParsedCommand, text: string): string {
 
 export const dotnetHandler: CommandHandler = {
   name: "dotnet",
+  programs: ["dotnet"],
   matches(command) {
     return command.program === "dotnet";
   },

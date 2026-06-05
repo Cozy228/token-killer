@@ -145,6 +145,7 @@ function formatPip(text: string, command: ParsedCommand): string {
 
 export const pipHandler: CommandHandler = {
   name: "pip",
+  programs: ["pip"],
 
   matches: matchesPip,
 

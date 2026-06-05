@@ -302,6 +302,7 @@ function formatPrisma(raw: RawResult, command: ParsedCommand): string {
 
 export const prismaHandler: CommandHandler = {
   name: "prisma",
+  programs: ["prisma"],
   matches(command) {
     return command.program === "prisma";
   },

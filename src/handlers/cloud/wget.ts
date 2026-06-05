@@ -165,6 +165,7 @@ function splitUrlAndArgs(args: string[]): { url: string; rest: string[] } {
 
 export const wgetHandler: CommandHandler = {
   name: "wget",
+  programs: ["wget"],
 
   matches: matchesWget,
 

@@ -168,6 +168,7 @@ function formatGt(raw: RawResult, command: ParsedCommand): string {
 
 export const gtHandler: CommandHandler = {
   name: "gt",
+  programs: ["gt"],
   matches(command) {
     return command.program === "gt";
   },

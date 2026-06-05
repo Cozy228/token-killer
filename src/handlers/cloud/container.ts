@@ -609,6 +609,7 @@ function matchesKubectl(command: ParsedCommand): boolean {
 
 export const dockerHandler: CommandHandler = {
   name: "docker",
+  programs: ["docker"],
 
   matches: matchesDocker,
 
@@ -630,6 +631,7 @@ export const dockerHandler: CommandHandler = {
 
 export const kubectlHandler: CommandHandler = {
   name: "kubectl",
+  programs: ["kubectl"],
 
   matches: matchesKubectl,
 

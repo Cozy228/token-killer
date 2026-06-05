@@ -145,6 +145,7 @@ function formatWc(raw: RawResult, command: ParsedCommand): string {
 
 export const wcHandler: CommandHandler = {
   name: "wc",
+  programs: ["wc"],
   matches(command) {
     return command.program === "wc";
   },

@@ -93,6 +93,7 @@ function formatTree(raw: RawResult): string {
 
 export const treeHandler: CommandHandler = {
   name: "tree",
+  programs: ["tree"],
   matches(command) {
     return command.program === "tree";
   },

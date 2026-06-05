@@ -161,6 +161,7 @@ function filterNextBuild(output: string): string {
 
 export const nextHandler: CommandHandler = {
   name: "next",
+  programs: ["next"],
 
   matches(command: ParsedCommand): boolean {
     return command.program === "next";

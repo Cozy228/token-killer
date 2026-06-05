@@ -194,6 +194,7 @@ function formatJsTest(text: string): string {
 
 export const jsTestHandler: CommandHandler = {
   name: "js-test",
+  programs: ["npm", "pnpm", "yarn", "jest", "vitest"],
 
   matches: matchesJsTest,
 

@@ -42,6 +42,7 @@ function formatJavac(text: string): string {
 
 export const javacHandler: CommandHandler = {
   name: "javac",
+  programs: ["javac"],
 
   matches(command) {
     return command.program === "javac";

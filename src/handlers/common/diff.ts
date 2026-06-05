@@ -195,6 +195,7 @@ async function diffFromStdin(command: ParsedCommand): Promise<RawResult> {
 
 export const diffHandler: CommandHandler = {
   name: "diff",
+  programs: ["diff"],
 
   matches(command) {
     return command.program === "diff";

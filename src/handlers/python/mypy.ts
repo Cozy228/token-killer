@@ -111,6 +111,7 @@ function formatMypy(text: string): string {
 
 export const mypyHandler: CommandHandler = {
   name: "mypy",
+  programs: ["mypy"],
 
   matches(command) {
     return command.program === "mypy";

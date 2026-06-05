@@ -21,6 +21,7 @@ function formatDiff(text: string): string {
 
 export const gitDiffHandler: CommandHandler = {
   name: "git-diff",
+  programs: ["git"],
 
   matches(command) {
     return command.program === "git" && command.args[0] === "diff";

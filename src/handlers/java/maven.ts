@@ -17,6 +17,7 @@ function formatMaven(text: string): string {
 
 export const mavenHandler: CommandHandler = {
   name: "maven",
+  programs: ["mvn"],
 
   matches(command) {
     return command.program === "mvn" || command.program.endsWith("mvn.cmd");

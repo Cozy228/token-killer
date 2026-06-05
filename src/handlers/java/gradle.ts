@@ -20,6 +20,7 @@ function formatGradle(text: string): string {
 
 export const gradleHandler: CommandHandler = {
   name: "gradle",
+  programs: ["gradle"],
 
   matches(command) {
     return (

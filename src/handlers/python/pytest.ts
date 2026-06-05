@@ -210,6 +210,7 @@ function buildPytestSummary(summary: string, failures: string[], xfailLines: str
 
 export const pytestHandler: CommandHandler = {
   name: "pytest",
+  programs: ["pytest"],
 
   matches: matchesPytest,
 

@@ -211,6 +211,7 @@ function formatEnv(stdout: string): string {
 
 export const envHandler: CommandHandler = {
   name: "env",
+  programs: ["env"],
   matches(command) {
     return command.program === "env";
   },

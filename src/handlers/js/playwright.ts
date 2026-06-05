@@ -176,6 +176,7 @@ function formatPlaywright(text: string): string {
 
 export const playwrightHandler: CommandHandler = {
   name: "playwright",
+  programs: ["playwright"],
 
   matches(command) {
     return command.program === "playwright";

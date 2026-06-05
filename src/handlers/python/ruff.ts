@@ -175,6 +175,7 @@ export function buildRuffArgs(userArgs: string[]): string[] {
 
 export const ruffHandler: CommandHandler = {
   name: "ruff",
+  programs: ["ruff"],
 
   matches: matchesRuff,
 

@@ -111,6 +111,7 @@ function filterTest(text: string): string | null {
 
 export const terraformHandler: CommandHandler = {
   name: "terraform",
+  programs: ["terraform", "tofu"],
 
   matches: matchesTerraform,
 

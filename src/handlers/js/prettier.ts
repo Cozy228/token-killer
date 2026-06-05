@@ -114,6 +114,7 @@ function filterPrettierOutput(output: string): string {
 
 export const prettierHandler: CommandHandler = {
   name: "prettier",
+  programs: ["prettier"],
 
   matches: matchesPrettier,
 

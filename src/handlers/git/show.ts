@@ -60,6 +60,7 @@ function formatShow(text: string, command: ParsedCommand): string {
 
 export const gitShowHandler: CommandHandler = {
   name: "git-show",
+  programs: ["git"],
 
   matches(command) {
     return command.program === "git" && command.args[0] === "show";

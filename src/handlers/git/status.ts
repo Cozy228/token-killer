@@ -167,6 +167,7 @@ function statusArgs(command: ParsedCommand): string[] {
 
 export const gitStatusHandler: CommandHandler = {
   name: "git-status",
+  programs: ["git"],
 
   matches(command) {
     return command.program === "git" && command.args[0] === "status";

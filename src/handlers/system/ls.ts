@@ -250,6 +250,7 @@ export function buildLsArgs(userArgs: string[]): string[] {
 
 export const lsHandler: CommandHandler = {
   name: "ls",
+  programs: ["ls"],
   matches(command) {
     return command.program === "ls";
   },

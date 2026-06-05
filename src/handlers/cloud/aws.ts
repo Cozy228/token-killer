@@ -274,6 +274,7 @@ function filterAws(args: string[], stdout: string): FilterResult {
 
 export const awsHandler: CommandHandler = {
   name: "aws",
+  programs: ["aws"],
 
   matches: matchesAws,
 

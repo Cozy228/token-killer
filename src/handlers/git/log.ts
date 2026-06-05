@@ -106,6 +106,7 @@ function formatLog(text: string): string {
 
 export const gitLogHandler: CommandHandler = {
   name: "git-log",
+  programs: ["git"],
 
   matches(command) {
     return command.program === "git" && command.args[0] === "log";

@@ -59,6 +59,7 @@ function formatCurl(raw: string): string {
 
 export const curlHandler: CommandHandler = {
   name: "curl",
+  programs: ["curl"],
 
   matches: matchesCurl,
 

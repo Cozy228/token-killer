@@ -126,6 +126,7 @@ export function buildBranchArgs(args: string[]): string[] {
 
 export const gitBranchHandler: CommandHandler = {
   name: "git-branch",
+  programs: ["git"],
 
   matches(command) {
     return command.program === "git" && command.args[0] === "branch";
