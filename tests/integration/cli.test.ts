@@ -15,7 +15,14 @@ const cli = path.join(repoRoot, "src/cli.ts");
 const tsxLoader = path.join(repoRoot, "node_modules/tsx/dist/loader.mjs");
 
 function runTg(args: string[], cwd: string, input?: string, tokenGuardHomeDir?: string) {
-  const env: NodeJS.ProcessEnv = { ...process.env };
+  // Prepend the repo's local bin so handler-spawned CLIs (tsc, eslint, ...)
+  // resolve to the project's installed versions instead of relying on a global
+  // install that may be absent in CI or in out-of-repo temp dirs.
+  const localBin = path.join(repoRoot, "node_modules/.bin");
+  const env: NodeJS.ProcessEnv = {
+    ...process.env,
+    PATH: `${localBin}${path.delimiter}${process.env.PATH ?? ""}`,
+  };
   if (tokenGuardHomeDir) {
     env.TOKEN_GUARD_HOME = tokenGuardHomeDir;
   }
@@ -35,6 +42,7 @@ function runTg(args: string[], cwd: string, input?: string, tokenGuardHomeDir?: 
             encoding: "utf8",
             input,
             timeout: 15000,
+            env,
           });
   return runner();
 }
@@ -671,7 +679,8 @@ describe("Acceptance: Handler Routing", () => {
     } finally {
       await rm(dir, { recursive: true, force: true });
     }
-  });
+    // Spawns many real subprocesses; the 5s default flakes on slow machines.
+  }, 30_000);
 });
 
 // ============================================================================
