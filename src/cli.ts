@@ -7,6 +7,8 @@ import { runShim } from "./shim/cli.js";
 import { runInit } from "./shim/init.js";
 import { runHook } from "./hook/cli.js";
 import { runInspect } from "./inspect/cli.js";
+import { runOptimize } from "./context/optimizeCli.js";
+import { runAgentsmd } from "./context/agentsmd.js";
 import { buildReport } from "./core/report.js";
 import { runPipeline } from "./core/pipeline.js";
 import { recordHistory } from "./core/history.js";
@@ -24,6 +26,9 @@ function help(): string {
     "       tg hook <copilot|check <command>>",
     "       tg inspect [--json] [--since 7d] [--session <id>] [--input-type vscode|copilot-cli] [--repo-context]",
     "                  [--advice] [--write-advice] [--telemetry-export] [--min-confidence n] [--min-occurrences n]",
+    "                  [--project] [--user] [--copilot-context] [--surface instructions|prompts|agents|skills] [--fail-on info|warn|error]",
+    "       tg optimize context [--dry-run] [--write-advice] [--apply-safe] [--token-budget-block] [--surface <name>] [--project|--user]",
+    "       tg agentsmd <patch|restore>",
     "",
     "Flags:",
     "  --raw                 print raw stdout/stderr",
@@ -87,6 +92,12 @@ async function main(): Promise<number> {
   }
   if (parsed.mode === "inspect") {
     return runInspect(parsed.subArgs ?? []);
+  }
+  if (parsed.mode === "optimize") {
+    return runOptimize(parsed.subArgs ?? []);
+  }
+  if (parsed.mode === "agentsmd") {
+    return runAgentsmd(parsed.subArgs ?? []);
   }
   if (!parsed.command) {
     process.stderr.write("tg: missing command\n");

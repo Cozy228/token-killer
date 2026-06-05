@@ -44,7 +44,17 @@ export type TgOptions = {
   reportFormat?: "text" | "json" | "csv";
 };
 
-export type ParseMode = "command" | "report" | "help" | "version" | "shim" | "init" | "hook" | "inspect";
+export type ParseMode =
+  | "command"
+  | "report"
+  | "help"
+  | "version"
+  | "shim"
+  | "init"
+  | "hook"
+  | "inspect"
+  | "optimize"
+  | "agentsmd";
 
 export type ParsedArgv = {
   mode: ParseMode;

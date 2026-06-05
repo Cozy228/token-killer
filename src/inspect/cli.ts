@@ -14,16 +14,23 @@ import {
   renderAdviceMarkdown,
   type AdviceFinding,
 } from "./advice.js";
+import { renderStaticContextSection } from "../context/report.js";
+import type { ContextFinding, ContextScope, FindingSeverity } from "../context/types.js";
 import { writeAdviceArtifacts, writeTelemetryExport } from "./persist.js";
 import { gatherRepoContext } from "./repoContext.js";
 import { buildReport, renderJson, renderMarkdown } from "./report.js";
-import { parseSince, scan } from "./scan.js";
+import { parseSince, scan, type ScanResult } from "./scan.js";
 import { discoverSources, type InputType } from "./sources.js";
+import { persistScopeBuckets, runStaticContext } from "./staticContext.js";
 import { buildTelemetry } from "./telemetry.js";
+import { runtimeFindings, type Finding } from "./unified.js";
+
+type FailOnSeverity = "info" | "warn" | "error";
 
 type InspectArgs = {
   json: boolean;
   inputType: InputType;
+  inputTypeExplicit: boolean;
   since?: string;
   session?: string;
   repoContext: boolean;
@@ -32,6 +39,12 @@ type InspectArgs = {
   telemetryExport: boolean; // default off; CLI flag overrides (no config yet)
   minConfidence: number;
   minOccurrences: number;
+  // Static-context scope/analyzer axes (ADR 0003).
+  scopeUser: boolean;
+  scopeProject: boolean;
+  copilotContext: boolean; // static-context analyzers only (runtime off)
+  surface?: string;
+  failOn?: FailOnSeverity;
   error?: string; // set on a parse error → exit 1
 };
 
@@ -46,13 +59,18 @@ export function parseInspectArgs(argv: string[]): InspectArgs {
   const args: InspectArgs = {
     json: false,
     inputType: "vscode",
+    inputTypeExplicit: false,
     repoContext: false,
     advice: false,
     writeAdvice: false,
     telemetryExport: false,
     minConfidence: DEFAULT_ADVICE_OPTIONS.minConfidence,
     minOccurrences: DEFAULT_ADVICE_OPTIONS.minOccurrences,
+    scopeUser: false,
+    scopeProject: false,
+    copilotContext: false,
   };
+  const SURFACES = new Set(["instructions", "prompts", "agents", "skills"]);
   for (let i = 0; i < argv.length; i += 1) {
     const token = argv[i];
     if (token === "--json") {
@@ -70,8 +88,25 @@ export function parseInspectArgs(argv: string[]): InspectArgs {
     } else if (token === "--input-type") {
       const value = argv[i + 1];
       i += 1;
+      args.inputTypeExplicit = true;
       if (value === "vscode" || value === "copilot-cli") args.inputType = value;
       else args.error = `invalid --input-type '${value ?? ""}' (expected vscode | copilot-cli)`;
+    } else if (token === "--project") {
+      args.scopeProject = true;
+    } else if (token === "--user") {
+      args.scopeUser = true;
+    } else if (token === "--copilot-context") {
+      args.copilotContext = true;
+    } else if (token === "--surface") {
+      const value = argv[i + 1];
+      i += 1;
+      if (value && SURFACES.has(value)) args.surface = value;
+      else args.error = `invalid --surface '${value ?? ""}' (expected instructions | prompts | agents | skills)`;
+    } else if (token === "--fail-on") {
+      const value = argv[i + 1];
+      i += 1;
+      if (value === "info" || value === "warn" || value === "error") args.failOn = value;
+      else args.error = `invalid --fail-on '${value ?? ""}' (expected info | warn | error)`;
     } else if (token === "--since") {
       const value = argv[i + 1];
       i += 1;
@@ -99,7 +134,15 @@ export function parseInspectArgs(argv: string[]): InspectArgs {
   return args;
 }
 
-export function runInspect(argv: string[], nowMs: number = Date.now(), home: string = homedir()): number {
+// Severity rank for --fail-on (info < warn < error).
+const SEVERITY_RANK: Record<FindingSeverity, number> = { info: 0, warn: 1, error: 2 };
+
+export function runInspect(
+  argv: string[],
+  nowMs: number = Date.now(),
+  home: string = homedir(),
+  cwd: string = process.cwd(),
+): number {
   const startMs = nowMs;
   let opts: InspectArgs;
   try {
@@ -114,6 +157,14 @@ export function runInspect(argv: string[], nowMs: number = Date.now(), home: str
     return 1;
   }
 
+  // --copilot-context (static-only) is mutually exclusive with runtime-only flags.
+  if (opts.copilotContext && (opts.since !== undefined || opts.session !== undefined || opts.inputTypeExplicit)) {
+    process.stderr.write(
+      "tg inspect: --copilot-context (static-context only) cannot be combined with runtime-only flags (--since/--session/--input-type)\n",
+    );
+    return 1;
+  }
+
   let sinceMs: number | undefined;
   if (opts.since !== undefined) {
     const duration = parseSince(opts.since);
@@ -124,21 +175,59 @@ export function runInspect(argv: string[], nowMs: number = Date.now(), home: str
     sinceMs = nowMs - duration;
   }
 
+  // Resolve static-context scopes (ADR 0003): default user-level.
+  const scopes: ContextScope[] = [];
+  if (opts.scopeUser) scopes.push("user");
+  if (opts.scopeProject) scopes.push("project");
+  if (scopes.length === 0) scopes.push("user");
+
   try {
-    const discovery = discoverSources(opts.inputType, home);
-    if (!discovery.found) {
+    // Runtime analysis (orthogonal to scope; off under --copilot-context).
+    let result: ScanResult | undefined;
+    if (!opts.copilotContext) {
+      const discovery = discoverSources(opts.inputType, home);
+      if (discovery.found) {
+        result = scan(discovery, { sinceMs, session: opts.session });
+      } else {
+        process.stderr.write(
+          `tg inspect: no ${opts.inputType} session sources found (this is normal if the host stores transcripts elsewhere).\n`,
+        );
+      }
+    }
+
+    // Static-context analysis (always runs, scope-aware).
+    const sc = runStaticContext({ scopes, surface: opts.surface, home, cwd });
+    const staticFindings: ContextFinding[] = sc.result.findings;
+
+    // Exit 2 only when BOTH runtime and static context are empty (goal exit table).
+    const runtimeEmpty = !result || result.tool_event_count === 0;
+    const staticEmpty = sc.result.files_scanned === 0;
+    if (runtimeEmpty && staticEmpty) {
       process.stderr.write(
-        `tg inspect: no ${opts.inputType} session sources found (this is normal if the host stores transcripts elsewhere).\n`,
+        "tg inspect: no major source analyzable (no runtime session events and no static-context files found).\n",
       );
       return 2;
     }
 
-    const result = scan(discovery, { sinceMs, session: opts.session });
-    const repoContext = opts.repoContext ? gatherRepoContext(process.cwd()) : undefined;
+    const rtFindings = runtimeFindings(result);
+    const unifiedFindings: Finding[] = [...rtFindings, ...staticFindings];
+
+    // Persist the per-scope unified Finding[] buckets that `tg optimize context`
+    // consumes (ADR 0003). Runtime findings are written into each produced bucket.
+    persistScopeBuckets({
+      scopes,
+      staticFindings,
+      runtimeFindings: rtFindings,
+      generatedAt: new Date(nowMs).toISOString(),
+      files_scanned: sc.result.files_scanned,
+      cwd,
+    });
+
+    const repoContext = opts.repoContext ? gatherRepoContext(cwd) : undefined;
 
     const adviceRequested = opts.advice || opts.writeAdvice;
     let findings: AdviceFinding[] = [];
-    if (adviceRequested) {
+    if (adviceRequested && result) {
       findings = buildAdvice(result, {
         minConfidence: opts.minConfidence,
         minOccurrences: opts.minOccurrences,
@@ -146,14 +235,22 @@ export function runInspect(argv: string[], nowMs: number = Date.now(), home: str
     }
 
     const report = buildReport(
-      result,
+      result ?? emptyScanResult(opts.inputType),
       new Date(nowMs).toISOString(),
       repoContext,
       adviceRequested ? findings : undefined,
     );
+    report.static_context = { files_scanned: sc.result.files_scanned, findings: staticFindings };
+    report.findings = unifiedFindings;
 
     const reportJson = renderJson(report);
-    const reportMarkdown = renderMarkdown(report);
+    const staticSection = renderStaticContextSection({
+      files_scanned: sc.result.files_scanned,
+      findings: staticFindings,
+    });
+    const reportMarkdown = opts.copilotContext
+      ? `# Token Guard Inspect\n\n${staticSection}`
+      : `${renderMarkdown(report)}\n${staticSection}`;
 
     // Persist (stable names) before printing the confirmation.
     if (opts.writeAdvice) {
@@ -166,8 +263,9 @@ export function runInspect(argv: string[], nowMs: number = Date.now(), home: str
     }
 
     // Telemetry export: allow-listed aggregates only. No endpoint in the generic
-    // package → write locally + warn; never fail the run (spec).
-    if (opts.telemetryExport) {
+    // package → write locally + warn; never fail the run (spec). Runtime-derived,
+    // so skipped under --copilot-context where no runtime scan ran.
+    if (opts.telemetryExport && result) {
       const telemetry = buildTelemetry(result, findings, Math.max(0, Date.now() - startMs), randomUUID());
       const path = writeTelemetryExport(`${JSON.stringify(telemetry, null, 2)}\n`);
       process.stderr.write(`tg inspect: no telemetry endpoint configured; wrote local export: ${path}\n`);
@@ -184,9 +282,32 @@ export function runInspect(argv: string[], nowMs: number = Date.now(), home: str
       }
     }
 
+    // --fail-on: opt-in non-zero exit (4, never reuses 2) when any finding is at
+    // or above the requested severity. Findings never change the exit code on
+    // their own — inspect is diagnostic, not enforcement.
+    if (opts.failOn) {
+      const threshold = SEVERITY_RANK[opts.failOn];
+      const hit = unifiedFindings.some((f) => SEVERITY_RANK[f.severity] >= threshold);
+      if (hit) return 4;
+    }
+
     return 0;
   } catch (error) {
     process.stderr.write(`tg inspect: internal error: ${error instanceof Error ? error.message : String(error)}\n`);
     return 3;
   }
+}
+
+// A zero-event ScanResult so the runtime report renders cleanly under
+// --copilot-context (no runtime scan) without special-casing every field.
+function emptyScanResult(inputType: InputType): ScanResult {
+  return {
+    inputType,
+    session_inventory: 0,
+    transcript_coverage: 0,
+    tool_event_count: 0,
+    unknown_time_records: 0,
+    coverage_errors: 0,
+    opportunities: [],
+  };
 }

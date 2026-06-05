@@ -2,9 +2,11 @@
 // Markdown is the default; `--json` switches to JSON. Neither carries raw evidence
 // — only sanitized labels, lengths, and counts.
 
+import type { ContextFinding } from "../context/types.js";
 import type { AdviceFinding } from "./advice.js";
 import type { RepoContext } from "./repoContext.js";
 import type { Opportunity, ScanResult } from "./scan.js";
+import type { Finding } from "./unified.js";
 
 export type Report = {
   schemaVersion: "1";
@@ -18,6 +20,10 @@ export type Report = {
   opportunities: Opportunity[];
   repo_context?: RepoContext;
   advice?: AdviceFinding[];
+  // Static-context analyzer output (goal): the source = static_context slice of
+  // the unified report, plus the merged unified Finding[].
+  static_context?: { files_scanned: number; findings: ContextFinding[] };
+  findings?: Finding[];
 };
 
 export function buildReport(

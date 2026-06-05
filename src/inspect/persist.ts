@@ -2,13 +2,70 @@
 // Writes to the user-level `~/.token-guard/advice/` with STABLE file names that
 // overwrite prior files (no timestamped trend snapshots). Never the repo.
 
-import { mkdirSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 
 import { tokenGuardHome } from "../core/dataDir.js";
+import type { Finding } from "./unified.js";
 
 export function adviceDir(): string {
   return join(tokenGuardHome(), "advice");
+}
+
+// ── Scope-bucket inspect reports (ADR 0003, goal "Data model") ────────────────
+// The unified Finding[] report is persisted per scope so global findings are
+// never duplicated across projects or left stale. `tg optimize context` reads
+// the matching bucket.
+
+export type ScopeBucket =
+  | { scope: "user" }
+  | { scope: "project"; fingerprint: string };
+
+export type InspectBucketReport = {
+  schemaVersion: "1";
+  generatedAt: string;
+  scope: "user" | "project";
+  fingerprint?: string;
+  files_scanned: number;
+  findings: Finding[];
+};
+
+export function userContextInspectDir(): string {
+  return join(tokenGuardHome(), "user-context", "inspect");
+}
+
+export function projectInspectDir(fingerprint: string): string {
+  // fingerprint is "repo:<hash>"; strip the prefix for a clean path segment.
+  const hash = fingerprint.replace(/^repo:/, "");
+  return join(tokenGuardHome(), "projects", hash, "inspect");
+}
+
+export function inspectBucketDir(bucket: ScopeBucket): string {
+  return bucket.scope === "user"
+    ? userContextInspectDir()
+    : projectInspectDir(bucket.fingerprint);
+}
+
+export function inspectBucketPath(bucket: ScopeBucket): string {
+  return join(inspectBucketDir(bucket), "latest.json");
+}
+
+export function writeInspectBucket(bucket: ScopeBucket, report: InspectBucketReport): string {
+  const dir = inspectBucketDir(bucket);
+  mkdirSync(dir, { recursive: true });
+  const path = join(dir, "latest.json");
+  writeFileSync(path, `${JSON.stringify(report, null, 2)}\n`);
+  return path;
+}
+
+export function readInspectBucket(bucket: ScopeBucket): InspectBucketReport | undefined {
+  const path = inspectBucketPath(bucket);
+  if (!existsSync(path)) return undefined;
+  try {
+    return JSON.parse(readFileSync(path, "utf8")) as InspectBucketReport;
+  } catch {
+    return undefined;
+  }
 }
 
 export type AdviceArtifacts = {
