@@ -2,27 +2,168 @@ import { describe, expect, test } from "vitest";
 
 import { expectRtkParity, filterRtkOutput } from "../../helpers/rtkCommandHarness.js";
 
-describe("RTK pipe behavior", () => {
-  test("keeps command failure signal while trimming noisy progress", async () => {
-    const result = await filterRtkOutput(
-      ["pipe", "cargo", "test"],
-      ["Compiling crate v0.1.0", "test result: FAILED. 1 passed; 1 failed", "error: test failed"].join("\n"),
-      1,
-    );
+// RTK oracle: rtk/src/cmds/system/pipe_cmd.rs. `rtk pipe [filter]` runs a named or
+// auto-detected filter over arbitrary piped output. In tg the command is
+// `pipe <cmd> <args...>` and the filtered content is raw.stdout. Here args[0] is
+// the explicit RTK filter name (resolve_filter), and absent/unknown names fall to
+// auto_detect_filter. These tests mirror the locally-defined wrappers in
+// pipe_cmd.rs (grep_wrapper, find_wrapper, auto_detect_filter, identity_filter)
+// and the two *_token_savings invariants.
 
-    expect(result.output).toContain("FAILED");
-    expect(result.output).toContain("1 failed");
-    expect(result.output).not.toMatch(/Compiling crate/);
+// Build a realistic grep/rg dump: `file:line:content` across many files/lines.
+function grepDump(fileCount: number, linesPerFile: number): string {
+  let input = "";
+  for (let fileIdx = 1; fileIdx <= fileCount; fileIdx += 1) {
+    for (let line = 1; line <= linesPerFile; line += 1) {
+      input += `src/cmds/module${fileIdx}/handler.rs:${line * 10}:    let result = process_request(ctx, &payload).await?;\n`;
+    }
+  }
+  return input;
+}
+
+// Build a realistic find/fd dump: file paths across many dirs.
+function findDump(dirCount: number, filesPerDir: number): string {
+  let input = "";
+  for (let dir = 1; dir <= dirCount; dir += 1) {
+    for (let file = 1; file <= filesPerDir; file += 1) {
+      input += `./src/components/feature${dir}/sub_${dir}/component_${file}.tsx\n`;
+    }
+  }
+  return input;
+}
+
+describe("RTK pipe behavior", () => {
+  // RTK: pipe_cmd.rs::test_resolve_filter_grep + grep_wrapper. Named `grep` filter
+  // groups matches by file under a "N matches in MF:" header.
+  test("grep filter groups matches by file with a header", async () => {
+    const result = await filterRtkOutput(["pipe", "grep"], grepDump(3, 4));
 
     expectRtkParity(result, {
       critical: [
-        "FAILED",
-        "1 failed",
+        "12 matches in 3F:", // 3 files * 4 lines
+        "[file] src/cmds/module1/handler.rs (4):",
+        "  10: let result = process_request(ctx, &payload).await?;",
       ],
-      forbidden: [
-        /Compiling crate/,
+    });
+  });
+
+  // RTK: pipe_cmd.rs::test_resolve_filter_rg_alias — `rg` resolves to grep_wrapper.
+  test("rg alias resolves to the same grep grouping", async () => {
+    const result = await filterRtkOutput(["pipe", "rg"], grepDump(2, 3));
+
+    expectRtkParity(result, {
+      critical: ["6 matches in 2F:", "[file] src/cmds/module1/handler.rs (3):"],
+    });
+  });
+
+  // RTK: grep_wrapper caps shown matches at MAX_PIPE_MATCHES (CAP_WARNINGS = 10)
+  // and emits a "+N" overflow marker for the remainder.
+  test("grep filter caps matches per file at 10 with a +N overflow marker", async () => {
+    // 1 file, 25 matches -> 10 shown + "+15".
+    const result = await filterRtkOutput(["pipe", "grep"], grepDump(1, 25));
+
+    expectRtkParity(result, {
+      critical: ["25 matches in 1F:", "[file] src/cmds/module1/handler.rs (25):", "+15"],
+    });
+    // Only 10 of the 25 match lines are rendered (the rest collapsed into "+15").
+    const renderedMatches = result.output.split("\n").filter((l) => /^\s{2,}\d+: /.test(l)).length;
+    expect(renderedMatches).toBe(10);
+  });
+
+  // RTK: pipe_cmd.rs::test_resolve_filter_find + find_wrapper. Named `find` filter
+  // groups paths by directory under a "N files in M dirs:" header.
+  test("find filter groups paths by directory with a header", async () => {
+    const result = await filterRtkOutput(["pipe", "find"], findDump(2, 3));
+
+    expectRtkParity(result, {
+      critical: [
+        "6 files in 2 dirs:", // 2 dirs * 3 files
+        "./src/components/feature1/sub_1/  (3)",
+        "component_1.tsx",
       ],
-      maxOutputChars: 90,
+    });
+  });
+
+  // RTK: pipe_cmd.rs::test_resolve_filter_fd_alias — `fd` resolves to find_wrapper.
+  test("fd alias resolves to the same find grouping", async () => {
+    const result = await filterRtkOutput(["pipe", "fd"], findDump(3, 2));
+
+    expectRtkParity(result, {
+      critical: ["6 files in 3 dirs:", "./src/components/feature1/sub_1/  (2)"],
+    });
+  });
+
+  // RTK: find_wrapper caps files per dir at MAX_PIPE_FILES (CAP_WARNINGS = 10) with
+  // a "+N" marker, and caps dirs at MAX_PIPE_DIRS (CAP_LIST = 20) with a
+  // "+N more dirs" trailer.
+  test("find filter applies file and dir caps with overflow markers", async () => {
+    // 25 dirs * 14 files: dir cap 20 (-> "+5 more dirs"), file cap 10 (-> "+4").
+    const result = await filterRtkOutput(["pipe", "find"], findDump(25, 14));
+
+    expectRtkParity(result, {
+      critical: ["350 files in 25 dirs:", "+4", "+5 more dirs"],
+    });
+    // Exactly 20 dir headers rendered (MAX_PIPE_DIRS), not all 25.
+    const dirHeaders = result.output.split("\n").filter((l) => /^\.\/src.*\(\d+\)$/.test(l)).length;
+    expect(dirHeaders).toBe(20);
+  });
+
+  // RTK: pipe_cmd.rs::test_auto_detect_grep_format — with no filter name, content
+  // sniffing routes grep-like `file:number:content` input to grep_wrapper.
+  test("auto-detect routes grep-shaped input to the grep filter", async () => {
+    const result = await filterRtkOutput(["pipe"], grepDump(3, 5));
+
+    expectRtkParity(result, {
+      critical: ["15 matches in 3F:", "[file] src/cmds/module1/handler.rs (5):"],
+    });
+  });
+
+  // RTK: pipe_cmd.rs::test_auto_detect_find_paths / _absolute_paths — auto-detect
+  // routes path-only input (>= 3 non-empty lines) to find_wrapper. Paths share a
+  // deep common dir so grouping (one dir header) genuinely shrinks the dump.
+  test("auto-detect routes path-only input to the find filter", async () => {
+    const input =
+      "./src/components/widgets/main.rs\n" +
+      "./src/components/widgets/lib.rs\n" +
+      "./src/components/widgets/mod.rs\n" +
+      "./src/components/widgets/util.rs\n" +
+      "./src/components/widgets/test.rs\n";
+    const result = await filterRtkOutput(["pipe"], input);
+
+    expectRtkParity(result, {
+      critical: ["5 files in 1 dirs:", "./src/components/widgets/  (5)"],
+      forbidden: [/matches in/],
+    });
+  });
+
+  // RTK: pipe_cmd.rs::test_auto_detect_find_not_triggered_for_grep_output — input
+  // with colons (grep shape) must NOT be treated as find output.
+  test("auto-detect does not treat grep output as find output", async () => {
+    const result = await filterRtkOutput(["pipe"], grepDump(1, 12));
+
+    expect(result.output).not.toMatch(/files in/);
+    expect(result.output).toContain("matches in");
+  });
+
+  // RTK: pipe_cmd.rs::test_grep_wrapper_token_savings — 200 matches across 10 files
+  // (20/file -> 10 shown + truncation) must yield >= 40% whitespace-token savings.
+  test("grep filter meets the RTK token-savings floor (>= 40%)", async () => {
+    const result = await filterRtkOutput(["pipe", "grep"], grepDump(10, 20));
+
+    expectRtkParity(result, {
+      critical: ["200 matches in 10F:"],
+      minTokenSavingsRatio: 0.4,
+    });
+  });
+
+  // RTK: pipe_cmd.rs::test_find_wrapper_token_savings — 510 files across 30 dirs
+  // (20-dir cap + 10-file cap both trigger) must yield >= 40% token savings.
+  test("find filter meets the RTK token-savings floor (>= 40%)", async () => {
+    const result = await filterRtkOutput(["pipe", "find"], findDump(30, 17));
+
+    expectRtkParity(result, {
+      critical: ["510 files in 30 dirs:", "+10 more dirs"],
+      minTokenSavingsRatio: 0.4,
     });
   });
 });

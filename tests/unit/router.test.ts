@@ -14,13 +14,15 @@ function command(original: string[]): ParsedCommand {
 
 describe("routeCommand", () => {
   test.each([
-    [["cat", "package.json"], "read-like"],
+    // cat/ls/tree route to dedicated RTK ports (system/read.rs, ls.rs, tree.rs);
+    // read/type/less/dir/find stay on the generic read-like/list-like handlers.
+    [["cat", "package.json"], "read"],
     [["read", "package.json"], "read-like"],
     [["type", "package.json"], "read-like"],
-    [["ls", "."], "list-like"],
+    [["ls", "."], "ls"],
     [["dir", "."], "list-like"],
     [["find", "."], "list-like"],
-    [["tree", "."], "list-like"],
+    [["tree", "."], "tree"],
     [["rg", "TODO", "."], "search-like"],
     [["grep", "TODO", "."], "search-like"],
     [["diff", "old.ts", "new.ts"], "diff"],
@@ -43,6 +45,13 @@ describe("routeCommand", () => {
     [["eslint", "."], "eslint"],
     [["tsc", "--noEmit"], "tsc"],
     [["npm", "list"], "package-list"],
+    // `npm ls` is the `list` alias; `pnpm -r list` keeps a flag before the subcommand.
+    [["npm", "ls", "--depth=0"], "package-list"],
+    [["pnpm", "-r", "list"], "package-list"],
+    // "list"/"ls" as a VALUE (package or script name) must NOT route to package-list.
+    [["npm", "install", "ls"], "npm"],
+    [["npm", "run", "ls"], "npm"],
+    [["npm", "install", "list"], "npm"],
     [["mvn", "-q", "test"], "maven"],
     [["gradle", "test"], "gradle"],
     [["./gradlew", "test"], "gradle"],

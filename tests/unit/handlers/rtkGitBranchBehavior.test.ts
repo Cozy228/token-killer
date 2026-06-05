@@ -29,10 +29,12 @@ describe("RTK git branch behavior", () => {
       forbidden: [
         /remotes\/origin\/main/,
       ],
+      // RTK: filter_branch_output — locals indented, remote-only branches grouped.
       exact: [
         "* main",
-        "develop",
-        "release/v2",
+        "  develop",
+        "  remote-only (1):",
+        "    release/v2",
       ].join("\n"),
     });
   });
