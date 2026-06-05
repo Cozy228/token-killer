@@ -14,6 +14,7 @@ export default defineConfig({
   test: {
     include: [
       "tests/unit/handlers/fixtureContent.test.ts",
+      "tests/unit/handlers/curlProductBehavior.test.ts",
       "tests/integration/**/*.test.ts",
       "tests/unit/parse.test.ts",
       "tests/unit/pipeline.test.ts",

@@ -310,7 +310,7 @@ tg config init
 
 > **Status: planned** — 本节描述目标行为；实现前以 §1 command proxy 为准。
 
-Hook 是 Token Guard 在 Copilot 工具调用链中的拦截点。它是 `tg <command>` 之外的运行时适配层：命令代理继续覆盖 shell/PowerShell/terminal 命令，hook runtime 则处理 Copilot tool event，包括 VS Code direct tools 和 terminal tools。
+Hook 是 Token Guard 在 Copilot 工具调用链中的拦截点。它是 `tg <command>` 之外的运行时适配层：命令代理继续覆盖 shell/PowerShell/terminal 命令，hook runtime 则处理 Copilot tool event，包括 VS Code direct tools 和 terminal tools。VS Code transcript 里 direct tools 往往不是补充路径，而是和 `run_in_terminal` 并列的主入口；Layer 2 必须把 `read_file`、`grep_search`、`list_dir`、`file_search`、`fetch_webpage`、GitHub MCP 等作为一等治理对象。
 
 Hook runtime 通过 stdin JSON 与宿主通信，自动识别 Copilot CLI camelCase payload 和 VS Code Copilot Chat snake_case payload。输入首先被归一化为 tool event，再按工具类型分流：
 
@@ -320,7 +320,8 @@ Hook runtime 通过 stdin JSON 与宿主通信，自动识别 Copilot CLI camelC
 | Direct read | `read_file`、`view` | 检查路径、大小、目录，阻断依赖目录、构建产物、lockfile 等高成本读取 | 对成功读取结果做 filter，返回 `modifiedResult` |
 | Direct search | `grep_search`、`rg`、`grep` | 检查搜索范围，提示限定路径或忽略生成目录 | 压缩匹配结果，保留所有关键匹配 |
 | Direct list | `list_dir`、`glob`、`file_search` | 检查路径和深度，阻断依赖目录和构建产物 | 压缩目录/文件列表 |
-| Edit | `apply_patch`、`edit`、`replace_string_in_file`、`create_file` | 通常放行，可做路径策略 | 记录长度和结果；不对补丁内容做破坏性压缩 |
+| Direct web / MCP | `fetch_webpage`、GitHub MCP file/search tools | 检查 URL、repo scope、query 宽度和输出上限 | heading/result grouping + raw recovery；不 telemetry 化 raw content |
+| Edit / mutation | `apply_patch`、`edit`、`replace_string_in_file`、`create_file`、mutating shell commands | 通常不 rewrite；可做路径策略、dry-run/confirmation 提示 | 记录输入/输出长度和结果；不对补丁内容做破坏性压缩 |
 | Unknown | 未识别工具 | fail-open | fail-open |
 
 Direct tools 不伪装成 shell command，也不走 `tg cat` / `tg rg` rewrite。它们通过 pretool policy 和 posttool result filtering 适配；terminal tools 才进入 command rewrite registry 并复用现有 command proxy pipeline。
@@ -334,8 +335,10 @@ Direct tool projection strategies:
 | Read / view | Range-aware output, outline metadata, binary/large-file policy; critical content retained or raw passthrough |
 | Search / grep | Group by file, count matches, retain all critical matches; narrow scope suggestions before truncation |
 | List / glob | Directory grouping, filtered generated/dependency paths, full retained path set when possible |
+| Web / GitHub MCP | Heading/link/result grouping, query scope hints, raw local recovery; never export raw fetched content by default |
 | Diagnostics | Group by file, severity and code; preserve all actionable diagnostics |
 | Agent / subagent result | Final result first; routine trace only when host explicitly supports recoverable raw pointer |
+| Edit / mutation | Measure tool input/output size and surface safety hints; do not rewrite commands or hide patch content |
 
 ### 3.1 Hook 类型
 
@@ -360,6 +363,8 @@ tg hook prompt            # prompt 提交前检查
 - 输出四种决策：`allow`（放行）、`warn`（附改写建议）、`deny`（附原因）、`rewrite`（改写后的 command）。
 - 对 terminal tools 中的 `rg`、`grep`、`cat`、`git status`、`npm test` 等给出 `tg` wrapper 改写。
 - 对 direct read/search/list tools 做 policy 判断，不把它们改写成 shell command。
+- 对 web fetch / GitHub MCP 结果做 source-aware projection，按 total output 和 max output 识别高成本来源。
+- 对 edit/create/apply_patch 和 mutating shell commands 默认不 rewrite；只做路径策略、dry-run/confirmation 建议和长度记录。
 - 对 `docker logs`、`kubectl logs` 按 mode 给出 suggest 或 deny。
 - 拒绝读取 `node_modules`、`dist`、`build`、`target`、`coverage`、`.git` 内文件、lockfile。
 
@@ -730,10 +735,12 @@ Disallowed fields:
 
 ## 9. Inspect — Copilot Session Scanning
 
-`tg inspect` 扫描 Copilot 会话历史和本地工具调用证据，找出终端命令中可用 `tg <command>` 替代的遗漏机会，以及 direct tool 中读/搜/列目录操作本应由 hook runtime 治理的高成本模式。
+`tg inspect` 扫描 Copilot 会话历史和本地工具调用证据，找出终端命令中可用 `tg <command>` 替代的遗漏机会，以及 direct tool 中读/搜/列目录/web/MCP 操作本应由 hook runtime 治理的高成本模式。
 
 ```bash
-tg inspect                    # 扫描本地 Copilot 会话
+tg inspect                    # 默认 input type: vscode
+tg inspect --input-type vscode
+tg inspect --input-type copilot-cli
 tg inspect --since 7d         # 仅扫描最近 7 天
 tg inspect --session <id>     # 扫描指定 session
 tg inspect --json             # JSON 格式输出
@@ -742,7 +749,25 @@ tg inspect --write-advice     # 写入用户级建议文件
 tg inspect --telemetry-export # 显式导出匿名聚合 telemetry
 ```
 
-扫描源包括 Copilot session-state、VS Code workspaceStorage 和 Copilot CLI 历史。扫描为纯只读操作，不修改任何文件，不记录命令参数值、搜索词或文件内容原文。
+默认 input type 是 `vscode`。输入类型按用户可理解的 Copilot surface 命名；workspaceStorage、session-state 等只是内部扫描来源。不同 input type 的 tool model 不同，不能混成一个命令入口：
+
+| Input type | Internal sources | Primary execution shape | Inspect handling |
+|------------|------------------|-------------------------|------------------|
+| `vscode` (default) | Stable VS Code `workspaceStorage` chat sessions and Copilot transcripts | `run_in_terminal` for shell, direct tools for read/search/list/edit/web | Classify terminal and direct tools separately; do not infer a PowerShell layer |
+| `copilot-cli` | Copilot CLI session-state/history stores | `powershell` or CLI-specific command-bearing tool events | Extract concrete command families from command-bearing payloads |
+
+扫描为纯只读操作，不修改任何文件，不记录命令参数值、搜索词或文件内容原文。
+
+Inspect reports must rank opportunities by both frequency and output volume. Minimum columns:
+
+| Metric | Why it matters |
+|--------|----------------|
+| `count` / `share` | Identifies common workflow surfaces |
+| `total_output_chars` or estimated tokens | Captures high-cost tools even when frequency is low |
+| `avg_output_chars` | Highlights consistently noisy tools |
+| `max_output_chars` | Finds outlier blowups that need guardrails |
+| `total_input_chars` / `max_input_chars` | Captures large edit/create/apply_patch payloads and prompt-side waste |
+| `success_count` / `failure_count` | Separates noisy failures from successful high-output tools |
 
 > **完整 inspect 规范见 [`docs/inspect-v1-design.md`](inspect-v1-design.md)**，包含 evidence model、分类枚举、推荐模型、raw evidence policy、telemetry 传输合约、exit code 表及 VS Code coverage 语义等细节。
 
@@ -770,11 +795,14 @@ tg inspect --min-occurrences 5         # 最低重复次数阈值
 | Direct tool 读依赖目录 | `read_file` / `view` 路径包含 `node_modules/` | hook pretool deny |
 | Direct tool 读大文件 | `read_file` / `view` 输出长度超过阈值 | hook posttool filter，必要时建议 targeted read |
 | Direct tool 全仓搜索 | `grep_search` 无 path 或路径为 repo root | hook pretool warn，建议限定 `src/` 或 `tests/` |
+| Direct web / MCP 高输出 | `fetch_webpage`、GitHub MCP file/search tool 输出过长或 query 过宽 | heading/result projection，建议收窄 URL、repo、path 或 query |
+| 大 tool input payload | `edit`、`apply_patch`、`create_file`、`task` 输入长度超过阈值 | 建议 split patch、引用文件路径或先保存本地 artifact |
 | Terminal 搜索依赖目录 | terminal command 中 `rg`/`grep` 路径包含 `node_modules/` | rewrite/suggest 到 `tg rg` 或 deny |
 | Terminal 读取 lockfile | terminal command 中 `cat package-lock.json` 等 | warn/deny，建议更窄查询 |
 | Terminal 读取构建产物 | terminal command 中 `cat dist/`、`build/`、`target/` | deny 或强烈建议跳过 |
 | Terminal 执行全量测试 | `npm test` / `pnpm test` 无过滤参数 | rewrite/suggest 到 `tg npm test` 只看 failures |
-| 重复执行相同 workflow | 同一 direct tool 或 terminal command 在短时间窗口内出现多次 | 建议缓存结果、收窄范围或使用 tg 减少输出 |
+| Mutating command safety | `git commit`、`git stash`、`Remove-Item`、文件写删等 mutating operation | 不 rewrite；建议 dry-run、status check、confirmation 或更窄路径 |
+| 重复执行相同 workflow | 同一 command family 或 direct tool pattern 在短时间窗口内多次出现 | 建议收窄范围、复用报告或使用 tg；exact command cache 只是辅助建议 |
 
 ### 10.3 输出格式
 
@@ -1002,6 +1030,8 @@ Not allowed:
 - Terminal command：`npm test`、`pnpm test`、`yarn test` → rewrite 到对应 `tg` command。
 - Direct read：`read_file` / `view` 读取依赖目录、构建产物、lockfile → warn 或 deny；成功读取的大输出 → posttool filter。
 - Direct search/list：`grep_search`、`list_dir`、`glob`、`file_search` 访问 repo root、依赖目录或构建产物 → warn/deny；成功结果 → posttool compact。
+- Direct web / MCP：`fetch_webpage`、GitHub MCP file/search tools 输出过长 → posttool projection + raw recovery；pretool 建议收窄 URL、repo、path 或 query。
+- Edit / mutation：`apply_patch`、`edit`、`create_file`、`git commit`、`git stash`、删除/覆盖命令 → 默认不 rewrite；只做长度统计、路径策略和 dry-run/confirmation 建议。
 
 ### 13.2 Layer 3: 提高 model input cacheability
 
@@ -1024,17 +1054,19 @@ Cache-hit practices:
 
 实现边界：
 
-- 新增 content-addressed output cache：`~/.token-guard/projects/<fingerprint>/cache/outputs/<hash>.json`。
-- cache key 由 `cwd`、command、args、git HEAD、相关文件 fingerprint 构成。
-- 重复命令在 fingerprint 未变时返回 cache summary，并在 history 中记录 `cache_hit`、`cache_key`、`cacheable`。
+- 优先实现 input diagnostics：统计 prompt prefix churn、stable/volatile ordering、duplicate guidance bytes、tool input payload size。
 - 新增 deterministic project context：`~/.token-guard/projects/<fingerprint>/context.md` 与 `context.json`。
 - 默认输出去 volatile：timestamp、duration、临时路径、随机 raw 文件名只在 `--verbose` 出现。
+- Content-addressed output cache 是辅助能力，不是 Layer 3 的主 ROI：会话历史显示 exact command 一次性比例高，cache key 由 `cwd`、command family、args shape、git HEAD 和相关文件 fingerprint 构成时才考虑复用。
+- 重复命令在 fingerprint 未变时可以返回 cache summary，并在 history 中记录 `cache_hit`、`cache_key`、`cacheable`；不得用 cache summary 替代 fresh evidence。
 
 报告后续增加：
 
 - cacheable commands。
 - cache hits。
 - repeated output avoided tokens。
+- tool input chars by family。
+- max tool input chars。
 - stable chars / volatile chars。
 - raw reuse hits。
 - cacheable prefix ratio。
@@ -1053,6 +1085,7 @@ Cache-hit practices:
 | False cache confidence | Semantic similarity 看起来像 cache hit，但事实已变化 | Semantic similarity 只做 recommendation；fresh tool output 仍是事实源 |
 | Adapter mismatch | Shell proxy 覆盖不到 direct tool results | 区分 shell、terminal tool、direct tool、prompt context；按 source family 统计覆盖率 |
 | Prompt cache churn | Volatile 内容出现在 prompt 前缀，破坏 provider input cache hit | Stable zone first；volatile zone last；canonical formatting；diagnose prefix churn |
+| Mutating command rewrite | 把 `git commit`、`git stash`、删除/覆盖命令等错误改写或隐藏输出，可能改变用户状态或掩盖风险 | Mutating operations 默认不 rewrite；只做 dry-run/status/confirmation 建议和路径/长度记录 |
 
 ---
 

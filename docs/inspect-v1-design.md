@@ -54,7 +54,8 @@ tg inspect
 tg inspect --json
 tg inspect --since 7d
 tg inspect --session <id>
-tg inspect --source-profile local-agent
+tg inspect --input-type vscode
+tg inspect --input-type copilot-cli
 tg inspect --repo-context
 tg inspect --include-raw
 tg inspect --write-advice
@@ -72,22 +73,23 @@ Inspect does not support:
 --source-path
 ```
 
-Path-based source scans are out of scope because they bypass source-profile discovery and make coverage semantics harder to explain.
+Path-based source scans are out of scope because they bypass input-type discovery and make coverage semantics harder to explain.
 
-## Default Source Profile
+## Default Input Type
 
-The default source profile is:
+The default input type is:
 
 ```text
-local-agent
+vscode
 ```
 
 It includes:
 
-1. Copilot CLI session storage
-2. Stable VS Code Copilot workspace storage
+1. Stable VS Code Copilot workspace storage
+2. `chatSessions/*.jsonl` for session inventory
+3. `GitHub.copilot-chat/transcripts/*.jsonl` for analyzable tool workflow events
 
-It excludes repository context by default.
+It excludes Copilot CLI storage, cloud audit logs, and repository context by default.
 
 Missing sources are normal. If VS Code transcript storage is absent, that is reported as not-found, not as an error. A coverage error only occurs when a discovered source or record exists but cannot be read or parsed.
 
@@ -187,7 +189,7 @@ Session inventory is the count of discovered chat session records. Transcript co
 
 These numbers must not be collapsed into one count. A report that says "162 VS Code sessions analyzed" when only 40 transcripts contain tool events is misleading.
 
-Inspect scans Stable VS Code storage by default. Insiders, Codium, and other VS Code-like storage roots are out of scope until explicitly added to the source-profile model.
+Inspect scans Stable VS Code storage by default. Insiders, Codium, and other VS Code-like storage roots are out of scope until explicitly added to the input-type model.
 
 ## Output Model
 
@@ -361,7 +363,7 @@ Allowed fields:
 
 ```jsonc
 {
-  "sourceProfile": "local-agent",
+  "inputType": "vscode",
   "defaultSince": "7d",
   "telemetryExport": false
 }
