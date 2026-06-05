@@ -41,10 +41,19 @@ function toCommand(tokens: string[]): ParsedCommand | undefined {
   };
 }
 
+// Reserved subcommands intercepted BEFORE argv[0] is treated as a program, so a
+// shimmed `shim`/`init` program name can never reach the command router.
+const RESERVED_SUBCOMMANDS = new Set<ParsedArgv["mode"]>(["shim", "init", "hook", "inspect"]);
+
 export function parseArgv(argv: string[]): ParsedArgv {
   const options = defaultOptions();
   let mode: ParsedArgv["mode"] = "command";
   let index = 0;
+
+  const first = argv[0];
+  if (first !== undefined && RESERVED_SUBCOMMANDS.has(first as ParsedArgv["mode"])) {
+    return { mode: first as ParsedArgv["mode"], options, subArgs: argv.slice(1) };
+  }
 
   while (index < argv.length) {
     const token = argv[index];

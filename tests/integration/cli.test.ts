@@ -617,12 +617,15 @@ describe("Error Handling", () => {
   });
 
   test("preserves stderr from failed commands", () => {
+    // `node` is a generic command (no specific handler) → passthrough with
+    // inherited stdio, so stderr stays on stderr (stream separation preserved)
+    // rather than being captured and reprinted to stdout.
     const result = runTg(
       [process.execPath, "-e", "console.error('error msg'); process.exit(1)"],
       repoRoot,
     );
     expect(result.status).toBe(1);
-    expect(result.stdout).toContain("error msg");
+    expect(result.stderr).toContain("error msg");
   });
 });
 
