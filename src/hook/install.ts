@@ -13,8 +13,25 @@
 import { existsSync, mkdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { homedir } from "node:os";
 import { dirname, join } from "node:path";
+import { fileURLToPath } from "node:url";
 
 const CONFIG_FILENAME = "tk-rewrite.json";
+
+// ADR 0005 §5 / audit #13: the hook config must NOT hardcode a bare `tk hook
+// copilot`. A bare `tk` is PATH-dependent and fails on Windows PowerShell with
+// CommandNotFoundException (the spike only worked with an absolute node path), so a
+// hook installed there is inert. Resolve the absolute node executable + the running
+// cli.js at install time instead. `process.argv[1]` is the script node executed for
+// `tk init`; fall back to this module's own bundled path.
+function quoteArg(p: string): string {
+  return /\s/.test(p) ? `"${p}"` : p;
+}
+
+export function resolveHookCommand(): string {
+  const node = process.execPath;
+  const cli = process.argv[1] ?? fileURLToPath(import.meta.url);
+  return `${quoteArg(node)} ${quoteArg(cli)} hook copilot`;
+}
 
 // Marker proving the file is ours (recoverable/marker-based). Sits beside `hooks`;
 // the host ignores unknown top-level keys.
@@ -31,11 +48,11 @@ export type ConfigLocation = { project: boolean; home?: string; cwd?: string };
 
 // The config artifact, format verified from `rtk init --copilot`'s
 // `.github/hooks/rtk-rewrite.json` (DESIGN §3.1).
-export function buildCopilotHookConfig(): CopilotHookConfig {
+export function buildCopilotHookConfig(command: string = resolveHookCommand()): CopilotHookConfig {
   return {
     managedBy: MARKER,
     hooks: {
-      PreToolUse: [{ type: "command", command: "tk hook copilot", cwd: ".", timeout: 5 }],
+      PreToolUse: [{ type: "command", command, cwd: ".", timeout: 5 }],
     },
   };
 }

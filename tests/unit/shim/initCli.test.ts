@@ -80,7 +80,8 @@ describe("tk init", () => {
     const cfg = join(home, ".copilot", "hooks", "tk-rewrite.json");
     expect(existsSync(cfg)).toBe(true);
     const parsed = JSON.parse(readFileSync(cfg, "utf8"));
-    expect(parsed.hooks.PreToolUse[0].command).toBe("tk hook copilot");
+    // Audit #13: an absolute node + cli path (not a bare PATH-dependent `tk`).
+    expect(parsed.hooks.PreToolUse[0].command.endsWith("hook copilot")).toBe(true);
   });
 
   test("copilot-cli auto-detected (~/.copilot exists) → hook tier", () => {

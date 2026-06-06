@@ -25,12 +25,21 @@ afterEach(() => {
 });
 
 describe("config artifact (DESIGN §3.1)", () => {
-  test("matches the rtk-verified shape and points at tk hook copilot", () => {
-    const config = buildCopilotHookConfig();
+  test("matches the rtk-verified shape with a fixed command", () => {
+    const config = buildCopilotHookConfig("tk hook copilot");
     expect(config.hooks.PreToolUse).toEqual([
       { type: "command", command: "tk hook copilot", cwd: ".", timeout: 5 },
     ]);
     expect(config.managedBy).toBe("token-killer");
+  });
+
+  // Audit #13 / ADR 0005 §5: the default command resolves an ABSOLUTE node + cli
+  // path (a bare `tk` is inert on Windows PowerShell), still ending in `hook copilot`.
+  test("default command resolves absolute node + cli, not a bare `tk`", () => {
+    const command = buildCopilotHookConfig().hooks.PreToolUse[0]!.command;
+    expect(command.endsWith("hook copilot")).toBe(true);
+    expect(command.startsWith("tk ")).toBe(false);
+    expect(command).toContain(process.execPath);
   });
 });
 
@@ -53,7 +62,7 @@ describe("install / plan / uninstall", () => {
     const plan = installCopilotHookConfig({ project: false, home });
     expect(plan.action).toBe("create");
     const written = JSON.parse(readFileSync(plan.path, "utf8"));
-    expect(written.hooks.PreToolUse[0].command).toBe("tk hook copilot");
+    expect(written.hooks.PreToolUse[0].command.endsWith("hook copilot")).toBe(true);
   });
 
   test("install is idempotent (second run → unchanged)", () => {
