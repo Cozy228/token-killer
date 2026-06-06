@@ -1,32 +1,33 @@
 // `tk gain` — RTK-parity savings analytics (ADR 0004 §4). Cold path, read-only,
 // fail-open: a missing or corrupt store yields an empty section, never a crash.
-// Consumes the pure aggregate.ts helpers and the shared pricing.ts module. Leaves
-// core/report.ts (`tk --report`) untouched.
+// Reads the incremental rollup cache (history.jsonl remains the source of truth).
 
-import {
-  byDay,
-  byMonth,
-  byWeek,
-  failures,
-  lastNDays,
-  summarize,
-  type GainSummary,
-  type TimeBucket,
-} from "./aggregate.js";
 import { randomUUID } from "node:crypto";
 
-import {
-  listProjectHistories,
-  readHistory,
-  readProjectMeta,
-  type HistoryRecord,
-} from "./history.js";
-import { runColdPathTelemetry, type DispatchParams } from "../telemetry/dispatch.js";
+import type { GainSummary, TimeBucket } from "./aggregate.js";
+import { projectFingerprint } from "./dataDir.js";
+import { readProjectMeta } from "./history.js";
 import {
   DEFAULT_INPUT_PRICE_PER_MTOK,
-  estimateSavingsUsd,
+  estimateSavingsUsdFromRollup,
   priceForModel,
 } from "./pricing.js";
+import {
+  allDaysFromRollup,
+  dailyBucketsFromRollup,
+  emptyRollup,
+  ensureProjectRollup,
+  listProjectRollups,
+  mergeRollups,
+  monthBucketsFromRollup,
+  rollupToGainSummary,
+  weekBucketsFromRollup,
+  type MergedRollup,
+  type ProjectRollup,
+  type RollupFailure,
+  type RollupRecent,
+} from "./rollup.js";
+import { runColdPathTelemetry, type DispatchParams } from "../telemetry/dispatch.js";
 
 type Bucketing = "none" | "daily" | "weekly" | "monthly" | "all";
 type Format = "text" | "json" | "csv";
@@ -35,12 +36,18 @@ type GainArgs = {
   user: boolean;
   bucketing: Bucketing;
   graph: boolean;
-  history?: number; // present ⇒ show recent N rows (default 10)
+  history?: number;
   failures: boolean;
   quota: boolean;
-  quotaModel?: string; // -t <model> override
+  quotaModel?: string;
   format: Format;
   error?: string;
+};
+
+type GainContext = {
+  rollup: MergedRollup;
+  perProject: ProjectRollup[];
+  userRollup: MergedRollup;
 };
 
 const SPARK_BLOCKS = "▁▂▃▄▅▆▇█";
@@ -74,7 +81,6 @@ export function parseGainArgs(argv: string[]): GainArgs {
         args.quota = true;
       }
     } else if (token === "--history") {
-      // optional numeric operand; defaults to 10 when absent or non-numeric.
       const value = argv[i + 1];
       if (value !== undefined && /^\d+$/.test(value)) {
         args.history = Number(value);
@@ -96,11 +102,25 @@ export function parseGainArgs(argv: string[]): GainArgs {
   return args;
 }
 
+async function loadGainContext(cwd: string, user: boolean): Promise<GainContext> {
+  try {
+    const allProjects = await listProjectRollups();
+    const userRollup = mergeRollups(allProjects);
+    if (user) {
+      return { rollup: userRollup, perProject: allProjects, userRollup };
+    }
+    const rollup = await ensureProjectRollup(cwd);
+    return { rollup, perProject: [rollup], userRollup };
+  } catch {
+    const empty = emptyRollup(projectFingerprint(cwd));
+    return { rollup: empty, perProject: [], userRollup: empty };
+  }
+}
+
 export async function runGain(
   argv: string[],
   cwd: string = process.cwd(),
   now: Date = new Date(),
-  // Cold-path telemetry trigger; injectable so tests stay deterministic/offline.
   dispatchTelemetry: (params: DispatchParams) => void = runColdPathTelemetry,
 ): Promise<number> {
   const args = parseGainArgs(argv);
@@ -109,77 +129,61 @@ export async function runGain(
     return 1;
   }
 
-  // Fail-open: an unreadable store surfaces as an empty record set, never a throw.
-  let records: HistoryRecord[];
-  try {
-    records = args.user ? await listProjectHistories() : await readHistory(cwd);
-  } catch {
-    records = [];
-  }
+  const ctx = await loadGainContext(cwd, args.user);
 
   if (args.format === "json") {
-    process.stdout.write(`${JSON.stringify(buildGainJson(records, args, now), null, 2)}\n`);
+    process.stdout.write(`${JSON.stringify(buildGainJson(ctx.rollup, args, now), null, 2)}\n`);
   } else if (args.format === "csv") {
-    process.stdout.write(renderCsv(records, args, now));
+    process.stdout.write(renderCsv(ctx.rollup, args, now));
   } else {
-    process.stdout.write(await renderText(records, args, now));
+    process.stdout.write(await renderText(ctx, args, now));
   }
 
-  // Cold-path telemetry (any output mode). ALWAYS user-level, independent of the
-  // gain scope above. Best-effort: never changes the exit code.
   try {
-    const userRecords = args.user ? records : await listProjectHistories();
-    dispatchTelemetry({ records: userRecords, now, runId: randomUUID() });
+    dispatchTelemetry({ rollup: ctx.userRollup, now, runId: randomUUID() });
   } catch {
     // telemetry must never break gain
   }
   return 0;
 }
 
-// ── JSON (ledger ① measured object; the only non-① sibling is the heuristic USD) ──
-
-function buildGainJson(records: HistoryRecord[], args: GainArgs, now: Date): Record<string, unknown> {
-  const summary = summarize(records);
+function buildGainJson(rollup: MergedRollup, args: GainArgs, now: Date): Record<string, unknown> {
+  const summary = rollupToGainSummary(rollup);
   const json: Record<string, unknown> = { ...summary };
 
-  const buckets = bucketsFor(records, args.bucketing, now);
+  const buckets = bucketsFor(rollup, args.bucketing, now);
   if (buckets) json.buckets = buckets;
-  if (args.graph) json.daily_30d = lastNDays(records, 30, now);
+  if (args.graph) json.daily_30d = dailyBucketsFromRollup(rollup, 30, now);
   if (args.history !== undefined) {
-    // command text is local-display-only — never in machine output (privacy).
-    json.history = recentRows(records, args.history).map((r) => ({
+    json.history = recentRows(rollup.recent, args.history).map((r) => ({
       timestamp: r.timestamp,
       handler: r.handler,
       savings_pct: r.savings_pct,
     }));
   }
   if (args.failures) {
-    json.failures = failures(records).map((r) => ({
+    json.failures = rollup.failures.map((r) => ({
       timestamp: r.timestamp,
       handler: r.handler,
-      quality_status: r.quality_status ?? "passed",
+      quality_status: r.quality_status,
       exit_code: r.exit_code,
     }));
   }
-  if (args.quota) json.estimated_savings_usd = quotaObject(records, args.quotaModel);
+  if (args.quota) json.estimated_savings_usd = quotaObject(rollup, args.quotaModel);
   return json;
 }
 
-// Sibling heuristic estimate — NEVER folded into the measured object, never summed
-// with saved_tokens (ADR 0004 §4).
-function quotaObject(records: HistoryRecord[], override?: string) {
+function quotaObject(rollup: MergedRollup, override?: string) {
   return {
     estimate_kind: "heuristic" as const,
-    value_usd: round2(estimateSavingsUsd(records, override)),
+    value_usd: round2(estimateSavingsUsdFromRollup(rollup.saved_tokens_by_model, override)),
     model: override ?? "per_row",
     price_per_mtok: override ? priceForModel(override) : DEFAULT_INPUT_PRICE_PER_MTOK,
   };
 }
 
-// ── CSV ──────────────────────────────────────────────────────────────────────
-
-function renderCsv(records: HistoryRecord[], args: GainArgs, now: Date): string {
-  const buckets = bucketsFor(records, args.bucketing, now);
+function renderCsv(rollup: MergedRollup, args: GainArgs, now: Date): string {
+  const buckets = bucketsFor(rollup, args.bucketing, now);
   if (buckets) {
     return [
       "key,commands,raw_tokens,saved_tokens,savings_pct",
@@ -187,7 +191,7 @@ function renderCsv(records: HistoryRecord[], args: GainArgs, now: Date): string 
       "",
     ].join("\n");
   }
-  const s = summarize(records);
+  const s = rollupToGainSummary(rollup);
   return [
     "commands,raw_tokens,output_tokens,saved_tokens,savings_pct",
     `${s.commands},${s.raw_tokens},${s.output_tokens},${s.saved_tokens},${s.savings_pct}`,
@@ -195,24 +199,24 @@ function renderCsv(records: HistoryRecord[], args: GainArgs, now: Date): string 
   ].join("\n");
 }
 
-// ── Text ─────────────────────────────────────────────────────────────────────
-
-async function renderText(records: HistoryRecord[], args: GainArgs, now: Date): Promise<string> {
-  const summary = summarize(records);
+async function renderText(ctx: GainContext, args: GainArgs, now: Date): Promise<string> {
+  const summary = rollupToGainSummary(ctx.rollup);
   const sections: string[] = [renderSummary(summary, args.user ? "all projects" : "this project")];
 
-  if (args.user) sections.push(await renderPerProject(records));
+  if (args.user) sections.push(await renderPerProject(ctx.perProject));
 
-  const buckets = bucketsFor(records, args.bucketing, now);
+  const buckets = bucketsFor(ctx.rollup, args.bucketing, now);
   if (buckets) sections.push(renderBuckets(args.bucketing, buckets));
 
-  if (args.graph) sections.push(renderGraph(lastNDays(records, 30, now)));
+  if (args.graph) sections.push(renderGraph(dailyBucketsFromRollup(ctx.rollup, 30, now)));
 
-  if (args.history !== undefined) sections.push(renderHistory(recentRows(records, args.history)));
+  if (args.history !== undefined) {
+    sections.push(renderHistory(recentRows(ctx.rollup.recent, args.history)));
+  }
 
-  if (args.failures) sections.push(renderFailures(failures(records)));
+  if (args.failures) sections.push(renderFailures(ctx.rollup.failures));
 
-  if (args.quota) sections.push(renderQuota(records, args.quotaModel));
+  if (args.quota) sections.push(renderQuota(ctx.rollup, args.quotaModel));
 
   return `${sections.join("\n\n")}\n`;
 }
@@ -239,17 +243,11 @@ function renderSummary(s: GainSummary, scope: string): string {
   ].join("\n");
 }
 
-async function renderPerProject(records: HistoryRecord[]): Promise<string> {
-  const groups = new Map<string, HistoryRecord[]>();
-  for (const record of records) {
-    const key = record.project_fingerprint ?? "unknown";
-    const list = groups.get(key) ?? [];
-    list.push(record);
-    groups.set(key, list);
-  }
+async function renderPerProject(projects: ProjectRollup[]): Promise<string> {
   const rows = await Promise.all(
-    [...groups.entries()].map(async ([fingerprint, group]) => {
-      const s = summarize(group);
+    projects.map(async (project) => {
+      const s = rollupToGainSummary(project);
+      const fingerprint = project.project_fingerprint;
       const meta = fingerprint === "unknown" ? undefined : await readProjectMeta(fingerprint);
       const label = meta?.label ?? shortFingerprint(fingerprint);
       return { label, saved: s.saved_tokens, pct: s.savings_pct, commands: s.commands };
@@ -273,22 +271,22 @@ function renderGraph(daily: TimeBucket[]): string {
   return ["Saved tokens — last 30 days:", `  ${sparkline(values)}`].join("\n");
 }
 
-function renderHistory(rows: HistoryRecord[]): string {
-  const lines = rows.map(
-    (r) => `  ${r.timestamp}  ${r.handler}  ${r.savings_pct}%  ${r.command}`,
-  );
+function renderHistory(rows: RollupRecent[]): string {
+  const lines = rows.map((r) => `  ${r.timestamp}  ${r.handler}  ${r.savings_pct}%  ${r.command}`);
   return ["Recent commands:", lines.join("\n") || "  - none"].join("\n");
 }
 
-function renderFailures(rows: HistoryRecord[]): string {
+function renderFailures(rows: RollupFailure[]): string {
   const lines = rows.map(
-    (r) => `  ${r.timestamp}  ${r.handler}  ${r.quality_status ?? "passed"}  exit=${r.exit_code}`,
+    (r) => `  ${r.timestamp}  ${r.handler}  ${r.quality_status}  exit=${r.exit_code}`,
   );
-  return ["Failures (fallback handler or tool failure):", lines.join("\n") || "  - none"].join("\n");
+  return ["Failures (fallback handler or tool failure):", lines.join("\n") || "  - none"].join(
+    "\n",
+  );
 }
 
-function renderQuota(records: HistoryRecord[], override?: string): string {
-  const q = quotaObject(records, override);
+function renderQuota(rollup: MergedRollup, override?: string): string {
+  const q = quotaObject(rollup, override);
   const assumption = override
     ? `model ${override} @ $${q.price_per_mtok}/Mtok`
     : `per-row pricing, default $${DEFAULT_INPUT_PRICE_PER_MTOK}/Mtok where model unknown`;
@@ -298,27 +296,27 @@ function renderQuota(records: HistoryRecord[], override?: string): string {
   ].join("\n");
 }
 
-// ── helpers ───────────────────────────────────────────────────────────────────
-
-function bucketsFor(records: HistoryRecord[], bucketing: Bucketing, now: Date): TimeBucket[] | undefined {
+function bucketsFor(
+  rollup: MergedRollup,
+  bucketing: Bucketing,
+  now: Date,
+): TimeBucket[] | undefined {
   switch (bucketing) {
     case "daily":
-      return lastNDays(records, 30, now);
+      return dailyBucketsFromRollup(rollup, 30, now);
     case "weekly":
-      return byWeek(records);
+      return weekBucketsFromRollup(rollup);
     case "monthly":
-      return byMonth(records);
+      return monthBucketsFromRollup(rollup);
     case "all":
-      return byDay(records);
+      return allDaysFromRollup(rollup);
     default:
       return undefined;
   }
 }
 
-function recentRows(records: HistoryRecord[], n: number): HistoryRecord[] {
-  return [...records]
-    .sort((a, b) => b.timestamp.localeCompare(a.timestamp))
-    .slice(0, n);
+function recentRows(rows: RollupRecent[], n: number): RollupRecent[] {
+  return rows.slice(0, n);
 }
 
 function sparkline(values: number[]): string {

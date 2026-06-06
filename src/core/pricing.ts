@@ -49,3 +49,19 @@ export function estimateSavingsUsd(records: HistoryRecord[], override?: string):
   }
   return usd;
 }
+
+// Rollup-backed estimate: uses per-model saved totals from the incremental cache.
+export function estimateSavingsUsdFromRollup(
+  savedByModel: Record<string, number>,
+  override?: string,
+): number {
+  if (override) {
+    const total = Object.values(savedByModel).reduce((sum, saved) => sum + saved, 0);
+    return tokensToUsd(total, priceForModel(override));
+  }
+  let usd = 0;
+  for (const [model, saved] of Object.entries(savedByModel)) {
+    usd += tokensToUsd(saved, priceForModel(model || undefined));
+  }
+  return usd;
+}

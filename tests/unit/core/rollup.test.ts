@@ -1,0 +1,183 @@
+import { mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
+import { tmpdir } from "node:os";
+import path from "node:path";
+import { afterEach, describe, expect, test } from "vitest";
+
+import {
+  applyRecord,
+  emptyRollup,
+  ensureProjectRollup,
+  mergeRollups,
+  rebuildRollupFromJsonl,
+  rollupFile,
+  rollupToGainSummary,
+} from "../../../src/core/rollup.js";
+import { recordHistory } from "../../../src/core/history.js";
+import type { FilteredResult, RawResult, TkOptions } from "../../../src/types.js";
+
+const previousHome = process.env.TOKEN_KILLER_HOME;
+
+afterEach(() => {
+  if (previousHome === undefined) delete process.env.TOKEN_KILLER_HOME;
+  else process.env.TOKEN_KILLER_HOME = previousHome;
+});
+
+async function withHome<T>(fn: (home: string) => Promise<T>): Promise<T> {
+  const home = await mkdtemp(path.join(tmpdir(), "tk-rollup-"));
+  process.env.TOKEN_KILLER_HOME = home;
+  try {
+    return await fn(home);
+  } finally {
+    await rm(home, { recursive: true, force: true });
+  }
+}
+
+function sampleRecord(partial: Partial<ReturnType<typeof baseRecord>> = {}) {
+  return { ...baseRecord(), ...partial };
+}
+
+function baseRecord() {
+  return {
+    timestamp: "2026-06-07T10:00:00.000Z",
+    command: "git status",
+    handler: "git-status",
+    raw_chars: 100,
+    output_chars: 40,
+    raw_tokens: 25,
+    output_tokens: 10,
+    saved_tokens: 15,
+    savings_pct: 60,
+    exit_code: 0,
+    duration_ms: 12,
+    project_fingerprint: "repo:abc123",
+    quality_status: "passed",
+    source_adapter: "shell",
+  };
+}
+
+describe("rollup", () => {
+  test("applyRecord increments totals and rings", () => {
+    const rollup = emptyRollup("repo:abc123");
+    applyRecord(rollup, sampleRecord());
+    applyRecord(
+      rollup,
+      sampleRecord({
+        timestamp: "2026-06-07T11:00:00.000Z",
+        handler: "fallback",
+        command: "",
+        quality_status: "failure",
+        saved_tokens: 0,
+        savings_pct: 0,
+      }),
+    );
+    expect(rollup.source_lines).toBe(2);
+    expect(rollup.totals.commands).toBe(2);
+    expect(rollup.totals.saved_tokens).toBe(15);
+    expect(rollup.by_handler["git-status"]?.count).toBe(1);
+    expect(rollup.fallback_count).toBe(1);
+    expect(rollup.recent).toHaveLength(1);
+    expect(rollup.failures).toHaveLength(1);
+  });
+
+  test("mergeRollups combines projects", () => {
+    const a = emptyRollup("repo:a");
+    const b = emptyRollup("repo:b");
+    applyRecord(a, sampleRecord({ saved_tokens: 10, raw_tokens: 20 }));
+    applyRecord(b, sampleRecord({ saved_tokens: 30, raw_tokens: 40 }));
+    const merged = mergeRollups([a, b]);
+    expect(merged.totals.commands).toBe(2);
+    expect(merged.totals.saved_tokens).toBe(40);
+    expect(rollupToGainSummary(merged).saved_tokens).toBe(40);
+  });
+
+  test("ensureProjectRollup rebuilds from jsonl on cold path (hot path does not write rollup)", async () => {
+    await withHome(async (home) => {
+      const opts: TkOptions = {
+        raw: false,
+        stats: false,
+        verbose: false,
+        maxLines: 120,
+        maxChars: 12000,
+        saveRaw: false,
+        cwd: home,
+        reportFormat: "text",
+      };
+      await recordHistory(
+        { command: "git status", stdout: "ok", stderr: "", exitCode: 0, durationMs: 1 },
+        {
+          handler: "git-status",
+          output: "ok",
+          rawChars: 2,
+          outputChars: 2,
+          rawTokens: 10,
+          outputTokens: 4,
+          savedTokens: 6,
+          savingsPct: 60,
+          exitCode: 0,
+          qualityStatus: "passed",
+        },
+        opts,
+      );
+
+      await expect(readFile(rollupFile(home), "utf8")).rejects.toThrow();
+
+      const cached = await ensureProjectRollup(home);
+      expect(cached.source_lines).toBe(1);
+      expect(cached.totals.saved_tokens).toBe(6);
+
+      const rebuilt = await rebuildRollupFromJsonl(home);
+      expect(rebuilt.source_lines).toBe(1);
+      expect(rebuilt.totals.saved_tokens).toBe(6);
+
+      const rollupText = await readFile(rollupFile(home), "utf8");
+      expect(rollupText).toContain('"source_lines":1');
+    });
+  });
+
+  test("ensureProjectRollup rebuilds when jsonl grows without cache update", async () => {
+    await withHome(async (home) => {
+      const history = path.join(home, "projects");
+      // write via record first
+      const opts: TkOptions = {
+        raw: false,
+        stats: false,
+        verbose: false,
+        maxLines: 120,
+        maxChars: 12000,
+        saveRaw: false,
+        cwd: home,
+        reportFormat: "text",
+      };
+      await recordHistory(
+        { command: "git status", stdout: "a", stderr: "", exitCode: 0, durationMs: 1 },
+        {
+          handler: "git-status",
+          output: "a",
+          rawChars: 1,
+          outputChars: 1,
+          rawTokens: 5,
+          outputTokens: 2,
+          savedTokens: 3,
+          savingsPct: 60,
+          exitCode: 0,
+          qualityStatus: "passed",
+        },
+        opts,
+      );
+
+      const dir = path.dirname(rollupFile(home));
+      const histPath = path.join(dir, "history.jsonl");
+      await writeFile(
+        histPath,
+        `${JSON.stringify(sampleRecord({ saved_tokens: 99, raw_tokens: 100 }))}\n`,
+        {
+          flag: "a",
+        },
+      );
+
+      const rebuilt = await ensureProjectRollup(home);
+      expect(rebuilt.source_lines).toBe(2);
+      expect(rebuilt.totals.saved_tokens).toBe(102);
+    });
+  });
+});

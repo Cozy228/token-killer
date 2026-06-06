@@ -11,7 +11,6 @@ import {
   projectMetaFileForFingerprint,
   tokenKillerHome,
 } from "./dataDir.js";
-
 export type ProjectMeta = { label: string };
 
 export type HistoryRecord = {
