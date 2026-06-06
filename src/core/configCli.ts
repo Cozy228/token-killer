@@ -1,6 +1,7 @@
 // `tk config` dispatcher (Slice 3a). Today only `init`: non-interactive, never
 // overwrites. Creating the file is NOT opt-in — both consent fields default to
-// false; the user opts in by editing to true or via `tk telemetry enable`.
+// the build-time default (false in generic builds, true when baked with
+// TK_TELEMETRY_DEFAULT=true); the user opts in/out by editing or `tk telemetry`.
 
 import { existsSync } from "node:fs";
 

@@ -3,7 +3,12 @@ import { tmpdir } from "node:os";
 import path from "node:path";
 import { afterEach, describe, expect, test, vi } from "vitest";
 
-import { ConfigError, configPath, readConfig, writeConfigTemplate } from "../../../src/core/config.js";
+import {
+  ConfigError,
+  configPath,
+  readConfig,
+  writeConfigTemplate,
+} from "../../../src/core/config.js";
 import { runConfig } from "../../../src/core/configCli.js";
 
 const previousHome = process.env.TOKEN_KILLER_HOME;
@@ -25,10 +30,21 @@ async function withHome<T>(fn: (home: string) => Promise<T>): Promise<T> {
 }
 
 describe("readConfig", () => {
-  test("missing file reads as defaults (all consent false)", async () => {
+  test("missing file reads as defaults (telemetry off in generic builds)", async () => {
     await withHome(async () => {
       expect(readConfig()).toEqual({ telemetryExport: false, telemetry: false });
     });
+  });
+
+  test("missing file reads telemetry true when TK_TELEMETRY_DEFAULT=true", async () => {
+    vi.stubEnv("TK_TELEMETRY_DEFAULT", "true");
+    vi.resetModules();
+    const { readConfig: readWithDefault } = await import("../../../src/core/config.js");
+    await withHome(async () => {
+      expect(readWithDefault()).toEqual({ telemetryExport: false, telemetry: true });
+    });
+    vi.unstubAllEnvs();
+    vi.resetModules();
   });
 
   test("parses JSONC with comments and the two independent consent flags", async () => {
@@ -66,7 +82,7 @@ describe("readConfig", () => {
 });
 
 describe("tk config init", () => {
-  test("creates the closed-set template with both consents false", async () => {
+  test("creates the closed-set template with telemetry off in generic builds", async () => {
     await withHome(async () => {
       vi.spyOn(process.stdout, "write").mockReturnValue(true);
       expect(runConfig(["init"])).toBe(0);
@@ -81,6 +97,23 @@ describe("tk config init", () => {
         telemetry: false,
       });
     });
+  });
+
+  test("tk config init writes telemetry true when TK_TELEMETRY_DEFAULT=true", async () => {
+    vi.stubEnv("TK_TELEMETRY_DEFAULT", "true");
+    vi.resetModules();
+    const { configPath: cfgPath, readConfig: readWithDefault } =
+      await import("../../../src/core/config.js");
+    const { runConfig: runWithDefault } = await import("../../../src/core/configCli.js");
+    await withHome(async () => {
+      vi.spyOn(process.stdout, "write").mockReturnValue(true);
+      expect(runWithDefault(["init"])).toBe(0);
+      const text = await readFile(cfgPath(), "utf8");
+      expect(text).toContain('"telemetry": true');
+      expect(readWithDefault().telemetry).toBe(true);
+    });
+    vi.unstubAllEnvs();
+    vi.resetModules();
   });
 
   test("does not overwrite an existing config ⇒ exit 1", async () => {

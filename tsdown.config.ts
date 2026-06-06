@@ -8,10 +8,11 @@ export default defineConfig({
   outDir: "dist",
   clean: true,
   fixedExtension: false,
-  // Bake the telemetry endpoint at build time (ADR 0004 §5). A generic build sets
-  // "" ⇒ telemetry is inert (local file + warning). An enterprise build sets
-  // TK_TELEMETRY_ENDPOINT in the build env to the operator's HTTPS URL.
+  // Bake telemetry build args at compile time (ADR 0004 §5).
+  // TK_TELEMETRY_ENDPOINT — HTTPS ingest URL ("" ⇒ network send inert).
+  // TK_TELEMETRY_DEFAULT — "true" ⇒ missing config.jsonc reads telemetry as on.
   define: {
     __TK_TELEMETRY_ENDPOINT__: JSON.stringify(process.env.TK_TELEMETRY_ENDPOINT ?? ""),
+    __TK_TELEMETRY_DEFAULT__: JSON.stringify(process.env.TK_TELEMETRY_DEFAULT === "true"),
   },
 });

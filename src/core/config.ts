@@ -10,6 +10,7 @@ import { mkdirSync } from "node:fs";
 import { dirname, join } from "node:path";
 
 import { tokenKillerHome } from "./dataDir.js";
+import { TELEMETRY_DEFAULT_ENABLED } from "../telemetry/defaults.js";
 
 export type TgConfig = {
   inputType?: "vscode" | "copilot-cli";
@@ -30,7 +31,10 @@ export function configPath(): string {
 
 // The canonical closed-set template. `tk config init` and `tk telemetry
 // enable|disable` regenerate the file from this — no comment-preserving edits.
-export function configTemplate(telemetry = false, telemetryExport = false): string {
+export function configTemplate(
+  telemetry = TELEMETRY_DEFAULT_ENABLED,
+  telemetryExport = false,
+): string {
   return [
     "{",
     "  // token-killer config — closed set; unknown keys are rejected (exit 1).",
@@ -46,7 +50,10 @@ export function configTemplate(telemetry = false, telemetryExport = false): stri
   ].join("\n");
 }
 
-const DEFAULT_CONFIG: TgConfig = { telemetryExport: false, telemetry: false };
+const DEFAULT_CONFIG: TgConfig = {
+  telemetryExport: false,
+  telemetry: TELEMETRY_DEFAULT_ENABLED,
+};
 
 const ALLOWED_KEYS = new Set(["inputType", "defaultSince", "telemetryExport", "telemetry"]);
 
@@ -109,7 +116,8 @@ function validate(raw: unknown): TgConfig {
     config.inputType = obj.inputType;
   }
   if ("defaultSince" in obj) {
-    if (typeof obj.defaultSince !== "string") throw new ConfigError("defaultSince must be a string");
+    if (typeof obj.defaultSince !== "string")
+      throw new ConfigError("defaultSince must be a string");
     config.defaultSince = obj.defaultSince;
   }
   if ("telemetryExport" in obj) {
@@ -139,16 +147,23 @@ export function readConfig(): TgConfig {
   try {
     parsed = JSON.parse(stripJsonComments(text));
   } catch (error) {
-    throw new ConfigError(`config parse error: ${error instanceof Error ? error.message : String(error)}`);
+    throw new ConfigError(
+      `config parse error: ${error instanceof Error ? error.message : String(error)}`,
+    );
   }
   return validate(parsed);
 }
 
 // Write the closed-set template. Used by `tk config init` (only if absent) and by
 // `tk telemetry enable|disable` (regenerate with the chosen consent values).
-export function writeConfigTemplate(opts: { telemetry?: boolean; telemetryExport?: boolean } = {}): string {
+export function writeConfigTemplate(
+  opts: { telemetry?: boolean; telemetryExport?: boolean } = {},
+): string {
   const path = configPath();
   mkdirSync(dirname(path), { recursive: true });
-  writeFileSync(path, configTemplate(opts.telemetry ?? false, opts.telemetryExport ?? false));
+  writeFileSync(
+    path,
+    configTemplate(opts.telemetry ?? TELEMETRY_DEFAULT_ENABLED, opts.telemetryExport ?? false),
+  );
   return path;
 }
