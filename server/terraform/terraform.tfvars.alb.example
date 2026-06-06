@@ -1,0 +1,43 @@
+# Internal-ALB ingress variant. Copy to terraform.tfvars (or pass with
+# -var-file=terraform.tfvars.alb.example) when you want an ALB front door instead
+# of the default private API Gateway.
+#
+# Unlike apigw, the ALB has no AWS-managed TLS — the tk client is HTTPS-only, so
+# you must supply an ACM cert and then Route53-alias the cert's domain to the
+# ALB DNS (terraform output alb_dns_name). See server/README.md.
+
+aws_region  = "us-east-1"
+name_prefix = "tk-telemetry"
+
+# Pick the ALB front door.
+ingress = "alb"
+
+# Existing corp network — this stack does NOT create a VPC.
+vpc_id = "vpc-0123456789abcdef0"
+# The ALB spreads across these; each must have >= alb_min_free_ips free IPs in
+# >= 2 AZs (enforced by a precondition before the ALB is created).
+private_subnet_ids = ["subnet-aaaa1111", "subnet-bbbb2222"]
+
+# Who may reach the internal ALB (developer machines / corp ranges).
+client_cidr_blocks = ["10.0.0.0/8"]
+
+# REQUIRED for ingress = alb: ACM cert whose domain you'll point at the ALB.
+alb_certificate_arn = "arn:aws:acm:us-east-1:123456789012:certificate/abcd1234-5678-90ab-cdef-EXAMPLE11111"
+
+# HTTPS listener port + the per-subnet free-IP floor (AWS minimum is 8).
+alb_listener_port = 443
+alb_min_free_ips  = 8
+
+# Lambda still runs in-VPC, so it needs these unless the VPC already has NAT or
+# shared secretsmanager/logs endpoints.
+create_interface_endpoints = true
+
+# Filled in after the first ECR push (see README ordering).
+lambda_image_uri = ""
+
+db_instance_class = "db.t4g.micro"
+
+tags = {
+  Project = "token-killer-telemetry"
+  Env     = "prod"
+}

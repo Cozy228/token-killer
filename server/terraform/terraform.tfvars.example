@@ -1,0 +1,22 @@
+aws_region  = "us-east-1"
+name_prefix = "tk-telemetry"
+
+# Existing corp network — this stack does NOT create a VPC.
+vpc_id             = "vpc-0123456789abcdef0"
+private_subnet_ids = ["subnet-aaaa1111", "subnet-bbbb2222"]
+
+# Who may reach the private API (developer machines / corp ranges).
+client_cidr_blocks = ["10.0.0.0/8"]
+
+# Set false if the VPC already has NAT or shared secretsmanager/logs endpoints.
+create_interface_endpoints = true
+
+# Filled in after the first ECR push (see README ordering).
+lambda_image_uri = ""
+
+db_instance_class = "db.t4g.micro"
+
+tags = {
+  Project = "token-killer-telemetry"
+  Env     = "prod"
+}
