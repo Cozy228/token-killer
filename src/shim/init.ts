@@ -24,7 +24,6 @@ type InitArgs = {
   host: Host | "auto";
   show: boolean;
   project: boolean;
-  autoPatch: boolean;
   dryRun: boolean;
   uninstall: boolean;
 };
@@ -34,7 +33,6 @@ export function parseInitArgs(argv: string[]): InitArgs {
     host: "auto",
     show: false,
     project: false,
-    autoPatch: false,
     dryRun: false,
     uninstall: false,
   };
@@ -52,8 +50,6 @@ export function parseInitArgs(argv: string[]): InitArgs {
       args.dryRun = true;
     } else if (token === "--uninstall") {
       args.uninstall = true;
-    } else if (token === "--auto-patch") {
-      args.autoPatch = true;
     } else if (token === "--global" || token === "-g") {
       // User-level is already the default scope for every tk write; -g is
       // accepted for parity with `rtk init` and is a no-op.
@@ -97,6 +93,12 @@ function uninstall(opts: InitArgs): number {
 }
 
 export function runInit(argv: string[]): number {
+  // `tk init shim <install|status|uninstall>` — explicit control of the shim
+  // delivery tier (formerly the top-level `tk shim`). The default `tk init`
+  // flow below already installs the shim as part of its tier ladder, so this
+  // is only for manual install/inspect/removal of the shim on its own.
+  if (argv[0] === "shim") return runShim(argv.slice(1));
+
   const opts = parseInitArgs(argv);
   if (opts.show) return showStatus();
   if (opts.uninstall) return uninstall(opts);

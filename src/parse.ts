@@ -44,12 +44,10 @@ function toCommand(tokens: string[]): ParsedCommand | undefined {
 // Reserved subcommands intercepted BEFORE argv[0] is treated as a program, so a
 // shimmed `shim`/`init` program name can never reach the command router.
 const RESERVED_SUBCOMMANDS = new Set<ParsedArgv["mode"]>([
-  "shim",
   "init",
   "hook",
   "inspect",
   "optimize",
-  "agentsmd",
   "gain",
   "config",
   "telemetry",
@@ -61,11 +59,8 @@ export function parseArgv(argv: string[]): ParsedArgv {
   let index = 0;
 
   const first = argv[0];
-  // `tk report` (the four-ledger read-side join, metrics-ledger §4) is a distinct
-  // subcommand from the legacy `--report` flag (mode "report" → core/report.ts).
-  if (first === "report") {
-    return { mode: "report-ledger", options, subArgs: argv.slice(1) };
-  }
+  // The detailed savings report lives at `tk gain report` (handled inside the
+  // gain dispatcher). The legacy `--report` flag (mode "report") is unrelated.
   if (first !== undefined && RESERVED_SUBCOMMANDS.has(first as ParsedArgv["mode"])) {
     return { mode: first as ParsedArgv["mode"], options, subArgs: argv.slice(1) };
   }

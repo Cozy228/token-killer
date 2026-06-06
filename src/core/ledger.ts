@@ -188,8 +188,8 @@ export function renderJson(ledgers: Ledgers): string {
 
 export function renderText(ledgers: Ledgers): string {
   const out: string[] = [];
-  out.push(`Token Killer — four-ledger report (scope: ${ledgers.scope}${ledgers.since ? `, since ${ledgers.since}` : ""})`);
-  out.push("Four ledgers, shown side by side. They are never summed.");
+  out.push(`Token Killer — savings report (scope: ${ledgers.scope}${ledgers.since ? `, since ${ledgers.since}` : ""})`);
+  out.push("Four separate views, shown side by side. They are never summed.");
   out.push("");
 
   // ① Measured command savings
@@ -258,7 +258,8 @@ function parseSince(value: string): Date {
   return date;
 }
 
-// `tk report [--scope user|project|runtime] [--project|--user] [--since <date>] [--json]`
+// `tk gain report [--scope user|project|runtime] [--project|--user] [--since <date>] [--json]`
+// (`tk report` is a back-compat alias for the same handler — see cli.ts / parse.ts.)
 export async function runReport(argv: string[]): Promise<number> {
   let scope: ReportScope = "user"; // user/project is the main axis; user default (ADR 0003)
   let since: Date | undefined;

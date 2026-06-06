@@ -73,15 +73,12 @@ export type TkOptions = {
 export type ParseMode =
   | "command"
   | "report"
-  | "report-ledger"
   | "help"
   | "version"
-  | "shim"
   | "init"
   | "hook"
   | "inspect"
   | "optimize"
-  | "agentsmd"
   | "gain"
   | "config"
   | "telemetry";
@@ -90,8 +87,8 @@ export type ParsedArgv = {
   mode: ParseMode;
   options: TkOptions;
   command?: ParsedCommand;
-  // Trailing args for reserved subcommands (shim/init), passed through verbatim
-  // to their own dispatcher instead of the command router.
+  // Trailing args for reserved subcommands (init/hook/inspect/…), passed through
+  // verbatim to their own dispatcher instead of the command router.
   subArgs?: string[];
 };
 

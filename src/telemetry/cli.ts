@@ -1,4 +1,6 @@
-// Slice 3b — `tk telemetry <enable|disable|status|preview|purge>` (ADR 0004 §5).
+// Slice 3b — `tk telemetry <enable|disable|status|preview>` (ADR 0004 §5).
+// `purge` (reset device id) stays an internal helper (state.purgeState), not a
+// user-facing subcommand — we don't surface device-reset to users.
 // NONE of these subcommands ever send over the network — `preview` prints the exact
 // payload that a send WOULD POST, and that is all. enable/disable rewrite
 // config.jsonc from the canonical closed-set template (read current values → set
@@ -11,7 +13,7 @@ import { ConfigError, readConfig, writeConfigTemplate } from "../core/config.js"
 import { listProjectHistories } from "../core/history.js";
 import { VERSION } from "../version.js";
 import { buildTelemetry } from "./build.js";
-import { deviceHash, loadOrCreateState, purgeState } from "./state.js";
+import { deviceHash, loadOrCreateState } from "./state.js";
 
 export async function runTelemetry(argv: string[], now: Date = new Date()): Promise<number> {
   const sub = argv[0];
@@ -73,17 +75,7 @@ export async function runTelemetry(argv: string[], now: Date = new Date()): Prom
     return 0;
   }
 
-  if (sub === "purge") {
-    const removed = purgeState();
-    process.stdout.write(
-      removed
-        ? "Telemetry state purged (device_hash reset on next use).\n"
-        : "No telemetry state to purge.\n",
-    );
-    return 0;
-  }
-
-  process.stderr.write("tk telemetry: usage: tk telemetry <enable|disable|status|preview|purge>\n");
+  process.stderr.write("tk telemetry: usage: tk telemetry <enable|disable|status|preview>\n");
   return 1;
 }
 

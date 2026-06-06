@@ -3,12 +3,10 @@ import { parseArgv } from "./parse.js";
 import { routeCommand, routeSpecific } from "./router.js";
 import { executePassthrough } from "./executor.js";
 import { shouldCompress } from "./shim/gate.js";
-import { runShim } from "./shim/cli.js";
 import { runInit } from "./shim/init.js";
 import { runHook } from "./hook/cli.js";
 import { runInspect } from "./inspect/cli.js";
 import { runOptimize } from "./context/optimizeCli.js";
-import { runAgentsmd } from "./context/agentsmd.js";
 import { buildReport } from "./core/report.js";
 import { runReport } from "./core/ledger.js";
 import { runGain } from "./core/gain.js";
@@ -25,33 +23,108 @@ import type { CommandHandler, FilteredResult, ParsedCommand, RawResult, TkOption
 
 function help(): string {
   return [
-    "Usage: tk [tk flags] <command...>",
-    "       tk shim <install|uninstall|status>",
-    "       tk init [--host auto|copilot-cli|vscode] [--project] [--show] [--dry-run] [--uninstall]",
-    "       tk hook <copilot|check <command>>",
-    "       tk inspect [--json] [--since 7d] [--session <id>] [--input-type vscode|copilot-cli] [--repo-context]",
-    "                  [--advice] [--write-advice] [--telemetry-export] [--min-confidence n] [--min-occurrences n]",
-    "                  [--project] [--user] [--copilot-context] [--surface instructions|prompts|agents|skills] [--fail-on info|warn|error]",
-    "       tk optimize context [--dry-run] [--write-advice] [--apply-safe] [--token-budget-block] [--surface <name>] [--project|--user]",
-    "       tk optimize context --vscode-settings [--apply-safe|--restore]",
-    "       tk agentsmd <patch|restore>",
-    "       tk gain [--user] [--daily|--weekly|--monthly|--all] [--graph] [--history [n]]",
-    "               [--failures] [--quota [-t <model>]] [--json|--csv|--format json|csv|text]",
-    "       tk config <init|show|path>",
-    "       tk report [--scope user|project|runtime] [--project|--user] [--since <date>] [--json]",
-    "       tk telemetry <enable|disable|status|preview|purge>",
+    "tk — Token Killer: a CLI proxy that compresses dev-command output so coding",
+    "agents spend far fewer tokens. Wrap any command, or manage tk's delivery and reports.",
     "",
-    "Flags:",
-    "  --raw                 print raw stdout/stderr",
-    "  --stats               print token savings",
-    "  --verbose             print token savings and raw output path",
-    "  --max-lines <n>       limit compressed output lines",
-    "  --max-chars <n>       limit compressed output chars",
-    "  --save-raw            always save raw output",
-    "  --no-save-raw         never save raw output",
-    "  --report [--json|--csv]",
-    "  --help",
-    "  --version",
+    "Usage:",
+    "  tk [flags] <command...>     Run a command through tk and compress its output",
+    "  tk <subcommand> [options]   Manage delivery, inspect savings, configure tk",
+    "",
+    "Commands:",
+    "  init        Install & manage tk delivery into your agent host (hook / shim / injection)",
+    "  hook        Agent-host hook runtime: decide command rewrites & governance",
+    "  inspect     Scan agent history for token-saving opportunities; print a ranked report",
+    "  optimize    Apply the context-file optimizations that inspect found",
+    "  gain        Show measured token savings (totals, trends, failures, quota)",
+    "  config      Manage the tk config file",
+    "  telemetry   Opt-in, anonymous network telemetry controls",
+    "",
+    "Run `tk <command> --help`-style usage is summarized below.",
+    "",
+    "tk init [--host auto|copilot-cli|vscode] [--project] [--show] [--dry-run] [--uninstall] [-g|--global]",
+    "  Auto-detects the host and wires the best delivery tier (hook > shim > injection).",
+    "  --host <h>     Force the host instead of auto-detecting",
+    "  --project      Also write project-level instructions into the current repo",
+    "  --show         Show current install status (host, hook, shim, injection)",
+    "  --dry-run      Preview what would change without writing",
+    "  --uninstall    Remove everything tk installed (hook config, shim, injection)",
+    "  -g, --global   Accepted for rtk parity; no-op (tk writes are user-level by default)",
+    "  tk init shim <install|status|uninstall>   Manually control the shim tier (shell PATH + VS Code)",
+    "",
+    "tk hook <copilot|check <command...>>",
+    "  copilot                Hook runtime: read a tool event on stdin, emit a rewrite/governance decision",
+    "  check <command...>     Dry-run: show how a command would be rewritten (no execution)",
+    "",
+    "tk inspect [--json] [--since 7d] [--session <id>] [--input-type vscode|copilot-cli] [--repo-context]",
+    "           [--advice] [--write-advice] [--telemetry-export|--no-telemetry-export]",
+    "           [--min-confidence n] [--min-occurrences n] [--project|--user] [--copilot-context]",
+    "           [--surface instructions|prompts|agents|skills] [--fail-on info|warn|error]",
+    "  Read-only scan of agent history for missed token savings; emits a ranked opportunity report.",
+    "  --json                       Output JSON instead of text",
+    "  --since <window>             Only sessions newer than e.g. 7d, 24h, 30m",
+    "  --session <id>               Restrict to one session",
+    "  --input-type <type>          Override source detection (vscode | copilot-cli)",
+    "  --repo-context               Include repo context in the report",
+    "  --advice                     Produce actionable advice findings, not just opportunities",
+    "  --write-advice               Write advice artifacts to disk",
+    "  --telemetry-export           Force-write the local telemetry aggregate (--no- to disable)",
+    "  --min-confidence <n>         Drop advice below confidence n",
+    "  --min-occurrences <n>        Drop advice seen fewer than n times",
+    "  --project | --user           Static-context scope (default: user)",
+    "  --copilot-context            Static-context analysis only (skip the runtime scan)",
+    "  --surface <s>                Restrict to one surface (instructions|prompts|agents|skills)",
+    "  --fail-on <severity>         Exit non-zero when a finding reaches info|warn|error",
+    "",
+    "tk optimize [--dry-run] [--apply] [--restore] [--write-advice] [--token-budget-block]",
+    "            [--surface <name>] [--project|--user] [--vscode-settings]",
+    "  Applies the context-file optimizations inspect found. Read-only unless --apply.",
+    "  Scope is git-aware: outside a git repo it works on your user-level files; inside",
+    "  a git repo it works on both the project and user files.",
+    "  (default)              Dry-run: print the full plan, write nothing",
+    "  --apply                Apply every deterministic change. Discloses the full plan,",
+    "                         backs up each file first; free-form suggestions are printed,",
+    "                         not written. Revert with --restore.",
+    "  --restore              Revert the most recent --apply from its backup",
+    "  --write-advice         Write the context advice file instead of planning inline",
+    "  --token-budget-block   Install the managed token-budget block into your user-level",
+    "                         instructions (--restore removes it). Replaces `tk agentsmd`.",
+    "  --surface <name>       Restrict to one surface (instructions|prompts|agents|skills)",
+    "  --project | --user     Force a single scope instead of the git-aware default",
+    "  --vscode-settings      Apply token-lean VS Code settings (--apply / --restore)",
+    "",
+    "tk gain [--user] [--daily|--weekly|--monthly|--all] [--graph] [--history [n]]",
+    "        [--failures] [--quota [-t <model>]] [--json|--csv|--format json|csv|text]",
+    "tk gain report [--scope user|project|runtime] [--project|--user] [--since <date>] [--json]",
+    "  gain          Measured token savings. Defaults to the current project; --user aggregates all.",
+    "    --daily|--weekly|--monthly|--all   Bucket savings by period",
+    "    --graph         Add a sparkline trend",
+    "    --history [n]   Show the last n records (default 10)",
+    "    --failures      Show the failure breakdown",
+    "    --quota [-t m]  Show quota usage; -t overrides the pricing model",
+    "  gain report   Detailed savings — four views side by side (measured / optimizer / governance / quality), never summed.",
+    "",
+    "tk config <init|show|path>",
+    "  init    Create the config file from the template",
+    "  show    Print the current config as JSON",
+    "  path    Print the config file path",
+    "",
+    "tk telemetry <enable|disable|status|preview>",
+    "  enable     Opt in to anonymous network telemetry uploads",
+    "  disable    Opt out of network uploads",
+    "  status     Show consent state and anonymous device id (no network check)",
+    "  preview    Print the exact payload that would be sent (sends nothing)",
+    "",
+    "Flags for `tk <command...>` (the compression proxy):",
+    "  --raw                 Print raw stdout/stderr (no compression)",
+    "  --stats               Append a token-savings summary",
+    "  --verbose             Append token savings and the saved raw-output path",
+    "  --max-lines <n>       Limit compressed output to n lines",
+    "  --max-chars <n>       Limit compressed output to n chars",
+    "  --save-raw            Always save the raw output",
+    "  --no-save-raw         Never save the raw output",
+    "  --report [--json|--csv]   Legacy aggregate report",
+    "  --help                Show this help",
+    "  --version             Show the tk version",
     "",
   ].join("\n");
 }
@@ -92,12 +165,6 @@ async function main(): Promise<number> {
     process.stdout.write(await buildReport(parsed.options));
     return 0;
   }
-  if (parsed.mode === "report-ledger") {
-    return runReport(parsed.subArgs ?? []);
-  }
-  if (parsed.mode === "shim") {
-    return runShim(parsed.subArgs ?? []);
-  }
   if (parsed.mode === "init") {
     return runInit(parsed.subArgs ?? []);
   }
@@ -110,11 +177,14 @@ async function main(): Promise<number> {
   if (parsed.mode === "optimize") {
     return runOptimize(parsed.subArgs ?? []);
   }
-  if (parsed.mode === "agentsmd") {
-    return runAgentsmd(parsed.subArgs ?? []);
-  }
   if (parsed.mode === "gain") {
-    return runGain(parsed.subArgs ?? [], parsed.options.cwd);
+    const sub = parsed.subArgs ?? [];
+    // `tk gain report` — the detailed multi-view savings report (second layer
+    // under `gain`). `tk report` stays as a back-compat alias (see parse.ts).
+    if (sub[0] === "report") {
+      return runReport(sub.slice(1));
+    }
+    return runGain(sub, parsed.options.cwd);
   }
   if (parsed.mode === "config") {
     return runConfig(parsed.subArgs ?? []);
