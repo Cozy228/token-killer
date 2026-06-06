@@ -4,6 +4,12 @@ status: accepted
 
 # Scope-aware `tk inspect`: user-level default, project opt-in, default `latest.json` write
 
+> **Amended by [ADR 0006](0006-cli-consolidation-and-optimize-apply-engine.md) (2026-06-07):**
+> the "project-level writes" non-goal and the "project files are never modified"
+> invariant are superseded. `tk optimize --apply` is git-aware and writes
+> deterministic fixes into project-tracked files (disclosed, backed up,
+> `--restore`-able). `tk optimize context` is now `tk optimize`.
+
 ## Context
 
 [Inspect](../../CONTEXT.md#surfaces) shipped (Slice 4–5, `docs/inspect-v1-design.md`) as a

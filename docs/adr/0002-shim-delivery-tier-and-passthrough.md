@@ -4,6 +4,11 @@ status: accepted
 
 # PATH-shim delivery tier, narrow compression scope, and the passthrough path
 
+> **Amended by [ADR 0006](0006-cli-consolidation-and-optimize-apply-engine.md) (2026-06-07):**
+> `tk shim` is no longer a top-level command. Its install/status/uninstall now
+> live under `tk init shim <…>`; the tier ladder and passthrough design below are
+> unchanged.
+
 ## Context
 
 Command-compression needs a way to get the agent to invoke the [Command

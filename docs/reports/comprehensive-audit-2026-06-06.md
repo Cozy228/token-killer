@@ -86,7 +86,7 @@ Token Killer's hot path is small, fast, and architecturally sound: `cli → pars
 ### 9. Static-context findings persist verbatim user file content, breaking the labels-and-lengths-only privacy promise `[SECURITY]` severity:medium confidence:confirmed
 - **Where:** `src/context/rules/duplicates.ts:76` and `:67` (heading into the pre-hash `idExtra`); `src/context/rules/alwaysOn.ts:71,76,110-112`; `src/context/rules/prompts.ts:71` (`tools.join(", ")`). To disk via `inspect/cli.ts:236-243` → `persist.ts` (`…/inspect/latest.json`) and `cli.ts:262-276` → `advice/inspect-report.json`.
 - **What:** Section headings are arbitrary user body text (could read `## Deploy creds for prod-db`). Copied verbatim into `evidence` (and the id-hash input), then serialized to two on-disk artifacts.
-- **Why it's a problem:** Module headers assert "lengths and sanitized LABELS only — never file/result content" (scan.ts:6, advice.ts:2, report.ts:2). A heading is raw body content. **The earlier pass that gave inspect a clean privacy bill under-audited `context/rules/**`; this is the one real leak.** Bounded blast radius — the telemetry/network path (`telemetry.ts:11-31`) emits only numeric counts, so nothing leaves the machine — but the persisted artifact is the label-safe contract `tk optimize context` consumes.
+- **Why it's a problem:** Module headers assert "lengths and sanitized LABELS only — never file/result content" (scan.ts:6, advice.ts:2, report.ts:2). A heading is raw body content. **The earlier pass that gave inspect a clean privacy bill under-audited `context/rules/**`; this is the one real leak.** Bounded blast radius — the telemetry/network path (`telemetry.ts:11-31`) emits only numeric counts, so nothing leaves the machine — but the persisted artifact is the label-safe contract `tk optimize` consumes.
 - **Better path:** Replace verbatim headings with the finding's own `file`+`start_line`/`end_line` or a heading hash, in both `evidence` and `idExtra`. `conflicts.ts:98` / `cacheability.ts:49` already do this correctly.
 - **Evidence:** serialized `Finding` field set carries `evidence` verbatim; no sanitization layer; runtime findings (unified.ts:71) model it correctly.
 
@@ -174,7 +174,7 @@ Token Killer's hot path is small, fast, and architecturally sound: `cli → pars
 - **`ruff` matcher substring bug** — `command.original.join(" ").includes("ruff check")` (ruff.ts:24) matches `truffle check`. Confirm by routing `["truffle","check"]`.
 - **`container.ts` ~650-line monolith** — the per-resource formatters could be split; suspected maintainability cost only.
 - **`history.ts` `listProjectHistories`/`listProjectHistoriesSync` near-duplicate** — async vs sync twins; suspected DETOUR.
-- **`resolveLivePath` traversal** — a tampered `latest.json` with `file:"../../etc/…"` could steer optimize reads/writes; mitigated by the `body_hash` write-gate. Confirm via a crafted bucket through `tk optimize context --apply-safe`.
+- **`resolveLivePath` traversal** — a tampered `latest.json` with `file:"../../etc/…"` could steer optimize reads/writes; mitigated by the `body_hash` write-gate. Confirm via a crafted bucket through `tk optimize --apply`.
 
 ## Out of scope (appendix)
 

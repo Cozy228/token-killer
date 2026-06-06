@@ -301,7 +301,7 @@ concrete, flag-level guidance (keep ≤ 15 lines, no volatile content):
 stays idempotent and `restore` still removes only the managed block.
 
 **Definition of done:** `TOKEN_KILLER_HOME="$(mktemp -d)" pnpm test:product -- context` and
-`pnpm typecheck` green; `tk agentsmd patch` then `tk agentsmd restore` round-trips cleanly.
+`pnpm typecheck` green; `tk optimize --token-budget-block` then `tk optimize --token-budget-block --restore` round-trips cleanly.
 
 ---
 

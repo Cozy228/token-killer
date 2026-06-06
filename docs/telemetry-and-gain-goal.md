@@ -68,7 +68,7 @@ rule).
 ```json
 { "deviceSalt": "<64 hex, generated once>", "firstSeenAt": "<ISO>", "lastSentAt": "<ISO|null>" }
 ```
-`device_hash = sha256(deviceSalt)`. `tk telemetry purge` deletes this file.
+`device_hash = sha256(deviceSalt)`. The internal `purgeState()` helper deletes this file (no longer a user-facing `tk telemetry` subcommand — ADR 0006).
 
 ## 2. `src/core/tokens.ts` — the one estimator (Slice 0)
 

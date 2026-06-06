@@ -4,6 +4,11 @@ status: accepted
 
 # Opt-in network telemetry (anonymous device hash, build-time endpoint) + `tk gain` parity
 
+> **Amended by [ADR 0006](0006-cli-consolidation-and-optimize-apply-engine.md) (2026-06-07):**
+> the detailed report is reached via `tk gain report` only (the `tk report` alias
+> is removed). `tk telemetry purge` is no longer a user-facing subcommand
+> (`purgeState()` remains internal). Consent model and payload are unchanged.
+
 ## Context
 
 Two adjacent capabilities were conflated and are settled here together.

@@ -14,14 +14,14 @@ report. It is **NOT** a separate `tk inspect --copilot-context` scan command;
 is **scope-aware** (ADR 0003): bare `tk inspect` reads **user-level** global context by
 default (highest token leverage, runnable anywhere); `--project` selects the current repo;
 runtime analysis is orthogonal and always runs. The "context optimizer" is the **downstream
-consumer** `tk optimize context`: it reads inspect's findings and makes targeted modifications.
+consumer** `tk optimize`: it reads inspect's findings and makes targeted modifications.
 
 The product shape is two-stage, and optimize itself has two layers:
 
 1. **Inspect** (the one `tk inspect`, DESIGN §9): read-only; static-context analyzers
    produce findings with evidence, severity, surface, confidence, and an explicit
    `fix_class`, merged into inspect's unified `Finding[]` report.
-2. **Optimize** (`tk optimize context`): consumes inspect's `source = static_context`
+2. **Optimize** (`tk optimize`): consumes inspect's `source = static_context`
    findings, then separates work into:
    - **Direct modify / restorable**: mechanical, reversible writes such as Token Killer
      AGENTS/copilot-instructions marker blocks, Token Budget rules, high-confidence user-level
@@ -157,7 +157,7 @@ narrow it (ADR 0003):
   (session) analysis is orthogonal to scope and **always runs** unless `--copilot-context`
   turns it off.
 
-The new command this goal owns is `tk optimize context` (the consumer).
+The new command this goal owns is `tk optimize` (the consumer).
 
 ```bash
 tk inspect                              # default: USER-level static context + runtime
@@ -172,13 +172,13 @@ tk inspect --surface skills
 tk inspect --json                       # unified Finding[] report
 tk inspect --fail-on <severity>         # opt-in: exit 4 if findings at/above this severity exist
 
-tk optimize context --dry-run           # read inspect findings → suggested diffs, no write
-tk optimize context --apply-safe
-tk optimize context --restore
-tk optimize context --write-advice
-tk optimize context --surface skills --dry-run
-tk optimize context --vscode-settings --apply-safe
-tk optimize context --token-budget-block --apply-safe
+tk optimize --dry-run           # read inspect findings → suggested diffs, no write
+tk optimize --apply
+tk optimize --restore
+tk optimize --write-advice
+tk optimize --surface skills --dry-run
+tk optimize --vscode-settings --apply
+tk optimize --token-budget-block --apply
 ```
 
 `--copilot-context` (static-only) is mutually exclusive with runtime-only flags
@@ -191,8 +191,8 @@ Compatibility aliases:
 ```bash
 tk skill scan
 tk skill optimize --dry-run
-tk agentsmd patch
-tk agentsmd restore
+tk optimize --token-budget-block
+tk optimize --token-budget-block --restore
 ```
 
 Exit codes. `tk inspect` keeps the inspect-v1 table (ADR 0003); `--fail-on` adds an opt-in
@@ -209,7 +209,7 @@ is diagnostic, not enforcement.
 | 3 | Internal error |
 | 4 | Findings at/above `--fail-on` severity exist (only when `--fail-on` is passed) |
 
-`tk optimize context`:
+`tk optimize`:
 
 | Code | Meaning |
 |------|---------|
@@ -268,7 +268,7 @@ export type ContextFinding = {
 ```
 
 These findings are written into the inspect report for their **scope bucket** (ADR 0003);
-`tk optimize context` reads the matching bucket:
+`tk optimize` reads the matching bucket:
 
 ```text
 ~/.token-killer/user-context/inspect/latest.json               # user-scope unified Finding[] report
@@ -285,7 +285,7 @@ hash, and short evidence snippets only.
 ```text
 src/context/
   analyzer.ts            # static-context analyzer registered into tk inspect (emits ContextFinding[])
-  optimizeCli.ts         # `tk optimize context` consumer command (reads inspect findings)
+  optimizeCli.ts         # `tk optimize` consumer command (reads inspect findings)
   discover.ts            # find supported context files
   parseMarkdown.ts       # frontmatter + markdown section parsing
   metrics.ts             # chars, estimated tokens, headings, hashes, line maps
@@ -309,7 +309,7 @@ src/context/
 
 `src/context/` owns no `inspect` command. Instead it exposes a static-context **analyzer**
 that `tk inspect` (`src/inspect/`) calls on every run (scope-aware: user-level by default,
-project under `--project`), plus the `tk optimize context` consumer command. Keep the implementation independent from command
+project under `--project`), plus the `tk optimize` consumer command. Keep the implementation independent from command
 handlers. It may reuse `src/core/dataDir.ts` for storage and `src/core/savings.ts` for rough
 token estimates, but it must not call the command pipeline. The optimize consumer reads
 inspect's persisted `inspect/latest.json` for the relevant scope bucket (project bucket by
@@ -499,7 +499,7 @@ Recommendation:
 Fix class:
 
 - `direct_restorable` only for adding missing `description` inferred from file name when
-  `--apply-safe --surface prompts` is explicitly used.
+  `--apply --surface prompts` is explicitly used.
 - otherwise `suggested_diff`.
 
 ### 6. `agent_overbreadth`
@@ -547,7 +547,7 @@ Fix class:
 
 - `suggested_diff` by default.
 - `direct_restorable` only for user-level skills when the rule has high confidence and
-  `--apply-safe --surface skills` is explicit.
+  `--apply --surface skills` is explicit.
 
 ### 8. `skill_entrypoint_bloat`
 
@@ -773,9 +773,9 @@ Files scanned: <n>
 
 ## Safe applies available
 
-- Run `tk optimize context --token-budget-block --apply-safe` to install the managed token
+- Run `tk optimize --token-budget-block --apply` to install the managed token
   budget block in your user-level agent instructions.
-- Run `tk optimize context --vscode-settings --apply-safe` to enable VS Code terminal output
+- Run `tk optimize --vscode-settings --apply` to enable VS Code terminal output
   compression in user settings.
 ```
 
@@ -838,17 +838,17 @@ Tests:
 
 ### Work item 2 — Make optimizer interactive by default for mixed actions
 
-`tk optimize context` can become an interactive consumer because many findings are advice,
+`tk optimize` can become an interactive consumer because many findings are advice,
 not safe edits. The non-interactive flags remain available for automation.
 
 CLI behavior:
 
 ```bash
-tk optimize context                 # interactive TTY flow when stdout is a TTY
-tk optimize context --dry-run        # non-interactive plan only
-tk optimize context --apply-safe     # non-interactive direct-restorable apply only
-tk optimize context --yes            # accept all direct_restorable actions; never applies advisory actions
-tk optimize context --restore        # interactive restore picker unless --all or --action-id is passed
+tk optimize                 # interactive TTY flow when stdout is a TTY
+tk optimize --dry-run        # non-interactive plan only
+tk optimize --apply     # non-interactive direct-restorable apply only
+tk optimize --yes            # accept all direct_restorable actions; never applies advisory actions
+tk optimize --restore        # interactive restore picker unless --all or --action-id is passed
 ```
 
 Interactive flow:
@@ -871,7 +871,7 @@ Interactive flow:
 
 Non-TTY behavior:
 
-- Without `--dry-run`, `--apply-safe`, `--write-advice`, `--restore`, or `--yes`, fail with a
+- Without `--dry-run`, `--apply`, `--write-advice`, `--restore`, or `--yes`, fail with a
   short message telling the caller to choose a non-interactive mode.
 - Never prompt in CI.
 
@@ -915,8 +915,8 @@ type OptimizeActionManifest = {
 
 Restore behavior:
 
-- `tk optimize context --restore --action-id <id>` restores one action.
-- `tk optimize context --restore --all` restores all Token Killer context optimizer actions in
+- `tk optimize --restore --action-id <id>` restores one action.
+- `tk optimize --restore --all` restores all Token Killer context optimizer actions in
   reverse chronological order.
 - Bare `--restore` on a TTY opens an action picker.
 - Marker restore removes only the Token Killer marker block.
@@ -989,7 +989,7 @@ Default writes stay user-level. Project marker writes are allowed only when all 
 - `--project` is passed
 - operation is the Token Killer marker block
 - command is interactive and the user selects the action, or non-interactive mode passes
-  `--apply-safe --project --yes`
+  `--apply --project --yes`
 - target file is `.github/copilot-instructions.md` or root `AGENTS.md`
 
 Project semantic rewrites remain suggested diff/advice only.
@@ -1011,10 +1011,10 @@ pnpm typecheck
   narrows to them. Both are fully read-only.
 - All static-context findings carry `source = "static_context"`, file, evidence,
   recommendation, and `fix_class`, merged into inspect's unified report.
-- `tk optimize context` consumes inspect's persisted report (or triggers inspect when absent).
-- `tk optimize context --dry-run` never writes.
-- `tk optimize context --write-advice` writes only user-level advice.
-- `tk optimize context --apply-safe` refuses project-level semantic edits.
+- `tk optimize` consumes inspect's persisted report (or triggers inspect when absent).
+- `tk optimize --dry-run` never writes.
+- `tk optimize --write-advice` writes only user-level advice.
+- `tk optimize --apply` refuses project-level semantic edits.
 - Token Killer managed marker block is idempotent and restorable.
 - Direct VS Code settings writes are idempotent and restorable.
 - Claude-only skill metadata never appears as a Copilot recommendation.

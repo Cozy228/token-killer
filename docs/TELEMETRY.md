@@ -106,7 +106,6 @@ tk telemetry enable           # set telemetry: true (network upload)
 tk telemetry disable          # set telemetry: false
 tk telemetry status           # show both consents, device_hash, first/last-sent
 tk telemetry preview          # print the EXACT payload that would be POSTed (never sends)
-tk telemetry purge            # delete telemetry-state.json (resets device_hash)
 ```
 
 `enable`/`disable`/`status`/`preview` **never send**. `preview` prints exactly what a send
@@ -121,8 +120,9 @@ build uploads to no one.
 To stop and erase:
 
 1. `tk telemetry disable` (or set `telemetry: false`) — stops all uploads.
-2. `tk telemetry purge` — deletes `~/.token-killer/telemetry-state.json`, resetting the
-   `device_hash`. The next run that you opt back into will generate a fresh, unlinkable id.
+2. Delete `~/.token-killer/telemetry-state.json` by hand to reset the `device_hash`
+   (device-reset is no longer a user-facing `tk telemetry` subcommand — ADR 0006).
+   The next run that you opt back into will generate a fresh, unlinkable id.
 
 Server-side deletion of already-uploaded payloads is the operator's responsibility; contact
 the operator that produced your enterprise build.

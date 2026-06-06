@@ -20,7 +20,7 @@ Figure out how to drive each host for real; do not substitute a unit test or a h
 | Copilot CLI | `copilot` → `/opt/homebrew/bin/copilot`; config dir `~/.copilot/` exists |
 | VS Code user settings | `~/Library/Application Support/Code/User/settings.json` (no `code` CLI on PATH) |
 | `tk` binary | NOT on PATH; built artifact is `dist/cli.js` (`bin.tk` → `./dist/cli.js`) |
-| Installer | **Does not exist yet** — `tk shim install` / `tk init` are Phase 2/3, unbuilt. You build the harness by hand. |
+| Installer | **Does not exist yet** — `tk init shim install` / `tk init` are Phase 2/3, unbuilt. You build the harness by hand. |
 
 ## 1. What actually shipped in Phase 1 (the review surface)
 
@@ -38,7 +38,7 @@ Code-complete, with unit tests under `tests/unit/shim/`:
 - `src/cli.ts` `main()` — the gate is wired: `--raw` unchanged; else `routeSpecific` + gate →
   compress or `executePassthrough`; compression errors fail toward passthrough.
 
-NOT shipped (out of scope for this review, but note the gap): `tk shim install/uninstall/status`,
+NOT shipped (out of scope for this review, but note the gap): `tk init shim install/uninstall/status`,
 the manifest, automated PATH injection, the `status` interception probe, `tk init`.
 
 ## 2. Source of truth (read before judging behavior)

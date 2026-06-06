@@ -110,7 +110,7 @@ that must land for the shim to be safe at all.**
 ## Phase 2 — `tk shim` installer + wrappers (ships the shim tier)
 
 Independently mergeable on top of Phase 1: gives a working shim via an explicit
-`tk shim install`, no `tk init` needed yet.
+`tk init shim install`, no `tk init` needed yet.
 
 1. **Subcommand dispatch.** `src/cli.ts` / `src/parse.ts`: intercept reserved
    subcommands **before** treating argv[0] as a program. Add `mode: "shim"` (and later
@@ -128,7 +128,7 @@ Independently mergeable on top of Phase 1: gives a working shim via an explicit
    terraform, dotnet`. (Exact set is whatever the handlers declare — the list above is the
    acceptance target for the declaration sweep, not a parallel hardcoded list.)
 
-3. **Wrapper generation.** `tk shim install`:
+3. **Wrapper generation.** `tk init shim install`:
    - Create `~/.token-killer/shim/` (this dir's path is `TK_SHIM_DIR`).
    - For each shimmable program, write an executable wrapper. POSIX: a file `git`
      containing `#!/usr/bin/env sh` + `exec tk git "$@"` (chmod +x). Windows: `git.cmd`
@@ -150,13 +150,13 @@ Independently mergeable on top of Phase 1: gives a working shim via an explicit
      (`~/.zshrc` / `~/.bashrc`) / PowerShell `$PROFILE` that prepends `TK_SHIM_DIR` and
      exports `TK_SHIM_DIR`. Idempotent (delimited by `# >>> token-killer shim >>>` markers).
 
-5. **`tk shim status` + interception probe.** Report: shim dir, whether it's first on
+5. **`tk init shim status` + interception probe.** Report: shim dir, whether it's first on
    PATH, which host configs were patched, manifest version. **Crucially**, run an
    interception probe: spawn a non-interactive shell the way the host would and confirm a
    shimmed call actually resolves to the wrapper (proves the load-bearing assumption — see
    *Most fragile assumption* below). Report PASS/FAIL.
 
-6. **`tk shim uninstall`.** Remove the shim dir, the RC block (between markers), and the
+6. **`tk init shim uninstall`.** Remove the shim dir, the RC block (between markers), and the
    `terminal.integrated.env` keys it added. Idempotent; leaves unrelated config intact.
 
 **Phase 2 tests:**
@@ -225,15 +225,15 @@ No cycles: the only loop risk is shim→tk→shim, cut by `stripShimDir` + senti
 
 - `pnpm test` (unit) and `pnpm test:migration` stay green (no handler behavior changed).
 - New: `pnpm vitest run tests/unit/shim` for Phases 1–3.
-- Manual acceptance (Phase 2, in real VS Code): `tk shim install` → restart terminal →
+- Manual acceptance (Phase 2, in real VS Code): `tk init shim install` → restart terminal →
   in an agent `run_in_terminal` shell run `command -v git` (must point into
   `~/.token-killer/shim`) and `git status` (must return compressed output) and
-  `git commit` (must open the editor, i.e. passthrough). `tk shim status` probe = PASS.
+  `git commit` (must open the editor, i.e. passthrough). `tk init shim status` probe = PASS.
 
 ## Rollback
 
 - Phase 1: pure code; revert the commit. No external state.
-- Phase 2/3: `tk shim uninstall` removes all PATH edits and the shim dir; injection file
+- Phase 2/3: `tk init shim uninstall` removes all PATH edits and the shim dir; injection file
   is removed by reverting the marked block. No data migration, fully reversible.
 
 ## Most fragile assumption (premise collapse)
@@ -243,7 +243,7 @@ NON-interactive `run_in_terminal` shells the agent uses.** If it is not (same fa
 class as the dead hook: the agent's tool-shell ignores the injected PATH), the shim tier
 never intercepts and is dead in the user's env — leaving only instruction injection.
 
-Deformation already built in: **Phase 2 step 5 makes `tk shim status` run an interception
+Deformation already built in: **Phase 2 step 5 makes `tk init shim status` run an interception
 probe**, and **Phase 3 detection falls to injection when the probe FAILs**. So the ladder
 degrades gracefully instead of silently shipping a no-op shim. This assumption must be
 confirmed by the probe on the user's real VS Code before relying on the shim tier — but

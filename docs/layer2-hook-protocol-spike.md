@@ -204,7 +204,7 @@ Consequences (revised — supersedes the round-1 "CLI-only headline"):
   (`.github/copilot-instructions.md`: "prefix commands with `tk`") for hosts where
   modifying `PATH` is undesirable.
 - `tk hook init` stays **Copilot-CLI-focused** (GitHub-hooks `~/.copilot/hooks/`); VS
-  Code/IntelliJ are served by `tk shim install` (PATH), not by hook config.
+  Code/IntelliJ are served by `tk init shim install` (PATH), not by hook config.
 - Prompt-side governance is record-only + session-start injection; no host blocks a
   submitted prompt (see [CONTEXT.md](../CONTEXT.md) decisions).
 

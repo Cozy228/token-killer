@@ -26,7 +26,7 @@ The branches the spec left open are now closed. These override any looser wordin
 
 1. **Estimator (Gap A) is already done.** `src/core/tokens.ts` exists and both `savings.ts` and
    `context/metrics.ts` import it. Slice 0 is a no-op except for the identical-numbers test.
-2. **`tk report` reuses ADR 0004's `src/core/aggregate.ts` for ledger ①** — it never writes a
+2. **`tk gain report` reuses ADR 0004's `src/core/aggregate.ts` for ledger ①** — it never writes a
    second aggregation. The telemetry-and-gain initiative (which owns `aggregate.ts`) ships its
    Slices 0–2 first; metrics-ledger starts at ledger ④ and joins `aggregate.ts` in Slice 5.
 3. **Ledger ③ gets a real store — `governance.jsonl` (Gap C, new).** The hook runtime appends one
@@ -41,7 +41,7 @@ The branches the spec left open are now closed. These override any looser wordin
    action: `{surface, before_hash, before_tokens, after_hash, after_tokens, exposure_class, ts}`.
    It serves both ledger ② (`delta = before − after`) and ledger ④ (`findings_reverted`: at the
    next inspect, the current file hash equal to `before_hash` means the user reverted it).
-6. **`tk report --scope`: user/project is the main axis; `runtime` renders only ②③.** Under
+6. **`tk gain report --scope`: user/project is the main axis; `runtime` renders only ②③.** Under
    `--scope runtime`, ledger ① shows "scope n/a, all-project" rather than a fabricated runtime
    figure. Each ledger only responds on scopes it actually has.
 7. **`estimate_kind` lives at the aggregation/output layer only**, never on a `HistoryRecord` row.
@@ -60,7 +60,7 @@ The branches the spec left open are now closed. These override any looser wordin
     never a standalone token total.
 11. **`advice/` stays the inspect-finding side of ③, not a counts store.** Live deny/suggest events
     are counted from `governance.jsonl` (§0.1.3). `inspect/advice.ts` + `context/advice.ts` keep
-    writing human-readable recommendation artifacts; `tk report` does **not** read `advice/` for
+    writing human-readable recommendation artifacts; `tk gain report` does **not** read `advice/` for
     counts. ③'s counts = `governance.jsonl` events; ③'s recommendations = `advice/` artifacts.
 
 ## 1. The four ledgers
@@ -101,7 +101,7 @@ guesses and produces a fake-precise token figure. Instead:
 
 - Source: the hook runtime (`src/hook/govern.ts`, `src/hook/prompt.ts`) and inspect findings.
   **Storage = `governance.jsonl` (Gap C, §0.1.3)** — `govern`/`prompt` append one record per
-  `deny`/`suggest`; `tk report` counts them. `govern.ts` today only *returns* a `Decision`; this
+  `deny`/`suggest`; `tk gain report` counts them. `govern.ts` today only *returns* a `Decision`; this
   is the missing persistence the spec did not call out.
 - Report **counts** as the primary figures, named after the real `Decision` enum:
   `denied_large_reads` (deny), `suggested_broad_searches` (suggest), `denied_large_prompts` /
@@ -183,7 +183,7 @@ re-edit. `body_hash` (from `BodyMetrics`) feeds `before_hash`/`after_hash` and d
 hook runtime on `deny`/`suggest` (labels+lengths only; `rewrite` never written). This is the
 physical home for ③'s counts; do it as part of Slice 3.
 
-## 4. The deliverable — a read-side unified report (`tk report`)
+## 4. The deliverable — a read-side unified report (`tk gain report`)
 
 One read-only command that joins all four ledgers and renders them in **four separate sections,
 with no grand total and no cross-ledger arithmetic.** It reads the existing stores (ledger ① via
@@ -194,7 +194,7 @@ ADR 0004's `aggregate.ts`, §0.1.2); it owns no new storage beyond Gap B/Gap C.
 fabricate one. Each ledger responds only on the scopes it actually has.
 
 ```text
-$ tk report [--scope user|project|runtime] [--since <date>] [--json]
+$ tk gain report [--scope user|project|runtime] [--since <date>] [--json]
 
 Measured command savings            (estimate_kind: measured)
   raw_tokens · delivered_tokens · saved_tokens · savings_pct
@@ -212,7 +212,7 @@ Quality guardrails
 ```
 
 `--json` emits the same four objects as four top-level keys — never a flattened total. Existing
-`tk gain` keeps working (it's ledger ① only); `tk report` is the superset view.
+`tk gain` keeps working (it's ledger ① only); `tk gain report` is the superset view.
 
 ## 5. Schema / naming contracts (MUST)
 
@@ -253,7 +253,7 @@ Quality guardrails
 4. **Optimizer delta ledger ②** (needs Gap B). Append-only `optimize-actions.jsonl` +
    `delta_tokens` + `exposure_class`. Test drift detection via `body_hash`, and that ② is a state
    diff (not accumulated). This store also backs ④'s `findings_reverted`.
-5. **`tk report`** — the read-side join. Four sections, `--scope` per §0.1.6, `--json`, no total.
+5. **`tk gain report`** — the read-side join. Four sections, `--scope` per §0.1.6, `--json`, no total.
    Ledger ① via `aggregate.ts` (§0.1.2). This is the payoff slice.
 
 ## 8. Done means
@@ -261,7 +261,7 @@ Quality guardrails
 - One estimator, imported everywhere. `grep -rn "length / 4" src` finds it in exactly one place
   (`core/tokens.ts`). (Do NOT gate on bare `/ 4` — `handlers/common/listLike.ts` uses `marker / 4`
   for tree-indent depth, unrelated to tokens.)
-- `tk report` shows four sections; no code path sums across them; `--json` has four top-level keys.
+- `tk gain report` shows four sections; no code path sums across them; `--json` has four top-level keys.
 - A test asserts an executed rewrite does **not** appear in ③ (anti-double-count).
 - A test asserts ② is a state diff, not accumulated over runs.
 - `saved_tokens` appears only in ledger ① types/output.
@@ -270,4 +270,4 @@ Quality guardrails
 - A test asserts `findings_reverted` fires only when a surface's current hash returns to its
   recorded `before_hash`; `raw_reopen_rate` is rendered `n/a`, never a fabricated number.
 - The whole thing fails open: a missing/corrupt store yields an empty section, never a crash on the
-  hot path (`tk report` is cold-path, but it must not block or error `tk <cmd>`).
+  hot path (`tk gain report` is cold-path, but it must not block or error `tk <cmd>`).
