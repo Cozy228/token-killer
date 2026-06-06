@@ -130,7 +130,11 @@ export function removeVscodeEnv(
   return next;
 }
 
-function readSettings(settingsPath: string): Record<string, unknown> {
+// Shared settings.json I/O — the single read/write path for VS Code user
+// settings, used both by the shim (PATH injection) and the context optimizer
+// (token-lean settings). Centralizing it keeps the two writers from diverging on
+// formatting (2-space + trailing newline) and parse policy (strict JSON only).
+export function readSettings(settingsPath: string): Record<string, unknown> {
   if (!existsSync(settingsPath)) return {};
   const text = readFileSync(settingsPath, "utf8").trim();
   if (text === "") return {};
@@ -140,7 +144,7 @@ function readSettings(settingsPath: string): Record<string, unknown> {
   return JSON.parse(text) as Record<string, unknown>;
 }
 
-function writeSettings(settingsPath: string, settings: Record<string, unknown>): void {
+export function writeSettings(settingsPath: string, settings: Record<string, unknown>): void {
   mkdirSync(dirname(settingsPath), { recursive: true });
   writeFileSync(settingsPath, `${JSON.stringify(settings, null, 2)}\n`);
 }

@@ -28,6 +28,8 @@ export type OptimizeArgs = {
   writeAdvice: boolean;
   applySafe: boolean;
   tokenBudgetBlock: boolean;
+  vscodeSettings: boolean;
+  restore: boolean;
   scopeUser: boolean;
   scopeProject: boolean;
   surface?: string;
@@ -47,6 +49,8 @@ export function parseOptimizeArgs(argv: string[]): OptimizeArgs {
     writeAdvice: false,
     applySafe: false,
     tokenBudgetBlock: false,
+    vscodeSettings: false,
+    restore: false,
     scopeUser: false,
     scopeProject: false,
   };
@@ -61,6 +65,8 @@ export function parseOptimizeArgs(argv: string[]): OptimizeArgs {
     else if (t === "--write-advice") args.writeAdvice = true;
     else if (t === "--apply-safe") args.applySafe = true;
     else if (t === "--token-budget-block") args.tokenBudgetBlock = true;
+    else if (t === "--vscode-settings") args.vscodeSettings = true;
+    else if (t === "--restore") args.restore = true;
     else if (t === "--project") args.scopeProject = true;
     else if (t === "--user") args.scopeUser = true;
     else if (t === "--surface") {
@@ -130,6 +136,14 @@ export async function runOptimize(
   if (args.error) {
     process.stderr.write(`tk optimize: ${args.error}\n`);
     return 1;
+  }
+
+  // Scheme 1: VS Code token-lean settings is a self-contained, host-native path
+  // (apply/restore/report compressOutput; advisory on the rest). It does not use
+  // the inspect bucket / finding pipeline, so dispatch before anything else.
+  if (args.vscodeSettings) {
+    const { runVscodeSettings } = await import("./vscodeSettings.js");
+    return runVscodeSettings(args, nowMs, home);
   }
 
   // Slice 6 owns --apply-safe; refuse it cleanly here so it's never a silent no-op.
