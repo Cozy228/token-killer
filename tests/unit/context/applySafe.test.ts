@@ -1,5 +1,13 @@
 import { afterEach, beforeEach, describe, expect, test, vi } from "vitest";
-import { existsSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, rmSync, writeFileSync } from "node:fs";
+import {
+  existsSync,
+  mkdirSync,
+  mkdtempSync,
+  readFileSync,
+  readdirSync,
+  rmSync,
+  writeFileSync,
+} from "node:fs";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 
@@ -69,7 +77,14 @@ describe("marker block helpers", () => {
   });
 
   test("setFrontmatterKey preserves body and comments", () => {
-    const content = ["---", "name: deploy", "# a yaml comment", "---", "# Heading", "body text"].join("\n");
+    const content = [
+      "---",
+      "name: deploy",
+      "# a yaml comment",
+      "---",
+      "# Heading",
+      "body text",
+    ].join("\n");
     const next = setFrontmatterKey(content, "disable-model-invocation", true);
     expect(next).toContain("disable-model-invocation: true");
     expect(next).toContain("# a yaml comment");
@@ -115,20 +130,26 @@ describe("runOptimize --apply", () => {
   test("applies a user-level skill frontmatter change with a backup", async () => {
     const skill = join(home, ".claude", "skills", "deploy", "SKILL.md");
     mkdirSync(dirname(skill), { recursive: true });
-    writeFileSync(skill, ["---", "name: deploy", "description: Deploy", "---", "# Deploy", "Run the deploy and publish."].join("\n"));
+    writeFileSync(
+      skill,
+      [
+        "---",
+        "name: deploy",
+        "description: Deploy",
+        "---",
+        "# Deploy",
+        "Run the deploy and publish.",
+      ].join("\n"),
+    );
 
     const trigger = vi.fn((_s: "user" | "project", h: string, c: string, n: number) => {
       runInspect(["--user"], n, h, c);
     });
 
     const s = silenceStdout();
-    const code = await runOptimize(
-      ["--user", "--surface", "skills", "--apply"],
-      1000,
-      home,
-      cwd,
-      { triggerInspect: trigger },
-    );
+    const code = await runOptimize(["--user", "--surface", "skills", "--apply"], 1000, home, cwd, {
+      triggerInspect: trigger,
+    });
     s.mockRestore();
 
     expect(code).toBe(0);
@@ -145,5 +166,26 @@ describe("runOptimize --apply", () => {
     expect(await runOptimize(["--restore"], 2000, home, cwd, {})).toBe(0);
     s2.mockRestore();
     expect(readFileSync(skill, "utf8")).not.toContain("disable-model-invocation: true");
+  });
+});
+
+describe("runOptimize --backup → --restore (reverts hand edits)", () => {
+  test("a file snapshotted with --backup is restored after a manual edit", async () => {
+    const file = join(cwd, "AGENTS.md");
+    writeFileSync(file, "original content\n");
+
+    const s = silenceStdout();
+    expect(await runOptimize(["--backup", file], 1000, home, cwd, {})).toBe(0);
+    s.mockRestore();
+
+    // Agent (or human) edits the file by hand after the snapshot.
+    writeFileSync(file, "totally rewritten by an agent\n");
+    expect(readFileSync(file, "utf8")).toContain("agent");
+
+    const s2 = silenceStdout();
+    expect(await runOptimize(["--restore"], 2000, home, cwd, {})).toBe(0);
+    s2.mockRestore();
+    // Restore brings back the pre-edit snapshot — undoing the manual edit.
+    expect(readFileSync(file, "utf8")).toBe("original content\n");
   });
 });

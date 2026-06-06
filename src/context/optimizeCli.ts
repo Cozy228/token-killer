@@ -30,6 +30,8 @@ export type OptimizeArgs = {
   tokenBudgetBlock: boolean;
   vscodeSettings: boolean;
   restore: boolean;
+  backup: boolean;
+  paths: string[]; // explicit files for --backup; empty → all in-scope context files
   scopeUser: boolean;
   scopeProject: boolean;
   surface?: string;
@@ -51,6 +53,8 @@ export function parseOptimizeArgs(argv: string[]): OptimizeArgs {
     tokenBudgetBlock: false,
     vscodeSettings: false,
     restore: false,
+    backup: false,
+    paths: [],
     scopeUser: false,
     scopeProject: false,
   };
@@ -65,13 +69,21 @@ export function parseOptimizeArgs(argv: string[]): OptimizeArgs {
     else if (t === "--token-budget-block") args.tokenBudgetBlock = true;
     else if (t === "--vscode-settings") args.vscodeSettings = true;
     else if (t === "--restore") args.restore = true;
-    else if (t === "--project") args.scopeProject = true;
+    else if (t === "--backup") {
+      args.backup = true;
+      // Consume following non-flag tokens as explicit file paths to snapshot.
+      while (i + 1 < tokens.length && !tokens[i + 1].startsWith("--")) {
+        args.paths.push(tokens[i + 1]);
+        i += 1;
+      }
+    } else if (t === "--project") args.scopeProject = true;
     else if (t === "--user") args.scopeUser = true;
     else if (t === "--surface") {
       const v = tokens[i + 1];
       i += 1;
       if (v && SURFACE_SELECTORS[v]) args.surface = v;
-      else args.error = `invalid --surface '${v ?? ""}' (expected instructions | prompts | agents | skills)`;
+      else
+        args.error = `invalid --surface '${v ?? ""}' (expected instructions | prompts | agents | skills)`;
     } else {
       args.error = `unknown flag '${t}'`;
     }
@@ -99,10 +111,20 @@ function resolveLivePath(file: string, home: string, cwd: string): string {
 // Inspect trigger is injected so src/context stays independent of the inspect
 // command module (default uses a dynamic import — no static cycle).
 export type OptimizeDeps = {
-  triggerInspect?: (scope: ContextScope, home: string, cwd: string, nowMs: number) => void | Promise<void>;
+  triggerInspect?: (
+    scope: ContextScope,
+    home: string,
+    cwd: string,
+    nowMs: number,
+  ) => void | Promise<void>;
 };
 
-async function defaultTriggerInspect(scope: ContextScope, home: string, cwd: string, nowMs: number): Promise<void> {
+async function defaultTriggerInspect(
+  scope: ContextScope,
+  home: string,
+  cwd: string,
+  nowMs: number,
+): Promise<void> {
   // Dynamic import avoids a static inspect↔context cycle. A full inspect run
   // (runtime + static) keeps the persisted bucket complete (goal §"Optimize").
   // We only want inspect's side effect (the persisted bucket), so its stdout
@@ -153,7 +175,16 @@ export async function runOptimize(
     return applyMarkerBlock(home, args.restore ? "remove" : "insert", nowMs);
   }
 
-  // `--restore` on its own reverts the most recent `--apply`.
+  // `--backup` snapshots files BEFORE they are edited (by an agent following a
+  // copied prompt, or by hand), so `--restore` can later revert those edits.
+  if (args.backup) {
+    const { runBackup } = await import("./applySafe.js");
+    return runBackup(args, nowMs, home, cwd);
+  }
+
+  // `--restore` reverts the most recent backup set — whether it was written by
+  // `--apply`, `--token-budget-block`, or a pre-edit `--backup` (so it can undo
+  // an agent's manual edits taken after that snapshot).
   if (args.restore) {
     const { runRestore } = await import("./applySafe.js");
     return runRestore(nowMs);
@@ -202,7 +233,9 @@ export async function runOptimize(
     }
     return 0;
   } catch (error) {
-    process.stderr.write(`tk optimize: internal error: ${error instanceof Error ? error.message : String(error)}\n`);
+    process.stderr.write(
+      `tk optimize: internal error: ${error instanceof Error ? error.message : String(error)}\n`,
+    );
     return 3;
   }
 }
@@ -250,13 +283,20 @@ function printDryRun(
   process.stdout.write(`${out.join("\n")}\n`);
 }
 
-function renderOutcome(finding: ContextFinding, outcome: PlanOutcome, live: string | undefined): string[] {
+function renderOutcome(
+  finding: ContextFinding,
+  outcome: PlanOutcome,
+  live: string | undefined,
+): string[] {
   const head = `[${finding.severity}] ${finding.type} ${finding.file ?? ""}${finding.start_line ? `:${finding.start_line}` : ""}`;
   if (outcome.status === "file_missing") {
     return [head, "  (file not found on disk — re-run inspect)"];
   }
   if (outcome.status === "hash_mismatch") {
-    return [head, "  (file changed since inspect — re-run `tk inspect` before optimizing; stale diff suppressed)"];
+    return [
+      head,
+      "  (file changed since inspect — re-run `tk inspect` before optimizing; stale diff suppressed)",
+    ];
   }
   if (outcome.status === "skipped") {
     return [head, `  (skipped: ${outcome.reason})`];
@@ -268,7 +308,11 @@ export function renderPlan(plan: ContextPatchPlan, live: string | undefined): st
   const lines: string[] = [];
   for (const op of plan.operations) {
     if (op.kind === "frontmatter_set" && live !== undefined) {
-      lines.push(...renderFrontmatterSetDiff(op.path, op.key, op.value, live).split("\n").map((l) => `  ${l}`));
+      lines.push(
+        ...renderFrontmatterSetDiff(op.path, op.key, op.value, live)
+          .split("\n")
+          .map((l) => `  ${l}`),
+      );
     } else if (op.kind === "suggested_diff") {
       lines.push(...op.diff.split("\n").map((l) => `  ${l}`));
     } else if (op.kind === "insert_marker_block") {

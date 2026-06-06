@@ -23,6 +23,7 @@ import { VERSION } from "../version.js";
 import { renderStaticContextSection } from "../context/report.js";
 import type { ContextFinding, ContextScope, FindingSeverity } from "../context/types.js";
 import { writeAdviceArtifacts, writeTelemetryExport } from "./persist.js";
+import { emitHtmlReport } from "../report/open.js";
 import { gatherRepoContext } from "./repoContext.js";
 import { buildReport, renderJson, renderMarkdown } from "./report.js";
 import { parseSince, scan, type ScanResult } from "./scan.js";
@@ -35,6 +36,7 @@ type FailOnSeverity = "info" | "warn" | "error";
 
 type InspectArgs = {
   json: boolean;
+  html: boolean;
   inputType: InputType;
   inputTypeExplicit: boolean;
   since?: string;
@@ -55,7 +57,10 @@ type InspectArgs = {
   error?: string; // set on a parse error → exit 1
 };
 
-function parseNumberFlag(value: string | undefined, name: string): { value?: number; error?: string } {
+function parseNumberFlag(
+  value: string | undefined,
+  name: string,
+): { value?: number; error?: string } {
   if (value === undefined) return { error: `${name} requires a value` };
   const n = Number(value);
   if (!Number.isFinite(n)) return { error: `${name} must be a number` };
@@ -65,6 +70,7 @@ function parseNumberFlag(value: string | undefined, name: string): { value?: num
 export function parseInspectArgs(argv: string[]): InspectArgs {
   const args: InspectArgs = {
     json: false,
+    html: false,
     inputType: "vscode",
     inputTypeExplicit: false,
     repoContext: false,
@@ -83,6 +89,8 @@ export function parseInspectArgs(argv: string[]): InspectArgs {
     const token = argv[i];
     if (token === "--json") {
       args.json = true;
+    } else if (token === "--html") {
+      args.html = true;
     } else if (token === "--repo-context") {
       args.repoContext = true;
     } else if (token === "--advice") {
@@ -111,7 +119,8 @@ export function parseInspectArgs(argv: string[]): InspectArgs {
       const value = argv[i + 1];
       i += 1;
       if (value && SURFACES.has(value)) args.surface = value;
-      else args.error = `invalid --surface '${value ?? ""}' (expected instructions | prompts | agents | skills)`;
+      else
+        args.error = `invalid --surface '${value ?? ""}' (expected instructions | prompts | agents | skills)`;
     } else if (token === "--fail-on") {
       const value = argv[i + 1];
       i += 1;
@@ -177,7 +186,10 @@ export function runInspect(
   }
 
   // --copilot-context (static-only) is mutually exclusive with runtime-only flags.
-  if (opts.copilotContext && (opts.since !== undefined || opts.session !== undefined || opts.inputTypeExplicit)) {
+  if (
+    opts.copilotContext &&
+    (opts.since !== undefined || opts.session !== undefined || opts.inputTypeExplicit)
+  ) {
     process.stderr.write(
       "tk inspect: --copilot-context (static-context only) cannot be combined with runtime-only flags (--since/--session/--input-type)\n",
     );
@@ -188,7 +200,9 @@ export function runInspect(
   if (opts.since !== undefined) {
     const duration = parseSince(opts.since);
     if (duration === undefined) {
-      process.stderr.write(`tk inspect: invalid --since '${opts.since}' (expected e.g. 7d, 24h, 30m)\n`);
+      process.stderr.write(
+        `tk inspect: invalid --since '${opts.since}' (expected e.g. 7d, 24h, 30m)\n`,
+      );
       return 1;
     }
     sinceMs = nowMs - duration;
@@ -262,6 +276,32 @@ export function runInspect(
     report.static_context = { files_scanned: sc.result.files_scanned, findings: staticFindings };
     report.findings = unifiedFindings;
 
+    // `--html`: write a single-file, user-facing HTML report and open it. Short-
+    // circuits the text/JSON stream (still after persistence above).
+    if (opts.html) {
+      emitHtmlReport({
+        kind: "inspect",
+        title: "Context cleanup report",
+        subtitle: "Where your AI setup wastes tokens, and how to fix it.",
+        generatedAt: new Date(nowMs).toISOString(),
+        data: {
+          scope: scopes.includes("project") ? "project" : "user",
+          files_scanned: sc.result.files_scanned,
+          sessions_analyzed: result?.session_inventory ?? 0,
+          findings: unifiedFindings.map((f) => ({
+            severity: f.severity,
+            type: f.type,
+            file: (f as { file?: string }).file,
+            start_line: (f as { start_line?: number }).start_line,
+            evidence: f.evidence,
+            recommendation: f.recommendation,
+            fix_class: f.fix_class,
+          })),
+        },
+      });
+      return 0;
+    }
+
     const reportJson = renderJson(report);
     const staticSection = renderStaticContextSection({
       files_scanned: sc.result.files_scanned,
@@ -298,7 +338,9 @@ export function runInspect(
         inspect: buildInspectAggregates(result, findings),
       });
       const path = writeTelemetryExport(`${JSON.stringify(telemetry, null, 2)}\n`);
-      process.stderr.write(`tk inspect: no telemetry endpoint configured; wrote local export: ${path}\n`);
+      process.stderr.write(
+        `tk inspect: no telemetry endpoint configured; wrote local export: ${path}\n`,
+      );
     }
 
     // stdout report (skipped when --write-advice already printed a confirmation,
@@ -334,7 +376,9 @@ export function runInspect(
 
     return 0;
   } catch (error) {
-    process.stderr.write(`tk inspect: internal error: ${error instanceof Error ? error.message : String(error)}\n`);
+    process.stderr.write(
+      `tk inspect: internal error: ${error instanceof Error ? error.message : String(error)}\n`,
+    );
     return 3;
   }
 }

@@ -17,6 +17,7 @@ import {
 } from "../inspect/optimizeActions.js";
 import { readInspectBucket, type ScopeBucket } from "../inspect/persist.js";
 import { summarize, type GainSummary } from "./aggregate.js";
+import { DEFAULT_INPUT_PRICE_PER_MTOK } from "./pricing.js";
 import { projectFingerprint } from "./dataDir.js";
 import {
   listProjectGovernance,
@@ -188,7 +189,9 @@ export function renderJson(ledgers: Ledgers): string {
 
 export function renderText(ledgers: Ledgers): string {
   const out: string[] = [];
-  out.push(`Token Killer — savings report (scope: ${ledgers.scope}${ledgers.since ? `, since ${ledgers.since}` : ""})`);
+  out.push(
+    `Token Killer — savings report (scope: ${ledgers.scope}${ledgers.since ? `, since ${ledgers.since}` : ""})`,
+  );
   out.push("Four separate views, shown side by side. They are never summed.");
   out.push("");
 
@@ -205,7 +208,9 @@ export function renderText(ledgers: Ledgers): string {
   out.push("");
 
   // ② Optimizer deltas
-  out.push("② Optimizer deltas                    (delta = measured, current state vs pre-opt snapshot)");
+  out.push(
+    "② Optimizer deltas                    (delta = measured, current state vs pre-opt snapshot)",
+  );
   if (ledgers.optimizer_deltas.surfaces.length === 0) {
     out.push("  (no recorded optimize actions)");
   } else {
@@ -223,7 +228,9 @@ export function renderText(ledgers: Ledgers): string {
   out.push(
     `  denied_large_reads ${g.denied_large_reads} · suggested_broad_searches ${g.suggested_broad_searches} · denied_large_prompts ${g.denied_large_prompts} · suggested_large_prompts ${g.suggested_large_prompts}`,
   );
-  out.push(`  avoided_tokens_estimate ≈ ${g.avoided_tokens_estimate} (heuristic; executed rewrites excluded — counted in ①)`);
+  out.push(
+    `  avoided_tokens_estimate ≈ ${g.avoided_tokens_estimate} (heuristic; executed rewrites excluded — counted in ①)`,
+  );
   out.push("");
 
   // ④ Quality guardrails
@@ -260,10 +267,22 @@ function parseSince(value: string): Date {
 
 // `tk gain report [--scope user|project|runtime] [--project|--user] [--since <date>] [--json]`
 // (`tk report` is a back-compat alias for the same handler — see cli.ts / parse.ts.)
+// Headline dollar estimate for the HTML report — measured saved tokens valued at
+// the default input price. Always an estimate (the report labels it as such).
+function usdFields(ledgers: Ledgers): { estimated_savings_usd: number; price_per_mtok: number } {
+  const m = ledgers.measured_command_savings;
+  const saved = isScopeNa(m) ? 0 : m.saved_tokens;
+  return {
+    estimated_savings_usd: (saved / 1_000_000) * DEFAULT_INPUT_PRICE_PER_MTOK,
+    price_per_mtok: DEFAULT_INPUT_PRICE_PER_MTOK,
+  };
+}
+
 export async function runReport(argv: string[]): Promise<number> {
   let scope: ReportScope = "user"; // user/project is the main axis; user default (ADR 0003)
   let since: Date | undefined;
   let json = false;
+  let text = false; // opt out of the default HTML report
 
   try {
     for (let i = 0; i < argv.length; i += 1) {
@@ -289,6 +308,12 @@ export async function runReport(argv: string[]): Promise<number> {
         case "--json":
           json = true;
           break;
+        case "--text":
+          text = true;
+          break;
+        case "--html":
+          // Default already; accepted for explicitness.
+          break;
         default:
           throw new Error(`tk report: unknown argument '${token}'`);
       }
@@ -298,6 +323,23 @@ export async function runReport(argv: string[]): Promise<number> {
     return 1;
   }
 
-  process.stdout.write(await buildLedgerReport({ scope, since, cwd: process.cwd() }, json));
+  const opts: ReportOptions = { scope, since, cwd: process.cwd() };
+
+  // Text/JSON only when explicitly asked; otherwise the default is the HTML
+  // report (built + opened).
+  if (json || text) {
+    process.stdout.write(await buildLedgerReport(opts, json));
+    return 0;
+  }
+
+  const ledgers = await loadLedgers(opts);
+  const { emitHtmlReport } = await import("../report/open.js");
+  emitHtmlReport({
+    kind: "gain",
+    title: "Your token savings",
+    subtitle: "How much token spend Token Killer saved you, and where it came from.",
+    generatedAt: new Date().toISOString(),
+    data: { ...ledgers, ...usdFields(ledgers) },
+  });
   return 0;
 }

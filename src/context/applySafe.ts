@@ -12,13 +12,10 @@ import { basename, join } from "node:path";
 
 import { tokenKillerHome } from "../core/dataDir.js";
 import { readInspectBucket, type ScopeBucket } from "../inspect/persist.js";
-import {
-  exposureForSurface,
-  recordOptimizeAction,
-} from "../inspect/optimizeActions.js";
+import { exposureForSurface, recordOptimizeAction } from "../inspect/optimizeActions.js";
 import { estimateTokens, hashText } from "./metrics.js";
 import { parseMarkdown } from "./parseMarkdown.js";
-import { contextProjectFingerprint, readContextFile } from "./discover.js";
+import { contextProjectFingerprint, discoverContextFiles, readContextFile } from "./discover.js";
 import type { OptimizeArgs, OptimizeDeps } from "./optimizeCli.js";
 import {
   resolveLivePath,
@@ -79,7 +76,7 @@ export function removeMarkerBlock(content: string): string {
   // Collapse the blank line(s) the block left behind.
   before = before.replace(/\n+$/, "\n");
   after = after.replace(/^\n+/, "");
-  if (before === "" ) return after.replace(/^\n+/, "");
+  if (before === "") return after.replace(/^\n+/, "");
   return `${before}${after}`;
 }
 
@@ -157,7 +154,9 @@ export function runRestore(_nowMs: number): number {
       process.stdout.write(`Restored ${entry.target}\n`);
       restored += 1;
     } catch (error) {
-      process.stderr.write(`tk optimize: could not restore ${entry.target}: ${error instanceof Error ? error.message : String(error)}\n`);
+      process.stderr.write(
+        `tk optimize: could not restore ${entry.target}: ${error instanceof Error ? error.message : String(error)}\n`,
+      );
     }
   }
   process.stdout.write(`tk optimize: restored ${restored} file(s) from ${latest}.\n`);
@@ -173,6 +172,38 @@ function miniDiff(path: string, before: string, after: string): string {
   for (const l of beforeLines) if (!afterSet.has(l)) out.push(`-${l}`);
   for (const l of afterLines) if (!beforeSet.has(l)) out.push(`+${l}`);
   return out.join("\n");
+}
+
+// `--backup`: snapshot files BEFORE they are edited (explicit paths, or all
+// in-scope context files when none are given), into ONE backup set with a
+// manifest. A later `tk optimize --restore` reverts those files to this
+// snapshot — so it can undo manual edits an agent makes after this runs.
+export function runBackup(args: OptimizeArgs, nowMs: number, home: string, cwd: string): number {
+  const targets =
+    args.paths.length > 0
+      ? args.paths.map((p) => resolveLivePath(p, home, cwd))
+      : discoverContextFiles({ scopes: resolveOptimizeScopes(args, cwd), home, cwd }).files.map(
+          (f) => f.path,
+        );
+
+  let count = 0;
+  for (const target of targets) {
+    const content = readContextFile(target);
+    if (content === undefined) continue;
+    writeBackup(target, content, nowMs);
+    count += 1;
+  }
+  if (count === 0) {
+    process.stdout.write("tk optimize: nothing to back up (no readable files found).\n");
+    return 0;
+  }
+  process.stdout.write(
+    `tk optimize: backed up ${count} file(s) to ${join(backupsRoot(), backupTimestamp(nowMs))}\n`,
+  );
+  process.stdout.write(
+    "Edit the files now; revert everything later with `tk optimize --restore`.\n",
+  );
+  return 0;
 }
 
 // ── Token-budget managed block (insert/remove) ───────────────────────────────
@@ -198,7 +229,9 @@ export function applyMarkerBlock(home: string, mode: "insert" | "remove", nowMs:
   }
   mkdirSync(join(target, ".."), { recursive: true });
   writeFileSync(target, next);
-  process.stdout.write(`${mode === "insert" ? "Installed" : "Removed"} Token Killer managed block in ${target}\n`);
+  process.stdout.write(
+    `${mode === "insert" ? "Installed" : "Removed"} Token Killer managed block in ${target}\n`,
+  );
   process.stdout.write(`${miniDiff(target, existing, next)}\n`);
   return 0;
 }
@@ -253,7 +286,9 @@ async function triggerInspectForScope(
     deps.triggerInspect ??
     (async (s: ContextScope, h: string, c: string, n: number) => {
       const mod = await import("../inspect/cli.js");
-      await withSuppressedStdout(() => mod.runInspect(s === "user" ? ["--user"] : ["--project"], n, h, c));
+      await withSuppressedStdout(() =>
+        mod.runInspect(s === "user" ? ["--user"] : ["--project"], n, h, c),
+      );
     });
   await trigger(scope, home, cwd, nowMs);
 }
@@ -276,7 +311,9 @@ export async function runApply(
 
   for (const scope of scopes) {
     const bucketRef: ScopeBucket =
-      scope === "user" ? { scope: "user" } : { scope: "project", fingerprint: contextProjectFingerprint(cwd) };
+      scope === "user"
+        ? { scope: "user" }
+        : { scope: "project", fingerprint: contextProjectFingerprint(cwd) };
     let bucket = readInspectBucket(bucketRef);
     if (!bucket) {
       await triggerInspectForScope(deps, scope, home, cwd, nowMs);
@@ -342,7 +379,9 @@ export async function runApply(
   }
 
   if (writes.size === 0) {
-    process.stdout.write(`\nNo auto-applicable changes; the ${suggestions.length} suggestion(s) above are for manual review.\n`);
+    process.stdout.write(
+      `\nNo auto-applicable changes; the ${suggestions.length} suggestion(s) above are for manual review.\n`,
+    );
     return 0;
   }
 
@@ -357,7 +396,9 @@ export async function runApply(
     // path leak — before/after_hash are body hashes in inspect's space).
     try {
       recordOptimizeAction(
-        w.scope === "user" ? { scope: "user" } : { scope: "project", fingerprint: contextProjectFingerprint(cwd) },
+        w.scope === "user"
+          ? { scope: "user" }
+          : { scope: "project", fingerprint: contextProjectFingerprint(cwd) },
         {
           surface: w.surface,
           before_hash: hashText(parseMarkdown(w.original).body),
@@ -369,7 +410,9 @@ export async function runApply(
         },
       );
     } catch (error) {
-      process.stderr.write(`tk optimize: ledger 2 record skipped: ${error instanceof Error ? error.message : String(error)}\n`);
+      process.stderr.write(
+        `tk optimize: ledger 2 record skipped: ${error instanceof Error ? error.message : String(error)}\n`,
+      );
     }
   }
 

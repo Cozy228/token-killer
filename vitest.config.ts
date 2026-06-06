@@ -28,6 +28,7 @@ export default defineConfig({
       "tests/unit/context/**/*.test.ts",
       "tests/unit/telemetry/**/*.test.ts",
       "tests/unit/core/**/*.test.ts",
+      "tests/unit/report/**/*.test.ts",
       "tests/unit/dataDir.test.ts",
       "tests/unit/scripts/**/*.test.ts",
     ],
