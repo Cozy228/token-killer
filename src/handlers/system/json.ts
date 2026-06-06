@@ -150,11 +150,15 @@ function formatJson(raw: RawResult): {
   let full: string;
   try {
     full = `${compactJson(value, 0)}\n`;
-  } catch {
-    // Pathologically deep nesting (would stack-overflow): degrade to the shape-only
-    // replacement, recoverable via the snapshot, instead of throwing through the
-    // pipeline.
-    return { output: jsonReplacementSummary(value), omission: { kind: "replacement" } };
+  } catch (error) {
+    // Only the depth guard's RangeError (and a native "Maximum call stack" overflow,
+    // also a RangeError) degrades to the shape-only replacement — recoverable via the
+    // snapshot. ANY other unexpected throw propagates so the pipeline fails open to
+    // raw, rather than silently shipping a lossy summary that would hide a real bug.
+    if (error instanceof RangeError) {
+      return { output: jsonReplacementSummary(value), omission: { kind: "replacement" } };
+    }
+    throw error;
   }
   if (withinBudget(full)) return { output: full };
   // No lossless digest step for arbitrary JSON structure → straight to step 2.
