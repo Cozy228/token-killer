@@ -1,5 +1,7 @@
 # Goal: Ship Copilot Context Optimizer inspect + optimize
 
+> **The apply engine in this spec is superseded by [ADR 0006](adr/0006-cli-consolidation-and-optimize-apply-engine.md) (2026-06-07).** `tk optimize context`→`tk optimize`; `--apply-safe`→`--apply` (applies ALL deterministic fixes, git-aware: writes project-tracked files inside a repo, with full disclosure + per-file backup + `--restore`). The old "project files are never modified / project skills never safe-applied" rules below no longer hold; free-form `suggested_diff` findings are still print-only. `tk agentsmd` is folded into `tk optimize --token-budget-block`.
+
 Drive agent sessions that build Token Killer's static context optimizer for GitHub Copilot
 workflows. This is not command-output compression. It diagnoses and improves the files that
 Copilot, VS Code, Claude, Gemini, and Codex may load as instructions, prompts, agents, or
@@ -1014,7 +1016,7 @@ pnpm typecheck
 - `tk optimize` consumes inspect's persisted report (or triggers inspect when absent).
 - `tk optimize --dry-run` never writes.
 - `tk optimize --write-advice` writes only user-level advice.
-- `tk optimize --apply` refuses project-level semantic edits.
+- `tk optimize --apply` writes deterministic fixes (incl. project files in a git repo, disclosed + backed up), but never auto-writes free-form `suggested_diff` edits — those stay print-only (ADR 0006).
 - Token Killer managed marker block is idempotent and restorable.
 - Direct VS Code settings writes are idempotent and restorable.
 - Claude-only skill metadata never appears as a Copilot recommendation.
@@ -1025,10 +1027,10 @@ pnpm typecheck
 
 | Risk | Control |
 |------|---------|
-| Optimizer rewrites team workflow incorrectly | default project behavior is suggested diff/advice only |
+| Optimizer rewrites team workflow incorrectly | default is plan-only; `--apply` discloses the full plan + backs up every file + `--restore` reverts; free-form rewrites are never auto-written (ADR 0006) |
 | Advice implies exact billing savings | wording restricted to heuristics/token pressure |
 | Copilot surface support changes | adapter labels and source notes stay in findings |
 | Duplicate detection deletes useful local nuance | no automatic deletes |
-| Skill frontmatter breaks shared project skills | project skills are never safe-applied |
+| Skill frontmatter breaks shared project skills | only the deterministic `disable-model-invocation` fix is auto-applied (disclosed + backed up + `--restore`); semantic skill rewrites stay suggestions (ADR 0006) |
 | VS Code settings changes alter user workflow | only terminal compression is direct-applied by default; other settings are advisory |
 | Prompt cache claims are overstated | report cacheability risk only, never provider savings |

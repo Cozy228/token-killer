@@ -110,7 +110,7 @@ that must land for the shim to be safe at all.**
 ## Phase 2 — `tk shim` installer + wrappers (ships the shim tier)
 
 Independently mergeable on top of Phase 1: gives a working shim via an explicit
-`tk init shim install`, no `tk init` needed yet.
+`tk init shim install` (the standalone `tk shim` was later folded under `tk init` — ADR 0006).
 
 1. **Subcommand dispatch.** `src/cli.ts` / `src/parse.ts`: intercept reserved
    subcommands **before** treating argv[0] as a program. Add `mode: "shim"` (and later
