@@ -124,8 +124,10 @@ describe("runColdPathTelemetry — opted in", () => {
       ).not.toThrow();
       // stamped before dispatch ⇒ no retry until the next window
       expect(lastSentAt()).toBe(now.toISOString());
-      // the local export is kept on failure (async — flush microtasks)
-      return Promise.resolve().then(() => {
+      // the local export is kept on failure. The write happens in the send
+      // promise's `.then().catch()` chain (≥2 microtask ticks), so a macrotask
+      // boundary is needed to let it settle — one Promise.resolve() tick is not enough.
+      return new Promise<void>((resolve) => setTimeout(resolve, 0)).then(() => {
         expect(existsSync(path.join(home, "advice", "telemetry-export.json"))).toBe(true);
       });
     });

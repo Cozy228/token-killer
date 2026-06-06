@@ -110,7 +110,10 @@ export function buildTelemetry(params: BuildTelemetryParams): TelemetryPayload {
     first_seen_days: firstSeenDays,
     active_days_30d: byDay(last30d).length,
     source_adapter_mix: sourceAdapterMix,
-    estimated_savings_usd_30d: Math.round(tokensToUsd(tokensSaved30d) * 100) / 100,
+    // Round to micro-dollars, not cents: at low volume a genuine sub-cent saving
+    // ($0.0003) would round to $0.00 and the metric would read zero (audit #15 —
+    // surfaced once the excluded telemetry tests were wired into the gate).
+    estimated_savings_usd_30d: Math.round(tokensToUsd(tokensSaved30d) * 1e6) / 1e6,
     runId: params.runId,
   };
   if (params.inspect) payload.inspect = params.inspect;

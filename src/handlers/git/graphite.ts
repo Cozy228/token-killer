@@ -45,7 +45,13 @@ function filterGtLog(input: string): string {
   for (let i = 0; i < lines.length; i += 1) {
     const line = lines[i]!;
     if (isGraphNode(line)) entryCount += 1;
-    const replaced = line.replace(EMAIL_RE, "");
+    // Bound the input BEFORE the email regex (audit #19): EMAIL_RE has overlapping
+    // character classes that backtrack catastrophically on a long line (a measured
+    // 80KB line took ~13s over untrusted `gt` output). A real branch-graph row is
+    // short; 2000 chars is far beyond any of them yet keeps the match bounded, and
+    // covers any genuine email before the final 120-char display truncation.
+    const bounded = line.length > 2000 ? line.slice(0, 2000) : line;
+    const replaced = bounded.replace(EMAIL_RE, "");
     result.push(truncate(replaced.replace(/\s+$/, ""), 120));
     if (entryCount >= MAX_LOG_ENTRIES) {
       const remaining = lines.slice(i + 1).filter((l) => isGraphNode(l)).length;

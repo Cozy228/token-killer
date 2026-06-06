@@ -1,4 +1,4 @@
-import { accessSync, constants, existsSync, statSync } from "node:fs";
+import { accessSync, constants, existsSync, realpathSync, statSync } from "node:fs";
 import { delimiter, join, normalize, sep } from "node:path";
 
 // The shim places wrapper executables (a file named `git` that runs `tk git`)
@@ -26,15 +26,37 @@ function normalizeEntry(entry: string): string {
   return process.platform === "win32" ? normalized.toLowerCase() : normalized;
 }
 
-// Remove every PATH entry equal to shimDir (path-normalized, OS-correct
-// separator). Order of the remaining entries is preserved.
+// Canonicalize a path for comparison: resolve symlinks via realpath, then
+// normalize. Best-effort — realpathSync throws on a non-existent path, so fall
+// back to the lexical normalize. This closes the recursion-guard bypass (audit
+// #10): a PATH entry that reaches the shim dir through a symlink (a symlinked
+// tools dir, a symlinked $HOME, or macOS `/var`→`/private/var`) is NOT equal to
+// the canonical shim path lexically, so without realpath it survives the strip and
+// the child re-resolves the wrapper through the alias → fork bomb.
+function canonicalize(entry: string): string {
+  try {
+    return normalizeEntry(realpathSync(entry));
+  } catch {
+    return normalizeEntry(entry);
+  }
+}
+
+// Remove every PATH entry that resolves to shimDir (after symlink + path
+// normalization, OS-correct separator). Order of the remaining entries is
+// preserved. The lexical check runs first (fast common case); the canonical check
+// only decides entries the lexical pass let through.
 export function stripShimDir(pathVar: string | undefined, shimDir: string | undefined): string {
   if (!pathVar) return "";
   if (!shimDir) return pathVar;
-  const target = normalizeEntry(shimDir);
+  const lexicalTarget = normalizeEntry(shimDir);
+  const canonicalTarget = canonicalize(shimDir);
   return pathVar
     .split(delimiter)
-    .filter((entry) => entry !== "" && normalizeEntry(entry) !== target)
+    .filter((entry) => {
+      if (entry === "") return false;
+      if (normalizeEntry(entry) === lexicalTarget) return false;
+      return canonicalize(entry) !== canonicalTarget;
+    })
     .join(delimiter);
 }
 
@@ -100,10 +122,13 @@ export function assertNoRecursion(program: string, strippedPath: string): void {
   if (program.includes("/") || program.includes("\\")) return;
 
   const resolved = resolveReal(program, strippedPath);
-  const target = normalizeEntry(shimDir);
+  // Compare canonical paths (audit #10): a tool resolved through a symlinked alias
+  // of the shim dir must still be recognised as living inside it.
+  const target = canonicalize(shimDir);
 
   if (resolved) {
-    if (normalizeEntry(resolved).startsWith(target + sep) || normalizeEntry(resolved) === target) {
+    const resolvedCanonical = canonicalize(resolved);
+    if (resolvedCanonical === target || resolvedCanonical.startsWith(target + sep)) {
       throw new ShimRecursionError(
         `tk: refusing to run ${program}: resolved inside shim dir (${shimDir})`,
       );

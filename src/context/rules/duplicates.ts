@@ -73,7 +73,10 @@ function makeFinding(primary: SectionRef, others: SectionRef[], kind: "exact" | 
     file: primary.af.file.display,
     start_line: primary.start_line,
     end_line: primary.end_line,
-    evidence: `Section "${primary.heading}" ${kind === "exact" ? "exactly matches" : "is near-duplicate of"} ${others.map(loc).join(", ")}.`,
+    // Privacy: cite the section's LOCATION, never its verbatim heading — a heading
+    // is arbitrary user body text (e.g. "## Deploy creds for prod-db") and inspect's
+    // contract is labels + lengths only, never content (audit #9).
+    evidence: `Section at ${loc(primary)} (heading ${primary.heading.length} chars) ${kind === "exact" ? "exactly matches" : "is near-duplicate of"} ${others.map(loc).join(", ")}.`,
     recommendation:
       "Keep the rule in the narrowest durable surface and replace duplicates with a short route/reference. Do not delete blindly.",
     fix_class: "advisory",

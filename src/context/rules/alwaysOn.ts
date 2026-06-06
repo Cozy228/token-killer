@@ -68,12 +68,13 @@ export const alwaysOnBloatRule: PerFileRule = {
             type: "always_on_bloat",
             severity: "warn",
             confidence: 0.75,
-            evidence: `Section "${section.heading}" is ~${sectionTokens} estimated tokens (> ${SECTION_TOKEN_LIMIT}).`,
+            // Privacy (audit #9): location + lengths only, never the verbatim heading.
+            evidence: `Section at line ${section.start_line} (heading ${section.heading.length} chars) is ~${sectionTokens} estimated tokens (> ${SECTION_TOKEN_LIMIT}).`,
             recommendation: MOVE_RECO,
             fix_class: "suggested_diff",
             start_line: section.start_line,
             end_line: section.end_line,
-            idExtra: `section:${section.heading}`,
+            idExtra: `section:${section.start_line}`,
           }),
         );
       }
@@ -107,8 +108,8 @@ export const alwaysOnBloatRule: PerFileRule = {
           type: "always_on_bloat",
           severity: "warn",
           confidence: 0.65,
-          evidence: `${verbHeadings.length} headings read as task workflows (${verbHeadings
-            .map((s) => s.heading)
+          evidence: `${verbHeadings.length} headings read as task workflows (at lines ${verbHeadings
+            .map((s) => s.start_line)
             .slice(0, 3)
             .join(", ")}).`,
           recommendation: "Move repeatable task workflows to .github/prompts/*.prompt.md and keep only a one-line route.",
