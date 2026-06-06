@@ -51,11 +51,11 @@ describe("skill_invocation_policy", () => {
     expect(f!.fix_class).toBe("safe_mechanical");
   });
 
-  test("project side-effect skill is suggested only, never safe-applied", () => {
+  test("project side-effect skill is also safe_mechanical (apply discloses + backs up + restores)", () => {
     writeProjectSkill("deploy", ["---", "name: deploy", "description: Deploy the service", "---", "# Deploy", "Run the deploy and publish the release."].join("\n"));
     const f = projectFindings().find((x) => x.type === "skill_invocation_policy");
     expect(f).toBeDefined();
-    expect(f!.fix_class).toBe("suggested_diff");
+    expect(f!.fix_class).toBe("safe_mechanical");
   });
 
   test("background-knowledge skill recommends user-invocable: false", () => {

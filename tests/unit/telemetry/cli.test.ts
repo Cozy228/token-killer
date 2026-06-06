@@ -64,7 +64,7 @@ describe("tk telemetry enable/disable", () => {
   });
 });
 
-describe("tk telemetry status / preview / purge — never send", () => {
+describe("tk telemetry status / preview — never send", () => {
   test("status reports both consents and the device_hash", async () => {
     await withHome(async () => {
       writeConfigTemplate({ telemetry: true, telemetryExport: false });
@@ -87,12 +87,10 @@ describe("tk telemetry status / preview / purge — never send", () => {
     });
   });
 
-  test("purge resets state, then reports nothing to purge", async () => {
+  test("purge is no longer a user-facing subcommand (exits 1)", async () => {
     await withHome(async () => {
-      const cap = captureStdout();
-      await runTelemetry(["preview"]); // creates state
-      await runTelemetry(["purge"]);
-      expect(cap.text()).toContain("purged");
+      vi.spyOn(process.stderr, "write").mockReturnValue(true);
+      expect(await runTelemetry(["purge"])).toBe(1);
     });
   });
 });

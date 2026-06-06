@@ -12,7 +12,6 @@ import {
   setFrontmatterKey,
   userTargetPath,
 } from "../../../src/context/applySafe.js";
-import { runAgentsmd } from "../../../src/context/agentsmd.js";
 import { runOptimize } from "../../../src/context/optimizeCli.js";
 
 let root: string;
@@ -79,14 +78,14 @@ describe("marker block helpers", () => {
   });
 });
 
-describe("tk agentsmd patch/restore", () => {
-  test("patch installs, backs up, and restore removes the managed block", async () => {
+describe("tk optimize --token-budget-block (folds in the former agentsmd)", () => {
+  test("installs, backs up, and --restore removes the managed block", async () => {
     const target = join(home, ".copilot", "copilot-instructions.md");
     mkdirSync(dirname(target), { recursive: true });
     writeFileSync(target, "# My rules\nBe concise.\n");
 
     const s = silenceStdout();
-    expect(await runAgentsmd(["patch"], 1000, home)).toBe(0);
+    expect(await runOptimize(["--token-budget-block"], 1000, home, cwd, {})).toBe(0);
     s.mockRestore();
 
     expect(hasMarkerBlock(readFileSync(target, "utf8"))).toBe(true);
@@ -96,36 +95,23 @@ describe("tk agentsmd patch/restore", () => {
     expect(readdirSync(backupRoot).length).toBeGreaterThan(0);
 
     const s2 = silenceStdout();
-    expect(await runAgentsmd(["restore"], 2000, home)).toBe(0);
+    expect(await runOptimize(["--token-budget-block", "--restore"], 2000, home, cwd, {})).toBe(0);
     s2.mockRestore();
     const after = readFileSync(target, "utf8");
     expect(hasMarkerBlock(after)).toBe(false);
     expect(after).toContain("Be concise.");
   });
 
-  test("unknown subcommand → exit 1", async () => {
+  test("installs the managed block at the user target", async () => {
     const s = silenceStdout();
-    expect(await runAgentsmd(["nope"], 1000, home)).toBe(1);
-    s.mockRestore();
-  });
-});
-
-describe("runOptimize --apply-safe", () => {
-  test("--token-budget-block installs the managed block at the user target", async () => {
-    const s = silenceStdout();
-    const code = await runOptimize(["context", "--token-budget-block", "--apply-safe"], 1000, home, cwd, {});
+    const code = await runOptimize(["--token-budget-block"], 1000, home, cwd, {});
     s.mockRestore();
     expect(code).toBe(0);
     expect(hasMarkerBlock(readFileSync(userTargetPath(home), "utf8"))).toBe(true);
   });
+});
 
-  test("refuses project-level safe applies", async () => {
-    const errSpy = vi.spyOn(process.stderr, "write").mockImplementation(() => true);
-    const code = await runOptimize(["context", "--apply-safe"], 1000, home, cwd, {});
-    errSpy.mockRestore();
-    expect(code).toBe(1);
-  });
-
+describe("runOptimize --apply", () => {
   test("applies a user-level skill frontmatter change with a backup", async () => {
     const skill = join(home, ".claude", "skills", "deploy", "SKILL.md");
     mkdirSync(dirname(skill), { recursive: true });
@@ -137,7 +123,7 @@ describe("runOptimize --apply-safe", () => {
 
     const s = silenceStdout();
     const code = await runOptimize(
-      ["context", "--user", "--surface", "skills", "--apply-safe"],
+      ["--user", "--surface", "skills", "--apply"],
       1000,
       home,
       cwd,
@@ -150,8 +136,14 @@ describe("runOptimize --apply-safe", () => {
     expect(after).toContain("disable-model-invocation: true");
     // Body preserved.
     expect(after).toContain("Run the deploy and publish.");
-    // Backup written.
+    // Backup written, with a manifest so --restore can revert it.
     const backupRoot = join(home, ".token-killer", "backups", "context");
     expect(existsSync(backupRoot)).toBe(true);
+
+    // --restore reverts the apply.
+    const s2 = silenceStdout();
+    expect(await runOptimize(["--restore"], 2000, home, cwd, {})).toBe(0);
+    s2.mockRestore();
+    expect(readFileSync(skill, "utf8")).not.toContain("disable-model-invocation: true");
   });
 });

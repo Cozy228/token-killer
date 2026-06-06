@@ -7,7 +7,7 @@ import { runInspect } from "../../../src/inspect/cli.js";
 import { registerAllRules } from "../../../src/context/rules/index.js";
 import {
   parseOptimizeArgs,
-  resolveOptimizeScope,
+  resolveOptimizeScopes,
   runOptimize,
   selectStaticFindings,
 } from "../../../src/context/optimizeCli.js";
@@ -47,15 +47,21 @@ function captureStdout(): { calls: string[]; restore: () => void } {
 }
 
 describe("parseOptimizeArgs / scope", () => {
-  test("requires the context target", () => {
-    expect(parseOptimizeArgs(["skills"]).error).toMatch(/unknown optimize target/);
+  test("`context` target is optional (accepted but no longer required)", () => {
+    // A leading `context` token is still accepted for back-compat.
     expect(parseOptimizeArgs(["context", "--dry-run"]).error).toBeUndefined();
+    // Flags work directly with no `context` prefix.
+    expect(parseOptimizeArgs(["--dry-run"]).error).toBeUndefined();
+    // A bare unknown token is a flag error.
+    expect(parseOptimizeArgs(["skills"]).error).toMatch(/unknown flag/);
   });
 
-  test("default scope is project; --surface skills selects user", () => {
-    expect(resolveOptimizeScope(parseOptimizeArgs(["context", "--dry-run"]))).toBe("project");
-    expect(resolveOptimizeScope(parseOptimizeArgs(["context", "--surface", "skills"]))).toBe("user");
-    expect(resolveOptimizeScope(parseOptimizeArgs(["context", "--user"]))).toBe("user");
+  test("scope is git-aware: off-git defaults to user; --surface skills and --user select user", () => {
+    // `cwd` here is a fresh temp dir, never a git repo → user-only default.
+    expect(resolveOptimizeScopes(parseOptimizeArgs(["--dry-run"]), cwd)).toEqual(["user"]);
+    expect(resolveOptimizeScopes(parseOptimizeArgs(["--surface", "skills"]), cwd)).toEqual(["user"]);
+    expect(resolveOptimizeScopes(parseOptimizeArgs(["--user"]), cwd)).toEqual(["user"]);
+    expect(resolveOptimizeScopes(parseOptimizeArgs(["--project"]), cwd)).toEqual(["project"]);
   });
 });
 

@@ -1,6 +1,13 @@
+import { PassThrough } from "node:stream";
+
 import { describe, expect, test } from "vitest";
 
-import { decide, decideFromStdin, toProtocol } from "../../../src/hook/copilot.js";
+import {
+  decide,
+  decideFromStdin,
+  readStreamWithTimeout,
+  toProtocol,
+} from "../../../src/hook/copilot.js";
 import { normalize } from "../../../src/hook/normalize.js";
 
 function pre(payload: Record<string, unknown>) {
@@ -92,5 +99,38 @@ describe("decideFromStdin — fail-open (DESIGN §3.6)", () => {
     expect(decideFromStdin(JSON.stringify({ event: "preToolUse", tool_name: "mystery" }))).toEqual({
       decision: "allow",
     });
+  });
+});
+
+describe("readStreamWithTimeout — fail-fast (never hang the tool call)", () => {
+  test("reads a payload that ends normally", async () => {
+    const stream = new PassThrough();
+    const payload = JSON.stringify({ event: "preToolUse" });
+    const read = readStreamWithTimeout(stream, 2000);
+    stream.write(payload);
+    stream.end();
+    expect(await read).toBe(payload);
+  });
+
+  test("a stream that never closes resolves on the timeout, not forever", async () => {
+    const stream = new PassThrough(); // intentionally never .end()ed
+    const started = Date.now();
+    const result = await readStreamWithTimeout(stream, 50);
+    expect(result).toBe("");
+    expect(Date.now() - started).toBeLessThan(1500);
+  });
+
+  test("a partial payload that never closes still fails open on timeout", async () => {
+    const stream = new PassThrough();
+    stream.write("{ partial");
+    const result = await readStreamWithTimeout(stream, 50);
+    // Whatever arrived is returned; decideFromStdin then fails open to allow.
+    expect(result).toBe("{ partial");
+    expect(decideFromStdin(result)).toEqual({ decision: "allow" });
+  });
+
+  test("a TTY stdin (no pipe) returns empty immediately", async () => {
+    const stream = Object.assign(new PassThrough(), { isTTY: true });
+    expect(await readStreamWithTimeout(stream, 50)).toBe("");
   });
 });

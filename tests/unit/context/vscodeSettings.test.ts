@@ -138,7 +138,7 @@ describe("renderVscodeReport", () => {
       settingsPath,
       analyzeVscodeSettings({ "chat.mcp.discovery.enabled": true }),
     );
-    expect(report).toContain("--apply-safe");
+    expect(report).toContain("--vscode-settings --apply");
     expect(report).toContain("advisory");
     expect(report).toContain("chat.mcp.discovery.enabled");
   });

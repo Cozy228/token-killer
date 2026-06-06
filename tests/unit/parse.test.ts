@@ -58,18 +58,11 @@ describe("parseArgv", () => {
     expect(parsed.command?.args).toEqual(["-q", "test"]);
   });
 
-  test("'report' subcommand routes to report-ledger, not the legacy --report mode", () => {
-    const parsed = parseArgv(["report", "--json"]);
-
-    expect(parsed.mode).toBe("report-ledger");
-    // subArgs carries the flags after 'report'
-    expect(parsed.subArgs).toContain("--json");
-    // must NOT treat it as a shell command
-    expect(parsed.command).toBeUndefined();
-  });
-
-  test("'report' subcommand without flags also routes to report-ledger", () => {
+  test("bare 'report' is no longer a subcommand (the report alias was removed)", () => {
+    // The detailed report now lives only at `tk gain report`; a bare `report`
+    // token is treated as an ordinary command, never the four-view report.
     const parsed = parseArgv(["report"]);
-    expect(parsed.mode).toBe("report-ledger");
+    expect(parsed.mode).toBe("command");
+    expect(parsed.command?.program).toBe("report");
   });
 });
