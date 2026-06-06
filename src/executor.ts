@@ -1,4 +1,4 @@
-import { spawn } from "node:child_process";
+import { spawn, spawnSync } from "node:child_process";
 import { existsSync } from "node:fs";
 import { constants as osConstants } from "node:os";
 import { delimiter, join } from "node:path";
@@ -18,6 +18,81 @@ function resolveExitCode(code: number | null, signal: NodeJS.Signals | null): nu
     return 128 + (signo ?? 0);
   }
   return 1;
+}
+
+// tk pipes the child's stdout/stderr and must turn those raw bytes back into a
+// string. The bytes are in whatever encoding the child chose, which on Windows
+// is per-tool: git and the Node/Rust toolchain emit UTF-8, but tools that follow
+// the locale code page (Python, pre-JDK18 Java, cmd builtins like `dir`) emit
+// the legacy multibyte encoding — GBK/cp936 on a zh-CN box. Forcing every tool
+// to UTF-8 one env var at a time does not scale (and JAVA_TOOL_OPTIONS even
+// pollutes stderr with a "Picked up" banner). Instead we decode once at this
+// boundary: strict UTF-8 first — which keeps ASCII and genuine UTF-8 byte-exact
+// — and only when that fails fall back to the host's legacy code page. POSIX
+// locales are UTF-8 so the fallback never fires off Windows. If the runtime
+// lacks ICU data for the legacy decoder (a small-icu Node build) we degrade to
+// lossy UTF-8 — never worse than a hardcoded toString("utf8"). (RTK never fixed
+// this: it decodes child output with from_utf8_lossy — mojibake without a crash
+// — and its POSIX-UTF-8 home turf never triggers it.)
+let legacyDecoder: TextDecoder | null | undefined;
+
+// Map the active Windows console code page to its encoding label. Resolved once,
+// lazily — only the first time a buffer fails strict UTF-8 — so the common
+// all-UTF-8 path never spawns chcp. Defaults to GB18030 (the lossless zh-CN
+// superset) when the code page can't be read; genuine UTF-8 output never reaches
+// this path regardless, so a wrong guess only ever touches already-legacy bytes.
+function detectWindowsLegacyLabel(): string | null {
+  let cp: number | null = null;
+  try {
+    const out = spawnSync("chcp.com", [], { encoding: "utf8", windowsHide: true });
+    const match = /(\d{2,6})/.exec(out.stdout ?? "");
+    cp = match ? Number(match[1]) : null;
+  } catch {
+    cp = null;
+  }
+  switch (cp) {
+    case 65001:
+      return null; // console already UTF-8 — nothing to fall back to
+    case 932:
+      return "shift_jis";
+    case 949:
+      return "euc-kr";
+    case 950:
+      return "big5";
+    default:
+      return "gb18030"; // 936 and unknown → zh-CN default
+  }
+}
+
+function getLegacyDecoder(): TextDecoder | null {
+  if (legacyDecoder !== undefined) return legacyDecoder;
+  if (process.platform !== "win32") return (legacyDecoder = null);
+  const label = detectWindowsLegacyLabel();
+  try {
+    legacyDecoder = label ? new TextDecoder(label) : null;
+  } catch {
+    legacyDecoder = null; // small-icu build lacks this encoding's data
+  }
+  return legacyDecoder;
+}
+
+// Decode one captured stream. Exported for tests; see the note above for why we
+// prefer strict UTF-8 and fall back to the legacy code page rather than forcing
+// each child tool's output encoding.
+export function decodeChildOutput(buf: Buffer): string {
+  if (buf.length === 0) return "";
+  try {
+    return new TextDecoder("utf-8", { fatal: true }).decode(buf);
+  } catch {
+    const legacy = getLegacyDecoder();
+    return legacy ? legacy.decode(buf) : buf.toString("utf8");
+  }
+}
+
+// Reset the cached legacy decoder. Test-only seam so a test can re-resolve the
+// code page within a single process.
+export function resetLegacyDecoderCache(): void {
+  legacyDecoder = undefined;
 }
 
 // Build the env passed to a spawned real tool. When TK_SHIM_DIR is set (running
@@ -150,8 +225,8 @@ export function executeCommand(
     child.on("close", (code, signal) => {
       resolve({
         command: command.displayCommand,
-        stdout: Buffer.concat(stdout).toString("utf8"),
-        stderr: Buffer.concat(stderr).toString("utf8"),
+        stdout: decodeChildOutput(Buffer.concat(stdout)),
+        stderr: decodeChildOutput(Buffer.concat(stderr)),
         exitCode: resolveExitCode(code, signal),
         durationMs: Date.now() - started,
       });
