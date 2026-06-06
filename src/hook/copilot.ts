@@ -77,15 +77,57 @@ export function decideFromStdin(raw: string): Decision {
   }
 }
 
-async function readStdin(): Promise<string> {
+// Fail-fast budget for reading the hook payload. The hook sits in the critical
+// path of every tool call, and the host (Copilot CLI) is fail-CLOSED on hook
+// timeout — so if a host opens stdin but never closes it, an unbounded read
+// would hang the agent until the host's own (longer) timeout fires and BLOCKS
+// the command. We cap the wait well under that: on timeout we stop waiting,
+// release stdin, and fall open with whatever arrived (normally nothing → ALLOW),
+// so the tool call proceeds unwrapped rather than stalling. (CONTEXT.md →
+// Fail-open; user directive: never let the agent hang or get confused.)
+export const STDIN_READ_TIMEOUT_MS = 2000;
+
+type StdinLike = NodeJS.ReadableStream & {
+  isTTY?: boolean;
+  destroy?: () => void;
+  removeAllListeners(event?: string): unknown;
+};
+
+// Read a hook-payload stream to a string, bounded by `timeoutMs` (fail-fast).
+// Exported for tests; `readStdin` binds it to `process.stdin`.
+export async function readStreamWithTimeout(
+  stream: StdinLike,
+  timeoutMs: number = STDIN_READ_TIMEOUT_MS,
+): Promise<string> {
   // No piped stdin (TTY) → empty payload → fail-open.
-  if (process.stdin.isTTY) return "";
+  if (stream.isTTY) return "";
   const chunks: Buffer[] = [];
   return await new Promise<string>((resolve) => {
-    process.stdin.on("data", (chunk: Buffer) => chunks.push(chunk));
-    process.stdin.on("end", () => resolve(Buffer.concat(chunks).toString("utf8")));
-    process.stdin.on("error", () => resolve(Buffer.concat(chunks).toString("utf8")));
+    let settled = false;
+    const finish = (): void => {
+      if (settled) return;
+      settled = true;
+      clearTimeout(timer);
+      stream.removeAllListeners("data");
+      stream.removeAllListeners("end");
+      stream.removeAllListeners("error");
+      resolve(Buffer.concat(chunks).toString("utf8"));
+    };
+    const timer = setTimeout(() => {
+      // Stop waiting and release the handle so the process can exit promptly.
+      stream.destroy?.();
+      finish();
+    }, timeoutMs);
+    // Don't let the timer itself keep the event loop alive once `end` fires.
+    timer.unref?.();
+    stream.on("data", (chunk: Buffer) => chunks.push(chunk));
+    stream.on("end", finish);
+    stream.on("error", finish);
   });
+}
+
+async function readStdin(): Promise<string> {
+  return readStreamWithTimeout(process.stdin);
 }
 
 // Best-effort failure-metric recording for errorOccurred (DESIGN §3.4, §8.1).
