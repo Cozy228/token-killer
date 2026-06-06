@@ -19,6 +19,7 @@ import { recordHistory } from "./core/history.js";
 import { calculateSavings } from "./core/savings.js";
 import { maybeSaveRawOutput } from "./core/rawStore.js";
 import { formatStats } from "./core/stats.js";
+import { failureHint } from "./core/failureHints.js";
 import { VERSION } from "./version.js";
 import type { CommandHandler, FilteredResult, ParsedCommand, RawResult, TkOptions } from "./types.js";
 
@@ -32,6 +33,7 @@ function help(): string {
     "                  [--advice] [--write-advice] [--telemetry-export] [--min-confidence n] [--min-occurrences n]",
     "                  [--project] [--user] [--copilot-context] [--surface instructions|prompts|agents|skills] [--fail-on info|warn|error]",
     "       tk optimize context [--dry-run] [--write-advice] [--apply-safe] [--token-budget-block] [--surface <name>] [--project|--user]",
+    "       tk optimize context --vscode-settings [--apply-safe|--restore]",
     "       tk agentsmd <patch|restore>",
     "       tk gain [--user] [--daily|--weekly|--monthly|--all] [--graph] [--history [n]]",
     "               [--failures] [--quota [-t <model>]] [--json|--csv|--format json|csv|text]",
@@ -190,6 +192,13 @@ async function runCompress(
   process.stdout.write(filtered.output);
   if (filtered.output.length > 0 && !filtered.output.endsWith("\n")) {
     process.stdout.write("\n");
+  }
+
+  // Inline failure-fix hint (scheme 2): presentation-layer only — appended after
+  // the compressed output, never part of it, so it can't trip the quality gate.
+  if (raw.exitCode !== 0) {
+    const hint = failureHint(raw, command);
+    if (hint) process.stdout.write(`tk hint: ${hint}\n`);
   }
 
   if (options.stats || options.verbose) {
