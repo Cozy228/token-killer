@@ -5,9 +5,9 @@
 
 ## One-liner
 
-**Token Killer compresses command output only when it can preserve every actionable fact the coding agent needs for the next step; otherwise it returns raw output.**
+**The trustworthy context filter for coding agents: it cuts command-output tokens only where nothing actionable is lost — otherwise, raw.**
 
-> `tk` 只压缩确定无损的噪音，不压缩不确定的证据。
+> 面向 coding agent 最可信的上下文过滤器：只在不丢任何可行动证据处压缩命令输出，否则返回原文。
 
 定位不是 "CLI output summarizer"，而是 **command-aware context optimizer for coding agents**——最可靠的 agent context filter，不是最狠的压缩器。
 

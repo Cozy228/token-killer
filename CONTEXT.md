@@ -128,8 +128,9 @@ _Avoid_: action, result, permission.
 
 **Projection**:
 Reshaping a tool result into a shorter form that retains all critical content, or
-returning raw when that is not possible. The posttool counterpart to command-proxy
-filtering.
+returning raw when that is not possible. The same retention-first contract as
+command-proxy filtering; posttool result projection is not built (see DESIGN
+"明确不做").
 _Avoid_: compression (when content may be dropped), summary.
 
 **Fail-open**:
