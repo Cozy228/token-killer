@@ -62,28 +62,33 @@ function formatDotnetTest(text: string): string {
 // --- dotnet test --logger trx (TRX XML) -------------------------------------
 
 // RTK: dotnet_trx.rs::parse_trx_content — read Counters + failed UnitTestResults.
+// Each failing test's message is extracted from WITHIN its own <UnitTestResult>
+// block (its <Output>/<ErrorInfo>/<Message>), not from a global list of every
+// <Message> in the file zipped by index. The old index-zip mis-attributed a
+// passing test's stdout (or the <ResultSummary>) as a failing test's error —
+// fabricating a wrong reason, a retention corruption worse than a drop (audit #7).
 function formatDotnetTrx(text: string): string {
   const failedCounter = text.match(/<Counters\b[^>]*\bfailed="(\d+)"/);
   const failedCount = failedCounter ? Number.parseInt(failedCounter[1] ?? "0", 10) : 0;
 
-  const names: string[] = [];
-  const testRe = /<UnitTestResult\b[^>]*?\btestName="([^"]+)"[^>]*?\boutcome="Failed"/g;
-  for (let match = testRe.exec(text); match; match = testRe.exec(text)) {
-    names.push(match[1] ?? "");
+  const failures: { name: string; message: string }[] = [];
+  // A failing UnitTestResult is never self-closing — it carries the ErrorInfo body,
+  // so it always has a `>...</UnitTestResult>` block. Passing tests are self-closed
+  // and never match, so their <Message> stdout can no longer leak across.
+  const blockRe = /<UnitTestResult\b([^>]*)>([\s\S]*?)<\/UnitTestResult>/g;
+  for (let match = blockRe.exec(text); match; match = blockRe.exec(text)) {
+    const attrs = match[1] ?? "";
+    if (!/\boutcome="Failed"/.test(attrs)) continue;
+    const name = attrs.match(/\btestName="([^"]+)"/)?.[1] ?? "";
+    const message = (match[2] ?? "").match(/<Message>([\s\S]*?)<\/Message>/)?.[1]?.trim() ?? "";
+    failures.push({ name, message });
   }
 
-  const messages: string[] = [];
-  const messageRe = /<Message>([\s\S]*?)<\/Message>/g;
-  for (let match = messageRe.exec(text); match; match = messageRe.exec(text)) {
-    messages.push((match[1] ?? "").trim());
-  }
-
-  const out: string[] = [`${failedCount || names.length} failed`];
-  names.forEach((name, index) => {
+  const out: string[] = [`${failedCount || failures.length} failed`];
+  for (const { name, message } of failures) {
     out.push(`  ${name}`);
-    const message = messages[index];
     if (message) out.push(`    ${truncate(message, 120)}`);
-  });
+  }
   return `${out.join("\n")}\n`;
 }
 

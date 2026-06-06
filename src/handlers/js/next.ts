@@ -172,6 +172,13 @@ export const nextHandler: CommandHandler = {
   },
 
   async filter(raw, _command, options) {
+    // A FAILED build's `file:line` compile/type error is the evidence the agent
+    // acts on; the route/bundle summary flattens it to "Errors: N" (audit #16). On
+    // a non-zero exit, pass the raw build output through so the error detail (and
+    // its location) survives instead of being reduced to a count.
+    if (raw.exitCode !== 0) {
+      return makeFilteredResult(this.name, raw, `${raw.stdout}${raw.stderr}`, options);
+    }
     return makeFilteredResult(
       this.name,
       raw,

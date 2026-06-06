@@ -244,7 +244,9 @@ function filterMigrateDeploy(output: string): string {
     result += `${deployed} migration(s) deployed\n`;
   } else {
     result += "[FAIL] Deployment failed:\n";
-    for (const err of errors.slice(0, 5)) {
+    // Every migration error is shown — a failed deploy's errors are exactly the
+    // evidence the agent needs, never silently capped at 5 (audit #25).
+    for (const err of errors) {
       result += `  ${err}\n`;
     }
   }
