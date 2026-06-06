@@ -28,15 +28,26 @@
     "test:install": "bash scripts/test-install.sh",
     "check:installation": "bash scripts/check-installation.sh",
     "test:ci": "pnpm test:product && pnpm test:install && bash scripts/check-test-presence.sh && bash scripts/validate-docs.sh && bash tests/smoke/smoke.sh",
-    "typecheck": "tsc --noEmit"
+    "typecheck": "tsc --noEmit",
+    "prepare": "husky"
+  },
+  "lint-staged": {
+    "*.ts": [
+      "oxfmt",
+      "oxlint --fix --vitest-plugin"
+    ]
   },
   "engines": {
     "node": ">=20"
   },
-  "dependencies": {},
   "devDependencies": {
+    "@commitlint/cli": "^21.0.2",
+    "@commitlint/config-conventional": "^21.0.2",
     "@types/node": "^25.9.1",
-    "prettier": "^3.8.3",
+    "husky": "^9.1.7",
+    "lint-staged": "^17.0.7",
+    "oxfmt": "^0.53.0",
+    "oxlint": "^1.68.0",
     "tsdown": "^0.22.1",
     "tsx": "^4.22.4",
     "typescript": "^6.0.3",
