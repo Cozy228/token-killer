@@ -1,10 +1,7 @@
 import { executeCommand } from "../../executor.js";
-import type { CommandHandler, ParsedCommand } from "../../types.js";
+import type { CommandHandler, OmissionDeclaration, ParsedCommand } from "../../types.js";
 import { makeFilteredResult } from "../base.js";
-
-// RTK: python/pytest_cmd.rs — CAP_WARNINGS = 10.
-const MAX_XFAIL = 10;
-const MAX_PYTEST_FAILURES = 10;
+import { overBudgetLadder } from "../common/budget.js";
 // RTK: build_pytest_summary uses a 39-char box-drawing separator under the header.
 const PYTEST_SEPARATOR = "═".repeat(39);
 
@@ -15,14 +12,6 @@ function matchesPytest(command: ParsedCommand): boolean {
       command.args[0] === "-m" &&
       command.args[1] === "pytest")
   );
-}
-
-// RTK: core/utils.rs::truncate — keep up to max chars, else max-3 chars + "...".
-function truncate(text: string, maxLen: number): string {
-  const chars = [...text];
-  if (chars.length <= maxLen) return text;
-  if (maxLen < 3) return "...";
-  return `${chars.slice(0, maxLen - 3).join("")}...`;
 }
 
 type PytestCounts = {
@@ -58,7 +47,7 @@ type ParseState = "header" | "test-progress" | "failures" | "summary";
 // RTK: pytest_cmd.rs::filter_pytest_output — a state machine that strips the
 // session banner and per-test progress, keeping the summary line, failure blocks,
 // and xfail/xpass entries.
-function filterPytestOutput(output: string): string {
+function filterPytestOutput(output: string): { output: string; omission?: OmissionDeclaration } {
   let state: ParseState = "header";
   const failures: string[] = [];
   let currentFailure: string[] = [];
@@ -130,82 +119,83 @@ function filterPytestOutput(output: string): string {
   return buildPytestSummary(summaryLine, failures, xfailLines);
 }
 
-function buildPytestSummary(summary: string, failures: string[], xfailLines: string[]): string {
+function buildPytestSummary(
+  summary: string,
+  failures: string[],
+  xfailLines: string[],
+): { output: string; omission?: OmissionDeclaration } {
   const { passed, failed, skipped, xfailed, xpassed } = parseSummaryLine(summary);
 
   if (passed === 0 && failed === 0 && skipped === 0 && xfailed === 0 && xpassed === 0) {
-    return "Pytest: No tests collected";
+    return { output: "Pytest: No tests collected" };
   }
 
   const extrasPresent = skipped > 0 || xfailed > 0 || xpassed > 0 || xfailLines.length > 0;
 
   if (failed === 0 && passed > 0 && !extrasPresent) {
-    return `Pytest: ${passed} passed`;
+    return { output: `Pytest: ${passed} passed` };
   }
 
-  let result = `Pytest: ${passed} passed, ${failed} failed`;
-  if (skipped > 0) result += `, ${skipped} skipped`;
-  if (xfailed > 0) result += `, ${xfailed} xfailed`;
-  if (xpassed > 0) result += `, ${xpassed} xpassed`;
-  result += `\n${PYTEST_SEPARATOR}\n`;
+  let head = `Pytest: ${passed} passed, ${failed} failed`;
+  if (skipped > 0) head += `, ${skipped} skipped`;
+  if (xfailed > 0) head += `, ${xfailed} xfailed`;
+  if (xpassed > 0) head += `, ${xpassed} xpassed`;
+  head += `\n${PYTEST_SEPARATOR}\n`;
 
-  if (xfailLines.length > 0) {
-    result += "\nExpected-failure outcomes:\n";
-    for (const line of xfailLines.slice(0, MAX_XFAIL)) {
-      result += `  ${truncate(line, 120)}\n`;
-    }
-    if (xfailLines.length > MAX_XFAIL) {
-      result += `  … +${xfailLines.length - MAX_XFAIL} more\n`;
-      // RTK: force_tee_tail_hint — tk's recovery channel is `tk --raw`.
-      result += "  (run with `tk --raw` to see all expected-failure outcomes)\n";
-    }
-  }
+  // Expected-failure outcomes — every line kept in full (ADR 0001: no MAX_XFAIL
+  // cap, no char truncation, no banned `tk --raw` hint).
+  const renderXfail = (): string => {
+    if (xfailLines.length === 0) return "";
+    let out = "\nExpected-failure outcomes:\n";
+    for (const line of xfailLines) out += `  ${line}\n`;
+    return out;
+  };
 
-  if (failures.length === 0) return result.trim();
+  if (failures.length === 0) return { output: `${head}${renderXfail()}`.trim() };
 
-  result += "\nFailures:\n";
+  // Each failing test is evidence and is never hidden behind `+N more failures`.
+  // Below budget EVERY failure block is shown in full — every diagnostic line,
+  // untruncated (the old `isRelevant` filter + 3-line cap silently dropped stack
+  // frames, finding #31). Over budget step 1 keeps every failure header (drops the
+  // bodies, declared digest); step 2 replaces with a count.
+  const renderFailures = (withBody: boolean): string => {
+    let out = "\nFailures:\n";
+    failures.forEach((failure, i) => {
+      const lines = failure.split("\n");
+      const firstLine = lines[0] ?? "";
+      const sep = i < failures.length - 1 ? "\n" : "";
 
-  const shownFailures = failures.slice(0, MAX_PYTEST_FAILURES);
-  for (let i = 0; i < shownFailures.length; i += 1) {
-    const lines = shownFailures[i]!.split("\n");
-    const firstLine = lines[0] ?? "";
-
-    if (firstLine.startsWith("___")) {
-      const testName = firstLine.replace(/^_+|_+$/g, "").trim();
-      result += `${i + 1}. [FAIL] ${testName}\n`;
-    } else if (firstLine.startsWith("FAILED")) {
-      const parts = firstLine.split(" - ");
-      const testPath = (parts[0] ?? "").replace(/^FAILED /, "");
-      result += `${i + 1}. [FAIL] ${testPath}\n`;
-      if (parts.length > 1) result += `     ${truncate(parts.slice(1).join(" - "), 100)}\n`;
-      if (i < failures.length - 1) result += "\n";
-      continue;
-    }
-
-    let relevant = 0;
-    for (const line of lines.slice(1)) {
-      const lower = line.toLowerCase();
-      const isRelevant =
-        line.trim().startsWith(">") ||
-        line.trim().startsWith("E") ||
-        lower.includes("assert") ||
-        lower.includes("error") ||
-        line.includes(".py:");
-      if (isRelevant && relevant < 3) {
-        result += `     ${truncate(line, 100)}\n`;
-        relevant += 1;
+      if (firstLine.startsWith("FAILED")) {
+        const parts = firstLine.split(" - ");
+        const testPath = (parts[0] ?? "").replace(/^FAILED /, "");
+        out += `${i + 1}. [FAIL] ${testPath}\n`;
+        if (withBody && parts.length > 1) out += `     ${parts.slice(1).join(" - ")}\n`;
+        out += sep;
+        return;
       }
-    }
 
-    if (i < failures.length - 1) result += "\n";
-  }
+      if (firstLine.startsWith("___")) {
+        const testName = firstLine.replace(/^_+|_+$/g, "").trim();
+        out += `${i + 1}. [FAIL] ${testName}\n`;
+      }
 
-  if (failures.length > MAX_PYTEST_FAILURES) {
-    result += `\n… +${failures.length - MAX_PYTEST_FAILURES} more failures\n`;
-    result += "  (run with `tk --raw` to see all failures)\n";
-  }
+      if (withBody) {
+        for (const line of lines.slice(1)) {
+          if (line.trim() !== "") out += `     ${line}\n`;
+        }
+      }
+      out += sep;
+    });
+    return out;
+  };
 
-  return result.trim();
+  const ladder = overBudgetLadder({
+    full: `${head}${renderXfail()}${renderFailures(true)}`,
+    digest: () => `${head}${renderXfail()}${renderFailures(false)}`,
+    replacement: () =>
+      `${head}\n${failures.length} failures, ${xfailLines.length} expected-failure outcomes (over budget)`,
+  });
+  return { output: ladder.text.trim(), omission: ladder.omission };
 }
 
 export const pytestHandler: CommandHandler = {
@@ -219,11 +209,7 @@ export const pytestHandler: CommandHandler = {
   },
 
   async filter(raw, _command, options) {
-    return makeFilteredResult(
-      this.name,
-      raw,
-      `${filterPytestOutput(`${raw.stdout}\n${raw.stderr}`)}\n`,
-      options,
-    );
+    const { output, omission } = filterPytestOutput(`${raw.stdout}\n${raw.stderr}`);
+    return makeFilteredResult(this.name, raw, `${output}\n`, options, undefined, omission);
   },
 };

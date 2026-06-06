@@ -9,13 +9,19 @@ import { fixtureCases, toParsedCommand } from "../../helpers/fixtureCases.js";
 import { routeCommand } from "../../../src/router.js";
 import type { RawResult, TkOptions } from "../../../src/types.js";
 
+// Forbidden in every fixture's compressed output. The `+N more` pattern matches
+// the marker SHAPE (any/no trailing noun) — the old version anchored a fixed noun
+// list, so real markers like `... +N more failures` / `… +N more` / `+N more rows`
+// slipped through and a regression could ship a fixture that hid evidence (ADR
+// 0001 finding #8). Mirrors src/handlers/base.ts OMISSION_MARKERS.
 const LOSSY_OMISSION_PATTERNS = [
   /\bHidden:/,
   /\bnot shown\b/,
   /\btruncated\b/,
   /\bomitted\b/,
   /\bmore lines\b/,
-  /\+\d+ more (matches|files|packages|errors|commits|branches|changed lines)/,
+  /\+\s*\d+\s+more\b/,
+  /\(more changes truncated\)/,
 ];
 
 const repoRoot = path.resolve(

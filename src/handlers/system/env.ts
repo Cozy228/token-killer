@@ -1,15 +1,25 @@
 import { executeCommand } from "../../executor.js";
-import type { CommandHandler, ParsedCommand, RawResult, TkOptions } from "../../types.js";
+import type {
+  CommandHandler,
+  OmissionDeclaration,
+  ParsedCommand,
+  RawResult,
+  TkOptions,
+} from "../../types.js";
 import { makeFilteredResult } from "../base.js";
+import { overBudgetLadder } from "../common/budget.js";
 
 // RTK: system/env_cmd.rs — group interesting environment variables, mask
 //   secrets, and collapse PATH into an entry count + preview. Variables that
 //   match no category (and no filter) are dropped entirely.
-
-// RTK: env_cmd.rs::run — MAX_PATH_ENTRIES = CAP_WARNINGS (10).
-const MAX_PATH_ENTRIES = 10;
-// RTK: env_cmd.rs::run — MAX_OTHER_VARS = CAP_LIST (20).
-const MAX_OTHER_VARS = 20;
+//
+// ADR 0001 (intentional divergence from RTK's CAP_WARNINGS=10 / CAP_LIST=20):
+// PATH entries and "other" vars are evidence — a dropped PATH dir or env var is a
+// fact the agent acted on. The fixed caps are removed: every PATH entry and every
+// categorised var is listed below the token budget; over budget the masked listing
+// is replaced by an aggregate count (formatEnv never emits `+N more`). env masks
+// secret VALUES, so it is registered as a masking handler in base.ts — it never
+// reverts to raw, and its snapshot (raw, unmasked) stays in the local data dir.
 
 // RTK: env_cmd.rs::get_sensitive_patterns.
 const SENSITIVE_PATTERNS = [
@@ -44,9 +54,6 @@ const TOOL_PATTERNS = [
   "XDG", "CLAUDE", "ANTHROPIC",
 ];
 
-// RTK: env_cmd.rs::is_interesting_var (prefix match).
-const INTERESTING_PREFIXES = ["HOME", "USER", "LANG", "LC_", "TZ", "PWD", "OLDPWD"];
-
 type EnvVar = { key: string; value: string };
 
 // RTK: env_cmd.rs::is_lang_var.
@@ -65,12 +72,6 @@ function isCloudVar(key: string): boolean {
 function isToolVar(key: string): boolean {
   const upper = key.toUpperCase();
   return TOOL_PATTERNS.some((p) => upper.includes(p));
-}
-
-// RTK: env_cmd.rs::is_interesting_var.
-function isInterestingVar(key: string): boolean {
-  const upper = key.toUpperCase();
-  return INTERESTING_PREFIXES.some((p) => upper.startsWith(p));
 }
 
 // RTK: env_cmd.rs::mask_value — short values become "****"; otherwise keep a
@@ -102,15 +103,14 @@ function parseEnvLines(stdout: string): EnvVar[] {
   return vars;
 }
 
-// RTK: env_cmd.rs::run — compute the display value (masking, long-value preview).
+// Compute the display value. Secrets are masked (security). ADR 0001: a long
+// non-sensitive value (a full PATH, NODE_OPTIONS, …) is evidence and is shown in
+// FULL below budget — the old >100-char head-truncation silently dropped content
+// even when the dump as a whole fit. The over-budget case is handled by
+// formatEnvLadder, not by truncating individual values.
 function displayValue(key: string, value: string): string {
   if (isSensitive(key)) {
     return maskValue(value);
-  }
-  if (Array.from(value).length > 100) {
-    const chars = Array.from(value);
-    const preview = chars.slice(0, 50).join("");
-    return `${preview}... (${chars.length} chars)`;
   }
   return value;
 }
@@ -139,8 +139,12 @@ function formatEnv(stdout: string): string {
       cloudVars.push(entry);
     } else if (isToolVar(key)) {
       toolVars.push(entry);
-    } else if (isInterestingVar(key)) {
-      // RTK also keeps everything when a filter is supplied; tk has no filter arg.
+    } else {
+      // ADR 0001: RTK dropped every uncategorised var (kept only "interesting"
+      // prefixes); a dropped env var is evidence the agent may need. Everything
+      // that matched no specific category falls into Other so nothing is silently
+      // discarded. isInterestingVar is no longer a gate — it only ordered which
+      // vars RTK kept, and we now keep them all.
       otherVars.push(entry);
     }
   }
@@ -153,11 +157,8 @@ function formatEnv(stdout: string): string {
       if (key === "PATH") {
         const paths = value.split(":");
         lines.push(`  PATH (${paths.length} entries):`);
-        for (const p of paths.slice(0, MAX_PATH_ENTRIES)) {
+        for (const p of paths) {
           lines.push(`    ${p}`);
-        }
-        if (paths.length > MAX_PATH_ENTRIES) {
-          lines.push(`    ... +${paths.length - MAX_PATH_ENTRIES} more`);
         }
       } else {
         lines.push(`  ${key}=${value}`);
@@ -188,37 +189,67 @@ function formatEnv(stdout: string): string {
 
   if (otherVars.length > 0) {
     lines.push("\nOther:");
-    for (const { key, value } of otherVars.slice(0, MAX_OTHER_VARS)) {
+    for (const { key, value } of otherVars) {
       lines.push(`  ${key}=${value}`);
-    }
-    if (otherVars.length > MAX_OTHER_VARS) {
-      lines.push(`  ... +${otherVars.length - MAX_OTHER_VARS} more`);
     }
   }
 
   const total = vars.length;
   const shown =
-    pathVars.length +
-    langVars.length +
-    cloudVars.length +
-    toolVars.length +
-    Math.min(otherVars.length, 20);
+    pathVars.length + langVars.length + cloudVars.length + toolVars.length + otherVars.length;
   // RTK prints the summary only when no filter is supplied (always, for tk).
   lines.push(`\nTotal: ${total} vars (showing ${shown} relevant)`);
 
   return `${lines.join("\n")}\n`;
 }
 
+// ADR 0001 over-budget path: the masked listing is replaced by its count line
+// (no secrets, no partial list); the gate persists the raw snapshot for recovery.
+function formatEnvLadder(stdout: string): { output: string; omission?: OmissionDeclaration } {
+  const full = formatEnv(stdout);
+  const ladder = overBudgetLadder({
+    full,
+    replacement: () => {
+      const total = parseEnvLines(stdout).length;
+      return `Total: ${total} vars (over budget)\n`;
+    },
+  });
+  return { output: ladder.text, omission: ladder.omission };
+}
+
+// `env` lists the environment ONLY when no command operand follows. Flags (-i,
+// -0, -u NAME, --) and VAR=value assignments are environment setup; a bare
+// positional token is the wrapped COMMAND (`env FOO=bar node app.js`), which `env`
+// then RUNS — its stdout is the tool's output, not an environment dump. Routing
+// such a run to the env formatter would parse the tool's stdout as env vars and
+// corrupt it (audit #14). The same applies to `time`/`nice`/`nohup` wrappers, but
+// those route by their own program name; here we only guard `env` itself.
+function isEnvListing(args: string[]): boolean {
+  for (let i = 0; i < args.length; i += 1) {
+    const arg = args[i]!;
+    if (arg === "--") return i === args.length - 1; // `env --` (listing) vs `env -- cmd`
+    if (arg === "-u" || arg === "--unset") {
+      i += 1; // consumes the following NAME
+      continue;
+    }
+    if (arg.startsWith("-")) continue; // other flags: -i, -0, -v, …
+    if (arg.includes("=")) continue; // VAR=value assignment
+    return false; // a bare positional ⇒ a command operand ⇒ this is a run, not a listing
+  }
+  return true;
+}
+
 export const envHandler: CommandHandler = {
   name: "env",
   programs: ["env"],
   matches(command) {
-    return command.program === "env";
+    return command.program === "env" && isEnvListing(command.args);
   },
   execute(command) {
     return executeCommand(command);
   },
   async filter(raw, _command, options: TkOptions) {
-    return makeFilteredResult(this.name, raw, formatEnv(raw.stdout), options);
+    const { output, omission } = formatEnvLadder(raw.stdout);
+    return makeFilteredResult(this.name, raw, output, options, undefined, omission);
   },
 };

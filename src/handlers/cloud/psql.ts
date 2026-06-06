@@ -1,16 +1,24 @@
 import { executeCommand } from "../../executor.js";
-import type { CommandHandler, ParsedCommand, RawResult, TkOptions } from "../../types.js";
+import type {
+  CommandHandler,
+  OmissionDeclaration,
+  ParsedCommand,
+  RawResult,
+  TkOptions,
+} from "../../types.js";
 import { makeFilteredResult, rawText } from "../base.js";
+import { overBudgetLadder } from "../common/budget.js";
 
 // RTK: cloud/psql_cmd.rs — PostgreSQL client output compression. Detects table
 // and expanded display formats, strips borders/padding/(N rows) footers, and
 // produces compact tab-separated or "[N] key=value" output. Other output
 // (COPY results, notices, SET, etc.) passes through unchanged.
-
-// RTK: cloud/psql_cmd.rs::MAX_TABLE_ROWS / MAX_EXPANDED_RECORDS = CAP_LIST.
-// truncate.rs::CAP_LIST = 20.
-const MAX_TABLE_ROWS = 20;
-const MAX_EXPANDED_RECORDS = 20;
+//
+// ADR 0001 (intentional divergence from RTK's CAP_LIST=20): SQL rows/records are
+// evidence — a dropped row is a query result the agent cannot recover. The fixed
+// caps are removed: every row/record is emitted below the token budget; over
+// budget the listing is replaced by an aggregate count + snapshot pointer (a flat
+// all-evidence list has no lossless reduction step, ADR decision 7). No `+N more`.
 
 // RTK: cloud/psql_cmd.rs lazy_static regexes.
 const EXPANDED_RECORD = /-\[ RECORD \d+ \]-/;
@@ -36,8 +44,9 @@ function isExpandedFormat(output: string): boolean {
 // the (N rows) footer, trim column padding, emit tab-separated rows. The header
 // row is always kept; data rows are capped at MAX_TABLE_ROWS with an overflow
 // summary.
-function filterTable(output: string): string {
+function filterTable(output: string): { text: string; header: string; dataRows: number } {
   const result: string[] = [];
+  let header = "";
   let dataRows = 0;
   let totalRows = 0;
 
@@ -62,32 +71,27 @@ function filterTable(output: string): string {
     // A data or header row with | delimiters.
     if (trimmed.includes("|")) {
       totalRows += 1;
+      const cols = trimmed.split("|").map((c) => c.trim()).join("\t");
       // First row is the header, don't count it as data.
-      if (totalRows > 1) {
+      if (totalRows === 1) {
+        header = cols;
+      } else {
         dataRows += 1;
       }
-
-      if (dataRows <= MAX_TABLE_ROWS || totalRows === 1) {
-        const cols = trimmed.split("|").map((c) => c.trim());
-        result.push(cols.join("\t"));
-      }
+      result.push(cols);
     } else {
       // Non-table line (e.g., command output like SET, NOTICE).
       result.push(trimmed);
     }
   }
 
-  if (dataRows > MAX_TABLE_ROWS) {
-    result.push(`... +${dataRows - MAX_TABLE_ROWS} more rows`);
-  }
-
-  return result.join("\n");
+  return { text: result.join("\n"), header, dataRows };
 }
 
 // RTK: cloud/psql_cmd.rs::filter_expanded — convert "-[ RECORD N ]-" blocks to
 // a one-liner "[N] key=val key=val" form, stripping the (N rows) footer. Records
 // are capped at MAX_EXPANDED_RECORDS with an overflow summary.
-function filterExpanded(output: string): string {
+function filterExpanded(output: string): { text: string; recordCount: number } {
   const result: string[] = [];
   let currentPairs: string[] = [];
   let currentRecord: string | undefined;
@@ -104,9 +108,7 @@ function filterExpanded(output: string): string {
     if (header) {
       // Flush previous record.
       if (currentRecord !== undefined) {
-        if (recordCount <= MAX_EXPANDED_RECORDS) {
-          result.push(`${currentRecord} ${currentPairs.join(" ")}`);
-        }
+        result.push(`${currentRecord} ${currentPairs.join(" ")}`);
         currentPairs = [];
       }
       recordCount += 1;
@@ -127,33 +129,45 @@ function filterExpanded(output: string): string {
 
   // Flush last record.
   if (currentRecord !== undefined) {
-    if (recordCount <= MAX_EXPANDED_RECORDS) {
-      result.push(`${currentRecord} ${currentPairs.join(" ")}`);
-    }
+    result.push(`${currentRecord} ${currentPairs.join(" ")}`);
   }
 
-  if (recordCount > MAX_EXPANDED_RECORDS) {
-    result.push(`... +${recordCount - MAX_EXPANDED_RECORDS} more records`);
-  }
-
-  return result.join("\n");
+  return { text: result.join("\n"), recordCount };
 }
 
 // RTK: cloud/psql_cmd.rs::filter_psql_output — route to expanded vs table vs
-// passthrough. Empty input yields empty output.
-function filterPsqlOutput(output: string): string {
+// passthrough. Empty input yields empty output. Over budget, each listing is
+// replaced wholesale by a count + snapshot pointer (ADR 0001 step 2).
+function filterPsqlOutput(output: string): { text: string; omission?: OmissionDeclaration } {
   if (output.trim() === "") {
-    return "";
+    return { text: "" };
   }
 
   if (isExpandedFormat(output)) {
-    return filterExpanded(output);
+    const { text, recordCount } = filterExpanded(output);
+    return overBudgetLadder({
+      full: text,
+      replacement: () => `${recordCount} records (over budget)`,
+    });
   }
   if (isTableFormat(output)) {
-    return filterTable(output);
+    const { text, header, dataRows } = filterTable(output);
+    return overBudgetLadder({
+      full: text,
+      // The header (column names) is schema context, not a data row, so it stays;
+      // every DATA row goes to the snapshot the gate persists + points at.
+      replacement: () => `${header}\n${dataRows} rows (over budget)`,
+    });
   }
-  // Passthrough: COPY results, notices, etc.
-  return output;
+  // Passthrough: COPY results, notices, etc. A large COPY stream is still evidence,
+  // so it goes through the same ladder rather than shipping unbounded (F4) — there
+  // is no lossless reduction for an opaque blob, so it falls straight to a line
+  // count + snapshot pointer over budget.
+  const lineCount = output.trimEnd().split("\n").length;
+  return overBudgetLadder({
+    full: output,
+    replacement: () => `${lineCount} lines (over budget)`,
+  });
 }
 
 export const psqlHandler: CommandHandler = {
@@ -172,6 +186,7 @@ export const psqlHandler: CommandHandler = {
     // RTK: cloud/psql_cmd.rs::run uses RunOptions::stdout_only() — only stdout is
     // filtered. tk's rawText merges stdout+stderr; on the success path stderr is
     // empty, matching RTK. The filter operates on the merged raw text.
-    return makeFilteredResult(this.name, raw, filterPsqlOutput(rawText(raw)), options);
+    const { text, omission } = filterPsqlOutput(rawText(raw));
+    return makeFilteredResult(this.name, raw, text, options, undefined, omission);
   },
 };

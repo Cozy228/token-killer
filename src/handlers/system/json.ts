@@ -1,6 +1,13 @@
 import { executeCommand } from "../../executor.js";
-import type { CommandHandler, ParsedCommand, RawResult, TkOptions } from "../../types.js";
+import type {
+  CommandHandler,
+  OmissionDeclaration,
+  ParsedCommand,
+  RawResult,
+  TkOptions,
+} from "../../types.js";
 import { makeFilteredResult } from "../base.js";
+import { withinBudget } from "../common/budget.js";
 
 // RTK: system/json_cmd.rs — inspect/compact JSON to save tokens on large payloads.
 //   `rtk json <file>` reads the file and, by default (no --schema/--keys-only),
@@ -16,11 +23,14 @@ import { makeFilteredResult } from "../base.js";
 //     default `json <file>` invocation uses filter_json_compact, which is what we
 //     port below.
 
-const MAX_DEPTH = 5; // RTK default max_depth for `rtk json` (json_cmd.rs run()).
-const STRING_TRUNCATE_LEN = 80; // RTK: compact_json String arm (s.len() > 80).
-const STRING_TRUNCATE_KEEP = 77; // RTK: floor_char_boundary(77) before "...".
-const ARRAY_INLINE_MAX = 5; // RTK: arr.len() > 5 collapses to "[first, ... +N more]".
-const OBJECT_KEY_LIMIT = 20; // RTK: i >= 20 emits "... +N more keys".
+// ADR 0001: every RTK reduction here was evidence-capping. The count/depth caps
+// (ARRAY_INLINE_MAX=5, OBJECT_KEY_LIMIT=20, MAX_DEPTH=5) dropped array elements,
+// object keys, and whole nested subtrees behind a `+N more` / `...` marker; the
+// per-string head-truncation (>80 chars → `"…"`) silently dropped string CONTENT
+// even when the payload as a whole fit the budget. All are removed: below the
+// token budget the compact view is rendered in FULL — every element, every key,
+// every level, every string byte (zero loss). Over budget the handler declares a
+// complete-replacement summary and the gate persists + points at the snapshot.
 
 type JsonValue =
   | null
@@ -40,33 +50,12 @@ function isSimple(value: JsonValue): boolean {
   );
 }
 
-// RTK: compact_json String arm uses s.floor_char_boundary(77) so multibyte
-// strings never split mid-codepoint. Array.from() iterates by code point, which
-// keeps the kept slice on a character boundary like Rust's floor_char_boundary.
-function truncateString(s: string): string {
-  if (s.length <= STRING_TRUNCATE_LEN) {
-    return `"${s}"`;
-  }
-  // Keep at most STRING_TRUNCATE_KEEP UTF-16 units, never splitting a surrogate
-  // pair (the JS analogue of Rust's char-boundary flooring).
-  let end = STRING_TRUNCATE_KEEP;
-  if (end > 0 && end < s.length) {
-    const code = s.charCodeAt(end);
-    // 0xDC00-0xDFFF is a low surrogate: stepping back keeps the pair intact.
-    if (code >= 0xdc00 && code <= 0xdfff) {
-      end -= 1;
-    }
-  }
-  return `"${s.slice(0, end)}..."`;
-}
-
-// RTK: json_cmd.rs::compact_json — depth-bounded compaction with values.
-function compactJson(value: JsonValue, depth: number, maxDepth: number): string {
+// Compact JSON to an indented `key: value` view, in full — every element, key,
+// nesting level, and string byte is kept (ADR 0001: no count/depth/string caps).
+// The over-budget decision is made once, at the top level (formatJson), on the
+// rendered size, so nothing is dropped while the payload still fits the budget.
+function compactJson(value: JsonValue, depth: number): string {
   const indent = "  ".repeat(depth);
-
-  if (depth > maxDepth) {
-    return `${indent}...`;
-  }
 
   if (value === null) {
     return `${indent}null`;
@@ -80,18 +69,14 @@ function compactJson(value: JsonValue, depth: number, maxDepth: number): string 
     return `${indent}${String(value)}`;
   }
   if (typeof value === "string") {
-    return `${indent}${truncateString(value)}`;
+    return `${indent}"${value}"`;
   }
 
   if (Array.isArray(value)) {
     if (value.length === 0) {
       return `${indent}[]`;
     }
-    if (value.length > ARRAY_INLINE_MAX) {
-      const first = compactJson(value[0]!, depth + 1, maxDepth);
-      return `${indent}[${first.trim()}, ... +${value.length - 1} more]`;
-    }
-    const items = value.map((v) => compactJson(v, depth + 1, maxDepth));
+    const items = value.map((v) => compactJson(v, depth + 1));
     const allSimple = value.every(isSimple);
     if (allSimple) {
       const inline = items.map((s) => s.trim());
@@ -113,43 +98,49 @@ function compactJson(value: JsonValue, depth: number, maxDepth: number): string 
   // RTK sorts keys (serde_json BTreeMap-style sort via keys.sort()).
   keys.sort();
   const lines = [`${indent}{`];
-  for (let i = 0; i < keys.length; i += 1) {
-    const key = keys[i]!;
+  for (const key of keys) {
     const val = value[key]!;
     if (isSimple(val)) {
-      const valStr = compactJson(val, 0, maxDepth);
+      const valStr = compactJson(val, 0);
       lines.push(`${indent}  ${key}: ${valStr.trim()}`);
     } else {
       lines.push(`${indent}  ${key}:`);
-      lines.push(compactJson(val, depth + 1, maxDepth));
-    }
-    if (i >= OBJECT_KEY_LIMIT) {
-      lines.push(`${indent}  ... +${keys.length - i - 1} more keys`);
-      break;
+      lines.push(compactJson(val, depth + 1));
     }
   }
   lines.push(`${indent}}`);
   return lines.join("\n");
 }
 
-// RTK: json_cmd.rs::filter_json_compact — parse then compact_json(value, 0, max_depth).
-function filterJsonCompact(jsonStr: string, maxDepth: number): string | undefined {
-  let value: JsonValue;
-  try {
-    value = JSON.parse(jsonStr) as JsonValue;
-  } catch {
-    return undefined; // RTK bails with "Failed to parse JSON"; tk falls back to raw.
+// ADR 0001 step-2 complete-replacement summary for an over-budget payload: a
+// shape-only aggregate, never a partial listing. The snapshot pointer is appended
+// by makeFilteredResult.
+function jsonReplacementSummary(value: JsonValue): string {
+  if (Array.isArray(value)) {
+    return `JSON array: ${value.length} items (over budget)\n`;
   }
-  return compactJson(value, 0, maxDepth);
+  if (value !== null && typeof value === "object") {
+    return `JSON object: ${Object.keys(value).length} keys (over budget)\n`;
+  }
+  return `JSON: scalar value (over budget)\n`;
 }
 
-function formatJson(raw: RawResult): { output: string; error?: string } {
-  const compacted = filterJsonCompact(raw.stdout, MAX_DEPTH);
-  if (compacted === undefined) {
-    // Fallback: leave raw untouched (RTK's filter-fail-then-passthrough contract).
+function formatJson(raw: RawResult): {
+  output: string;
+  error?: string;
+  omission?: OmissionDeclaration;
+} {
+  let value: JsonValue;
+  try {
+    value = JSON.parse(raw.stdout) as JsonValue;
+  } catch {
+    // RTK's filter-fail-then-passthrough contract: leave raw untouched.
     return { output: raw.stdout, error: "Failed to parse JSON" };
   }
-  return { output: `${compacted}\n` };
+  const full = `${compactJson(value, 0)}\n`;
+  if (withinBudget(full)) return { output: full };
+  // No lossless digest step for arbitrary JSON structure → straight to step 2.
+  return { output: jsonReplacementSummary(value), omission: { kind: "replacement" } };
 }
 
 export const jsonHandler: CommandHandler = {
@@ -161,7 +152,7 @@ export const jsonHandler: CommandHandler = {
     return executeCommand(command);
   },
   async filter(raw, _command, options: TkOptions) {
-    const { output, error } = formatJson(raw);
-    return makeFilteredResult(this.name, raw, output, options, error);
+    const { output, error, omission } = formatJson(raw);
+    return makeFilteredResult(this.name, raw, output, options, error, omission);
   },
 };

@@ -402,8 +402,16 @@ const DOCKER_PS_ALL_FORMAT =
   "{{.State}}\t{{.ID}}\t{{.Names}}\t{{.Status}}\t{{.Image}}\t{{.Ports}}";
 const DOCKER_IMAGES_FORMAT = "{{.Repository}}:{{.Tag}}\t{{.Size}}";
 const DOCKER_COMPOSE_PS_FORMAT = "{{.Name}}\t{{.Image}}\t{{.Status}}\t{{.Ports}}";
-// RTK: docker_logs / kubectl_logs / run_compose_logs all cap the stream at 100.
-const LOGS_TAIL = "100";
+
+// ADR 0001 decision 8 + CONTEXT.md "Lossless capture": the capture-time `--tail 100`
+// injection RTK uses is REMOVED. Pre-truncating the fetch discards the very bytes
+// the recovery contract relies on (a stack trace older than 100 lines is gone with
+// no raw to fall back to). The full stream is captured; the formatter de-dups
+// losslessly and, over budget, summarises by count + snapshot pointer. A live
+// `-f`/`--follow` cannot be captured (it never exits), so it passes through.
+function hasFollow(args: string[]): boolean {
+  return args.includes("-f") || args.includes("--follow");
+}
 
 // docker/compose `logs` accept options that consume the FOLLOWING token as their
 // value (`--tail 50`, `--since 1h`, …). The container/service is the first
@@ -457,8 +465,9 @@ export function buildDockerArgs(args: string[]): string[] {
       return out;
     }
     if (action === "logs") {
+      if (hasFollow(args)) return args;
       const svc = firstLogsOperand(args.slice(2), COMPOSE_LOGS_VALUE_FLAGS);
-      const out = ["compose", "logs", "--tail", LOGS_TAIL];
+      const out = ["compose", "logs"];
       if (svc !== undefined) out.push(svc);
       return out;
     }
@@ -467,8 +476,9 @@ export function buildDockerArgs(args: string[]): string[] {
   }
 
   if (sub === "logs") {
+    if (hasFollow(args)) return args;
     const container = firstLogsOperand(args.slice(1), DOCKER_LOGS_VALUE_FLAGS);
-    if (container !== undefined) return ["logs", "--tail", LOGS_TAIL, container];
+    if (container !== undefined) return ["logs", container];
     return args;
   }
 
@@ -497,10 +507,11 @@ export function buildKubectlArgs(args: string[]): string[] {
   }
 
   if (args[0] === "logs") {
+    if (hasFollow(args)) return args;
     const after = args.slice(1);
     const pod = after[0];
     if (pod !== undefined) {
-      return ["logs", "--tail", LOGS_TAIL, pod, ...after.slice(1)];
+      return ["logs", pod, ...after.slice(1)];
     }
     return args;
   }

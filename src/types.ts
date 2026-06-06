@@ -18,6 +18,19 @@ export type RawResult = {
   auxStdout?: string;
 };
 
+// ADR 0001: a handler that cannot list every item below the token budget reduces
+// it via the over-budget ladder and *declares* the reduction here, instead of
+// emitting a `+N more` marker the gate has to sniff for. `digest` is a lossless
+// reduction (step 1 — e.g. location-class: every file:line kept, match content
+// dropped; stream-class: repeated lines de-duped). `replacement` is a complete-
+// replacement summary (step 2 — an aggregate count, never a partial list). There
+// is no "partial cap" kind because `+N more` is banned outright. The gate trusts
+// the declaration: it force-persists raw that turn and records the snapshot path
+// as the recovery pointer.
+export type OmissionKind = "digest" | "replacement";
+
+export type OmissionDeclaration = { kind: OmissionKind };
+
 export type FilteredResult = {
   handler: string;
   output: string;
@@ -31,6 +44,10 @@ export type FilteredResult = {
   exitCode: number;
   filterError?: string;
   qualityStatus: "passed" | "inflated" | "empty_output";
+  // Present only when the handler declared an over-budget reduction (ADR 0001).
+  // rawPointer is the persisted snapshot path the recovery contract guarantees;
+  // it is absent only when raw persistence was explicitly disabled (--no-save-raw).
+  omission?: { kind: OmissionKind; rawPointer?: string };
 };
 
 export type TkOptions = {

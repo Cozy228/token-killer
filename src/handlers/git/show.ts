@@ -1,5 +1,5 @@
 import { executeCommand } from "../../executor.js";
-import type { CommandHandler, ParsedCommand } from "../../types.js";
+import type { CommandHandler, OmissionDeclaration, ParsedCommand } from "../../types.js";
 import { makeFilteredResult } from "../base.js";
 import { compactUnifiedDiff, extractDiffStatLines } from "./compactDiff.js";
 
@@ -10,12 +10,15 @@ function wantsStatOnly(command: ParsedCommand, text: string): boolean {
   return extractDiffStatLines(text).length > 0 && !text.includes("diff --git");
 }
 
-function formatShow(text: string, command: ParsedCommand): string {
+function formatShow(
+  text: string,
+  command: ParsedCommand,
+): { output: string; omission?: OmissionDeclaration } {
   const trimmed = text.trim();
-  if (!trimmed) return trimmed;
+  if (!trimmed) return { output: trimmed };
 
   if (wantsStatOnly(command, text)) {
-    return `${trimmed}\n`;
+    return { output: `${trimmed}\n` };
   }
 
   const lines = text.split(/\r?\n/);
@@ -51,11 +54,15 @@ function formatShow(text: string, command: ParsedCommand): string {
     out.push("");
     out.push(...statLines);
   }
+  let omission: OmissionDeclaration | undefined;
   if (diffText.trim()) {
-    out.push("", "--- Changes ---", compactUnifiedDiff(diffText));
+    const compacted = compactUnifiedDiff(diffText);
+    omission = compacted.omission;
+    out.push("", "--- Changes ---", compacted.text);
   }
 
-  return out.length > 0 ? `${out.join("\n").trimEnd()}\n` : `${trimmed}\n`;
+  const output = out.length > 0 ? `${out.join("\n").trimEnd()}\n` : `${trimmed}\n`;
+  return { output, omission };
 }
 
 export const gitShowHandler: CommandHandler = {
@@ -71,6 +78,7 @@ export const gitShowHandler: CommandHandler = {
   },
 
   async filter(raw, command, options) {
-    return makeFilteredResult(this.name, raw, formatShow(raw.stdout || raw.stderr, command), options);
+    const { output, omission } = formatShow(raw.stdout || raw.stderr, command);
+    return makeFilteredResult(this.name, raw, output, options, undefined, omission);
   },
 };

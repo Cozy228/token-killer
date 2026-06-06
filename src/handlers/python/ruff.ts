@@ -1,6 +1,7 @@
 import { executeCommand } from "../../executor.js";
-import type { CommandHandler, ParsedCommand } from "../../types.js";
+import type { CommandHandler, OmissionDeclaration, ParsedCommand } from "../../types.js";
 import { makeFilteredResult } from "../base.js";
+import { overBudgetLadder } from "../common/budget.js";
 
 // RTK: python/ruff_cmd.rs — `rtk ruff` forces `check --output-format=json` and
 // summarizes the parsed diagnostics (counts + rule codes + file:line locations),
@@ -15,10 +16,6 @@ type RuffIssue = {
   rule: string;
   message: string;
 };
-
-// RTK: ruff_cmd.rs::MAX_VIOLATIONS — cap the listed violations so large runs stay
-// compact; the suppressed remainder is reported as a "+N more" marker.
-const MAX_RUFF_VIOLATIONS = 50;
 
 function matchesRuff(command: ParsedCommand): boolean {
   return command.program === "ruff" || command.original.includes("ruff") || command.original.join(" ").includes("ruff check");
@@ -87,46 +84,72 @@ function parseJsonDiagnostics(text: string): { issues: RuffIssue[]; fixable: num
   return { issues, fixable };
 }
 
-// Render the grouped, capped summary shared by the JSON and text paths. Keeps the
-// rule code + file:line:col for every listed violation (goal: never drop key
-// diagnostics for compression).
-function renderIssues(issues: RuffIssue[], fixableLine: string | undefined): string {
+function groupByRule(issues: RuffIssue[]): [string, RuffIssue[]][] {
   const byRule = new Map<string, RuffIssue[]>();
   for (const issue of issues) {
     const list = byRule.get(issue.rule) ?? [];
     list.push(issue);
     byRule.set(issue.rule, list);
   }
+  return [...byRule.entries()].sort();
+}
 
+function header(issues: RuffIssue[], fixableLine: string | undefined): string[] {
   const fileCount = new Set(issues.map((issue) => issue.file)).size;
   const out = [`Ruff: ${issues.length} issues in ${fileCount} files`];
   if (fixableLine) out.push(fixableLine);
-
-  let shown = 0;
-  let suppressed = 0;
-  for (const [rule, ruleIssues] of [...byRule.entries()].sort()) {
-    const sortedIssues = [...ruleIssues].sort((a, b) => a.file.localeCompare(b.file));
-    out.push("", `${rule}: ${ruleIssues.length}`);
-    for (const issue of sortedIssues) {
-      if (shown >= MAX_RUFF_VIOLATIONS) {
-        suppressed += 1;
-        continue;
-      }
-      out.push(`- ${issue.file}:${issue.line}:${issue.column} ${issue.message}`);
-      shown += 1;
-    }
-  }
-  if (suppressed > 0) out.push("", `... +${suppressed} more`);
-  return `${out.join("\n")}\n`;
+  return out;
 }
 
-function formatRuff(stdout: string, stderr: string, command: ParsedCommand): string {
+// ADR 0001: ruff diagnostics are location-class — every `file:line:col` is
+// evidence the agent opens, and is NEVER capped. Below the token budget the full
+// listing (location + message) is emitted; over budget step 1 keeps every
+// location but drops the message text (lossless for navigation); if that still
+// exceeds budget, step 2 replaces the listing with per-rule counts. No `+N more`.
+function renderIssues(
+  issues: RuffIssue[],
+  fixableLine: string | undefined,
+): { output: string; omission?: OmissionDeclaration } {
+  const grouped = groupByRule(issues);
+
+  const renderListing = (withMessage: boolean): string => {
+    const out = header(issues, fixableLine);
+    for (const [rule, ruleIssues] of grouped) {
+      const sorted = [...ruleIssues].sort((a, b) => a.file.localeCompare(b.file));
+      out.push("", `${rule}: ${ruleIssues.length}`);
+      for (const issue of sorted) {
+        const loc = `${issue.file}:${issue.line}:${issue.column}`;
+        out.push(withMessage ? `- ${loc} ${issue.message}` : `- ${loc}`);
+      }
+    }
+    return `${out.join("\n")}\n`;
+  };
+
+  const renderCounts = (): string => {
+    const out = header(issues, fixableLine);
+    for (const [rule, ruleIssues] of grouped) out.push(`${rule}: ${ruleIssues.length}`);
+    return `${out.join("\n")}\n`;
+  };
+
+  const ladder = overBudgetLadder({
+    full: renderListing(true),
+    digest: () => renderListing(false),
+    replacement: renderCounts,
+  });
+  return { output: ladder.text, omission: ladder.omission };
+}
+
+function formatRuff(
+  stdout: string,
+  stderr: string,
+  command: ParsedCommand,
+): { output: string; omission?: OmissionDeclaration } {
   // RTK: ruff_cmd.rs::filter_ruff_check_json — parse the forced JSON output first.
   // JSON lands on stdout; ruff diagnostics never mix into the JSON array, so parse
   // stdout alone (stderr may carry unrelated warnings that would break JSON.parse).
   const json = parseJsonDiagnostics(stdout);
   if (json) {
-    if (json.issues.length === 0) return "Ruff: 0 issues in 0 files\n";
+    if (json.issues.length === 0) return { output: "Ruff: 0 issues in 0 files\n" };
     const fixableLine = json.fixable > 0 ? `[*] ${json.fixable} fixable with the \`--fix\` option.` : undefined;
     return renderIssues(json.issues, fixableLine);
   }
@@ -138,9 +161,9 @@ function formatRuff(stdout: string, stderr: string, command: ParsedCommand): str
     .map(parseTextIssue)
     .filter((issue): issue is RuffIssue => Boolean(issue));
   if (issues.length === 0 && text.trim()) {
-    if (command.args[0] === "format") return `${text.trimEnd()}\n`;
-    if (/All checks passed/i.test(text)) return "Ruff: 0 issues in 0 files\n";
-    return `${text.trimEnd()}\n`;
+    if (command.args[0] === "format") return { output: `${text.trimEnd()}\n` };
+    if (/All checks passed/i.test(text)) return { output: "Ruff: 0 issues in 0 files\n" };
+    return { output: `${text.trimEnd()}\n` };
   }
   const fixableLine = text.split(/\r?\n/).find((line) => line.includes("fixable"));
   return renderIssues(issues, fixableLine?.trim());
@@ -194,6 +217,7 @@ export const ruffHandler: CommandHandler = {
   },
 
   async filter(raw, command, options) {
-    return makeFilteredResult(this.name, raw, formatRuff(raw.stdout, raw.stderr, command), options);
+    const { output, omission } = formatRuff(raw.stdout, raw.stderr, command);
+    return makeFilteredResult(this.name, raw, output, options, undefined, omission);
   },
 };

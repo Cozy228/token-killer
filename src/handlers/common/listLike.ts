@@ -2,8 +2,9 @@ import { readdir } from "node:fs/promises";
 import path from "node:path";
 
 import { executeCommand } from "../../executor.js";
-import type { CommandHandler, ParsedCommand, RawResult } from "../../types.js";
+import type { CommandHandler, OmissionDeclaration, ParsedCommand, RawResult } from "../../types.js";
 import { makeFilteredResult } from "../base.js";
+import { overBudgetLadder } from "./budget.js";
 
 const LIST_PROGRAMS = new Set(["ls", "dir", "find", "tree"]);
 const SKIP_DIRS = new Set([
@@ -120,7 +121,6 @@ function findRoot(command: ParsedCommand): string {
 // RTK: system/find_cmd.rs default max_results (parse_find_args → 50). tk filters
 // the real find's output rather than re-walking the filesystem, so it caps the
 // grouped listing at the same budget and reports the remainder as "+N more".
-const FIND_MAX_RESULTS = 50;
 
 // RTK: find_cmd.rs uses the -name/-iname glob as the effective_pattern shown in
 // the "0 for '<pattern>'" empty message (defaults to "*").
@@ -141,7 +141,10 @@ function stripFindRoot(pathValue: string, root: string): string {
   return cleaned.startsWith(`${root}/`) ? cleaned.slice(root.length + 1) : cleaned;
 }
 
-function summarizeFindOutput(text: string, command: ParsedCommand): string {
+function summarizeFindOutput(
+  text: string,
+  command: ParsedCommand,
+): { output: string; omission?: OmissionDeclaration } {
   const root = findRoot(command);
   const files = [...new Set(
     text
@@ -151,7 +154,7 @@ function summarizeFindOutput(text: string, command: ParsedCommand): string {
   )].sort();
 
   // RTK: find_cmd.rs — empty result collapses to "0 for '<pattern>'".
-  if (files.length === 0) return `0 for '${findPattern(command)}'\n`;
+  if (files.length === 0) return { output: `0 for '${findPattern(command)}'\n` };
 
   const byDir = new Map<string, string[]>();
   for (const file of files) {
@@ -166,28 +169,30 @@ function summarizeFindOutput(text: string, command: ParsedCommand): string {
 
   const dirs = [...byDir.keys()].sort();
   const totalFiles = files.length;
-  const lines = [`${totalFiles}F ${dirs.length}D:`, ""];
+  const header = `${totalFiles}F ${dirs.length}D:`;
 
-  // RTK: find_cmd.rs:317-350 — fill the budget across sorted dirs, partial-show
-  // the dir that overflows, then emit "+N more" using the uncapped total.
-  let shown = 0;
-  for (const dir of dirs) {
-    if (shown >= FIND_MAX_RESULTS) break;
-    const entries = (byDir.get(dir) ?? []).sort();
-    const remaining = FIND_MAX_RESULTS - shown;
-    if (entries.length <= remaining) {
-      lines.push(`${dir}/ ${entries.join(" ")}`);
-      shown += entries.length;
-    } else {
-      lines.push(`${dir}/ ${entries.slice(0, remaining).join(" ")}`);
-      shown += remaining;
-      break;
-    }
-  }
+  // ADR 0001 (intentional divergence from RTK's FIND_MAX_RESULTS=50 + `+N more`):
+  // each path is location evidence and is never capped. Below budget every file
+  // is listed; step 1 keeps every directory (drops the per-dir filenames, a
+  // lossless reduction of locations to their parent dirs + count); step 2 is a
+  // repo-wide total.
+  const renderFull = (): string => {
+    const lines = [header, ""];
+    for (const dir of dirs) lines.push(`${dir}/ ${(byDir.get(dir) ?? []).sort().join(" ")}`);
+    return `${lines.join("\n")}\n`;
+  };
+  const renderDigest = (): string => {
+    const lines = [header, ""];
+    for (const dir of dirs) lines.push(`${dir}/ (${(byDir.get(dir) ?? []).length} files)`);
+    return `${lines.join("\n")}\n`;
+  };
 
-  if (shown < totalFiles) lines.push(`+${totalFiles - shown} more`);
-
-  return `${lines.join("\n")}\n`;
+  const ladder = overBudgetLadder({
+    full: renderFull(),
+    digest: renderDigest,
+    replacement: () => `${totalFiles} files in ${dirs.length} directories (over budget)\n`,
+  });
+  return { output: ladder.text, omission: ladder.omission };
 }
 
 async function executeDirInternally(command: ParsedCommand): Promise<RawResult | undefined> {
@@ -224,9 +229,11 @@ export const listLikeHandler: CommandHandler = {
 
   async filter(raw, command, options) {
     const text = `${raw.stdout}\n${raw.stderr}`;
-    const output = command.program === "find"
-      ? summarizeFindOutput(text, command)
-      : summarizeListing(command.program === "tree" ? flattenTreeOutput(text) : text);
+    if (command.program === "find") {
+      const { output, omission } = summarizeFindOutput(text, command);
+      return makeFilteredResult(this.name, raw, output, options, undefined, omission);
+    }
+    const output = summarizeListing(command.program === "tree" ? flattenTreeOutput(text) : text);
     return makeFilteredResult(this.name, raw, output, options);
   },
 };

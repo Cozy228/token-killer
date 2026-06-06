@@ -1,5 +1,11 @@
 import { executeCommand } from "../../executor.js";
-import type { CommandHandler, ParsedCommand, RawResult, TkOptions } from "../../types.js";
+import type {
+  CommandHandler,
+  OmissionDeclaration,
+  ParsedCommand,
+  RawResult,
+  TkOptions,
+} from "../../types.js";
 import { makeFilteredResult } from "../base.js";
 import { type CompressionLevel, parseLevel } from "../common/level.js";
 
@@ -98,10 +104,10 @@ function readOptions(args: string[]): ReadOptions {
 // RTK: core/filter.rs::smart_truncate — keep the first max_lines/2 lines plus any
 // structurally important lines (imports, declarations, braces) up to max_lines-1,
 // then append a single `[N more lines]` marker. No inline omission markers.
-function smartTruncate(content: string, maxLines: number): string {
+function smartTruncate(content: string, maxLines: number): { text: string; omitted: boolean } {
   const lines = content.split("\n");
   if (lines.length <= maxLines) {
-    return content;
+    return { text: content, omitted: false };
   }
 
   const result: string[] = [];
@@ -122,21 +128,24 @@ function smartTruncate(content: string, maxLines: number): string {
       keptLines += 1;
     }
 
-    if (keptLines >= maxLines - 1) {
+    if (keptLines >= maxLines) {
       break;
     }
   }
 
-  result.push(`[${lines.length - keptLines} more lines]`);
-  return result.join("\n");
+  // ADR 0001: the user explicitly asked for --max-lines, so the reduction is
+  // legitimate — but it is still a lossy drop, declared (not marked with a banned
+  // `[N more lines]`) so the gate force-persists the full file and cites the
+  // snapshot for the lines that were dropped.
+  return { text: result.join("\n"), omitted: true };
 }
 
 // RTK: read.rs::apply_line_window — tail_lines wins over max_lines; max_lines uses
 // smart_truncate; otherwise content is returned unchanged.
-function applyLineWindow(content: string, options: ReadOptions): string {
+function applyLineWindow(content: string, options: ReadOptions): { text: string; omitted: boolean } {
   if (options.tailLines !== undefined) {
     if (options.tailLines === 0) {
-      return "";
+      return { text: "", omitted: content.trim().length > 0 };
     }
     const lines = content.split("\n");
     // Mirror Rust `lines()`: a trailing newline does not yield a final empty line.
@@ -148,14 +157,14 @@ function applyLineWindow(content: string, options: ReadOptions): string {
     if (content.endsWith("\n")) {
       result += "\n";
     }
-    return result;
+    return { text: result, omitted: start > 0 };
   }
 
   if (options.maxLines !== undefined) {
     return smartTruncate(content, options.maxLines);
   }
 
-  return content;
+  return { text: content, omitted: false };
 }
 
 // RTK: read.rs::format_with_line_numbers — right-aligned line numbers + " │ ".
@@ -402,7 +411,10 @@ export function buildCatArgs(args: string[]): string[] {
   return readOptions(args).files;
 }
 
-function formatRead(raw: RawResult, command: ParsedCommand): string {
+function formatRead(
+  raw: RawResult,
+  command: ParsedCommand,
+): { output: string; omission?: OmissionDeclaration } {
   const content = raw.stdout;
   const options = readOptions(command.args);
 
@@ -410,8 +422,9 @@ function formatRead(raw: RawResult, command: ParsedCommand): string {
   // boilerplate), THEN the line window, THEN optional line numbers.
   const lang = detectLanguage(options.files);
   const filtered = applyLevelFilter(content, options.level, lang);
-  const windowed = applyLineWindow(filtered, options);
-  return options.lineNumbers ? formatWithLineNumbers(windowed) : windowed;
+  const { text: windowed, omitted } = applyLineWindow(filtered, options);
+  const output = options.lineNumbers ? formatWithLineNumbers(windowed) : windowed;
+  return { output, omission: omitted ? { kind: "replacement" } : undefined };
 }
 
 export const readHandler: CommandHandler = {
@@ -436,6 +449,7 @@ export const readHandler: CommandHandler = {
     return executeCommand(rewritten);
   },
   async filter(raw, command, options: TkOptions) {
-    return makeFilteredResult(this.name, raw, formatRead(raw, command), options);
+    const { output, omission } = formatRead(raw, command);
+    return makeFilteredResult(this.name, raw, output, options, undefined, omission);
   },
 };

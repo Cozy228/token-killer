@@ -1,7 +1,8 @@
 import { executeCommand } from "../../executor.js";
 import { removeAnsi } from "../../core/ansi.js";
-import type { CommandHandler, ParsedCommand } from "../../types.js";
+import type { CommandHandler, OmissionDeclaration, ParsedCommand } from "../../types.js";
 import { makeFilteredResult } from "../base.js";
+import { overBudgetLadder } from "../common/budget.js";
 
 // RTK: js/playwright_cmd.rs — filters Playwright E2E test output to show only failures.
 // Tier 1 parses the JSON reporter (suites → specs → tests → results); Tier 2 falls back
@@ -139,29 +140,40 @@ function extractPlaywrightRegex(output: string): TestResult | undefined {
 // RTK: parser/formatter.rs::TestResult::format_compact — "PASS (p) FAIL (f)" (+ optional
 // " skipped (s)"), a blank line then up to 5 numbered failures with indented message
 // lines, an overflow note, and an optional "Time: {ms}ms" line.
-function formatCompact(result: TestResult): string {
+// ADR 0001 (intentional divergence from RTK's 5-failure cap): a failing test is
+// never hidden behind `+N more failures`. Below budget every failure is listed in
+// full; over budget step 1 keeps every failing test NAME and drops only the error
+// body; step 2 replaces with a failure count.
+function formatCompact(result: TestResult): { output: string; omission?: OmissionDeclaration } {
   let summary = `PASS (${result.passed}) FAIL (${result.failed})`;
   if (result.skipped > 0) summary += ` skipped (${result.skipped})`;
-  const lines = [summary];
+  const timeLine = result.durationMs !== undefined ? `\nTime: ${result.durationMs}ms` : "";
 
-  if (result.failures.length > 0) {
-    lines.push("");
-    result.failures.slice(0, 5).forEach((failure, idx) => {
+  if (result.failures.length === 0) {
+    return { output: `${summary}${timeLine}` };
+  }
+
+  const render = (withMessages: boolean): string => {
+    const lines = [summary, ""];
+    result.failures.forEach((failure, idx) => {
       lines.push(`${idx + 1}. ${failure.testName}`);
-      if (failure.errorMessage) {
+      if (withMessages && failure.errorMessage) {
         for (const line of failure.errorMessage.split("\n")) lines.push(`   ${line}`);
       }
     });
-    if (result.failures.length > 5) {
-      lines.push(`\n... +${result.failures.length - 5} more failures`);
-    }
-  }
+    if (timeLine) lines.push(timeLine);
+    return lines.join("\n");
+  };
 
-  if (result.durationMs !== undefined) lines.push(`\nTime: ${result.durationMs}ms`);
-  return lines.join("\n");
+  const ladder = overBudgetLadder({
+    full: render(true),
+    digest: () => render(false),
+    replacement: () => `${summary}\n${result.failures.length} failures (over budget)${timeLine}`,
+  });
+  return { output: ladder.text, omission: ladder.omission };
 }
 
-function formatPlaywright(text: string): string {
+function formatPlaywright(text: string): { output: string; omission?: OmissionDeclaration } {
   // Tier 1: JSON reporter.
   const json = parsePlaywrightJson(text);
   if (json) return formatCompact(json);
@@ -171,7 +183,7 @@ function formatPlaywright(text: string): string {
   if (regex) return formatCompact(regex);
 
   // Tier 3: passthrough — let the shared output limiter cap it.
-  return text;
+  return { output: text };
 }
 
 export const playwrightHandler: CommandHandler = {
@@ -187,6 +199,7 @@ export const playwrightHandler: CommandHandler = {
   },
 
   async filter(raw, _command, options) {
-    return makeFilteredResult(this.name, raw, formatPlaywright(`${raw.stdout}\n${raw.stderr}`), options);
+    const { output, omission } = formatPlaywright(`${raw.stdout}\n${raw.stderr}`);
+    return makeFilteredResult(this.name, raw, output, options, undefined, omission);
   },
 };

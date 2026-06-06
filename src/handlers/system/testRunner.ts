@@ -1,17 +1,21 @@
 import { executeCommand } from "../../executor.js";
-import type { CommandHandler } from "../../types.js";
+import type { CommandHandler, OmissionDeclaration } from "../../types.js";
 import { makeFilteredResult, rawText } from "../base.js";
+import { overBudgetLadder } from "../common/budget.js";
 
 // RTK: rust/runner.rs::run_test / extract_test_summary — `test <cmd>` runs a test
 // command and extracts only the failures and summary lines, framework-aware
 // (cargo / pytest / jest|npm|yarn / go). Per-test "... ok" chatter is dropped.
-
-// RTK: truncate.rs::CAP_WARNINGS = 12, CAP_LIST = 50.
-const MAX_RUNNER_FAILURES = 12;
-const MAX_RUNNER_LINES = 50;
+// ADR 0001 (intentional divergence from RTK's CAP_WARNINGS=12 / CAP_LIST=50): a
+// failing test and its diagnostic lines are evidence and are never hidden behind a
+// `+N more`. All failures are listed below budget; over budget step 1 keeps every
+// failure header (drops the detail lines), step 2 replaces with a count.
 
 // RTK: rust/runner.rs::extract_test_summary.
-function extractTestSummary(output: string, command: string): string {
+function extractTestSummary(
+  output: string,
+  command: string,
+): { output: string; omission?: OmissionDeclaration } {
   const lines = output.split("\n");
 
   const isCargo = command.includes("cargo test");
@@ -51,32 +55,40 @@ function extractTestSummary(output: string, command: string): string {
     }
   }
 
-  const out: string[] = [];
+  const tail = (): string[] => {
+    const out: string[] = [];
+    if (summary.length > 0) {
+      out.push("SUMMARY:");
+      for (const line of summary) out.push(`  ${line}`);
+    } else {
+      out.push("OUTPUT (last 5 lines):");
+      for (const line of lines.slice(Math.max(0, lines.length - 5))) {
+        if (line.trim() !== "") out.push(`  ${line}`);
+      }
+    }
+    return out;
+  };
 
-  if (failures.length > 0) {
-    out.push("[FAIL] FAILURES:");
-    for (const failure of failures.slice(0, MAX_RUNNER_FAILURES)) out.push(`  ${failure}`);
-    if (failures.length > MAX_RUNNER_FAILURES) {
-      out.push(`  ... +${failures.length - MAX_RUNNER_FAILURES} more failures`);
-    }
-    for (const failure of failureLines.slice(0, MAX_RUNNER_LINES)) out.push(`  ${failure.trim()}`);
-    if (failureLines.length > MAX_RUNNER_LINES) {
-      out.push(`  ... +${failureLines.length - MAX_RUNNER_LINES} more`);
-    }
+  if (failures.length === 0) {
+    return { output: tail().join("\n") };
+  }
+
+  // full: every failure header + every diagnostic line. digest: every failure
+  // header, drop the diagnostic lines. replacement: failure count only.
+  const render = (withDetail: boolean): string => {
+    const out = ["[FAIL] FAILURES:"];
+    for (const failure of failures) out.push(`  ${failure}`);
+    if (withDetail) for (const detail of failureLines) out.push(`  ${detail.trim()}`);
     out.push("");
-  }
+    return [...out, ...tail()].join("\n");
+  };
 
-  if (summary.length > 0) {
-    out.push("SUMMARY:");
-    for (const line of summary) out.push(`  ${line}`);
-  } else {
-    out.push("OUTPUT (last 5 lines):");
-    for (const line of lines.slice(Math.max(0, lines.length - 5))) {
-      if (line.trim() !== "") out.push(`  ${line}`);
-    }
-  }
-
-  return out.join("\n");
+  const ladder = overBudgetLadder({
+    full: render(true),
+    digest: () => render(false),
+    replacement: () => [`[FAIL] ${failures.length} failures (over budget)`, "", ...tail()].join("\n"),
+  });
+  return { output: ladder.text, omission: ladder.omission };
 }
 
 export const testRunnerHandler: CommandHandler = {
@@ -93,7 +105,7 @@ export const testRunnerHandler: CommandHandler = {
     });
   },
   async filter(raw, command, options) {
-    const summary = extractTestSummary(rawText(raw), command.args.join(" "));
-    return makeFilteredResult(this.name, raw, summary, options);
+    const { output, omission } = extractTestSummary(rawText(raw), command.args.join(" "));
+    return makeFilteredResult(this.name, raw, output, options, undefined, omission);
   },
 };

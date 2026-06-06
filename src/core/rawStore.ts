@@ -25,7 +25,6 @@ export async function maybeSaveRawOutput(
 
   const fileName = `${timestampForPath()}-${safePathPart(raw.command)}.log`;
   const dir = rawOutputDir(options.cwd);
-  await mkdir(dir, { recursive: true });
   const relativePath = rawOutputPathRelative(options.cwd, fileName);
   const absolutePath = path.join(dir, fileName);
   const content = [
@@ -38,6 +37,18 @@ export async function maybeSaveRawOutput(
     raw.stderr,
   ].join("\n");
 
-  await writeFile(absolutePath, content, "utf8");
+  // Persisting raw must never break the pipeline. A disk-full / permission / quota
+  // error here returns "no snapshot" (undefined) rather than throwing through
+  // makeFilteredResult — the agent must still get its output. Critically, ADR 0001's
+  // declared-omission path now force-persists on EVERY digest/replacement (a much
+  // wider surface than the old exit≠0/>20K trigger), and makeFilteredResult's
+  // `replacementNeedsRecovery` fail-open assumes a missing snapshot is signalled by
+  // `undefined`, not an exception — so swallowing the error here is load-bearing.
+  try {
+    await mkdir(dir, { recursive: true });
+    await writeFile(absolutePath, content, "utf8");
+  } catch {
+    return undefined;
+  }
   return relativePath;
 }

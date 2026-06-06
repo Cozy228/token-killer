@@ -1,7 +1,8 @@
 import { executeCommand } from "../../executor.js";
 import { removeAnsi } from "../../core/ansi.js";
-import type { CommandHandler, ParsedCommand } from "../../types.js";
+import type { CommandHandler, OmissionDeclaration, ParsedCommand } from "../../types.js";
 import { makeFilteredResult } from "../base.js";
+import { overBudgetLadder } from "../common/budget.js";
 
 // RTK: rtk/src/parser/types.rs::TestResult / TestFailure — the normalized model both
 // the JSON (Tier 1) and regex (Tier 2) parsers feed into before formatting.
@@ -155,41 +156,58 @@ function parseTextStats(text: string): TestResult | undefined {
   return { passed, failed, skipped: 0, durationMs, failures };
 }
 
-// RTK: rtk/src/parser/formatter.rs::TestResult::format_compact — "PASS (p) FAIL (f)",
-// then up to 5 numbered failures with their message lines, then an optional Time line.
-function formatCompact(result: TestResult): string {
+// "PASS (p) FAIL (f)", then numbered failures with their message lines, then an
+// optional Time line. ADR 0001 (intentional divergence from RTK's 5-failure cap):
+// a failing test is the highest-value evidence and is NEVER hidden behind a
+// `+N more failures`. Below budget every failure is listed in full; over budget
+// step 1 keeps every failing test NAME (which test failed — never dropped) and
+// drops only the error-message body; step 2 replaces with a failure count.
+function formatCompact(result: TestResult): { output: string; omission?: OmissionDeclaration } {
   let summary = `PASS (${result.passed}) FAIL (${result.failed})`;
   if (result.skipped > 0) summary += ` skipped (${result.skipped})`;
-  const lines = [summary];
+  const timeLine = result.durationMs !== undefined ? `\nTime: ${result.durationMs}ms` : "";
 
-  if (result.failures.length > 0) {
-    lines.push("");
-    result.failures.slice(0, 5).forEach((failure, idx) => {
+  if (result.failures.length === 0) {
+    return { output: `${summary}${timeLine}` };
+  }
+
+  const render = (withMessages: boolean): string => {
+    const lines = [summary, ""];
+    result.failures.forEach((failure, idx) => {
       lines.push(`${idx + 1}. ${failure.testName}`);
-      if (failure.errorMessage) {
+      if (withMessages && failure.errorMessage) {
         for (const line of failure.errorMessage.split("\n")) lines.push(`   ${line}`);
       }
     });
-    if (result.failures.length > 5) {
-      lines.push(`\n... +${result.failures.length - 5} more failures`);
-    }
-  }
+    if (timeLine) lines.push(timeLine);
+    return lines.join("\n");
+  };
 
-  if (result.durationMs !== undefined) lines.push(`\nTime: ${result.durationMs}ms`);
-  return lines.join("\n");
+  const ladder = overBudgetLadder({
+    full: render(true),
+    digest: () => render(false),
+    replacement: () => `${summary}\n${result.failures.length} failures (over budget)${timeLine}`,
+  });
+  return { output: ladder.text, omission: ladder.omission };
 }
 
-function formatJsTest(text: string): string {
+function formatJsTest(text: string): { output: string; omission?: OmissionDeclaration } {
   // Tier 1: structured JSON (direct or extracted from a prefixed banner).
   const json = parseTestJson(text);
-  if (json) return `${formatCompact(json)}\n`;
+  if (json) {
+    const { output, omission } = formatCompact(json);
+    return { output: `${output}\n`, omission };
+  }
 
   // Tier 2: regex over the human reporter.
   const stats = parseTextStats(text);
-  if (stats) return `${formatCompact(stats)}\n`;
+  if (stats) {
+    const { output, omission } = formatCompact(stats);
+    return { output: `${output}\n`, omission };
+  }
 
   // Tier 3: passthrough — let the shared output limiter cap it.
-  return text;
+  return { output: text };
 }
 
 export const jsTestHandler: CommandHandler = {
@@ -203,6 +221,7 @@ export const jsTestHandler: CommandHandler = {
   },
 
   async filter(raw, _command, options) {
-    return makeFilteredResult(this.name, raw, formatJsTest(`${raw.stdout}\n${raw.stderr}`), options);
+    const { output, omission } = formatJsTest(`${raw.stdout}\n${raw.stderr}`);
+    return makeFilteredResult(this.name, raw, output, options, undefined, omission);
   },
 };

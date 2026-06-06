@@ -4,6 +4,7 @@ import path from "node:path";
 import { executeCommand } from "../../executor.js";
 import type { CommandHandler, ParsedCommand, RawResult, TkOptions } from "../../types.js";
 import { makeFilteredResult } from "../base.js";
+import { overBudgetLadder } from "./budget.js";
 
 type DiffChange =
   | { kind: "added"; newLine: number; content: string }
@@ -99,17 +100,14 @@ function flushUnifiedFile(
 ) {
   if (!currentFile || (added === 0 && removed === 0)) return;
 
-  // RTK: git/diff_cmd.rs::condense_unified_diff — every +/- line is shown in full
-  // (never truncated; users decide on this data). When the file has more than 10
-  // changes, a "... +N more" footer notes the size using the UNCAPPED total
-  // (total-10), not a capped count (overflow_count_accuracy / no_false_overflow).
+  // Every +/- line is shown in full — diff hunks are location-class and are never
+  // capped (CONTEXT.md). The header already carries the exact `(+added -removed)`
+  // count, so the old `... +N more` footer noted a size it had NOT omitted: a
+  // false omission marker that tripped the Safe-Compression-Gate for nothing
+  // (ADR 0001 — no `+N more` anywhere). Removed; no evidence is dropped here.
   output.push(`[file] ${currentFile} (+${added} -${removed})`);
   for (const change of changes) {
     output.push(`  ${change}`);
-  }
-  const total = added + removed;
-  if (total > 10) {
-    output.push(`  ... +${total - 10} more`);
   }
 }
 
@@ -162,6 +160,14 @@ async function diffInternally(command: ParsedCommand, options: TkOptions): Promi
       stat(newAbsolute),
     ]);
 
+    // Guard the dense O(n·m) LCS matrix (audit #12): two 5,000-line files allocate
+    // ~25M cells (~200 MB) on the hot path. Above a cell cap, fall through to the
+    // real `diff` (lossless) instead of risking a memory/time cliff — compression
+    // uncertain ⇒ return raw.
+    if (splitLines(oldText).length * splitLines(newText).length > 4_000_000) {
+      return undefined;
+    }
+
     return {
       command: command.displayCommand,
       stdout: formatDiffOutput(oldPath, newPath, oldInfo.mtime, newInfo.mtime, oldText, newText),
@@ -213,7 +219,20 @@ export const diffHandler: CommandHandler = {
     const filtered = command.args.includes("-") || isUnifiedDiff(output)
       ? condenseUnifiedDiff(output)
       : output.trimEnd();
+    const body = filtered.trim() ? `${filtered.trimEnd()}\n` : "[ok] Files are identical\n";
 
-    return makeFilteredResult(this.name, raw, filtered.trim() ? `${filtered.trimEnd()}\n` : "[ok] Files are identical\n", options);
+    // ADR 0001: a very large diff must not ship unbounded. Diff lines are
+    // location-class (never count-capped), so over budget the listing is replaced
+    // by the per-file `(+added -removed)` summary lines + the snapshot pointer.
+    const ladder = overBudgetLadder({
+      full: body,
+      replacement: () => {
+        const summary = body
+          .split("\n")
+          .filter((line) => /^\[file\] |->.*\(\+\d+ -\d+\)/.test(line));
+        return summary.length > 0 ? `${summary.join("\n")}\n` : body;
+      },
+    });
+    return makeFilteredResult(this.name, raw, ladder.text, options, undefined, ladder.omission);
   },
 };

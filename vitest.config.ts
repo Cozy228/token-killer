@@ -15,6 +15,7 @@ export default defineConfig({
     include: [
       "tests/unit/handlers/fixtureContent.test.ts",
       "tests/unit/handlers/curlProductBehavior.test.ts",
+      "tests/unit/handlers/adr0001Ladder.test.ts",
       "tests/integration/**/*.test.ts",
       "tests/unit/parse.test.ts",
       "tests/unit/pipeline.test.ts",
@@ -25,6 +26,7 @@ export default defineConfig({
       "tests/unit/hook/**/*.test.ts",
       "tests/unit/inspect/**/*.test.ts",
       "tests/unit/context/**/*.test.ts",
+      "tests/unit/telemetry/**/*.test.ts",
       "tests/unit/core/**/*.test.ts",
       "tests/unit/dataDir.test.ts",
       "tests/unit/scripts/**/*.test.ts",
