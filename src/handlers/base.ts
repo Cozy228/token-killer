@@ -95,6 +95,30 @@ const INFLATION_EXEMPT_HANDLERS = new Set([
 // the sniff and fails open to raw above budget when it cannot declare omission.
 const MASKING_HANDLERS = new Set(["env"]);
 
+// Handlers that participate in the ADR 0001 over-budget ladder: they either ship
+// the full output or DECLARE a digest/replacement — they NEVER emit an undeclared
+// `+N more`. The prose-sniff is retired for them (ADR 0001: the sniff is only a
+// net for foreign passthrough / not-yet-converted handlers). Without this, the
+// sniff fires on their own legitimate passthrough content — a diff body line like
+// `+10 more fixes`, a vitest snapshot `... +5 more`, or a source line surfaced by
+// `read` — trimming to a whole-line marker match and needlessly reverting a
+// correct compression to raw. (`list-like` is intentionally absent: its ls/tree
+// path is not yet ladder-converted, so it still needs the net.)
+const LADDER_HANDLERS = new Set([
+  "ruff",
+  "pytest",
+  "js-test",
+  "playwright",
+  "test",
+  "env",
+  "json",
+  "read",
+  "psql",
+  "diff",
+  "git-diff",
+  "git-show",
+]);
+
 // Detects content-omission markers in a handler's output. ADR 0001 retires this
 // prose-sniffing for `tk`'s own handlers (they now *declare* omission, see
 // makeFilteredResult); it is kept as the defense against UNDECLARED omission — a
@@ -163,6 +187,7 @@ export async function makeFilteredResult(
   const undeclaredOmission =
     !omission &&
     !masking &&
+    !LADDER_HANDLERS.has(handler) &&
     rawHasContent &&
     outputHasContent &&
     outputOmitsContent(cleanOutput);
@@ -190,11 +215,35 @@ export async function makeFilteredResult(
   // replacement ships even without a snapshot — the masked summary leaks nothing.
   const replacementNeedsRecovery =
     declared && omission!.kind === "replacement" && !rawOutputPath && !masking;
-  const qualityStatus = replacementNeedsRecovery ? "inflated" : initialStatus;
+
+  // A MASKING handler never reverts to raw (secrets) — but a recovery-less lossy
+  // `replacement` (a bare count) is just as forbidden as a fake-complete. When the
+  // snapshot is unavailable (persistence disabled OR the write FAILED — both signal
+  // as a missing rawOutputPath), ship the handler's lossless, leak-free FULL
+  // rendering instead (omission.safeFull, e.g. env's masked full). Only when that
+  // fallback is absent do we keep the lossy count, flagged degraded. This closes
+  // the hole where a snapshot WRITE FAILURE (not a user opt-out) silently dropped
+  // masked evidence with no recovery.
+  const maskingReplacementNoSnapshot =
+    declared && masking && omission!.kind === "replacement" && !rawOutputPath;
+  const maskingSafeFull = maskingReplacementNoSnapshot ? omission!.safeFull : undefined;
+  const maskingDegraded = maskingReplacementNoSnapshot && maskingSafeFull === undefined;
+
+  const qualityStatus =
+    replacementNeedsRecovery || maskingDegraded ? "inflated" : initialStatus;
 
   let limited = qualityStatus === "passed" ? cleanOutput : cleanRaw;
   let omissionField: FilteredResult["omission"];
-  if (declared && !replacementNeedsRecovery) {
+  if (maskingSafeFull !== undefined) {
+    // Lossless masked full — nothing is omitted, so no omission field and no
+    // recovery pointer; never expose the unmasked raw.
+    limited = removeAnsi(maskingSafeFull);
+  } else if (maskingDegraded) {
+    // No snapshot AND no safe-full fallback: keep the count (never raw secrets) but
+    // signal recovery-less via qualityStatus="inflated".
+    limited = cleanOutput;
+    omissionField = { kind: omission!.kind, rawPointer: undefined };
+  } else if (declared && !replacementNeedsRecovery) {
     // Decision 6: the inline recovery pointer names the persisted snapshot FILE
     // path — never a `tk --raw` re-run (which can drift / re-fire a mutation).
     if (rawOutputPath) {

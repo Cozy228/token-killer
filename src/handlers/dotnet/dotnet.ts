@@ -1,6 +1,7 @@
 import { executeCommand } from "../../executor.js";
-import type { CommandHandler, ParsedCommand } from "../../types.js";
+import type { CommandHandler, OmissionDeclaration, ParsedCommand } from "../../types.js";
 import { makeFilteredResult, rawText } from "../base.js";
+import { overBudgetLadder } from "../common/budget.js";
 
 // RTK: cmds/dotnet/{dotnet_cmd,dotnet_trx,binlog,dotnet_format_report}.rs — the
 // `dotnet` proxy keeps test failures + summaries (stripping restore/build
@@ -22,7 +23,7 @@ type DotnetFailure = { name: string; messages: string[] };
 
 // RTK: dotnet_cmd.rs / binlog.rs::parse_test_from_text — keep failed test names,
 // their error messages, and the final counts line; drop restore/build chatter.
-function formatDotnetTest(text: string): string {
+function formatDotnetTest(text: string): { output: string; omission?: OmissionDeclaration } {
   const failures: DotnetFailure[] = [];
   const summary: string[] = [];
 
@@ -47,16 +48,33 @@ function formatDotnetTest(text: string): string {
     }
   }
 
-  const out: string[] = [];
-  if (failures.length > 0) {
-    out.push("Failed Tests:");
-    for (const failure of failures) {
-      out.push(`  ${failure.name}`);
-      for (const message of failure.messages) out.push(`    ${truncate(message, 120)}`);
+  // ADR 0001 (audit #2): a failing test's error message is evidence and is NEVER
+  // silently clipped (the old `truncate(message, 120)` dropped stack-trace tails
+  // with no marker/snapshot). full keeps every message line; over budget step 1
+  // keeps every failure NAME (drops messages); step 2 is a count.
+  const render = (withMessages: boolean): string => {
+    const out: string[] = [];
+    if (failures.length > 0) {
+      out.push("Failed Tests:");
+      for (const failure of failures) {
+        out.push(`  ${failure.name}`);
+        if (withMessages) {
+          for (const message of failure.messages) out.push(`    ${message}`);
+        }
+      }
     }
-  }
-  for (const line of summary) out.push(line);
-  return out.length > 0 ? `${out.join("\n")}\n` : text;
+    for (const line of summary) out.push(line);
+    return out.length > 0 ? `${out.join("\n")}\n` : text;
+  };
+
+  if (failures.length === 0) return { output: render(false) };
+
+  const ladder = overBudgetLadder({
+    full: render(true),
+    digest: () => render(false),
+    replacement: () => `${["Failed Tests: " + failures.length + " (over budget)", ...summary].join("\n")}\n`,
+  });
+  return { output: ladder.text, omission: ladder.omission };
 }
 
 // --- dotnet test --logger trx (TRX XML) -------------------------------------
@@ -67,15 +85,18 @@ function formatDotnetTest(text: string): string {
 // <Message> in the file zipped by index. The old index-zip mis-attributed a
 // passing test's stdout (or the <ResultSummary>) as a failing test's error —
 // fabricating a wrong reason, a retention corruption worse than a drop (audit #7).
-function formatDotnetTrx(text: string): string {
+function formatDotnetTrx(text: string): { output: string; omission?: OmissionDeclaration } {
   const failedCounter = text.match(/<Counters\b[^>]*\bfailed="(\d+)"/);
   const failedCount = failedCounter ? Number.parseInt(failedCounter[1] ?? "0", 10) : 0;
 
   const failures: { name: string; message: string }[] = [];
-  // A failing UnitTestResult is never self-closing — it carries the ErrorInfo body,
-  // so it always has a `>...</UnitTestResult>` block. Passing tests are self-closed
-  // and never match, so their <Message> stdout can no longer leak across.
-  const blockRe = /<UnitTestResult\b([^>]*)>([\s\S]*?)<\/UnitTestResult>/g;
+  // Match BOTH the block form (`>…</UnitTestResult>`, carrying the ErrorInfo body)
+  // AND the self-closed form (`… />`): a Failed result without an inner body would
+  // otherwise be skipped entirely (audit #9), losing its NAME and making the header
+  // count disagree with the listed failures. The error message lives only in
+  // <ErrorInfo><Message> (captured stdout is <StdOut>), so the FIRST <Message> in
+  // the body is the right one and never picks up another test's output (audit #7).
+  const blockRe = /<UnitTestResult\b([^>]*?)(?:\/>|>([\s\S]*?)<\/UnitTestResult>)/g;
   for (let match = blockRe.exec(text); match; match = blockRe.exec(text)) {
     const attrs = match[1] ?? "";
     if (!/\boutcome="Failed"/.test(attrs)) continue;
@@ -84,12 +105,30 @@ function formatDotnetTrx(text: string): string {
     failures.push({ name, message });
   }
 
-  const out: string[] = [`${failedCount || failures.length} failed`];
-  for (const { name, message } of failures) {
-    out.push(`  ${name}`);
-    if (message) out.push(`    ${truncate(message, 120)}`);
-  }
-  return `${out.join("\n")}\n`;
+  const head = `${failedCount || failures.length} failed`;
+  if (failures.length === 0) return { output: `${head}\n` };
+
+  // ADR 0001 (audit #2): the failure message is evidence and is NEVER silently
+  // clipped (the old `truncate(message, 120)` dropped stack-trace tails). full
+  // keeps every message line; step 1 keeps every failing NAME (drops messages);
+  // step 2 is a count.
+  const render = (withMessage: boolean): string => {
+    const out = [head];
+    for (const { name, message } of failures) {
+      out.push(`  ${name}`);
+      if (withMessage && message) {
+        for (const line of message.split("\n")) out.push(`    ${line}`);
+      }
+    }
+    return `${out.join("\n")}\n`;
+  };
+
+  const ladder = overBudgetLadder({
+    full: render(true),
+    digest: () => render(false),
+    replacement: () => `${head} (over budget)\n`,
+  });
+  return { output: ladder.text, omission: ladder.omission };
 }
 
 // --- dotnet msbuild -bl (binlog text) ---------------------------------------
@@ -210,13 +249,16 @@ function formatDotnetFormat(text: string): string {
 
 // --- routing ----------------------------------------------------------------
 
-function formatDotnet(command: ParsedCommand, text: string): string {
+function formatDotnet(
+  command: ParsedCommand,
+  text: string,
+): { output: string; omission?: OmissionDeclaration } {
   const args = command.args;
   const joined = args.join(" ");
 
-  if (args.includes("format")) return formatDotnetFormat(text);
+  if (args.includes("format")) return { output: formatDotnetFormat(text) };
   if (args.includes("msbuild") || args.includes("-bl") || args.includes("/bl")) {
-    return formatDotnetBinlog(text);
+    return { output: formatDotnetBinlog(text) };
   }
 
   const looksTrx = text.trimStart().startsWith("<");
@@ -235,6 +277,7 @@ export const dotnetHandler: CommandHandler = {
     return executeCommand(command);
   },
   async filter(raw, command, options) {
-    return makeFilteredResult(this.name, raw, formatDotnet(command, rawText(raw)), options);
+    const { output, omission } = formatDotnet(command, rawText(raw));
+    return makeFilteredResult(this.name, raw, output, options, undefined, omission);
   },
 };

@@ -214,6 +214,14 @@ function formatEnvLadder(stdout: string): { output: string; omission?: OmissionD
       return `Total: ${total} vars (over budget)\n`;
     },
   });
+  // env is a MASKING handler: when it falls to the lossy count, hand the gate the
+  // masked FULL listing as the recovery-safe fallback. The gate ships it (instead
+  // of the count) whenever no snapshot exists — persistence disabled OR the write
+  // failed — since env must never revert to raw secrets. The masked full leaks
+  // nothing, so this is lossless and safe.
+  if (ladder.omission?.kind === "replacement") {
+    return { output: ladder.text, omission: { kind: "replacement", safeFull: full } };
+  }
   return { output: ladder.text, omission: ladder.omission };
 }
 

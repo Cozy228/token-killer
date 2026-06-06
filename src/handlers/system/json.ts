@@ -54,7 +54,17 @@ function isSimple(value: JsonValue): boolean {
 // nesting level, and string byte is kept (ADR 0001: no count/depth/string caps).
 // The over-budget decision is made once, at the top level (formatJson), on the
 // rendered size, so nothing is dropped while the payload still fits the budget.
-function compactJson(value: JsonValue, depth: number): string {
+// Guards against a RangeError stack overflow on pathologically nested JSON (the
+// old MAX_DEPTH=5 cap was removed for losslessness, audit #8). `stackDepth` counts
+// real recursion (unlike `depth`, the indent level, which resets to 0 for inline
+// simple values). When exceeded we throw; formatJson treats that as "over budget →
+// replacement summary" so the payload stays recoverable via the snapshot.
+const MAX_SAFE_DEPTH = 200;
+
+function compactJson(value: JsonValue, depth: number, stackDepth = 0): string {
+  if (stackDepth > MAX_SAFE_DEPTH) {
+    throw new RangeError("json: nesting too deep to render safely");
+  }
   const indent = "  ".repeat(depth);
 
   if (value === null) {
@@ -76,7 +86,7 @@ function compactJson(value: JsonValue, depth: number): string {
     if (value.length === 0) {
       return `${indent}[]`;
     }
-    const items = value.map((v) => compactJson(v, depth + 1));
+    const items = value.map((v) => compactJson(v, depth + 1, stackDepth + 1));
     const allSimple = value.every(isSimple);
     if (allSimple) {
       const inline = items.map((s) => s.trim());
@@ -101,11 +111,11 @@ function compactJson(value: JsonValue, depth: number): string {
   for (const key of keys) {
     const val = value[key]!;
     if (isSimple(val)) {
-      const valStr = compactJson(val, 0);
+      const valStr = compactJson(val, 0, stackDepth + 1);
       lines.push(`${indent}  ${key}: ${valStr.trim()}`);
     } else {
       lines.push(`${indent}  ${key}:`);
-      lines.push(compactJson(val, depth + 1));
+      lines.push(compactJson(val, depth + 1, stackDepth + 1));
     }
   }
   lines.push(`${indent}}`);
@@ -137,7 +147,15 @@ function formatJson(raw: RawResult): {
     // RTK's filter-fail-then-passthrough contract: leave raw untouched.
     return { output: raw.stdout, error: "Failed to parse JSON" };
   }
-  const full = `${compactJson(value, 0)}\n`;
+  let full: string;
+  try {
+    full = `${compactJson(value, 0)}\n`;
+  } catch {
+    // Pathologically deep nesting (would stack-overflow): degrade to the shape-only
+    // replacement, recoverable via the snapshot, instead of throwing through the
+    // pipeline.
+    return { output: jsonReplacementSummary(value), omission: { kind: "replacement" } };
+  }
   if (withinBudget(full)) return { output: full };
   // No lossless digest step for arbitrary JSON structure → straight to step 2.
   return { output: jsonReplacementSummary(value), omission: { kind: "replacement" } };

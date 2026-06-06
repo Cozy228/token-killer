@@ -41,21 +41,38 @@ function canonicalize(entry: string): string {
   }
 }
 
+// A (device, inode) identity for a directory, following symlinks (including
+// symlinked PARENT components — macOS `/var`→`/private/var`, a symlinked $HOME).
+// Returns null when the path does not exist. One `statSync` syscall, far cheaper
+// than realpathSync's per-component lstat + readlink chain — this runs once per
+// PATH entry on the shim's hot path (every wrapped command), so it must be cheap.
+function dirIdentity(entry: string): string | null {
+  try {
+    const s = statSync(entry);
+    return `${s.dev}:${s.ino}`;
+  } catch {
+    return null;
+  }
+}
+
 // Remove every PATH entry that resolves to shimDir (after symlink + path
 // normalization, OS-correct separator). Order of the remaining entries is
-// preserved. The lexical check runs first (fast common case); the canonical check
-// only decides entries the lexical pass let through.
+// preserved. The lexical check runs first (fast common case); the (dev,inode)
+// check only decides entries the lexical pass let through — catching symlinked
+// aliases of the shim dir (audit #10) without realpath's readlink chains.
 export function stripShimDir(pathVar: string | undefined, shimDir: string | undefined): string {
   if (!pathVar) return "";
   if (!shimDir) return pathVar;
   const lexicalTarget = normalizeEntry(shimDir);
-  const canonicalTarget = canonicalize(shimDir);
+  const targetIdentity = dirIdentity(shimDir);
   return pathVar
     .split(delimiter)
     .filter((entry) => {
       if (entry === "") return false;
       if (normalizeEntry(entry) === lexicalTarget) return false;
-      return canonicalize(entry) !== canonicalTarget;
+      // Only entries that survived the lexical check pay a stat; an entry sharing
+      // the shim dir's device+inode is the same directory via a symlink/alias.
+      return !(targetIdentity !== null && dirIdentity(entry) === targetIdentity);
     })
     .join(delimiter);
 }

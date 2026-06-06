@@ -119,7 +119,7 @@ describe("ADR 0001 over-budget ladder", () => {
     expect(result.qualityStatus).toBe("inflated");
   });
 
-  test("env over budget WITHOUT persistence ships a masked aggregate, never reverts to raw secrets", async () => {
+  test("env over budget WITHOUT a snapshot ships the masked FULL (lossless), never the recovery-less count or raw secrets", async () => {
     // Many categorised (cloud) vars push env past budget; one is a secret.
     const lines = Array.from({ length: 600 }, (_, i) => `AWS_CONFIG_${i}=config-value-number-${i}`);
     lines.push("AWS_SECRET_ACCESS_KEY=SUPERSECRETVALUE_DO_NOT_LEAK_12345");
@@ -127,10 +127,31 @@ describe("ADR 0001 over-budget ladder", () => {
 
     const result = await run(["env"], stdout, options({ saveRaw: false }));
 
-    // Masking handler: it must NOT fail open to raw (that would re-expose the secret).
+    // Masking handler: it must NOT fail open to raw (that would re-expose the
+    // secret), AND must NOT ship a recovery-less lossy count when no snapshot
+    // exists. The fix: fall back to the masked FULL listing — every var present,
+    // secret masked, zero loss, no `over budget` count, no omission marker.
+    expect(result.output).not.toContain("SUPERSECRETVALUE_DO_NOT_LEAK_12345");
+    expect(result.output).toContain("AWS_CONFIG_0=config-value-number-0");
+    expect(result.output).toContain("AWS_CONFIG_599=config-value-number-599");
+    expect(result.output).not.toContain("over budget");
+    expect(result.omission).toBeUndefined();
+    expect(result.output).not.toMatch(NO_OVERFLOW_MARKER);
+  });
+
+  test("env over budget WITH persistence ships the masked count + snapshot pointer", async () => {
+    const lines = Array.from({ length: 600 }, (_, i) => `AWS_CONFIG_${i}=config-value-number-${i}`);
+    lines.push("AWS_SECRET_ACCESS_KEY=SUPERSECRETVALUE_DO_NOT_LEAK_12345");
+    const stdout = `${lines.join("\n")}\n`;
+
+    const result = await run(["env"], stdout, options({ saveRaw: "auto" }));
+
+    // Snapshot exists ⇒ the lossy count is honest (recoverable). Secret never in
+    // the snapshot pointer path nor the visible output.
     expect(result.output).not.toContain("SUPERSECRETVALUE_DO_NOT_LEAK_12345");
     expect(result.output).toContain("over budget");
     expect(result.omission?.kind).toBe("replacement");
+    expect(result.omission?.rawPointer).toBeTruthy();
     expect(result.output).not.toMatch(NO_OVERFLOW_MARKER);
   });
 

@@ -424,7 +424,12 @@ function formatRead(
   const filtered = applyLevelFilter(content, options.level, lang);
   const { text: windowed, omitted } = applyLineWindow(filtered, options);
   const output = options.lineNumbers ? formatWithLineNumbers(windowed) : windowed;
-  return { output, omission: omitted ? { kind: "replacement" } : undefined };
+  // A line window is the user's EXPLICIT request (--max-lines / --tail-lines), not
+  // a budget-forced reduction, so it must ALWAYS ship the window — declaring it as
+  // `digest` (which never fails open) rather than `replacement` (which, under
+  // --no-save-raw, would fail open to the WHOLE file, the opposite of what the user
+  // asked for). The snapshot pointer is still appended when persistence is on.
+  return { output, omission: omitted ? { kind: "digest" } : undefined };
 }
 
 export const readHandler: CommandHandler = {

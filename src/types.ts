@@ -29,7 +29,16 @@ export type RawResult = {
 // as the recovery pointer.
 export type OmissionKind = "digest" | "replacement";
 
-export type OmissionDeclaration = { kind: OmissionKind };
+export type OmissionDeclaration = {
+  kind: OmissionKind;
+  // MASKING handlers only (e.g. env): a lossless, leak-free rendering (the masked
+  // FULL listing) the gate ships when the recovery snapshot is unavailable —
+  // whether persistence was disabled (--no-save-raw) OR the write FAILED. A masking
+  // handler must never revert to raw (secrets) nor ship a recovery-less lossy
+  // count, so this is its safe fallback. Non-masking handlers omit it (they fail
+  // open to raw). Internal to the gate — not serialized into FilteredResult.
+  safeFull?: string;
+};
 
 export type FilteredResult = {
   handler: string;

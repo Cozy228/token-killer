@@ -4,7 +4,7 @@ import path from "node:path";
 import { executeCommand } from "../../executor.js";
 import type { CommandHandler, ParsedCommand, RawResult, TkOptions } from "../../types.js";
 import { makeFilteredResult } from "../base.js";
-import { overBudgetLadder } from "./budget.js";
+import { type LadderResult, overBudgetLadder } from "./budget.js";
 
 type DiffChange =
   | { kind: "added"; newLine: number; content: string }
@@ -224,15 +224,16 @@ export const diffHandler: CommandHandler = {
     // ADR 0001: a very large diff must not ship unbounded. Diff lines are
     // location-class (never count-capped), so over budget the listing is replaced
     // by the per-file `(+added -removed)` summary lines + the snapshot pointer.
-    const ladder = overBudgetLadder({
-      full: body,
-      replacement: () => {
-        const summary = body
-          .split("\n")
-          .filter((line) => /^\[file\] |->.*\(\+\d+ -\d+\)/.test(line));
-        return summary.length > 0 ? `${summary.join("\n")}\n` : body;
-      },
-    });
+    // A non-unified diff has NO such summary lines — there is nothing to reduce, so
+    // ship the full body with NO omission (declaring a "replacement" that replaced
+    // nothing would mislabel a complete dump as a lossy step-2 reduction).
+    const summaryLines = body
+      .split("\n")
+      .filter((line) => /^\[file\] |->.*\(\+\d+ -\d+\)/.test(line));
+    const ladder: LadderResult =
+      summaryLines.length > 0
+        ? overBudgetLadder({ full: body, replacement: () => `${summaryLines.join("\n")}\n` })
+        : { text: body };
     return makeFilteredResult(this.name, raw, ladder.text, options, undefined, ladder.omission);
   },
 };

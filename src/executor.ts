@@ -44,7 +44,11 @@ let legacyDecoder: TextDecoder | null | undefined;
 function detectWindowsLegacyLabel(): string | null {
   let cp: number | null = null;
   try {
-    const out = spawnSync("chcp.com", [], { encoding: "utf8", windowsHide: true });
+    const out = spawnSync("chcp.com", [], {
+      encoding: "utf8",
+      windowsHide: true,
+      timeout: 1000,
+    });
     const match = /(\d{2,6})/.exec(out.stdout ?? "");
     cp = match ? Number(match[1]) : null;
   } catch {
