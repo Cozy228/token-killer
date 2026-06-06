@@ -3,7 +3,12 @@ import { homedir } from "node:os";
 
 import { detectHost, gatherDetectEnv, type Host } from "./detect.js";
 import { vscodeUserDir } from "./hostConfig.js";
-import { projectInjectionPath, userInjectionPath, unwriteInjection, writeInjection } from "./injection.js";
+import {
+  projectInjectionPath,
+  userInjectionPath,
+  unwriteInjection,
+  writeInjection,
+} from "./injection.js";
 import { installShim, runShim } from "./cli.js";
 import {
   copilotHookConfigStatus,
@@ -11,6 +16,12 @@ import {
   planCopilotHookConfig,
   uninstallCopilotHookConfig,
 } from "../hook/install.js";
+import {
+  claudeHookStatus,
+  installClaudeHook,
+  planClaudeHookInstall,
+  uninstallClaudeHook,
+} from "../hook/claudeInstall.js";
 
 // Unified `tk init` (goal Phase 3, ADR 0002 §5). Auto-detects the host and wires
 // the highest available delivery tier: Copilot CLI → hook seam (Track B), else
@@ -40,7 +51,14 @@ export function parseInitArgs(argv: string[]): InitArgs {
     const token = argv[i];
     if (token === "--host") {
       const value = argv[i + 1];
-      if (value === "copilot-cli" || value === "vscode" || value === "auto") args.host = value;
+      if (
+        value === "copilot-cli" ||
+        value === "vscode" ||
+        value === "claude-code" ||
+        value === "auto"
+      ) {
+        args.host = value;
+      }
       i += 1;
     } else if (token === "--show") {
       args.show = true;
@@ -50,10 +68,9 @@ export function parseInitArgs(argv: string[]): InitArgs {
       args.dryRun = true;
     } else if (token === "--uninstall") {
       args.uninstall = true;
-    } else if (token === "--global" || token === "-g") {
-      // User-level is already the default scope for every tk write; -g is
-      // accepted for parity with `rtk init` and is a no-op.
     }
+    // Unknown tokens (e.g. a stray `-g` from rtk muscle memory) are ignored —
+    // every tk write is user-level, so there is no global/local switch to honor.
   }
   return args;
 }
@@ -66,6 +83,14 @@ function injectionTarget(host: Host): string {
 function showStatus(): number {
   const host = detectHost(gatherDetectEnv());
   out(`Detected host: ${host}`);
+  const claude = claudeHookStatus({});
+  out(
+    `  claude-code settings hook: ${
+      claude.present
+        ? `${claude.path} (${claude.pointsAtTk ? "points at tk" : "present, NOT tk"})`
+        : "absent"
+    }`,
+  );
   const hookStatus = copilotHookConfigStatus({ project: false });
   out(`  copilot hook config: ${hookStatus.present ? hookStatus.path : "absent"}`);
   runShim(["status"]);
@@ -78,11 +103,19 @@ function showStatus(): number {
 // config, the shim, and the injection files (user + project). Marker-guarded —
 // only files tk wrote are removed.
 function uninstall(opts: InitArgs): number {
+  const removedClaude = uninstallClaudeHook({});
+  out(
+    `claude-code settings hook: ${removedClaude.removed ? `removed tk entry from ${removedClaude.path}` : "nothing to remove"}`,
+  );
   const removedHook = uninstallCopilotHookConfig({ project: false });
-  out(`copilot hook config: ${removedHook.removed ? `removed ${removedHook.path}` : "nothing to remove"}`);
+  out(
+    `copilot hook config: ${removedHook.removed ? `removed ${removedHook.path}` : "nothing to remove"}`,
+  );
   if (opts.project) {
     const removedProjectHook = uninstallCopilotHookConfig({ project: true, cwd: process.cwd() });
-    out(`project hook config: ${removedProjectHook.removed ? `removed ${removedProjectHook.path}` : "nothing to remove"}`);
+    out(
+      `project hook config: ${removedProjectHook.removed ? `removed ${removedProjectHook.path}` : "nothing to remove"}`,
+    );
   }
   runShim(["uninstall"]);
   const host = detectHost(gatherDetectEnv());
@@ -117,6 +150,31 @@ export function runInit(argv: string[]): number {
     }
   }
 
+  // Hook tier (Claude Code): patch ~/.claude/settings.json so the PreToolUse
+  // Bash hook invokes `tk hook claude`, replacing any `rtk hook claude` in place
+  // (true drop-in — rtk leaves the path). The rewritten command is bare
+  // `tk <cmd>`, so tk must be on PATH when Claude Code runs Bash.
+  if (host === "claude-code") {
+    if (opts.dryRun) {
+      const plan = planClaudeHookInstall({});
+      out(`[dry-run] would ${plan.action} claude-code settings hook: ${plan.path}`);
+      if (plan.previousCommand && plan.previousCommand !== plan.command) {
+        out(`  - ${plan.previousCommand}`);
+      }
+      out(`  + ${plan.command}`);
+      out(`Active tier: hook`);
+      out(`Ensure tk is on PATH for Claude Code's Bash (e.g. pnpm build && npm link).`);
+      return 0;
+    }
+    const plan = installClaudeHook({});
+    out(
+      `${plan.action === "unchanged" ? "Up to date" : `${plan.action}d`} claude-code settings hook: ${plan.path}`,
+    );
+    out(`Active tier: hook`);
+    out(`Ensure tk is on PATH for Claude Code's Bash (e.g. pnpm build && npm link).`);
+    return 0;
+  }
+
   // Hook tier (Copilot CLI only): write the host hook config pointing PreToolUse
   // at `tk hook copilot` (Slices 1–2). This is the highest tier; the proxy
   // compresses. Repo write only under --project.
@@ -129,7 +187,9 @@ export function runInit(argv: string[]): number {
       return 0;
     }
     const plan = installCopilotHookConfig(loc);
-    out(`${plan.action === "unchanged" ? "Up to date" : "Wrote"} copilot hook config: ${plan.path}`);
+    out(
+      `${plan.action === "unchanged" ? "Up to date" : "Wrote"} copilot hook config: ${plan.path}`,
+    );
     out(`Active tier: hook`);
     return 0;
   }

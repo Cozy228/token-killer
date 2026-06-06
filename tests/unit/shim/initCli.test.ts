@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, test } from "vitest";
-import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync } from "node:fs";
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -23,6 +23,11 @@ function runTg(args: string[], env: NodeJS.ProcessEnv = {}, cwd = repoRoot) {
       ...process.env,
       HOME: home,
       TOKEN_KILLER_HOME: join(home, ".token-killer"),
+      // The suite itself runs inside Claude Code, which sets these markers; clear
+      // them by default so host auto-detection reflects each test's intent. The
+      // claude-code tests force the host explicitly or set these back on.
+      CLAUDECODE: "",
+      CLAUDE_CODE_ENTRYPOINT: "",
       ...env,
     },
   });
@@ -106,6 +111,79 @@ describe("tk init", () => {
     const result = runTg(["init", "--uninstall"]);
     expect(result.status).toBe(0);
     expect(existsSync(cfg)).toBe(false);
+  });
+
+  test("--host claude-code → hook tier, patches ~/.claude/settings.json", () => {
+    const result = runTg(["init", "--host", "claude-code"]);
+    expect(result.status).toBe(0);
+    expect(result.stdout).toContain("Active tier: hook");
+    const cfg = join(home, ".claude", "settings.json");
+    expect(existsSync(cfg)).toBe(true);
+    const parsed = JSON.parse(readFileSync(cfg, "utf8"));
+    const cmd = parsed.hooks.PreToolUse[0].hooks[0].command;
+    expect(cmd.endsWith("hook claude")).toBe(true);
+    expect(cmd.startsWith("tk ")).toBe(false); // absolute node + cli, not bare tk
+  });
+
+  test("claude-code drop-in: replaces an existing rtk hook claude in place", () => {
+    mkdirSync(join(home, ".claude"), { recursive: true });
+    writeFileSync(
+      join(home, ".claude", "settings.json"),
+      JSON.stringify(
+        {
+          hooks: {
+            PreToolUse: [
+              { matcher: "Bash", hooks: [{ type: "command", command: "rtk hook claude" }] },
+            ],
+          },
+          statusLine: { type: "command", command: "sh /x/s.sh" },
+          enabledPlugins: { "codex@openai-codex": true },
+        },
+        null,
+        2,
+      ),
+    );
+    const result = runTg(["init", "--host", "claude-code"]);
+    expect(result.status).toBe(0);
+    const parsed = JSON.parse(readFileSync(join(home, ".claude", "settings.json"), "utf8"));
+    expect(parsed.hooks.PreToolUse).toHaveLength(1);
+    expect(parsed.hooks.PreToolUse[0].hooks[0].command).not.toBe("rtk hook claude");
+    expect(parsed.hooks.PreToolUse[0].hooks[0].command.endsWith("hook claude")).toBe(true);
+    // surgical: unrelated keys preserved
+    expect(parsed.statusLine).toEqual({ type: "command", command: "sh /x/s.sh" });
+    expect(parsed.enabledPlugins).toEqual({ "codex@openai-codex": true });
+  });
+
+  test("claude-code auto-detected from a live env marker", () => {
+    const result = runTg(["init"], { CLAUDECODE: "1" });
+    expect(result.status).toBe(0);
+    expect(result.stdout).toContain("Detected host: claude-code");
+    expect(result.stdout).toContain("Active tier: hook");
+  });
+
+  test("claude-code -g is a no-op (same as copilot): hook only, no TK.md", () => {
+    const result = runTg(["init", "--host", "claude-code", "-g"]);
+    expect(result.status).toBe(0);
+    expect(result.stdout).toContain("Active tier: hook");
+    // -g writes no extra instruction files for any host
+    expect(existsSync(join(home, ".claude", "TK.md"))).toBe(false);
+    expect(existsSync(join(home, ".claude", "CLAUDE.md"))).toBe(false);
+  });
+
+  test("claude-code --dry-run writes nothing", () => {
+    const result = runTg(["init", "--host", "claude-code", "--dry-run"]);
+    expect(result.status).toBe(0);
+    expect(result.stdout).toContain("[dry-run]");
+    expect(existsSync(join(home, ".claude", "settings.json"))).toBe(false);
+  });
+
+  test("claude-code --uninstall removes the tk hook entry", () => {
+    runTg(["init", "--host", "claude-code"]);
+    expect(existsSync(join(home, ".claude", "settings.json"))).toBe(true);
+    const result = runTg(["init", "--uninstall"]);
+    expect(result.status).toBe(0);
+    const parsed = JSON.parse(readFileSync(join(home, ".claude", "settings.json"), "utf8"));
+    expect(parsed.hooks.PreToolUse).toEqual([]);
   });
 
   test("--show reports the detected host and shim status", () => {

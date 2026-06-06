@@ -1,6 +1,7 @@
 // Slice 1 — `tk hook` subcommand dispatcher.
 //
 //   tk hook copilot      runtime handler the host invokes (reads stdin → decision)
+//   tk hook claude       runtime handler for Claude Code's PreToolUse Bash hook
 //   tk hook check <cmd>  dry-run: show how a command would be rewritten (mirrors
 //                        `rtk hook check`); the test/debug surface
 //
@@ -8,6 +9,7 @@
 // `tk hook install`/`init`/`status`.
 
 import { runHookCopilot } from "./copilot.js";
+import { runHookClaude } from "./claude.js";
 import { rewriteCommand } from "./rewrite.js";
 
 function err(line: string): void {
@@ -47,10 +49,12 @@ export async function runHook(argv: string[]): Promise<number> {
   switch (sub) {
     case "copilot":
       return runHookCopilot();
+    case "claude":
+      return runHookClaude();
     case "check":
       return runHookCheck(argv.slice(1));
     default:
-      err(`tk hook: unknown subcommand '${sub ?? ""}' (expected copilot | check)`);
+      err(`tk hook: unknown subcommand '${sub ?? ""}' (expected copilot | claude | check)`);
       return 1;
   }
 }

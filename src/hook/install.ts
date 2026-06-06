@@ -27,10 +27,10 @@ function quoteArg(p: string): string {
   return /\s/.test(p) ? `"${p}"` : p;
 }
 
-export function resolveHookCommand(): string {
+export function resolveHookCommand(subcommand: string = "copilot"): string {
   const node = process.execPath;
   const cli = process.argv[1] ?? fileURLToPath(import.meta.url);
-  return `${quoteArg(node)} ${quoteArg(cli)} hook copilot`;
+  return `${quoteArg(node)} ${quoteArg(cli)} hook ${subcommand}`;
 }
 
 // Marker proving the file is ours (recoverable/marker-based). Sits beside `hooks`;
@@ -105,7 +105,10 @@ function isManaged(path: string): boolean {
 
 // Remove our config — only if the marker proves we wrote it (never clobber a
 // user's own hooks file).
-export function uninstallCopilotHookConfig(loc: ConfigLocation): { path: string; removed: boolean } {
+export function uninstallCopilotHookConfig(loc: ConfigLocation): {
+  path: string;
+  removed: boolean;
+} {
   const path = copilotHookConfigPath(loc);
   if (!isManaged(path)) return { path, removed: false };
   rmSync(path, { force: true });

@@ -17,6 +17,7 @@ import { governPrompt } from "./prompt.js";
 import { failureSourceAdapter, handleError } from "./error.js";
 import { recordHookFailure } from "../core/history.js";
 import { recordGovernance } from "../core/governance.js";
+import { hookDebug } from "./debug.js";
 
 const ALLOW: Decision = { decision: "allow" };
 
@@ -72,7 +73,9 @@ export function decideFromStdin(raw: string): Decision {
   try {
     return decide(normalizeStdin(raw));
   } catch (error) {
-    process.stderr.write(`tk hook copilot: ${error instanceof Error ? error.message : String(error)}\n`);
+    process.stderr.write(
+      `tk hook copilot: ${error instanceof Error ? error.message : String(error)}\n`,
+    );
     return ALLOW;
   }
 }
@@ -141,7 +144,9 @@ async function recordFailureMetric(ev: ToolEvent): Promise<void> {
       exitCode: 1,
     });
   } catch (error) {
-    process.stderr.write(`tk hook copilot: failure-metric write skipped: ${error instanceof Error ? error.message : String(error)}\n`);
+    process.stderr.write(
+      `tk hook copilot: failure-metric write skipped: ${error instanceof Error ? error.message : String(error)}\n`,
+    );
   }
 }
 
@@ -161,7 +166,9 @@ async function recordGovernanceMetric(ev: ToolEvent, decision: Decision): Promis
       estimated_tokens: decision.estimated_tokens,
     });
   } catch (error) {
-    process.stderr.write(`tk hook copilot: governance-metric write skipped: ${error instanceof Error ? error.message : String(error)}\n`);
+    process.stderr.write(
+      `tk hook copilot: governance-metric write skipped: ${error instanceof Error ? error.message : String(error)}\n`,
+    );
   }
 }
 
@@ -175,17 +182,27 @@ export async function runHookCopilot(): Promise<number> {
     raw = "";
   }
 
+  hookDebug("copilot:stdin", { bytes: raw.length });
   let ev: ToolEvent | null = null;
   let decision: Decision = ALLOW;
   try {
     ev = normalizeStdin(raw);
     decision = decide(ev);
   } catch (error) {
-    process.stderr.write(`tk hook copilot: ${error instanceof Error ? error.message : String(error)}\n`);
+    process.stderr.write(
+      `tk hook copilot: ${error instanceof Error ? error.message : String(error)}\n`,
+    );
     ev = null;
     decision = ALLOW;
   }
 
+  hookDebug("copilot:decision", {
+    event: ev?.event,
+    category: ev?.category,
+    decision: decision.decision,
+    reason: decision.reason,
+    rewritten: decision.rewritten_command,
+  });
   process.stdout.write(JSON.stringify(toProtocol(decision)));
 
   if (ev) {

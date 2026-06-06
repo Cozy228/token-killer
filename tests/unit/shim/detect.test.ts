@@ -4,6 +4,8 @@ import { detectHost, selectTier, type DetectEnv } from "../../../src/shim/detect
 
 function env(overrides: Partial<DetectEnv>): DetectEnv {
   return {
+    claudeEnv: false,
+    claudeSettingsExists: false,
     copilotDirExists: false,
     termProgram: undefined,
     codeOnPath: false,
@@ -13,8 +15,26 @@ function env(overrides: Partial<DetectEnv>): DetectEnv {
 }
 
 describe("detectHost", () => {
+  test("Claude Code wins outright when its env markers are set (live session)", () => {
+    expect(detectHost(env({ claudeEnv: true, copilotDirExists: true }))).toBe("claude-code");
+  });
+
+  test("Claude Code from a persistent settings file (no live env, no copilot)", () => {
+    expect(detectHost(env({ claudeSettingsExists: true, vscodeUserDirExists: true }))).toBe(
+      "claude-code",
+    );
+  });
+
+  test("Copilot CLI still wins over a persistent Claude settings file", () => {
+    expect(detectHost(env({ claudeSettingsExists: true, copilotDirExists: true }))).toBe(
+      "copilot-cli",
+    );
+  });
+
   test("Copilot CLI wins when ~/.copilot exists (highest tier)", () => {
-    expect(detectHost(env({ copilotDirExists: true, vscodeUserDirExists: true }))).toBe("copilot-cli");
+    expect(detectHost(env({ copilotDirExists: true, vscodeUserDirExists: true }))).toBe(
+      "copilot-cli",
+    );
   });
 
   test("VS Code when TERM_PROGRAM=vscode", () => {
@@ -35,6 +55,10 @@ describe("detectHost", () => {
 });
 
 describe("selectTier", () => {
+  test("Claude Code → hook when the installer is available", () => {
+    expect(selectTier("claude-code", true, false)).toBe("hook");
+  });
+
   test("Copilot CLI → hook when the installer is available", () => {
     expect(selectTier("copilot-cli", true, true)).toBe("hook");
   });

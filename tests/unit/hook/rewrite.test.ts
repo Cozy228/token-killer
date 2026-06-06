@@ -70,6 +70,39 @@ describe("rewriteCommand — non-rewrite cases (pass)", () => {
   });
 });
 
+describe("rewriteCommand — pass carries a reason (TK_DEBUG: why not rewritten)", () => {
+  test("empty command", () => {
+    expect(rewriteCommand("").reason).toBe("empty command");
+  });
+
+  test("already a tk command", () => {
+    expect(rewriteCommand("tk git status").reason).toBe("already a tk command");
+  });
+
+  test("no handler names the program", () => {
+    expect(rewriteCommand("some-unknown-tool --flag").reason).toBe(
+      "no tk handler for 'some-unknown-tool'",
+    );
+  });
+
+  test("mutating git subcommand", () => {
+    expect(rewriteCommand("git push").reason).toBe("mutating git subcommand");
+  });
+
+  test("output redirect / heredoc", () => {
+    expect(rewriteCommand("git log > out.txt").reason).toContain("redirect");
+    expect(rewriteCommand("cat <<EOF\nhi\nEOF").reason).toContain("redirect");
+  });
+
+  test("pipes into xargs", () => {
+    expect(rewriteCommand("find . -name '*.ts' | xargs grep TODO").reason).toBe("pipes into xargs");
+  });
+
+  test("a rewrite carries no pass reason", () => {
+    expect(rewriteCommand("git status").reason).toBeUndefined();
+  });
+});
+
 describe("rewriteCommand — chains", () => {
   test("&& rewrites both eligible sides", () => {
     const r = rewriteCommand("git status && tsc --noEmit");

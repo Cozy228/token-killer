@@ -134,27 +134,65 @@ function isMutating(parsed: ParsedCommand): boolean {
   if (parsed.program !== "git") return false;
   const sub = parsed.args[0];
   const mutatingSubs = new Set([
-    "commit", "push", "pull", "fetch", "merge", "rebase", "reset", "revert",
-    "cherry-pick", "restore", "checkout", "switch", "stash", "clean", "rm",
-    "mv", "add", "apply", "am", "tag", "init", "clone", "gc", "prune",
+    "commit",
+    "push",
+    "pull",
+    "fetch",
+    "merge",
+    "rebase",
+    "reset",
+    "revert",
+    "cherry-pick",
+    "restore",
+    "checkout",
+    "switch",
+    "stash",
+    "clean",
+    "rm",
+    "mv",
+    "add",
+    "apply",
+    "am",
+    "tag",
+    "init",
+    "clone",
+    "gc",
+    "prune",
   ]);
   if (sub && mutatingSubs.has(sub)) return true;
   // `git branch -d/-D/-m/-M/--delete/--move` mutates even though the branch
   // handler matches the read form.
   if (sub === "branch") {
-    return parsed.args.some((a) =>
-      a === "-d" || a === "-D" || a === "-m" || a === "-M" ||
-      a === "--delete" || a === "--move" || a === "-c" || a === "-C",
+    return parsed.args.some(
+      (a) =>
+        a === "-d" ||
+        a === "-D" ||
+        a === "-m" ||
+        a === "-M" ||
+        a === "--delete" ||
+        a === "--move" ||
+        a === "-c" ||
+        a === "-C",
     );
   }
   return false;
 }
 
-function isEligible(tokens: string[]): boolean {
-  if (tokens.length === 0) return false;
-  if (tokens[0] === "tk") return false; // already proxied — never nest
+// Why a segment is (in)eligible for rewrite. The reason is surfaced on `pass`
+// decisions so `TK_DEBUG` can explain "why wasn't this rewritten?" (the most
+// common hook question). Total; never throws.
+type Eligibility = { eligible: true } | { eligible: false; reason: string };
+
+function eligibility(tokens: string[]): Eligibility {
+  if (tokens.length === 0) return { eligible: false, reason: "empty segment" };
+  if (tokens[0] === "tk") return { eligible: false, reason: "already a tk command" };
   const parsed = toParsed(tokens);
-  return routeSpecific(parsed) !== null && !isInteractive(parsed) && !isMutating(parsed);
+  if (routeSpecific(parsed) === null) {
+    return { eligible: false, reason: `no tk handler for '${parsed.program}'` };
+  }
+  if (isInteractive(parsed)) return { eligible: false, reason: "interactive command" };
+  if (isMutating(parsed)) return { eligible: false, reason: "mutating git subcommand" };
+  return { eligible: true };
 }
 
 function rejoin(segments: Segment[]): string {
@@ -192,32 +230,39 @@ function hasNonEquivalentRedirect(command: string): boolean {
 // `find … | xargs …` (and any pipe into xargs) must not be split/rewritten — it
 // would break the pipeline semantics. Pass the whole command.
 function pipesIntoXargs(segments: Segment[]): boolean {
-  return segments.some(
-    (seg) => seg.precededBy === "|" && tokenize(seg.text)[0] === "xargs",
-  );
+  return segments.some((seg) => seg.precededBy === "|" && tokenize(seg.text)[0] === "xargs");
 }
 
 // Rewrite a raw shell command per DESIGN §3.8. Pure and total; never throws.
 export function rewriteCommand(raw: string): RewriteDecision {
   const command = (raw ?? "").trim();
-  if (command.length === 0) return { decision: "pass" };
+  if (command.length === 0) return { decision: "pass", reason: "empty command" };
 
   // Non-equivalent shells → pass.
-  if (hasNonEquivalentRedirect(command)) return { decision: "pass" };
+  if (hasNonEquivalentRedirect(command)) {
+    return { decision: "pass", reason: "output redirect or heredoc (not equivalent under tk)" };
+  }
 
   const segments = splitTopLevel(command);
-  if (pipesIntoXargs(segments)) return { decision: "pass" };
+  if (pipesIntoXargs(segments)) return { decision: "pass", reason: "pipes into xargs" };
 
   let changed = false;
+  // The reason the FIRST evaluated (non-pipe-RHS) segment was not rewritten —
+  // reported on `pass` so the debug trace can explain it.
+  let passReason: string | undefined;
   const out: Segment[] = segments.map((seg) => {
     // Only the LHS of `|` is rewritten; the RHS (`| grep`, `| head`) passes.
     if (seg.precededBy === "|") return seg;
     const tokens = tokenize(seg.text);
-    if (!isEligible(tokens)) return seg;
+    const elig = eligibility(tokens);
+    if (!elig.eligible) {
+      if (passReason === undefined) passReason = elig.reason;
+      return seg;
+    }
     changed = true;
     return { ...seg, text: `tk ${seg.text.trim()}` };
   });
 
-  if (!changed) return { decision: "pass" };
+  if (!changed) return { decision: "pass", reason: passReason };
   return { decision: "rewrite", rewritten: rejoin(out) };
 }

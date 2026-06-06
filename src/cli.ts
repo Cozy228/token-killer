@@ -19,7 +19,13 @@ import { maybeSaveRawOutput } from "./core/rawStore.js";
 import { formatStats } from "./core/stats.js";
 import { failureHint } from "./core/failureHints.js";
 import { VERSION } from "./version.js";
-import type { CommandHandler, FilteredResult, ParsedCommand, RawResult, TkOptions } from "./types.js";
+import type {
+  CommandHandler,
+  FilteredResult,
+  ParsedCommand,
+  RawResult,
+  TkOptions,
+} from "./types.js";
 
 function help(): string {
   return [
@@ -41,19 +47,23 @@ function help(): string {
     "",
     "Run `tk <command> --help`-style usage is summarized below.",
     "",
-    "tk init [--host auto|copilot-cli|vscode] [--project] [--show] [--dry-run] [--uninstall] [-g|--global]",
+    "tk init [--host auto|claude-code|copilot-cli|vscode] [--project] [--show] [--dry-run] [--uninstall]",
     "  Auto-detects the host and wires the best delivery tier (hook > shim > injection).",
-    "  --host <h>     Force the host instead of auto-detecting",
+    "  --host <h>     Force the host instead of auto-detecting (claude-code patches",
+    "                 ~/.claude/settings.json's PreToolUse Bash hook)",
     "  --project      Also write project-level instructions into the current repo",
     "  --show         Show current install status (host, hook, shim, injection)",
     "  --dry-run      Preview what would change without writing",
     "  --uninstall    Remove everything tk installed (hook config, shim, injection)",
-    "  -g, --global   Accepted for rtk parity; no-op (tk writes are user-level by default)",
     "  tk init shim <install|status|uninstall>   Manually control the shim tier (shell PATH + VS Code)",
     "",
-    "tk hook <copilot|check <command...>>",
+    "tk hook <copilot|claude|check <command...>>",
     "  copilot                Hook runtime: read a tool event on stdin, emit a rewrite/governance decision",
+    "  claude                 Hook runtime: Claude Code PreToolUse Bash hook — emit a command rewrite",
     "  check <command...>     Dry-run: show how a command would be rewritten (no execution)",
+    "  TK_DEBUG=1             Trace the hook runtime (stdin size, decision + why, what was emitted)",
+    "                         to stderr AND append it to $TOKEN_KILLER_HOME/debug.log for live",
+    "                         `tail -f`. stdout stays clean. Same switch the compress path uses.",
     "",
     "tk inspect [--json] [--since 7d] [--session <id>] [--input-type vscode|copilot-cli] [--repo-context]",
     "           [--advice] [--write-advice] [--telemetry-export|--no-telemetry-export]",
