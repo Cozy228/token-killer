@@ -49,6 +49,12 @@ function canonicalize(entry: string): string {
 function dirIdentity(entry: string): string | null {
   try {
     const s = statSync(entry);
+    // ino is 0 / unreliable on some Windows filesystems (FAT, certain network
+    // shares). Treat that as "no stable identity" so two unrelated dirs both
+    // reporting ino 0 are never falsely matched and stripped — the lexical check
+    // still covers the common case; only realpath-class symlink aliasing goes
+    // undetected on such a filesystem.
+    if (!s.ino) return null;
     return `${s.dev}:${s.ino}`;
   } catch {
     return null;

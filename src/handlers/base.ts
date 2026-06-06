@@ -110,6 +110,7 @@ const LADDER_HANDLERS = new Set([
   "js-test",
   "playwright",
   "test",
+  "dotnet",
   "env",
   "json",
   "read",

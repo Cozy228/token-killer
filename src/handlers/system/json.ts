@@ -59,7 +59,7 @@ function isSimple(value: JsonValue): boolean {
 // real recursion (unlike `depth`, the indent level, which resets to 0 for inline
 // simple values). When exceeded we throw; formatJson treats that as "over budget →
 // replacement summary" so the payload stays recoverable via the snapshot.
-const MAX_SAFE_DEPTH = 200;
+const MAX_SAFE_DEPTH = 500;
 
 function compactJson(value: JsonValue, depth: number, stackDepth = 0): string {
   if (stackDepth > MAX_SAFE_DEPTH) {
