@@ -297,7 +297,7 @@ Telemetry export must never include Raw Evidence.
 > holds for opted-in enterprise installs, which is the intended behavior; (2) consent
 > is split into two independent flags — `telemetryExport` (local file, this doc's
 > original scope) and `telemetry` (network upload). Neither implies the other. The
-> shipped payload is **schema "2"** ([TELEMETRY.md](./TELEMETRY.md)), history-derived
+> shipped payload is **schema "1"** ([TELEMETRY.md](./TELEMETRY.md)), history-derived
 > and always user-level; the inspect aggregates below become an optional add-on on an
 > `tk inspect`-triggered build. The rest of this section still holds.
 

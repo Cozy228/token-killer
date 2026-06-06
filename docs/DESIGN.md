@@ -904,7 +904,7 @@ Disallowed fields:
 - Raw prompt content.
 - Source code, logs or file content.
 
-> The shipped payload (schema "2", ADR 0004 §5) is a **subset** of the list above —
+> The shipped payload (schema "1", ADR 0004 §5) is a **subset** of the list above —
 > `handler` already names the compressor family, so `compressor_family_counts` /
 > `avg_compression_ratio_by_family` are dropped. The allow-list is enforced **in
 > code**: the builder physically constructs only allowed fields. See

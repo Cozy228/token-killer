@@ -49,6 +49,7 @@ const ALLOWED_KEYS = new Set([
   "tokens_saved_total",
   "savings_pct",
   "top_handlers",
+  "top_commands",
   "quality_status_counts",
   "fallback_count",
   "parse_failure_24h",
@@ -61,17 +62,18 @@ const ALLOWED_KEYS = new Set([
   "runId",
 ]);
 
-describe("buildTelemetry — schema v2 shape", () => {
-  test("emits the v2 usage / quality / retention aggregates", () => {
+describe("buildTelemetry — schema v1 shape", () => {
+  test("emits the v1 usage / quality / retention aggregates", () => {
     const t = build([
       record({ saved_tokens: 75, raw_tokens: 100 }),
       record({ handler: "grep", saved_tokens: 25, raw_tokens: 100 }),
     ]);
-    expect(t.schema).toBe("2");
+    expect(t.schema).toBe("1");
     expect(t.commands_total).toBe(2);
     expect(t.tokens_saved_total).toBe(100);
     expect(t.commands_24h).toBe(2);
     expect(t.top_handlers).toEqual(["git-status", "grep"]);
+    expect(t.top_commands).toEqual(["git status"]);
     expect(t.first_seen_days).toBe(9);
     expect(t.active_days_30d).toBe(1);
     expect(t.source_adapter_mix).toEqual({ shell: 2 });
@@ -126,7 +128,7 @@ describe("buildTelemetry — allow-list is physically enforced (§8)", () => {
     }
   });
 
-  test("the serialized payload cannot contain command text, paths, or repo fingerprints", () => {
+  test("the serialized payload cannot contain args, paths, or repo fingerprints", () => {
     const json = JSON.stringify(build(sensitive));
     expect(json).not.toContain("SUPERSECRETTOKEN");
     expect(json).not.toContain("id_rsa");
@@ -134,5 +136,6 @@ describe("buildTelemetry — allow-list is physically enforced (§8)", () => {
     expect(json).not.toContain("/Users/alice");
     expect(json).not.toContain("secret-project");
     expect(json).not.toContain("beadfacefeed");
+    expect(build(sensitive).top_commands).toEqual(["deploy"]);
   });
 });

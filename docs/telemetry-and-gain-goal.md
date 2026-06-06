@@ -161,8 +161,8 @@ are documented in `docs/TELEMETRY.md`.
   to `true` or via `tk telemetry enable`).
 - Rewire inspect's existing `--telemetry-export` / `telemetryExport` to read from this config.
 
-### Slice 3b — payload v2 + consent commands (no network yet)
-- `buildTelemetry` (schema **"2"**) rebuilt from `aggregate.ts` + quality signals.
+### Slice 3b — payload v1 + consent commands (no network yet)
+- `buildTelemetry` (schema **"1"**) rebuilt from `aggregate.ts` + quality signals.
   **Aggregation is always user-level** (`listProjectHistories`), regardless of which project a
   cold-path trigger ran in — usage/quality totals are per-install, matching the per-install
   `device_hash`.
@@ -232,7 +232,7 @@ are documented in `docs/TELEMETRY.md`.
 2. `tk gain` full surface (parity table §4) in `core/gain.ts` + `core/pricing.ts` (shared price
    module, first consumer = `--quota`); `--user` (+ `meta.json` basename) closes §8.2.
 3a. `core/config.ts` JSONC reader + `tk config init` + closed-set/exit-1 (build the inspect-v1 contract).
-3b. Telemetry payload v2 + `tk telemetry` (two-flag consent; allow-list + disallow tests; no net).
+3b. Telemetry payload v1 + `tk telemetry` (two-flag consent; allow-list + disallow tests; no net).
 4. Transport + cold-path trigger + build-time endpoint + `TELEMETRY.md` (mock-endpoint tests).
 
 ## 8. Done means

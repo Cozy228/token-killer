@@ -10,7 +10,7 @@ import app from "../src/index.js";
 import { insertEvent } from "../src/db.js";
 
 const valid = {
-  schema: "2",
+  schema: "1",
   device_hash: "a1b2c3",
   version: "0.1.0",
   os: "darwin",
@@ -57,7 +57,7 @@ describe("POST /v1/telemetry", () => {
   });
 
   it("rejects a payload missing required fields", async () => {
-    const res = await post({ schema: "2", device_hash: "x" });
+    const res = await post({ schema: "1", device_hash: "x" });
     expect(res.status).toBe(400);
     expect(insertEvent).not.toHaveBeenCalled();
   });

@@ -7,7 +7,8 @@ import { readConfig } from "../core/config.js";
 import type { HistoryRecord } from "../core/history.js";
 import { writeTelemetryExport } from "../inspect/persist.js";
 import { VERSION } from "../version.js";
-import { buildTelemetry, type InspectAggregates } from "./build.js";
+import { buildTelemetry, buildTelemetryFromRollup, type InspectAggregates } from "./build.js";
+import type { MergedRollup } from "../core/rollup.js";
 import { TELEMETRY_ENDPOINT } from "./endpoint.js";
 import { sendTelemetry } from "./send.js";
 import { deviceHash, loadOrCreateState, setLastSentAt } from "./state.js";
@@ -17,7 +18,8 @@ const WINDOW_MS = 23 * 60 * 60 * 1000; // ≤1 attempt per 23h
 export type SendFn = (endpoint: string, body: string) => Promise<boolean>;
 
 export type DispatchParams = {
-  records: HistoryRecord[]; // user-level history (always)
+  records?: HistoryRecord[]; // legacy full scan
+  rollup?: MergedRollup; // preferred user-level cache
   now: Date;
   runId: string;
   inspect?: InspectAggregates;
@@ -37,15 +39,25 @@ export function runColdPathTelemetry(params: DispatchParams): void {
 
     const endpoint = params.endpoint ?? TELEMETRY_ENDPOINT;
     const state = loadOrCreateState(params.now);
-    const payload = buildTelemetry({
-      records: params.records,
-      version: VERSION,
-      deviceHash: deviceHash(state),
-      firstSeenAt: state.firstSeenAt,
-      now: params.now,
-      runId: params.runId,
-      inspect: params.inspect,
-    });
+    const payload = params.rollup
+      ? buildTelemetryFromRollup({
+          rollup: params.rollup,
+          version: VERSION,
+          deviceHash: deviceHash(state),
+          firstSeenAt: state.firstSeenAt,
+          now: params.now,
+          runId: params.runId,
+          inspect: params.inspect,
+        })
+      : buildTelemetry({
+          records: params.records ?? [],
+          version: VERSION,
+          deviceHash: deviceHash(state),
+          firstSeenAt: state.firstSeenAt,
+          now: params.now,
+          runId: params.runId,
+          inspect: params.inspect,
+        });
     const body = `${JSON.stringify(payload)}\n`;
 
     if (!endpoint) {

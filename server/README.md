@@ -12,7 +12,7 @@ developer machine (corp network / VPN)
    ▼
 execute-api VPC endpoint ──► PRIVATE API Gateway REST API   (resource policy: only this VPCE)
    ▼
-Lambda (Hono, in VPC)        validate schema:"2" → INSERT … ON CONFLICT DO NOTHING
+Lambda (Hono, in VPC)        validate schema:"1" → INSERT … ON CONFLICT DO NOTHING
    ▼
 RDS PostgreSQL (db.t4g.micro, single-AZ, encrypted, private)
    ▲

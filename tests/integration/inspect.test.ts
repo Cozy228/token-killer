@@ -45,7 +45,13 @@ function seedRawCommands(command: string, times: number) {
 }
 
 function seedTranscript(records: object[]) {
-  const ws = path.join(vscodeUserDir(process.platform, home), "workspaceStorage", "ws1", "GitHub.copilot-chat", "transcripts");
+  const ws = path.join(
+    vscodeUserDir(process.platform, home),
+    "workspaceStorage",
+    "ws1",
+    "GitHub.copilot-chat",
+    "transcripts",
+  );
   mkdirSync(ws, { recursive: true });
   writeFileSync(path.join(ws, "t.jsonl"), records.map((r) => JSON.stringify(r)).join("\n") + "\n");
 }
@@ -59,7 +65,11 @@ describe("tk inspect — exit codes & output", () => {
 
   test("default markdown report → exit 0", () => {
     seedTranscript([
-      { toolName: "bash", toolArgs: JSON.stringify({ command: "git status" }), toolResult: "x".repeat(200) },
+      {
+        toolName: "bash",
+        toolArgs: JSON.stringify({ command: "git status" }),
+        toolResult: "x".repeat(200),
+      },
     ]);
     const r = runTk(["inspect"]);
     expect(r.status).toBe(0);
@@ -69,7 +79,11 @@ describe("tk inspect — exit codes & output", () => {
 
   test("--json emits parseable JSON with schemaVersion", () => {
     seedTranscript([
-      { toolName: "bash", toolArgs: JSON.stringify({ command: "npm test" }), toolResult: "y".repeat(80) },
+      {
+        toolName: "bash",
+        toolArgs: JSON.stringify({ command: "npm test" }),
+        toolResult: "y".repeat(80),
+      },
     ]);
     const r = runTk(["inspect", "--json"]);
     expect(r.status).toBe(0);
@@ -79,7 +93,9 @@ describe("tk inspect — exit codes & output", () => {
   });
 
   test("invalid --since → exit 1", () => {
-    seedTranscript([{ toolName: "bash", toolArgs: JSON.stringify({ command: "git log" }), toolResult: "z" }]);
+    seedTranscript([
+      { toolName: "bash", toolArgs: JSON.stringify({ command: "git log" }), toolResult: "z" },
+    ]);
     const r = runTk(["inspect", "--since", "7w"]);
     expect(r.status).toBe(1);
     expect(r.stderr).toContain("invalid --since");
@@ -92,7 +108,9 @@ describe("tk inspect — exit codes & output", () => {
   });
 
   test("--repo-context adds the repo section", () => {
-    seedTranscript([{ toolName: "bash", toolArgs: JSON.stringify({ command: "git log" }), toolResult: "z" }]);
+    seedTranscript([
+      { toolName: "bash", toolArgs: JSON.stringify({ command: "git log" }), toolResult: "z" },
+    ]);
     const r = runTk(["inspect", "--repo-context"]);
     expect(r.status).toBe(0);
     expect(r.stdout).toContain("Repository context");
@@ -139,7 +157,7 @@ describe("tk inspect --advice / --write-advice / --telemetry-export (Slice 5)", 
       readFileSync(path.join(home, ".token-killer", "advice", "telemetry-export.json"), "utf8"),
     );
     // Payload v2 (ADR 0004 §5): history-derived aggregates + optional inspect bits.
-    expect(telemetry.schema).toBe("2");
+    expect(telemetry.schema).toBe("1");
     expect(telemetry).toHaveProperty("device_hash");
     expect(telemetry.inspect?.tool_category_counts).toBeDefined();
     // No raw evidence in telemetry.

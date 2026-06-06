@@ -81,7 +81,7 @@ describe("tk telemetry status / preview — never send", () => {
       const cap = captureStdout();
       expect(await runTelemetry(["preview"])).toBe(0);
       const payload = JSON.parse(cap.text());
-      expect(payload.schema).toBe("2");
+      expect(payload.schema).toBe("1");
       expect(payload).toHaveProperty("device_hash");
       expect(payload.inspect).toBeUndefined(); // gain/preview path: no inspect aggregates
     });

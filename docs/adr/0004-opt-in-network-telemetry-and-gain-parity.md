@@ -82,7 +82,7 @@ superset. This ADR builds out `tk gain`; it does not build `tk report`.
    legitimate operational needs; a random, purgeable salt is the minimum identifier that enables
    them without identifying a person. The DESIGN §8.3 disallow-list otherwise stands in full.
 
-5. **The telemetry payload is rebuilt to the DESIGN §8.3 field set (schema v2),** sourced from
+5. **The telemetry payload is rebuilt to the DESIGN §8.3 field set (schema v1),** sourced from
    `src/core/aggregate.ts` (ledger ①) plus quality signals (ledger ④) plus the privacy-safe
    inspect aggregates already present. Allowed: `device_hash`, `version`, `os`, `arch`,
    `install_method` (best-effort), usage volume (`commands_24h/total`, `tokens_saved_24h/total`,
@@ -142,7 +142,7 @@ superset. This ADR builds out `tk gain`; it does not build `tk report`.
   or a new `src/gain/`), plus a user-level history enumerator for `--user`.
 - `src/core/savings.ts` + `src/context/metrics.ts` lose their private `chars/4`; both import one
   estimator (`src/core/tokens.ts`). A test asserts identical numbers pre/post refactor.
-- The telemetry payload type bumps to schema v2; `src/inspect/telemetry.ts` is rebuilt against
+- The telemetry payload type is schema v1; `src/inspect/telemetry.ts` is rebuilt against
   `aggregate.ts`. `buildTelemetry`'s old inspect-only fields are retained as a subset.
 - New transport module performs HTTPS POST (Node built-in `https`, no new dependency), 2-second
   timeout, `unref()` so it never holds the process open, fire-and-forget, errors swallowed, no

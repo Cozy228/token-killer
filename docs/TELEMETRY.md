@@ -37,7 +37,7 @@ the built-in `https` module: `Content-Type: application/json`, 2s timeout,
 `socket.unref()` (never holds the process open), any `2xx` = success, no retry. A failure
 warns and keeps the local `telemetry-export.json`.
 
-## What is collected (allow-list, schema "2")
+## What is collected (allow-list, schema "1")
 
 The payload is **history-derived and always user-level** (aggregated across all projects,
 matching the per-install `device_hash`). The builder **physically constructs only these
@@ -45,7 +45,7 @@ fields** — it never copies a history row — and a test proves no disallowed v
 surface even when rows contain it.
 
 **Identity / environment**
-- `schema` (`"2"`), `version`, `os`, `arch`
+- `schema` (`"1"`), `version`, `os`, `arch`
 - `device_hash` — `sha256(deviceSalt)`, a once-generated per-install **anonymous** id.
   Not a user, account, repository, or session identifier.
 - `runId` — a per-POST random message id for endpoint-side dedup (does **not** correlate
@@ -55,6 +55,8 @@ surface even when rows contain it.
 - `commands_24h`, `commands_total`
 - `tokens_saved_24h`, `tokens_saved_total`, `savings_pct`
 - `top_handlers` — handler **names** only, ≤5
+- `top_commands` — redacted command **stems** (program + subcommand), ≤5. Example:
+  `git diff src/secret.ts` → `git diff`; args, paths, flags, and URLs are stripped.
 
 **Quality** (Token Killer's differentiator)
 - `quality_status_counts` — counts over the four real statuses: `passed`, `inflated`,
@@ -83,7 +85,7 @@ a fresh scan)
 
 The allow-list is exhaustive; everything else is structurally impossible:
 
-- Raw commands or command arguments
+- Raw command arguments, file paths, URLs, flags, or secrets (only redacted stems in `top_commands`)
 - File paths, repository names, or `project_fingerprint`
 - Session identifiers, raw output snippets, prompt content
 - Source code, logs, or file content
