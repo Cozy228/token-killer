@@ -1,4 +1,4 @@
-// `tk optimize context` — the downstream CONSUMER of inspect (goal §"Slice 5").
+// `tk optimize` — the downstream CONSUMER of inspect (goal §"Slice 5").
 // Reads inspect's persisted per-scope bucket (project by default; user for
 // --surface skills user-level work), filters to source = static_context, and
 // plans patches. Default mode is read-only; it triggers a full inspect when the
@@ -14,7 +14,7 @@ import {
   type ScopeBucket,
 } from "../inspect/persist.js";
 import { renderContextAdvice, writeContextAdvice } from "./advice.js";
-import { contextProjectFingerprint, readContextFile } from "./discover.js";
+import { contextProjectFingerprint, isGitProject, readContextFile } from "./discover.js";
 import {
   planForFinding,
   renderFrontmatterSetDiff,
@@ -26,7 +26,7 @@ import type { ContextFinding, ContextScope, ContextSurface } from "./types.js";
 export type OptimizeArgs = {
   dryRun: boolean;
   writeAdvice: boolean;
-  applySafe: boolean;
+  apply: boolean;
   tokenBudgetBlock: boolean;
   vscodeSettings: boolean;
   restore: boolean;
@@ -47,30 +47,28 @@ export function parseOptimizeArgs(argv: string[]): OptimizeArgs {
   const args: OptimizeArgs = {
     dryRun: false,
     writeAdvice: false,
-    applySafe: false,
+    apply: false,
     tokenBudgetBlock: false,
     vscodeSettings: false,
     restore: false,
     scopeUser: false,
     scopeProject: false,
   };
-  // The first token must be the `context` target (the only optimize target).
-  if (argv[0] !== "context") {
-    args.error = `unknown optimize target '${argv[0] ?? ""}' (expected: context)`;
-    return args;
-  }
-  for (let i = 1; i < argv.length; i += 1) {
-    const t = argv[i];
+  // `context` used to be a required target; it is now optional. A leading
+  // `context` token is still accepted (and ignored) for back-compat.
+  const tokens = argv[0] === "context" ? argv.slice(1) : argv;
+  for (let i = 0; i < tokens.length; i += 1) {
+    const t = tokens[i];
     if (t === "--dry-run") args.dryRun = true;
     else if (t === "--write-advice") args.writeAdvice = true;
-    else if (t === "--apply-safe") args.applySafe = true;
+    else if (t === "--apply") args.apply = true;
     else if (t === "--token-budget-block") args.tokenBudgetBlock = true;
     else if (t === "--vscode-settings") args.vscodeSettings = true;
     else if (t === "--restore") args.restore = true;
     else if (t === "--project") args.scopeProject = true;
     else if (t === "--user") args.scopeUser = true;
     else if (t === "--surface") {
-      const v = argv[i + 1];
+      const v = tokens[i + 1];
       i += 1;
       if (v && SURFACE_SELECTORS[v]) args.surface = v;
       else args.error = `invalid --surface '${v ?? ""}' (expected instructions | prompts | agents | skills)`;
@@ -81,13 +79,15 @@ export function parseOptimizeArgs(argv: string[]): OptimizeArgs {
   return args;
 }
 
-// Optimize reads the project bucket by default; user bucket for --surface skills
-// user-level work or explicit --user (goal §"Module layout").
-export function resolveOptimizeScope(args: OptimizeArgs): ContextScope {
-  if (args.scopeUser) return "user";
-  if (args.scopeProject) return "project";
-  if (args.surface === "skills") return "user";
-  return "project";
+// Git-aware scope resolution. Explicit --user/--project win; --surface skills is
+// always user-level work. Otherwise: off-git directories optimize the user scope
+// only (there is no project to speak of), and inside a git repo we operate on
+// both the user and project scopes together.
+export function resolveOptimizeScopes(args: OptimizeArgs, cwd: string): ContextScope[] {
+  if (args.scopeUser) return ["user"];
+  if (args.scopeProject) return ["project"];
+  if (args.surface === "skills") return ["user"];
+  return isGitProject(cwd) ? ["user", "project"] : ["user"];
 }
 
 function resolveLivePath(file: string, home: string, cwd: string): string {
@@ -146,44 +146,60 @@ export async function runOptimize(
     return runVscodeSettings(args, nowMs, home);
   }
 
-  // Slice 6 owns --apply-safe; refuse it cleanly here so it's never a silent no-op.
-  if (args.applySafe) {
-    const { runApplySafe } = await import("./applySafe.js");
-    return runApplySafe(args, nowMs, home, cwd, deps);
+  // Managed token-budget block (folds in the former `tk agentsmd`): a user-level
+  // marker-block write. `--restore` removes it; otherwise it is installed.
+  if (args.tokenBudgetBlock) {
+    const { applyMarkerBlock } = await import("./applySafe.js");
+    return applyMarkerBlock(home, args.restore ? "remove" : "insert", nowMs);
+  }
+
+  // `--restore` on its own reverts the most recent `--apply`.
+  if (args.restore) {
+    const { runRestore } = await import("./applySafe.js");
+    return runRestore(nowMs);
+  }
+
+  // `--apply` writes every deterministic change across the resolved scopes.
+  if (args.apply) {
+    const { runApply } = await import("./applySafe.js");
+    return runApply(args, nowMs, home, cwd, deps);
   }
 
   try {
-    const scope = resolveOptimizeScope(args);
-    const fingerprint = scope === "project" ? contextProjectFingerprint(cwd) : undefined;
-    const bucketRef: ScopeBucket =
-      scope === "user" ? { scope: "user" } : { scope: "project", fingerprint: fingerprint! };
+    const scopes = resolveOptimizeScopes(args, cwd);
+    const trigger = deps.triggerInspect ?? defaultTriggerInspect;
 
-    let bucket = readInspectBucket(bucketRef);
-    if (!bucket) {
-      // Bucket absent → trigger a full inspect for this scope, then re-read.
-      const trigger = deps.triggerInspect ?? defaultTriggerInspect;
-      await trigger(scope, home, cwd, nowMs);
-      bucket = readInspectBucket(bucketRef);
+    for (const scope of scopes) {
+      const fingerprint = scope === "project" ? contextProjectFingerprint(cwd) : undefined;
+      const bucketRef: ScopeBucket =
+        scope === "user" ? { scope: "user" } : { scope: "project", fingerprint: fingerprint! };
+
+      let bucket = readInspectBucket(bucketRef);
+      if (!bucket) {
+        // Bucket absent → trigger a full inspect for this scope, then re-read.
+        await trigger(scope, home, cwd, nowMs);
+        bucket = readInspectBucket(bucketRef);
+      }
+
+      const findings = selectStaticFindings(bucket, args.surface);
+
+      if (args.writeAdvice) {
+        const content = renderContextAdvice({
+          scope,
+          fingerprint,
+          generatedAt: new Date(nowMs).toISOString(),
+          filesScanned: bucket?.files_scanned ?? 0,
+          findings,
+          safeAppliesAvailable: scope === "user",
+        });
+        const path = writeContextAdvice(scope, fingerprint, content);
+        process.stdout.write(`Wrote context advice: ${path}\n`);
+        continue;
+      }
+
+      // Default + --dry-run: plan patches and print, never write.
+      printDryRun(findings, home, cwd, scope, bucketRef);
     }
-
-    const findings = selectStaticFindings(bucket, args.surface);
-
-    if (args.writeAdvice) {
-      const content = renderContextAdvice({
-        scope,
-        fingerprint,
-        generatedAt: new Date(nowMs).toISOString(),
-        filesScanned: bucket?.files_scanned ?? 0,
-        findings,
-        safeAppliesAvailable: scope === "user",
-      });
-      const path = writeContextAdvice(scope, fingerprint, content);
-      process.stdout.write(`Wrote context advice: ${path}\n`);
-      return 0;
-    }
-
-    // Default + --dry-run: plan patches and print, never write.
-    printDryRun(findings, home, cwd, scope, bucketRef);
     return 0;
   } catch (error) {
     process.stderr.write(`tk optimize: internal error: ${error instanceof Error ? error.message : String(error)}\n`);
@@ -212,7 +228,7 @@ function printDryRun(
   bucketRef: ScopeBucket,
 ): void {
   const out: string[] = [];
-  out.push(`# tk optimize context (--dry-run, scope = ${scope})`);
+  out.push(`# tk optimize (--dry-run, scope = ${scope})`);
   out.push(`Reading findings from: ${inspectBucketPath(bucketRef)}`);
   out.push(`Static-context findings: ${findings.length}`);
   out.push("");

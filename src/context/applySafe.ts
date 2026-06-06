@@ -1,11 +1,13 @@
-// Safe apply + restore (goal §"Safe apply rules", §"Slice 6"). Writes ONLY when:
-//  - target is user-level, or a Token Killer managed marker block, AND
-//  - the operation is fix_class === "safe_mechanical", AND
-//  - a reversible backup is written under ~/.token-killer/backups/context/<ts>/.
-// The generated diff is always printed. Project files are never modified.
+// Apply + restore for `tk optimize`. `--apply` writes every deterministic
+// optimization (frontmatter sets and managed marker blocks) across the resolved
+// scopes (user-only off-git; user + project inside a git repo). Free-form
+// suggestions are printed for manual review, never written. Before any write the
+// full plan is disclosed, and every touched file is backed up under
+// ~/.token-killer/backups/context/<ts>/ with a manifest so `--restore` can revert
+// the most recent apply.
 
 import { createHash } from "node:crypto";
-import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, readFileSync, readdirSync, statSync, writeFileSync } from "node:fs";
 import { basename, join } from "node:path";
 
 import { tokenKillerHome } from "../core/dataDir.js";
@@ -16,16 +18,16 @@ import {
 } from "../inspect/optimizeActions.js";
 import { estimateTokens, hashText } from "./metrics.js";
 import { parseMarkdown } from "./parseMarkdown.js";
-import { readContextFile } from "./discover.js";
+import { contextProjectFingerprint, readContextFile } from "./discover.js";
 import type { OptimizeArgs, OptimizeDeps } from "./optimizeCli.js";
 import {
   resolveLivePath,
-  resolveOptimizeScope,
+  resolveOptimizeScopes,
   selectStaticFindings,
   withSuppressedStdout,
 } from "./optimizeCli.js";
 import { planForFinding } from "./patchPlan.js";
-import type { ContextScope } from "./types.js";
+import type { ContextScope, ContextSurface } from "./types.js";
 
 export const MARKER_START = "<!-- tk:token_budget:start -->";
 export const MARKER_END = "<!-- tk:token_budget:end -->";
@@ -85,13 +87,81 @@ function backupTimestamp(nowMs: number): string {
   return new Date(nowMs).toISOString().replace(/[:.]/g, "-");
 }
 
+function backupsRoot(): string {
+  return join(tokenKillerHome(), "backups", "context");
+}
+
+type ManifestEntry = { target: string; backup: string };
+
+// Write a reversible backup of `path` into the timestamp dir for `nowMs`, and
+// record it in that dir's manifest.json so `tk optimize --restore` can map the
+// backup file back to its original location (the raw path is never inferable
+// from the backup filename alone).
 export function writeBackup(path: string, content: string, nowMs: number): string {
-  const dir = join(tokenKillerHome(), "backups", "context", backupTimestamp(nowMs));
+  const dir = join(backupsRoot(), backupTimestamp(nowMs));
   mkdirSync(dir, { recursive: true });
   const tag = createHash("sha256").update(path).digest("hex").slice(0, 6);
-  const dest = join(dir, `${basename(path)}.${tag}`);
-  writeFileSync(dest, content);
-  return dest;
+  const backupName = `${basename(path)}.${tag}`;
+  writeFileSync(join(dir, backupName), content);
+
+  const manifestPath = join(dir, "manifest.json");
+  let entries: ManifestEntry[] = [];
+  if (existsSync(manifestPath)) {
+    try {
+      entries = JSON.parse(readFileSync(manifestPath, "utf8")) as ManifestEntry[];
+    } catch {
+      entries = [];
+    }
+  }
+  if (!entries.some((e) => e.target === path)) entries.push({ target: path, backup: backupName });
+  writeFileSync(manifestPath, JSON.stringify(entries, null, 2));
+  return join(dir, backupName);
+}
+
+// Restore the most recent apply: read the latest timestamp dir's manifest and
+// copy each backup file back over its original target.
+export function runRestore(_nowMs: number): number {
+  const root = backupsRoot();
+  if (!existsSync(root)) {
+    process.stdout.write("tk optimize: nothing to restore (no backups recorded yet).\n");
+    return 0;
+  }
+  const dirs = readdirSync(root)
+    .filter((name) => {
+      try {
+        return statSync(join(root, name)).isDirectory();
+      } catch {
+        return false;
+      }
+    })
+    .sort(); // ISO-ish timestamps sort chronologically
+  const latest = dirs[dirs.length - 1];
+  const manifestPath = latest ? join(root, latest, "manifest.json") : undefined;
+  if (!manifestPath || !existsSync(manifestPath)) {
+    process.stdout.write("tk optimize: nothing to restore (no restorable backup found).\n");
+    return 0;
+  }
+  let entries: ManifestEntry[];
+  try {
+    entries = JSON.parse(readFileSync(manifestPath, "utf8")) as ManifestEntry[];
+  } catch {
+    process.stderr.write("tk optimize: latest backup manifest is unreadable.\n");
+    return 1;
+  }
+  let restored = 0;
+  for (const entry of entries) {
+    try {
+      const content = readFileSync(join(root, latest!, entry.backup), "utf8");
+      mkdirSync(join(entry.target, ".."), { recursive: true });
+      writeFileSync(entry.target, content);
+      process.stdout.write(`Restored ${entry.target}\n`);
+      restored += 1;
+    } catch (error) {
+      process.stderr.write(`tk optimize: could not restore ${entry.target}: ${error instanceof Error ? error.message : String(error)}\n`);
+    }
+  }
+  process.stdout.write(`tk optimize: restored ${restored} file(s) from ${latest}.\n`);
+  return 0;
 }
 
 function miniDiff(path: string, before: string, after: string): string {
@@ -162,101 +232,151 @@ function setFrontmatterKey(content: string, key: string, value: unknown): string
   return `---\n${newLine}\n---\n${content}`;
 }
 
-export async function runApplySafe(
+type PlannedWrite = {
+  livePath: string;
+  displayFile: string;
+  scope: ContextScope;
+  surface: ContextSurface;
+  original: string;
+  next: string;
+  type: string;
+};
+
+async function triggerInspectForScope(
+  deps: OptimizeDeps,
+  scope: ContextScope,
+  home: string,
+  cwd: string,
+  nowMs: number,
+): Promise<void> {
+  const trigger =
+    deps.triggerInspect ??
+    (async (s: ContextScope, h: string, c: string, n: number) => {
+      const mod = await import("../inspect/cli.js");
+      await withSuppressedStdout(() => mod.runInspect(s === "user" ? ["--user"] : ["--project"], n, h, c));
+    });
+  await trigger(scope, home, cwd, nowMs);
+}
+
+// `tk optimize --apply` — apply every deterministic optimization across the
+// resolved scopes, after disclosing the full plan and backing up each file.
+// Free-form `suggested_diff` findings are printed for manual review, never
+// written (they are not guaranteed to apply cleanly).
+export async function runApply(
   args: OptimizeArgs,
   nowMs: number,
   home: string,
   cwd: string,
   deps: OptimizeDeps,
 ): Promise<number> {
-  // The managed token-budget block is always a user-level write, regardless of scope.
-  if (args.tokenBudgetBlock) {
-    return applyMarkerBlock(home, "insert", nowMs);
+  const scopes = resolveOptimizeScopes(args, cwd);
+  const writes = new Map<string, PlannedWrite>();
+  const suggestions: { scope: ContextScope; file: string; diff: string }[] = [];
+  const deferred = new Set<string>();
+
+  for (const scope of scopes) {
+    const bucketRef: ScopeBucket =
+      scope === "user" ? { scope: "user" } : { scope: "project", fingerprint: contextProjectFingerprint(cwd) };
+    let bucket = readInspectBucket(bucketRef);
+    if (!bucket) {
+      await triggerInspectForScope(deps, scope, home, cwd, nowMs);
+      bucket = readInspectBucket(bucketRef);
+    }
+
+    for (const finding of selectStaticFindings(bucket, args.surface)) {
+      if (!finding.file) continue;
+      const livePath = resolveLivePath(finding.file, home, cwd);
+      const live = readContextFile(livePath);
+      if (live === undefined) continue;
+      const outcome = planForFinding(finding, live);
+      if (outcome.status !== "ok") continue;
+
+      for (const op of outcome.plan.operations) {
+        if (op.kind === "suggested_diff") {
+          suggestions.push({ scope, file: finding.file, diff: op.diff });
+          continue;
+        }
+        let next: string | undefined;
+        if (op.kind === "frontmatter_set") next = setFrontmatterKey(live, op.key, op.value);
+        else if (op.kind === "insert_marker_block") next = insertMarkerBlock(live);
+        else if (op.kind === "remove_marker_block") next = removeMarkerBlock(live);
+        if (next === undefined || next === live) continue;
+        // One auto-write per file per run; further findings on the same file are
+        // deferred so a later op never plans against stale content.
+        if (writes.has(livePath)) {
+          deferred.add(finding.file);
+          continue;
+        }
+        writes.set(livePath, {
+          livePath,
+          displayFile: finding.file,
+          scope,
+          surface: finding.surface,
+          original: live,
+          next,
+          type: finding.type,
+        });
+      }
+    }
   }
 
-  const scope = resolveOptimizeScope(args);
-  if (scope === "project") {
-    process.stderr.write(
-      "tk optimize: --apply-safe refuses project-level edits. Use --dry-run or --write-advice; pass --user (or --surface skills) for user-level safe applies.\n",
+  // Disclosure — always printed in full before any file is touched.
+  process.stdout.write(`# tk optimize --apply (scopes: ${scopes.join(", ")})\n`);
+  if (writes.size === 0 && suggestions.length === 0) {
+    process.stdout.write("Nothing to optimize — no changes or suggestions found.\n");
+    return 0;
+  }
+  process.stdout.write(`\nChanges to apply (${writes.size}):\n`);
+  for (const w of writes.values()) {
+    process.stdout.write(`\n[${w.scope}] ${w.displayFile} — ${w.type}\n`);
+    process.stdout.write(`${miniDiff(w.displayFile, w.original, w.next)}\n`);
+  }
+  if (suggestions.length > 0) {
+    process.stdout.write(`\nSuggestions for manual review (${suggestions.length}, not applied):\n`);
+    for (const s of suggestions) process.stdout.write(`\n[${s.scope}] ${s.file}\n${s.diff}\n`);
+  }
+  if (deferred.size > 0) {
+    process.stdout.write(
+      `\nDeferred (multiple changes on one file; re-run \`tk optimize --apply\` to catch these): ${[...deferred].join(", ")}\n`,
     );
-    return 1;
   }
 
-  // Frontmatter safe applies require an explicit surface (goal rules 5 & 7).
-  if (!args.surface) {
-    process.stderr.write(
-      "tk optimize: --apply-safe needs an explicit --surface (e.g. --surface skills) for frontmatter changes.\n",
-    );
-    return 1;
-  }
-
-  const bucketRef: ScopeBucket = { scope: "user" };
-  let bucket = readInspectBucket(bucketRef);
-  if (!bucket) {
-    const trigger =
-      deps.triggerInspect ??
-      (async (_s: ContextScope, h: string, c: string, n: number) => {
-        const mod = await import("../inspect/cli.js");
-        await withSuppressedStdout(() => mod.runInspect(["--user"], n, h, c));
-      });
-    await trigger("user", home, cwd, nowMs);
-    bucket = readInspectBucket(bucketRef);
-  }
-
-  const findings = selectStaticFindings(bucket, args.surface).filter(
-    (f) => f.fix_class === "safe_mechanical",
-  );
-  if (findings.length === 0) {
-    process.stdout.write("tk optimize: no safe_mechanical frontmatter changes available for this surface.\n");
+  if (writes.size === 0) {
+    process.stdout.write(`\nNo auto-applicable changes; the ${suggestions.length} suggestion(s) above are for manual review.\n`);
     return 0;
   }
 
+  // Apply with reversible backups.
   let applied = 0;
-  for (const finding of findings) {
-    if (!finding.file) continue;
-    const livePath = resolveLivePath(finding.file, home, cwd);
-    const live = readContextFile(livePath);
-    const outcome = planForFinding(finding, live);
-    if (outcome.status !== "ok" || live === undefined) {
-      process.stdout.write(`Skipped ${finding.file}: ${outcome.status}\n`);
-      continue;
-    }
-    const op = outcome.plan.operations.find((o) => o.kind === "frontmatter_set");
-    if (!op || op.kind !== "frontmatter_set") continue;
-
-    const next = setFrontmatterKey(live, op.key, op.value);
-    if (next === live) continue;
-    const backup = writeBackup(livePath, live, nowMs);
-    writeFileSync(livePath, next);
+  for (const w of writes.values()) {
+    writeBackup(w.livePath, w.original, nowMs);
+    mkdirSync(join(w.livePath, ".."), { recursive: true });
+    writeFileSync(w.livePath, w.next);
     applied += 1;
-    // Ledger 2 (Gap B, section 0.1.5): one append-only record per applied action.
-    // before/after_hash are body_hashes (inspect's space, so ledger 4 revert
-    // detection works via re-scan with no stored path); before/after_tokens are
-    // whole-file (the loaded-context cost). delta = before - after is a measured
-    // diff; exposure_class is a category, never a multiplier. Best-effort - a
-    // ledger write must not abort the apply, and never leaks a path.
+    // Ledger 2: one append-only record per applied action (best-effort, never a
+    // path leak — before/after_hash are body hashes in inspect's space).
     try {
       recordOptimizeAction(
-        { scope: "user" },
+        w.scope === "user" ? { scope: "user" } : { scope: "project", fingerprint: contextProjectFingerprint(cwd) },
         {
-          surface: finding.surface,
-          before_hash: hashText(parseMarkdown(live).body),
-          after_hash: hashText(parseMarkdown(next).body),
-          before_tokens: estimateTokens(live),
-          after_tokens: estimateTokens(next),
-          exposure_class: exposureForSurface(finding.surface),
+          surface: w.surface,
+          before_hash: hashText(parseMarkdown(w.original).body),
+          after_hash: hashText(parseMarkdown(w.next).body),
+          before_tokens: estimateTokens(w.original),
+          after_tokens: estimateTokens(w.next),
+          exposure_class: exposureForSurface(w.surface),
           ts: new Date(nowMs).toISOString(),
         },
       );
     } catch (error) {
       process.stderr.write(`tk optimize: ledger 2 record skipped: ${error instanceof Error ? error.message : String(error)}\n`);
     }
-    process.stdout.write(`Applied ${finding.type} to ${finding.file} (set ${op.key})\n`);
-    process.stdout.write(`Backup: ${backup}\n`);
-    process.stdout.write(`${miniDiff(finding.file, live, next)}\n`);
   }
 
-  process.stdout.write(`tk optimize: applied ${applied} safe change(s).\n`);
+  process.stdout.write(
+    `\ntk optimize: applied ${applied} change(s). Backups under ${join(backupsRoot(), backupTimestamp(nowMs))}\n`,
+  );
+  process.stdout.write("Run `tk optimize --restore` to revert the last apply.\n");
   return 0;
 }
 

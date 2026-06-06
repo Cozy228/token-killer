@@ -255,6 +255,23 @@ export function discoverContextFiles(opts: {
 // hash of git remote origin URL when present, else git toplevel path, else cwd.
 // Only the hash is stored, never the raw path (goal "Discovery"). Two clones of
 // the same remote share one report.
+// True when `cwd` is inside a git work tree — the signal that there is a
+// project worth optimizing at the project scope (off-git, optimize stays
+// user-only).
+export function isGitProject(cwd: string): boolean {
+  try {
+    const out = execFileSync("git", ["rev-parse", "--is-inside-work-tree"], {
+      cwd,
+      stdio: ["ignore", "pipe", "ignore"],
+    })
+      .toString()
+      .trim();
+    return out === "true";
+  } catch {
+    return false;
+  }
+}
+
 export function contextProjectFingerprint(cwd: string): string {
   let identity = "";
   try {

@@ -33,7 +33,6 @@ export const skillInvocationPolicyRule: PerFileRule = {
     const fmEnd = af.parsed.frontmatter.end_line ?? 1;
     const name = skillName(af);
     const haystack = `${name}\n${af.parsed.body}`;
-    const userScope = af.file.scope === "user";
 
     const hasSideEffect = SIDE_EFFECT_VERBS.test(haystack);
     const disableSet = af.parsed.frontmatter.values["disable-model-invocation"] === true;
@@ -47,8 +46,10 @@ export const skillInvocationPolicyRule: PerFileRule = {
           confidence: 0.85,
           evidence: "Skill performs side-effect/high-cost actions but disable-model-invocation is not set.",
           recommendation: "Add `disable-model-invocation: true` so the model cannot auto-invoke this side-effect workflow.",
-          // High-confidence frontmatter add — safe_mechanical only at user scope.
-          fix_class: userScope ? "safe_mechanical" : "suggested_diff",
+          // High-confidence, deterministic frontmatter add — safe_mechanical at
+          // either scope (`tk optimize --apply` discloses, backs up, and is
+          // reversible via --restore, so project-tracked skills are eligible too).
+          fix_class: "safe_mechanical",
           start_line: fmEnd,
           idExtra: "disable-model-invocation",
         }),

@@ -60,7 +60,7 @@ export function renderContextAdvice(opts: {
     lines.push("## Safe applies available");
     lines.push("");
     lines.push(
-      "- Run `tk optimize context --token-budget-block --apply-safe` to install the managed token budget block in your user-level agent instructions.",
+      "- Run `tk optimize --token-budget-block` to install the managed token budget block in your user-level agent instructions.",
     );
     lines.push("");
   }

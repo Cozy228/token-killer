@@ -171,12 +171,12 @@ export function restoreCompress(settingsPath: string, nowMs: number): number {
 }
 
 export function renderVscodeReport(settingsPath: string, a: VscodeSettingsAnalysis): string {
-  const out: string[] = ["# tk optimize context --vscode-settings", `Settings file: ${settingsPath}`, ""];
+  const out: string[] = ["# tk optimize --vscode-settings", `Settings file: ${settingsPath}`, ""];
   if (a.compress === "on") {
     out.push(`[ok] ${COMPRESS_KEY} is enabled — terminal output is compressed before reaching the model.`);
   } else {
     out.push(`[off] ${COMPRESS_KEY} is not enabled.`);
-    out.push("  Apply with: tk optimize context --vscode-settings --apply-safe");
+    out.push("  Apply with: tk optimize --vscode-settings --apply");
     out.push("  (host-native terminal output compression; restorable, user-level only.)");
   }
   out.push("");
@@ -203,7 +203,7 @@ export function runVscodeSettings(
 ): number {
   const settingsPath = vscodeSettingsPath(process.platform, home);
   if (args.restore) return restoreCompress(settingsPath, nowMs);
-  if (args.applySafe) return applyCompress(settingsPath, nowMs);
+  if (args.apply) return applyCompress(settingsPath, nowMs);
 
   // Default / --dry-run: report only.
   const read = readVscodeSettingsFile(settingsPath);
