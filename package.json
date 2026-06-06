@@ -1,5 +1,5 @@
 {
-  "name": "@company/tk",
+  "name": "token-killer",
   "version": "0.1.0",
   "description": "Token-saving command proxy.",
   "type": "module",

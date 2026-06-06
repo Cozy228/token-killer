@@ -1,6 +1,6 @@
 Legend: production dependency, optional only, dev only
 
-@company/tk@0.1.0 /Users/ziyu/Workspace/token-killer
+token-killer@0.1.0 /Users/ziyu/Workspace/token-killer
 │
 │   dependencies:
 ├── strip-ansi@7.2.0

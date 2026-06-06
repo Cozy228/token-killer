@@ -158,7 +158,7 @@ assert_ok      "tk ls src/"                     $TK ls src/
 section "Read / Cat"
 
 assert_ok      "tk cat package.json"            $TK cat package.json
-assert_contains "tk cat shows name"             "@company/tk" $TK cat package.json
+assert_contains "tk cat shows name"             "token-killer" $TK cat package.json
 assert_ok      "tk cat README.md"               $TK cat README.md
 assert_contains "tk cat README content"         "tk" $TK cat README.md
 assert_ok      "tk read aggressive"             $TK read --level aggressive tests/integration/cli.test.ts

@@ -60,7 +60,7 @@ fi
 
 if npm link 2>/dev/null && tk --version >/dev/null 2>&1; then
     pass "npm link && tk --version"
-    npm unlink -g @company/tk 2>/dev/null || true
+    npm unlink -g token-killer 2>/dev/null || true
 else
     pass "npm link && tk --version  ${YELLOW}(optional — skipped)${NC}"
 fi
