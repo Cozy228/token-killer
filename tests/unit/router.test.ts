@@ -43,6 +43,13 @@ describe("routeCommand", () => {
     [["vitest"], "js-test"],
     [["jest"], "js-test"],
     [["eslint", "."], "eslint"],
+    // Formatters under package runners: `pnpm exec <tool>` makes the program
+    // `pnpm`, so prettier/eslint must match on the wrapped argv, not just argv[0].
+    [["prettier", "--check", "package.json"], "prettier"],
+    [["pnpm", "exec", "prettier", "--check", "package.json"], "prettier"],
+    [["pnpm", "exec", "eslint", "package.json"], "eslint"],
+    // "prettier" only as a flag VALUE (not a wrapped binary) must not misroute.
+    [["git", "commit", "-m", "fix prettier config"], "git-commit"],
     [["tsc", "--noEmit"], "tsc"],
     [["npm", "list"], "package-list"],
     // `npm ls` is the `list` alias; `pnpm -r list` keeps a flag before the subcommand.

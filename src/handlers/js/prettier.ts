@@ -9,8 +9,13 @@ const MAX_PRETTIER_FILES = 10;
 // RTK: js/prettier_cmd.rs uses a 39-char box-drawing separator under the summary.
 const PRETTIER_SEPARATOR = "═".repeat(39);
 
+// Match a bare `prettier …` invocation OR a package-runner wrapper such as
+// `pnpm exec prettier --check` / `npx prettier`. `original` is the raw argv array,
+// so `.includes("prettier")` is an exact-element test (not a substring scan): it
+// catches the wrapped binary without misfiring on values like `-m "fix prettier"`.
+// Mirrors matchesEslint so the two formatters route consistently under runners.
 function matchesPrettier(command: ParsedCommand): boolean {
-  return command.program === "prettier";
+  return command.program === "prettier" || command.original.includes("prettier");
 }
 
 // RTK: js/prettier_cmd.rs::filter_prettier_output — only these extensions are
