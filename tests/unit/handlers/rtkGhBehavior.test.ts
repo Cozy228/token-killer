@@ -150,14 +150,10 @@ describe("RTK gh behavior", () => {
     });
   });
 
-  // ADR 0001 divergence: RTK caps the listing at CAP_LIST (20) with a "  … +N more"
-  // marker. tg's gh handler is NOT ladder-converted, so that marker is an UNDECLARED
-  // omission: the ADR 0001 safety net rejects any handler output carrying it and
-  // fails open to RAW (the opaque JSON) — an over-cap PR list would pass through
-  // unfiltered. The supported tg path is the lossless one: at/within the cap
-  // (<= 20) tg reshapes the JSON into the compact "Pull Requests\n  [open] #N ..."
+  // ADR 0001 decision 2: RTK's CAP_LIST (20) + "  … +N more" cap is REMOVED. Within
+  // budget tk reshapes the JSON into the compact "Pull Requests\n  [open] #N ..."
   // view and lists EVERY PR with NO fake overflow marker.
-  test("reshapes a PR list up to the cap with no fake overflow marker", async () => {
+  test("reshapes a PR list in full with no fake overflow marker", async () => {
     const prs = Array.from({ length: 20 }, (_, i) => ({
       number: i + 1,
       title: `pr ${i + 1}`,
@@ -175,6 +171,33 @@ describe("RTK gh behavior", () => {
     expectRtkParity(result, {
       critical: ["Pull Requests", "[open] #20 pr 20 (dev)"],
       forbidden: [/(?:\.{3}|…)\s*\+\d+\s+more/],
+    });
+  });
+
+  // ADR 0001 decisions 2/5/7: over budget, the PR list ladders instead of reverting
+  // to the raw JSON. The step-1 lossless digest keeps EVERY PR's #num + title and
+  // drops the state-icon/author decoration, declaring `kind === "digest"`. No
+  // "… +N more" — all 120 PRs survive, compressed.
+  test("PR list over budget ships the lossless #num/title digest, not raw", async () => {
+    const prs = Array.from({ length: 120 }, (_, i) => ({
+      number: i + 1,
+      title: `Fix a moderately long pull request title number ${i}`,
+      state: "OPEN",
+      author: { login: `developer${i}` },
+    }));
+    const result = await filterRtkOutput(["gh", "pr", "list"], JSON.stringify(prs));
+
+    expect(result.output).not.toContain('"number":');
+    expect(result.qualityStatus).toBe("passed");
+    expect(result.omission?.kind).toBe("digest");
+    expect(result.output).toContain("Pull Requests");
+    expect(result.output).toContain("  #1 Fix a moderately long pull request title number 0");
+    expect(result.output).toContain("  #120 Fix a moderately long pull request title number 119");
+    expectRtkParity(result, {
+      critical: ["Pull Requests"],
+      // No fake-complete marker; state icon + author dropped in the digest.
+      forbidden: [/… \+\d+ more/, /\[open\]/, /developer0/],
+      minSavingsRatio: 0.4,
     });
   });
 

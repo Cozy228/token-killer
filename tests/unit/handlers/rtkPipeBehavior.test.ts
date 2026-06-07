@@ -56,18 +56,19 @@ describe("RTK pipe behavior", () => {
     });
   });
 
-  // RTK: grep_wrapper caps shown matches at MAX_PIPE_MATCHES (CAP_WARNINGS = 10)
-  // and emits a "+N" overflow marker for the remainder.
-  test("grep filter caps matches per file at 10 with a +N overflow marker", async () => {
-    // 1 file, 25 matches -> 10 shown + "+15".
+  // ADR 0001 decision 2: RTK's per-file MAX_PIPE_MATCHES (10) cap + bare "+N"
+  // overflow is REMOVED. Within budget every match renders — no cap marker.
+  test("grep filter lists every match per file with no overflow marker", async () => {
+    // 1 file, 25 matches -> all 25 rendered, no "+15".
     const result = await filterRtkOutput(["pipe", "grep"], grepDump(1, 25));
 
     expectRtkParity(result, {
-      critical: ["25 matches in 1F:", "[file] src/cmds/module1/handler.rs (25):", "+15"],
+      critical: ["25 matches in 1F:", "[file] src/cmds/module1/handler.rs (25):"],
+      forbidden: [/^\s*\+\d+\s*$/m],
     });
-    // Only 10 of the 25 match lines are rendered (the rest collapsed into "+15").
+    // All 25 match lines are rendered — nothing collapsed into a "+N" marker.
     const renderedMatches = result.output.split("\n").filter((l) => /^\s{2,}\d+: /.test(l)).length;
-    expect(renderedMatches).toBe(10);
+    expect(renderedMatches).toBe(25);
   });
 
   // RTK: pipe_cmd.rs::test_resolve_filter_find + find_wrapper. Named `find` filter
@@ -93,32 +94,25 @@ describe("RTK pipe behavior", () => {
     });
   });
 
-  // ADR 0001 divergence: the `pipe` handler does NOT declare its omissions, so it
-  // is subject to the undeclared-omission sniff (base.ts OMISSION_MARKERS). A
-  // per-dir `+N` file-cap marker is a BARE count (no "more"), so it passes the
-  // sniff and ships. But the dir-cap trailer `+N more dirs` matches the
-  // `^\+\d+ more …$` marker shape, so when it fires the WHOLE listing is treated as
-  // foreign omission and reverted to raw (passthrough) — RTK would always cap and
-  // ship that trailer, tk deliberately fails safe to raw instead. So to exercise
-  // the genuinely-shipping find compression, keep dirs at/under MAX_PIPE_DIRS (20)
-  // and let only the per-file cap fire: every dir header renders, each over-cap dir
-  // gets a bare `+N`, and there is NO `+N more dirs` trailer.
-  test("find filter applies file and dir caps with overflow markers", async () => {
-    // 20 dirs (== MAX_PIPE_DIRS, no dir overflow) * 14 files: file cap 10 -> "+4".
+  // ADR 0001 decision 2: RTK's MAX_PIPE_DIRS (20) + per-dir MAX_PIPE_FILES (10) caps
+  // and their "+N" / "+N more dirs" overflow markers are all REMOVED. Within budget
+  // every dir header AND every file renders, with NO overflow marker of any shape.
+  test("find filter lists every dir and file with no overflow markers", async () => {
+    // 20 dirs * 14 files: all 20 dir headers + all 14 files/dir, no "+N", no "+N more dirs".
     const result = await filterRtkOutput(["pipe", "find"], findDump(20, 14));
 
     expectRtkParity(result, {
-      critical: ["280 files in 20 dirs:", "+4"],
-      // The dir-cap trailer would have reverted the whole listing to raw, so it
-      // must NOT appear — the per-file cap is the only shipping omission.
-      forbidden: [/\+\d+ more dirs/],
+      critical: ["280 files in 20 dirs:"],
+      // No overflow marker of any kind: neither the per-dir bare "+N" nor "+N more dirs".
+      forbidden: [/\+\d+ more dirs/, /^\s*\+\d+\s*$/m],
     });
-    // All 20 dir headers render (no dir cap fired), and each over-cap dir collapses
-    // its tail into a bare "+4" — real per-file compression that ships.
+    // All 20 dir headers render, and each dir lists all 14 of its files (14 * 20 = 280).
     const dirHeaders = result.output.split("\n").filter((l) => /^\.\/src.*\(\d+\)$/.test(l)).length;
     expect(dirHeaders).toBe(20);
-    const fileOverflowMarkers = result.output.split("\n").filter((l) => /^\s*\+4$/.test(l)).length;
-    expect(fileOverflowMarkers).toBe(20);
+    const fileLines = result.output
+      .split("\n")
+      .filter((l) => /^ {2}component_\d+\.tsx$/.test(l)).length;
+    expect(fileLines).toBe(280);
   });
 
   // RTK: pipe_cmd.rs::test_auto_detect_grep_format — with no filter name, content
@@ -158,8 +152,9 @@ describe("RTK pipe behavior", () => {
     expect(result.output).toContain("matches in");
   });
 
-  // RTK: pipe_cmd.rs::test_grep_wrapper_token_savings — 200 matches across 10 files
-  // (20/file -> 10 shown + truncation) must yield >= 40% whitespace-token savings.
+  // RTK: pipe_cmd.rs::test_grep_wrapper_token_savings — 200 matches across 10 files.
+  // Over the token budget, the grep ladder ships the step-1 digest (per-file counts),
+  // comfortably clearing the RTK >= 40% whitespace-token floor with NO cap marker.
   test("grep filter meets the RTK token-savings floor (>= 40%)", async () => {
     const result = await filterRtkOutput(["pipe", "grep"], grepDump(10, 20));
 
@@ -169,21 +164,15 @@ describe("RTK pipe behavior", () => {
     });
   });
 
-  // ADR 0001 divergence: RTK reaches its >= 40% find token-savings floor by firing
-  // BOTH the dir cap (`+10 more dirs`) and the file cap. In tk the `+N more dirs`
-  // trailer trips the undeclared-omission sniff and reverts the whole listing to
-  // raw (0% savings), so that RTK shape cannot ship. tk reaches the SAME 40% floor
-  // through the per-file cap alone: keep dirs at/under MAX_PIPE_DIRS (18) but stack
-  // 25 files/dir so every dir collapses its tail into a bare `+15`. The grouped
-  // listing then ships and the whitespace-token savings invariant still holds —
-  // confirming tk genuinely compresses to the RTK floor without the reverted trailer.
+  // RTK: reaches its >= 40% find token-savings floor via caps. ADR 0001: tk reaches
+  // the SAME floor over budget through the step-1 digest (every dir + its file count,
+  // filenames dropped) — no "+N more dirs" trailer, no revert, ~90% token savings.
   test("find filter meets the RTK token-savings floor (>= 40%)", async () => {
     const result = await filterRtkOutput(["pipe", "find"], findDump(18, 25));
 
     expectRtkParity(result, {
       critical: ["450 files in 18 dirs:"],
       forbidden: [/\+\d+ more dirs/],
-      // tk's per-file cap alone clears the RTK 40% whitespace-token floor (~47%).
       minTokenSavingsRatio: 0.4,
     });
   });

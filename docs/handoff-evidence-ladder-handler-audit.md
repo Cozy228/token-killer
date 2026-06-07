@@ -3,6 +3,30 @@
 **Repo:** `/Users/ziyu/Workspace/token-killer` (branch `token-killer-node-cli`)
 **Focus for next session:** verify, then ladder-ify a class of RTK-ported handlers that ship **raw, uncompressed** output when their result is large — exactly the case where compression matters most.
 
+> **Status (2026-06-07): AUDIT + FIX COMPLETE (fix uncommitted).**
+>
+> - **Audit:** all 11 suspect commands were empirically CONFIRMED reverting to raw
+>   at 0%; `find`/`ls` confirmed SAFE. Full table + fixtures below.
+> - **Fix (shipped, awaiting commit):** user signed off on **C primary + B fallback**
+>   — the ADR 0001 two-step ladder (lossless step-1 digest → step-2 count
+>   replacement), with **all `… +N more` / bare `+N` cap markers REMOVED** and caps
+>   replaced by the `LISTING_TOKEN_BUDGET` (2000-token) flip. Converted handlers:
+>   `docker`, `kubectl`, `aws` (cloud); `gh`, `glab`, `gt` (git); `prettier`,
+>   `package-list` (js); `pipe`. Each formatter now returns `LadderResult` and threads
+>   the declared `omission` into `makeFilteredResult` (reusing `common/budget.ts`
+>   `overBudgetLadder`). `search-like` was fixed separately (committed `e3df5e4`).
+> - **Per-handler digest shapes** (user defaults): docker/kubectl drop ports/image →
+>   `name status`; gh/glab/pnpm drop icons/author → `#num title` / `name version`;
+>   docker/kubectl logs OUT of scope; pipe bare `+N` also removed. Handlers whose items
+>   are pure evidence (prettier files, s3 ls, kubectl pod issues, cfn/ecs lists) have
+>   no lossless step-1 and ladder straight full→replacement.
+> - **Verification:** `pnpm test:product` green (138 files / 1196 tests), `tsc`
+>   clean. Each handler gained an over-budget test (digest tier) + had its stale
+>   "reverts to raw" parity-test comments corrected. NOTE: the replacement (step-2)
+>   tier correctly fails open to raw under `--no-save-raw` (the test-harness default),
+>   so per-handler over-budget tests target the digest tier; the replacement tier is
+>   covered generically by `adr0001Ladder.test.ts`.
+
 ---
 
 ## The bug (mechanism)
@@ -56,28 +80,46 @@ Notes:
 
 ---
 
-## Audit status (this session)
+## Audit status — COMPLETE (audit session 2026-06-07)
 
-Empirically verified by feeding crafted over-cap stdout to `handler.filter` and
-checking `output === raw` (revert) + `qualityStatus`.
+Every row below was empirically verified by feeding a **correctly-shaped** over-cap
+fixture to `routeCommand(cmd).filter(...)` (bypassing the test harness's
+passthrough assertion) and checking `output.trim() === stdout.trim()` (revert),
+`qualityStatus`, and whether an `OMISSION_MARKER` survives in the output. The
+earlier INCONCLUSIVE rows were re-probed with parser-correct fixtures (the prior
+false-negatives came from feeding the wrong shape — TSV to a JSON parser, fake
+rows that parsed to 0 items). Probe options used a generous budget so the marker
+came from the handler's own cap, not from `limitOutput`.
 
-| handler | file:line of marker | declares omission? | status |
-|---|---|---|---|
-| grep (search-like) | grepFilter.ts `[+N more]` | no | **CONFIRMED revert** (probed; fix written then reset — see below) |
-| aws | cloud/aws.ts:31,134 | no (base.ts:289/296/299) | **CONFIRMED revert** (probe: inflated + reverted) |
-| find / ls (list-like) | common/listLike.ts | **YES** (listLike.ts:190,233 — `overBudgetLadder`) | **SAFE — not vulnerable** (an earlier inference that it was vulnerable was WRONG) |
-| docker (container) | cloud/container.ts:71,98,106,151,191 | no (container.ts:639) | marker code present; runtime probe INCONCLUSIVE (fake `docker ps` rows didn't match the parser → 0 rows → no marker). Re-probe with real `docker ps` output. |
-| kubectl (container) | cloud/container.ts:311 etc. | no (container.ts:659) | same as docker — INCONCLUSIVE, re-probe with real `kubectl get` output |
-| gh / glab (hostingCli) | git/hostingCli.ts:130 | no (hostingCli.ts:276) | marker present; INCONCLUSIVE (probe fed TSV, handler expects JSON → passthrough). Re-probe with real `gh pr list --json`-shaped stdout |
-| gt (graphite) | git/graphite.ts:58 | no (graphite.ts:185) | marker present, no declaration — NOT runtime-probed |
-| prettier | js/prettier.ts:104 | no (prettier.ts:131, 4-arg call) | marker present, no declaration — NOT runtime-probed |
-| pnpm (packageList) | js/packageList.ts:120 | no (packageList.ts:164, 4-arg call) | marker present, no declaration — NOT runtime-probed |
-| pipe | system/pipe.ts:114 | no (pipe.ts:203) | dir-cap marker present, no declaration — NOT runtime-probed (per-file bare `+N` ships) |
+**Verdict: 11 commands across ~10 handlers CONFIRMED revert-to-raw at 0%. 2 SAFE.**
 
-Caveat on runtime probes: a false-negative happens when the crafted stdout doesn't
-match the handler's parser (it then counts 0 rows, emits no marker, and passes
-through at 0% — looks "fine" but for the wrong reason). Each remaining handler
-needs a probe with a *correctly-shaped* fixture so the cap actually triggers.
+| handler | command probed | file:line of marker | declares omission? | result |
+|---|---|---|---|---|
+| grep (search-like) | `grep -r` (300 matches / 3 files) | grepFilter.ts:236 `[+N more]` | no (searchLike.ts:130/150) | **CONFIRMED** — revert, inflated, raw 14371b→14371b |
+| aws | `aws lambda list-functions` (25 fns) | cloud/aws.ts:31,134,152 `… +N more` | no (aws.ts:299) | **CONFIRMED** — revert, inflated, 2380b→2380b |
+| docker (container) | `docker ps` (25 rows) | container.ts:71 `… +N more` | no (container.ts:639) | **CONFIRMED** — revert, inflated, 1854b→1854b |
+| kubectl (container) | `kubectl get services` (25 svc) | container.ts:353 `… +N more` | no (container.ts:659) | **CONFIRMED** — revert, inflated, 3026b→3026b |
+| kubectl (container) | `kubectl get pods` (15 Pending) | container.ts:311 `… +N more` | no (container.ts:659) | **CONFIRMED** — revert, inflated, 1576b→1576b |
+| gh (hostingCli) | `gh pr list` (25 PRs JSON) | hostingCli.ts:130 `… +N more` | no (hostingCli.ts:276) | **CONFIRMED** — revert, inflated, 2697b→2697b |
+| glab (hostingCli) | `glab mr list` (25 MRs JSON) | hostingCli.ts:130 `… +N more` | no (hostingCli.ts:276) | **CONFIRMED** — revert, inflated, 1947b→1947b |
+| gt (graphite) | `gt log` (20 graph nodes) | graphite.ts:58 `... +N more entries` | no (graphite.ts:185) | **CONFIRMED** — revert, inflated, 379b→379b |
+| prettier | `prettier --check` (15 files) | prettier.ts:104 `... +N more files` | no (prettier.ts:131, 4-arg) | **CONFIRMED** — revert, inflated, 237b→237b |
+| pnpm (package-list) | `pnpm list` (25 prod deps JSON) | packageList.ts:120 `… +N more` | no (packageList.ts:164, 4-arg) | **CONFIRMED** — revert, inflated, 767b→767b |
+| pipe | `pipe find` (25 dirs) | pipe.ts:114 `+N more dirs` | no (pipe.ts:203) | **CONFIRMED** — revert, inflated, 439b→439b |
+| find (list-like) | `find` (3000 files / 50 dirs, >8KB) | none — laddered, not capped | **YES** (listLike.ts:190,233 `overBudgetLadder`) | **SAFE** — declared digest, no revert, 64289b→1102b (98.3%) |
+| ls (list-like) | n/a — code inspection | **none emitted** (`grep -c more src/handlers/system/ls.ts` = 0) | n/a (compacts, never caps) | **SAFE** — structurally cannot trip the sniff (emits no `+N more` marker) |
+
+Notes:
+- The `kubectl get pods` path trips via the `[warn] Issues:` warnings cap
+  (`CAP_WARNINGS=10`), a different code path than the `services` list cap
+  (`CAP_LIST=20`) — both confirmed reverting.
+- `pipe`'s per-file bare `+N` (pipe.ts:72,109) does NOT match `OMISSION_MARKERS`
+  and ships fine; only the dir-cap `+N more dirs` (pipe.ts:114) reverts — as the
+  earlier handoff predicted.
+- All CONFIRMED rows show `marker=gone` in the shipped output **because** the
+  revert ships raw (which has no marker) — the marker only exists in the
+  *compressed* rendering that the gate discards. That is the bug in one line:
+  the compression that would have produced the marker is thrown away.
 
 ---
 

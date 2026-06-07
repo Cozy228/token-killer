@@ -117,16 +117,11 @@ describe("RTK kubectl behavior", () => {
     });
   });
 
-  // ADR 0001 divergence: RTK truncates the issue list past CAP_WARNINGS (10) and
-  // ships a "  … +N more" marker. tk's pod digest does NOT declare that omission, so
-  // a "… +N more" marker matches the undeclared-omission sniff (base.ts
-  // OMISSION_MARKERS) and the whole digest is reverted to the raw `-o json` blob
-  // (0% savings) — tk fails safe to the full evidence rather than ship a foreign
-  // cap marker. So to exercise the genuinely-shipping pod-issues digest, drive
-  // exactly CAP_WARNINGS (10) failing pods: every issue is listed (none suppressed),
-  // there is NO "… +N more" trailer, and the JSON-to-digest reduction ships at huge
-  // char savings.
-  test("pod issues truncate past CAP_WARNINGS", async () => {
+  // ADR 0001 decision 2: RTK's CAP_WARNINGS (10) + "… +N more" cap is REMOVED. Pod
+  // issues are pure evidence (no decoration to drop), so within budget every issue
+  // is listed — none suppressed, no "… +N more" — and the JSON-to-summary reduction
+  // ships at huge char savings.
+  test("pod issues list every failing pod with no overflow marker", async () => {
     const items = Array.from({ length: 10 }, (_, i) => ({
       metadata: { namespace: "default", name: `bad-${i}` },
       status: { phase: "Failed", containerStatuses: [{ restartCount: 1 }] },
@@ -215,6 +210,31 @@ describe("RTK kubectl behavior", () => {
     const command = ["kubectl", "get", "pods", "-o", "wide"];
     const handlerResult = await rawPassthrough(command, table);
     expect(handlerResult).toBe(table);
+  });
+
+  // ADR 0001 decisions 2/5/7: over budget, `kubectl get services` ladders instead
+  // of reverting to raw. The step-1 lossless digest keeps EVERY service's ns/name
+  // and drops the TYPE/ports decoration, declaring `omission.kind === "digest"`. No
+  // "… +N more" — all 200 services survive, compressed.
+  test("services over budget ship the lossless ns/name digest, not raw", async () => {
+    const items = Array.from({ length: 200 }, (_, i) => ({
+      metadata: { namespace: "production", name: `service-name-${i}` },
+      spec: { type: "ClusterIP", ports: [{ port: 8080, targetPort: 8080 }] },
+    }));
+
+    const result = await filterRtkOutput(["kubectl", "get", "services"], JSON.stringify({ items }));
+
+    expect(result.qualityStatus).toBe("passed");
+    expect(result.omission?.kind).toBe("digest");
+    expect(result.output).toContain("200 services:");
+    expect(result.output).toContain("  production/service-name-0");
+    expect(result.output).toContain("  production/service-name-199");
+    expectRtkParity(result, {
+      critical: ["200 services:"],
+      // No fake-complete marker; TYPE/ports decoration dropped in the digest.
+      forbidden: [/… \+\d+ more/, /ClusterIP/],
+      minSavingsRatio: 0.5,
+    });
   });
 
   // RTK: cloud/container.rs::format_kubectl_pods / _services empty cases.

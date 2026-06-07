@@ -1,6 +1,7 @@
 import { executeCommand } from "../../executor.js";
 import type { CommandHandler, ParsedCommand, RawResult, TkOptions } from "../../types.js";
 import { makeFilteredResult } from "../base.js";
+import { type LadderResult, overBudgetLadder } from "../common/budget.js";
 
 function text(raw: RawResult): string {
   return `${raw.stdout}${raw.stderr}`.trimEnd();
@@ -23,7 +24,11 @@ function parseJson(rawText: string): any | undefined {
 }
 
 function hasRawJsonFlag(command: ParsedCommand): boolean {
-  return command.args.includes("--json") || command.args.includes("--output") || command.args.includes("-F");
+  return (
+    command.args.includes("--json") ||
+    command.args.includes("--output") ||
+    command.args.includes("-F")
+  );
 }
 
 // RTK: gh_cmd.rs — RTK never trusts gh's human table output; it re-runs the
@@ -42,7 +47,13 @@ export function buildGhArgs(args: string[]): string[] {
     if (rest.some((a) => GH_VIEW_PASSTHROUGH.includes(a))) return args;
     // RTK extracts the id and appends extra args after --json; gh accepts the id
     // and flags in any order, so passing `rest` ahead of --json is equivalent.
-    return ["pr", "view", ...rest, "--json", "number,title,state,author,body,url,mergeable,reviews,statusCheckRollup"];
+    return [
+      "pr",
+      "view",
+      ...rest,
+      "--json",
+      "number,title,state,author,body,url,mergeable,reviews,statusCheckRollup",
+    ];
   }
   if (resource === "issue" && action === "list") {
     return ["issue", "list", "--json", "number,title,state,author", ...rest];
@@ -52,10 +63,24 @@ export function buildGhArgs(args: string[]): string[] {
     return ["issue", "view", ...rest, "--json", "number,title,state,author,body,url"];
   }
   if (resource === "run" && action === "list") {
-    return ["run", "list", "--json", "databaseId,name,status,conclusion,createdAt", "--limit", "10", ...rest];
+    return [
+      "run",
+      "list",
+      "--json",
+      "databaseId,name,status,conclusion,createdAt",
+      "--limit",
+      "10",
+      ...rest,
+    ];
   }
   if (resource === "repo" && action === "view") {
-    return ["repo", "view", ...rest, "--json", "name,owner,description,url,stargazerCount,forkCount,isPrivate"];
+    return [
+      "repo",
+      "view",
+      ...rest,
+      "--json",
+      "name,owner,description,url,stargazerCount,forkCount,isPrivate",
+    ];
   }
   return args;
 }
@@ -114,26 +139,28 @@ function glabStateIcon(state: string): string {
   }
 }
 
-// RTK: core/truncate.rs CAP_LIST.
-const CAP_LIST = 20;
-
 // RTK: gh_cmd.rs::format_pr_list / glab_cmd.rs::format_mr_list — a "Header\n" line
-// then "  <icon> <num> <title> (<author>)" rows, capped at CAP_LIST with "  … +N more".
+// then "  <icon> <num> <title> (<author>)" rows. ADR 0001 decisions 2/5/7: RTK's
+// CAP_LIST (20) + "  … +N more" cap is REMOVED. Within budget every row ships; over
+// budget the step-1 lossless digest keeps every item (`#num title`, dropping the
+// state-icon/author decoration) and, if still over, a count replacement. No marker.
 function formatList(
   header: string,
   emptyLabel: string,
   rows: string[],
-): string {
-  if (rows.length === 0) return `${emptyLabel}\n`;
-  const out: string[] = [header];
-  for (const line of rows.slice(0, CAP_LIST)) out.push(line);
-  if (rows.length > CAP_LIST) out.push(`  … +${rows.length - CAP_LIST} more`);
-  return `${out.join("\n")}\n`;
+  digestRows: string[],
+): LadderResult {
+  if (rows.length === 0) return { text: `${emptyLabel}\n` };
+  return overBudgetLadder({
+    full: `${[header, ...rows].join("\n")}\n`,
+    digest: () => `${[header, ...digestRows].join("\n")}\n`,
+    replacement: () => `${header}: ${rows.length}\n`,
+  });
 }
 
-function formatGh(raw: RawResult, command: ParsedCommand): string {
+function formatGh(raw: RawResult, command: ParsedCommand): LadderResult {
   const rawText = text(raw);
-  if (hasRawJsonFlag(command)) return `${rawText}\n`;
+  if (hasRawJsonFlag(command)) return { text: `${rawText}\n` };
   const json = parseJson(rawText);
   const [resource, action] = command.args;
 
@@ -143,25 +170,35 @@ function formatGh(raw: RawResult, command: ParsedCommand): string {
       (pr) =>
         `  ${ghStateIcon(pr.state ?? "???")} #${pr.number ?? 0} ${truncate(pr.title ?? "???", 60)} (${pr.author?.login ?? "???"})`,
     );
-    return formatList("Pull Requests", "No Pull Requests", rows);
+    // Step-1 digest: keep every PR's number + title, drop the state icon + author.
+    const digestRows = json.map((pr) => `  #${pr.number ?? 0} ${truncate(pr.title ?? "???", 60)}`);
+    return formatList("Pull Requests", "No Pull Requests", rows, digestRows);
   }
   if (resource === "pr" && action === "view" && json) {
-    return `#${json.number} ${json.title}\n${json.state} @${json.author?.login ?? "unknown"} ${json.mergeable ?? ""}\n${(json.labels ?? []).map((label: any) => label.name).join(", ")}\n${json.url ?? ""}\n${stripMarkdownNoise(json.body ?? "")}\n`;
+    return {
+      text: `#${json.number} ${json.title}\n${json.state} @${json.author?.login ?? "unknown"} ${json.mergeable ?? ""}\n${(json.labels ?? []).map((label: any) => label.name).join(", ")}\n${json.url ?? ""}\n${stripMarkdownNoise(json.body ?? "")}\n`,
+    };
   }
   if (resource === "pr" && action === "checks") {
-    return `${rawText
-      .split(/\r?\n/)
-      .filter((line) => /\bfail\b|failed/i.test(line))
-      .join("\n")}\n`;
+    return {
+      text: `${rawText
+        .split(/\r?\n/)
+        .filter((line) => /\bfail\b|failed/i.test(line))
+        .join("\n")}\n`,
+    };
   }
   if (resource === "issue" && action === "list" && Array.isArray(json)) {
     // RTK: gh_cmd.rs::format_issue_list — "Issues\n  [open] #N title" (no labels;
-    // RTK only fetches number,title,state,author), capped at CAP_LIST.
+    // RTK only fetches number,title,state,author).
     const rows = json.map(
       (issue) =>
         `  ${(issue.state ?? "???") === "OPEN" ? "[open]" : "[closed]"} #${issue.number ?? 0} ${truncate(issue.title ?? "???", 60)}`,
     );
-    return formatList("Issues", "No Issues", rows);
+    // Step-1 digest: keep every issue's number + title, drop the state icon.
+    const digestRows = json.map(
+      (issue) => `  #${issue.number ?? 0} ${truncate(issue.title ?? "???", 60)}`,
+    );
+    return formatList("Issues", "No Issues", rows, digestRows);
   }
   if (resource === "issue" && action === "view" && json) {
     // RTK: gh_cmd.rs::format_issue_view.
@@ -182,7 +219,7 @@ function formatGh(raw: RawResult, command: ParsedCommand): string {
         out.push("", "  Description: (body contained only badges/images/comments)");
       }
     }
-    return `${out.join("\n")}\n`;
+    return { text: `${out.join("\n")}\n` };
   }
   if (resource === "run" && action === "list" && Array.isArray(json)) {
     // RTK: gh_cmd.rs::format_run_list — "Workflow Runs\n  <icon> <name> [<id>]".
@@ -193,15 +230,16 @@ function formatGh(raw: RawResult, command: ParsedCommand): string {
         conclusion === "success"
           ? "[ok]"
           : conclusion === "failure"
-          ? "[FAIL]"
-          : conclusion === "cancelled"
-          ? "[X]"
-          : status === "in_progress"
-          ? "[time]"
-          : "[pending]";
+            ? "[FAIL]"
+            : conclusion === "cancelled"
+              ? "[X]"
+              : status === "in_progress"
+                ? "[time]"
+                : "[pending]";
       return `  ${icon} ${truncate(run.name ?? "???", 50)} [${run.databaseId ?? 0}]`;
     });
-    return `Workflow Runs\n${rows.join("\n")}\n`;
+    // RTK injects `--limit 10`, so the run list is already bounded — ship in full.
+    return { text: `Workflow Runs\n${rows.join("\n")}\n` };
   }
   if (resource === "repo" && action === "view" && json) {
     // RTK: gh_cmd.rs::format_repo_view.
@@ -213,14 +251,14 @@ function formatGh(raw: RawResult, command: ParsedCommand): string {
     if (description !== "") out.push(`  ${truncate(description, 80)}`);
     out.push(`  ${json.stargazerCount ?? 0} stars | ${json.forkCount ?? 0} forks`);
     out.push(`  ${json.url ?? ""}`);
-    return `${out.join("\n")}\n`;
+    return { text: `${out.join("\n")}\n` };
   }
-  return `${rawText}\n`;
+  return { text: `${rawText}\n` };
 }
 
-function formatGlab(raw: RawResult, command: ParsedCommand): string {
+function formatGlab(raw: RawResult, command: ParsedCommand): LadderResult {
   const rawText = text(raw);
-  if (hasRawJsonFlag(command)) return `${rawText}\n`;
+  if (hasRawJsonFlag(command)) return { text: `${rawText}\n` };
   const json = parseJson(rawText);
   const [resource, action] = command.args;
 
@@ -230,30 +268,38 @@ function formatGlab(raw: RawResult, command: ParsedCommand): string {
       (mr) =>
         `  ${glabStateIcon(mr.state ?? "???")} !${mr.iid ?? 0} ${truncate(mr.title ?? "???", 60)} (${mr.author?.username ?? "???"})`,
     );
-    return formatList("Merge Requests", "No Merge Requests", rows);
+    // Step-1 digest: keep every MR's iid + title, drop the state icon + author.
+    const digestRows = json.map((mr) => `  !${mr.iid ?? 0} ${truncate(mr.title ?? "???", 60)}`);
+    return formatList("Merge Requests", "No Merge Requests", rows, digestRows);
   }
   if (resource === "mr" && action === "view" && json) {
-    return `!${json.iid} ${json.title}\n${json.state} ${json.source_branch} -> ${json.target_branch}\n${(json.labels ?? []).join(", ")}\n${(json.reviewers ?? []).map((reviewer: any) => reviewer.username).join(", ")}\n${json.merge_status ?? ""}\n${json.description ?? ""}\n${json.web_url ?? ""}\n`;
+    return {
+      text: `!${json.iid} ${json.title}\n${json.state} ${json.source_branch} -> ${json.target_branch}\n${(json.labels ?? []).join(", ")}\n${(json.reviewers ?? []).map((reviewer: any) => reviewer.username).join(", ")}\n${json.merge_status ?? ""}\n${json.description ?? ""}\n${json.web_url ?? ""}\n`,
+    };
   }
   if (resource === "ci" && action === "list" && Array.isArray(json)) {
-    return `${json.map((pipeline) => `${pipeline.id} ${pipeline.status} ${pipeline.ref} ${pipeline.web_url ?? ""}`).join("\n")}\n`;
+    return {
+      text: `${json.map((pipeline) => `${pipeline.id} ${pipeline.status} ${pipeline.ref} ${pipeline.web_url ?? ""}`).join("\n")}\n`,
+    };
   }
   if (resource === "ci" && action === "trace") {
-    return `${rawText
-      .split(/\r?\n/)
-      .filter((line) => !/section_start|section_end|gitlab-runner|Fetching changes/.test(line))
-      .join("\n")}\n`;
+    return {
+      text: `${rawText
+        .split(/\r?\n/)
+        .filter((line) => !/section_start|section_end|gitlab-runner|Fetching changes/.test(line))
+        .join("\n")}\n`,
+    };
   }
   if (resource === "release" && action === "list") {
-    return `${rawText.split(/\r?\n/).slice(0, 1).join("\n")}\n`;
+    return { text: `${rawText.split(/\r?\n/).slice(0, 1).join("\n")}\n` };
   }
-  return `${rawText}\n`;
+  return { text: `${rawText}\n` };
 }
 
 function makeHostingHandler(
   program: "gh" | "glab",
   buildArgs: (args: string[]) => string[],
-  formatter: (raw: RawResult, command: ParsedCommand) => string,
+  formatter: (raw: RawResult, command: ParsedCommand) => LadderResult,
 ): CommandHandler {
   return {
     name: program,
@@ -273,7 +319,8 @@ function makeHostingHandler(
       });
     },
     async filter(raw, command, options: TkOptions) {
-      return makeFilteredResult(this.name, raw, formatter(raw, command), options);
+      const { text: output, omission } = formatter(raw, command);
+      return makeFilteredResult(this.name, raw, output, options, undefined, omission);
     },
   };
 }

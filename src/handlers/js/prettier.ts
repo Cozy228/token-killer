@@ -1,10 +1,13 @@
 import { executeCommand } from "../../executor.js";
 import type { CommandHandler, ParsedCommand } from "../../types.js";
 import { makeFilteredResult } from "../base.js";
+import { type LadderResult, overBudgetLadder } from "../common/budget.js";
 
-// RTK: js/prettier_cmd.rs — show only files that need formatting.
-// RTK: core/truncate.rs::CAP_WARNINGS = 10 (MAX_PRETTIER_FILES).
-const MAX_PRETTIER_FILES = 10;
+// RTK: js/prettier_cmd.rs — show only files that need formatting. ADR 0001
+// decisions 2/5/7: RTK's MAX_PRETTIER_FILES (10) cap + "... +N more files" marker
+// is REMOVED. Each path is evidence (no decoration to drop), so within budget every
+// file lists; over budget it falls straight to a count replacement (+ snapshot). No
+// "... +N more".
 
 // RTK: js/prettier_cmd.rs uses a 39-char box-drawing separator under the summary.
 const PRETTIER_SEPARATOR = "═".repeat(39);
@@ -33,11 +36,11 @@ function isFormattableFile(trimmed: string): boolean {
   );
 }
 
-// RTK: js/prettier_cmd.rs::filter_prettier_output — faithful port.
-function filterPrettierOutput(output: string): string {
+// RTK: js/prettier_cmd.rs::filter_prettier_output — faithful port (cap → ladder).
+function filterPrettierOutput(output: string): LadderResult {
   // RTK: #221 — empty or whitespace-only output means prettier didn't run.
   if (output.trim() === "") {
-    return "Error: prettier produced no output";
+    return { text: "Error: prettier produced no output" };
   }
 
   const filesToFormat: string[] = [];
@@ -77,7 +80,7 @@ function filterPrettierOutput(output: string): string {
 
   // Check if all files are formatted.
   if (filesToFormat.length === 0 && output.includes("All matched files use Prettier")) {
-    return "Prettier: All files formatted correctly";
+    return { text: "Prettier: All files formatted correctly" };
   }
 
   // Check if files were written (write mode).
@@ -85,36 +88,34 @@ function filterPrettierOutput(output: string): string {
     isCheckMode = false;
   }
 
-  const result: string[] = [];
-
-  if (isCheckMode) {
-    // Check mode: show files that need formatting.
-    if (filesToFormat.length === 0) {
-      result.push("Prettier: All files formatted correctly");
-    } else {
-      result.push(`Prettier: ${filesToFormat.length} files need formatting`);
-      result.push(PRETTIER_SEPARATOR);
-
-      filesToFormat.slice(0, MAX_PRETTIER_FILES).forEach((file, i) => {
-        result.push(`${i + 1}. ${file}`);
-      });
-
-      if (filesToFormat.length > MAX_PRETTIER_FILES) {
-        result.push("");
-        result.push(`... +${filesToFormat.length - MAX_PRETTIER_FILES} more files`);
-      }
-
-      if (filesChecked > 0) {
-        result.push("");
-        result.push(`${filesChecked - filesToFormat.length} files already formatted`);
-      }
-    }
-  } else {
+  if (!isCheckMode) {
     // Write mode: show what was formatted.
-    result.push(`Prettier: ${filesToFormat.length} files formatted`);
+    return { text: `Prettier: ${filesToFormat.length} files formatted` };
   }
 
-  return result.join("\n").trim();
+  // Check mode: show files that need formatting.
+  if (filesToFormat.length === 0) {
+    return { text: "Prettier: All files formatted correctly" };
+  }
+
+  const header = `Prettier: ${filesToFormat.length} files need formatting`;
+  // ADR 0001: within budget the full numbered listing ships; over budget it falls
+  // to the count-only header (a step-2 replacement, snapshot-recoverable). The file
+  // paths are pure evidence, so there is no lossless step-1 digest between them.
+  const buildFull = (): string => {
+    const result = [header, PRETTIER_SEPARATOR];
+    filesToFormat.forEach((file, i) => result.push(`${i + 1}. ${file}`));
+    if (filesChecked > 0) {
+      result.push("");
+      result.push(`${filesChecked - filesToFormat.length} files already formatted`);
+    }
+    return result.join("\n").trim();
+  };
+
+  return overBudgetLadder({
+    full: buildFull(),
+    replacement: () => header,
+  });
 }
 
 export const prettierHandler: CommandHandler = {
@@ -128,11 +129,7 @@ export const prettierHandler: CommandHandler = {
   },
 
   async filter(raw, _command, options) {
-    return makeFilteredResult(
-      this.name,
-      raw,
-      `${filterPrettierOutput(`${raw.stdout}\n${raw.stderr}`)}\n`,
-      options,
-    );
+    const { text, omission } = filterPrettierOutput(`${raw.stdout}\n${raw.stderr}`);
+    return makeFilteredResult(this.name, raw, `${text}\n`, options, undefined, omission);
   },
 };

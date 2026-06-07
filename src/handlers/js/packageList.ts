@@ -2,9 +2,12 @@ import { executeCommand } from "../../executor.js";
 
 import type { CommandHandler, ParsedCommand } from "../../types.js";
 import { makeFilteredResult } from "../base.js";
+import { type LadderResult, overBudgetLadder } from "../common/budget.js";
 
-// RTK: rtk/src/core/truncate.rs::CAP_LIST — cap each [prod]/[dev] section at 20 entries.
-const CAP_LIST = 20;
+// ADR 0001 decisions 2/5/7: RTK's CAP_LIST (20-per-section) + "… +N more" marker is
+// REMOVED. `name version` is already minimal evidence (the version drives the
+// dependency-conflict probe), so there is no lossless step-1 digest — within budget
+// every package lists; over budget it falls to a count replacement. No "… +N more".
 
 // RTK: rtk/src/parser/types.rs::Dependency (subset used by `pnpm list`).
 type Dependency = { name: string; version: string; dev: boolean };
@@ -22,17 +25,14 @@ function matchesPackageList(command: ParsedCommand): boolean {
 
 function isCompactPackageList(text: string): boolean {
   const trimmed = text.trim();
-  return /^\d+ packages \(/.test(trimmed) || /^\[prod\]/m.test(trimmed) || /^\[dev\]/m.test(trimmed);
+  return (
+    /^\d+ packages \(/.test(trimmed) || /^\[prod\]/m.test(trimmed) || /^\[dev\]/m.test(trimmed)
+  );
 }
 
 // RTK: pnpm_cmd.rs::collect_dependencies — recursively flatten a `pnpm list --json`
 // tree, carrying the prod/dev classification down each branch.
-function collectJsonDeps(
-  name: string,
-  pkg: any,
-  isDev: boolean,
-  deps: Dependency[],
-): void {
+function collectJsonDeps(name: string, pkg: any, isDev: boolean, deps: Dependency[]): void {
   if (typeof pkg?.version === "string") {
     deps.push({ name, version: pkg.version, dev: isDev });
   }
@@ -100,55 +100,60 @@ function extractListText(text: string): { state?: DependencyState; problems: str
   return { state, problems };
 }
 
-// RTK: pnpm_cmd.rs::format_dependency_listing — "N packages (X prod / Y dev)" then grouped
-// [prod]/[dev] sections, each capped at CAP_LIST with a "… +N more" overflow marker.
-function formatDependencyListing(state: DependencyState, cap: boolean): string {
+// RTK: pnpm_cmd.rs::format_dependency_listing — "N packages (X prod / Y dev)" then
+// grouped [prod]/[dev] sections. Within budget every package lists; over budget the
+// listing falls to the count-only summary line (a step-2 replacement).
+function formatDependencyListing(state: DependencyState): LadderResult {
   const prod = state.dependencies.filter((dep) => !dep.dev);
   const dev = state.dependencies.filter((dep) => dep.dev);
   const total = Math.max(state.totalPackages, state.dependencies.length);
+  const summary = `${total} packages (${prod.length} prod / ${dev.length} dev)`;
 
-  const lines = [`${total} packages (${prod.length} prod / ${dev.length} dev)`];
+  const buildFull = (): string => {
+    const lines = [summary];
+    for (const [label, group] of [
+      ["[prod]", prod],
+      ["[dev]", dev],
+    ] as const) {
+      if (group.length === 0) continue;
+      lines.push(label);
+      for (const dep of group) lines.push(`  ${dep.name} ${dep.version}`);
+    }
+    return lines.join("\n");
+  };
 
-  for (const [label, group] of [
-    ["[prod]", prod],
-    ["[dev]", dev],
-  ] as const) {
-    if (group.length === 0) continue;
-    lines.push(label);
-    const shown = cap ? Math.min(group.length, CAP_LIST) : group.length;
-    for (const dep of group.slice(0, shown)) lines.push(`  ${dep.name} ${dep.version}`);
-    if (cap && group.length > CAP_LIST) lines.push(`  … +${group.length - CAP_LIST} more`);
-  }
-
-  return lines.join("\n");
+  return overBudgetLadder({
+    full: buildFull(),
+    replacement: () => summary,
+  });
 }
 
-function formatPackageList(text: string, args: string[]): string {
+function formatPackageList(text: string): LadderResult {
   const trimmed = text.trim();
-  if (!trimmed) return "\n";
-  if (isCompactPackageList(trimmed)) return `${trimmed}\n`;
-
-  // `--prod`/`--dev` target a single category — show every package so the hidden ones
-  // surface (RTK: cap=false). Plain `pnpm list` may truncate (cap=true).
-  const cap = !args.some((arg) => ["--prod", "-P", "--dev", "-D"].includes(arg));
+  if (!trimmed) return { text: "\n" };
+  if (isCompactPackageList(trimmed)) return { text: `${trimmed}\n` };
 
   const state = parseListJson(text);
-  if (state) return `${formatDependencyListing(state, cap)}\n`;
+  if (state) {
+    const ladder = formatDependencyListing(state);
+    return { text: `${ladder.text}\n`, omission: ladder.omission };
+  }
 
   const { state: textState, problems } = extractListText(text);
   if (textState) {
-    let out = formatDependencyListing(textState, cap);
+    const ladder = formatDependencyListing(textState);
+    let out = ladder.text;
     if (problems.length > 0) {
       out += `\n\nProblems:\n${problems.map((line) => `- ${line}`).join("\n")}`;
     }
-    return `${out}\n`;
+    return { text: `${out}\n`, omission: ladder.omission };
   }
 
   // No parseable dependency data — surface any problems, else passthrough.
   if (problems.length > 0) {
-    return `Problems:\n${problems.map((line) => `- ${line}`).join("\n")}\n`;
+    return { text: `Problems:\n${problems.map((line) => `- ${line}`).join("\n")}\n` };
   }
-  return `${trimmed}\n`;
+  return { text: `${trimmed}\n` };
 }
 
 export const packageListHandler: CommandHandler = {
@@ -160,12 +165,8 @@ export const packageListHandler: CommandHandler = {
     return executeCommand(command);
   },
 
-  async filter(raw, command, options) {
-    return makeFilteredResult(
-      this.name,
-      raw,
-      formatPackageList(`${raw.stdout}\n${raw.stderr}`, command.args),
-      options,
-    );
+  async filter(raw, _command, options) {
+    const { text, omission } = formatPackageList(`${raw.stdout}\n${raw.stderr}`);
+    return makeFilteredResult(this.name, raw, text, options, undefined, omission);
   },
 };

@@ -41,14 +41,10 @@ describe("RTK gt behavior", () => {
     });
   });
 
-  // ADR 0001 divergence: RTK caps the stack at MAX_LOG_ENTRIES (15) with a
-  // "... +N more entries" marker. tg's gt handler is NOT ladder-converted, so that
-  // marker is an UNDECLARED omission: the ADR 0001 safety net rejects any handler
-  // output carrying it and fails open to RAW. Crucially, the raw still contains the
-  // author emails, so capping would re-leak them — exactly why the supported tg path
-  // is the lossless one: at/within the cap (<= 15 entries) tg keeps every entry,
-  // strips every author email, and emits NO fake overflow marker.
-  test("keeps every entry up to the cap, strips emails, no fake marker", async () => {
+  // ADR 0001 decision 2: RTK's MAX_LOG_ENTRIES (15) cap + "... +N more entries"
+  // marker is REMOVED. Within budget tk keeps every entry, strips every author
+  // email, and emits NO fake overflow marker.
+  test("keeps every entry, strips emails, no fake marker", async () => {
     const lines: string[] = [];
     for (let i = 0; i < 15; i += 1) {
       lines.push(`◉  hash${i} branch-${i} 1d ago dev${i}@example.com`);
@@ -69,6 +65,34 @@ describe("RTK gt behavior", () => {
     expectRtkParity(result, {
       critical: ["hash0 branch-0", "hash14 branch-14"],
       forbidden: [/@example\.com/, /(?:\.{3}|…)\s*\+\d+\s+more/],
+    });
+  });
+
+  // ADR 0001 decisions 2/5/7: over budget, the stack graph ladders instead of
+  // reverting to raw. The step-1 lossless digest keeps every graph-node row (the
+  // branch / commit identity), drops the pure connector art, declaring
+  // `kind === "digest"`. No "... +N more entries" — and crucially the author emails
+  // are still stripped (a revert would re-leak them from the raw).
+  test("log over budget ships the lossless graph-node digest, not raw", async () => {
+    const lines: string[] = [];
+    for (let i = 0; i < 120; i += 1) {
+      lines.push(`◉  hash${i} feat/some-branch-name-${i} 1d ago dev${i}@example.com`);
+      lines.push(`│  commit message describing the change ${i}`);
+      lines.push("│");
+    }
+    lines.push("~");
+    const result = await filterRtkOutput(["gt", "log"], lines.join("\n"));
+
+    expect(result.qualityStatus).toBe("passed");
+    expect(result.omission?.kind).toBe("digest");
+    expect(result.output).toContain("hash0 feat/some-branch-name-0");
+    expect(result.output).toContain("hash119 feat/some-branch-name-119");
+    expect(result.output).not.toMatch(/@example\.com/);
+    expectRtkParity(result, {
+      critical: ["hash0 feat/some-branch-name-0", "hash119 feat/some-branch-name-119"],
+      // No fake-complete marker; connector-only art dropped in the digest.
+      forbidden: [/@example\.com/, /(?:\.{3}|…)\s*\+\d+\s+more/],
+      minSavingsRatio: 0.4,
     });
   });
 

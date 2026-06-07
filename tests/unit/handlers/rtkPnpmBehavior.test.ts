@@ -53,27 +53,24 @@ describe("RTK pnpm behavior", () => {
     expect(result.output).not.toMatch(/numTotal|"version"/);
   });
 
-  // RTK: rtk/src/cmds/js/pnpm_cmd.rs::test_format_listing_cap_shows_hint_with_offset
-  // ADR 0001 divergence: RTK caps each section at CAP_LIST (20) with a "… +N more"
-  // overflow marker. tg's package-list handler is NOT ladder-converted, so that
-  // marker is an UNDECLARED omission: the ADR 0001 safety net rejects any handler
-  // output carrying it and fails open to RAW — an over-cap listing would just pass
-  // through unfiltered. The supported tg path is the lossless one: at/within the
-  // cap (<= 20 per section) tg reshapes the listing (summary + [prod] section +
-  // version reformat) and lists EVERY package with NO fake overflow marker.
-  test("reshapes a full section up to the cap with no fake overflow marker", async () => {
+  // ADR 0001 decision 2: RTK's CAP_LIST (20-per-section) + "… +N more" marker is
+  // REMOVED. 25 packages — PAST the old cap — and tk lists EVERY one (including the
+  // 21st–25th) with NO fake overflow marker, on the DEFAULT plain-list path (which
+  // RTK would have truncated). Tree chars are stripped so the reshape is a shrink.
+  test("reshapes every package past the old cap with no fake overflow marker", async () => {
     const lines = ["dependencies:"];
-    for (let i = 1; i <= 20; i += 1) lines.push(`dep${i}@1.0.0`);
+    for (let i = 1; i <= 25; i += 1) lines.push(`├── dep${i}@1.0.0`);
     const result = await filterRtkOutput(["pnpm", "list", "--depth=0"], lines.join("\n"));
 
-    expect(result.output).toContain("20 packages (20 prod / 0 dev)");
-    // Every package is listed losslessly — including the 20th — and there is NO
-    // fake "… +N more" omission marker.
-    expect(result.output).toContain("dep20 1.0.0");
+    expect(result.output).toContain("25 packages (25 prod / 0 dev)");
+    // Every package is listed losslessly — including the 21st and 25th — and there
+    // is NO fake "… +N more" omission marker.
+    expect(result.output).toContain("dep21 1.0.0");
+    expect(result.output).toContain("dep25 1.0.0");
     expect(result.output).not.toMatch(/(?:\.{3}|…)\s*\+\d+\s+more/);
 
     expectRtkParity(result, {
-      critical: ["20 packages (20 prod / 0 dev)", "dep20 1.0.0"],
+      critical: ["25 packages (25 prod / 0 dev)", "dep25 1.0.0"],
       forbidden: [/(?:\.{3}|…)\s*\+\d+\s+more/, /[├└│]/],
     });
   });

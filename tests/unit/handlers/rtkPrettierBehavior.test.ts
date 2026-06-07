@@ -45,15 +45,10 @@ describe("RTK prettier behavior", () => {
     });
   });
 
-  // ADR 0001 divergence: tg's prettier handler is NOT ladder-converted, so its
-  // RTK-style "... +N more files" cap is an UNDECLARED omission marker. The ADR
-  // 0001 safety net (outputOmitsContent) rejects any handler output carrying such
-  // a fake marker and fails open to RAW — meaning an over-cap prettier run would
-  // simply pass through unfiltered. The honest, supported tg path is therefore
-  // the lossless one: within the cap (<= MAX_PRETTIER_FILES = 10) tg lists EVERY
-  // file under the summary with NO "+N more" marker. We assert that real path:
-  // 10 files, all listed, no fake overflow marker, chatter stripped.
-  test("lists every file under the cap with no fake overflow marker", async () => {
+  // ADR 0001 decision 2: RTK's MAX_PRETTIER_FILES (10) cap + "... +N more files"
+  // marker is REMOVED. Within budget tk lists EVERY file under the summary with NO
+  // "+N more" marker — here 10 files, all listed, chatter stripped.
+  test("lists every file with no fake overflow marker", async () => {
     const lines = ["Checking formatting..."];
     for (let i = 0; i < 10; i += 1) {
       lines.push(`src/file${i}.ts`);
@@ -90,6 +85,28 @@ describe("RTK prettier behavior", () => {
         "9. src/file8.ts",
         "10. src/file9.ts",
       ].join("\n"),
+    });
+  });
+
+  // ADR 0001 decision 2: 15 files — PAST RTK's old MAX_PRETTIER_FILES (10) cap. The
+  // cap is gone, so every file lists (including the 11th–15th) with NO "... +N more"
+  // marker and no revert-to-raw. (Chatter padding makes the reshape a real shrink.)
+  test("lists every file past the old cap with no overflow marker", async () => {
+    const lines = ["Checking formatting..."];
+    for (let i = 0; i < 15; i += 1) lines.push(`src/file${i}.ts`);
+    for (let i = 0; i < 30; i += 1) {
+      lines.push(`[warn] src/file${i}.ts has code style issues that prettier would reformat`);
+    }
+
+    const result = await filterRtkOutput(["prettier", "--check", "src"], lines.join("\n"), 1);
+
+    expect(result.output).toContain("15 files need formatting");
+    expect(result.output).toContain("11. src/file10.ts");
+    expect(result.output).toContain("15. src/file14.ts");
+    expectRtkParity(result, {
+      critical: ["15 files need formatting", "15. src/file14.ts"],
+      forbidden: [/\.\.\.\s*\+\d+\s+more/],
+      minSavingsRatio: 0.4,
     });
   });
 

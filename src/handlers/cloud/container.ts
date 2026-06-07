@@ -1,13 +1,14 @@
 import { executeCommand } from "../../executor.js";
 import type { CommandHandler, ParsedCommand } from "../../types.js";
 import { makeFilteredResult, rawText } from "../base.js";
+import { type LadderResult, overBudgetLadder } from "../common/budget.js";
 
-// RTK: cloud/container.rs — caps come from core/truncate.rs.
-// CAP_LIST = 20 (docker ps, compose ps, kubectl services),
-// CAP_INVENTORY = 50 (docker images), CAP_WARNINGS = 10 (kubectl pod issues).
-const CAP_LIST = 20;
-const CAP_INVENTORY = 50;
-const CAP_WARNINGS = 10;
+// ADR 0001 decisions 2/5/7: RTK's CAP_LIST / CAP_INVENTORY / CAP_WARNINGS caps and
+// their `… +N more` overflow markers are REMOVED. A listing that fits the token
+// budget ships in full; over budget it runs the two-step ladder — a lossless
+// step-1 digest (every item kept, decoration columns dropped) then a step-2
+// count replacement — with a declared omission so the gate force-persists raw and
+// appends a `[full output: <path>]` pointer. No class ever emits a `+N more`.
 
 // RTK: cloud/container.rs::compact_ports — extract bare port numbers from a
 // docker ports column. Keeps the host-side port (after the final ':' before
@@ -16,13 +17,11 @@ function compactPorts(ports: string): string {
   if (ports === "") {
     return "-";
   }
-  const portNums = ports
-    .split(",")
-    .map((p) => {
-      const left = p.split("->")[0] ?? "";
-      const segs = left.split(":");
-      return segs[segs.length - 1] ?? "";
-    });
+  const portNums = ports.split(",").map((p) => {
+    const left = p.split("->")[0] ?? "";
+    const segs = left.split(":");
+    return segs[segs.length - 1] ?? "";
+  });
 
   if (portNums.length <= 3) {
     return portNums.join(", ");
@@ -50,72 +49,92 @@ function formatContainerLineFromParts(parts: string[], withPorts: boolean): stri
   return `  ${id} ${name} (${shortImage}) ${status}${portSuffix}\n`;
 }
 
-// RTK: cloud/container.rs::docker_ps — "[docker] N containers:" header then one
-// line per container; truncates past CAP_LIST with "  … +N more". (tk receives
-// the `--format` stdout that RTK produces internally and reformats it.)
-function dockerPs(raw: string): string {
-  if (raw.trim() === "") {
-    return "[docker] 0 containers";
+// ADR 0001 step-1 lossless digest line: keep every container's identity (name +
+// status — the "which service is abnormal?" evidence) and drop the id/image/ports
+// decoration. Same null guard as the full renderer so the two stay item-aligned.
+function identContainerLine(parts: string[]): string | null {
+  if (parts.length < 4) {
+    return null;
   }
-  const lines = raw
+  return `  ${parts[1]!} ${parts[2]!.trim()}\n`;
+}
+
+// RTK: cloud/container.rs::docker_ps — "[docker] N containers:" header then one
+// line per container. (tk receives the `--format` stdout that RTK produces
+// internally and reformats it.) Over budget it ladders: full → name/status digest
+// → count. No `… +N more`.
+function dockerPs(raw: string): LadderResult {
+  if (raw.trim() === "") {
+    return { text: "[docker] 0 containers" };
+  }
+  const rows = raw
     .split("\n")
     .filter((l) => l.trim() !== "")
-    .map((line) => formatContainerLineFromParts(line.split("\t"), true))
-    .filter((l): l is string => l !== null);
+    .map((line) => line.split("\t"));
+  const rich: string[] = [];
+  const ident: string[] = [];
+  for (const parts of rows) {
+    const full = formatContainerLineFromParts(parts, true);
+    if (full === null) continue;
+    rich.push(full);
+    ident.push(identContainerLine(parts)!);
+  }
 
-  let rtk = `[docker] ${lines.length} containers:\n`;
-  for (const entry of lines.slice(0, CAP_LIST)) {
-    rtk += entry;
-  }
-  if (lines.length > CAP_LIST) {
-    rtk += `  … +${lines.length - CAP_LIST} more\n`;
-  }
-  return rtk;
+  const header = `[docker] ${rich.length} containers:\n`;
+  return overBudgetLadder({
+    full: `${header}${rich.join("")}`,
+    digest: () => `${header}${ident.join("")}`,
+    replacement: () => `[docker] ${rich.length} containers`,
+  });
 }
 
 // RTK: cloud/container.rs::docker_ps_all — first column is State; running/
 // restarting are grouped under "[docker] N running:", everything else under
-// "[docker] N stopped/exited:". Each group truncates at 20.
-function dockerPsAll(raw: string): string {
-  const running: string[] = [];
-  const stopped: string[] = [];
+// "[docker] N stopped/exited:". Over budget it ladders both groups together.
+function dockerPsAll(raw: string): LadderResult {
+  const runningRich: string[] = [];
+  const runningIdent: string[] = [];
+  const stoppedRich: string[] = [];
+  const stoppedIdent: string[] = [];
   for (const line of raw.split("\n").filter((l) => l.trim() !== "")) {
     const parts = line.split("\t");
     const state = parts[0] ?? "";
     const isRunning = state === "running" || state === "restarting";
-    const entry = formatContainerLineFromParts(parts.slice(1), isRunning);
-    if (entry !== null) {
-      (isRunning ? running : stopped).push(entry);
-    }
+    const rest = parts.slice(1);
+    const full = formatContainerLineFromParts(rest, isRunning);
+    if (full === null) continue;
+    (isRunning ? runningRich : stoppedRich).push(full);
+    (isRunning ? runningIdent : stoppedIdent).push(identContainerLine(rest)!);
   }
 
-  const MAX = 20;
-  let rtk = `[docker] ${running.length} running:\n`;
-  for (const l of running.slice(0, MAX)) {
-    rtk += l;
-  }
-  if (running.length > MAX) {
-    rtk += `  … +${running.length - MAX} more\n`;
-  }
-  if (stopped.length > 0) {
-    rtk += `[docker] ${stopped.length} stopped/exited:\n`;
-    for (const l of stopped.slice(0, MAX)) {
-      rtk += l;
+  const render = (running: string[], stopped: string[]): string => {
+    let out = `[docker] ${runningRich.length} running:\n`;
+    out += running.join("");
+    if (stoppedRich.length > 0) {
+      out += `[docker] ${stoppedRich.length} stopped/exited:\n`;
+      out += stopped.join("");
     }
-    if (stopped.length > MAX) {
-      rtk += `  … +${stopped.length - MAX} more\n`;
-    }
-  }
-  return rtk;
+    return out;
+  };
+
+  return overBudgetLadder({
+    full: render(runningRich, stoppedRich),
+    digest: () => render(runningIdent, stoppedIdent),
+    replacement: () =>
+      stoppedRich.length > 0
+        ? `[docker] ${runningRich.length} running, ${stoppedRich.length} stopped/exited`
+        : `[docker] ${runningRich.length} running`,
+  });
 }
 
 // RTK: cloud/container.rs::docker_images — "[docker] N images (TOTAL)" header
 // where TOTAL sums GB/MB sizes (GB→MB ×1024, displayed GB past 1024MB). One
-// "  image [size]" line each, truncated past CAP_INVENTORY.
-function dockerImages(raw: string): string {
+// "  image [size]" line each. Over budget: digest drops the size column, then a
+// count replacement.
+function dockerImages(raw: string): LadderResult {
   const lines = raw.split("\n").filter((l) => l !== "");
   if (lines.length === 0) {
-    return "[docker] 0 images";
+    return { text: "[docker] 0 images" };
   }
 
   let totalMb = 0;
@@ -137,60 +156,61 @@ function dockerImages(raw: string): string {
     }
   }
 
-  const totalDisplay = totalMb > 1024 ? `${(totalMb / 1024).toFixed(1)}GB` : `${totalMb.toFixed(0)}MB`;
-  let rtk = `[docker] ${lines.length} images (${totalDisplay})\n`;
-
-  const imageLines = lines.map((line) => {
+  const totalDisplay =
+    totalMb > 1024 ? `${(totalMb / 1024).toFixed(1)}GB` : `${totalMb.toFixed(0)}MB`;
+  const header = `[docker] ${lines.length} images (${totalDisplay})\n`;
+  const rich = lines.map((line) => {
     const parts = line.split("\t");
     return `  ${parts[0] ?? ""} [${parts[1] ?? ""}]\n`;
   });
-  for (const l of imageLines.slice(0, CAP_INVENTORY)) {
-    rtk += l;
-  }
-  if (imageLines.length > CAP_INVENTORY) {
-    rtk += `  … +${imageLines.length - CAP_INVENTORY} more\n`;
-  }
-  return rtk;
+  const ident = lines.map((line) => `  ${line.split("\t")[0] ?? ""}\n`);
+
+  return overBudgetLadder({
+    full: `${header}${rich.join("")}`,
+    digest: () => `${header}${ident.join("")}`,
+    replacement: () => `[docker] ${lines.length} images (${totalDisplay})`,
+  });
 }
 
 // RTK: cloud/container.rs::format_compose_ps — tab-separated
 // "Name\tImage\tStatus\tPorts" (headerless --format output). Shortens image to
-// its last path segment, drops empty port brackets, truncates past CAP_LIST.
-function formatComposePs(raw: string): string {
+// its last path segment, drops empty port brackets. Over budget it ladders to a
+// name/status digest then a count.
+function formatComposePs(raw: string): LadderResult {
   const lines = raw.split("\n").filter((l) => l.trim() !== "");
   if (lines.length === 0) {
-    return "[compose] 0 services";
+    return { text: "[compose] 0 services" };
   }
 
-  let result = `[compose] ${lines.length} services:\n`;
-  const formatted = lines
-    .map((line) => {
-      const parts = line.split("\t");
-      if (parts.length < 4) {
-        return null;
-      }
-      const name = parts[0]!;
-      const image = parts[1]!;
-      const status = parts[2]!;
-      const ports = parts[3]!;
-      const imageParts = image.split("/");
-      const shortImage = imageParts[imageParts.length - 1] || image;
-      let portStr = "";
-      if (ports.trim() !== "") {
-        const compact = compactPorts(ports.trim());
-        portStr = compact === "-" ? "" : ` [${compact}]`;
-      }
-      return `  ${name} (${shortImage}) ${status}${portStr}`;
-    })
-    .filter((l): l is string => l !== null);
+  const rich: string[] = [];
+  const ident: string[] = [];
+  for (const line of lines) {
+    const parts = line.split("\t");
+    if (parts.length < 4) {
+      continue;
+    }
+    const name = parts[0]!;
+    const image = parts[1]!;
+    const status = parts[2]!;
+    const ports = parts[3]!;
+    const imageParts = image.split("/");
+    const shortImage = imageParts[imageParts.length - 1] || image;
+    let portStr = "";
+    if (ports.trim() !== "") {
+      const compact = compactPorts(ports.trim());
+      portStr = compact === "-" ? "" : ` [${compact}]`;
+    }
+    rich.push(`  ${name} (${shortImage}) ${status}${portStr}`);
+    ident.push(`  ${name} ${status}`);
+  }
 
-  for (const line of formatted.slice(0, CAP_LIST)) {
-    result += `${line}\n`;
-  }
-  if (formatted.length > CAP_LIST) {
-    result += `  … +${formatted.length - CAP_LIST} more\n`;
-  }
-  return result.replace(/\s+$/, "");
+  const header = `[compose] ${rich.length} services:`;
+  const join = (rows: string[]): string => `${header}\n${rows.join("\n")}`.replace(/\s+$/, "");
+  return overBudgetLadder({
+    full: join(rich),
+    digest: () => join(ident),
+    replacement: () => `[compose] ${rich.length} services`,
+  });
 }
 
 // RTK: cloud/container.rs::format_compose_build — emits the
@@ -210,7 +230,8 @@ function formatComposeBuild(raw: string): string {
   }
   if (result === "") {
     const buildingLine = raw.split("\n").find((l) => l.includes("Building"));
-    result += buildingLine !== undefined ? `[compose] ${buildingLine.trim()}\n` : "[compose] Build:\n";
+    result +=
+      buildingLine !== undefined ? `[compose] ${buildingLine.trim()}\n` : "[compose] Build:\n";
   }
 
   const services: string[] = [];
@@ -243,11 +264,13 @@ function formatComposeBuild(raw: string): string {
 
 // RTK: cloud/container.rs::format_kubectl_pods — parses `kubectl get pods -o
 // json`. Counts Running/Pending/Failed and total restarts, surfaces non-Running
-// pods (incl. CrashLoop/Error waiting reasons) under "[warn] Issues:".
-function formatKubectlPods(json: unknown): string {
+// pods (incl. CrashLoop/Error waiting reasons) under "[warn] Issues:". The issues
+// list is pure evidence (no decoration to drop), so it has no step-1 digest: over
+// budget it falls straight to a count replacement (decision 2 + step-2).
+function formatKubectlPods(json: unknown): LadderResult {
   const items = (json as { items?: unknown }).items;
   if (!Array.isArray(items) || items.length === 0) {
-    return "No pods found\n";
+    return { text: "No pods found\n" };
   }
 
   let running = 0;
@@ -279,7 +302,10 @@ function formatKubectlPods(json: unknown): string {
     } else if (Array.isArray(containers)) {
       for (const c of containers) {
         const reason = c.state?.waiting?.reason;
-        if (typeof reason === "string" && (reason.includes("CrashLoop") || reason.includes("Error"))) {
+        if (
+          typeof reason === "string" &&
+          (reason.includes("CrashLoop") || reason.includes("Error"))
+        ) {
           failed += 1;
           issues.push(`${ns}/${name} ${reason}`);
         }
@@ -301,30 +327,29 @@ function formatKubectlPods(json: unknown): string {
     parts.push(`${restartsTotal} restarts`);
   }
 
-  let out = `${items.length} pods: ${parts.join(", ")}\n`;
-  if (issues.length > 0) {
-    out += "[warn] Issues:\n";
-    for (const issue of issues.slice(0, CAP_WARNINGS)) {
-      out += `  ${issue}\n`;
-    }
-    if (issues.length > CAP_WARNINGS) {
-      out += `  … +${issues.length - CAP_WARNINGS} more`;
-    }
+  const summary = `${items.length} pods: ${parts.join(", ")}\n`;
+  if (issues.length === 0) {
+    return { text: summary };
   }
-  return out;
+
+  return overBudgetLadder({
+    full: `${summary}[warn] Issues:\n${issues.map((issue) => `  ${issue}\n`).join("")}`,
+    replacement: () => `${summary}[warn] ${issues.length} issues\n`,
+  });
 }
 
 // RTK: cloud/container.rs::format_kubectl_services — parses `kubectl get
-// services -o json`. One "  ns/name TYPE [ports]" line each; ports render as
-// "port" or "port→target", truncated past CAP_LIST.
-function formatKubectlServices(json: unknown): string {
+// services -o json`. One "  ns/name TYPE [ports]" line each. Over budget: digest
+// drops the TYPE/ports decoration (keeps every ns/name), then a count.
+function formatKubectlServices(json: unknown): LadderResult {
   const items = (json as { items?: unknown }).items;
   if (!Array.isArray(items) || items.length === 0) {
-    return "No services found\n";
+    return { text: "No services found\n" };
   }
 
-  let out = `${items.length} services:\n`;
-  const allLines = (items as Record<string, any>[]).map((svc) => {
+  const rich: string[] = [];
+  const ident: string[] = [];
+  for (const svc of items as Record<string, any>[]) {
     const ns = svc.metadata?.namespace ?? "-";
     const name = svc.metadata?.name ?? "-";
     const svcType = svc.spec?.type ?? "-";
@@ -343,17 +368,17 @@ function formatKubectlServices(json: unknown): string {
           return port === target ? `${port}` : `${port}→${target}`;
         })
       : [];
-    return `  ${ns}/${name} ${svcType} [${ports.join(",")}]`;
-  });
+    rich.push(`  ${ns}/${name} ${svcType} [${ports.join(",")}]`);
+    ident.push(`  ${ns}/${name}`);
+  }
 
-  for (const line of allLines.slice(0, CAP_LIST)) {
-    out += `${line}\n`;
-  }
-  if (allLines.length > CAP_LIST) {
-    out += `  … +${allLines.length - CAP_LIST} more`;
-    out += "\n";
-  }
-  return out;
+  const header = `${rich.length} services:`;
+  const join = (rows: string[]): string => `${header}\n${rows.join("\n")}\n`;
+  return overBudgetLadder({
+    full: join(rich),
+    digest: () => join(ident),
+    replacement: () => `${rich.length} services\n`,
+  });
 }
 
 // RTK: cloud/container.rs::format_compose_logs / docker_logs / kubectl_logs —
@@ -398,8 +423,7 @@ function requestsRawOutput(args: string[]): boolean {
 // expects (the migration harness bypasses execute(), so only these construction
 // helpers — and their unit tests — guard the real-CLI command shape).
 const DOCKER_PS_FORMAT = "{{.ID}}\t{{.Names}}\t{{.Status}}\t{{.Image}}\t{{.Ports}}";
-const DOCKER_PS_ALL_FORMAT =
-  "{{.State}}\t{{.ID}}\t{{.Names}}\t{{.Status}}\t{{.Image}}\t{{.Ports}}";
+const DOCKER_PS_ALL_FORMAT = "{{.State}}\t{{.ID}}\t{{.Names}}\t{{.Status}}\t{{.Image}}\t{{.Ports}}";
 const DOCKER_IMAGES_FORMAT = "{{.Repository}}:{{.Tag}}\t{{.Size}}";
 const DOCKER_COMPOSE_PS_FORMAT = "{{.Name}}\t{{.Image}}\t{{.Status}}\t{{.Ports}}";
 
@@ -534,8 +558,9 @@ function rewriteCommand(command: ParsedCommand, args: string[]): ParsedCommand {
 // reformats the captured stdout instead of re-executing with `--format`/`-o
 // json`, so the docker ps/images branches assume tab-separated `--format`
 // stdout and the kubectl branches assume `-o json` stdout, matching how RTK
-// invokes the child internally.
-function formatDocker(args: string[], raw: string): string {
+// invokes the child internally. Returns a LadderResult so a declared omission
+// reaches makeFilteredResult; passthrough/log/build paths carry no omission.
+function formatDocker(args: string[], raw: string): LadderResult {
   const sub = args[0];
 
   if (sub === "compose") {
@@ -544,12 +569,12 @@ function formatDocker(args: string[], raw: string): string {
       return formatComposePs(raw);
     }
     if (action === "logs") {
-      return formatComposeLogs(raw);
+      return { text: formatComposeLogs(raw) };
     }
     if (action === "build") {
-      return formatComposeBuild(raw);
+      return { text: formatComposeBuild(raw) };
     }
-    return raw;
+    return { text: raw };
   }
 
   if (sub === "ps") {
@@ -567,10 +592,10 @@ function formatDocker(args: string[], raw: string): string {
     // Identify the container the same way buildDockerArgs does so the header
     // label matches the stream actually fetched (skip value-flag arguments).
     const container = firstLogsOperand(args.slice(1), DOCKER_LOGS_VALUE_FLAGS) ?? "";
-    return formatDockerLogs(container, raw);
+    return { text: formatDockerLogs(container, raw) };
   }
 
-  return raw;
+  return { text: raw };
 }
 
 function parseKubectlJson(raw: string): unknown | null {
@@ -581,7 +606,7 @@ function parseKubectlJson(raw: string): unknown | null {
   }
 }
 
-function formatKubectl(args: string[], raw: string): string {
+function formatKubectl(args: string[], raw: string): LadderResult {
   // RTK: kubectl get <pods|services> dispatch via kubectl_get_target — the
   // resource is the FIRST token after `get` (positional), rest is everything
   // after it. Mirrors buildKubectlArgs so execute() and filter() agree.
@@ -592,22 +617,22 @@ function formatKubectl(args: string[], raw: string): string {
     if (resource !== undefined && !resource.startsWith("-") && !requestsRawOutput(rest)) {
       if (resource === "po" || resource === "pod" || resource === "pods") {
         const json = parseKubectlJson(raw);
-        return json === null ? raw : formatKubectlPods(json);
+        return json === null ? { text: raw } : formatKubectlPods(json);
       }
       if (resource === "svc" || resource === "service" || resource === "services") {
         const json = parseKubectlJson(raw);
-        return json === null ? raw : formatKubectlServices(json);
+        return json === null ? { text: raw } : formatKubectlServices(json);
       }
     }
-    return raw;
+    return { text: raw };
   }
 
   if (args[0] === "logs") {
     const pod = args.slice(1).find((a) => !a.startsWith("-")) ?? "";
-    return formatKubectlLogs(pod, raw);
+    return { text: formatKubectlLogs(pod, raw) };
   }
 
-  return raw;
+  return { text: raw };
 }
 
 function matchesDocker(command: ParsedCommand): boolean {
@@ -636,7 +661,8 @@ export const dockerHandler: CommandHandler = {
     if (raw.exitCode !== 0) {
       return makeFilteredResult(this.name, raw, rawText(raw), options);
     }
-    return makeFilteredResult(this.name, raw, formatDocker(command.args, raw.stdout), options);
+    const { text, omission } = formatDocker(command.args, raw.stdout);
+    return makeFilteredResult(this.name, raw, text, options, undefined, omission);
   },
 };
 
@@ -656,6 +682,7 @@ export const kubectlHandler: CommandHandler = {
     if (raw.exitCode !== 0) {
       return makeFilteredResult(this.name, raw, rawText(raw), options);
     }
-    return makeFilteredResult(this.name, raw, formatKubectl(command.args, raw.stdout), options);
+    const { text, omission } = formatKubectl(command.args, raw.stdout);
+    return makeFilteredResult(this.name, raw, text, options, undefined, omission);
   },
 };

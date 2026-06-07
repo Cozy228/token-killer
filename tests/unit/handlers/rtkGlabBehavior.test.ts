@@ -60,14 +60,10 @@ describe("RTK glab behavior", () => {
     expect(result.output).not.toContain("[]");
   });
 
-  // ADR 0001 divergence: RTK caps the listing at CAP_LIST (20) with a "  … +N more"
-  // marker. tg's glab handler is NOT ladder-converted, so that marker is an
-  // UNDECLARED omission: the ADR 0001 safety net rejects any handler output carrying
-  // it and fails open to RAW (the opaque JSON) — an over-cap MR list would pass
-  // through unfiltered. The supported tg path is the lossless one: at/within the cap
-  // (<= 20) tg reshapes the JSON into the compact "Merge Requests\n  [open] !iid ..."
+  // ADR 0001 decision 2: RTK's CAP_LIST (20) + "  … +N more" cap is REMOVED. Within
+  // budget tk reshapes the JSON into the compact "Merge Requests\n  [open] !iid ..."
   // view and lists EVERY MR with NO fake overflow marker.
-  test("reshapes an MR list up to the cap with no fake overflow marker", async () => {
+  test("reshapes an MR list in full with no fake overflow marker", async () => {
     const mrs = Array.from({ length: 20 }, (_, i) => ({
       iid: i + 1,
       title: `mr ${i + 1}`,
@@ -76,7 +72,7 @@ describe("RTK glab behavior", () => {
     }));
     const result = await filterRtkOutput(["glab", "mr", "list"], JSON.stringify(mrs));
 
-    // 20 MRs == cap: header present, first and last MR shown, no fake marker.
+    // 20 MRs: header present, first and last MR shown, no fake marker.
     expect(result.output).toContain("Merge Requests");
     expect(result.output).toContain("[open] !1 mr 1 (dev)");
     expect(result.output).toContain("[open] !20 mr 20 (dev)");
@@ -85,6 +81,35 @@ describe("RTK glab behavior", () => {
     expectRtkParity(result, {
       critical: ["Merge Requests", "[open] !20 mr 20 (dev)"],
       forbidden: [/(?:\.{3}|…)\s*\+\d+\s+more/],
+    });
+  });
+
+  // ADR 0001 decisions 2/5/7: over budget, the MR list ladders instead of reverting
+  // to raw JSON. The step-1 lossless digest keeps EVERY MR's !iid + title and drops
+  // the state-icon/author decoration, declaring `kind === "digest"`. No "… +N more".
+  test("MR list over budget ships the lossless !iid/title digest, not raw", async () => {
+    const mrs = Array.from({ length: 120 }, (_, i) => ({
+      iid: i + 1,
+      title: `Feature merge request with a longish descriptive title ${i}`,
+      state: "opened",
+      author: { username: `developer${i}` },
+    }));
+    const result = await filterRtkOutput(["glab", "mr", "list"], JSON.stringify(mrs));
+
+    expect(result.output).not.toContain('"iid":');
+    expect(result.qualityStatus).toBe("passed");
+    expect(result.omission?.kind).toBe("digest");
+    expect(result.output).toContain("Merge Requests");
+    expect(result.output).toContain(
+      "  !1 Feature merge request with a longish descriptive title 0",
+    );
+    expect(result.output).toContain(
+      "  !120 Feature merge request with a longish descriptive title 119",
+    );
+    expectRtkParity(result, {
+      critical: ["Merge Requests"],
+      forbidden: [/… \+\d+ more/, /\[open\]/, /developer0/],
+      minSavingsRatio: 0.4,
     });
   });
 });

@@ -116,17 +116,12 @@ describe("RTK docker behavior", () => {
     });
   });
 
-  // ADR 0001 divergence: RTK truncates the service list past CAP_LIST (20) and
-  // ships a "  … +N more" marker. tk's compose-ps digest does NOT declare that
-  // omission, so a "… +N more" line matches the undeclared-omission sniff (base.ts
-  // OMISSION_MARKERS) and the whole digest is reverted to the raw tab-separated
-  // dump (0% savings) — tk fails safe to full evidence rather than ship a foreign
-  // cap marker. So to exercise the genuinely-shipping compose-ps compression, drive
-  // exactly CAP_LIST (20) services with long registry-prefixed images: every
-  // service renders (none suppressed), there is NO "… +N more" trailer, and the
-  // per-row reformat (image shortened to its last path segment, ports compacted to
-  // `[port]`) still ships ~49% char savings.
-  test("compose ps truncates past CAP_LIST and reports the overflow count", async () => {
+  // ADR 0001 decision 2: RTK's CAP_LIST (20) + "… +N more" cap is REMOVED. A
+  // service list that fits the token budget ships IN FULL — every service renders,
+  // none suppressed, and NO "… +N more" marker is invented. The real compression
+  // is the per-row reformat (image shortened to its last path segment, ports
+  // compacted to `[port]`), ~49% char savings, fully lossless.
+  test("compose ps ships every service in full with no overflow marker", async () => {
     const rows = Array.from(
       { length: 20 },
       (_, i) =>
@@ -223,15 +218,10 @@ describe("RTK docker behavior", () => {
     });
   });
 
-  // ADR 0001 divergence: RTK makes the image inventory beat the dump by truncating
-  // past CAP_INVENTORY (50) with a "  … +N more" marker. tk's images digest does
-  // NOT declare that omission, so the "… +N more" line trips the undeclared-omission
-  // sniff (base.ts OMISSION_MARKERS) and the whole digest is reverted to the raw
-  // dump (0% savings) — tk fails safe to full evidence rather than ship a foreign
-  // cap marker. So the genuinely-shipping images path is the size-summing header +
-  // the drop of the verbose IMAGE ID / CREATED columns a real `docker images`
-  // capture carries (the digest keeps only col 0 = repo:tag and col 1 = size).
-  // Stay UNDER CAP_INVENTORY so nothing is suppressed: every image is listed, the
+  // ADR 0001 decision 2: RTK's CAP_INVENTORY (50) + "… +N more" cap is REMOVED.
+  // The genuinely-shipping images path is the size-summing header + the drop of the
+  // verbose IMAGE ID / CREATED columns a real `docker images` capture carries (the
+  // full line keeps col 0 = repo:tag and col 1 = size). Every image is listed, the
   // total is summed into the header, and NO "… +N more" marker is invented.
   test("docker images sums sizes into a header and lists each image", async () => {
     // Realistic `docker images` rows: repo:tag, size, IMAGE ID, CREATED. The digest
@@ -260,6 +250,36 @@ describe("RTK docker behavior", () => {
       // verbose id/created columns are dropped from every row.
       forbidden: [/… \+\d+ more/, /sha256:/, /weeks ago/, /days ago/],
       minTokenSavingsRatio: 0.4,
+    });
+  });
+
+  // ADR 0001 decisions 2/5/7: over budget, `docker ps` runs the two-step ladder
+  // instead of reverting to raw (the old revert-to-raw bug). The step-1 lossless
+  // digest keeps EVERY container's identity (name + status) and drops the
+  // id/image/ports decoration, declaring `omission.kind === "digest"`. No
+  // "… +N more" is ever emitted — the agent sees all 200 containers, compressed.
+  test("docker ps over budget ships the lossless name/status digest, not raw", async () => {
+    const rows = Array.from(
+      { length: 200 },
+      (_, i) =>
+        `id${i}xxxxxxxxxx\tcontainer-name-${i}\tUp 3 hours\tregistry.example.com/team/service:latest\t0.0.0.0:${8000 + i}->80/tcp`,
+    ).join("\n");
+
+    const result = await filterRtkOutput(["docker", "ps"], rows);
+
+    // Not reverted to the raw tab-separated dump.
+    expect(result.output).not.toContain("\t");
+    expect(result.qualityStatus).toBe("passed");
+    expect(result.omission?.kind).toBe("digest");
+    // Every container survives in the digest (first and 200th), identity-only.
+    expect(result.output).toContain("[docker] 200 containers:");
+    expect(result.output).toContain("  container-name-0 Up 3 hours");
+    expect(result.output).toContain("  container-name-199 Up 3 hours");
+    expectRtkParity(result, {
+      critical: ["[docker] 200 containers:"],
+      // No fake-complete cap marker, and the decoration columns are gone.
+      forbidden: [/… \+\d+ more/, /registry\.example\.com/, /\[8000\]/],
+      minSavingsRatio: 0.5,
     });
   });
 

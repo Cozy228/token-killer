@@ -208,20 +208,11 @@ describe("RTK aws behavior", () => {
     });
   });
 
-  // ADR 0001 divergence: RTK caps lists with a "… +N more items" marker. tg's AWS
-  // handler is NOT ladder-converted, so that marker is an UNDECLARED omission and
-  // the ADR 0001 safety net (outputOmitsContent) rejects any handler output that
-  // carries it, failing open to RAW. Two consequences:
-  //   1. `aws s3 ls` (plain text, only ever *truncates*, never reshapes) becomes a
-  //      pure verbatim passthrough — over its cap the truncated form is rejected and
-  //      reverts to the full raw listing; under its cap it was already identity. So
-  //      there is no "tg compressed it" path to assert for s3 ls.
-  //   2. The JSON list filters (EC2/Lambda/…) DO reshape, and within their cap they
-  //      emit the full compact listing with NO "… +N more" marker.
-  // We therefore assert the real, supported compression path: a 20-instance EC2
-  // listing (at the cap, so no overflow marker) is reshaped to one compact line per
-  // instance, every instance retained, and crucially NO fake "… +N more" marker.
-  test("compresses an EC2 listing to the cap with no fake '… +N more' marker", async () => {
+  // ADR 0001 decision 2: RTK's "… +N more items" cap is REMOVED. The JSON list
+  // filters reshape every item and, within budget, emit the full compact listing
+  // with NO overflow marker. A 20-instance EC2 listing is reshaped to one compact
+  // line per instance, every instance retained, and crucially NO fake "… +N more".
+  test("compresses an EC2 listing in full with no fake '… +N more' marker", async () => {
     const instances = [];
     for (let i = 0; i < 20; i += 1) {
       instances.push({
@@ -266,6 +257,44 @@ describe("RTK aws behavior", () => {
         /(?:\.{3}|…)\s*\+\d+\s+more/,
       ],
       minSavingsRatio: 0.3,
+    });
+  });
+
+  // ADR 0001 decisions 2/5/7: over budget, EC2 ladders instead of reverting to raw.
+  // The step-1 lossless digest keeps EVERY instance's id/state/name and drops the
+  // network decoration (privateIp/pub/vpc/subnet/sg), declaring `kind === "digest"`.
+  // No "… +N more" — all 300 instances survive, compressed.
+  test("EC2 over budget ships the lossless id/state/name digest, not raw", async () => {
+    // 150 instances: the full per-line listing exceeds the 2000-token budget (so the
+    // ladder engages) but the id/state/name digest stays under it (so digest ships,
+    // not the count-only step-2 replacement).
+    const instances = Array.from({ length: 150 }, (_, i) => ({
+      InstanceId: `i-${String(i).padStart(8, "0")}`,
+      State: { Code: 16, Name: "running" },
+      InstanceType: "t3.micro",
+      PrivateIpAddress: `10.0.${Math.floor(i / 256)}.${i % 256}`,
+      PublicIpAddress: `54.1.2.${i % 256}`,
+      VpcId: "vpc-0123456789",
+      SubnetId: "subnet-0123456789",
+      SecurityGroups: [{ GroupId: "sg-0123456789", GroupName: "web" }],
+      Tags: [{ Key: "Name", Value: `service-node-${i}` }],
+    }));
+
+    const result = await filterRtkOutput(
+      ["aws", "ec2", "describe-instances"],
+      JSON.stringify({ Reservations: [{ ReservationId: "r-001", Instances: instances }] }),
+    );
+
+    expect(result.qualityStatus).toBe("passed");
+    expect(result.omission?.kind).toBe("digest");
+    expect(result.output).toContain("EC2: 150 instances");
+    expect(result.output).toContain("  i-00000000 running (service-node-0)");
+    expect(result.output).toContain("  i-00000149 running (service-node-149)");
+    expectRtkParity(result, {
+      critical: ["EC2: 150 instances"],
+      // No fake-complete marker; network decoration dropped in the digest.
+      forbidden: [/… \+\d+ more/, /pub:/, /vpc:/, /sg:\[/],
+      minSavingsRatio: 0.5,
     });
   });
 });
