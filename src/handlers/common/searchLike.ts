@@ -1,5 +1,5 @@
 import { executeCommand } from "../../executor.js";
-import type { CommandHandler, ParsedCommand } from "../../types.js";
+import type { CommandHandler, OmissionDeclaration, ParsedCommand } from "../../types.js";
 import { makeFilteredResult } from "../base.js";
 import {
   type GrepGroupOptions,
@@ -74,10 +74,25 @@ export function buildGrepArgs(program: string, userArgs: string[]): string[] {
   // command, do NOT inject -n/-H — otherwise the "passthrough" output carries
   // line numbers the raw invocation never produced.
   if (parseLevel(userArgs, { fallback: "balanced" }) === "none") return cleaned;
-  // Duplicate -n/-H/--no-heading are harmless to grep/rg, so prepend unconditionally.
-  if (program === "grep") return ["-n", "-H", ...cleaned];
-  if (program === "rg") return ["-n", "-H", "--no-heading", ...cleaned];
+  // Force the parseable `file:line:content` shape, but only inject flags the user
+  // didn't already pass — re-prepending produces the cosmetic `-n -H -n -H` doubling
+  // seen in history when an agent already typed them. (Duplicates are harmless to
+  // grep/rg; this just keeps the executed command clean.)
+  if (program === "grep") return [...missingFlags(cleaned, ["-n", "-H"]), ...cleaned];
+  if (program === "rg") return [...missingFlags(cleaned, ["-n", "-H", "--no-heading"]), ...cleaned];
   return cleaned;
+}
+
+// Long-form equivalents of the shape flags we inject — if the user already asked
+// for line numbers / filenames by their long name, don't add the short one too.
+const FLAG_ALIASES: Record<string, readonly string[]> = {
+  "-n": ["-n", "--line-number"],
+  "-H": ["-H", "--with-filename"],
+  "--no-heading": ["--no-heading"],
+};
+
+function missingFlags(args: string[], wanted: readonly string[]): string[] {
+  return wanted.filter((flag) => !FLAG_ALIASES[flag]!.some((alias) => args.includes(alias)));
 }
 
 // Map the shared --level dial onto the grouping caps. `none` is handled before
@@ -145,8 +160,21 @@ export const searchLikeHandler: CommandHandler = {
       ...grepOptionsForLevel(level),
       recoveryHint,
     });
-    const output = grouped ?? `${raw.stdout.trimEnd()}\n`;
+    if (grouped === null) {
+      return makeFilteredResult(this.name, raw, `${raw.stdout.trimEnd()}\n`, options);
+    }
 
-    return makeFilteredResult(this.name, raw, output, options);
+    // ADR 0001 decision 5: declare the reduction so the gate trusts it instead of
+    // sniffing the grouped output's `[+N more]` marker as an UNDECLARED omission and
+    // reverting the whole group back to raw — the search-like 0%-savings bug, where
+    // a large `grep -r` shipped full raw despite a 200-line digest being ready.
+    //
+    // Declared `digest` (not `replacement`), mirroring read.ts's line-window choice:
+    // a search's recovery channel is RE-EXECUTION (`tk --raw …`, named in the hint),
+    // always available, not a raw snapshot. `replacement` would fail open to the full
+    // raw search under --no-save-raw — reintroducing the exact bug this fixes — so
+    // even a capped group declares digest; the `[+N more]` count keeps it honest.
+    const omission: OmissionDeclaration = { kind: "digest" };
+    return makeFilteredResult(this.name, raw, grouped, options, undefined, omission);
   },
 };

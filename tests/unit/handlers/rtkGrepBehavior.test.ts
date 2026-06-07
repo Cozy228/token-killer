@@ -34,6 +34,41 @@ describe("RTK grep command construction", () => {
     expect(buildGrepArgs("grep", ["-l", "import", "src/"])).toEqual(["-l", "import", "src/"]);
   });
 
+  // An agent that already typed -n/-H (or their long forms) must not get them
+  // re-prepended — that produced the cosmetic `grep -n -H -n -H -r …` doubling seen
+  // in dogfood history. Only the MISSING shape flags are injected.
+  test("does not double -n/-H the user already passed", () => {
+    expect(buildGrepArgs("grep", ["-n", "-H", "-r", "the", "docs/"])).toEqual([
+      "-n",
+      "-H",
+      "-r",
+      "the",
+      "docs/",
+    ]);
+    expect(buildGrepArgs("grep", ["-n", "-r", "the", "docs/"])).toEqual([
+      "-H",
+      "-n",
+      "-r",
+      "the",
+      "docs/",
+    ]);
+    expect(buildGrepArgs("rg", ["-n", "-H", "--no-heading", "export", "src/"])).toEqual([
+      "-n",
+      "-H",
+      "--no-heading",
+      "export",
+      "src/",
+    ]);
+    // Long-form aliases also suppress the short-flag injection.
+    expect(buildGrepArgs("grep", ["--line-number", "--with-filename", "-r", "x", "src/"])).toEqual([
+      "--line-number",
+      "--with-filename",
+      "-r",
+      "x",
+      "src/",
+    ]);
+  });
+
   // Piped to a non-TTY, rg OMITS line numbers by default, so its raw output is
   // unparseable and falls back to passthrough (0% saved). Forcing -n -H
   // --no-heading restores `file:line:content` — parity with RTK's real behavior
@@ -174,10 +209,10 @@ describe("RTK grep behavior", () => {
 
   // ADR 0001 divergence: RTK always caps each file at grep_max_per_file (25) and
   // appends a `[+N more]` overflow marker. tk only caps OVER budget; below budget
-  // it groups by file losslessly with NO `[+N more]` (an over-cap input instead
-  // reverts to raw, since the cap marker is an undeclared omission — see the note
-  // on the balanced level below). So this exercises the lossless grouped path:
-  // every match is kept, grouped by file, and no overflow marker is invented.
+  // it groups by file losslessly with NO `[+N more]`. (Over budget it now ships the
+  // capped digest — searchLike declares the omission — see the over-budget test
+  // below.) So this exercises the lossless grouped path: every match is kept,
+  // grouped by file, and no overflow marker is invented.
   test("groups default matches by file losslessly under the cap", async () => {
     const result = await filterRtkOutput(["grep", "-rn", "submitOrder", "src"], underCapMatches());
 
@@ -235,11 +270,8 @@ describe("RTK grep --level dial + lossless dedup", () => {
     expect(result.output).not.toContain("# capped");
   });
 
-  // ADR 0001 divergence: balanced is the default level. RTK caps each file at 25
-  // and ships a `[+42 more]` + `# capped` recovery hint. tk caps only OVER budget,
-  // and an over-cap grep cannot ship the cap marker (it is an undeclared omission
-  // that reverts the whole listing to raw), so below budget balanced groups by
-  // file losslessly with no cap marker and no recovery hint.
+  // balanced is the default level. Under the per-file / global cap, balanced groups
+  // by file losslessly — no cap marker, no recovery hint.
   test("balanced groups by file losslessly under the cap (no cap marker)", async () => {
     const stdout = `${Array.from(
       { length: 18 },
@@ -255,6 +287,29 @@ describe("RTK grep --level dial + lossless dedup", () => {
     expect(result.output).toContain("src/order/submit.ts:18:");
     expect(result.output).not.toMatch(/\[\+\d+ more\]/);
     expect(result.output).not.toContain("# capped");
+  });
+
+  // Regression — the search-like 0%-savings bug. An OVER-budget balanced grep caps
+  // matches and emits a `[+N more]` marker. That marker reads as an omission, so
+  // before searchLike declared the reduction the gate sniffed it as UNDECLARED and
+  // reverted the whole listing back to raw (0% saved). Now searchLike declares a
+  // `digest`, so the capped group SHIPS COMPRESSED even under saveRaw:false (the
+  // harness default) — recovery is re-execution (`tk --raw`), not a raw snapshot.
+  test("over-budget balanced ships the capped digest, never reverts to raw", async () => {
+    // 30 distinct-content matches in one file > the 25 per-file cap → `[+5 more]`.
+    const stdout = `${Array.from(
+      { length: 30 },
+      (_, i) =>
+        `src/order/submit.ts:${i + 1}:    const handler${i} = submitOrder(uniquePayload${i});`,
+    ).join("\n")}\n`;
+    const result = await filterRtkOutput(["grep", "-n", "-H", "submitOrder", "src"], stdout);
+
+    expect(result.output).toMatch(/\[\+\d+ more\]/);
+    expect(result.output).toContain("# capped");
+    // The whole point: it did NOT fail open to the full raw listing.
+    expect(result.output.trim()).not.toBe(stdout.trim());
+    expect(result.output.length).toBeLessThan(stdout.length);
+    expect(result.qualityStatus).toBe("passed");
   });
 
   // --level aggressive: per-file count + one sample line only.
