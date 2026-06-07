@@ -22,6 +22,7 @@ import {
   planClaudeHookInstall,
   uninstallClaudeHook,
 } from "../hook/claudeInstall.js";
+import { guidanceFilePath, guidanceLoader, unwriteGuidance, writeGuidance } from "./guidance.js";
 
 // Unified `tk init` (goal Phase 3, ADR 0002 §5). Auto-detects the host and wires
 // the highest available delivery tier: Copilot CLI → hook seam (Track B), else
@@ -29,6 +30,21 @@ import {
 
 function out(line: string): void {
   process.stdout.write(`${line}\n`);
+}
+
+// Drop the tk usage guidance (TK.md) and wire it into the host's auto-loaded
+// instructions so the agent reads it. Hosts without a guidance home are a no-op.
+function writeGuidanceStep(host: Host, dryRun: boolean): void {
+  if (dryRun) {
+    const file = guidanceFilePath(host);
+    const loader = guidanceLoader(host);
+    if (file) out(`[dry-run] would write usage guidance: ${file}`);
+    if (loader) out(`[dry-run] would reference it from: ${loader.path}`);
+    return;
+  }
+  const written = writeGuidance(host);
+  if (written.guidance) out(`Wrote usage guidance: ${written.guidance}`);
+  if (written.loader) out(`Referenced it from: ${written.loader}`);
 }
 
 type InitArgs = {
@@ -96,6 +112,8 @@ function showStatus(): number {
   runShim(["status"]);
   const target = injectionTarget(host);
   out(`  injection file: ${existsSync(target) ? target : "absent"}`);
+  const guidance = guidanceFilePath(host);
+  out(`  usage guidance: ${guidance && existsSync(guidance) ? guidance : "absent"}`);
   return 0;
 }
 
@@ -122,6 +140,12 @@ function uninstall(opts: InitArgs): number {
   unwriteInjection(injectionTarget(host));
   if (opts.project) unwriteInjection(projectInjectionPath(process.cwd()));
   out(`instruction injection: removed`);
+  // Remove the usage guidance (TK.md) + its loader reference for any host that
+  // has one. detectHost may differ from the install-time host, so clear both.
+  for (const guidanceHost of ["claude-code", "copilot-cli"] as const) {
+    unwriteGuidance(guidanceHost);
+  }
+  out(`usage guidance: removed`);
   return 0;
 }
 
@@ -162,6 +186,7 @@ export function runInit(argv: string[]): number {
         out(`  - ${plan.previousCommand}`);
       }
       out(`  + ${plan.command}`);
+      writeGuidanceStep(host, true);
       out(`Active tier: hook`);
       out(`Ensure tk is on PATH for Claude Code's Bash (e.g. pnpm build && npm link).`);
       return 0;
@@ -170,6 +195,7 @@ export function runInit(argv: string[]): number {
     out(
       `${plan.action === "unchanged" ? "Up to date" : `${plan.action}d`} claude-code settings hook: ${plan.path}`,
     );
+    writeGuidanceStep(host, false);
     out(`Active tier: hook`);
     out(`Ensure tk is on PATH for Claude Code's Bash (e.g. pnpm build && npm link).`);
     return 0;
@@ -183,6 +209,7 @@ export function runInit(argv: string[]): number {
     if (opts.dryRun) {
       const plan = planCopilotHookConfig(loc);
       out(`[dry-run] would ${plan.action} copilot hook config: ${plan.path}`);
+      writeGuidanceStep(host, true);
       out(`Active tier: hook`);
       return 0;
     }
@@ -190,6 +217,7 @@ export function runInit(argv: string[]): number {
     out(
       `${plan.action === "unchanged" ? "Up to date" : "Wrote"} copilot hook config: ${plan.path}`,
     );
+    writeGuidanceStep(host, false);
     out(`Active tier: hook`);
     return 0;
   }

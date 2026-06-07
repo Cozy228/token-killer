@@ -161,13 +161,14 @@ describe("tk init", () => {
     expect(result.stdout).toContain("Active tier: hook");
   });
 
-  test("claude-code -g is a no-op (same as copilot): hook only, no TK.md", () => {
+  test("claude-code writes the usage guide (TK.md) + wires @TK.md into CLAUDE.md; -g is a no-op", () => {
     const result = runTg(["init", "--host", "claude-code", "-g"]);
     expect(result.status).toBe(0);
     expect(result.stdout).toContain("Active tier: hook");
-    // -g writes no extra instruction files for any host
-    expect(existsSync(join(home, ".claude", "TK.md"))).toBe(false);
-    expect(existsSync(join(home, ".claude", "CLAUDE.md"))).toBe(false);
+    // tk now drops a usage guide and references it from the auto-loaded CLAUDE.md
+    // so the agent reads it. -g (stray rtk muscle memory) changes nothing.
+    expect(existsSync(join(home, ".claude", "TK.md"))).toBe(true);
+    expect(readFileSync(join(home, ".claude", "CLAUDE.md"), "utf8")).toContain("@TK.md");
   });
 
   test("claude-code --dry-run writes nothing", () => {
@@ -175,15 +176,18 @@ describe("tk init", () => {
     expect(result.status).toBe(0);
     expect(result.stdout).toContain("[dry-run]");
     expect(existsSync(join(home, ".claude", "settings.json"))).toBe(false);
+    expect(existsSync(join(home, ".claude", "TK.md"))).toBe(false);
   });
 
-  test("claude-code --uninstall removes the tk hook entry", () => {
+  test("claude-code --uninstall removes the tk hook entry and the usage guide", () => {
     runTg(["init", "--host", "claude-code"]);
     expect(existsSync(join(home, ".claude", "settings.json"))).toBe(true);
+    expect(existsSync(join(home, ".claude", "TK.md"))).toBe(true);
     const result = runTg(["init", "--uninstall"]);
     expect(result.status).toBe(0);
     const parsed = JSON.parse(readFileSync(join(home, ".claude", "settings.json"), "utf8"));
     expect(parsed.hooks.PreToolUse).toEqual([]);
+    expect(existsSync(join(home, ".claude", "TK.md"))).toBe(false);
   });
 
   test("--show reports the detected host and shim status", () => {
