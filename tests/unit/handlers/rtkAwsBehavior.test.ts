@@ -1,6 +1,6 @@
 import { describe, expect, test } from "vitest";
 
-import { expectRtkParity, filterRtkOutput } from "../../../helpers/rtkCommandHarness.js";
+import { expectRtkParity, filterRtkOutput } from "../../helpers/rtkCommandHarness.js";
 
 // Faithful parity tests for the AWS handler (src/handlers/cloud/aws.ts).
 // Source of truth: rtk/src/cmds/cloud/aws_cmd.rs — the filter_* functions and their
@@ -208,22 +208,64 @@ describe("RTK aws behavior", () => {
     });
   });
 
-  // RTK: aws_cmd.rs::filter_s3_ls / test_filter_s3_ls_overflow — plain-text output,
-  // kept verbatim until CAP_LIST + 10 = 30 lines, then "… +N more items".
-  test("s3 ls overflows past 30 lines with a '… +N more items' marker", async () => {
-    const lines: string[] = [];
-    for (let i = 1; i <= 50; i += 1) {
-      lines.push(
-        `2024-01-0${(i % 9) + 1} 12:00:00     1024 object-with-a-fairly-long-name-${i}.txt`,
-      );
+  // ADR 0001 divergence: RTK caps lists with a "… +N more items" marker. tg's AWS
+  // handler is NOT ladder-converted, so that marker is an UNDECLARED omission and
+  // the ADR 0001 safety net (outputOmitsContent) rejects any handler output that
+  // carries it, failing open to RAW. Two consequences:
+  //   1. `aws s3 ls` (plain text, only ever *truncates*, never reshapes) becomes a
+  //      pure verbatim passthrough — over its cap the truncated form is rejected and
+  //      reverts to the full raw listing; under its cap it was already identity. So
+  //      there is no "tg compressed it" path to assert for s3 ls.
+  //   2. The JSON list filters (EC2/Lambda/…) DO reshape, and within their cap they
+  //      emit the full compact listing with NO "… +N more" marker.
+  // We therefore assert the real, supported compression path: a 20-instance EC2
+  // listing (at the cap, so no overflow marker) is reshaped to one compact line per
+  // instance, every instance retained, and crucially NO fake "… +N more" marker.
+  test("compresses an EC2 listing to the cap with no fake '… +N more' marker", async () => {
+    const instances = [];
+    for (let i = 0; i < 20; i += 1) {
+      instances.push({
+        InstanceId: `i-${String(i).padStart(6, "0")}`,
+        ImageId: "ami-0abcdef1234567890",
+        State: { Code: 16, Name: "running" },
+        InstanceType: "t3.micro",
+        PrivateIpAddress: `10.0.1.${i}`,
+        PublicIpAddress: `54.1.2.${i}`,
+        VpcId: "vpc-001",
+        SubnetId: "subnet-001",
+        BlockDeviceMappings: [{ DeviceName: "/dev/xvda" }],
+        SecurityGroups: [{ GroupId: "sg-001", GroupName: "web" }],
+        Tags: [{ Key: "Name", Value: `node-${i}` }],
+      });
     }
-    const result = await filterRtkOutput(["aws", "s3", "ls"], `${lines.join("\n")}\n`);
+    const result = await filterRtkOutput(
+      ["aws", "ec2", "describe-instances"],
+      JSON.stringify(
+        {
+          Reservations: [{ ReservationId: "r-001", Instances: instances }],
+          ResponseMetadata: { RequestId: "req-ec2", HTTPStatusCode: 200 },
+        },
+        null,
+        2,
+      ),
+    );
+
+    // 20 instances == cap: every instance is shown (first and last), and there is
+    // NO fake overflow marker. tg never emits a "… +N more" omission marker.
+    expect(result.output).toContain("EC2: 20 instances");
+    expect(result.output).toContain("i-000000 running t3.micro");
+    expect(result.output).toContain("i-000019 running t3.micro");
+    expect(result.output).not.toMatch(/(?:\.{3}|…)\s*\+\d+\s+more/);
 
     expectRtkParity(result, {
-      critical: ["object-with-a-fairly-long-name-1.txt", "… +20 more items"],
+      critical: ["EC2: 20 instances", "i-000019 running t3.micro"],
+      forbidden: [
+        /ImageId/,
+        /BlockDeviceMappings/,
+        /ResponseMetadata/,
+        /(?:\.{3}|…)\s*\+\d+\s+more/,
+      ],
       minSavingsRatio: 0.3,
     });
-    // The 31st+ items must be dropped, only the overflow marker remains.
-    expect(result.output).not.toContain("object-with-a-fairly-long-name-50.txt");
   });
 });

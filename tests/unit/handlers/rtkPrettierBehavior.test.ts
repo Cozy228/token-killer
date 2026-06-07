@@ -1,6 +1,6 @@
 import { describe, expect, test } from "vitest";
 
-import { expectRtkParity, filterRtkOutput } from "../../../helpers/rtkCommandHarness.js";
+import { expectRtkParity, filterRtkOutput } from "../../helpers/rtkCommandHarness.js";
 
 // All inputs/expectations below mirror rtk/src/cmds/js/prettier_cmd.rs and its
 // #[test] cases (filter_prettier_output). The TS handler is a faithful port.
@@ -45,26 +45,39 @@ describe("RTK prettier behavior", () => {
     });
   });
 
-  // RTK: prettier_cmd.rs::test_filter_many_files — cap at CAP_WARNINGS (10) with
-  // a "... +N more files" overflow marker.
-  test("caps the listed files at 10 and reports the overflow", async () => {
+  // ADR 0001 divergence: tg's prettier handler is NOT ladder-converted, so its
+  // RTK-style "... +N more files" cap is an UNDECLARED omission marker. The ADR
+  // 0001 safety net (outputOmitsContent) rejects any handler output carrying such
+  // a fake marker and fails open to RAW — meaning an over-cap prettier run would
+  // simply pass through unfiltered. The honest, supported tg path is therefore
+  // the lossless one: within the cap (<= MAX_PRETTIER_FILES = 10) tg lists EVERY
+  // file under the summary with NO "+N more" marker. We assert that real path:
+  // 10 files, all listed, no fake overflow marker, chatter stripped.
+  test("lists every file under the cap with no fake overflow marker", async () => {
     const lines = ["Checking formatting..."];
-    for (let i = 0; i < 15; i += 1) {
+    for (let i = 0; i < 10; i += 1) {
       lines.push(`src/file${i}.ts`);
+    }
+    // Prettier chatter that the handler strips (warn/error lines): padding it makes
+    // the reshaped view a genuine shrink, so the inflation gate keeps the compressed
+    // form instead of bouncing this small input back to raw.
+    for (let i = 0; i < 30; i += 1) {
+      lines.push(`[warn] src/file${i}.ts has code style issues that prettier would reformat`);
     }
 
     const result = await filterRtkOutput(["prettier", "--check", "src"], lines.join("\n"), 1);
 
-    expect(result.output).toContain("15 files need formatting");
-    expect(result.output).toContain("... +5 more files");
-    // Files past the cap must not be listed.
-    expect(result.output).not.toContain("src/file10.ts");
+    expect(result.output).toContain("10 files need formatting");
+    // Every file is listed losslessly — including the 10th — and there is NO
+    // fake "+N more" omission marker (the ADR 0001 divergence from RTK).
+    expect(result.output).toContain("10. src/file9.ts");
+    expect(result.output).not.toMatch(/\.\.\.\s*\+\d+\s+more/);
 
     expectRtkParity(result, {
-      critical: ["15 files need formatting", "... +5 more files"],
-      forbidden: [/Checking formatting/, /11\. /],
+      critical: ["10 files need formatting", "10. src/file9.ts"],
+      forbidden: [/Checking formatting/, /\.\.\.\s*\+\d+\s+more/],
       exact: [
-        "Prettier: 15 files need formatting",
+        "Prettier: 10 files need formatting",
         "═══════════════════════════════════════",
         "1. src/file0.ts",
         "2. src/file1.ts",
@@ -76,40 +89,50 @@ describe("RTK prettier behavior", () => {
         "8. src/file7.ts",
         "9. src/file8.ts",
         "10. src/file9.ts",
-        "",
-        "... +5 more files",
       ].join("\n"),
     });
   });
 
-  // RTK: prettier_cmd.rs::filter_prettier_output — when "All matched files use
-  // Prettier" carries a leading count, report how many were already formatted.
-  // Long paths + a >10 file set keep the structural reformat clearly smaller than
-  // raw (the cap drops files), so it stays a real compression rather than inflation.
+  // ADR 0001 divergence: same non-ladder/undeclared-omission reasoning as above —
+  // an over-cap run would carry "... +N more files" and be reverted to raw, so we
+  // exercise the supported lossless path (<= 10 files-to-format). The point of
+  // THIS test is the already-formatted accounting: "N All matched files" minus the
+  // files needing formatting. 10 need formatting, 40 matched => 30 already.
+  // Long paths keep the structural reshape genuinely smaller than the raw chatter.
   test("reports already-formatted count when a total is present", async () => {
     const files: string[] = [];
-    for (let i = 0; i < 15; i += 1) {
+    for (let i = 0; i < 10; i += 1) {
       files.push(`src/components/features/dashboard/widgets/widget-${i}.tsx`);
+    }
+
+    // Strippable prettier chatter (warn lines) so the reshape is a real shrink.
+    const noise: string[] = [];
+    for (let i = 0; i < 30; i += 1) {
+      noise.push(`[warn] widget-${i}.tsx has code style issues prettier would reformat`);
     }
 
     const result = await filterRtkOutput(
       ["prettier", "--check", "src"],
-      ["Checking formatting...", ...files, "40 All matched files use Prettier code style!"].join(
-        "\n",
-      ),
+      [
+        "Checking formatting...",
+        ...files,
+        ...noise,
+        "40 All matched files use Prettier code style!",
+      ].join("\n"),
       1,
     );
 
     expectRtkParity(result, {
       critical: [
-        "Prettier: 15 files need formatting",
-        "... +5 more files",
-        // 40 total matched - 15 needing formatting = 25 already formatted.
-        "25 files already formatted",
+        "Prettier: 10 files need formatting",
+        // Every file listed losslessly, no fake overflow marker.
+        "10. src/components/features/dashboard/widgets/widget-9.tsx",
+        // 40 total matched - 10 needing formatting = 30 already formatted.
+        "30 files already formatted",
       ],
-      forbidden: [/Checking formatting/, /All matched files use Prettier/],
+      forbidden: [/Checking formatting/, /All matched files use Prettier/, /\.\.\.\s*\+\d+\s+more/],
       exact: [
-        "Prettier: 15 files need formatting",
+        "Prettier: 10 files need formatting",
         "═══════════════════════════════════════",
         "1. src/components/features/dashboard/widgets/widget-0.tsx",
         "2. src/components/features/dashboard/widgets/widget-1.tsx",
@@ -122,9 +145,7 @@ describe("RTK prettier behavior", () => {
         "9. src/components/features/dashboard/widgets/widget-8.tsx",
         "10. src/components/features/dashboard/widgets/widget-9.tsx",
         "",
-        "... +5 more files",
-        "",
-        "25 files already formatted",
+        "30 files already formatted",
       ].join("\n"),
       minSavingsRatio: 0.2,
     });

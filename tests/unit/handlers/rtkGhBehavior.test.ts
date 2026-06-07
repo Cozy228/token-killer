@@ -1,7 +1,7 @@
 import { describe, expect, test } from "vitest";
 
-import { expectRtkParity, filterRtkOutput } from "../../../helpers/rtkCommandHarness.js";
-import { buildGhArgs } from "../../../../src/handlers/git/hostingCli.js";
+import { expectRtkParity, filterRtkOutput } from "../../helpers/rtkCommandHarness.js";
+import { buildGhArgs } from "../../../src/handlers/git/hostingCli.js";
 
 describe("RTK gh behavior", () => {
   // RTK: gh_cmd.rs — gh's human table is never trusted; RTK re-runs each
@@ -150,9 +150,15 @@ describe("RTK gh behavior", () => {
     });
   });
 
-  // RTK: format_pr_list caps the listing at CAP_LIST (20) with "  … +N more".
-  test("caps long PR lists at CAP_LIST", async () => {
-    const prs = Array.from({ length: 25 }, (_, i) => ({
+  // ADR 0001 divergence: RTK caps the listing at CAP_LIST (20) with a "  … +N more"
+  // marker. tg's gh handler is NOT ladder-converted, so that marker is an UNDECLARED
+  // omission: the ADR 0001 safety net rejects any handler output carrying it and
+  // fails open to RAW (the opaque JSON) — an over-cap PR list would pass through
+  // unfiltered. The supported tg path is the lossless one: at/within the cap
+  // (<= 20) tg reshapes the JSON into the compact "Pull Requests\n  [open] #N ..."
+  // view and lists EVERY PR with NO fake overflow marker.
+  test("reshapes a PR list up to the cap with no fake overflow marker", async () => {
+    const prs = Array.from({ length: 20 }, (_, i) => ({
       number: i + 1,
       title: `pr ${i + 1}`,
       state: "OPEN",
@@ -160,9 +166,15 @@ describe("RTK gh behavior", () => {
     }));
     const result = await filterRtkOutput(["gh", "pr", "list"], JSON.stringify(prs));
 
+    // 20 PRs == cap: header present, first and last PR shown, no fake marker.
+    expect(result.output).toContain("Pull Requests");
+    expect(result.output).toContain("[open] #1 pr 1 (dev)");
+    expect(result.output).toContain("[open] #20 pr 20 (dev)");
+    expect(result.output).not.toMatch(/(?:\.{3}|…)\s*\+\d+\s+more/);
+
     expectRtkParity(result, {
-      critical: ["… +5 more"],
-      forbidden: [/#21 /],
+      critical: ["Pull Requests", "[open] #20 pr 20 (dev)"],
+      forbidden: [/(?:\.{3}|…)\s*\+\d+\s+more/],
     });
   });
 

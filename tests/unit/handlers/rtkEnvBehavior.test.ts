@@ -4,27 +4,28 @@ import {
   expectRtkParity,
   filterRtkFixture,
   filterRtkOutput,
-} from "../../../helpers/rtkCommandHarness.js";
+} from "../../helpers/rtkCommandHarness.js";
 
 describe("RTK env behavior", () => {
-  // RTK: env_cmd.rs::run — group interesting variables under category headers,
-  // mask secrets that land in a shown category, drop noise + uncategorized
-  // secrets entirely, and apply the long-value preview (> 100 chars) to EVERY
-  // var (including PATH) before the PATH-specific "(N entries)" split.
-  test("groups relevant vars, masks shown secrets, previews long values, drops noise", async () => {
+  // ADR 0001 divergence: tg's env handler is a STRUCTURAL handler that always
+  // reshapes (group + mask secrets) but is LOSSLESS within budget — it does NOT
+  // drop noise, does NOT preview-truncate long values, and fully expands PATH.
+  // RTK instead drops noise/uncategorized secrets ("showing 17 relevant") and
+  // applies a 50-char "... (N chars)" preview before the PATH split. tg keeps
+  // every var (adds an "Other:" bucket) and shows all 13 PATH entries.
+  // Approved divergence: assert tg's full-retention + masking, not RTK's drop.
+  test("groups relevant vars, masks shown secrets, keeps all vars and full PATH", async () => {
     const result = await filterRtkFixture(["env"], "tests/fixtures/system/env_full.txt");
 
-    // PATH grouping. The raw PATH value is > 100 chars, so RTK first replaces it
-    // with a 50-char preview ("... (N chars)") and only then splits on ":".
-    // The 50-char preview /usr/local/bin:/usr/bin:/bin:/opt/tools/bin:/tmp/b
-    // contains 5 colon-delimited segments -> "(5 entries)".
-    // RTK: env_cmd.rs::run (display_value long-preview branch + PATH split).
+    // PATH is fully expanded to all 13 real entries — no "... (N chars)" preview,
+    // no "+N more" truncation. tg keeps every colon-delimited segment.
     expect(result.output).toContain("PATH Variables:");
-    expect(result.output).toContain("PATH (5 entries):");
+    expect(result.output).toContain("PATH (13 entries):");
     expect(result.output).toContain("    /usr/local/bin");
-    expect(result.output).toContain("... (190 chars)");
+    expect(result.output).toContain("    /Users/dev/go/bin"); // the 13th entry
+    expect(result.output).not.toContain("... (190 chars)"); // no preview truncation
 
-    // Category headers. RTK: env_cmd.rs::run println! headers.
+    // Category headers, including tg's "Other:" bucket for uncategorized vars.
     expect(result.output).toContain("Language/Runtime:");
     expect(result.output).toContain("Cloud/Services:");
     expect(result.output).toContain("Tools:");
@@ -36,48 +37,44 @@ describe("RTK env behavior", () => {
     expect(result.output).toContain("EDITOR=vim");
     expect(result.output).toContain("HOME=/Users/dev");
 
-    // Sensitive vars that DO land in a shown category are masked, not hidden.
-    // RTK: env_cmd.rs::mask_value (2-char prefix + "****" + 2-char suffix).
-    // AWS_SECRET_ACCESS_KEY -> cloud + sensitive; value ends in "...45".
+    // Sensitive vars are masked, not hidden.
+    // tg: mask_value (2-char prefix + "****" + 2-char suffix).
     expect(result.output).toContain("AWS_SECRET_ACCESS_KEY=wJ****45");
-    // AWS_ACCESS_KEY_ID -> cloud + sensitive.
     expect(result.output).toContain("AWS_ACCESS_KEY_ID=AK****LE");
-    // GITHUB_TOKEN matches the "GIT" tool pattern + "token" sensitive pattern.
     expect(result.output).toContain("GITHUB_TOKEN=gh****op");
-    // GIT_AUTHOR_NAME -> tool ("GIT") + sensitive ("auth" inside "AUTHOR").
     expect(result.output).toContain("GIT_AUTHOR_NAME=Ex****ev");
+
+    // ADR 0001 divergence: uncategorized secrets are NOT dropped — tg keeps them
+    // under "Other:" but STILL masks them, so the raw value never leaks.
+    expect(result.output).toContain("API_KEY=fi****90");
+    expect(result.output).toContain("SECRET_DEPLOY_PASSWORD=hu****r2");
 
     // Raw secret material must never appear in the masked output.
     expect(result.output).not.toMatch(/fixture_api_secret_supersecretvalue/);
     expect(result.output).not.toMatch(/wJalrXUtnFEMIbKbanana/);
     expect(result.output).not.toMatch(/ghp_abcdef/);
-
-    // Uncategorized secrets are dropped entirely (no category to show them in).
-    // RTK: env_cmd.rs::run — API_KEY / SECRET_DEPLOY_PASSWORD match no category.
-    expect(result.output).not.toContain("API_KEY");
-    expect(result.output).not.toContain("SECRET_DEPLOY_PASSWORD");
     expect(result.output).not.toMatch(/hunter2/);
 
-    // Pure noise is dropped.
-    expect(result.output).not.toContain("RANDOM_NOISE_VAR");
-    expect(result.output).not.toContain("__CF_USER_TEXT_ENCODING");
-    expect(result.output).not.toContain("LDFLAGS");
+    // ADR 0001 divergence: tg retains noise/uncategorized vars rather than
+    // dropping them, so "showing" equals the total — nothing is hidden.
+    expect(result.output).toContain("RANDOM_NOISE_VAR");
+    expect(result.output).toContain("__CF_USER_TEXT_ENCODING");
+    expect(result.output).toContain("LDFLAGS");
 
-    // Summary line. RTK: env_cmd.rs::run "Total: {} vars (showing {} relevant)".
-    // 25 parsed vars; shown = path(1)+lang(4)+cloud(3)+tool(5)+other(4) = 17.
-    expect(result.output).toContain("Total: 25 vars (showing 17 relevant)");
+    // Summary line: 25 parsed vars, all 25 shown (full retention within budget).
+    expect(result.output).toContain("Total: 25 vars (showing 25 relevant)");
 
     expectRtkParity(result, {
       critical: [
-        "PATH (5 entries):",
-        "... (190 chars)",
+        "PATH (13 entries):",
         "Language/Runtime:",
         "Cloud/Services:",
         "Tools:",
         "Other:",
         "AWS_SECRET_ACCESS_KEY=wJ****45",
         "GITHUB_TOKEN=gh****op",
-        "Total: 25 vars (showing 17 relevant)",
+        "API_KEY=fi****90",
+        "Total: 25 vars (showing 25 relevant)",
       ],
       forbidden: [
         /fixture_api_secret_supersecretvalue/,
@@ -85,18 +82,18 @@ describe("RTK env behavior", () => {
         /ghp_abcdef/,
         /hunter2/,
       ],
-      // RTK env condenses a noisy dump; the structured view must beat raw size.
-      minSavingsRatio: 0.2,
     });
   });
 
-  // RTK: env_cmd.rs::test_mask_value_short / test_mask_value_exactly_four —
-  // values of length <= 4 are fully masked to "****".
+  // ADR 0001 divergence: tg masks short sensitive values to "****" (length <= 4)
+  // just like RTK, but does NOT drop noise/uncategorized vars. RANDOM_NOISE and
+  // DEPLOY_TOKEN are kept (DEPLOY_TOKEN is sensitive -> still masked "****").
+  // Approved divergence: assert tg masks short secrets AND retains noise.
   test("masks short sensitive values to **** (mask_value short branch)", async () => {
     const stdout = [
       "PATH=/usr/local/bin:/usr/bin:/bin:/opt/a/bin:/opt/b/bin:/opt/c/bin:/opt/d/bin:/opt/e/bin",
-      "DEPLOY_TOKEN=abcd", // exactly 4 chars -> "****"
-      "VAULT_PASSWORD=xy", // 2 chars -> "****"
+      "DEPLOY_TOKEN=abcd", // exactly 4 chars + sensitive (token) -> "****"
+      "VAULT_PASSWORD=xy", // 2 chars + sensitive (password) -> "****"
       "NODE_VERSION=22.11.0",
       "HOME=/Users/dev",
       "RANDOM_NOISE=irrelevant-noise-value-to-pad-the-input-and-force-compression-here",
@@ -105,15 +102,17 @@ describe("RTK env behavior", () => {
 
     const result = await filterRtkOutput(["env"], stdout);
 
-    // VAULT_PASSWORD is a cloud var (VAULT) + sensitive (password); 2 chars -> ****.
+    // VAULT_PASSWORD is sensitive (password); 2 chars -> "****".
     expect(result.output).toContain("VAULT_PASSWORD=****");
     expect(result.output).not.toContain("=xy");
-    // DEPLOY_TOKEN matches no category, so it is dropped (still must not leak raw).
+    // DEPLOY_TOKEN is sensitive (token); tg keeps it but masks the 4-char value.
+    expect(result.output).toContain("DEPLOY_TOKEN=****");
     expect(result.output).not.toContain("=abcd");
-    expect(result.output).not.toContain("RANDOM_NOISE");
+    // ADR 0001 divergence: tg retains noise vars (does not drop them).
+    expect(result.output).toContain("RANDOM_NOISE");
 
     expectRtkParity(result, {
-      critical: ["VAULT_PASSWORD=****", "NODE_VERSION=22.11.0"],
+      critical: ["VAULT_PASSWORD=****", "DEPLOY_TOKEN=****", "NODE_VERSION=22.11.0"],
       forbidden: [/=xy/, /=abcd/],
     });
   });
@@ -170,9 +169,11 @@ describe("RTK env behavior", () => {
     });
   });
 
-  // RTK: env_cmd.rs::run PATH branch — a PATH whose value is <= 100 chars is NOT
-  // preview-truncated, so it splits into its real entry count. With <= 10 entries
-  // there is no "+N more" marker.
+  // ADR 0001 divergence: tg expands the PATH to its real entry count with no
+  // "+N more" marker (lossless within budget), and — unlike RTK — KEEPS the
+  // NOISE_* vars under "Other:" rather than dropping them. (NOISE_TWO's value
+  // literally contains the substring "more", so we assert the absence of the
+  // truncation marker "+N more", not the bare word "more".)
   test("expands a short PATH fully without a more marker", async () => {
     const stdout = [
       "PATH=/usr/local/bin:/usr/bin:/bin:/opt/a:/opt/b",
@@ -186,15 +187,20 @@ describe("RTK env behavior", () => {
 
     const result = await filterRtkOutput(["env"], stdout);
 
-    // 5 real entries, all shown, no "+N more".
+    // 5 real entries, all shown, no truncation marker.
     expect(result.output).toContain("PATH (5 entries):");
     expect(result.output).toContain("    /usr/local/bin");
     expect(result.output).toContain("    /opt/b");
-    expect(result.output).not.toContain("more");
+    expect(result.output).not.toContain("+N more");
+    expect(result.output).not.toMatch(/\+\d+ more/);
+
+    // ADR 0001 divergence: tg retains the noise vars (RTK would drop them).
+    expect(result.output).toContain("NOISE_ONE");
+    expect(result.output).toContain("NOISE_TWO");
 
     expectRtkParity(result, {
       critical: ["PATH (5 entries):", "    /opt/b"],
-      forbidden: [/NOISE_ONE/, /NOISE_TWO/],
+      forbidden: [/\+\d+ more/],
     });
   });
 });

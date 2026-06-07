@@ -1,6 +1,6 @@
 import { describe, expect, test } from "vitest";
 
-import { expectRtkParity, filterRtkOutput } from "../../../helpers/rtkCommandHarness.js";
+import { expectRtkParity, filterRtkOutput } from "../../helpers/rtkCommandHarness.js";
 
 // Faithful parity port of rtk/src/cmds/cloud/psql_cmd.rs. Each test mirrors a
 // specific #[test] (or pair of #[test]s) in that module so green proves RTK's
@@ -83,10 +83,10 @@ describe("RTK psql behavior", () => {
     });
   });
 
-  // RTK: psql_cmd.rs::test_filter_table_overflow — with 40 data rows the output
-  // keeps the header + MAX_TABLE_ROWS (20) data rows + one overflow marker, and
-  // result_lines.len() == MAX_TABLE_ROWS + 2 (1 header + 20 data + 1 overflow).
-  test("table format: caps data rows at 20 and appends '... +N more rows'", async () => {
+  // ADR 0001 divergence: within budget tg keeps every data row instead of RTK's
+  // MAX_TABLE_ROWS (20) cap + "... +N more rows" marker. Borders + (N rows)
+  // footer are still stripped, but all 40 rows survive.
+  test("table format: keeps all data rows with no overflow cap", async () => {
     const lines = [" id | val", "----+-----"];
     for (let i = 1; i <= 40; i += 1) {
       lines.push(`  ${i} | row${i}`);
@@ -95,22 +95,25 @@ describe("RTK psql behavior", () => {
 
     const result = await filterRtkOutput(["psql", "-c", "select * from t"], lines.join("\n"));
 
-    expect(result.output).toContain("... +20 more rows");
-    // 1 header + 20 data rows + 1 overflow marker = 22 lines.
-    expect(result.output.split("\n").length).toBe(22);
+    // No RTK cap marker; all 40 rows kept.
+    expect(result.output).not.toContain("more rows");
+    // 1 header + 40 data rows = 41 lines (no overflow marker).
+    expect(result.output.split("\n").length).toBe(41);
     expect(result.output).toContain("id\tval");
     expect(result.output).toContain("20\trow20");
-    // Row 21 and beyond are dropped.
-    expect(result.output).not.toContain("21\trow21");
+    // Row 21 and the last row are still present (not dropped).
+    expect(result.output).toContain("21\trow21");
+    expect(result.output).toContain("40\trow40");
     expectRtkParity(result, {
-      critical: ["... +20 more rows", "id\tval"],
-      forbidden: [/----/, /\(40 rows\)/],
+      critical: ["id\tval", "21\trow21", "40\trow40"],
+      forbidden: [/----/, /\(40 rows\)/, /\+\d+ more rows/, /more rows/],
     });
   });
 
-  // RTK: psql_cmd.rs::test_filter_expanded_overflow — with 25 records the output
-  // keeps 20 records and appends "... +5 more records".
-  test("expanded format: caps records at 20 and appends '... +N more records'", async () => {
+  // ADR 0001 divergence: within budget tg keeps every record instead of RTK's
+  // 20-record cap + "... +N more records" marker. RECORD blocks still collapse
+  // to "[N] key=value" one-liners, but all 25 records survive.
+  test("expanded format: keeps all records with no overflow cap", async () => {
     const lines: string[] = [];
     for (let i = 1; i <= 25; i += 1) {
       lines.push(`-[ RECORD ${i} ]----`);
@@ -120,12 +123,15 @@ describe("RTK psql behavior", () => {
 
     const result = await filterRtkOutput(["psql", "-x", "-c", "select * from t"], lines.join("\n"));
 
-    expect(result.output).toContain("... +5 more records");
+    // No RTK cap marker; all 25 records kept.
+    expect(result.output).not.toContain("more records");
     expect(result.output).toContain("[20] id=20 name=user20");
-    expect(result.output).not.toContain("[21]");
+    // Records 21+ that RTK would drop are still present.
+    expect(result.output).toContain("[21] id=21 name=user21");
+    expect(result.output).toContain("[25] id=25 name=user25");
     expectRtkParity(result, {
-      critical: ["... +5 more records", "[1] id=1 name=user1"],
-      forbidden: [/-\[ RECORD/],
+      critical: ["[1] id=1 name=user1", "[21] id=21 name=user21", "[25] id=25 name=user25"],
+      forbidden: [/-\[ RECORD/, /\+\d+ more records/, /more records/],
     });
   });
 

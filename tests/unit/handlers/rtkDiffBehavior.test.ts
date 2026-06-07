@@ -1,7 +1,7 @@
 import { describe, expect, test } from "vitest";
 
-import { expectRtkParity, filterRtkOutput } from "../../../helpers/rtkCommandHarness.js";
-import { lcsChanges } from "../../../../src/handlers/common/diff.js";
+import { expectRtkParity, filterRtkOutput } from "../../helpers/rtkCommandHarness.js";
+import { lcsChanges } from "../../../src/handlers/common/diff.js";
 
 // RTK: git/diff_cmd.rs::make_large_unified_diff — one file, N removed then N added.
 function makeLargeUnifiedDiff(added: number, removed: number): string {
@@ -61,17 +61,19 @@ describe("RTK diff behavior", () => {
     expect(result.output).toContain("  -removed line");
   });
 
-  // RTK: diff_cmd.rs::test_condense_unified_diff_overflow_count_accuracy — 200
-  // changes → the footer reports the UNCAPPED overflow (200-10=190), never a
-  // capped "+5 more". Every change line is still shown in full (anti-truncation).
-  test("reports an accurate uncapped overflow footer for large files", async () => {
+  // ADR 0001 divergence: within budget tg shows every changed line in full with
+  // NO overflow footer at all — not even RTK's uncapped "... +190 more". The
+  // file metadata header is kept and all 200 change lines survive.
+  test("shows every changed line with no overflow footer for large files", async () => {
     const result = await filterRtkOutput(["diff", "-"], makeLargeUnifiedDiff(100, 100));
 
     expect(result.output).toContain("[file] config.yaml (+100 -100)");
-    expect(result.output).toContain("... +190 more");
-    expect(result.output).not.toMatch(/\+5 more/);
-    // Anti-truncation: first and last change lines are present in full.
+    // No "more" footer of any kind (capped or uncapped).
+    expect(result.output).not.toMatch(/more/);
+    // Every +/- change line is present in full, first through last.
     expect(result.output).toContain("-old_value_0");
+    expect(result.output).toContain("-old_value_99");
+    expect(result.output).toContain("+new_value_0");
     expect(result.output).toContain("+new_value_99");
   });
 

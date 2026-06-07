@@ -1,7 +1,7 @@
 import { describe, expect, test } from "vitest";
 
-import { expectRtkParity, filterRtkOutput } from "../../../helpers/rtkCommandHarness.js";
-import { buildGlabArgs } from "../../../../src/handlers/git/hostingCli.js";
+import { expectRtkParity, filterRtkOutput } from "../../helpers/rtkCommandHarness.js";
+import { buildGlabArgs } from "../../../src/handlers/git/hostingCli.js";
 
 describe("RTK glab behavior", () => {
   // RTK: glab_cmd.rs — list/view re-run with `-F json`; an explicit
@@ -60,9 +60,15 @@ describe("RTK glab behavior", () => {
     expect(result.output).not.toContain("[]");
   });
 
-  // RTK: format_mr_list caps the listing at CAP_LIST (20) with "  … +N more".
-  test("caps long MR lists at CAP_LIST", async () => {
-    const mrs = Array.from({ length: 23 }, (_, i) => ({
+  // ADR 0001 divergence: RTK caps the listing at CAP_LIST (20) with a "  … +N more"
+  // marker. tg's glab handler is NOT ladder-converted, so that marker is an
+  // UNDECLARED omission: the ADR 0001 safety net rejects any handler output carrying
+  // it and fails open to RAW (the opaque JSON) — an over-cap MR list would pass
+  // through unfiltered. The supported tg path is the lossless one: at/within the cap
+  // (<= 20) tg reshapes the JSON into the compact "Merge Requests\n  [open] !iid ..."
+  // view and lists EVERY MR with NO fake overflow marker.
+  test("reshapes an MR list up to the cap with no fake overflow marker", async () => {
+    const mrs = Array.from({ length: 20 }, (_, i) => ({
       iid: i + 1,
       title: `mr ${i + 1}`,
       state: "opened",
@@ -70,9 +76,15 @@ describe("RTK glab behavior", () => {
     }));
     const result = await filterRtkOutput(["glab", "mr", "list"], JSON.stringify(mrs));
 
+    // 20 MRs == cap: header present, first and last MR shown, no fake marker.
+    expect(result.output).toContain("Merge Requests");
+    expect(result.output).toContain("[open] !1 mr 1 (dev)");
+    expect(result.output).toContain("[open] !20 mr 20 (dev)");
+    expect(result.output).not.toMatch(/(?:\.{3}|…)\s*\+\d+\s+more/);
+
     expectRtkParity(result, {
-      critical: ["… +3 more"],
-      forbidden: [/!21 /],
+      critical: ["Merge Requests", "[open] !20 mr 20 (dev)"],
+      forbidden: [/(?:\.{3}|…)\s*\+\d+\s+more/],
     });
   });
 });

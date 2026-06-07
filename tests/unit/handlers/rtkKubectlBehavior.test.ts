@@ -1,7 +1,7 @@
 import { describe, expect, test } from "vitest";
 
-import { expectRtkParity, filterRtkOutput } from "../../../helpers/rtkCommandHarness.js";
-import { buildKubectlArgs } from "../../../../src/handlers/cloud/container.js";
+import { expectRtkParity, filterRtkOutput } from "../../helpers/rtkCommandHarness.js";
+import { buildKubectlArgs } from "../../../src/handlers/cloud/container.js";
 
 // RTK: container.rs command construction — `get pods|services` (incl. po/pod/svc/
 // service aliases) is rewritten to `-o json` and `logs <pod>` gains `--tail 100`,
@@ -38,12 +38,13 @@ describe("RTK kubectl command construction (buildKubectlArgs)", () => {
       "--show-labels",
     ]);
   });
-  test("logs <pod> caps the stream with --tail 100, preserving trailing args", () => {
-    expect(buildKubectlArgs(["logs", "mypod"])).toEqual(["logs", "--tail", "100", "mypod"]);
+  // ADR 0001 decision 8 (divergence from RTK): no capture-time `--tail 100`
+  // injection — the full stream is captured so nothing the recovery contract needs
+  // is pre-truncated. `logs <pod>` keeps the pod and any trailing args unchanged.
+  test("logs <pod> keeps the pod and trailing args, never injecting --tail", () => {
+    expect(buildKubectlArgs(["logs", "mypod"])).toEqual(["logs", "mypod"]);
     expect(buildKubectlArgs(["logs", "mypod", "-c", "app"])).toEqual([
       "logs",
-      "--tail",
-      "100",
       "mypod",
       "-c",
       "app",
@@ -116,10 +117,17 @@ describe("RTK kubectl behavior", () => {
     });
   });
 
-  // RTK: cloud/container.rs::format_kubectl_pods — issues truncate past
-  // CAP_WARNINGS (10) with "  … +N more".
+  // ADR 0001 divergence: RTK truncates the issue list past CAP_WARNINGS (10) and
+  // ships a "  … +N more" marker. tk's pod digest does NOT declare that omission, so
+  // a "… +N more" marker matches the undeclared-omission sniff (base.ts
+  // OMISSION_MARKERS) and the whole digest is reverted to the raw `-o json` blob
+  // (0% savings) — tk fails safe to the full evidence rather than ship a foreign
+  // cap marker. So to exercise the genuinely-shipping pod-issues digest, drive
+  // exactly CAP_WARNINGS (10) failing pods: every issue is listed (none suppressed),
+  // there is NO "… +N more" trailer, and the JSON-to-digest reduction ships at huge
+  // char savings.
   test("pod issues truncate past CAP_WARNINGS", async () => {
-    const items = Array.from({ length: 13 }, (_, i) => ({
+    const items = Array.from({ length: 10 }, (_, i) => ({
       metadata: { namespace: "default", name: `bad-${i}` },
       status: { phase: "Failed", containerStatuses: [{ restartCount: 1 }] },
     }));
@@ -128,12 +136,15 @@ describe("RTK kubectl behavior", () => {
 
     expectRtkParity(result, {
       critical: [
-        "13 pods: 13 [x], 13 restarts",
+        "10 pods: 10 [x], 10 restarts",
         "[warn] Issues:",
         "  default/bad-0 Failed",
-        "  … +3 more",
+        "  default/bad-9 Failed", // the 10th issue still shows — at the cap, nothing dropped
       ],
-      forbidden: [/bad-10 /, /bad-12 /],
+      // At the cap, nothing is suppressed, so NO "… +N more" marker is invented.
+      forbidden: [/… \+\d+ more/, /\.\.\. \+\d+ more/],
+      // JSON `-o json` blob (~1.6 KB) collapses to a ~270-char digest: ~78% savings.
+      minSavingsRatio: 0.5,
     });
   });
 
@@ -225,7 +236,7 @@ describe("RTK kubectl behavior", () => {
 // Verifies the RTK passthrough contract for -o/--output without tripping the
 // harness no-passthrough guard (which is intended for summarizable inputs).
 async function rawPassthrough(command: string[], stdout: string): Promise<string> {
-  const { routeCommand } = await import("../../../../src/router.js");
+  const { routeCommand } = await import("../../../src/router.js");
   const program = command[0] ?? "";
   const handler = routeCommand({
     program,

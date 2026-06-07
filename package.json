@@ -16,8 +16,6 @@
     "build": "tsdown",
     "test": "vitest --config vitest.config.ts",
     "test:product": "vitest run --config vitest.config.ts",
-    "test:migration": "vitest run --config vitest.migration.config.ts",
-    "test:migration:report": "vitest run --config vitest.migration.config.ts || true",
     "test:smoke": "bash tests/smoke/smoke.sh",
     "test:atlas-dogfood": "bash scripts/atlas-dogfood.sh",
     "test:windows-dogfood": "pwsh -NoProfile -File scripts/windows-dogfood.ps1",

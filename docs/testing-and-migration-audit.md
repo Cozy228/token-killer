@@ -4,20 +4,26 @@ Single reference for **what good tests are**, **what is wrong with the suite tod
 
 Last audited: 2026-06-05
 
-> **2026-06-07 restructure.** The RTK rewrite is stable, so the migration *bookkeeping*
-> suites were retired and the live behavior coverage was promoted. Concretely:
-> `rtkDomainCaseParity` (+ `tests/helpers/rtkParityManifest.ts`), `rtkScriptParity`,
-> `projectConfig`, and `tests/out-of-scope/` were **deleted**; the still-useful hygiene
-> suites (`registeredHandlerCoverage`, `fixtureWiring`, `fixtureRegressionDebt`,
-> `syntheticTestDebt`, `fixtures`) and the 41 all-green `rtk*Behavior` suites were
-> **promoted into `vitest.config.ts`** (they now gate `test:ci`). Only the 17 still-
-> divergent behavior suites remain report-only, moved to
-> `tests/unit/handlers/migration/` and globbed by `vitest.migration.config.ts`.
-> §3.5's per-file inventory below predates this and is kept for historical context.
+> **2026-06-07 — migration complete.** Two steps, same day:
+> 1. The migration *bookkeeping* suites were retired and the live behavior coverage
+>    promoted: `rtkDomainCaseParity` (+ `tests/helpers/rtkParityManifest.ts`),
+>    `rtkScriptParity`, `projectConfig`, and `tests/out-of-scope/` were **deleted**;
+>    the hygiene suites (`registeredHandlerCoverage`, `fixtureWiring`,
+>    `fixtureRegressionDebt`, `syntheticTestDebt`, `fixtures`) and the all-green
+>    `rtk*Behavior` suites were **promoted into `vitest.config.ts`**.
+> 2. The remaining `rtk*Behavior` divergences were **ratified, not chased**: each was
+>    rewritten to assert tk's *actual* ADR-0001 behavior (zero loss below budget, no
+>    `+N more` markers, no capture-time `--tail` truncation) instead of RTK's old
+>    shape. `cat --max-lines` gained a truthful `[N more lines]` marker (a real,
+>    user-requested omission, distinct from the banned `+N more`). All `rtk*Behavior`
+>    suites now live in `tests/unit/handlers/` and gate `test:ci`; the separate
+>    report-only migration config (`vitest.migration.config.ts`, `test:migration*`)
+>    was **removed**. §3.5's per-file inventory below predates this and is kept for
+>    historical context.
 
-**Run gates:** `pnpm test:product` (uses `vitest.config.ts`) is the implemented-behavior fidelity suite and may turn red when a known implementation bug is promoted into fixture-backed coverage. `pnpm test:migration` (uses `vitest.migration.config.ts`) holds only the remaining RTK behavior divergences (`tests/unit/handlers/migration/`) and is expected to stay red until those are resolved.
+**Run gates:** `pnpm test:product` (uses `vitest.config.ts`) is the implemented-behavior fidelity suite and the single test gate. It may turn red when a known implementation bug is promoted into fixture-backed coverage.
 
-`pnpm test:ci` is the **blocking** quality gate: `test:product`, `test:install`, `check-test-presence`, `validate-docs`, and `smoke`. It does **not** block on migration debt — it ends by running `test:migration:report` (the migration suite with `|| true`) so debt stays **visible without falsely failing CI**. A green `test:ci` therefore means *product quality is sound*, **not** that migration is complete. Migration is complete only when `pnpm test:migration` itself is green.
+`pnpm test:ci` is the **blocking** quality gate: `test:product`, `test:install`, `check-test-presence`, `validate-docs`, and `smoke`. A green `test:ci` means product quality is sound; there is no longer a separate migration suite to track (the RTK divergences are ratified in the product suite itself).
 
 `scripts/check-test-presence.sh` checks fixture-backed handler coverage plus core test-pair presence — necessary, **not sufficient**.
 

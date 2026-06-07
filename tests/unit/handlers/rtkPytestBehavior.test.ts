@@ -4,7 +4,7 @@ import {
   expectRtkParity,
   filterRtkFixture,
   filterRtkOutput,
-} from "../../../helpers/rtkCommandHarness.js";
+} from "../../helpers/rtkCommandHarness.js";
 
 describe("RTK pytest behavior", () => {
   // RTK: python/pytest_cmd.rs::test_filter_pytest_with_failures — keep the summary
@@ -77,9 +77,10 @@ describe("RTK pytest behavior", () => {
     expect(result.output).toContain("test_something");
   });
 
-  // RTK: pytest_cmd.rs::test_filter_pytest_xfail_caps_and_tee_hint — 15 XFAIL lines
-  // cap at MAX_XFAIL (10) and emit "… +5 more" + a recovery hint.
-  test("caps xfail entries at 10 and emits an overflow hint", async () => {
+  // ADR 0001 divergence: within budget tg lists every XFAIL entry instead of
+  // RTK's MAX_XFAIL (10) cap + "… +5 more" + "tk --raw" recovery hint. All 15
+  // expected-failure outcomes are kept with their reasons.
+  test("lists every xfail entry with no overflow cap", async () => {
     const lines = [
       "=== test session starts ===",
       "collected 15 items",
@@ -95,9 +96,13 @@ describe("RTK pytest behavior", () => {
 
     const section = result.output.split("Expected-failure outcomes:")[1] ?? "";
     const listed = section.split("\n").filter((l) => l.trim().startsWith("XFAIL")).length;
-    expect(listed).toBeLessThanOrEqual(10);
-    expect(result.output).toContain("… +5 more");
-    expect(result.output).toMatch(/tk --raw/);
+    // All 15 XFAIL lines kept, including the ones RTK would drop past its cap.
+    expect(listed).toBe(15);
+    expect(result.output).toContain("XFAIL test_x.py::test_case_0 - known issue #0");
+    expect(result.output).toContain("XFAIL test_x.py::test_case_14 - known issue #14");
+    // No RTK cap marker and no recovery hint.
+    expect(result.output).not.toContain("more");
+    expect(result.output).not.toMatch(/tk --raw/);
   });
 
   // RTK: pytest_cmd.rs::test_filter_pytest_xfail_xpass — XPASS in particular is

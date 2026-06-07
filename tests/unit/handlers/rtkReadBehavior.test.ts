@@ -4,10 +4,10 @@ import { fileURLToPath } from "node:url";
 
 import { describe, expect, test } from "vitest";
 
-import { expectRtkParity, filterRtkOutput } from "../../../helpers/rtkCommandHarness.js";
-import { buildCatArgs } from "../../../../src/handlers/system/read.js";
+import { expectRtkParity, filterRtkOutput } from "../../helpers/rtkCommandHarness.js";
+import { buildCatArgs } from "../../../src/handlers/system/read.js";
 
-const repoRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "../../../..");
+const repoRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "../../..");
 
 // RTK: read.rs reads the file bytes directly; tk shells to `cat`, so the real CLI
 // path must pass ONLY the file operands — `cat` would reject RTK's read flags

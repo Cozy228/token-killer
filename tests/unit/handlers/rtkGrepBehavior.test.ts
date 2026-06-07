@@ -4,16 +4,16 @@ import {
   expectRtkParity,
   filterRtkFixture,
   filterRtkOutput,
-} from "../../../helpers/rtkCommandHarness.js";
+} from "../../helpers/rtkCommandHarness.js";
 import {
   cleanLine,
   compactPath,
   groupGrepOutput,
   hasFormatFlag,
   parseMatchLine,
-} from "../../../../src/handlers/common/grepFilter.js";
-import { buildGrepArgs } from "../../../../src/handlers/common/searchLike.js";
-import { parseLevel, stripLevelFlags } from "../../../../src/handlers/common/level.js";
+} from "../../../src/handlers/common/grepFilter.js";
+import { buildGrepArgs } from "../../../src/handlers/common/searchLike.js";
+import { parseLevel, stripLevelFlags } from "../../../src/handlers/common/level.js";
 
 describe("RTK grep command construction", () => {
   // RTK: grep_cmd.rs::run — RTK searches with `-nH` so output is `file:line:content`.
@@ -156,47 +156,54 @@ describe("RTK grep behavior", () => {
     });
   });
 
-  // --- Compression: default path groups by file with an uncapped overflow ---
+  // --- Compression: default path groups by file, losslessly, under the cap ---
 
-  // RTK: grep_cmd.rs::run default path (lines 104-150) + test_grep_overflow_uses_
-  // uncapped_total. 67 matches in one file exceed grep_max_per_file (25), so 25
-  // are shown and the overflow reports the TRUE suppressed count (67-25=42), not
-  // a capped number. This is the grep compression path that passthrough cannot gate.
-  test("groups default matches by file and reports uncapped overflow", async () => {
-    const result = await filterRtkFixture(
-      ["grep", "-rn", "submitOrder", "src"],
-      "tests/fixtures/common/rg_overflow_matches.txt",
-    );
+  // 24 matches across 2 files (12 each — under the per-file cap of 25) with long
+  // lines, so the by-file grouping is a genuine shrink and ships.
+  const underCapMatches = () => {
+    const lines: string[] = [];
+    for (let f = 0; f < 2; f += 1) {
+      for (let i = 1; i <= 12; i += 1) {
+        lines.push(
+          `src/order/file${f}.ts:${i}:    const result${i} = submitOrder(payload${i}); ${"x".repeat(120)}`,
+        );
+      }
+    }
+    return `${lines.join("\n")}\n`;
+  };
 
-    expect(result.output).toContain("69 matches in 2 files:");
-    expect(result.output).toContain("src/order/api.ts:88:return submitOrder(payload)");
-    expect(result.output).toContain("src/order/submit.ts:25:");
-    // per-file cap holds at 25 — the 26th match must be suppressed.
-    expect(result.output).not.toContain("src/order/submit.ts:26:");
-    // overflow = uncapped total (67) - shown for that file (25) = 42.
-    expect(result.output).toContain("[+42 more]");
+  // ADR 0001 divergence: RTK always caps each file at grep_max_per_file (25) and
+  // appends a `[+N more]` overflow marker. tk only caps OVER budget; below budget
+  // it groups by file losslessly with NO `[+N more]` (an over-cap input instead
+  // reverts to raw, since the cap marker is an undeclared omission — see the note
+  // on the balanced level below). So this exercises the lossless grouped path:
+  // every match is kept, grouped by file, and no overflow marker is invented.
+  test("groups default matches by file losslessly under the cap", async () => {
+    const result = await filterRtkOutput(["grep", "-rn", "submitOrder", "src"], underCapMatches());
+
+    expect(result.output).toContain("24 matches in 2 files:");
+    expect(result.output).toContain("src/order/file0.ts:1:");
+    expect(result.output).toContain("src/order/file1.ts:12:");
+    // Nothing suppressed below the cap, so no fake overflow marker.
+    expect(result.output).not.toMatch(/\[\+\d+ more\]/);
+    expect(result.output).not.toContain("# capped");
 
     expectRtkParity(result, {
-      critical: ["69 matches in 2 files:", "[+42 more]"],
-      // 4565 raw chars compress to ~1736; real cap below raw size.
-      minSavingsRatio: 0.5,
-      maxOutputChars: 2200,
+      critical: ["24 matches in 2 files:"],
+      forbidden: [/\[\+\d+ more\]/, /# capped/],
+      // Long lines trimmed to ~80 chars + grouping: a genuine shrink below raw.
+      minSavingsRatio: 0.4,
     });
   });
 
-  // rg piped to a non-TTY omits line numbers; tk now forces -nH so the SAME
-  // grouping/cap machinery compresses rg exactly like grep. Reuse the overflow
-  // fixture as the `rg -nH` output shape.
-  test("groups rg matches by file with the per-file cap and uncapped overflow", async () => {
-    const result = await filterRtkFixture(
-      ["rg", "submitOrder", "src"],
-      "tests/fixtures/common/rg_overflow_matches.txt",
-    );
+  // rg piped to a non-TTY omits line numbers; tk forces -nH so the SAME grouping
+  // machinery compresses rg exactly like grep — lossless, no overflow marker.
+  test("groups rg matches by file losslessly under the cap", async () => {
+    const result = await filterRtkOutput(["rg", "submitOrder", "src"], underCapMatches());
 
-    expect(result.output).toContain("69 matches in 2 files:");
-    expect(result.output).toContain("src/order/submit.ts:25:");
-    expect(result.output).not.toContain("src/order/submit.ts:26:");
-    expect(result.output).toContain("[+42 more]");
+    expect(result.output).toContain("24 matches in 2 files:");
+    expect(result.output).toContain("src/order/file0.ts:1:");
+    expect(result.output).not.toMatch(/\[\+\d+ more\]/);
   });
 });
 
@@ -228,17 +235,26 @@ describe("RTK grep --level dial + lossless dedup", () => {
     expect(result.output).not.toContain("# capped");
   });
 
-  // --level balanced (default): per-file cap at 25, uncapped overflow, recovery hint.
-  test("balanced caps per file and surfaces a recovery hint", async () => {
-    const result = await filterRtkFixture(
+  // ADR 0001 divergence: balanced is the default level. RTK caps each file at 25
+  // and ships a `[+42 more]` + `# capped` recovery hint. tk caps only OVER budget,
+  // and an over-cap grep cannot ship the cap marker (it is an undeclared omission
+  // that reverts the whole listing to raw), so below budget balanced groups by
+  // file losslessly with no cap marker and no recovery hint.
+  test("balanced groups by file losslessly under the cap (no cap marker)", async () => {
+    const stdout = `${Array.from(
+      { length: 18 },
+      (_, i) =>
+        `src/order/submit.ts:${i + 1}:    const handler${i} = submitOrder(payload${i}); ${"y".repeat(110)}`,
+    ).join("\n")}\n`;
+    const result = await filterRtkOutput(
       ["rg", "--level", "balanced", "submitOrder", "src"],
-      "tests/fixtures/common/rg_overflow_matches.txt",
+      stdout,
     );
-    expect(result.output).toContain("src/order/submit.ts:25:");
-    expect(result.output).not.toContain("src/order/submit.ts:26:");
-    expect(result.output).toContain("[+42 more]");
-    expect(result.output).toContain("# capped");
-    expect(result.output).toContain("--level minimal");
+
+    expect(result.output).toContain("18 matches in 1 files:");
+    expect(result.output).toContain("src/order/submit.ts:18:");
+    expect(result.output).not.toMatch(/\[\+\d+ more\]/);
+    expect(result.output).not.toContain("# capped");
   });
 
   // --level aggressive: per-file count + one sample line only.
@@ -331,7 +347,7 @@ describe("RTK grep level/-- parsing (edge cases)", () => {
     const lines: string[] = [];
     for (let i = 1; i <= 130; i += 1) lines.push(`src/f${i}.ts:1:match ${i}`);
     const grouped = groupGrepOutput(lines.join("\n"), "match", { aggregate: true, dedupe: true })!;
-    const headers = grouped.split("\n").filter((l) => l.endsWith(': 1 matches'));
+    const headers = grouped.split("\n").filter((l) => l.endsWith(": 1 matches"));
     expect(headers.length).toBeLessThanOrEqual(100);
     expect(grouped).toContain("[+30 more]");
   });

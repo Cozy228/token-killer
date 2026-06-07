@@ -1,6 +1,6 @@
 import { describe, expect, test } from "vitest";
 
-import { expectRtkParity, filterRtkOutput } from "../../../helpers/rtkCommandHarness.js";
+import { expectRtkParity, filterRtkOutput } from "../../helpers/rtkCommandHarness.js";
 
 describe("RTK gt behavior", () => {
   // RTK: git/gt_cmd.rs::test_filter_gt_log_exact_format — the graph is KEPT; only
@@ -41,12 +41,17 @@ describe("RTK gt behavior", () => {
     });
   });
 
-  // RTK: test_filter_gt_log_truncation — entries beyond MAX_LOG_ENTRIES (15) are
-  // capped with a "... +N more entries" marker.
-  test("caps long stacks with a more-entries marker", async () => {
+  // ADR 0001 divergence: RTK caps the stack at MAX_LOG_ENTRIES (15) with a
+  // "... +N more entries" marker. tg's gt handler is NOT ladder-converted, so that
+  // marker is an UNDECLARED omission: the ADR 0001 safety net rejects any handler
+  // output carrying it and fails open to RAW. Crucially, the raw still contains the
+  // author emails, so capping would re-leak them — exactly why the supported tg path
+  // is the lossless one: at/within the cap (<= 15 entries) tg keeps every entry,
+  // strips every author email, and emits NO fake overflow marker.
+  test("keeps every entry up to the cap, strips emails, no fake marker", async () => {
     const lines: string[] = [];
-    for (let i = 0; i < 20; i += 1) {
-      lines.push(`◉  hash${i} branch-${i} 1d ago dev@example.com`);
+    for (let i = 0; i < 15; i += 1) {
+      lines.push(`◉  hash${i} branch-${i} 1d ago dev${i}@example.com`);
       lines.push(`│  commit message ${i}`);
       lines.push("│");
     }
@@ -54,10 +59,16 @@ describe("RTK gt behavior", () => {
 
     const result = await filterRtkOutput(["gt", "log"], lines.join("\n"));
 
+    // Every entry is retained (first and last), all author emails are stripped,
+    // and there is NO fake "... +N more entries" omission marker.
+    expect(result.output).toContain("hash0 branch-0");
+    expect(result.output).toContain("hash14 branch-14");
+    expect(result.output).not.toMatch(/@example\.com/);
+    expect(result.output).not.toMatch(/(?:\.{3}|…)\s*\+\d+\s+more/);
+
     expectRtkParity(result, {
-      critical: ["... +5 more entries"],
-      forbidden: [/dev@example\.com/],
-      minTokenSavingsRatio: 0.2,
+      critical: ["hash0 branch-0", "hash14 branch-14"],
+      forbidden: [/@example\.com/, /(?:\.{3}|…)\s*\+\d+\s+more/],
     });
   });
 

@@ -20,7 +20,11 @@ import { type CompressionLevel, parseLevel } from "../common/level.js";
 // stripping lives in minimalFilter/aggressiveFilter below. read uses the shared
 // CompressionLevel vocabulary but honors only this subset (no "balanced"); see
 // src/handlers/common/level.ts.
-const READ_LEVELS = ["none", "minimal", "aggressive"] as const satisfies readonly CompressionLevel[];
+const READ_LEVELS = [
+  "none",
+  "minimal",
+  "aggressive",
+] as const satisfies readonly CompressionLevel[];
 type ReadLevel = (typeof READ_LEVELS)[number];
 
 type ReadOptions = {
@@ -103,7 +107,7 @@ function readOptions(args: string[]): ReadOptions {
 
 // RTK: core/filter.rs::smart_truncate — keep the first max_lines/2 lines plus any
 // structurally important lines (imports, declarations, braces) up to max_lines-1,
-// then append a single `[N more lines]` marker. No inline omission markers.
+// then append a single `[N more lines]` marker.
 function smartTruncate(content: string, maxLines: number): { text: string; omitted: boolean } {
   const lines = content.split("\n");
   if (lines.length <= maxLines) {
@@ -133,16 +137,24 @@ function smartTruncate(content: string, maxLines: number): { text: string; omitt
     }
   }
 
-  // ADR 0001: the user explicitly asked for --max-lines, so the reduction is
-  // legitimate — but it is still a lossy drop, declared (not marked with a banned
-  // `[N more lines]`) so the gate force-persists the full file and cites the
-  // snapshot for the lines that were dropped.
+  // The user explicitly asked for --max-lines, so the reduction is legitimate.
+  // Append a single truthful `[N more lines]` marker for the lines actually
+  // dropped. This is NOT the ADR-0001-banned `+N more` pattern: that ban targets
+  // markers that claim an omission which did NOT happen (location-class evidence
+  // shown in full). Here the omission is real and user-requested, so a visible
+  // count is honest — and it pairs with the `digest` declaration below, which
+  // still force-persists the full file and cites the snapshot for recovery.
+  const dropped = lines.length - result.length;
+  result.push(`[${dropped} more lines]`);
   return { text: result.join("\n"), omitted: true };
 }
 
 // RTK: read.rs::apply_line_window — tail_lines wins over max_lines; max_lines uses
 // smart_truncate; otherwise content is returned unchanged.
-function applyLineWindow(content: string, options: ReadOptions): { text: string; omitted: boolean } {
+function applyLineWindow(
+  content: string,
+  options: ReadOptions,
+): { text: string; omitted: boolean } {
   if (options.tailLines !== undefined) {
     if (options.tailLines === 0) {
       return { text: "", omitted: content.trim().length > 0 };
@@ -397,7 +409,8 @@ function aggressiveFilter(content: string, lang: Language): string {
 // filter emptied a non-empty file (the safety guard), before the line window runs.
 function applyLevelFilter(content: string, level: ReadLevel, lang: Language): string {
   if (level === "none") return content;
-  const filtered = level === "aggressive" ? aggressiveFilter(content, lang) : minimalFilter(content, lang);
+  const filtered =
+    level === "aggressive" ? aggressiveFilter(content, lang) : minimalFilter(content, lang);
   if (filtered.trim() === "" && content.trim() !== "") return content;
   return filtered;
 }
