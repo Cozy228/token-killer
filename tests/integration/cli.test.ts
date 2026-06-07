@@ -585,9 +585,11 @@ describe("Report", () => {
 // ============================================================================
 
 describe("Error Handling", () => {
-  test("tk with no command exits non-zero", () => {
+  test("tk with no command prints the usage summary and exits 0", () => {
     const result = runTk([], repoRoot);
-    expect(result.status).not.toBe(0);
+    expect(result.status).toBe(0);
+    expect(result.stdout).toContain("tk — Token Killer");
+    expect(result.stdout).toContain("Commands:");
   });
 
   test("preserves original command exit code", () => {

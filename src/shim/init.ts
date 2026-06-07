@@ -34,6 +34,32 @@ function out(line: string): void {
 
 // Drop the tk usage guidance (TK.md) and wire it into the host's auto-loaded
 // instructions so the agent reads it. Hosts without a guidance home are a no-op.
+// A hook-config patch reports its action as a verb stem (create/replace/append/
+// overwrite/unchanged). Naively suffixing "d" produces "appendd"/"overwrited", so
+// map each to a correct past tense for the applied-change line.
+function actionDone(action: string): string {
+  switch (action) {
+    case "unchanged":
+      return "Up to date";
+    case "append":
+      return "Appended";
+    case "replace":
+      return "Replaced";
+    case "create":
+      return "Created";
+    case "overwrite":
+      return "Rewrote";
+    default:
+      return `${action}d`;
+  }
+}
+
+// For the `[dry-run] would <verb>` line: "would unchanged" is not English, so a
+// no-op patch reads "would leave unchanged"; every other action is already a verb.
+function actionWould(action: string): string {
+  return action === "unchanged" ? "leave unchanged" : action;
+}
+
 function writeGuidanceStep(host: Host, dryRun: boolean): void {
   if (dryRun) {
     const file = guidanceFilePath(host);
@@ -121,6 +147,9 @@ function showStatus(): number {
 // config, the shim, and the injection files (user + project). Marker-guarded —
 // only files tk wrote are removed.
 function uninstall(opts: InitArgs): number {
+  // --dry-run must NOT remove anything — probe current state via the same status
+  // helpers `--show` uses and report what removal WOULD touch.
+  if (opts.dryRun) return uninstallDryRun(opts);
   const removedClaude = uninstallClaudeHook({});
   out(
     `claude-code settings hook: ${removedClaude.removed ? `removed tk entry from ${removedClaude.path}` : "nothing to remove"}`,
@@ -146,6 +175,44 @@ function uninstall(opts: InitArgs): number {
     unwriteGuidance(guidanceHost);
   }
   out(`usage guidance: removed`);
+  return 0;
+}
+
+// Read-only preview of `--uninstall`: report what each tier removal would touch
+// without deleting anything. Mirrors uninstall()'s lines with `would remove`.
+function uninstallDryRun(opts: InitArgs): number {
+  const claude = claudeHookStatus({});
+  out(
+    `[dry-run] claude-code settings hook: ${claude.present ? `would remove tk entry from ${claude.path}` : "nothing to remove"}`,
+  );
+  const hook = copilotHookConfigStatus({ project: false });
+  out(
+    `[dry-run] copilot hook config: ${hook.present ? `would remove ${hook.path}` : "nothing to remove"}`,
+  );
+  if (opts.project) {
+    const projectHook = copilotHookConfigStatus({ project: true, cwd: process.cwd() });
+    out(
+      `[dry-run] project hook config: ${projectHook.present ? `would remove ${projectHook.path}` : "nothing to remove"}`,
+    );
+  }
+  runShim(["status"]);
+  const host = detectHost(gatherDetectEnv());
+  const target = injectionTarget(host);
+  out(
+    `[dry-run] instruction injection: ${existsSync(target) ? `would remove ${target}` : "nothing to remove"}`,
+  );
+  if (opts.project) {
+    const projectInjection = projectInjectionPath(process.cwd());
+    out(
+      `[dry-run] project injection: ${existsSync(projectInjection) ? `would remove ${projectInjection}` : "nothing to remove"}`,
+    );
+  }
+  for (const guidanceHost of ["claude-code", "copilot-cli"] as const) {
+    const guidance = guidanceFilePath(guidanceHost);
+    if (guidance && existsSync(guidance)) {
+      out(`[dry-run] usage guidance (${guidanceHost}): would remove ${guidance}`);
+    }
+  }
   return 0;
 }
 
@@ -181,7 +248,7 @@ export function runInit(argv: string[]): number {
   if (host === "claude-code") {
     if (opts.dryRun) {
       const plan = planClaudeHookInstall({});
-      out(`[dry-run] would ${plan.action} claude-code settings hook: ${plan.path}`);
+      out(`[dry-run] would ${actionWould(plan.action)} claude-code settings hook: ${plan.path}`);
       if (plan.previousCommand && plan.previousCommand !== plan.command) {
         out(`  - ${plan.previousCommand}`);
       }
@@ -192,9 +259,7 @@ export function runInit(argv: string[]): number {
       return 0;
     }
     const plan = installClaudeHook({});
-    out(
-      `${plan.action === "unchanged" ? "Up to date" : `${plan.action}d`} claude-code settings hook: ${plan.path}`,
-    );
+    out(`${actionDone(plan.action)} claude-code settings hook: ${plan.path}`);
     writeGuidanceStep(host, false);
     out(`Active tier: hook`);
     out(`Ensure tk is on PATH for Claude Code's Bash (e.g. pnpm build && npm link).`);
@@ -208,7 +273,7 @@ export function runInit(argv: string[]): number {
     const loc = { project: opts.project, cwd: process.cwd() };
     if (opts.dryRun) {
       const plan = planCopilotHookConfig(loc);
-      out(`[dry-run] would ${plan.action} copilot hook config: ${plan.path}`);
+      out(`[dry-run] would ${actionWould(plan.action)} copilot hook config: ${plan.path}`);
       writeGuidanceStep(host, true);
       out(`Active tier: hook`);
       return 0;

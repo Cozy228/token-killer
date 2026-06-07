@@ -113,6 +113,22 @@ describe("tk init", () => {
     expect(existsSync(cfg)).toBe(false);
   });
 
+  // Regression: `--uninstall --dry-run` once IGNORED dry-run and actually deleted
+  // everything while printing "removed". It must preview only — touch nothing.
+  test("--uninstall --dry-run previews without deleting anything", () => {
+    runTg(["init", "--host", "copilot-cli"]);
+    const cfg = join(home, ".copilot", "hooks", "tk-rewrite.json");
+    expect(existsSync(cfg)).toBe(true);
+
+    const result = runTg(["init", "--uninstall", "--dry-run"]);
+    expect(result.status).toBe(0);
+    expect(result.stdout).toContain("[dry-run]");
+    expect(result.stdout).toContain("would remove");
+    expect(result.stdout).not.toMatch(/^(?!.*\[dry-run]).*\bremoved\b/m);
+    // The config the real uninstall deletes is still present.
+    expect(existsSync(cfg)).toBe(true);
+  });
+
   test("--host claude-code → hook tier, patches ~/.claude/settings.json", () => {
     const result = runTg(["init", "--host", "claude-code"]);
     expect(result.status).toBe(0);

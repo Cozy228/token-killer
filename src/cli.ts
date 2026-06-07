@@ -208,8 +208,11 @@ async function main(): Promise<number> {
     return runTelemetry(parsed.subArgs ?? []);
   }
   if (!parsed.command) {
-    process.stderr.write("tk: missing command\n");
-    return 1;
+    // Bare `tk` (or flags with no command to run) has nothing to execute — print
+    // the usage summary like `--help` rather than a bare error, so a curious user
+    // who just types `tk` lands on the command list.
+    process.stdout.write(help());
+    return 0;
   }
 
   const command = parsed.command;

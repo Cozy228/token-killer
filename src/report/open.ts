@@ -49,6 +49,8 @@ export function openInBrowser(path: string): boolean {
 export function emitHtmlReport(doc: ReportDoc, nowMs: number = Date.now()): string {
   const path = writeReport(doc, nowMs);
   const opened = openInBrowser(path);
-  process.stdout.write(`HTML report: ${path}${opened ? " (opening…)" : ""}\n`);
+  process.stdout.write(
+    `Generated HTML report: ${path}${opened ? " (opening in your browser…)" : ""}\n`,
+  );
   return path;
 }
