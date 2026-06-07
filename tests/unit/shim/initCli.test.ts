@@ -113,6 +113,37 @@ describe("tk init", () => {
     expect(existsSync(cfg)).toBe(false);
   });
 
+  // Regression: `--uninstall --project` once nuked the user-level install too (it
+  // removed everything, then ADDED project removals). Cleaning up a project test
+  // must leave the user's claude-code hook and other user tiers intact.
+  test("--uninstall --project removes only repo artifacts, not the user install", () => {
+    const project = mkdtempSync(join(tmpdir(), "tk-init-project-"));
+    try {
+      // User-level claude-code install.
+      runTg(["init", "--host", "claude-code"]);
+      const userHook = join(home, ".claude", "settings.json");
+      expect(existsSync(userHook)).toBe(true);
+      // Project-level copilot install in the repo.
+      runTg(["init", "--project", "--host", "copilot-cli"], {}, project);
+      const projectCfg = join(project, ".github", "hooks", "tk-rewrite.json");
+      const projectInjection = join(project, ".github", "copilot-instructions.md");
+      expect(existsSync(projectCfg)).toBe(true);
+
+      const result = runTg(["init", "--uninstall", "--project"], {}, project);
+      expect(result.status).toBe(0);
+      // Project artifacts gone — including the now-empty hooks/ dir and the
+      // injection-only instructions file (no 0-byte leftover).
+      expect(existsSync(projectCfg)).toBe(false);
+      expect(existsSync(join(project, ".github", "hooks"))).toBe(false);
+      expect(existsSync(projectInjection)).toBe(false);
+      // User-level install untouched.
+      expect(existsSync(userHook)).toBe(true);
+      expect(readFileSync(userHook, "utf8")).toContain("hook claude");
+    } finally {
+      rmSync(project, { recursive: true, force: true });
+    }
+  });
+
   // Regression: `--uninstall --dry-run` once IGNORED dry-run and actually deleted
   // everything while printing "removed". It must preview only — touch nothing.
   test("--uninstall --dry-run previews without deleting anything", () => {

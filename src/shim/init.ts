@@ -143,13 +143,17 @@ function showStatus(): number {
   return 0;
 }
 
-// Remove every tier this user-level init may have written: the Copilot hook
-// config, the shim, and the injection files (user + project). Marker-guarded —
-// only files tk wrote are removed.
+// Remove what tk installed. Marker-guarded — only files tk wrote are removed.
+// `--project` scopes removal to the repo's own artifacts (the project hook config
+// + project injection); without it, the user-level install is removed. The two are
+// installed independently, so uninstalling one must never nuke the other — e.g.
+// cleaning up a `--project` test must not delete the user's claude-code hook.
 function uninstall(opts: InitArgs): number {
   // --dry-run must NOT remove anything — probe current state via the same status
   // helpers `--show` uses and report what removal WOULD touch.
   if (opts.dryRun) return uninstallDryRun(opts);
+  if (opts.project) return uninstallProject();
+
   const removedClaude = uninstallClaudeHook({});
   out(
     `claude-code settings hook: ${removedClaude.removed ? `removed tk entry from ${removedClaude.path}` : "nothing to remove"}`,
@@ -158,16 +162,9 @@ function uninstall(opts: InitArgs): number {
   out(
     `copilot hook config: ${removedHook.removed ? `removed ${removedHook.path}` : "nothing to remove"}`,
   );
-  if (opts.project) {
-    const removedProjectHook = uninstallCopilotHookConfig({ project: true, cwd: process.cwd() });
-    out(
-      `project hook config: ${removedProjectHook.removed ? `removed ${removedProjectHook.path}` : "nothing to remove"}`,
-    );
-  }
   runShim(["uninstall"]);
   const host = detectHost(gatherDetectEnv());
   unwriteInjection(injectionTarget(host));
-  if (opts.project) unwriteInjection(projectInjectionPath(process.cwd()));
   out(`instruction injection: removed`);
   // Remove the usage guidance (TK.md) + its loader reference for any host that
   // has one. detectHost may differ from the install-time host, so clear both.
@@ -178,9 +175,37 @@ function uninstall(opts: InitArgs): number {
   return 0;
 }
 
-// Read-only preview of `--uninstall`: report what each tier removal would touch
-// without deleting anything. Mirrors uninstall()'s lines with `would remove`.
+// Project-scoped uninstall (`--uninstall --project`): only the repo's own
+// artifacts. Leaves every user-level tier (claude hook, shim, user injection,
+// user guidance) untouched.
+function uninstallProject(): number {
+  const cwd = process.cwd();
+  const removedProjectHook = uninstallCopilotHookConfig({ project: true, cwd });
+  out(
+    `project hook config: ${removedProjectHook.removed ? `removed ${removedProjectHook.path}` : "nothing to remove"}`,
+  );
+  unwriteInjection(projectInjectionPath(cwd));
+  out(`project instruction injection: removed`);
+  return 0;
+}
+
+// Read-only preview of `--uninstall`: report what removal WOULD touch without
+// deleting anything. Mirrors uninstall()'s scoping — `--project` previews only the
+// repo's artifacts, leaving the user-level tiers out.
 function uninstallDryRun(opts: InitArgs): number {
+  if (opts.project) {
+    const cwd = process.cwd();
+    const projectHook = copilotHookConfigStatus({ project: true, cwd });
+    out(
+      `[dry-run] project hook config: ${projectHook.present ? `would remove ${projectHook.path}` : "nothing to remove"}`,
+    );
+    const projectInjection = projectInjectionPath(cwd);
+    out(
+      `[dry-run] project instruction injection: ${existsSync(projectInjection) ? `would remove ${projectInjection}` : "nothing to remove"}`,
+    );
+    return 0;
+  }
+
   const claude = claudeHookStatus({});
   out(
     `[dry-run] claude-code settings hook: ${claude.present ? `would remove tk entry from ${claude.path}` : "nothing to remove"}`,
@@ -189,24 +214,12 @@ function uninstallDryRun(opts: InitArgs): number {
   out(
     `[dry-run] copilot hook config: ${hook.present ? `would remove ${hook.path}` : "nothing to remove"}`,
   );
-  if (opts.project) {
-    const projectHook = copilotHookConfigStatus({ project: true, cwd: process.cwd() });
-    out(
-      `[dry-run] project hook config: ${projectHook.present ? `would remove ${projectHook.path}` : "nothing to remove"}`,
-    );
-  }
   runShim(["status"]);
   const host = detectHost(gatherDetectEnv());
   const target = injectionTarget(host);
   out(
     `[dry-run] instruction injection: ${existsSync(target) ? `would remove ${target}` : "nothing to remove"}`,
   );
-  if (opts.project) {
-    const projectInjection = projectInjectionPath(process.cwd());
-    out(
-      `[dry-run] project injection: ${existsSync(projectInjection) ? `would remove ${projectInjection}` : "nothing to remove"}`,
-    );
-  }
   for (const guidanceHost of ["claude-code", "copilot-cli"] as const) {
     const guidance = guidanceFilePath(guidanceHost);
     if (guidance && existsSync(guidance)) {

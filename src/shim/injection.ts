@@ -1,4 +1,4 @@
-import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { homedir } from "node:os";
 import { dirname, join } from "node:path";
 
@@ -48,7 +48,16 @@ export function writeInjection(filePath: string, body = injectionBody()): void {
 
 export function unwriteInjection(filePath: string): void {
   if (!existsSync(filePath)) return;
-  writeFileSync(filePath, removeInjectionBlock(readFileSync(filePath, "utf8")));
+  const stripped = removeInjectionBlock(readFileSync(filePath, "utf8"));
+  // If only tk's block was in the file, tk created it solely for that block —
+  // delete it rather than leave a 0-byte file (e.g. a project `.github/
+  // copilot-instructions.md`). A file that still has the user's own content keeps
+  // it; only the block is stripped.
+  if (stripped.trim() === "") {
+    rmSync(filePath, { force: true });
+    return;
+  }
+  writeFileSync(filePath, stripped);
 }
 
 // User-level instruction file for a host (the DEFAULT target — never the repo).
@@ -60,7 +69,8 @@ export function userInjectionPath(
   vscodeUserDirPath?: string,
 ): string {
   if (host === "copilot-cli") return join(home, ".copilot", "copilot-instructions.md");
-  if (host === "vscode" && vscodeUserDirPath) return join(vscodeUserDirPath, "copilot-instructions.md");
+  if (host === "vscode" && vscodeUserDirPath)
+    return join(vscodeUserDirPath, "copilot-instructions.md");
   return join(tokenKillerHome(), "copilot-instructions.md");
 }
 

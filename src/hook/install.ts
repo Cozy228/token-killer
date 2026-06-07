@@ -10,7 +10,15 @@
 // (`<cwd>/.github/hooks/tk-rewrite.json`). The file is dedicated and carries a
 // marker so uninstall removes only our file, never a user's.
 
-import { existsSync, mkdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import {
+  existsSync,
+  mkdirSync,
+  readdirSync,
+  readFileSync,
+  rmdirSync,
+  rmSync,
+  writeFileSync,
+} from "node:fs";
 import { homedir } from "node:os";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -112,7 +120,19 @@ export function uninstallCopilotHookConfig(loc: ConfigLocation): {
   const path = copilotHookConfigPath(loc);
   if (!isManaged(path)) return { path, removed: false };
   rmSync(path, { force: true });
+  // The `hooks/` dir is tk-dedicated (it holds only this config), so drop it once
+  // empty rather than leaving an empty `.github/hooks/` behind. Best-effort; the
+  // shared parent (`.github/` / `~/.copilot/`) is never touched.
+  removeDirIfEmpty(dirname(path));
   return { path, removed: true };
+}
+
+function removeDirIfEmpty(dir: string): void {
+  try {
+    if (existsSync(dir) && readdirSync(dir).length === 0) rmdirSync(dir);
+  } catch {
+    // Best-effort cleanup — a non-empty or vanished dir is fine to leave.
+  }
 }
 
 export function copilotHookConfigStatus(loc: ConfigLocation): {

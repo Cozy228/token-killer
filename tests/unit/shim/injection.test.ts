@@ -57,13 +57,27 @@ describe("writeInjection round-trip", () => {
   });
   afterEach(() => rmSync(dir, { recursive: true, force: true }));
 
-  test("creates the file (and parent dirs) then unwrite removes the block", () => {
+  test("creates the file (and parent dirs); unwrite of an injection-only file deletes it", () => {
     const file = join(dir, "nested", "copilot-instructions.md");
     writeInjection(file);
     expect(existsSync(file)).toBe(true);
     expect(readFileSync(file, "utf8")).toContain("Token Killer");
     unwriteInjection(file);
-    expect(readFileSync(file, "utf8")).not.toContain(">>> token-killer >>>");
+    // tk created the file solely for its block, so unwrite removes it rather than
+    // leaving a 0-byte file behind.
+    expect(existsSync(file)).toBe(false);
+  });
+
+  test("unwrite preserves a file that has the user's own content", () => {
+    const file = join(dir, "copilot-instructions.md");
+    writeFileSync(file, "# My rules\n");
+    writeInjection(file);
+    expect(readFileSync(file, "utf8")).toContain(">>> token-killer >>>");
+    unwriteInjection(file);
+    expect(existsSync(file)).toBe(true);
+    const after = readFileSync(file, "utf8");
+    expect(after).toContain("# My rules");
+    expect(after).not.toContain(">>> token-killer >>>");
   });
 
   test("is idempotent against an existing file", () => {
