@@ -1,7 +1,7 @@
 import { describe, expect, test } from "vitest";
 
-import { expectRtkParity, filterRtkOutput } from "../../helpers/rtkCommandHarness.js";
-import { lcsChanges } from "../../../src/handlers/common/diff.js";
+import { expectRtkParity, filterRtkOutput } from "../../../helpers/rtkCommandHarness.js";
+import { lcsChanges } from "../../../../src/handlers/common/diff.js";
 
 // RTK: git/diff_cmd.rs::make_large_unified_diff — one file, N removed then N added.
 function makeLargeUnifiedDiff(added: number, removed: number): string {
@@ -22,7 +22,13 @@ describe("RTK diff behavior", () => {
   test("condenses unified diff to file metadata and changed lines", async () => {
     const result = await filterRtkOutput(
       ["diff", "old.ts", "new.ts"],
-      ["--- old.ts", "+++ new.ts", "@@ -1,2 +1,2 @@", "-const value = 1;", "+const value = 2;"].join("\n"),
+      [
+        "--- old.ts",
+        "+++ new.ts",
+        "@@ -1,2 +1,2 @@",
+        "-const value = 1;",
+        "+const value = 2;",
+      ].join("\n"),
     );
 
     expectRtkParity(result, {

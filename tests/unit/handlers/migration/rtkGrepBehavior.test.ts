@@ -1,15 +1,19 @@
 import { describe, expect, test } from "vitest";
 
-import { expectRtkParity, filterRtkFixture, filterRtkOutput } from "../../helpers/rtkCommandHarness.js";
+import {
+  expectRtkParity,
+  filterRtkFixture,
+  filterRtkOutput,
+} from "../../../helpers/rtkCommandHarness.js";
 import {
   cleanLine,
   compactPath,
   groupGrepOutput,
   hasFormatFlag,
   parseMatchLine,
-} from "../../../src/handlers/common/grepFilter.js";
-import { buildGrepArgs } from "../../../src/handlers/common/searchLike.js";
-import { parseLevel, stripLevelFlags } from "../../../src/handlers/common/level.js";
+} from "../../../../src/handlers/common/grepFilter.js";
+import { buildGrepArgs } from "../../../../src/handlers/common/searchLike.js";
+import { parseLevel, stripLevelFlags } from "../../../../src/handlers/common/level.js";
 
 describe("RTK grep command construction", () => {
   // RTK: grep_cmd.rs::run — RTK searches with `-nH` so output is `file:line:content`.
@@ -63,7 +67,12 @@ describe("RTK grep command construction", () => {
   });
 
   test("leaves context-flag invocations untouched (no rewrite, no grouping)", () => {
-    expect(buildGrepArgs("rg", ["-A", "2", "export", "src/"])).toEqual(["-A", "2", "export", "src/"]);
+    expect(buildGrepArgs("rg", ["-A", "2", "export", "src/"])).toEqual([
+      "-A",
+      "2",
+      "export",
+      "src/",
+    ]);
     expect(buildGrepArgs("rg", ["-C3", "export", "src/"])).toEqual(["-C3", "export", "src/"]);
   });
 
@@ -239,7 +248,9 @@ describe("RTK grep --level dial + lossless dedup", () => {
       "tests/fixtures/common/rg_overflow_matches.txt",
     );
     expect(result.output).toContain("src/order/submit.ts: 67 matches");
-    expect(result.output).toContain("src/order/submit.ts:1:const handler1 = submitOrder(payload1);");
+    expect(result.output).toContain(
+      "src/order/submit.ts:1:const handler1 = submitOrder(payload1);",
+    );
     // Only the first sample — the 25th match is no longer shown.
     expect(result.output).not.toContain("src/order/submit.ts:25:");
     expect(result.output).toContain("# capped");
@@ -273,7 +284,10 @@ describe("RTK grep retention guards (rg)", () => {
 
   // Format-flag rg (-c) output is already small — pass through verbatim.
   test("format-flag rg passes through unchanged", async () => {
-    const result = await filterRtkOutput(["rg", "-c", "export", "src/"], "src/a.ts:3\nsrc/b.ts:1\n");
+    const result = await filterRtkOutput(
+      ["rg", "-c", "export", "src/"],
+      "src/a.ts:3\nsrc/b.ts:1\n",
+    );
     expect(result.output.trim()).toBe("src/a.ts:3\nsrc/b.ts:1");
   });
 
@@ -289,7 +303,10 @@ describe("RTK grep retention guards (rg)", () => {
   // real match out of a long line.
   test("centers long lines on the real pattern, not a -g glob value", async () => {
     const longLine = `src/a.ts:1:${"x".repeat(90)} submitOrder(payload)`;
-    const result = await filterRtkOutput(["rg", "-g", "*.ts", "submitOrder", "src"], `${longLine}\n`);
+    const result = await filterRtkOutput(
+      ["rg", "-g", "*.ts", "submitOrder", "src"],
+      `${longLine}\n`,
+    );
     expect(result.output).toContain("submitOrder");
   });
 });
@@ -297,7 +314,9 @@ describe("RTK grep retention guards (rg)", () => {
 describe("RTK grep level/-- parsing (edge cases)", () => {
   // #2: `--` ends option parsing — a literal `--level` token after it is NOT the dial.
   test("parseLevel ignores --level after a -- delimiter", () => {
-    expect(parseLevel(["--", "--level", "minimal", "src"], { fallback: "balanced" })).toBe("balanced");
+    expect(parseLevel(["--", "--level", "minimal", "src"], { fallback: "balanced" })).toBe(
+      "balanced",
+    );
     expect(parseLevel(["--level", "minimal", "src"], { fallback: "balanced" })).toBe("minimal");
   });
 
@@ -312,7 +331,7 @@ describe("RTK grep level/-- parsing (edge cases)", () => {
     const lines: string[] = [];
     for (let i = 1; i <= 130; i += 1) lines.push(`src/f${i}.ts:1:match ${i}`);
     const grouped = groupGrepOutput(lines.join("\n"), "match", { aggregate: true, dedupe: true })!;
-    const headers = grouped.split("\n").filter((l) => /: 1 matches$/.test(l));
+    const headers = grouped.split("\n").filter((l) => l.endsWith(': 1 matches'));
     expect(headers.length).toBeLessThanOrEqual(100);
     expect(grouped).toContain("[+30 more]");
   });
@@ -380,11 +399,7 @@ describe("RTK grep clean_line", () => {
 
   // RTK: test_clean_line_multibyte — never panics / empties on multibyte input.
   test("handles multibyte content without splitting characters", () => {
-    const cleaned = cleanLine(
-      "  สวัสดีครับ นี่คือข้อความที่ยาวมากสำหรับทดสอบ  ",
-      20,
-      "ครับ",
-    );
+    const cleaned = cleanLine("  สวัสดีครับ นี่คือข้อความที่ยาวมากสำหรับทดสอบ  ", 20, "ครับ");
     expect(cleaned.length).toBeGreaterThan(0);
   });
 
@@ -433,7 +448,8 @@ describe("RTK grep groupGrepOutput fallback", () => {
   // tk adaptation: lines that never parse (no -n line numbers) cannot be grouped,
   // so the grouper signals passthrough rather than dropping content.
   test("returns null when no line parses as a match", () => {
-    const raw = "src/core/history.ts:export type Foo = {\nsrc/core/history.ts:export const bar = 1\n";
+    const raw =
+      "src/core/history.ts:export type Foo = {\nsrc/core/history.ts:export const bar = 1\n";
     expect(groupGrepOutput(raw, "export")).toBeNull();
   });
 });

@@ -1,6 +1,6 @@
 import { describe, expect, test } from "vitest";
 
-import { expectRtkParity, filterRtkOutput } from "../../helpers/rtkCommandHarness.js";
+import { expectRtkParity, filterRtkOutput } from "../../../helpers/rtkCommandHarness.js";
 
 describe("RTK gt behavior", () => {
   // RTK: git/gt_cmd.rs::test_filter_gt_log_exact_format — the graph is KEPT; only
@@ -87,7 +87,11 @@ describe("RTK gt behavior", () => {
   test("summarizes a sync with deleted branch names", async () => {
     const result = await filterRtkOutput(
       ["gt", "sync"],
-      ["Synced with remote", "Deleted branch feat/merged-feature", "Deleted branch fix/old-hotfix"].join("\n"),
+      [
+        "Synced with remote",
+        "Deleted branch feat/merged-feature",
+        "Deleted branch fix/old-hotfix",
+      ].join("\n"),
     );
     expectRtkParity(result, {
       critical: ["ok sync: 1 synced, 2 deleted (feat/merged-feature, fix/old-hotfix)"],
@@ -105,9 +109,15 @@ describe("RTK gt behavior", () => {
         "Restacked branch fix/parsing on feat/add-db",
       ].join("\n"),
     );
-    expectRtkParity(restack, { critical: ["ok restacked 3 branches"], exact: "ok restacked 3 branches" });
+    expectRtkParity(restack, {
+      critical: ["ok restacked 3 branches"],
+      exact: "ok restacked 3 branches",
+    });
 
     const create = await filterRtkOutput(["gt", "create"], "Created branch feat/new-feature");
-    expectRtkParity(create, { critical: ["ok created feat/new-feature"], exact: "ok created feat/new-feature" });
+    expectRtkParity(create, {
+      critical: ["ok created feat/new-feature"],
+      exact: "ok created feat/new-feature",
+    });
   });
 });

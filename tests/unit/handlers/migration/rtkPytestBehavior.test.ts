@@ -1,6 +1,10 @@
 import { describe, expect, test } from "vitest";
 
-import { expectRtkParity, filterRtkFixture, filterRtkOutput } from "../../helpers/rtkCommandHarness.js";
+import {
+  expectRtkParity,
+  filterRtkFixture,
+  filterRtkOutput,
+} from "../../../helpers/rtkCommandHarness.js";
 
 describe("RTK pytest behavior", () => {
   // RTK: python/pytest_cmd.rs::test_filter_pytest_with_failures — keep the summary
@@ -34,7 +38,12 @@ describe("RTK pytest behavior", () => {
   test("reports no tests collected", async () => {
     const result = await filterRtkOutput(
       ["pytest"],
-      ["=== test session starts ===", "collected 0 items", "", "=== no tests ran in 0.00s ==="].join("\n"),
+      [
+        "=== test session starts ===",
+        "collected 0 items",
+        "",
+        "=== no tests ran in 0.00s ===",
+      ].join("\n"),
       5,
     );
 
@@ -71,7 +80,12 @@ describe("RTK pytest behavior", () => {
   // RTK: pytest_cmd.rs::test_filter_pytest_xfail_caps_and_tee_hint — 15 XFAIL lines
   // cap at MAX_XFAIL (10) and emit "… +5 more" + a recovery hint.
   test("caps xfail entries at 10 and emits an overflow hint", async () => {
-    const lines = ["=== test session starts ===", "collected 15 items", "", "=== short test summary info ==="];
+    const lines = [
+      "=== test session starts ===",
+      "collected 15 items",
+      "",
+      "=== short test summary info ===",
+    ];
     for (let i = 0; i < 15; i += 1) {
       lines.push(`XFAIL test_x.py::test_case_${i} - known issue #${i}`);
     }

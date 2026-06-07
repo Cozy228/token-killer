@@ -1,7 +1,7 @@
 import { describe, expect, test } from "vitest";
 
-import { expectRtkParity, filterRtkOutput } from "../../helpers/rtkCommandHarness.js";
-import { buildGhArgs } from "../../../src/handlers/git/hostingCli.js";
+import { expectRtkParity, filterRtkOutput } from "../../../helpers/rtkCommandHarness.js";
+import { buildGhArgs } from "../../../../src/handlers/git/hostingCli.js";
 
 describe("RTK gh behavior", () => {
   // RTK: gh_cmd.rs — gh's human table is never trusted; RTK re-runs each
@@ -117,12 +117,7 @@ describe("RTK gh behavior", () => {
     );
 
     expectRtkParity(result, {
-      critical: [
-        "Workflow Runs",
-        "[ok] CI [101]",
-        "[FAIL] Deploy [102]",
-        "[time] Nightly [103]",
-      ],
+      critical: ["Workflow Runs", "[ok] CI [101]", "[FAIL] Deploy [102]", "[time] Nightly [103]"],
       forbidden: [/workflowName/, /displayTitle/, /undefined/],
     });
   });
@@ -142,7 +137,11 @@ describe("RTK gh behavior", () => {
     expect(result.output).toContain("fix auth flow");
 
     expectRtkParity(result, {
-      critical: ["Pull Requests", "[open] #12 fix auth flow (alice)", "[open] #13 update deps (bob)"],
+      critical: [
+        "Pull Requests",
+        "[open] #12 fix auth flow (alice)",
+        "[open] #13 update deps (bob)",
+      ],
       exact: [
         "Pull Requests",
         "  [open] #12 fix auth flow (alice)",
@@ -183,7 +182,12 @@ describe("RTK gh behavior", () => {
     );
 
     expectRtkParity(result, {
-      critical: ["Cozy228/token-killer", "[public]", "7 stars | 2 forks", "https://github.com/Cozy228/token-killer"],
+      critical: [
+        "Cozy228/token-killer",
+        "[public]",
+        "7 stars | 2 forks",
+        "https://github.com/Cozy228/token-killer",
+      ],
       exact: [
         "Cozy228/token-killer",
         "  [public]",

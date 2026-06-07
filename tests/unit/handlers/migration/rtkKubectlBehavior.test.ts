@@ -1,7 +1,7 @@
 import { describe, expect, test } from "vitest";
 
-import { expectRtkParity, filterRtkOutput } from "../../helpers/rtkCommandHarness.js";
-import { buildKubectlArgs } from "../../../src/handlers/cloud/container.js";
+import { expectRtkParity, filterRtkOutput } from "../../../helpers/rtkCommandHarness.js";
+import { buildKubectlArgs } from "../../../../src/handlers/cloud/container.js";
 
 // RTK: container.rs command construction — `get pods|services` (incl. po/pod/svc/
 // service aliases) is rewritten to `-o json` and `logs <pod>` gains `--tail 100`,
@@ -72,7 +72,9 @@ describe("RTK kubectl behavior", () => {
             metadata: { namespace: "default", name: "api-123" },
             status: {
               phase: "Unknown",
-              containerStatuses: [{ restartCount: 3, state: { waiting: { reason: "CrashLoopBackOff" } } }],
+              containerStatuses: [
+                { restartCount: 3, state: { waiting: { reason: "CrashLoopBackOff" } } },
+              ],
             },
           },
           {
@@ -125,7 +127,12 @@ describe("RTK kubectl behavior", () => {
     const result = await filterRtkOutput(["kubectl", "get", "pods"], JSON.stringify({ items }));
 
     expectRtkParity(result, {
-      critical: ["13 pods: 13 [x], 13 restarts", "[warn] Issues:", "  default/bad-0 Failed", "  … +3 more"],
+      critical: [
+        "13 pods: 13 [x], 13 restarts",
+        "[warn] Issues:",
+        "  default/bad-0 Failed",
+        "  … +3 more",
+      ],
       forbidden: [/bad-10 /, /bad-12 /],
     });
   });
@@ -150,7 +157,11 @@ describe("RTK kubectl behavior", () => {
     );
 
     expectRtkParity(result, {
-      critical: ["2 services:", "  default/frontend LoadBalancer [80→8080]", "  default/cache ClusterIP [6379]"],
+      critical: [
+        "2 services:",
+        "  default/frontend LoadBalancer [80→8080]",
+        "  default/cache ClusterIP [6379]",
+      ],
       forbidden: [/metadata/, /targetPort/],
     });
   });
@@ -214,7 +225,7 @@ describe("RTK kubectl behavior", () => {
 // Verifies the RTK passthrough contract for -o/--output without tripping the
 // harness no-passthrough guard (which is intended for summarizable inputs).
 async function rawPassthrough(command: string[], stdout: string): Promise<string> {
-  const { routeCommand } = await import("../../../src/router.js");
+  const { routeCommand } = await import("../../../../src/router.js");
   const program = command[0] ?? "";
   const handler = routeCommand({
     program,

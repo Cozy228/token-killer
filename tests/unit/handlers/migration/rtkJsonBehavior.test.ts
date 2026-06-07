@@ -1,6 +1,10 @@
 import { describe, expect, test } from "vitest";
 
-import { expectRtkParity, filterRtkFixture, filterRtkOutput } from "../../helpers/rtkCommandHarness.js";
+import {
+  expectRtkParity,
+  filterRtkFixture,
+  filterRtkOutput,
+} from "../../../helpers/rtkCommandHarness.js";
 
 // RTK oracle: rtk/src/cmds/system/json_cmd.rs.
 // `rtk json <file>` (no --schema/--keys-only) runs filter_json_compact ->
@@ -35,7 +39,9 @@ describe("RTK json behavior", () => {
 
     // The long "description" string is truncated to 77 chars + ellipsis, so the
     // raw 80+ "a" run from the source JSON must not survive.
-    expect(result.output).not.toMatch(/aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa/);
+    expect(result.output).not.toMatch(
+      /aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa/,
+    );
 
     expectRtkParity(result, {
       // Exact full-document compaction, anchored to RTK's compact_json output:
@@ -51,7 +57,7 @@ describe("RTK json behavior", () => {
         `  description: "${"a".repeat(77)}..."`,
         "  files:",
         '  ["dist", ... +7 more]',
-        "  name: \"token-killer\"",
+        '  name: "token-killer"',
         "  private: true",
         "  scripts:",
         "  {",
@@ -95,7 +101,9 @@ describe("RTK json behavior", () => {
 
     expectRtkParity(result, {
       critical: ["key:", `"${"b".repeat(77)}..."`],
-      forbidden: [/bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb/],
+      forbidden: [
+        /bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb/,
+      ],
     });
   });
 
@@ -146,7 +154,10 @@ describe("RTK json behavior", () => {
   test("keeps the compact view on minified nested JSON without reverting to raw", async () => {
     const result = await filterRtkOutput(
       ["json", "config.json"],
-      JSON.stringify({ config: { db: { host: "localhost", port: 5432 }, cache: { ttl: 60 } }, name: "svc" }),
+      JSON.stringify({
+        config: { db: { host: "localhost", port: 5432 }, cache: { ttl: 60 } },
+        name: "svc",
+      }),
     );
 
     // RTK compact form strips the JSON quoting/braces noise: "key: value" not "\"key\":value".

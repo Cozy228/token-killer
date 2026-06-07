@@ -4,22 +4,18 @@ import { fileURLToPath } from "node:url";
 
 import { describe, expect, test } from "vitest";
 
-const repoRoot = path.resolve(
-  path.dirname(fileURLToPath(import.meta.url)),
-  "../../..",
-);
+const repoRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "../../..");
 
 /**
- * Structural meta-tests that operate on the test corpus or RTK manifest rather
- * than on a single handler's stdout. They never fabricate command output, so
- * they are exempt from the synthetic-stdout check by design.
+ * Structural meta-tests that operate on the test corpus rather than on a single
+ * handler's stdout. They never fabricate command output, so they are exempt from
+ * the synthetic-stdout check by design.
  */
 const structuralMetaTests = new Set([
   "fixtureContent.test.ts",
   "fixtureRegressionDebt.test.ts",
   "fixtureWiring.test.ts",
   "registeredHandlerCoverage.test.ts",
-  "rtkDomainCaseParity.test.ts",
   "syntheticTestDebt.test.ts",
 ]);
 

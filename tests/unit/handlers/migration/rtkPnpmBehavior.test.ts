@@ -1,6 +1,6 @@
 import { describe, expect, test } from "vitest";
 
-import { expectRtkParity, filterRtkOutput } from "../../helpers/rtkCommandHarness.js";
+import { expectRtkParity, filterRtkOutput } from "../../../helpers/rtkCommandHarness.js";
 
 describe("RTK pnpm behavior", () => {
   test("groups dependency listing sections and strips tree characters", async () => {
@@ -23,16 +23,8 @@ describe("RTK pnpm behavior", () => {
     expect(result.output).not.toMatch(/[├└│]/);
 
     expectRtkParity(result, {
-      critical: [
-        "[prod]",
-        "react",
-        "[dev]",
-        "eslint",
-      ],
-      forbidden: [
-        /Legend:/,
-        /[├└│]/,
-      ],
+      critical: ["[prod]", "react", "[dev]", "eslint"],
+      forbidden: [/Legend:/, /[├└│]/],
       exact: [
         "2 packages (1 prod / 1 dev)",
         "[prod]",

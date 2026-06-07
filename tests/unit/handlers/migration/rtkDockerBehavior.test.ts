@@ -1,7 +1,7 @@
 import { describe, expect, test } from "vitest";
 
-import { expectRtkParity, filterRtkOutput } from "../../helpers/rtkCommandHarness.js";
-import { buildDockerArgs } from "../../../src/handlers/cloud/container.js";
+import { expectRtkParity, filterRtkOutput } from "../../../helpers/rtkCommandHarness.js";
+import { buildDockerArgs } from "../../../../src/handlers/cloud/container.js";
 
 // RTK: container.rs command construction — the real CLI path rewrites each handled
 // subcommand into a fixed `--format`/`--tail` invocation so the headerless,
@@ -138,7 +138,11 @@ describe("RTK docker behavior", () => {
     const result = await filterRtkOutput(["docker", "compose", "ps"], rows);
 
     expectRtkParity(result, {
-      critical: ["[compose] 25 services:", "  svc-0 (nginx:latest) Up 1 hour [8000]", "  … +5 more"],
+      critical: [
+        "[compose] 25 services:",
+        "  svc-0 (nginx:latest) Up 1 hour [8000]",
+        "  … +5 more",
+      ],
       forbidden: [/svc-20 /, /svc-24 /],
       minTokenSavingsRatio: 0.1,
     });

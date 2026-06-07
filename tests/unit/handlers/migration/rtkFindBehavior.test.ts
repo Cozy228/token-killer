@@ -1,6 +1,10 @@
 import { describe, expect, test } from "vitest";
 
-import { expectRtkParity, filterRtkFixture, filterRtkOutput } from "../../helpers/rtkCommandHarness.js";
+import {
+  expectRtkParity,
+  filterRtkFixture,
+  filterRtkOutput,
+} from "../../../helpers/rtkCommandHarness.js";
 
 describe("RTK find behavior", () => {
   // RTK: system/find_cmd.rs — group matched files by directory ("NF MD:" header +
@@ -9,7 +13,12 @@ describe("RTK find behavior", () => {
   test("groups matched files by directory instead of dumping one path per line", async () => {
     const result = await filterRtkOutput(
       ["find", ".", "-name", "*.ts"],
-      ["./src/cli.ts", "./src/parse.ts", "./src/core/history.ts", "./tests/unit/parse.test.ts"].join("\n"),
+      [
+        "./src/cli.ts",
+        "./src/parse.ts",
+        "./src/core/history.ts",
+        "./tests/unit/parse.test.ts",
+      ].join("\n"),
     );
 
     expect(result.output).toContain("4F");

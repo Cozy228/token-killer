@@ -1,6 +1,6 @@
 import { describe, expect, test } from "vitest";
 
-import { expectRtkParity, filterRtkOutput } from "../../helpers/rtkCommandHarness.js";
+import { expectRtkParity, filterRtkOutput } from "../../../helpers/rtkCommandHarness.js";
 
 // RTK oracle: rtk/src/cmds/system/pipe_cmd.rs. `rtk pipe [filter]` runs a named or
 // auto-detected filter over arbitrary piped output. In tk the command is

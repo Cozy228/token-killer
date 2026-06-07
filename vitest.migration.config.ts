@@ -1,16 +1,20 @@
 import { defineConfig } from "vitest/config";
 
 /**
- * Migration and debt gates. Red is meaningful here:
- * - RTK module migration remains incomplete (rtkDomainCaseParity)
- * - RTK command behavior remains unmigrated (rtk*Behavior)
- * - Fixture-backed behavior regressions remain unresolved
- * - fixtureCases wiring / synthetic-stdout debt must stay clean
- * - Script parity and project infrastructure (CI, docs) are still incomplete
+ * Remaining RTK behavior debt, report-only. Red is meaningful here: each suite
+ * under tests/unit/handlers/migration/ covers a handler whose tk output still
+ * diverges from RTK reference behavior on some cases. Their green assertions are
+ * real shipped-handler coverage too, but the file as a whole carries known-red
+ * cases, so it cannot gate `test:ci` without hiding live failures.
  *
- * This suite is expected to be red until migration completes, so it is run
- * report-only and is NOT part of the blocking `test:ci` gate. The mapping in
- * docs/testing-and-migration-audit.md §4.2 is the source of truth for this list.
+ * As a handler's divergences are resolved (or accepted and the red cases
+ * removed), move its suite back to tests/unit/handlers/ so the product config's
+ * rtk*Behavior glob picks it up and it starts gating.
+ *
+ * The migration bookkeeping suites (parity manifest, script parity, project-
+ * config existence) were retired once the rewrite stabilized; the still-useful
+ * hygiene suites (registeredHandlerCoverage, fixtureWiring, fixtureRegressionDebt,
+ * syntheticTestDebt, fixtures) were promoted into the product config.
  */
 export default defineConfig({
   test: {
@@ -19,16 +23,6 @@ export default defineConfig({
     setupFiles: ["./tests/setup/isolateHome.ts"],
     restoreMocks: true,
     clearMocks: true,
-    include: [
-      "tests/unit/handlers/rtkDomainCaseParity.test.ts",
-      "tests/unit/handlers/registeredHandlerCoverage.test.ts",
-      "tests/unit/handlers/fixtureWiring.test.ts",
-      "tests/unit/handlers/fixtureRegressionDebt.test.ts",
-      "tests/unit/handlers/syntheticTestDebt.test.ts",
-      "tests/unit/handlers/rtk*Behavior.test.ts",
-      "tests/unit/fixtures.test.ts",
-      "tests/unit/rtkScriptParity.test.ts",
-      "tests/unit/projectConfig.test.ts",
-    ],
+    include: ["tests/unit/handlers/migration/rtk*Behavior.test.ts"],
   },
 });

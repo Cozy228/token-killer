@@ -1,6 +1,6 @@
 import { describe, expect, test } from "vitest";
 
-import { expectRtkParity, filterRtkOutput } from "../../helpers/rtkCommandHarness.js";
+import { expectRtkParity, filterRtkOutput } from "../../../helpers/rtkCommandHarness.js";
 
 // All inputs/expectations below mirror rtk/src/cmds/js/prettier_cmd.rs and its
 // #[test] cases (filter_prettier_output). The TS handler is a faithful port.
@@ -23,11 +23,7 @@ describe("RTK prettier behavior", () => {
     );
 
     expectRtkParity(result, {
-      critical: [
-        "Prettier: 6 files need formatting",
-        "button.tsx",
-        "session.ts",
-      ],
+      critical: ["Prettier: 6 files need formatting", "button.tsx", "session.ts"],
       forbidden: [
         // RTK strips the "Checking formatting..." chatter and the trailing hint.
         /Checking formatting/,
@@ -57,11 +53,7 @@ describe("RTK prettier behavior", () => {
       lines.push(`src/file${i}.ts`);
     }
 
-    const result = await filterRtkOutput(
-      ["prettier", "--check", "src"],
-      lines.join("\n"),
-      1,
-    );
+    const result = await filterRtkOutput(["prettier", "--check", "src"], lines.join("\n"), 1);
 
     expect(result.output).toContain("15 files need formatting");
     expect(result.output).toContain("... +5 more files");
@@ -102,11 +94,9 @@ describe("RTK prettier behavior", () => {
 
     const result = await filterRtkOutput(
       ["prettier", "--check", "src"],
-      [
-        "Checking formatting...",
-        ...files,
-        "40 All matched files use Prettier code style!",
-      ].join("\n"),
+      ["Checking formatting...", ...files, "40 All matched files use Prettier code style!"].join(
+        "\n",
+      ),
       1,
     );
 
@@ -144,10 +134,7 @@ describe("RTK prettier behavior", () => {
   test("collapses a clean check into a single status line", async () => {
     const result = await filterRtkOutput(
       ["prettier", "--check", "src"],
-      [
-        "Checking formatting...",
-        "All matched files use Prettier code style!",
-      ].join("\n"),
+      ["Checking formatting...", "All matched files use Prettier code style!"].join("\n"),
       0,
     );
 

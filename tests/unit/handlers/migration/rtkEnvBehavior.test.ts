@@ -1,6 +1,10 @@
 import { describe, expect, test } from "vitest";
 
-import { expectRtkParity, filterRtkFixture, filterRtkOutput } from "../../helpers/rtkCommandHarness.js";
+import {
+  expectRtkParity,
+  filterRtkFixture,
+  filterRtkOutput,
+} from "../../../helpers/rtkCommandHarness.js";
 
 describe("RTK env behavior", () => {
   // RTK: env_cmd.rs::run — group interesting variables under category headers,
@@ -148,7 +152,11 @@ describe("RTK env behavior", () => {
   // back to raw and leak the unmasked secret. No padding here — the point is that
   // the contract holds even when the structured form does not shrink the input.
   test("masks secrets on a tiny env without reverting to raw (no leak)", async () => {
-    const stdout = ["PATH=/usr/bin:/bin", "HOME=/home/u", "AWS_SECRET_ACCESS_KEY=fixture_api_secret_supersecretvalue"].join("\n");
+    const stdout = [
+      "PATH=/usr/bin:/bin",
+      "HOME=/home/u",
+      "AWS_SECRET_ACCESS_KEY=fixture_api_secret_supersecretvalue",
+    ].join("\n");
 
     const result = await filterRtkOutput(["env"], stdout);
 

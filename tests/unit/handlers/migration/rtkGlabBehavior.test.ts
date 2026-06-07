@@ -1,7 +1,7 @@
 import { describe, expect, test } from "vitest";
 
-import { expectRtkParity, filterRtkOutput } from "../../helpers/rtkCommandHarness.js";
-import { buildGlabArgs } from "../../../src/handlers/git/hostingCli.js";
+import { expectRtkParity, filterRtkOutput } from "../../../helpers/rtkCommandHarness.js";
+import { buildGlabArgs } from "../../../../src/handlers/git/hostingCli.js";
 
 describe("RTK glab behavior", () => {
   // RTK: glab_cmd.rs — list/view re-run with `-F json`; an explicit
@@ -39,7 +39,11 @@ describe("RTK glab behavior", () => {
     expect(result.output).toContain("fix auth flow");
 
     expectRtkParity(result, {
-      critical: ["Merge Requests", "[open] !7 fix auth flow (alice)", "[open] !8 update deps (bob)"],
+      critical: [
+        "Merge Requests",
+        "[open] !7 fix auth flow (alice)",
+        "[open] !8 update deps (bob)",
+      ],
       exact: [
         "Merge Requests",
         "  [open] !7 fix auth flow (alice)",

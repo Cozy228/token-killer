@@ -4,7 +4,18 @@ Single reference for **what good tests are**, **what is wrong with the suite tod
 
 Last audited: 2026-06-05
 
-**Run gates:** `pnpm test:product` (uses `vitest.config.ts`) is the implemented-behavior fidelity suite and may turn red when a known implementation bug is promoted into fixture-backed coverage. `pnpm test:migration` (uses `vitest.migration.config.ts`) is expected to stay red until RTK migration/debt is complete.
+> **2026-06-07 restructure.** The RTK rewrite is stable, so the migration *bookkeeping*
+> suites were retired and the live behavior coverage was promoted. Concretely:
+> `rtkDomainCaseParity` (+ `tests/helpers/rtkParityManifest.ts`), `rtkScriptParity`,
+> `projectConfig`, and `tests/out-of-scope/` were **deleted**; the still-useful hygiene
+> suites (`registeredHandlerCoverage`, `fixtureWiring`, `fixtureRegressionDebt`,
+> `syntheticTestDebt`, `fixtures`) and the 41 all-green `rtk*Behavior` suites were
+> **promoted into `vitest.config.ts`** (they now gate `test:ci`). Only the 17 still-
+> divergent behavior suites remain report-only, moved to
+> `tests/unit/handlers/migration/` and globbed by `vitest.migration.config.ts`.
+> §3.5's per-file inventory below predates this and is kept for historical context.
+
+**Run gates:** `pnpm test:product` (uses `vitest.config.ts`) is the implemented-behavior fidelity suite and may turn red when a known implementation bug is promoted into fixture-backed coverage. `pnpm test:migration` (uses `vitest.migration.config.ts`) holds only the remaining RTK behavior divergences (`tests/unit/handlers/migration/`) and is expected to stay red until those are resolved.
 
 `pnpm test:ci` is the **blocking** quality gate: `test:product`, `test:install`, `check-test-presence`, `validate-docs`, and `smoke`. It does **not** block on migration debt — it ends by running `test:migration:report` (the migration suite with `|| true`) so debt stays **visible without falsely failing CI**. A green `test:ci` therefore means *product quality is sound*, **not** that migration is complete. Migration is complete only when `pnpm test:migration` itself is green.
 

@@ -1,6 +1,6 @@
 import { describe, expect, test } from "vitest";
 
-import { expectRtkParity, filterRtkOutput } from "../../helpers/rtkCommandHarness.js";
+import { expectRtkParity, filterRtkOutput } from "../../../helpers/rtkCommandHarness.js";
 
 // Faithful parity tests for the AWS handler (src/handlers/cloud/aws.ts).
 // Source of truth: rtk/src/cmds/cloud/aws_cmd.rs — the filter_* functions and their
@@ -59,8 +59,20 @@ describe("RTK aws behavior", () => {
       ["aws", "cloudformation", "describe-stacks"],
       JSON.stringify({
         Stacks: [
-          { StackName: "api-prod", StackStatus: "CREATE_COMPLETE", DriftInformation: { StackDriftStatus: "IN_SYNC" }, RollbackConfiguration: {}, NotificationARNs: [] },
-          { StackName: "web-prod", StackStatus: "UPDATE_COMPLETE", DriftInformation: { StackDriftStatus: "IN_SYNC" }, RollbackConfiguration: {}, NotificationARNs: [] },
+          {
+            StackName: "api-prod",
+            StackStatus: "CREATE_COMPLETE",
+            DriftInformation: { StackDriftStatus: "IN_SYNC" },
+            RollbackConfiguration: {},
+            NotificationARNs: [],
+          },
+          {
+            StackName: "web-prod",
+            StackStatus: "UPDATE_COMPLETE",
+            DriftInformation: { StackDriftStatus: "IN_SYNC" },
+            RollbackConfiguration: {},
+            NotificationARNs: [],
+          },
         ],
         ResponseMetadata: { RequestId: "req-456", HTTPStatusCode: 200 },
       }),
@@ -138,32 +150,36 @@ describe("RTK aws behavior", () => {
       ["aws", "lambda", "list-functions"],
       // AWS CLI emits pretty-printed (indented) JSON; mirror that so token savings
       // (whitespace-delimited, like RTK count_tokens) is measured realistically.
-      JSON.stringify({
-        Functions: [
-          {
-            FunctionName: "my-api",
-            FunctionArn: "arn:aws:lambda:us-east-1:123:function:my-api",
-            Runtime: "python3.12",
-            Role: "arn:aws:iam::123:role/role-1",
-            Handler: "index.handler",
-            CodeSize: 5242880,
-            Timeout: 30,
-            MemorySize: 512,
-            LastModified: "2024-01-15T10:30:00.000+0000",
-            State: "Active",
-            Environment: { Variables: { SECRET_KEY: "s3cr3t", DB_PASSWORD: "hunter2" } },
-          },
-          {
-            FunctionName: "my-worker",
-            FunctionArn: "arn:aws:lambda:us-east-1:123:function:my-worker",
-            Runtime: "nodejs20.x",
-            MemorySize: 256,
-            Timeout: 60,
-            State: "Active",
-          },
-        ],
-        ResponseMetadata: { RequestId: "req-lambda", HTTPStatusCode: 200 },
-      }, null, 2),
+      JSON.stringify(
+        {
+          Functions: [
+            {
+              FunctionName: "my-api",
+              FunctionArn: "arn:aws:lambda:us-east-1:123:function:my-api",
+              Runtime: "python3.12",
+              Role: "arn:aws:iam::123:role/role-1",
+              Handler: "index.handler",
+              CodeSize: 5242880,
+              Timeout: 30,
+              MemorySize: 512,
+              LastModified: "2024-01-15T10:30:00.000+0000",
+              State: "Active",
+              Environment: { Variables: { SECRET_KEY: "s3cr3t", DB_PASSWORD: "hunter2" } },
+            },
+            {
+              FunctionName: "my-worker",
+              FunctionArn: "arn:aws:lambda:us-east-1:123:function:my-worker",
+              Runtime: "nodejs20.x",
+              MemorySize: 256,
+              Timeout: 60,
+              State: "Active",
+            },
+          ],
+          ResponseMetadata: { RequestId: "req-lambda", HTTPStatusCode: 200 },
+        },
+        null,
+        2,
+      ),
     );
 
     expectRtkParity(result, {
@@ -197,7 +213,9 @@ describe("RTK aws behavior", () => {
   test("s3 ls overflows past 30 lines with a '… +N more items' marker", async () => {
     const lines: string[] = [];
     for (let i = 1; i <= 50; i += 1) {
-      lines.push(`2024-01-0${(i % 9) + 1} 12:00:00     1024 object-with-a-fairly-long-name-${i}.txt`);
+      lines.push(
+        `2024-01-0${(i % 9) + 1} 12:00:00     1024 object-with-a-fairly-long-name-${i}.txt`,
+      );
     }
     const result = await filterRtkOutput(["aws", "s3", "ls"], `${lines.join("\n")}\n`);
 

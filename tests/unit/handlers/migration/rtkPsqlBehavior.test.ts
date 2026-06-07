@@ -1,6 +1,6 @@
 import { describe, expect, test } from "vitest";
 
-import { expectRtkParity, filterRtkOutput } from "../../helpers/rtkCommandHarness.js";
+import { expectRtkParity, filterRtkOutput } from "../../../helpers/rtkCommandHarness.js";
 
 // Faithful parity port of rtk/src/cmds/cloud/psql_cmd.rs. Each test mirrors a
 // specific #[test] (or pair of #[test]s) in that module so green proves RTK's
