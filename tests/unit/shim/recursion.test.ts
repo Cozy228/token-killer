@@ -18,20 +18,25 @@ const tsxLoader = join(repoRoot, "node_modules/tsx/dist/loader.mjs");
 
 let tmp: string;
 let shimDir: string;
+let tkHome: string;
 
 function runTg(args: string[], extraEnv: NodeJS.ProcessEnv, cwd = repoRoot) {
   return spawnSync(process.execPath, ["--import", tsxLoader, cli, ...args], {
     cwd,
     encoding: "utf8",
     timeout: 15000,
-    env: { ...process.env, ...extraEnv },
+    // Isolate the data dir: cwd is the repo root, so without this the spawned
+    // CLI would write history into the real ~/.token-killer/.
+    env: { ...process.env, TOKEN_KILLER_HOME: tkHome, ...extraEnv },
   });
 }
 
 beforeAll(() => {
   tmp = mkdtempSync(join(tmpdir(), "tk-shim-e2e-"));
   shimDir = join(tmp, "shim");
+  tkHome = join(tmp, "home");
   mkdirSync(shimDir);
+  mkdirSync(tkHome);
   // A POSIX wrapper that, absent the recursion guard, would re-invoke tk → shim.
   writeFileSync(join(shimDir, "git"), '#!/usr/bin/env sh\nexec tk git "$@"\n');
   chmodSync(join(shimDir, "git"), 0o755);

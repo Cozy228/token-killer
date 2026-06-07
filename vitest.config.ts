@@ -12,6 +12,13 @@ import { defineConfig } from "vitest/config";
  */
 export default defineConfig({
   test: {
+    // Redirect TOKEN_KILLER_HOME to a throwaway dir so tests never write into
+    // the real ~/.token-killer/ (see tests/setup/isolateHome.ts).
+    setupFiles: ["./tests/setup/isolateHome.ts"],
+    // Auto-reset spies/mocks between tests so a forgotten restore in one test
+    // can't leak into the next.
+    restoreMocks: true,
+    clearMocks: true,
     include: [
       "tests/unit/handlers/fixtureContent.test.ts",
       "tests/unit/handlers/curlProductBehavior.test.ts",

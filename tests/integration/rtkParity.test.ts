@@ -1,4 +1,5 @@
 import { spawnSync } from "node:child_process";
+import { mkdtempSync } from "node:fs";
 import { mkdtemp, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
@@ -6,11 +7,12 @@ import { fileURLToPath } from "node:url";
 
 import { describe, expect, test } from "vitest";
 
-const repoRoot = path.resolve(
-  path.dirname(fileURLToPath(import.meta.url)),
-  "../..",
-);
+const repoRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "../..");
 const cli = path.join(repoRoot, "src/cli.ts");
+
+// Isolate the data dir so the spawned CLI never writes history into the real
+// ~/.token-killer/.
+const tokenKillerHome = mkdtempSync(path.join(tmpdir(), "tk-rtk-home-"));
 
 function runTk(args: string[], cwd: string, input?: string, timeout = 15000) {
   return spawnSync("npx", ["tsx", cli, ...args], {
@@ -18,6 +20,7 @@ function runTk(args: string[], cwd: string, input?: string, timeout = 15000) {
     input,
     encoding: "utf8",
     timeout,
+    env: { ...process.env, TOKEN_KILLER_HOME: tokenKillerHome },
   });
 }
 
@@ -49,14 +52,8 @@ describe("RTK-style CLI integration parity", () => {
   test("tk grep -r preserves real grep output without line numbers", async () => {
     const dir = await mkdtemp(path.join(tmpdir(), "tk-rtk-grep-"));
     try {
-      await writeFile(
-        path.join(dir, "history.ts"),
-        "export async function recordHistory() {}\n",
-      );
-      await writeFile(
-        path.join(dir, "pipeline.ts"),
-        "export async function runPipeline() {}\n",
-      );
+      await writeFile(path.join(dir, "history.ts"), "export async function recordHistory() {}\n");
+      await writeFile(path.join(dir, "pipeline.ts"), "export async function runPipeline() {}\n");
 
       const result = runTk(["grep", "-r", "export", "."], dir);
 
@@ -128,9 +125,7 @@ describe("RTK-style CLI integration parity", () => {
 
       expect(result.status).toBe(0);
       expect(result.stdout).toContain("-  return api.submit(payload)");
-      expect(result.stdout).toContain(
-        "+  return api.submit({ ...payload, idempotencyKey })",
-      );
+      expect(result.stdout).toContain("+  return api.submit({ ...payload, idempotencyKey })");
     } finally {
       await rm(dir, { recursive: true, force: true });
     }

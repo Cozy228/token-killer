@@ -44,6 +44,10 @@ const filtered: FilteredResult = {
 describe("report quality metrics", () => {
   test("records and reports filter quality status counts", async () => {
     const dir = await mkdtemp(path.join(tmpdir(), "tk-report-quality-"));
+    // recordHistory writes under $TOKEN_KILLER_HOME; point it at the temp dir so
+    // it never touches the real ~/.token-killer/.
+    const prevHome = process.env.TOKEN_KILLER_HOME;
+    process.env.TOKEN_KILLER_HOME = dir;
     try {
       await recordHistory(raw, filtered, options(dir));
 
@@ -52,6 +56,8 @@ describe("report quality metrics", () => {
       expect(report).toContain("Quality:");
       expect(report).toContain("- inflated: 1");
     } finally {
+      if (prevHome === undefined) delete process.env.TOKEN_KILLER_HOME;
+      else process.env.TOKEN_KILLER_HOME = prevHome;
       await rm(dir, { recursive: true, force: true });
     }
   });

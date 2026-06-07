@@ -14,6 +14,11 @@ import { defineConfig } from "vitest/config";
  */
 export default defineConfig({
   test: {
+    // Same global safety net as the product config: never touch the real
+    // ~/.token-killer/ (see tests/setup/isolateHome.ts).
+    setupFiles: ["./tests/setup/isolateHome.ts"],
+    restoreMocks: true,
+    clearMocks: true,
     include: [
       "tests/unit/handlers/rtkDomainCaseParity.test.ts",
       "tests/unit/handlers/registeredHandlerCoverage.test.ts",

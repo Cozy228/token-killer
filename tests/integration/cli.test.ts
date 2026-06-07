@@ -1,4 +1,5 @@
 import { mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
+import { mkdtempSync } from "node:fs";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
@@ -7,12 +8,14 @@ import { describe, expect, test } from "vitest";
 
 import { historyFile, resolveStoredPath } from "../../src/core/dataDir.js";
 
-const repoRoot = path.resolve(
-  path.dirname(fileURLToPath(import.meta.url)),
-  "../..",
-);
+const repoRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "../..");
 const cli = path.join(repoRoot, "src/cli.ts");
 const tsxLoader = path.join(repoRoot, "node_modules/tsx/dist/loader.mjs");
+
+// Default isolated TOKEN_KILLER_HOME for callers that don't pass an explicit one.
+// Without this, the spawned CLI would inherit the real environment and write its
+// history into the developer's real ~/.token-killer/, polluting `tk gain`.
+const defaultTokenKillerHome = mkdtempSync(path.join(tmpdir(), "tk-test-home-"));
 
 function runTk(args: string[], cwd: string, input?: string, tokenKillerHomeDir?: string) {
   // Prepend the repo's local bin so handler-spawned CLIs (tsc, eslint, ...)
@@ -22,29 +25,16 @@ function runTk(args: string[], cwd: string, input?: string, tokenKillerHomeDir?:
   const env: NodeJS.ProcessEnv = {
     ...process.env,
     PATH: `${localBin}${path.delimiter}${process.env.PATH ?? ""}`,
+    // Always isolate the data dir so tests never touch the real ~/.token-killer/.
+    TOKEN_KILLER_HOME: tokenKillerHomeDir ?? defaultTokenKillerHome,
   };
-  if (tokenKillerHomeDir) {
-    env.TOKEN_KILLER_HOME = tokenKillerHomeDir;
-  }
-  const runner =
-    tokenKillerHomeDir !== undefined
-      ? () =>
-          spawnSync(process.execPath, ["--import", tsxLoader, cli, ...args], {
-            cwd,
-            encoding: "utf8",
-            input,
-            timeout: 15000,
-            env,
-          })
-      : () =>
-          spawnSync("npx", ["tsx", cli, ...args], {
-            cwd,
-            encoding: "utf8",
-            input,
-            timeout: 15000,
-            env,
-          });
-  return runner();
+  return spawnSync(process.execPath, ["--import", tsxLoader, cli, ...args], {
+    cwd,
+    encoding: "utf8",
+    input,
+    timeout: 15000,
+    env,
+  });
 }
 
 // ============================================================================
@@ -141,9 +131,7 @@ describe("Read / Cat", () => {
       expect(result.stdout).toContain("bravo");
       expect(result.stdout).toContain("charlie");
       expect(result.stdout).toContain("delta");
-      expect(result.stdout.indexOf("alpha")).toBeLessThan(
-        result.stdout.indexOf("charlie"),
-      );
+      expect(result.stdout.indexOf("alpha")).toBeLessThan(result.stdout.indexOf("charlie"));
     } finally {
       await rm(dir, { recursive: true, force: true });
     }
@@ -181,7 +169,10 @@ describe("Read / Cat", () => {
         "export async function submitOrder(payload: OrderPayload) {",
         "  const idempotencyKey = `${payload.id}:submit`;",
         ...Array.from({ length: 260 }, (_, i) => `  const filler${i} = ${i};`),
-        ...Array.from({ length: 80 }, (_, i) => `  const checkpoint${i} = payload.items[${i}]?.id ?? "missing";`),
+        ...Array.from(
+          { length: 80 },
+          (_, i) => `  const checkpoint${i} = payload.items[${i}]?.id ?? "missing";`,
+        ),
         "  const result = await api.submit({ ...payload, idempotencyKey });",
         "  return { id: result.id };",
         "}",
@@ -242,11 +233,7 @@ describe("Read / Cat", () => {
   });
 
   test("tk read supports RTK stdin dash input", () => {
-    const result = runTk(
-      ["read", "-", "--tail-lines", "2"],
-      repoRoot,
-      "alpha\nbravo\ncharlie\n",
-    );
+    const result = runTk(["read", "-", "--tail-lines", "2"], repoRoot, "alpha\nbravo\ncharlie\n");
 
     expect(result.status).toBe(0);
     expect(result.stdout).toBe("bravo\ncharlie\n");
@@ -408,14 +395,8 @@ describe("Grep / Search", () => {
   test("tk rg finds matches", async () => {
     const dir = await mkdtemp(path.join(tmpdir(), "tk-rg-"));
     try {
-      await writeFile(
-        path.join(dir, "a.ts"),
-        "export const x = 1;\nconst y = 2;\n",
-      );
-      await writeFile(
-        path.join(dir, "b.ts"),
-        "import { x } from './a';\nexport default x;\n",
-      );
+      await writeFile(path.join(dir, "a.ts"), "export const x = 1;\nconst y = 2;\n");
+      await writeFile(path.join(dir, "b.ts"), "import { x } from './a';\nexport default x;\n");
 
       const result = runTk(["rg", "export", "."], dir);
       expect(result.status).toBe(0);
@@ -524,10 +505,7 @@ describe("Global Flags", () => {
   });
 
   test("--raw bypasses filtering", () => {
-    const raw = runTk(
-      ["--raw", process.execPath, "-e", "console.log('raw retained')"],
-      repoRoot,
-    );
+    const raw = runTk(["--raw", process.execPath, "-e", "console.log('raw retained')"], repoRoot);
     expect(raw.stdout).toBe("raw retained\n");
   });
 
@@ -595,9 +573,7 @@ describe("Report", () => {
 
       const csv = runTk(["--report", "--csv"], dir);
       expect(csv.status).toBe(0);
-      expect(csv.stdout).toContain(
-        "commands,raw_tokens,output_tokens,saved_tokens,savings_pct",
-      );
+      expect(csv.stdout).toContain("commands,raw_tokens,output_tokens,saved_tokens,savings_pct");
     } finally {
       await rm(dir, { recursive: true, force: true });
     }
@@ -666,12 +642,8 @@ describe("Acceptance: Handler Routing", () => {
       // Each should route to its specific handler (not generic)
       expect(runTk(["git", "status"], dir).stdout).toContain("* main");
       expect(runTk(["git", "diff"], dir).stdout).toContain("+changed");
-      expect(runTk(["git", "log", "-1"], dir).stdout).toContain(
-        "initial retained",
-      );
-      expect(runTk(["git", "show", "--stat", "HEAD"], dir).stdout).toContain(
-        "initial retained",
-      );
+      expect(runTk(["git", "log", "-1"], dir).stdout).toContain("initial retained");
+      expect(runTk(["git", "show", "--stat", "HEAD"], dir).stdout).toContain("initial retained");
       expect(runTk(["git", "branch"], dir).stdout).toContain("main");
       expect(runTk(["cat", "pkg.json"], dir).stdout).toContain("sample");
       expect(runTk(["ls", "."], dir).stdout).toContain("pkg.json");
@@ -692,10 +664,7 @@ describe("Language-specific handlers", () => {
     const dir = await mkdtemp(path.join(tmpdir(), "tk-tsc-"));
     try {
       // Create a TS file with a type error
-      await writeFile(
-        path.join(dir, "error.ts"),
-        "const x: number = 'string';\n",
-      );
+      await writeFile(path.join(dir, "error.ts"), "const x: number = 'string';\n");
       await writeFile(
         path.join(dir, "tsconfig.json"),
         '{"compilerOptions":{"strict":true,"noEmit":true}}\n',
