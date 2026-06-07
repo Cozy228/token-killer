@@ -9,9 +9,11 @@
 // Fail-open), so Claude Code runs the command unchanged and the agent never
 // hangs or gets confused.
 //
-// This is a DIFFERENT wire protocol from Copilot's `{ "decision": "allow" }`
-// shape, so it does NOT reuse copilot.ts's `toProtocol`. The only shared pieces
-// are `rewriteCommand` (the engine) and `readStreamWithTimeout` (bounded stdin).
+// Claude Code keys its rewrite off `updatedInput` alone (no `permissionDecision`),
+// so this builds the output directly rather than reusing copilot.ts's per-dialect
+// `toHostOutput` (which adds `permissionDecision`/`modifiedArgs` for VS Code +
+// Copilot CLI). The only shared pieces are `rewriteCommand` (the engine) and
+// `readStreamWithTimeout` (bounded stdin).
 // Bash-only by design: no prompt/error governance, no postToolUse/result
 // compression — the host's hook uses `matcher: "Bash"`.
 

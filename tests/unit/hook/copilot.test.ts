@@ -3,15 +3,23 @@ import { PassThrough } from "node:stream";
 import { describe, expect, test } from "vitest";
 
 import {
+  COPILOT_REWRITE_REASON,
   decide,
   decideFromStdin,
   readStreamWithTimeout,
-  toProtocol,
+  toHostOutput,
 } from "../../../src/hook/copilot.js";
 import { normalize } from "../../../src/hook/normalize.js";
 
 function pre(payload: Record<string, unknown>) {
   return decide(normalize({ event: "preToolUse", ...payload }));
+}
+
+// Build the host-shaped wire output for a preToolUse payload, carrying the same
+// dialect the normalizer detects (snake_case → vscode, camelCase → cli).
+function wire(payload: Record<string, unknown>) {
+  const ev = normalize({ event: "preToolUse", ...payload });
+  return toHostOutput(ev, decide(ev));
 }
 
 describe("decide — preToolUse terminal rewrite", () => {
@@ -58,33 +66,72 @@ describe("decide — preToolUse direct-tool governance", () => {
 
 describe("decide — non-preToolUse events allow (Slice 2 adds prompt/error)", () => {
   test("postToolUse → allow", () => {
-    expect(decide(normalize({ event: "postToolUse", toolName: "bash", toolResult: "x" })).decision).toBe("allow");
+    expect(
+      decide(normalize({ event: "postToolUse", toolName: "bash", toolResult: "x" })).decision,
+    ).toBe("allow");
   });
   test("userPromptSubmitted → allow", () => {
-    expect(decide(normalize({ event: "userPromptSubmitted", prompt: "hi" })).decision).toBe("allow");
+    expect(decide(normalize({ event: "userPromptSubmitted", prompt: "hi" })).decision).toBe(
+      "allow",
+    );
   });
 });
 
-describe("toProtocol — internal ledger fields never reach the host wire JSON", () => {
-  test("strips governance_kind and estimated_tokens from a deny decision", () => {
-    const d = decide(
-      normalize({ event: "preToolUse", tool_name: "read_file", tool_input: { filePath: "node_modules/x/i.js" } }),
-    );
-    expect(d.governance_kind).toBeDefined();
-    const wire = toProtocol(d);
-    expect("governance_kind" in wire).toBe(false);
-    expect("estimated_tokens" in wire).toBe(false);
-    expect(wire.decision).toBe("deny");
-    expect(typeof wire.reason).toBe("string");
+describe("toHostOutput — emits the shape the real host reads (ADR 0005)", () => {
+  // VS Code dialect (snake_case tool_name/tool_input): hookSpecificOutput wrapper
+  // with updatedInput — byte-for-byte the shape verified live against rtk hook copilot.
+  test("VS Code rewrite → hookSpecificOutput.updatedInput.command", () => {
+    const out = wire({
+      tool_name: "run_in_terminal",
+      tool_input: { command: "git status" },
+    }) as Record<string, Record<string, unknown>>;
+    expect(out.hookSpecificOutput).toEqual({
+      hookEventName: "PreToolUse",
+      permissionDecision: "allow",
+      permissionDecisionReason: COPILOT_REWRITE_REASON,
+      updatedInput: { command: "tk git status" },
+    });
   });
 
-  test("rewrite decision: toProtocol includes rewritten_command, no extras", () => {
-    const d = decide(normalize({ event: "preToolUse", toolName: "bash", toolArgs: JSON.stringify({ command: "git status" }) }));
-    const wire = toProtocol(d);
-    expect(wire.decision).toBe("rewrite");
-    expect(typeof wire.rewritten_command).toBe("string");
-    expect("governance_kind" in wire).toBe(false);
-    expect("estimated_tokens" in wire).toBe(false);
+  // Copilot CLI dialect (camelCase toolName/toolArgs): flat shape with modifiedArgs.
+  test("Copilot CLI rewrite → flat modifiedArgs.command", () => {
+    const out = wire({
+      toolName: "bash",
+      toolArgs: JSON.stringify({ command: "git status" }),
+    }) as Record<string, unknown>;
+    expect(out).toEqual({
+      permissionDecision: "allow",
+      permissionDecisionReason: COPILOT_REWRITE_REASON,
+      modifiedArgs: { command: "tk git status" },
+    });
+    expect("hookSpecificOutput" in out).toBe(false);
+  });
+
+  test("deny → permissionDecision deny + reason, no ledger fields", () => {
+    const out = wire({
+      tool_name: "read_file",
+      tool_input: { filePath: "node_modules/x/i.js" },
+    }) as Record<string, Record<string, unknown>>;
+    const hook = out.hookSpecificOutput;
+    expect(hook.permissionDecision).toBe("deny");
+    expect(typeof hook.permissionDecisionReason).toBe("string");
+    // Internal ledger fields must never reach the wire.
+    const flat = JSON.stringify(out);
+    expect(flat).not.toContain("governance_kind");
+    expect(flat).not.toContain("estimated_tokens");
+  });
+
+  test("suggest → allow + additionalContext (never blocks)", () => {
+    const out = wire({ tool_name: "grep_search", tool_input: { query: "TODO" } }) as Record<
+      string,
+      Record<string, unknown>
+    >;
+    expect(out.hookSpecificOutput.permissionDecision).toBe("allow");
+    expect(typeof out.hookSpecificOutput.additionalContext).toBe("string");
+  });
+
+  test("plain allow → null (emit nothing, like RTK)", () => {
+    expect(wire({ tool_name: "read_file", tool_input: { filePath: "src/cli.ts" } })).toBeNull();
   });
 });
 

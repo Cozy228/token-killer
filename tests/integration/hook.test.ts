@@ -24,20 +24,33 @@ function runTk(args: string[], input?: string, tokenKillerHome?: string) {
 }
 
 describe("tk hook copilot — protocol over stdin/stdout", () => {
-  test("rewrites a terminal command, stdout is ONLY protocol JSON", () => {
+  test("VS Code dialect: rewrites via hookSpecificOutput.updatedInput, stdout is ONLY that JSON", () => {
+    const payload = JSON.stringify({
+      event: "preToolUse",
+      tool_name: "run_in_terminal",
+      tool_input: { command: "git status" },
+    });
+    const r = runTk(["hook", "copilot"], payload);
+    expect(r.status).toBe(0);
+    // stdout must parse as a single JSON object and contain nothing else.
+    const parsed = JSON.parse(r.stdout);
+    expect(parsed.hookSpecificOutput.updatedInput).toEqual({ command: "tk git status" });
+    expect(parsed.hookSpecificOutput.permissionDecision).toBe("allow");
+  });
+
+  test("Copilot CLI dialect: rewrites via flat modifiedArgs", () => {
     const payload = JSON.stringify({
       event: "preToolUse",
       toolName: "bash",
       toolArgs: JSON.stringify({ command: "git status" }),
     });
     const r = runTk(["hook", "copilot"], payload);
-    expect(r.status).toBe(0);
-    // stdout must parse as a single JSON object and contain nothing else.
     const parsed = JSON.parse(r.stdout);
-    expect(parsed).toEqual({ decision: "rewrite", rewritten_command: "tk git status" });
+    expect(parsed.modifiedArgs).toEqual({ command: "tk git status" });
+    expect("hookSpecificOutput" in parsed).toBe(false);
   });
 
-  test("denies a dependency-dir read", () => {
+  test("denies a dependency-dir read via permissionDecision", () => {
     const payload = JSON.stringify({
       event: "preToolUse",
       tool_name: "read_file",
@@ -45,20 +58,20 @@ describe("tk hook copilot — protocol over stdin/stdout", () => {
     });
     const r = runTk(["hook", "copilot"], payload);
     const parsed = JSON.parse(r.stdout);
-    expect(parsed.decision).toBe("deny");
-    expect(parsed.reason).toBeTruthy();
+    expect(parsed.hookSpecificOutput.permissionDecision).toBe("deny");
+    expect(parsed.hookSpecificOutput.permissionDecisionReason).toBeTruthy();
   });
 
-  test("fail-open: malformed payload → exit 0, stdout is {\"decision\":\"allow\"}", () => {
+  test("fail-open: malformed payload → exit 0, empty stdout (run unchanged)", () => {
     const r = runTk(["hook", "copilot"], "}{ not json");
     expect(r.status).toBe(0);
-    expect(JSON.parse(r.stdout)).toEqual({ decision: "allow" });
+    expect(r.stdout).toBe("");
   });
 
-  test("fail-open: empty stdin → allow", () => {
+  test("fail-open: empty stdin → exit 0, empty stdout", () => {
     const r = runTk(["hook", "copilot"], "");
     expect(r.status).toBe(0);
-    expect(JSON.parse(r.stdout)).toEqual({ decision: "allow" });
+    expect(r.stdout).toBe("");
   });
 });
 
@@ -66,18 +79,21 @@ describe("tk hook copilot — prompt + error events (Slice 2)", () => {
   test("oversized prompt → deny", () => {
     const payload = JSON.stringify({ event: "userPromptSubmitted", prompt: "x".repeat(17000 * 4) });
     const r = runTk(["hook", "copilot"], payload);
-    expect(JSON.parse(r.stdout).decision).toBe("deny");
+    expect(JSON.parse(r.stdout).hookSpecificOutput.permissionDecision).toBe("deny");
   });
 
-  test("implementation-intent prompt → suggest with additional_context", () => {
-    const payload = JSON.stringify({ event: "userPromptSubmitted", prompt: "implement the parser" });
+  test("implementation-intent prompt → allow + additionalContext hint", () => {
+    const payload = JSON.stringify({
+      event: "userPromptSubmitted",
+      prompt: "implement the parser",
+    });
     const r = runTk(["hook", "copilot"], payload);
     const parsed = JSON.parse(r.stdout);
-    expect(parsed.decision).toBe("suggest");
-    expect(parsed.additional_context).toBeTruthy();
+    expect(parsed.hookSpecificOutput.permissionDecision).toBe("allow");
+    expect(parsed.hookSpecificOutput.additionalContext).toBeTruthy();
   });
 
-  test("errorOccurred → allow + hint, and records a failure history row", async () => {
+  test("errorOccurred → additionalContext hint, and records a failure history row", async () => {
     const home = await mkdtemp(path.join(tmpdir(), "tk-hook-fail-"));
     try {
       const payload = JSON.stringify({
@@ -88,8 +104,8 @@ describe("tk hook copilot — prompt + error events (Slice 2)", () => {
       });
       const r = runTk(["hook", "copilot"], payload, home);
       const parsed = JSON.parse(r.stdout);
-      expect(parsed.decision).toBe("allow");
-      expect(parsed.additional_context).toContain("Command not found");
+      // errorOccurred carries camelCase toolName → Copilot CLI flat dialect.
+      expect(parsed.additionalContext).toContain("Command not found");
 
       // The child runs with cwd=repoRoot and TOKEN_KILLER_HOME=home; build the
       // history path the same way (fingerprint is TOKEN_KILLER_HOME-independent).

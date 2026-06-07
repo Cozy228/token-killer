@@ -5,8 +5,10 @@
 // `preToolUse` either rewrites a shell command (prepend `tk`) or governs a direct
 // tool. It ONLY prepends `tk`; the proxy compresses. No `modifiedResult`, ever.
 //
-// Fail-open (DESIGN §3.6, CONTEXT.md → Fail-open): any internal error resolves to
-// `{ "decision": "allow" }`. stdout carries ONLY the protocol JSON; diagnostics
+// Fail-open (DESIGN §3.6, CONTEXT.md → Fail-open): any internal error (or a plain
+// allow) emits NOTHING on stdout — the host then runs the call unchanged, exactly
+// like RTK, which writes no JSON for a non-rewritten, non-governed call. A real
+// decision emits the host-conformant shape (toHostOutput, ADR 0005); diagnostics
 // go to stderr. Copilot CLI preToolUse is fail-closed on crash/timeout, so this
 // must never throw.
 
@@ -21,15 +23,94 @@ import { hookDebug } from "./debug.js";
 
 const ALLOW: Decision = { decision: "allow" };
 
-// The host protocol JSON — only the wire fields. Internal ledger fields
-// (`governance_kind`, `estimated_tokens`) are recording metadata and must never
-// reach the host's decision payload.
-export function toProtocol(d: Decision): Record<string, unknown> {
-  const out: Record<string, unknown> = { decision: d.decision };
-  if (d.rewritten_command !== undefined) out.rewritten_command = d.rewritten_command;
-  if (d.reason !== undefined) out.reason = d.reason;
-  if (d.additional_context !== undefined) out.additional_context = d.additional_context;
-  return out;
+// Ground-truth reason the host shows for an auto-rewrite (tk analogue of RTK's
+// "RTK auto-rewrite"; verified live against `rtk hook copilot`).
+export const COPILOT_REWRITE_REASON = "tk auto-rewrite";
+
+// The normalized lifecycle event → the host's hookEventName spelling. Only
+// PreToolUse is contract-verified (ADR 0005, hookCommandTypes.ts); the rest reuse
+// the same wrapper with their canonical name for additionalContext-style hints.
+function hostEventName(event: ToolEvent["event"]): string {
+  switch (event) {
+    case "userPromptSubmitted":
+      return "UserPromptSubmit";
+    case "postToolUse":
+    case "errorOccurred":
+      return "PostToolUse";
+    default:
+      return "PreToolUse";
+  }
+}
+
+// The host-neutral fields a decision contributes, before per-dialect wrapping.
+// `null` ⇒ emit nothing (a plain allow with no hint — RTK emits no JSON at all
+// for a non-rewritten, non-governed call, and so do we).
+type HostFields = {
+  permissionDecision?: "allow" | "deny" | "ask";
+  permissionDecisionReason?: string;
+  command?: string; // the rewritten command, applied via updatedInput / modifiedArgs
+  additionalContext?: string;
+};
+
+function hostFields(d: Decision): HostFields | null {
+  switch (d.decision) {
+    case "rewrite":
+      if (!d.rewritten_command) return null;
+      // "allow" (not RTK's "ask") so the rewrite applies TRANSPARENTLY — no
+      // confirmation prompt per command. Verified live in VS Code: "ask" surfaced a
+      // prompt for `tk git status --short`; "allow" + updatedInput runs the rewritten
+      // `tk <cmd>` silently, which is the point of transparent token savings.
+      return {
+        permissionDecision: "allow",
+        permissionDecisionReason: COPILOT_REWRITE_REASON,
+        command: d.rewritten_command,
+      };
+    case "deny":
+      return { permissionDecision: "deny", permissionDecisionReason: d.reason };
+    case "suggest":
+      // Advisory only — never block; inject the hint as additionalContext.
+      return { permissionDecision: "allow", additionalContext: d.reason ?? d.additional_context };
+    case "allow":
+    default:
+      if (d.additional_context)
+        return { permissionDecision: "allow", additionalContext: d.additional_context };
+      return null;
+  }
+}
+
+// ADR 0005: emit the shape the real host actually reads. tk's old
+// `{ decision, rewritten_command }` was read by NO host, so the hook was inert.
+// VS Code Copilot Chat (snake_case `tool_name`/`tool_input` dialect) reads
+// `hookSpecificOutput.{permissionDecision, permissionDecisionReason, updatedInput,
+// additionalContext}`; Copilot CLI (camelCase `toolName`/`toolArgs`) reads a flat
+// `{permissionDecision, modifiedArgs, …}`. Internal ledger fields
+// (`governance_kind`, `estimated_tokens`) never appear here. Returns null to emit
+// nothing (fail-open / plain allow).
+export function toHostOutput(ev: ToolEvent, d: Decision): Record<string, unknown> | null {
+  const f = hostFields(d);
+  if (f === null) return null;
+
+  if (ev.dialect === "cli") {
+    // Copilot CLI: flat shape. `modifiedArgs` replaces the tool args (applied when
+    // permissionDecision is allow/absent).
+    const out: Record<string, unknown> = {};
+    if (f.permissionDecision !== undefined) out.permissionDecision = f.permissionDecision;
+    if (f.permissionDecisionReason !== undefined)
+      out.permissionDecisionReason = f.permissionDecisionReason;
+    if (f.command !== undefined) out.modifiedArgs = { command: f.command };
+    if (f.additionalContext !== undefined) out.additionalContext = f.additionalContext;
+    return out;
+  }
+
+  // VS Code (and Claude-family / unknown dialects): the hookSpecificOutput wrapper
+  // with `updatedInput` for the transparent rewrite.
+  const hook: Record<string, unknown> = { hookEventName: hostEventName(ev.event) };
+  if (f.permissionDecision !== undefined) hook.permissionDecision = f.permissionDecision;
+  if (f.permissionDecisionReason !== undefined)
+    hook.permissionDecisionReason = f.permissionDecisionReason;
+  if (f.command !== undefined) hook.updatedInput = { command: f.command };
+  if (f.additionalContext !== undefined) hook.additionalContext = f.additionalContext;
+  return { hookSpecificOutput: hook };
 }
 
 // Decide the governance verdict for a normalized event. Pure and total — no I/O;
@@ -203,7 +284,10 @@ export async function runHookCopilot(): Promise<number> {
     reason: decision.reason,
     rewritten: decision.rewritten_command,
   });
-  process.stdout.write(JSON.stringify(toProtocol(decision)));
+  // Emit the host-shaped output (ADR 0005). null ⇒ nothing on stdout (plain allow),
+  // matching RTK, which emits no JSON for a non-rewritten, non-governed call.
+  const output = ev ? toHostOutput(ev, decision) : null;
+  if (output) process.stdout.write(JSON.stringify(output));
 
   if (ev) {
     await recordGovernanceMetric(ev, decision);
