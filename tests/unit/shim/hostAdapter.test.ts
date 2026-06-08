@@ -34,12 +34,14 @@ describe("adapters table", () => {
     expect(adapters.unknown.guidancePath("/home/u")).toBeUndefined();
   });
 
-  test("injectionPath routes per host (copilot → ~/.copilot, vscode → its user dir)", () => {
+  test("injectionPath routes per host (copilot → ~/.copilot, vscode → user .instructions.md)", () => {
     expect(adapters["copilot-cli"].injectionPath("/home/u")).toBe(
       "/home/u/.copilot/copilot-instructions.md",
     );
+    // VS Code's user-level channel is ~/.copilot/instructions (ADR 0008), not the
+    // inert <vscodeUserDir>/copilot-instructions.md.
     expect(adapters.vscode.injectionPath("/home/u", "/home/u/.config/Code/User")).toBe(
-      "/home/u/.config/Code/User/copilot-instructions.md",
+      "/home/u/.copilot/instructions/token-killer-prefix.instructions.md",
     );
   });
 });

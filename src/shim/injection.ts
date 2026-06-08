@@ -40,14 +40,33 @@ export function applyInjectionBlock(content: string, body = injectionBody()): st
   return `${base}${injectionBlock(body)}\n`;
 }
 
+// A VS Code `.instructions.md` is a tk-OWNED file (never a shared user doc), and
+// VS Code only auto-applies it when it carries an `applyTo` frontmatter — the
+// frontmatter-less marker block would silently never load. So such a target gets
+// the whole file written (frontmatter + the guarded block) and is deleted whole on
+// uninstall, exactly like the guidance `.instructions.md`. Shared targets
+// (~/.copilot/copilot-instructions.md, project .github/…) keep the marker-block
+// merge that preserves the user's own content.
+function isOwnedInstructionsFile(filePath: string): boolean {
+  return filePath.endsWith(".instructions.md");
+}
+
 export function writeInjection(filePath: string, body = injectionBody()): void {
   mkdirSync(dirname(filePath), { recursive: true });
+  if (isOwnedInstructionsFile(filePath)) {
+    writeFileSync(filePath, `---\napplyTo: '**'\n---\n\n${injectionBlock(body)}\n`);
+    return;
+  }
   const content = existsSync(filePath) ? readFileSync(filePath, "utf8") : "";
   writeFileSync(filePath, applyInjectionBlock(content, body));
 }
 
 export function unwriteInjection(filePath: string): void {
   if (!existsSync(filePath)) return;
+  if (isOwnedInstructionsFile(filePath)) {
+    rmSync(filePath, { force: true });
+    return;
+  }
   const stripped = removeInjectionBlock(readFileSync(filePath, "utf8"));
   // If only tk's block was in the file, tk created it solely for that block —
   // delete it rather than leave a 0-byte file (e.g. a project `.github/
@@ -66,11 +85,15 @@ export function unwriteInjection(filePath: string): void {
 export function userInjectionPath(
   host: Host,
   home = homedir(),
-  vscodeUserDirPath?: string,
+  _vscodeUserDirPath?: string,
 ): string {
   if (host === "copilot-cli") return join(home, ".copilot", "copilot-instructions.md");
-  if (host === "vscode" && vscodeUserDirPath)
-    return join(vscodeUserDirPath, "copilot-instructions.md");
+  // VS Code does NOT auto-load a user-level copilot-instructions.md (only workspace
+  // `.github/…`); its user-level channel is `~/.copilot/instructions/*.instructions.md`.
+  // The old `<vscodeUserDir>/copilot-instructions.md` target was therefore inert.
+  // The leading `_` keeps `vscodeUserDirPath` a documented-but-unused param.
+  if (host === "vscode")
+    return join(home, ".copilot", "instructions", "token-killer-prefix.instructions.md");
   return join(tokenKillerHome(), "copilot-instructions.md");
 }
 

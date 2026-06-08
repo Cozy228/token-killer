@@ -41,8 +41,11 @@ Deliver to VS Code the **full guidance, inlined**, in a **user-level**
 - Path: `~/.copilot/instructions/token-killer.instructions.md`.
 - Body: `applyTo: '**'` frontmatter + the verbatim `guidanceDoc()` text (the same
   content the other hosts get — no @import indirection).
-- Drop the inert `<vscodeUserDir>/copilot-instructions.md` injection for vscode;
-  VS Code never read it.
+- Redirect the vscode injection (the shim-failed-fallback "prefix with `tk`" block)
+  off the inert `<vscodeUserDir>/copilot-instructions.md` onto a user-level file VS
+  Code does load: `~/.copilot/instructions/token-killer-prefix.instructions.md`
+  (separate from the guide; a `.instructions.md` carries `applyTo: '**'` and is a
+  tk-owned whole file, deleted on uninstall).
 
 ## Considered alternatives
 

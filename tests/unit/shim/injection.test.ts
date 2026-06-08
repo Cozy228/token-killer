@@ -39,9 +39,11 @@ describe("injection targets", () => {
     );
   });
 
-  test("VS Code user-level path is under the VS Code user dir", () => {
+  test("VS Code user-level path is a user-profile .instructions.md it actually loads", () => {
+    // VS Code does not auto-load <vscodeUserDir>/copilot-instructions.md; its
+    // user-level channel is ~/.copilot/instructions/*.instructions.md (ADR 0008).
     expect(userInjectionPath("vscode", "/home/u", "/home/u/.config/Code/User")).toBe(
-      "/home/u/.config/Code/User/copilot-instructions.md",
+      "/home/u/.copilot/instructions/token-killer-prefix.instructions.md",
     );
   });
 
@@ -87,5 +89,19 @@ describe("writeInjection round-trip", () => {
     const once = readFileSync(file, "utf8");
     writeInjection(file);
     expect(readFileSync(file, "utf8")).toBe(once);
+  });
+
+  test("a .instructions.md target gets always-on frontmatter and is deleted whole", () => {
+    // VS Code only applies a .instructions.md with an `applyTo` frontmatter, and tk
+    // owns the file entirely (ADR 0008) — so it is whole-written and whole-deleted,
+    // never marker-merged.
+    const file = join(dir, "instructions", "token-killer-prefix.instructions.md");
+    writeInjection(file);
+    const content = readFileSync(file, "utf8");
+    expect(content.startsWith("---\napplyTo: '**'\n---\n")).toBe(true);
+    expect(content).toContain("Prefix shell commands with `tk`");
+    expect(content).toContain(">>> token-killer >>>");
+    unwriteInjection(file);
+    expect(existsSync(file)).toBe(false);
   });
 });

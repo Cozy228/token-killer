@@ -61,8 +61,12 @@ applyTo: '**'
 2. `src/shim/hostAdapter.ts` — `vscodeAdapter.guidancePath` returns the new path;
    `init.ts` `guidanceHosts` then includes vscode for install + `--uninstall`
    automatically (no init.ts edit).
-3. Drop the inert vscode user-level `copilot-instructions.md` injection (VS Code
-   never read it). Keep the injection tier for hosts that still need it.
+3. Redirect the inert vscode injection: `userInjectionPath("vscode")` →
+   `~/.copilot/instructions/token-killer-prefix.instructions.md` (VS Code never
+   loaded the old `<vscodeUserDir>/copilot-instructions.md`). `writeInjection`/
+   `unwriteInjection` treat any `.instructions.md` target as a tk-owned whole file
+   (write `applyTo: '**'` frontmatter + the guarded block; delete whole on
+   uninstall). Shared targets keep the marker-merge.
 4. Tests: vscode now writes a guidance file (assert path + `applyTo: '**'` +
    inlined body); `--uninstall` removes it; injection no longer targets the dead
    vscode user path.
