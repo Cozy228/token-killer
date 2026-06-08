@@ -659,10 +659,10 @@ export const dockerHandler: CommandHandler = {
     // RTK: container.rs early_exit_on_failure — on failure RTK surfaces stderr
     // and tracks raw; tk returns the unfiltered streams so diagnostics survive.
     if (raw.exitCode !== 0) {
-      return makeFilteredResult(this.name, raw, rawText(raw), options);
+      return makeFilteredResult(this, raw, rawText(raw), options);
     }
     const { text, omission } = formatDocker(command.args, raw.stdout);
-    return makeFilteredResult(this.name, raw, text, options, undefined, omission);
+    return makeFilteredResult(this, raw, text, options, undefined, omission);
   },
 };
 
@@ -680,9 +680,9 @@ export const kubectlHandler: CommandHandler = {
 
   async filter(raw, command, options) {
     if (raw.exitCode !== 0) {
-      return makeFilteredResult(this.name, raw, rawText(raw), options);
+      return makeFilteredResult(this, raw, rawText(raw), options);
     }
     const { text, omission } = formatKubectl(command.args, raw.stdout);
-    return makeFilteredResult(this.name, raw, text, options, undefined, omission);
+    return makeFilteredResult(this, raw, text, options, undefined, omission);
   },
 };

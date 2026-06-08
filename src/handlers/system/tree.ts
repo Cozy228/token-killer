@@ -165,6 +165,6 @@ export const treeHandler: CommandHandler = {
     return result;
   },
   async filter(raw, command, options: TkOptions) {
-    return makeFilteredResult(this.name, raw, formatTree(raw), options);
+    return makeFilteredResult(this, raw, formatTree(raw), options);
   },
 };

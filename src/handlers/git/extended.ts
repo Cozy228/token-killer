@@ -23,7 +23,9 @@ function failure(command: ParsedCommand, raw: RawResult): string {
 }
 
 function shortstat(text: string): string | undefined {
-  const match = text.match(/(\d+) files? changed(?:,\s*(\d+) insertions?\(\+\))?(?:,\s*(\d+) deletions?\(-\))?/);
+  const match = text.match(
+    /(\d+) files? changed(?:,\s*(\d+) insertions?\(\+\))?(?:,\s*(\d+) deletions?\(-\))?/,
+  );
   if (!match) return undefined;
   const files = match[1] ?? "0";
   const added = match[2] ?? "0";
@@ -98,7 +100,10 @@ export function formatAddSummary(shortstatStdout: string): string {
 function formatGitExtended(name: string, raw: RawResult, command: ParsedCommand): string {
   const text = combined(raw);
   const subcommand = command.args[0] ?? "";
-  if (raw.exitCode !== 0 && !/nothing to commit|Everything up-to-date|Already up to date|No local changes/.test(text)) {
+  if (
+    raw.exitCode !== 0 &&
+    !/nothing to commit|Everything up-to-date|Already up to date|No local changes/.test(text)
+  ) {
     return failure(command, raw);
   }
 
@@ -113,7 +118,9 @@ function formatGitExtended(name: string, raw: RawResult, command: ParsedCommand)
   if (name === "git-push") {
     if (/Everything up-to-date/.test(text)) return "Everything up-to-date\nok (up-to-date)\n";
     if (/\[rejected\]|failed to push/.test(text)) return `${text}\n`;
-    const keep = text.split(/\r?\n/).filter((line) => /^To |^remote: |->/.test(line.trim()) || /\s->\s/.test(line));
+    const keep = text
+      .split(/\r?\n/)
+      .filter((line) => /^To |^remote: |->/.test(line.trim()) || /\s->\s/.test(line));
     const ref = firstPushedRef(text);
     return `${[...keep, ref ? `ok ${ref}` : "ok pushed"].join("\n")}\n`;
   }
@@ -127,7 +134,9 @@ function formatGitExtended(name: string, raw: RawResult, command: ParsedCommand)
   if (name === "git-fetch") {
     // RTK: git/git.rs::run_fetch — count refs via stderr lines containing "->" or
     // "[new", collapse to "ok fetched (N new refs)" (the ref lines are dropped).
-    const newRefs = text.split(/\r?\n/).filter((line) => line.includes("->") || line.includes("[new")).length;
+    const newRefs = text
+      .split(/\r?\n/)
+      .filter((line) => line.includes("->") || line.includes("[new")).length;
     return newRefs > 0 ? `ok fetched (${newRefs} new refs)\n` : "ok fetched\n";
   }
 
@@ -139,7 +148,8 @@ function formatGitExtended(name: string, raw: RawResult, command: ParsedCommand)
     }
     if (action === "show") return `${text}\n`;
     if (/No local changes/.test(text)) return `${text}\n`;
-    if (!action || action === "push" || action === "save") return `ok stashed${text ? ` ${text.replace(/^Saved working directory and index state\s+/, "")}` : ""}\n`;
+    if (!action || action === "push" || action === "save")
+      return `ok stashed${text ? ` ${text.replace(/^Saved working directory and index state\s+/, "")}` : ""}\n`;
     return `ok stash ${action}\n`;
   }
 
@@ -158,6 +168,10 @@ function formatGitExtended(name: string, raw: RawResult, command: ParsedCommand)
 function makeGitExtendedHandler(name: string, subcommand: string): CommandHandler {
   return {
     name,
+    // Only git-push is structural: it appends an "ok <ref>" / "ok (up-to-date)"
+    // summary line that on a tiny up-to-date push edges past raw. The other
+    // extended subcommands take the default gate behaviour.
+    traits: name === "git-push" ? { structural: true } : undefined,
     matches(command) {
       return command.program === "git" && command.args[0] === subcommand;
     },
@@ -165,7 +179,7 @@ function makeGitExtendedHandler(name: string, subcommand: string): CommandHandle
       return executeCommand(command);
     },
     async filter(raw, command, options: TkOptions) {
-      return makeFilteredResult(this.name, raw, formatGitExtended(this.name, raw, command), options);
+      return makeFilteredResult(this, raw, formatGitExtended(this.name, raw, command), options);
     },
   };
 }
@@ -193,10 +207,10 @@ const gitAddHandler: CommandHandler = {
   },
   async filter(raw, command, options: TkOptions) {
     if (raw.exitCode !== 0) {
-      return makeFilteredResult(this.name, raw, failure(command, raw), options);
+      return makeFilteredResult(this, raw, failure(command, raw), options);
     }
     const summary = formatAddSummary(raw.auxStdout ?? "");
-    return makeFilteredResult(this.name, raw, summary ? `${summary}\n` : "", options);
+    return makeFilteredResult(this, raw, summary ? `${summary}\n` : "", options);
   },
 };
 

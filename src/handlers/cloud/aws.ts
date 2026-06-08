@@ -1,7 +1,7 @@
-import { executeCommand } from "../../executor.js";
-import type { CommandHandler, ParsedCommand } from "../../types.js";
-import { makeFilteredResult, rawText } from "../base.js";
+import type { ParsedCommand } from "../../types.js";
+import { rawText } from "../base.js";
 import { type LadderResult, overBudgetLadder } from "../common/budget.js";
+import { defineHandler } from "../define.js";
 
 // RTK: cloud/aws_cmd.rs — AWS CLI emits verbose JSON; RTK parses it (serde_json)
 // and emits compact, LLM-oriented summaries. This is a faithful port of a
@@ -278,30 +278,26 @@ function filterAws(args: string[], stdout: string): FilterResult {
   return null;
 }
 
-export const awsHandler: CommandHandler = {
+export const awsHandler = defineHandler({
   name: "aws",
   programs: ["aws"],
 
-  matches: matchesAws,
+  match: matchesAws,
 
-  execute(command) {
-    return executeCommand(command);
-  },
-
-  async filter(raw, command, options) {
+  format: (raw, command, options) => {
     // RTK: cloud/aws_cmd.rs — on a failed command RTK prints stderr verbatim and
     // does not filter; mirror that by surfacing the raw output unchanged.
     if (raw.exitCode !== 0) {
-      return makeFilteredResult(this.name, raw, rawText(raw), options);
+      return rawText(raw);
     }
 
     const result = filterAws(command.args, raw.stdout);
     if (result === null) {
       // Uncovered service or unparseable JSON: fall back to raw (RTK's None path
       // / generic passthrough). Not under test.
-      return makeFilteredResult(this.name, raw, rawText(raw), options);
+      return rawText(raw);
     }
 
-    return makeFilteredResult(this.name, raw, result.text, options, undefined, result.omission);
+    return { output: result.text, omission: result.omission };
   },
-};
+});

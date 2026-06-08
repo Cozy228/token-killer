@@ -1,10 +1,13 @@
-import { executeCommand } from "../../executor.js";
-import type { CommandHandler, OmissionDeclaration, ParsedCommand } from "../../types.js";
-import { makeFilteredResult } from "../base.js";
+import type { OmissionDeclaration, ParsedCommand } from "../../types.js";
+import { defineHandler } from "../define.js";
 import { compactUnifiedDiff, extractDiffStatLines } from "./compactDiff.js";
 
 function wantsStatOnly(command: ParsedCommand, text: string): boolean {
-  if (command.args.includes("--stat") || command.args.includes("--name-only") || command.args.includes("--name-status")) {
+  if (
+    command.args.includes("--stat") ||
+    command.args.includes("--name-only") ||
+    command.args.includes("--name-status")
+  ) {
     return true;
   }
   return extractDiffStatLines(text).length > 0 && !text.includes("diff --git");
@@ -22,9 +25,18 @@ function formatShow(
   }
 
   const lines = text.split(/\r?\n/);
-  const commit = lines.find((line) => line.startsWith("commit "))?.replace("commit ", "").trim();
-  const author = lines.find((line) => line.startsWith("Author:"))?.replace("Author:", "").trim();
-  const date = lines.find((line) => line.startsWith("Date:"))?.replace("Date:", "").trim();
+  const commit = lines
+    .find((line) => line.startsWith("commit "))
+    ?.replace("commit ", "")
+    .trim();
+  const author = lines
+    .find((line) => line.startsWith("Author:"))
+    ?.replace("Author:", "")
+    .trim();
+  const date = lines
+    .find((line) => line.startsWith("Date:"))
+    ?.replace("Date:", "")
+    .trim();
 
   const subjectLines: string[] = [];
   let inSubject = false;
@@ -65,20 +77,17 @@ function formatShow(
   return { output, omission };
 }
 
-export const gitShowHandler: CommandHandler = {
+export const gitShowHandler = defineHandler({
   name: "git-show",
+  traits: { structural: true, ladder: true },
   programs: ["git"],
 
-  matches(command) {
+  match(command) {
     return command.program === "git" && command.args[0] === "show";
   },
 
-  execute(command) {
-    return executeCommand(command);
-  },
-
-  async filter(raw, command, options) {
+  format(raw, command, _options) {
     const { output, omission } = formatShow(raw.stdout || raw.stderr, command);
-    return makeFilteredResult(this.name, raw, output, options, undefined, omission);
+    return { output, omission };
   },
-};
+});

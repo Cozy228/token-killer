@@ -1,19 +1,12 @@
-import { executeCommand } from "../executor.js";
-import type { CommandHandler } from "../types.js";
-import { makeFilteredResult, rawText } from "./base.js";
+import { rawText } from "./base.js";
+import { defineHandler } from "./define.js";
 
-export const genericHandler: CommandHandler = {
+export const genericHandler = defineHandler({
   name: "generic",
 
-  matches() {
+  match() {
     return true;
   },
 
-  execute(command) {
-    return executeCommand(command);
-  },
-
-  async filter(raw, _command, options) {
-    return makeFilteredResult(this.name, raw, rawText(raw), options);
-  },
-};
+  format: (raw, _command, _options) => rawText(raw),
+});

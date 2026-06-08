@@ -56,7 +56,9 @@ function humanSize(bytes: number): string {
 // RTK: ls.rs::is_dotdir — `.` and `..` entries carry no content.
 function isDotdir(line: string): boolean {
   const trimmed = line.trim();
-  return trimmed.endsWith(".") && (trimmed.endsWith("..") || trimmed.endsWith(" .") || trimmed === ".");
+  return (
+    trimmed.endsWith(".") && (trimmed.endsWith("..") || trimmed.endsWith(" .") || trimmed === ".")
+  );
 }
 
 type LsLine = { fileType: string; perms: string; size: number; name: string };
@@ -240,7 +242,11 @@ export function buildLsArgs(userArgs: string[]): string[] {
     if (flag.startsWith("--")) {
       if (flag !== "--all") out.push(flag);
     } else {
-      const extra = [...flag.slice(1)].filter((c) => c !== "l" && c !== "a" && c !== "h").join("");
+      // Array.from (not a `[...str]` spread) so oxlint --fix can't strip the
+      // string-to-chars conversion and leave .filter on a string.
+      const extra = Array.from(flag.slice(1))
+        .filter((c) => c !== "l" && c !== "a" && c !== "h")
+        .join("");
       if (extra !== "") out.push(`-${extra}`);
     }
   }
@@ -265,6 +271,6 @@ export const lsHandler: CommandHandler = {
     return executeCommand(rewritten, { LC_ALL: "C" });
   },
   async filter(raw, command, options: TkOptions) {
-    return makeFilteredResult(this.name, raw, formatLs(raw, command), options);
+    return makeFilteredResult(this, raw, formatLs(raw, command), options);
   },
 };

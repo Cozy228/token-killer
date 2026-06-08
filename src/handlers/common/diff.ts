@@ -27,9 +27,10 @@ export function lcsChanges(oldLines: string[], newLines: string[]): DiffChange[]
 
   for (let oldIndex = oldLines.length - 1; oldIndex >= 0; oldIndex -= 1) {
     for (let newIndex = newLines.length - 1; newIndex >= 0; newIndex -= 1) {
-      common[oldIndex]![newIndex] = oldLines[oldIndex] === newLines[newIndex]
-        ? common[oldIndex + 1]![newIndex + 1]! + 1
-        : Math.max(common[oldIndex + 1]![newIndex]!, common[oldIndex]![newIndex + 1]!);
+      common[oldIndex]![newIndex] =
+        oldLines[oldIndex] === newLines[newIndex]
+          ? common[oldIndex + 1]![newIndex + 1]! + 1
+          : Math.max(common[oldIndex + 1]![newIndex]!, common[oldIndex]![newIndex + 1]!);
     }
   }
 
@@ -145,7 +146,10 @@ function condenseUnifiedDiff(text: string): string {
   return output.join("\n");
 }
 
-async function diffInternally(command: ParsedCommand, options: TkOptions): Promise<RawResult | undefined> {
+async function diffInternally(
+  command: ParsedCommand,
+  options: TkOptions,
+): Promise<RawResult | undefined> {
   const [oldPath, newPath] = fileArgs(command);
   if (!oldPath || !newPath) return undefined;
 
@@ -201,6 +205,7 @@ async function diffFromStdin(command: ParsedCommand): Promise<RawResult> {
 
 export const diffHandler: CommandHandler = {
   name: "diff",
+  traits: { structural: true, ladder: true },
   programs: ["diff"],
 
   matches(command) {
@@ -216,9 +221,10 @@ export const diffHandler: CommandHandler = {
 
   async filter(raw, command, options) {
     const output = `${raw.stdout}${raw.stderr}`;
-    const filtered = command.args.includes("-") || isUnifiedDiff(output)
-      ? condenseUnifiedDiff(output)
-      : output.trimEnd();
+    const filtered =
+      command.args.includes("-") || isUnifiedDiff(output)
+        ? condenseUnifiedDiff(output)
+        : output.trimEnd();
     const body = filtered.trim() ? `${filtered.trimEnd()}\n` : "[ok] Files are identical\n";
 
     // ADR 0001: a very large diff must not ship unbounded. Diff lines are
@@ -234,6 +240,6 @@ export const diffHandler: CommandHandler = {
       summaryLines.length > 0
         ? overBudgetLadder({ full: body, replacement: () => `${summaryLines.join("\n")}\n` })
         : { text: body };
-    return makeFilteredResult(this.name, raw, ladder.text, options, undefined, ladder.omission);
+    return makeFilteredResult(this, raw, ladder.text, options, undefined, ladder.omission);
   },
 };

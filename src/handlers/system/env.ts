@@ -1,12 +1,5 @@
-import { executeCommand } from "../../executor.js";
-import type {
-  CommandHandler,
-  OmissionDeclaration,
-  ParsedCommand,
-  RawResult,
-  TkOptions,
-} from "../../types.js";
-import { makeFilteredResult } from "../base.js";
+import type { OmissionDeclaration, ParsedCommand, RawResult, TkOptions } from "../../types.js";
+import { defineHandler } from "../define.js";
 import { overBudgetLadder } from "../common/budget.js";
 
 // RTK: system/env_cmd.rs — group interesting environment variables, mask
@@ -38,20 +31,59 @@ const SENSITIVE_PATTERNS = [
 
 // RTK: env_cmd.rs::is_lang_var.
 const LANG_PATTERNS = [
-  "RUST", "CARGO", "PYTHON", "PIP", "NODE", "NPM", "YARN", "DENO", "BUN", "JAVA", "MAVEN",
-  "GRADLE", "GO", "GOPATH", "GOROOT", "RUBY", "GEM", "PERL", "PHP", "DOTNET", "NUGET",
+  "RUST",
+  "CARGO",
+  "PYTHON",
+  "PIP",
+  "NODE",
+  "NPM",
+  "YARN",
+  "DENO",
+  "BUN",
+  "JAVA",
+  "MAVEN",
+  "GRADLE",
+  "GO",
+  "GOPATH",
+  "GOROOT",
+  "RUBY",
+  "GEM",
+  "PERL",
+  "PHP",
+  "DOTNET",
+  "NUGET",
 ];
 
 // RTK: env_cmd.rs::is_cloud_var.
 const CLOUD_PATTERNS = [
-  "AWS", "AZURE", "GCP", "GOOGLE_CLOUD", "DOCKER", "KUBERNETES", "K8S", "HELM",
-  "TERRAFORM", "VAULT", "CONSUL", "NOMAD",
+  "AWS",
+  "AZURE",
+  "GCP",
+  "GOOGLE_CLOUD",
+  "DOCKER",
+  "KUBERNETES",
+  "K8S",
+  "HELM",
+  "TERRAFORM",
+  "VAULT",
+  "CONSUL",
+  "NOMAD",
 ];
 
 // RTK: env_cmd.rs::is_tool_var.
 const TOOL_PATTERNS = [
-  "EDITOR", "VISUAL", "SHELL", "TERM", "GIT", "SSH", "GPG", "BREW", "HOMEBREW",
-  "XDG", "CLAUDE", "ANTHROPIC",
+  "EDITOR",
+  "VISUAL",
+  "SHELL",
+  "TERM",
+  "GIT",
+  "SSH",
+  "GPG",
+  "BREW",
+  "HOMEBREW",
+  "XDG",
+  "CLAUDE",
+  "ANTHROPIC",
 ];
 
 type EnvVar = { key: string; value: string };
@@ -247,17 +279,15 @@ function isEnvListing(args: string[]): boolean {
   return true;
 }
 
-export const envHandler: CommandHandler = {
+export const envHandler = defineHandler({
   name: "env",
+  traits: { structural: true, masksSecrets: true, ladder: true },
   programs: ["env"],
-  matches(command) {
+  match(command) {
     return command.program === "env" && isEnvListing(command.args);
   },
-  execute(command) {
-    return executeCommand(command);
-  },
-  async filter(raw, _command, options: TkOptions) {
+  format: (raw, _command, options: TkOptions) => {
     const { output, omission } = formatEnvLadder(raw.stdout);
-    return makeFilteredResult(this.name, raw, output, options, undefined, omission);
+    return { output, omission };
   },
-};
+});

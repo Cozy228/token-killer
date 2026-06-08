@@ -1,6 +1,5 @@
-import { executeCommand } from "../../executor.js";
-import type { CommandHandler, ParsedCommand } from "../../types.js";
-import { makeFilteredResult } from "../base.js";
+import type { ParsedCommand } from "../../types.js";
+import { defineHandler } from "../define.js";
 import { type LadderResult, overBudgetLadder } from "../common/budget.js";
 
 // RTK: js/prettier_cmd.rs — show only files that need formatting. ADR 0001
@@ -118,18 +117,14 @@ function filterPrettierOutput(output: string): LadderResult {
   });
 }
 
-export const prettierHandler: CommandHandler = {
+export const prettierHandler = defineHandler({
   name: "prettier",
   programs: ["prettier"],
 
-  matches: matchesPrettier,
+  match: matchesPrettier,
 
-  execute(command) {
-    return executeCommand(command);
-  },
-
-  async filter(raw, _command, options) {
+  format: (raw, _command, options) => {
     const { text, omission } = filterPrettierOutput(`${raw.stdout}\n${raw.stderr}`);
-    return makeFilteredResult(this.name, raw, `${text}\n`, options, undefined, omission);
+    return { output: `${text}\n`, omission };
   },
-};
+});

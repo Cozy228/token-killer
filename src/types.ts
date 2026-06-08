@@ -92,8 +92,29 @@ export type ParsedArgv = {
   subArgs?: string[];
 };
 
+// Static gate facts a handler declares about itself, read by the quality gate
+// (makeFilteredResult) instead of the hardcoded name lists it replaced. These are
+// the static analogue of OmissionDeclaration (which carries the *runtime* reduction
+// fact through the same interface).
+//   - structural: the output is a deliberate reformat (RTK-style grouping/
+//     annotation), not a size reduction, so on small/clean inputs it can exceed the
+//     raw dump — the SIZE-inflation check must not bounce it back to raw.
+//   - masksSecrets: the raw output contains secret values the handler masks (env),
+//     so reverting to raw would re-expose them — it must NEVER fail open to raw.
+//   - ladder: the handler participates in the ADR 0001 over-budget ladder and never
+//     emits an undeclared `+N more`, so the prose-omission sniff is retired for it
+//     (the sniff is only the net for foreign / not-yet-converted passthrough).
+export type HandlerTraits = {
+  structural?: boolean;
+  masksSecrets?: boolean;
+  ladder?: boolean;
+};
+
 export interface CommandHandler {
   name: string;
+  // Static gate facts (see HandlerTraits). Declared only on handlers that need a
+  // non-default gate behaviour; omitted on the majority that take the defaults.
+  traits?: HandlerTraits;
   // The real external executables this handler fronts — the programs the shim
   // wraps so `git`, `tsc`, … on the agent's PATH route into `tk`. Declared only
   // on handlers that wrap an external tool; omitted on tk-native verbs (read,
@@ -102,9 +123,5 @@ export interface CommandHandler {
   programs?: string[];
   matches(command: ParsedCommand): boolean;
   execute(command: ParsedCommand, options: TkOptions): Promise<RawResult>;
-  filter(
-    raw: RawResult,
-    command: ParsedCommand,
-    options: TkOptions,
-  ): Promise<FilteredResult>;
+  filter(raw: RawResult, command: ParsedCommand, options: TkOptions): Promise<FilteredResult>;
 }

@@ -1,6 +1,4 @@
-import { executeCommand } from "../../executor.js";
-import type { CommandHandler } from "../../types.js";
-import { makeFilteredResult } from "../base.js";
+import { defineHandler } from "../define.js";
 
 // RTK: mypy_cmd.rs uses a 39-char box-drawing separator under the summary line.
 const MYPY_SEPARATOR = "═".repeat(39);
@@ -109,19 +107,14 @@ function formatMypy(text: string): string {
   return `${out.join("\n").trimEnd()}\n`;
 }
 
-export const mypyHandler: CommandHandler = {
+export const mypyHandler = defineHandler({
   name: "mypy",
+  traits: { structural: true },
   programs: ["mypy"],
 
-  matches(command) {
+  match(command) {
     return command.program === "mypy";
   },
 
-  execute(command) {
-    return executeCommand(command);
-  },
-
-  async filter(raw, _command, options) {
-    return makeFilteredResult(this.name, raw, formatMypy(`${raw.stdout}\n${raw.stderr}`), options);
-  },
-};
+  format: (raw, _command, options) => formatMypy(`${raw.stdout}\n${raw.stderr}`),
+});

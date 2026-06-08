@@ -86,13 +86,15 @@ function extractTestSummary(
   const ladder = overBudgetLadder({
     full: render(true),
     digest: () => render(false),
-    replacement: () => [`[FAIL] ${failures.length} failures (over budget)`, "", ...tail()].join("\n"),
+    replacement: () =>
+      [`[FAIL] ${failures.length} failures (over budget)`, "", ...tail()].join("\n"),
   });
   return { output: ladder.text, omission: ladder.omission };
 }
 
 export const testRunnerHandler: CommandHandler = {
   name: "test",
+  traits: { structural: true, ladder: true },
   matches(command) {
     return command.program === "test" && command.args.length > 0;
   },
@@ -106,6 +108,6 @@ export const testRunnerHandler: CommandHandler = {
   },
   async filter(raw, command, options) {
     const { output, omission } = extractTestSummary(rawText(raw), command.args.join(" "));
-    return makeFilteredResult(this.name, raw, output, options, undefined, omission);
+    return makeFilteredResult(this, raw, output, options, undefined, omission);
   },
 };

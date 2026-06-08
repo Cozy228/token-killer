@@ -1,4 +1,10 @@
-import type { FilteredResult, OmissionDeclaration, RawResult, TkOptions } from "../types.js";
+import type {
+  FilteredResult,
+  HandlerTraits,
+  OmissionDeclaration,
+  RawResult,
+  TkOptions,
+} from "../types.js";
 import { calculateSavings } from "../core/savings.js";
 import { maybeSaveRawOutput } from "../core/rawStore.js";
 import { limitOutput } from "../core/outputLimit.js";
@@ -8,117 +14,58 @@ export function rawText(raw: RawResult): string {
   return `${raw.stdout}${raw.stderr}`;
 }
 
-// Handlers whose output is a deliberate structural reformat (RTK-style grouping/
-// annotation) rather than a size reduction. On clean inputs these can be slightly
-// larger than the raw dump, so the SIZE-inflation check must not second-guess them
-// — RTK always emits the structured form. The empty_output guard still applies.
-// git-diff annotates hunks; tsc/mypy regroup diagnostics by file; pip regroups
-// an inventory under a header + separator.
+// The three gate facts below used to be name-indexed Sets in this file; they now
+// live on each handler as `traits` (see HandlerTraits in types.ts) and the gate
+// reads them through the CommandHandler interface — the static analogue of how
+// OmissionDeclaration carries the runtime reduction fact across the same seam. The
+// rationale for each trait is preserved here because it explains the gate logic,
+// not any single handler.
 //
-// ADR 0001 finding #2: this set suppresses ONLY `outputInflatesRaw` (size). It used
-// to also disable the content-omission check, which made evidence loss in the worst
-// droppers (json/git-diff/pip/env/…) unconditional. Those two concerns are now
-// separate: omission protection (declared-or-sniffed, below) runs for *every*
-// handler; only the size-inflation tolerance is gated by membership here.
-// curl appends a "... (N bytes total)" marker + recovery hint to a truncated
-// body, which near the 500-byte boundary can edge just past the raw size — RTK
-// always emits this form (curl_cmd.rs), so it must not be bounced back to raw.
-// git-push appends an "ok <ref>" / "ok (up-to-date)" summary line that RTK always
-// emits (git.rs::run_push_filter); on a tiny up-to-date push that one line edges
-// past raw, so the inflation gate must not bounce it back and drop the summary.
-// read (RTK system/read.rs) is a structural reformat: `--max-lines` appends a
-// single `[N more lines]` marker (smart_truncate) and `-n` prefixes every line
-// with a right-aligned number + " │ ". Both are RTK's intended output yet can be
-// larger than the raw bytes on small inputs, and the marker matches the
-// content-omission guard — but RTK always emits this shape, so it must not be
-// bounced back to raw. The tail_lines path is a genuine shrink and is unaffected.
-// json (RTK system/json_cmd.rs::compact_json) renders an indented `key: value`
-// view (quotes/braces stripped). On COMPACT (non-pretty) nested JSON — exactly
-// what arrives from APIs/tools — the indented form can equal or exceed the raw
-// bytes, so the inflation gate would bounce it back to raw and silently drop the
-// compact contract. RTK always emits the compact view, so json is structural.
-// env (RTK system/env_cmd.rs) groups vars under headers and MASKS secrets. On a
-// small env dump the grouped form can exceed raw — reverting to raw would expose
-// the unmasked secret values (a security contract break), so env is structural.
-// log (RTK system/log_cmd.rs) always emits the "Log Summary" digest; on a tiny
-// log the digest can exceed raw and would otherwise revert, dropping the contract.
-// summary / test / deps (RTK system/summary.rs, rust/runner.rs::run_test,
-// system/deps.rs) are always-emit structural digests: a "[FAIL] Command:" + counts
-// summary, a "[FAIL] FAILURES:" + SUMMARY extraction, and a per-ecosystem dependency
-// roll-up. On small inputs the reformat can exceed raw, but RTK always emits it, so
-// it must not be bounced back to the raw replay.
-// git-status (RTK git/git.rs::format_status_inner) prefixes the branch as
-// `* <branch>` and, on a clean tree, appends `clean — nothing to commit`; on a
-// one-line porcelain capture that reformat can exceed raw, but RTK always emits
-// it, so it must not be bounced back to the opaque porcelain string.
-// gh / glab (RTK gh_cmd.rs / glab_cmd.rs) reformat gh/glab JSON into a compact
-// human summary that RTK always emits. On an EMPTY list the "No Pull Requests" /
-// "No Issues" / "No Merge Requests" summary is larger than the raw `[]`, and the
-// "  … +N more" cap marker matches the content-omission guard — but RTK always
-// emits these, so they must not be bounced back to the raw JSON (which would leak
-// an opaque `[]` / array on empty state).
-const INFLATION_EXEMPT_HANDLERS = new Set([
-  "gh",
-  "glab",
-  "git-status",
-  "git-diff",
-  // git-show shares git-diff's compaction (compactUnifiedDiff): on a large commit
-  // it deliberately drops diff context and appends a "... (more changes truncated)"
-  // recovery marker — exactly the content-omission shape the inflation gate bounces
-  // back to raw. Without this exemption `git show <commit>` degraded to ~5-18%
-  // savings vs ~96% for the identical `git diff` payload. It is a structural
-  // reformat like git-diff, so it must not be second-guessed.
-  "git-show",
-  "diff",
-  "tsc",
-  "mypy",
-  "pip",
-  "curl",
-  "pytest",
-  "git-push",
-  "read",
-  "json",
-  "env",
-  "log",
-  "summary",
-  "test",
-  "deps",
-]);
-
-// Handlers whose RAW output contains secret values the handler MASKS (env masks
-// API keys / tokens / passwords). For these, reverting to raw is a security break,
-// so they are exempt from BOTH revert-to-raw paths: the undeclared-omission sniff
-// is suppressed, and a declared `replacement` without a persisted snapshot ships
-// its masked summary rather than failing open to unmasked raw. (Recovery is still
-// guaranteed whenever persistence is on — the default — via the raw snapshot,
-// which lives only in the local data dir.) Every NON-masking handler is subject to
-// the sniff and fails open to raw above budget when it cannot declare omission.
-const MASKING_HANDLERS = new Set(["env"]);
-
-// Handlers that participate in the ADR 0001 over-budget ladder: they either ship
-// the full output or DECLARE a digest/replacement — they NEVER emit an undeclared
-// `+N more`. The prose-sniff is retired for them (ADR 0001: the sniff is only a
-// net for foreign passthrough / not-yet-converted handlers). Without this, the
-// sniff fires on their own legitimate passthrough content — a diff body line like
-// `+10 more fixes`, a vitest snapshot `... +5 more`, or a source line surfaced by
-// `read` — trimming to a whole-line marker match and needlessly reverting a
-// correct compression to raw. (`list-like` is intentionally absent: its ls/tree
-// path is not yet ladder-converted, so it still needs the net.)
-const LADDER_HANDLERS = new Set([
-  "ruff",
-  "pytest",
-  "js-test",
-  "playwright",
-  "test",
-  "dotnet",
-  "env",
-  "json",
-  "read",
-  "psql",
-  "diff",
-  "git-diff",
-  "git-show",
-]);
+// traits.structural — the output is a deliberate structural reformat (RTK-style
+// grouping/annotation) rather than a size reduction. On clean inputs it can be
+// slightly larger than the raw dump, so the SIZE-inflation check must not second-
+// guess it — RTK always emits the structured form. The empty_output guard still
+// applies, and (ADR 0001 finding #2) this trait suppresses ONLY `outputInflatesRaw`
+// (size); omission protection runs for *every* handler regardless. Bearers and why:
+//   git-diff annotates hunks; git-show shares git-diff's compaction (drops context +
+//     appends "... (more changes truncated)") — without structural, `git show <commit>`
+//     degraded to ~5-18% savings vs ~96% for the identical `git diff` payload.
+//   tsc/mypy regroup diagnostics by file; pip regroups an inventory under a header.
+//   curl appends a "... (N bytes total)" marker + recovery hint that can edge past
+//     raw near the 500-byte boundary (curl_cmd.rs).
+//   git-push appends an "ok <ref>" / "ok (up-to-date)" line that on a tiny up-to-date
+//     push edges past raw (git.rs::run_push_filter).
+//   read appends a `[N more lines]` marker and/or " │ "-prefixed line numbers
+//     (system/read.rs) that can exceed raw on small inputs.
+//   json renders an indented `key: value` view that on compact nested JSON can
+//     equal/exceed raw (system/json_cmd.rs::compact_json).
+//   env groups vars under headers and masks secrets — reverting to raw would expose
+//     unmasked values (also masksSecrets, below).
+//   log always emits the "Log Summary" digest (system/log_cmd.rs).
+//   summary/test/deps are always-emit digests (system/summary.rs, rust/runner.rs,
+//     system/deps.rs) that can exceed raw on small inputs.
+//   git-status prefixes `* <branch>` and appends `clean — nothing to commit`
+//     (git.rs::format_status_inner), exceeding a one-line porcelain capture.
+//   gh/glab reformat JSON into a compact human summary; on an EMPTY list the
+//     "No Pull Requests" / "No Issues" summary is larger than the raw `[]`.
+//
+// traits.masksSecrets — the RAW output contains secret values the handler MASKS
+// (env masks API keys / tokens / passwords). Reverting to raw is a security break,
+// so it is exempt from BOTH revert-to-raw paths: the undeclared-omission sniff is
+// suppressed, and a declared `replacement` without a persisted snapshot ships its
+// masked summary rather than failing open to unmasked raw. (Recovery is still
+// guaranteed whenever persistence is on — the default — via the raw snapshot in the
+// local data dir.) Every non-masking handler is subject to the sniff and fails open
+// to raw above budget when it cannot declare omission.
+//
+// traits.ladder — the handler participates in the ADR 0001 over-budget ladder: it
+// either ships the full output or DECLARES a digest/replacement, NEVER an undeclared
+// `+N more`. The prose-sniff is retired for it (ADR 0001: the sniff is only the net
+// for foreign / not-yet-converted passthrough). Without this, the sniff would fire
+// on its own legitimate content — a diff body line `+10 more fixes`, a vitest
+// snapshot `... +5 more`, or a source line surfaced by `read` — and needlessly
+// revert a correct compression to raw. (`list-like` intentionally lacks it: its
+// ls/tree path is not yet ladder-converted, so it still needs the net.)
 
 // Detects content-omission markers in a handler's output. ADR 0001 retires this
 // prose-sniffing for `tk`'s own handlers (they now *declare* omission, see
@@ -155,7 +102,9 @@ export function outputOmitsContent(output: string): boolean {
 }
 
 export async function makeFilteredResult(
-  handler: string,
+  // The calling handler — read for its `name` (recorded on the result) and its
+  // declared gate `traits`. Callers pass `this` from inside `filter()`.
+  handler: { name: string; traits?: HandlerTraits },
   raw: RawResult,
   output: string,
   options: TkOptions,
@@ -172,7 +121,7 @@ export async function makeFilteredResult(
   const outputHasContent = cleanOutput.trim().length > 0;
   const inflationBudget =
     cleanRaw.length <= 200 ? 0 : Math.max(80, Math.floor(cleanRaw.length * 0.05));
-  const inflationExempt = INFLATION_EXEMPT_HANDLERS.has(handler);
+  const inflationExempt = handler.traits?.structural === true;
   const outputInflatesRaw =
     !inflationExempt &&
     rawHasContent &&
@@ -184,19 +133,20 @@ export async function makeFilteredResult(
   // and reverting `env` to raw would re-expose secrets). The sniff is the safety
   // net only for UNDECLARED omission — a foreign passthrough or not-yet-converted
   // handler — and is suppressed for the (shrinking) unsafe-to-revert bypass set.
-  const masking = MASKING_HANDLERS.has(handler);
+  const masking = handler.traits?.masksSecrets === true;
   const undeclaredOmission =
     !omission &&
     !masking &&
-    !LADDER_HANDLERS.has(handler) &&
+    handler.traits?.ladder !== true &&
     rawHasContent &&
     outputHasContent &&
     outputOmitsContent(cleanOutput);
-  const initialStatus = !outputHasContent && rawHasContent
-    ? "empty_output"
-    : outputInflatesRaw || undeclaredOmission
-    ? "inflated"
-    : "passed";
+  const initialStatus =
+    !outputHasContent && rawHasContent
+      ? "empty_output"
+      : outputInflatesRaw || undeclaredOmission
+        ? "inflated"
+        : "passed";
 
   // Decision 4: a declared omission force-persists raw this turn regardless of
   // exit code / size, so the snapshot the digest points at always exists. An
@@ -230,8 +180,7 @@ export async function makeFilteredResult(
   const maskingSafeFull = maskingReplacementNoSnapshot ? omission!.safeFull : undefined;
   const maskingDegraded = maskingReplacementNoSnapshot && maskingSafeFull === undefined;
 
-  const qualityStatus =
-    replacementNeedsRecovery || maskingDegraded ? "inflated" : initialStatus;
+  const qualityStatus = replacementNeedsRecovery || maskingDegraded ? "inflated" : initialStatus;
 
   let limited = qualityStatus === "passed" ? cleanOutput : cleanRaw;
   let omissionField: FilteredResult["omission"];
@@ -256,7 +205,7 @@ export async function makeFilteredResult(
   const savings = calculateSavings(rawText(raw), limited);
 
   return {
-    handler,
+    handler: handler.name,
     output: limited,
     rawChars: savings.rawChars,
     outputChars: savings.outputChars,

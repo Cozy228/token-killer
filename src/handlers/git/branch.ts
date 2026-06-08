@@ -151,17 +151,17 @@ export const gitBranchHandler: CommandHandler = {
     // RTK: git.rs — on failure the raw stderr/stdout is surfaced verbatim so
     // diagnostics survive (truncating a branch error would be misleading).
     if (raw.exitCode !== 0) {
-      return makeFilteredResult(this.name, raw, rawText(raw), options);
+      return makeFilteredResult(this, raw, rawText(raw), options);
     }
 
     // RTK: git.rs — show-current prints the bare branch name; a write op prints
     // "ok"; only the list mode is folded into the compact branch view.
     if (mode === "show-current") {
-      return makeFilteredResult(this.name, raw, `${raw.stdout.trim()}\n`, options);
+      return makeFilteredResult(this, raw, `${raw.stdout.trim()}\n`, options);
     }
     if (mode === "write") {
-      return makeFilteredResult(this.name, raw, "ok\n", options);
+      return makeFilteredResult(this, raw, "ok\n", options);
     }
-    return makeFilteredResult(this.name, raw, formatBranch(raw.stdout || raw.stderr), options);
+    return makeFilteredResult(this, raw, formatBranch(raw.stdout || raw.stderr), options);
   },
 };

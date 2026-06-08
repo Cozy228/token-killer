@@ -1,6 +1,5 @@
-import { executeCommand } from "../../executor.js";
-import type { CommandHandler, ParsedCommand } from "../../types.js";
-import { makeFilteredResult } from "../base.js";
+import type { ParsedCommand } from "../../types.js";
+import { defineHandler } from "../define.js";
 import { removeAnsi } from "../../core/ansi.js";
 
 // RTK: js/next_cmd.rs — filter Next.js `next build` output down to a route/bundle
@@ -117,9 +116,7 @@ function filterNextBuild(output: string): string {
     result.push("Already built (using cache)");
     result.push("");
   } else if (routesTotal > 0) {
-    result.push(
-      `${routesTotal} routes (${routesStatic} static, ${routesDynamic} dynamic)`,
-    );
+    result.push(`${routesTotal} routes (${routesStatic} static, ${routesDynamic} dynamic)`);
     result.push("");
   }
 
@@ -159,31 +156,22 @@ function filterNextBuild(output: string): string {
   return result.join("\n").trim();
 }
 
-export const nextHandler: CommandHandler = {
+export const nextHandler = defineHandler({
   name: "next",
   programs: ["next"],
 
-  matches(command: ParsedCommand): boolean {
+  match(command: ParsedCommand): boolean {
     return command.program === "next";
   },
 
-  execute(command) {
-    return executeCommand(command);
-  },
-
-  async filter(raw, _command, options) {
+  format: (raw, _command, options) => {
     // A FAILED build's `file:line` compile/type error is the evidence the agent
     // acts on; the route/bundle summary flattens it to "Errors: N" (audit #16). On
     // a non-zero exit, pass the raw build output through so the error detail (and
     // its location) survives instead of being reduced to a count.
     if (raw.exitCode !== 0) {
-      return makeFilteredResult(this.name, raw, `${raw.stdout}${raw.stderr}`, options);
+      return `${raw.stdout}${raw.stderr}`;
     }
-    return makeFilteredResult(
-      this.name,
-      raw,
-      `${filterNextBuild(`${raw.stdout}\n${raw.stderr}`)}\n`,
-      options,
-    );
+    return `${filterNextBuild(`${raw.stdout}\n${raw.stderr}`)}\n`;
   },
-};
+});

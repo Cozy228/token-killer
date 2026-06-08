@@ -142,7 +142,7 @@ export const searchLikeHandler: CommandHandler = {
 
     if (!raw.stdout.trim()) {
       const output = `${raw.stderr || `0 matches for ${pattern}`}\n`;
-      return makeFilteredResult(this.name, raw, output, options);
+      return makeFilteredResult(this, raw, output, options);
     }
 
     // RTK: grep_cmd.rs — explicit format flags (-c/-l/-L/-o/-Z/--json) already
@@ -151,7 +151,7 @@ export const searchLikeHandler: CommandHandler = {
     // is an explicit opt-out (= --raw).
     const level = parseLevel(command.args, { fallback: "balanced" });
     if (hasFormatFlag(cleanedArgs) || hasContextFlag(cleanedArgs) || level === "none") {
-      return makeFilteredResult(this.name, raw, `${raw.stdout.trimEnd()}\n`, options);
+      return makeFilteredResult(this, raw, `${raw.stdout.trimEnd()}\n`, options);
     }
 
     // Recovery contract item 3: when matches are suppressed, name how to recover.
@@ -161,7 +161,7 @@ export const searchLikeHandler: CommandHandler = {
       recoveryHint,
     });
     if (grouped === null) {
-      return makeFilteredResult(this.name, raw, `${raw.stdout.trimEnd()}\n`, options);
+      return makeFilteredResult(this, raw, `${raw.stdout.trimEnd()}\n`, options);
     }
 
     // ADR 0001 decision 5: declare the reduction so the gate trusts it instead of
@@ -175,6 +175,6 @@ export const searchLikeHandler: CommandHandler = {
     // raw search under --no-save-raw — reintroducing the exact bug this fixes — so
     // even a capped group declares digest; the `[+N more]` count keeps it honest.
     const omission: OmissionDeclaration = { kind: "digest" };
-    return makeFilteredResult(this.name, raw, grouped, options, undefined, omission);
+    return makeFilteredResult(this, raw, grouped, options, undefined, omission);
   },
 };

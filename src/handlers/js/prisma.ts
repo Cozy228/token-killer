@@ -1,6 +1,6 @@
-import { executeCommand } from "../../executor.js";
-import type { CommandHandler, ParsedCommand, RawResult, TkOptions } from "../../types.js";
-import { makeFilteredResult, rawText } from "../base.js";
+import type { ParsedCommand, RawResult, TkOptions } from "../../types.js";
+import { rawText } from "../base.js";
+import { defineHandler } from "../define.js";
 
 // RTK: js/prisma_cmd.rs — strips Prisma CLI ASCII art and verbose decoration,
 // summarizing generate / migrate dev / migrate deploy / migrate status / db push.
@@ -302,16 +302,13 @@ function formatPrisma(raw: RawResult, command: ParsedCommand): string {
   }
 }
 
-export const prismaHandler: CommandHandler = {
+export const prismaHandler = defineHandler({
   name: "prisma",
   programs: ["prisma"],
-  matches(command) {
+  match(command) {
     return command.program === "prisma";
   },
-  execute(command) {
-    return executeCommand(command);
+  format: (raw, command, options: TkOptions) => {
+    return formatPrisma(raw, command);
   },
-  async filter(raw, command, options: TkOptions) {
-    return makeFilteredResult(this.name, raw, formatPrisma(raw, command), options);
-  },
-};
+});

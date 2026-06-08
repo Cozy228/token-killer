@@ -1,13 +1,7 @@
-import { executeCommand } from "../../executor.js";
-import type {
-  CommandHandler,
-  OmissionDeclaration,
-  ParsedCommand,
-  RawResult,
-  TkOptions,
-} from "../../types.js";
-import { makeFilteredResult, rawText } from "../base.js";
+import type { OmissionDeclaration, ParsedCommand, RawResult, TkOptions } from "../../types.js";
+import { rawText } from "../base.js";
 import { overBudgetLadder } from "../common/budget.js";
+import { defineHandler } from "../define.js";
 
 // RTK: cloud/psql_cmd.rs — PostgreSQL client output compression. Detects table
 // and expanded display formats, strips borders/padding/(N rows) footers, and
@@ -71,7 +65,10 @@ function filterTable(output: string): { text: string; header: string; dataRows: 
     // A data or header row with | delimiters.
     if (trimmed.includes("|")) {
       totalRows += 1;
-      const cols = trimmed.split("|").map((c) => c.trim()).join("\t");
+      const cols = trimmed
+        .split("|")
+        .map((c) => c.trim())
+        .join("\t");
       // First row is the header, don't count it as data.
       if (totalRows === 1) {
         header = cols;
@@ -170,23 +167,20 @@ function filterPsqlOutput(output: string): { text: string; omission?: OmissionDe
   });
 }
 
-export const psqlHandler: CommandHandler = {
+export const psqlHandler = defineHandler({
   name: "psql",
+  traits: { ladder: true },
   programs: ["psql"],
 
-  matches(command: ParsedCommand) {
+  match(command: ParsedCommand) {
     return command.program === "psql";
   },
 
-  execute(command) {
-    return executeCommand(command);
-  },
-
-  async filter(raw: RawResult, _command, options: TkOptions) {
+  format: (raw: RawResult, _command, options: TkOptions) => {
     // RTK: cloud/psql_cmd.rs::run uses RunOptions::stdout_only() — only stdout is
     // filtered. tk's rawText merges stdout+stderr; on the success path stderr is
     // empty, matching RTK. The filter operates on the merged raw text.
     const { text, omission } = filterPsqlOutput(rawText(raw));
-    return makeFilteredResult(this.name, raw, text, options, undefined, omission);
+    return { output: text, omission };
   },
-};
+});

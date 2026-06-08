@@ -1,7 +1,6 @@
-import { executeCommand } from "../../executor.js";
 import { removeAnsi } from "../../core/ansi.js";
-import type { CommandHandler, OmissionDeclaration, ParsedCommand } from "../../types.js";
-import { makeFilteredResult } from "../base.js";
+import type { OmissionDeclaration, ParsedCommand } from "../../types.js";
+import { defineHandler } from "../define.js";
 import { overBudgetLadder } from "../common/budget.js";
 
 // RTK: rtk/src/parser/types.rs::TestResult / TestFailure — the normalized model both
@@ -75,8 +74,8 @@ function extractJsonObject(input: string): string | undefined {
 // RTK: vitest_cmd.rs::VitestParser (Tier 1) — parse vitest/jest JSON reporter output,
 // directly or after stripping a prefix, into the normalized TestResult.
 function parseTestJson(text: string): TestResult | undefined {
-  const candidates = [text.trim(), extractJsonObject(text)].filter(
-    (value): value is string => Boolean(value),
+  const candidates = [text.trim(), extractJsonObject(text)].filter((value): value is string =>
+    Boolean(value),
   );
   for (const candidate of candidates) {
     if (!candidate.startsWith("{")) continue;
@@ -210,18 +209,15 @@ function formatJsTest(text: string): { output: string; omission?: OmissionDeclar
   return { output: text };
 }
 
-export const jsTestHandler: CommandHandler = {
+export const jsTestHandler = defineHandler({
   name: "js-test",
+  traits: { ladder: true },
   programs: ["npm", "pnpm", "yarn", "jest", "vitest"],
 
-  matches: matchesJsTest,
+  match: matchesJsTest,
 
-  execute(command) {
-    return executeCommand(command);
-  },
-
-  async filter(raw, _command, options) {
+  format: (raw, _command, options) => {
     const { output, omission } = formatJsTest(`${raw.stdout}\n${raw.stderr}`);
-    return makeFilteredResult(this.name, raw, output, options, undefined, omission);
+    return { output, omission };
   },
-};
+});

@@ -1,6 +1,5 @@
-import { executeCommand } from "../../executor.js";
-import type { CommandHandler, ParsedCommand, RawResult, TkOptions } from "../../types.js";
-import { makeFilteredResult } from "../base.js";
+import type { ParsedCommand, RawResult, TkOptions } from "../../types.js";
+import { defineHandler } from "../define.js";
 
 // RTK: js/npm_cmd.rs — filter `npm`/`npm run` output: strip the lifecycle banner
 // (`> pkg@x.y.z script`), `npm WARN` / `npm notice` lines, progress indicators, and
@@ -58,16 +57,12 @@ function formatNpm(raw: RawResult): string {
   return `${filterNpmOutput(`${raw.stdout}\n${raw.stderr}`)}\n`;
 }
 
-export const npmHandler: CommandHandler = {
+export const npmHandler = defineHandler({
   name: "npm",
 
-  matches: matchesNpm,
+  match: matchesNpm,
 
-  execute(command) {
-    return executeCommand(command);
+  format: (raw, _command, options: TkOptions) => {
+    return formatNpm(raw);
   },
-
-  async filter(raw, _command, options: TkOptions) {
-    return makeFilteredResult(this.name, raw, formatNpm(raw), options);
-  },
-};
+});

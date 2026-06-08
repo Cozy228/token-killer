@@ -1,6 +1,5 @@
-import { executeCommand } from "../../executor.js";
-import type { CommandHandler, ParsedCommand } from "../../types.js";
-import { makeFilteredResult } from "../base.js";
+import type { ParsedCommand } from "../../types.js";
+import { defineHandler } from "../define.js";
 
 // RTK: system/format_cmd.rs — `format` is a dispatcher that detects a formatter
 // (prettier / ruff / black / biome) and routes raw output to the matching
@@ -351,22 +350,13 @@ function filterFormatOutput(formatter: string, raw: string): string {
   }
 }
 
-export const formatHandler: CommandHandler = {
+export const formatHandler = defineHandler({
   name: "format",
 
-  matches: matchesFormat,
+  match: matchesFormat,
 
-  execute(command) {
-    return executeCommand(command);
-  },
-
-  async filter(raw, command, options) {
+  format: (raw, command, options) => {
     const formatter = detectFormatter(command.args);
-    return makeFilteredResult(
-      this.name,
-      raw,
-      `${filterFormatOutput(formatter, `${raw.stdout}\n${raw.stderr}`)}\n`,
-      options,
-    );
+    return `${filterFormatOutput(formatter, `${raw.stdout}\n${raw.stderr}`)}\n`;
   },
-};
+});

@@ -1,6 +1,4 @@
-import { executeCommand } from "../../executor.js";
-import type { CommandHandler } from "../../types.js";
-import { makeFilteredResult } from "../base.js";
+import { defineHandler } from "../define.js";
 
 type JavacIssue = {
   file: string;
@@ -40,19 +38,13 @@ function formatJavac(text: string): string {
   return `${out.join("\n")}\n`;
 }
 
-export const javacHandler: CommandHandler = {
+export const javacHandler = defineHandler({
   name: "javac",
   programs: ["javac"],
 
-  matches(command) {
+  match(command) {
     return command.program === "javac";
   },
 
-  execute(command) {
-    return executeCommand(command);
-  },
-
-  async filter(raw, _command, options) {
-    return makeFilteredResult(this.name, raw, formatJavac(`${raw.stdout}\n${raw.stderr}`), options);
-  },
-};
+  format: (raw, _command, options) => formatJavac(`${raw.stdout}\n${raw.stderr}`),
+});

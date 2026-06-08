@@ -19,7 +19,7 @@ const TIMESTAMP_RE = /^\d{4}[-/]\d{2}[-/]\d{2}[T ]\d{2}:\d{2}:\d{2}[.,]?\d*\s*/;
 const UUID_RE = /[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}/g;
 const HEX_RE = /0x[0-9a-fA-F]+/g;
 const NUM_RE = /\b\d{4,}\b/g;
-const PATH_RE = /\/[\w./\-]+/g;
+const PATH_RE = /\/[\w./-]+/g;
 
 // RTK: truncate.rs::CAP_WARNINGS = 10; reduced(CAP_WARNINGS, 5) = 5.
 const MAX_LOG_ERRORS = 10;
@@ -166,7 +166,10 @@ function formatLog(raw: RawResult): string {
 // summarizes them. tk mirrors this: when an argument resolves to a readable file,
 // read it directly. Otherwise (e.g. macOS `log show`/`log stream` with no file
 // path) fall back to the real `log` command rather than guessing.
-async function readLogFile(command: ParsedCommand, options: TkOptions): Promise<RawResult | undefined> {
+async function readLogFile(
+  command: ParsedCommand,
+  options: TkOptions,
+): Promise<RawResult | undefined> {
   const fileArg = command.args.find((arg) => !arg.startsWith("-"));
   if (!fileArg) return undefined;
   try {
@@ -185,6 +188,7 @@ async function readLogFile(command: ParsedCommand, options: TkOptions): Promise<
 
 export const logHandler: CommandHandler = {
   name: "log",
+  traits: { structural: true },
   matches(command) {
     return command.program === "log";
   },
@@ -192,6 +196,6 @@ export const logHandler: CommandHandler = {
     return (await readLogFile(command, options)) ?? executeCommand(command);
   },
   async filter(raw, command, options: TkOptions) {
-    return makeFilteredResult(this.name, raw, formatLog(raw), options);
+    return makeFilteredResult(this, raw, formatLog(raw), options);
   },
 };

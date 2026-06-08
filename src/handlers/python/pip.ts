@@ -1,6 +1,5 @@
-import { executeCommand } from "../../executor.js";
-import type { CommandHandler, ParsedCommand } from "../../types.js";
-import { makeFilteredResult } from "../base.js";
+import type { ParsedCommand } from "../../types.js";
+import { defineHandler } from "../define.js";
 
 // RTK: pip_cmd.rs uses a 39-char box-drawing separator under the summary line.
 const PIP_SEPARATOR = "═".repeat(39);
@@ -136,24 +135,20 @@ function formatPip(text: string, command: ParsedCommand): string {
   const { packages, problems } = parsePipTable(text);
   if (packages.length > 0 || problems.length > 0) {
     let out = formatPipList(packages);
-    if (problems.length > 0) out += `\n\nProblems:\n${problems.map((line) => `- ${line}`).join("\n")}`;
+    if (problems.length > 0)
+      out += `\n\nProblems:\n${problems.map((line) => `- ${line}`).join("\n")}`;
     return `${out.trimEnd()}\n`;
   }
 
   return trimmed ? `${trimmed}\n` : "\n";
 }
 
-export const pipHandler: CommandHandler = {
+export const pipHandler = defineHandler({
   name: "pip",
+  traits: { structural: true },
   programs: ["pip"],
 
-  matches: matchesPip,
+  match: matchesPip,
 
-  execute(command) {
-    return executeCommand(command);
-  },
-
-  async filter(raw, command, options) {
-    return makeFilteredResult(this.name, raw, formatPip(`${raw.stdout}\n${raw.stderr}`, command), options);
-  },
-};
+  format: (raw, command, options) => formatPip(`${raw.stdout}\n${raw.stderr}`, command),
+});

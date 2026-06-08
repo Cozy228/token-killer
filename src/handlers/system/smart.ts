@@ -1,6 +1,5 @@
-import { executeCommand } from "../../executor.js";
-import type { CommandHandler } from "../../types.js";
-import { makeFilteredResult, rawText } from "../base.js";
+import { rawText } from "../base.js";
+import { defineHandler } from "../define.js";
 
 // RTK: system/local_llm.rs — `smart <file>` produces a local heuristic summary of a
 // file with no external model. In tk the summarizer emits a `Summary:` payload (and
@@ -31,15 +30,10 @@ function extractSummary(output: string): string {
     .trim();
 }
 
-export const smartHandler: CommandHandler = {
+export const smartHandler = defineHandler({
   name: "smart",
-  matches(command) {
+  match(command) {
     return command.program === "smart" && command.args.length > 0;
   },
-  execute(command) {
-    return executeCommand(command);
-  },
-  async filter(raw, _command, options) {
-    return makeFilteredResult(this.name, raw, extractSummary(rawText(raw)), options);
-  },
-};
+  format: (raw, _command, options) => extractSummary(rawText(raw)),
+});

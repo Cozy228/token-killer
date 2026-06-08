@@ -1,7 +1,5 @@
-import { executeCommand } from "../../executor.js";
-
-import type { CommandHandler, ParsedCommand } from "../../types.js";
-import { makeFilteredResult } from "../base.js";
+import type { ParsedCommand } from "../../types.js";
+import { defineHandler } from "../define.js";
 import { type LadderResult, overBudgetLadder } from "../common/budget.js";
 
 // ADR 0001 decisions 2/5/7: RTK's CAP_LIST (20-per-section) + "… +N more" marker is
@@ -156,17 +154,13 @@ function formatPackageList(text: string): LadderResult {
   return { text: `${trimmed}\n` };
 }
 
-export const packageListHandler: CommandHandler = {
+export const packageListHandler = defineHandler({
   name: "package-list",
 
-  matches: matchesPackageList,
+  match: matchesPackageList,
 
-  execute(command) {
-    return executeCommand(command);
-  },
-
-  async filter(raw, _command, options) {
+  format: (raw, _command, options) => {
     const { text, omission } = formatPackageList(`${raw.stdout}\n${raw.stderr}`);
-    return makeFilteredResult(this.name, raw, text, options, undefined, omission);
+    return { output: text, omission };
   },
-};
+});

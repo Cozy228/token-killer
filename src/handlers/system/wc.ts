@@ -1,6 +1,5 @@
-import { executeCommand } from "../../executor.js";
-import type { CommandHandler, ParsedCommand, RawResult, TkOptions } from "../../types.js";
-import { makeFilteredResult } from "../base.js";
+import type { ParsedCommand, RawResult, TkOptions } from "../../types.js";
+import { defineHandler } from "../define.js";
 
 // RTK: system/wc_cmd.rs — strip redundant paths and alignment padding from wc.
 //   wc file        → "30L 96W 978B"
@@ -107,7 +106,9 @@ function formatMultiLine(lines: string[], mode: WcMode): string {
       if (isTotal) {
         result.push(`Σ ${parts[0] ?? "0"}L ${parts[1] ?? "0"}W ${parts[2] ?? "0"}B`);
       } else if (parts.length >= 4) {
-        result.push(`${parts[0]}L ${parts[1]}W ${parts[2]}B ${stripPrefix(parts[3]!, commonPrefix)}`);
+        result.push(
+          `${parts[0]}L ${parts[1]}W ${parts[2]}B ${stripPrefix(parts[3]!, commonPrefix)}`,
+        );
       } else {
         result.push(line.trim());
       }
@@ -118,7 +119,9 @@ function formatMultiLine(lines: string[], mode: WcMode): string {
       } else if (parts.length >= 2) {
         const lastIsPath = !isNumeric(parts.at(-1)!);
         if (lastIsPath) {
-          result.push(`${parts.slice(0, -1).join(" ")} ${stripPrefix(parts.at(-1)!, commonPrefix)}`);
+          result.push(
+            `${parts.slice(0, -1).join(" ")} ${stripPrefix(parts.at(-1)!, commonPrefix)}`,
+          );
         } else {
           result.push(parts.join(" "));
         }
@@ -132,7 +135,10 @@ function formatMultiLine(lines: string[], mode: WcMode): string {
 
 // RTK: wc_cmd.rs::filter_wc_output.
 function filterWc(raw: string, mode: WcMode): string {
-  const lines = raw.trim().split("\n").filter((l) => l !== "");
+  const lines = raw
+    .trim()
+    .split("\n")
+    .filter((l) => l !== "");
   if (lines.length === 0) return "";
   if (lines.length === 1) return formatSingleLine(lines[0]!, mode);
   return formatMultiLine(lines, mode);
@@ -143,16 +149,11 @@ function formatWc(raw: RawResult, command: ParsedCommand): string {
   return `${filterWc(raw.stdout, mode)}\n`;
 }
 
-export const wcHandler: CommandHandler = {
+export const wcHandler = defineHandler({
   name: "wc",
   programs: ["wc"],
-  matches(command) {
+  match(command) {
     return command.program === "wc";
   },
-  execute(command) {
-    return executeCommand(command);
-  },
-  async filter(raw, command, options: TkOptions) {
-    return makeFilteredResult(this.name, raw, formatWc(raw, command), options);
-  },
-};
+  format: (raw, command, options: TkOptions) => formatWc(raw, command),
+});

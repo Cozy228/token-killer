@@ -72,12 +72,24 @@ export function formatStatusOutput(porcelain: string, detached?: string): string
 
 // RTK: git/git.rs::GitStatusState — compact in-progress summaries.
 const STATE_SUMMARIES: Array<{ test: (line: string) => boolean; summary: string }> = [
-  { test: (l) => l.includes("All conflicts fixed but you are still merging"), summary: "merge in progress. no conflicts" },
-  { test: (l) => l.includes("You have unmerged paths"), summary: "merge in progress. unresolved conflicts" },
-  { test: (l) => l.includes("You are currently cherry-picking"), summary: "cherry-pick in progress" },
+  {
+    test: (l) => l.includes("All conflicts fixed but you are still merging"),
+    summary: "merge in progress. no conflicts",
+  },
+  {
+    test: (l) => l.includes("You have unmerged paths"),
+    summary: "merge in progress. unresolved conflicts",
+  },
+  {
+    test: (l) => l.includes("You are currently cherry-picking"),
+    summary: "cherry-pick in progress",
+  },
   { test: (l) => l.includes("You are currently reverting"), summary: "revert in progress" },
   { test: (l) => l.includes("You are currently bisecting"), summary: "bisect in progress" },
-  { test: (l) => l.includes("You are in the middle of an am session"), summary: "am session in progress" },
+  {
+    test: (l) => l.includes("You are in the middle of an am session"),
+    summary: "am session in progress",
+  },
   { test: (l) => l.includes("You are in a sparse checkout"), summary: "sparse checkout enabled" },
 ];
 
@@ -167,6 +179,7 @@ function statusArgs(command: ParsedCommand): string[] {
 
 export const gitStatusHandler: CommandHandler = {
   name: "git-status",
+  traits: { structural: true },
   programs: ["git"],
 
   matches(command) {
@@ -188,10 +201,7 @@ export const gitStatusHandler: CommandHandler = {
       args: ["status", "--porcelain", "-b"],
       displayCommand: "git status --porcelain -b",
     });
-    const human = await executeCommand(
-      { ...command, args: ["status", ...args] },
-      { LC_ALL: "C" },
-    );
+    const human = await executeCommand({ ...command, args: ["status", ...args] }, { LC_ALL: "C" });
     return { ...porcelain, auxStdout: human.stdout };
   },
 
@@ -204,13 +214,13 @@ export const gitStatusHandler: CommandHandler = {
       // filter_status_with_args("") would collapse to "ok", masking the error,
       // so on a non-zero exit return the raw streams verbatim.
       if (raw.exitCode !== 0) {
-        return makeFilteredResult(this.name, raw, rawText(raw), options);
+        return makeFilteredResult(this, raw, rawText(raw), options);
       }
-      return makeFilteredResult(this.name, raw, `${filterStatusWithArgs(raw.stdout)}\n`, options);
+      return makeFilteredResult(this, raw, `${filterStatusWithArgs(raw.stdout)}\n`, options);
     }
 
     if (raw.exitCode !== 0 && /not a git repository/.test(raw.stderr)) {
-      return makeFilteredResult(this.name, raw, "Not a git repository\n", options);
+      return makeFilteredResult(this, raw, "Not a git repository\n", options);
     }
 
     const human = raw.auxStdout ?? "";
@@ -226,8 +236,10 @@ export const gitStatusHandler: CommandHandler = {
     // plain capture is available (real execution), use it as the savings/raw
     // baseline so reported savings reflect human→compact, matching RTK. In the
     // formatter-only test path auxStdout is absent, so fall back to `raw`.
-    const baseline: RawResult = human ? { ...raw, stdout: human, stderr: "", auxStdout: undefined } : raw;
+    const baseline: RawResult = human
+      ? { ...raw, stdout: human, stderr: "", auxStdout: undefined }
+      : raw;
 
-    return makeFilteredResult(this.name, baseline, `${formatted}\n`, options);
+    return makeFilteredResult(this, baseline, `${formatted}\n`, options);
   },
 };

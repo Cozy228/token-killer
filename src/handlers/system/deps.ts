@@ -19,13 +19,7 @@ const MAX_DEPS = 12;
 const MAX_DEV_DEPS = 7;
 
 // RTK order: Cargo.toml, package.json, requirements.txt, pyproject.toml, go.mod.
-const MANIFESTS = [
-  "Cargo.toml",
-  "package.json",
-  "requirements.txt",
-  "pyproject.toml",
-  "go.mod",
-];
+const MANIFESTS = ["Cargo.toml", "package.json", "requirements.txt", "pyproject.toml", "go.mod"];
 
 function summarizePackageJson(content: string): string | undefined {
   let json: Record<string, unknown>;
@@ -197,6 +191,7 @@ async function readPrimaryManifest(options: TkOptions): Promise<string> {
 
 export const depsHandler: CommandHandler = {
   name: "deps",
+  traits: { structural: true },
   matches(command: ParsedCommand) {
     return command.program === "deps";
   },
@@ -220,6 +215,6 @@ export const depsHandler: CommandHandler = {
     };
   },
   async filter(raw, _command, options) {
-    return makeFilteredResult(this.name, raw, summarizeDeps(rawText(raw)), options);
+    return makeFilteredResult(this, raw, summarizeDeps(rawText(raw)), options);
   },
 };

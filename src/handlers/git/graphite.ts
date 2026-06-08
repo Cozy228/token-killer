@@ -1,6 +1,5 @@
-import { executeCommand } from "../../executor.js";
-import type { CommandHandler, ParsedCommand, RawResult, TkOptions } from "../../types.js";
-import { makeFilteredResult } from "../base.js";
+import type { ParsedCommand, RawResult } from "../../types.js";
+import { defineHandler } from "../define.js";
 import { type LadderResult, overBudgetLadder } from "../common/budget.js";
 
 // RTK: git/gt_cmd.rs — Graphite (gt) stacking CLI output filters.
@@ -189,17 +188,14 @@ function formatGt(raw: RawResult, command: ParsedCommand): LadderResult {
   return { text: `${body}\n`, omission };
 }
 
-export const gtHandler: CommandHandler = {
+export const gtHandler = defineHandler({
   name: "gt",
   programs: ["gt"],
-  matches(command) {
+  match(command) {
     return command.program === "gt";
   },
-  execute(command) {
-    return executeCommand(command);
-  },
-  async filter(raw, command, options: TkOptions) {
+  format(raw, command, _options) {
     const { text, omission } = formatGt(raw, command);
-    return makeFilteredResult(this.name, raw, text, options, undefined, omission);
+    return { output: text, omission };
   },
-};
+});

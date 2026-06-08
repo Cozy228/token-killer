@@ -34,7 +34,7 @@ export const npxHandler: CommandHandler = {
     const handler = routeCommand(inner);
     // Guard against routing back to npx (would recurse); fall back to passthrough.
     if (handler.name === "npx") {
-      return makeFilteredResult(this.name, raw, rawText(raw), options);
+      return makeFilteredResult(this, raw, rawText(raw), options);
     }
     return handler.filter(raw, inner, options);
   },

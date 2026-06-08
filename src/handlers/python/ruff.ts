@@ -18,7 +18,11 @@ type RuffIssue = {
 };
 
 function matchesRuff(command: ParsedCommand): boolean {
-  return command.program === "ruff" || command.original.includes("ruff") || command.original.join(" ").includes("ruff check");
+  return (
+    command.program === "ruff" ||
+    command.original.includes("ruff") ||
+    command.original.join(" ").includes("ruff check")
+  );
 }
 
 // RTK: ruff_cmd.rs::compact_path — collapse deep paths to a src//lib//tests/ root
@@ -150,7 +154,8 @@ function formatRuff(
   const json = parseJsonDiagnostics(stdout);
   if (json) {
     if (json.issues.length === 0) return { output: "Ruff: 0 issues in 0 files\n" };
-    const fixableLine = json.fixable > 0 ? `[*] ${json.fixable} fixable with the \`--fix\` option.` : undefined;
+    const fixableLine =
+      json.fixable > 0 ? `[*] ${json.fixable} fixable with the \`--fix\` option.` : undefined;
     return renderIssues(json.issues, fixableLine);
   }
 
@@ -198,6 +203,7 @@ export function buildRuffArgs(userArgs: string[]): string[] {
 
 export const ruffHandler: CommandHandler = {
   name: "ruff",
+  traits: { ladder: true },
   programs: ["ruff"],
 
   matches: matchesRuff,
@@ -218,6 +224,6 @@ export const ruffHandler: CommandHandler = {
 
   async filter(raw, command, options) {
     const { output, omission } = formatRuff(raw.stdout, raw.stderr, command);
-    return makeFilteredResult(this.name, raw, output, options, undefined, omission);
+    return makeFilteredResult(this, raw, output, options, undefined, omission);
   },
 };

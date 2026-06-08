@@ -1,7 +1,6 @@
-import { executeCommand } from "../../executor.js";
 import { removeAnsi } from "../../core/ansi.js";
-import type { CommandHandler, OmissionDeclaration, ParsedCommand } from "../../types.js";
-import { makeFilteredResult } from "../base.js";
+import type { OmissionDeclaration, ParsedCommand } from "../../types.js";
+import { defineHandler } from "../define.js";
 import { overBudgetLadder } from "../common/budget.js";
 
 // RTK: js/playwright_cmd.rs — filters Playwright E2E test output to show only failures.
@@ -41,7 +40,10 @@ type PwJson = {
 // RTK: playwright_cmd.rs::collect_test_results — walk suites/nested-suites, count every
 // spec into `total`, and for each failing spec (ok === false) record the first failed or
 // timedOut error message from the first "unexpected" execution (fallback "Test failed").
-function collectTestResults(suites: PwSuite[], acc: { total: number; failures: TestFailure[] }): void {
+function collectTestResults(
+  suites: PwSuite[],
+  acc: { total: number; failures: TestFailure[] },
+): void {
   for (const suite of suites) {
     // RTK derives file_path = suite.file ?? suite.title for the verbose formatter; the
     // compact formatter used here never prints it, so we only retain test_name + message.
@@ -123,7 +125,11 @@ function extractPlaywrightRegex(output: string): TestResult | undefined {
     const value = Number.parseFloat(durationMatch[1] ?? "0");
     const unit = durationMatch[2];
     durationMs =
-      unit === "s" ? Math.trunc(value * 1000) : unit === "m" ? Math.trunc(value * 60000) : Math.trunc(value);
+      unit === "s"
+        ? Math.trunc(value * 1000)
+        : unit === "m"
+          ? Math.trunc(value * 60000)
+          : Math.trunc(value);
   }
 
   const total = passed + failed + skipped;
@@ -186,20 +192,17 @@ function formatPlaywright(text: string): { output: string; omission?: OmissionDe
   return { output: text };
 }
 
-export const playwrightHandler: CommandHandler = {
+export const playwrightHandler = defineHandler({
   name: "playwright",
+  traits: { ladder: true },
   programs: ["playwright"],
 
-  matches(command) {
+  match(command) {
     return command.program === "playwright";
   },
 
-  execute(command) {
-    return executeCommand(command);
-  },
-
-  async filter(raw, _command, options) {
+  format: (raw, _command, options) => {
     const { output, omission } = formatPlaywright(`${raw.stdout}\n${raw.stderr}`);
-    return makeFilteredResult(this.name, raw, output, options, undefined, omission);
+    return { output, omission };
   },
-};
+});

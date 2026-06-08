@@ -1,6 +1,5 @@
-import { executeCommand } from "../../executor.js";
-import type { CommandHandler, OmissionDeclaration, ParsedCommand } from "../../types.js";
-import { makeFilteredResult } from "../base.js";
+import type { OmissionDeclaration, ParsedCommand } from "../../types.js";
+import { defineHandler } from "../define.js";
 import { overBudgetLadder } from "../common/budget.js";
 // RTK: build_pytest_summary uses a 39-char box-drawing separator under the header.
 const PYTEST_SEPARATOR = "═".repeat(39);
@@ -82,7 +81,9 @@ function filterPytestOutput(output: string): { output: string; omission?: Omissi
       !trimmed.startsWith("===") &&
       !trimmed.startsWith("FAILED") &&
       !trimmed.startsWith("ERROR") &&
-      (trimmed.includes(" passed") || trimmed.includes(" failed") || trimmed.includes(" skipped")) &&
+      (trimmed.includes(" passed") ||
+        trimmed.includes(" failed") ||
+        trimmed.includes(" skipped")) &&
       trimmed.includes(" in ")
     ) {
       summaryLine = trimmed;
@@ -109,7 +110,8 @@ function filterPytestOutput(output: string): { output: string; omission?: Omissi
         break;
       case "summary":
         if (trimmed.startsWith("FAILED") || trimmed.startsWith("ERROR")) failures.push(trimmed);
-        else if (trimmed.startsWith("XFAIL") || trimmed.startsWith("XPASS")) xfailLines.push(trimmed);
+        else if (trimmed.startsWith("XFAIL") || trimmed.startsWith("XPASS"))
+          xfailLines.push(trimmed);
         break;
     }
   }
@@ -198,18 +200,15 @@ function buildPytestSummary(
   return { output: ladder.text.trim(), omission: ladder.omission };
 }
 
-export const pytestHandler: CommandHandler = {
+export const pytestHandler = defineHandler({
   name: "pytest",
+  traits: { structural: true, ladder: true },
   programs: ["pytest"],
 
-  matches: matchesPytest,
+  match: matchesPytest,
 
-  execute(command) {
-    return executeCommand(command);
-  },
-
-  async filter(raw, _command, options) {
+  format: (raw, _command, options) => {
     const { output, omission } = filterPytestOutput(`${raw.stdout}\n${raw.stderr}`);
-    return makeFilteredResult(this.name, raw, `${output}\n`, options, undefined, omission);
+    return { output: `${output}\n`, omission };
   },
-};
+});

@@ -1,6 +1,4 @@
-import { executeCommand } from "../../executor.js";
-import type { CommandHandler } from "../../types.js";
-import { makeFilteredResult } from "../base.js";
+import { defineHandler } from "../define.js";
 
 function formatGradle(text: string): string {
   const important = text
@@ -10,7 +8,12 @@ function formatGradle(text: string): string {
         line,
       ),
     )
-    .filter((line) => !/Run with --stacktrace|Get more help|INSTRUMENTATION_STATUS|Starting \d+ tests| PASSED|org\.junit\.Assert/.test(line))
+    .filter(
+      (line) =>
+        !/Run with --stacktrace|Get more help|INSTRUMENTATION_STATUS|Starting \d+ tests| PASSED|org\.junit\.Assert/.test(
+          line,
+        ),
+    )
     .slice(0, 80)
     .map((line) => line.trim());
 
@@ -18,11 +21,11 @@ function formatGradle(text: string): string {
   return `${[heading, ...important].join("\n")}\n`;
 }
 
-export const gradleHandler: CommandHandler = {
+export const gradleHandler = defineHandler({
   name: "gradle",
   programs: ["gradle"],
 
-  matches(command) {
+  match(command) {
     return (
       command.program === "gradle" ||
       command.program === "./gradlew" ||
@@ -31,11 +34,5 @@ export const gradleHandler: CommandHandler = {
     );
   },
 
-  execute(command) {
-    return executeCommand(command);
-  },
-
-  async filter(raw, _command, options) {
-    return makeFilteredResult(this.name, raw, formatGradle(`${raw.stdout}\n${raw.stderr}`), options);
-  },
-};
+  format: (raw, _command, options) => formatGradle(`${raw.stdout}\n${raw.stderr}`),
+});

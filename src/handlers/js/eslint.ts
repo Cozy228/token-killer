@@ -1,6 +1,5 @@
-import { executeCommand } from "../../executor.js";
-import type { CommandHandler, ParsedCommand } from "../../types.js";
-import { makeFilteredResult } from "../base.js";
+import type { ParsedCommand } from "../../types.js";
+import { defineHandler } from "../define.js";
 
 type EslintIssue = {
   file: string;
@@ -67,7 +66,9 @@ function formatEslint(text: string): string {
     list.push(issue);
     byRule.set(issue.rule, list);
   }
-  const out = [`ESLint: ${issues.length} problems in ${new Set(issues.map((issue) => issue.file)).size} files`];
+  const out = [
+    `ESLint: ${issues.length} problems in ${new Set(issues.map((issue) => issue.file)).size} files`,
+  ];
   for (const [rule, ruleIssues] of [...byRule.entries()].sort()) {
     const sortedIssues = [...ruleIssues].sort((a, b) => a.file.localeCompare(b.file));
     out.push("", `${rule}: ${ruleIssues.length}`);
@@ -78,17 +79,13 @@ function formatEslint(text: string): string {
   return `${out.join("\n")}\n`;
 }
 
-export const eslintHandler: CommandHandler = {
+export const eslintHandler = defineHandler({
   name: "eslint",
   programs: ["eslint"],
 
-  matches: matchesEslint,
+  match: matchesEslint,
 
-  execute(command) {
-    return executeCommand(command);
+  format: (raw, _command, options) => {
+    return formatEslint(`${raw.stdout}\n${raw.stderr}`);
   },
-
-  async filter(raw, _command, options) {
-    return makeFilteredResult(this.name, raw, formatEslint(`${raw.stdout}\n${raw.stderr}`), options);
-  },
-};
+});

@@ -1,6 +1,5 @@
-import { executeCommand } from "../../executor.js";
-import type { CommandHandler, ParsedCommand, RawResult } from "../../types.js";
-import { makeFilteredResult } from "../base.js";
+import type { ParsedCommand, RawResult } from "../../types.js";
+import { defineHandler } from "../define.js";
 
 // RTK: cloud/wget_cmd.rs — compact wget: strips progress bars, emits a single
 // result line. RTK's `run` path captures wget's output (progress is written to
@@ -136,7 +135,14 @@ function parseError(stderr: string, stdout: string): string {
 
 // RTK: wget_cmd.rs::run resolves the URL as the final positional argument and
 // passes the remaining tokens through as wget flags.
-const VALUE_FLAGS = new Set(["-O", "--output-document", "-o", "--output-file", "-P", "--directory-prefix"]);
+const VALUE_FLAGS = new Set([
+  "-O",
+  "--output-document",
+  "-o",
+  "--output-file",
+  "-P",
+  "--directory-prefix",
+]);
 
 function splitUrlAndArgs(args: string[]): { url: string; rest: string[] } {
   let url = "";
@@ -163,24 +169,20 @@ function splitUrlAndArgs(args: string[]): { url: string; rest: string[] } {
   return { url, rest };
 }
 
-export const wgetHandler: CommandHandler = {
+export const wgetHandler = defineHandler({
   name: "wget",
   programs: ["wget"],
 
-  matches: matchesWget,
+  match: matchesWget,
 
-  execute(command) {
-    return executeCommand(command);
-  },
-
-  async filter(raw: RawResult, command, options) {
+  format: (raw: RawResult, command, options) => {
     const { url, rest } = splitUrlAndArgs(command.args);
 
     if (raw.exitCode !== 0) {
       // RTK: wget_cmd.rs::run failure branch — "{compact_url} FAILED: {error}".
       const error = parseError(raw.stderr, raw.stdout);
       const output = `${compactUrl(url)} FAILED: ${error}`;
-      return makeFilteredResult(this.name, raw, output, options);
+      return output;
     }
 
     // RTK: wget_cmd.rs::run success branch — "{compact_url} ok | {filename} |
@@ -190,9 +192,9 @@ export const wgetHandler: CommandHandler = {
     const filename = extractFilename(raw.stderr, url, rest);
     const size = parseSavedSize(raw.stderr, raw.stdout);
     const output = `${compactUrl(url)} ok | ${filename} | ${formatSize(size)}`;
-    return makeFilteredResult(this.name, raw, output, options);
+    return output;
   },
-};
+});
 
 // RTK: wget_cmd.rs::run reports the downloaded file's size from disk metadata.
 // tk has no file to stat, so it recovers the byte count from wget's terminal

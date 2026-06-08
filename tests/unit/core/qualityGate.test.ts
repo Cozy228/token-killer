@@ -26,7 +26,7 @@ function raw(stdout: string): RawResult {
 describe("filtered output quality gate", () => {
   test("passes raw output through when a filter inflates small output", async () => {
     const result = await makeFilteredResult(
-      "custom",
+      { name: "custom" },
       raw("a.txt\nb.ts\n"),
       ".\n├─ a.txt\n├─ b.ts\n",
       options,
@@ -40,7 +40,7 @@ describe("filtered output quality gate", () => {
 
   test("passes raw output through when a filter erases non-empty output", async () => {
     const result = await makeFilteredResult(
-      "custom",
+      { name: "custom" },
       raw("important line\n"),
       "\n",
       options,
@@ -52,7 +52,7 @@ describe("filtered output quality gate", () => {
 
   test("passes raw output through when a filter omits content", async () => {
     const result = await makeFilteredResult(
-      "custom",
+      { name: "custom" },
       raw("line one\nline two\nline three\n"),
       "line one\n+2 more matches\n",
       options,
@@ -64,7 +64,7 @@ describe("filtered output quality gate", () => {
 
   test("passes raw output through when a filter reports truncated content", async () => {
     const result = await makeFilteredResult(
-      "custom",
+      { name: "custom" },
       raw("diff line one\ndiff line two\n"),
       "diff line one\n... (more changes truncated)\n",
       options,
@@ -82,7 +82,7 @@ describe("filtered output quality gate", () => {
       "",
     ].join("\n");
 
-    const result = await makeFilteredResult("custom", raw(output), output, options);
+    const result = await makeFilteredResult({ name: "custom" }, raw(output), output, options);
 
     expect(result.output).toBe(output);
     expect(result.qualityStatus).toBe("passed");
@@ -90,7 +90,7 @@ describe("filtered output quality gate", () => {
 
   test("keeps compact output when it is smaller and non-empty", async () => {
     const result = await makeFilteredResult(
-      "custom",
+      { name: "custom" },
       raw("first line\nsecond line\nthird line\n"),
       "3 lines summarized\n",
       options,

@@ -303,6 +303,9 @@ function makeHostingHandler(
 ): CommandHandler {
   return {
     name: program,
+    // gh/glab reformat JSON into a compact human summary that can exceed raw on an
+    // empty list (and the cap marker matches the omission sniff) — structural.
+    traits: { structural: true },
     programs: [program],
     matches(command) {
       return command.program === program;
@@ -320,7 +323,7 @@ function makeHostingHandler(
     },
     async filter(raw, command, options: TkOptions) {
       const { text: output, omission } = formatter(raw, command);
-      return makeFilteredResult(this.name, raw, output, options, undefined, omission);
+      return makeFilteredResult(this, raw, output, options, undefined, omission);
     },
   };
 }

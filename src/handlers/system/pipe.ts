@@ -1,6 +1,5 @@
-import { executeCommand } from "../../executor.js";
-import type { CommandHandler, ParsedCommand, RawResult, TkOptions } from "../../types.js";
-import { makeFilteredResult } from "../base.js";
+import type { ParsedCommand, RawResult } from "../../types.js";
+import { defineHandler } from "../define.js";
 import { type LadderResult, overBudgetLadder } from "../common/budget.js";
 
 // RTK: system/pipe_cmd.rs — `rtk pipe [filter]` reads stdin and runs a named or
@@ -198,16 +197,13 @@ function formatPipe(raw: RawResult, command: ParsedCommand): LadderResult {
   return filter(input);
 }
 
-export const pipeHandler: CommandHandler = {
+export const pipeHandler = defineHandler({
   name: "pipe",
-  matches(command) {
+  match(command) {
     return command.program === "pipe";
   },
-  execute(command) {
-    return executeCommand(command);
-  },
-  async filter(raw, command, options: TkOptions) {
+  format: (raw, command) => {
     const { text, omission } = formatPipe(raw, command);
-    return makeFilteredResult(this.name, raw, text, options, undefined, omission);
+    return { output: text, omission };
   },
-};
+});

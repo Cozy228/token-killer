@@ -1,6 +1,5 @@
-import { executeCommand } from "../../executor.js";
-import type { CommandHandler, OmissionDeclaration } from "../../types.js";
-import { makeFilteredResult } from "../base.js";
+import type { OmissionDeclaration } from "../../types.js";
+import { defineHandler } from "../define.js";
 import { compactUnifiedDiff } from "./compactDiff.js";
 
 // RTK: git/diff_cmd.rs + pipe_cmd.rs::git_diff_wrapper — `rtk git diff` filters
@@ -20,20 +19,17 @@ function formatDiff(text: string): { output: string; omission?: OmissionDeclarat
   return { output: `${trimmed}\n` };
 }
 
-export const gitDiffHandler: CommandHandler = {
+export const gitDiffHandler = defineHandler({
   name: "git-diff",
+  traits: { structural: true, ladder: true },
   programs: ["git"],
 
-  matches(command) {
+  match(command) {
     return command.program === "git" && command.args[0] === "diff";
   },
 
-  execute(command) {
-    return executeCommand(command);
-  },
-
-  async filter(raw, command, options) {
+  format(raw, _command, _options) {
     const { output, omission } = formatDiff(raw.stdout || raw.stderr);
-    return makeFilteredResult(this.name, raw, output, options, undefined, omission);
+    return { output, omission };
   },
-};
+});

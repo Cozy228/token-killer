@@ -1,7 +1,7 @@
-import { executeCommand } from "../../executor.js";
-import type { CommandHandler, OmissionDeclaration, ParsedCommand } from "../../types.js";
-import { makeFilteredResult, rawText } from "../base.js";
+import type { OmissionDeclaration, ParsedCommand } from "../../types.js";
+import { rawText } from "../base.js";
 import { overBudgetLadder } from "../common/budget.js";
+import { defineHandler } from "../define.js";
 
 // RTK: cmds/dotnet/{dotnet_cmd,dotnet_trx,binlog,dotnet_format_report}.rs — the
 // `dotnet` proxy keeps test failures + summaries (stripping restore/build
@@ -72,7 +72,8 @@ function formatDotnetTest(text: string): { output: string; omission?: OmissionDe
   const ladder = overBudgetLadder({
     full: render(true),
     digest: () => render(false),
-    replacement: () => `${["Failed Tests: " + failures.length + " (over budget)", ...summary].join("\n")}\n`,
+    replacement: () =>
+      `${["Failed Tests: " + failures.length + " (over budget)", ...summary].join("\n")}\n`,
   });
   return { output: ladder.text, omission: ladder.omission };
 }
@@ -135,14 +136,39 @@ function formatDotnetTrx(text: string): { output: string; omission?: OmissionDec
 
 // RTK: binlog.rs::SENSITIVE_ENV_VARS — redact secret/identity env values.
 const SENSITIVE_ENV_VARS = [
-  "PATH", "HOME", "USERPROFILE", "USERNAME", "USER", "APPDATA", "LOCALAPPDATA",
-  "TEMP", "TMP", "SSH_AUTH_SOCK", "SSH_AGENT_LAUNCHER",
-  "GH_TOKEN", "GITHUB_TOKEN", "GITHUB_PAT",
-  "NUGET_API_KEY", "NUGET_AUTH_TOKEN", "VSS_NUGET_EXTERNAL_FEED_ENDPOINTS",
-  "AZURE_DEVOPS_TOKEN", "AZURE_CLIENT_SECRET", "AZURE_TENANT_ID", "AZURE_CLIENT_ID",
-  "AWS_ACCESS_KEY_ID", "AWS_SECRET_ACCESS_KEY", "AWS_SESSION_TOKEN",
-  "API_TOKEN", "AUTH_TOKEN", "ACCESS_TOKEN", "BEARER_TOKEN", "PASSWORD",
-  "CONNECTION_STRING", "DATABASE_URL", "DOCKER_CONFIG", "KUBECONFIG",
+  "PATH",
+  "HOME",
+  "USERPROFILE",
+  "USERNAME",
+  "USER",
+  "APPDATA",
+  "LOCALAPPDATA",
+  "TEMP",
+  "TMP",
+  "SSH_AUTH_SOCK",
+  "SSH_AGENT_LAUNCHER",
+  "GH_TOKEN",
+  "GITHUB_TOKEN",
+  "GITHUB_PAT",
+  "NUGET_API_KEY",
+  "NUGET_AUTH_TOKEN",
+  "VSS_NUGET_EXTERNAL_FEED_ENDPOINTS",
+  "AZURE_DEVOPS_TOKEN",
+  "AZURE_CLIENT_SECRET",
+  "AZURE_TENANT_ID",
+  "AZURE_CLIENT_ID",
+  "AWS_ACCESS_KEY_ID",
+  "AWS_SECRET_ACCESS_KEY",
+  "AWS_SESSION_TOKEN",
+  "API_TOKEN",
+  "AUTH_TOKEN",
+  "ACCESS_TOKEN",
+  "BEARER_TOKEN",
+  "PASSWORD",
+  "CONNECTION_STRING",
+  "DATABASE_URL",
+  "DOCKER_CONFIG",
+  "KUBECONFIG",
 ];
 
 const SENSITIVE_ENV_RE = new RegExp(
@@ -215,7 +241,8 @@ function formatDotnetFormat(text: string): string {
   }
 
   const root = parsed as Record<string, unknown>;
-  const rawFiles = (pick<unknown[]>(root, "files", "Files") ?? (Array.isArray(parsed) ? parsed : [])) as unknown[];
+  const rawFiles = (pick<unknown[]>(root, "files", "Files") ??
+    (Array.isArray(parsed) ? parsed : [])) as unknown[];
 
   const entries: { filePath: string; change: FormatChange }[] = [];
   for (const rawFile of rawFiles) {
@@ -267,17 +294,15 @@ function formatDotnet(
   return formatDotnetTest(text);
 }
 
-export const dotnetHandler: CommandHandler = {
+export const dotnetHandler = defineHandler({
   name: "dotnet",
+  traits: { ladder: true },
   programs: ["dotnet"],
-  matches(command) {
+  match(command) {
     return command.program === "dotnet";
   },
-  execute(command) {
-    return executeCommand(command);
-  },
-  async filter(raw, command, options) {
+  format: (raw, command, options) => {
     const { output, omission } = formatDotnet(command, rawText(raw));
-    return makeFilteredResult(this.name, raw, output, options, undefined, omission);
+    return { output, omission };
   },
-};
+});

@@ -59,6 +59,7 @@ function formatCurl(raw: string): string {
 
 export const curlHandler: CommandHandler = {
   name: "curl",
+  traits: { structural: true },
   programs: ["curl"],
 
   matches: matchesCurl,
@@ -84,8 +85,8 @@ export const curlHandler: CommandHandler = {
     if (raw.exitCode !== 0) {
       const segments = [raw.stderr.trim(), raw.stdout.trim()].filter(Boolean);
       const output = segments.length > 0 ? `FAILED: curl ${segments.join("\n")}` : "FAILED: curl";
-      return makeFilteredResult(this.name, raw, output, options);
+      return makeFilteredResult(this, raw, output, options);
     }
-    return makeFilteredResult(this.name, raw, formatCurl(rawText(raw)), options);
+    return makeFilteredResult(this, raw, formatCurl(rawText(raw)), options);
   },
 };

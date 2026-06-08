@@ -1,6 +1,6 @@
-import { executeCommand } from "../../executor.js";
-import type { CommandHandler, ParsedCommand } from "../../types.js";
-import { makeFilteredResult, rawText } from "../base.js";
+import type { ParsedCommand } from "../../types.js";
+import { rawText } from "../base.js";
+import { defineHandler } from "../define.js";
 
 // tk-only handler: rtk has no terraform support, so this is a pure addition rather
 // than an RTK port. Both subcommands are noise filters (retention-first): they drop
@@ -18,7 +18,9 @@ function matchesTerraform(command: ParsedCommand): boolean {
 // so the caller passes the raw output through unchanged.
 function filterPlan(text: string): string | null {
   const lines = text.split(/\r?\n/);
-  const hasActions = lines.some((line) => line.includes("Terraform will perform the following actions:"));
+  const hasActions = lines.some((line) =>
+    line.includes("Terraform will perform the following actions:"),
+  );
   const hasPlanLine = lines.some((line) => /^Plan: \d+ to add/.test(line.trim()));
   const hasNoChanges = lines.some((line) => line.includes("No changes."));
   if (!hasActions && !hasPlanLine && !hasNoChanges) return null;
@@ -41,7 +43,7 @@ function filterPlan(text: string): string | null {
 
     if (state === "legend") {
       // Skip the "+ create / ~ update in-place / - destroy" key lines.
-      if (trimmed === "" || /^[+~\-]\/?[+]?\s+\w/.test(trimmed)) continue;
+      if (trimmed === "" || /^[+~-]\/?[+]?\s+\w/.test(trimmed)) continue;
       state = "preamble";
       // fall through to preamble handling for this line
     }
@@ -57,7 +59,10 @@ function filterPlan(text: string): string | null {
     }
 
     // state === "body"
-    if (/^─{5,}/.test(trimmed) || (/^Note:/.test(trimmed) && out.join("\n").includes("Plan:"))) {
+    if (
+      /^─{5,}/.test(trimmed) ||
+      (trimmed.startsWith("Note:") && out.join("\n").includes("Plan:"))
+    ) {
       state = "trailer";
       continue;
     }
@@ -65,7 +70,10 @@ function filterPlan(text: string): string | null {
     out.push(line);
   }
 
-  return `${out.join("\n").replace(/\n{3,}/g, "\n\n").trim()}\n`;
+  return `${out
+    .join("\n")
+    .replace(/\n{3,}/g, "\n\n")
+    .trim()}\n`;
 }
 
 function isPlanNoise(line: string): boolean {
@@ -76,7 +84,7 @@ function isPlanNoise(line: string): boolean {
     /: Reading\.\.\./.test(line) ||
     /: Read complete after/.test(line) ||
     /: Still reading\.\.\./.test(line) ||
-    /^Terraform used the selected providers/.test(trimmed)
+    trimmed.startsWith("Terraform used the selected providers")
   );
 }
 
@@ -94,7 +102,7 @@ function filterTest(text: string): string | null {
 
     if (trimmed === "╷" || trimmed === "╵") continue;
     if (/\.\.\. (in progress|setting up|tearing down)$/.test(trimmed)) continue;
-    if (/\.\.\. pass$/.test(trimmed)) continue;
+    if (trimmed.endsWith("... pass")) continue;
 
     if (trimmed.startsWith("│")) {
       const inner = trimmed.replace(/^│\s?/, "");
@@ -106,20 +114,19 @@ function filterTest(text: string): string | null {
     out.push(line);
   }
 
-  return `${out.join("\n").replace(/\n{3,}/g, "\n\n").trim()}\n`;
+  return `${out
+    .join("\n")
+    .replace(/\n{3,}/g, "\n\n")
+    .trim()}\n`;
 }
 
-export const terraformHandler: CommandHandler = {
+export const terraformHandler = defineHandler({
   name: "terraform",
   programs: ["terraform", "tofu"],
 
-  matches: matchesTerraform,
+  match: matchesTerraform,
 
-  execute(command) {
-    return executeCommand(command);
-  },
-
-  async filter(raw, command, options) {
+  format: (raw, command, options) => {
     const sub = command.args[0];
     const text = rawText(raw);
     let filtered: string | null = null;
@@ -127,6 +134,6 @@ export const terraformHandler: CommandHandler = {
     else if (sub === "test") filtered = filterTest(text);
 
     // Unsupported subcommand or unrecognized output → passthrough raw.
-    return makeFilteredResult(this.name, raw, filtered ?? `${text}\n`, options);
+    return filtered ?? `${text}\n`;
   },
-};
+});

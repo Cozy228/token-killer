@@ -1,6 +1,5 @@
-import { executeCommand } from "../../executor.js";
-import type { CommandHandler, ParsedCommand } from "../../types.js";
-import { makeFilteredResult } from "../base.js";
+import type { ParsedCommand } from "../../types.js";
+import { defineHandler } from "../define.js";
 
 type TscIssue = {
   file: string;
@@ -53,7 +52,8 @@ function formatTsc(text: string): string {
       issues.push(issue);
       continue;
     }
-    if (/^\s{2,}\S/.test(line) && issues.length > 0) issues[issues.length - 1]!.notes.push(line.trim());
+    if (/^\s{2,}\S/.test(line) && issues.length > 0)
+      issues[issues.length - 1]!.notes.push(line.trim());
   }
 
   if (issues.length === 0) {
@@ -74,9 +74,7 @@ function formatTsc(text: string): string {
   const codeCounts = new Map<string, number>();
   for (const issue of issues) codeCounts.set(issue.code, (codeCounts.get(issue.code) ?? 0) + 1);
 
-  const out: string[] = [
-    `TypeScript: ${issues.length} errors in ${byFile.size} files`,
-  ];
+  const out: string[] = [`TypeScript: ${issues.length} errors in ${byFile.size} files`];
 
   // RTK: top error codes on one line, highest count first, capped at 5.
   if (codeCounts.size > 1) {
@@ -103,17 +101,12 @@ function formatTsc(text: string): string {
   return `${out.join("\n").trimEnd()}\n`;
 }
 
-export const tscHandler: CommandHandler = {
+export const tscHandler = defineHandler({
   name: "tsc",
+  traits: { structural: true },
   programs: ["tsc"],
 
-  matches: matchesTsc,
+  match: matchesTsc,
 
-  execute(command) {
-    return executeCommand(command);
-  },
-
-  async filter(raw, _command, options) {
-    return makeFilteredResult(this.name, raw, formatTsc(`${raw.stdout}\n${raw.stderr}`), options);
-  },
-};
+  format: (raw, _command, options) => formatTsc(`${raw.stdout}\n${raw.stderr}`),
+});

@@ -129,7 +129,10 @@ function readStdin(): Promise<string> {
   });
 }
 
-async function readInternally(command: ParsedCommand, options: TkOptions): Promise<RawResult | undefined> {
+async function readInternally(
+  command: ParsedCommand,
+  options: TkOptions,
+): Promise<RawResult | undefined> {
   const { files } = readOptions(command);
   if (files.length === 0) return undefined;
 
@@ -158,7 +161,9 @@ async function readInternally(command: ParsedCommand, options: TkOptions): Promi
           continue;
         }
         const buffer = await readFile(absolute);
-        chunks.push(looksBinary(buffer) ? `Binary file omitted: ${fileArg}\n` : buffer.toString("utf8"));
+        chunks.push(
+          looksBinary(buffer) ? `Binary file omitted: ${fileArg}\n` : buffer.toString("utf8"),
+        );
       } catch (error) {
         const code = error && typeof error === "object" && "code" in error ? error.code : undefined;
         const message =
@@ -212,7 +217,9 @@ function addLineNumbers(text: string): string {
   const hadTrailingNewline = lines.at(-1) === "";
   if (hadTrailingNewline) lines.pop();
   const width = String(lines.length).length;
-  const numbered = lines.map((line, index) => `${String(index + 1).padStart(width, " ")} | ${line}`);
+  const numbered = lines.map(
+    (line, index) => `${String(index + 1).padStart(width, " ")} | ${line}`,
+  );
   return numbered.join("\n") + (hadTrailingNewline && numbered.length > 0 ? "\n" : "");
 }
 
@@ -242,6 +249,6 @@ export const readLikeHandler: CommandHandler = {
             maxChars: Math.max(options.maxChars, text.length),
           }
         : options;
-    return makeFilteredResult(this.name, raw, output, resultOptions);
+    return makeFilteredResult(this, raw, output, resultOptions);
   },
 };

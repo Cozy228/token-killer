@@ -1,12 +1,5 @@
-import { executeCommand } from "../../executor.js";
-import type {
-  CommandHandler,
-  OmissionDeclaration,
-  ParsedCommand,
-  RawResult,
-  TkOptions,
-} from "../../types.js";
-import { makeFilteredResult } from "../base.js";
+import type { OmissionDeclaration, ParsedCommand, RawResult } from "../../types.js";
+import { defineHandler } from "../define.js";
 import { withinBudget } from "../common/budget.js";
 
 // RTK: system/json_cmd.rs — inspect/compact JSON to save tokens on large payloads.
@@ -32,13 +25,7 @@ import { withinBudget } from "../common/budget.js";
 // every level, every string byte (zero loss). Over budget the handler declares a
 // complete-replacement summary and the gate persists + points at the snapshot.
 
-type JsonValue =
-  | null
-  | boolean
-  | number
-  | string
-  | JsonValue[]
-  | { [key: string]: JsonValue };
+type JsonValue = null | boolean | number | string | JsonValue[] | { [key: string]: JsonValue };
 
 function isSimple(value: JsonValue): boolean {
   // RTK: matches!(v, Null | Bool | Number | String).
@@ -165,16 +152,14 @@ function formatJson(raw: RawResult): {
   return { output: jsonReplacementSummary(value), omission: { kind: "replacement" } };
 }
 
-export const jsonHandler: CommandHandler = {
+export const jsonHandler = defineHandler({
   name: "json",
-  matches(command: ParsedCommand) {
+  traits: { structural: true, ladder: true },
+  match(command: ParsedCommand) {
     return command.program === "json";
   },
-  execute(command) {
-    return executeCommand(command);
-  },
-  async filter(raw, _command, options: TkOptions) {
+  format: (raw) => {
     const { output, error, omission } = formatJson(raw);
-    return makeFilteredResult(this.name, raw, output, options, error, omission);
+    return { output, omission, filterError: error };
   },
-};
+});

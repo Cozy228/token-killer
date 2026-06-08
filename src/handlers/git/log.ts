@@ -1,6 +1,4 @@
-import { executeCommand } from "../../executor.js";
-import type { CommandHandler } from "../../types.js";
-import { makeFilteredResult } from "../base.js";
+import { defineHandler } from "../define.js";
 
 type Commit = {
   hash: string;
@@ -104,19 +102,15 @@ function formatLog(text: string): string {
   return `${lines.join("\n")}\n`;
 }
 
-export const gitLogHandler: CommandHandler = {
+export const gitLogHandler = defineHandler({
   name: "git-log",
   programs: ["git"],
 
-  matches(command) {
+  match(command) {
     return command.program === "git" && command.args[0] === "log";
   },
 
-  execute(command) {
-    return executeCommand(command);
+  format(raw, _command, _options) {
+    return formatLog(raw.stdout || raw.stderr);
   },
-
-  async filter(raw, _command, options) {
-    return makeFilteredResult(this.name, raw, formatLog(raw.stdout || raw.stderr), options);
-  },
-};
+});

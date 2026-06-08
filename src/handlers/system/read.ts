@@ -447,6 +447,7 @@ function formatRead(
 
 export const readHandler: CommandHandler = {
   name: "read",
+  traits: { structural: true, ladder: true },
   programs: ["cat"],
   // tk maps `cat` onto RTK read semantics (system/read.rs); `read`/`type`/`less`
   // stay on the existing read-like handler, which owns stdin/multi-file execution.
@@ -468,6 +469,6 @@ export const readHandler: CommandHandler = {
   },
   async filter(raw, command, options: TkOptions) {
     const { output, omission } = formatRead(raw, command);
-    return makeFilteredResult(this.name, raw, output, options, undefined, omission);
+    return makeFilteredResult(this, raw, output, options, undefined, omission);
   },
 };

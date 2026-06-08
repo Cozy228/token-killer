@@ -28,7 +28,11 @@ function detectOutputType(output: string, command: string): OutputType {
   if (cmdLower.includes("test") || (outLower.includes("passed") && outLower.includes("failed"))) {
     return "test";
   }
-  if (cmdLower.includes("build") || cmdLower.includes("compile") || outLower.includes("compiling")) {
+  if (
+    cmdLower.includes("build") ||
+    cmdLower.includes("compile") ||
+    outLower.includes("compiling")
+  ) {
     return "build";
   }
   if (outLower.includes("error:") || outLower.includes("warn:") || outLower.includes("[info]")) {
@@ -238,6 +242,7 @@ function summarizeOutput(output: string, command: string, success: boolean): str
 
 export const summaryHandler: CommandHandler = {
   name: "summary",
+  traits: { structural: true },
   matches(command) {
     return command.program === "summary" && command.args.length > 0;
   },
@@ -251,6 +256,6 @@ export const summaryHandler: CommandHandler = {
   },
   async filter(raw: RawResult, command, options) {
     const summary = summarizeOutput(rawText(raw), command.args.join(" "), raw.exitCode === 0);
-    return makeFilteredResult(this.name, raw, summary, options);
+    return makeFilteredResult(this, raw, summary, options);
   },
 };

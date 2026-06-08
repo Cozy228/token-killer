@@ -27,10 +27,7 @@ type TreeSummary = {
 };
 
 function cleanPath(line: string): string {
-  return line
-    .trim()
-    .replace(/^\.\//, "")
-    .replace(/\/$/, "");
+  return line.trim().replace(/^\.\//, "").replace(/\/$/, "");
 }
 
 function addPath(summary: TreeSummary, rawPath: string): void {
@@ -55,7 +52,10 @@ function treeLineDepth(line: string): number {
 }
 
 function treeNodeName(line: string): string {
-  return line.replace(/^[\s│├└─]+/, "").trim().replace(/\/$/, "");
+  return line
+    .replace(/^[\s│├└─]+/, "")
+    .trim()
+    .replace(/\/$/, "");
 }
 
 function flattenTreeOutput(text: string): string {
@@ -146,12 +146,14 @@ function summarizeFindOutput(
   command: ParsedCommand,
 ): { output: string; omission?: OmissionDeclaration } {
   const root = findRoot(command);
-  const files = [...new Set(
-    text
-      .split(/\r?\n/)
-      .map((line) => stripFindRoot(line, root))
-      .filter((line) => line && !line.split(/[\\/]+/).some((part) => SKIP_DIRS.has(part))),
-  )].sort();
+  const files = [
+    ...new Set(
+      text
+        .split(/\r?\n/)
+        .map((line) => stripFindRoot(line, root))
+        .filter((line) => line && !line.split(/[\\/]+/).some((part) => SKIP_DIRS.has(part))),
+    ),
+  ].sort();
 
   // RTK: find_cmd.rs — empty result collapses to "0 for '<pattern>'".
   if (files.length === 0) return { output: `0 for '${findPattern(command)}'\n` };
@@ -231,9 +233,9 @@ export const listLikeHandler: CommandHandler = {
     const text = `${raw.stdout}\n${raw.stderr}`;
     if (command.program === "find") {
       const { output, omission } = summarizeFindOutput(text, command);
-      return makeFilteredResult(this.name, raw, output, options, undefined, omission);
+      return makeFilteredResult(this, raw, output, options, undefined, omission);
     }
     const output = summarizeListing(command.program === "tree" ? flattenTreeOutput(text) : text);
-    return makeFilteredResult(this.name, raw, output, options);
+    return makeFilteredResult(this, raw, output, options);
   },
 };

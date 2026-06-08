@@ -97,6 +97,6 @@ export const errHandler: CommandHandler = {
     });
   },
   async filter(raw, _command, options) {
-    return makeFilteredResult(this.name, raw, filterErrors(rawText(raw), raw.exitCode), options);
+    return makeFilteredResult(this, raw, filterErrors(rawText(raw), raw.exitCode), options);
   },
 };
