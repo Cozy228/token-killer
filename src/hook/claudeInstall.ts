@@ -48,12 +48,19 @@ function isClaudeRewriteHook(command: string | undefined): boolean {
 }
 
 // Is this hook OURS (tk), as opposed to a foreign `rtk hook claude` the user may
-// keep? Used by uninstall so we never remove someone else's hook. Ours is the
-// absolute form carrying our cli path, or a legacy bare `tk hook claude`.
+// keep? Used by uninstall (so we never remove someone else's hook) and by the
+// `pointsAtTk` status probe (`tk debug` §2 / `tk init --show`). Ours is the exact
+// command we'd write, OR any invocation of a `tk` binary — `node /abs/bin/tk hook
+// claude`, a bare `tk hook claude`, or the Windows `tk.cmd`/`tk.exe` shim. The
+// binary may sit behind any absolute path, so the boundary before `tk` must allow
+// a path separator (or quote/space/start), NOT just whitespace — otherwise a real
+// global install (`…/bin/tk`) reads as foreign and a healthy, actively-rewriting
+// hook is reported "NOT tk"/"not wired". `rtk` stays excluded: its `tk` is
+// preceded by `r`, which is not a boundary char.
 function isOurClaudeHook(command: string | undefined, ourCommand: string): boolean {
   if (typeof command !== "string") return false;
   if (command === ourCommand) return true;
-  if (/(^|["'\s])tk\s+hook\s+claude\b/.test(command)) return true;
+  if (/(^|[\\/\s"'])tk(\.exe|\.cmd)?["'\s]+hook\s+claude\b/.test(command)) return true;
   const cli = process.argv[1];
   return Boolean(cli) && command.includes(cli!) && /\bhook\s+claude\b/.test(command);
 }

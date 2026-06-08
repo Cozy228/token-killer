@@ -78,6 +78,7 @@ export type ParseMode =
   | "init"
   | "hook"
   | "inspect"
+  | "debug"
   | "optimize"
   | "gain"
   | "config"

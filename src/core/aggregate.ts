@@ -110,6 +110,62 @@ export function fallbackCount(records: HistoryRecord[]): number {
   return records.filter((record) => record.handler === FALLBACK_HANDLER).length;
 }
 
+// A generic count/token rollup keyed by some label extracted from each row. Used
+// by `tk debug`'s usage-aggregation section to fan the same measured rows out by
+// host (source_adapter), by exact command, and by handler without re-reading disk.
+// PURE — sorted by saved desc, ties broken by count desc then key for stable output.
+export type LabelRollup = {
+  key: string;
+  count: number;
+  raw: number;
+  saved: number;
+  pct: number;
+};
+
+function rollupBy(records: HistoryRecord[], keyOf: (r: HistoryRecord) => string): LabelRollup[] {
+  const groups = new Map<string, { count: number; raw: number; saved: number }>();
+  for (const record of records) {
+    const key = keyOf(record);
+    const current = groups.get(key) ?? { count: 0, raw: 0, saved: 0 };
+    current.count += 1;
+    current.raw += record.raw_tokens;
+    current.saved += record.saved_tokens;
+    groups.set(key, current);
+  }
+  return [...groups.entries()]
+    .map(([key, s]) => ({
+      key,
+      count: s.count,
+      raw: s.raw,
+      saved: s.saved,
+      pct: pct(s.saved, s.raw),
+    }))
+    .sort((a, b) => b.saved - a.saved || b.count - a.count || a.key.localeCompare(b.key));
+}
+
+// Per delivery surface (source_adapter). Absent ⇒ "shell" (the command-proxy path
+// that predates the field — recordHistory now always stamps it, but legacy rows
+// may not carry it). Honest about provenance, never invented.
+export function byHost(records: HistoryRecord[]): LabelRollup[] {
+  return rollupBy(records, (r) => r.source_adapter ?? "shell");
+}
+
+// Per exact command string. recordHookFailure rows store "" (the failed command is
+// never persisted); they roll up under an empty-string key the renderer labels.
+export function byCommand(records: HistoryRecord[]): LabelRollup[] {
+  return rollupBy(records, (r) => r.command);
+}
+
+// Just the source_adapter histogram (count only) for the bundle's provenance line.
+export function sourceAdapterMix(records: HistoryRecord[]): Record<string, number> {
+  const mix: Record<string, number> = {};
+  for (const record of records) {
+    const key = record.source_adapter ?? "shell";
+    mix[key] = (mix[key] ?? 0) + 1;
+  }
+  return mix;
+}
+
 function bucketBy(records: HistoryRecord[], keyOf: (date: Date) => string): TimeBucket[] {
   const buckets = new Map<string, { commands: number; raw: number; saved: number }>();
   for (const record of records) {
@@ -168,11 +224,7 @@ export function byMonth(records: HistoryRecord[]): TimeBucket[] {
 // Daily buckets for the last N calendar days (UTC), oldest first, with empty days
 // filled as zero buckets. Used by `tk gain --graph`, which renders empty days as the
 // lowest block. `now` is injected for deterministic tests.
-export function lastNDays(
-  records: HistoryRecord[],
-  n = 30,
-  now: Date = new Date(),
-): TimeBucket[] {
+export function lastNDays(records: HistoryRecord[], n = 30, now: Date = new Date()): TimeBucket[] {
   const present = new Map(byDay(records).map((bucket) => [bucket.key, bucket]));
   const today = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate()));
   const result: TimeBucket[] = [];

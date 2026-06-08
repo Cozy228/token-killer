@@ -6,6 +6,7 @@ import { shouldCompress } from "./shim/gate.js";
 import { runInit } from "./shim/init.js";
 import { runHook } from "./hook/cli.js";
 import { runInspect } from "./inspect/cli.js";
+import { runDebug } from "./debug/cli.js";
 import { runOptimize } from "./context/optimizeCli.js";
 import { buildReport } from "./core/report.js";
 import { runReport } from "./core/ledger.js";
@@ -40,6 +41,7 @@ function help(): string {
     "  init        Install & manage tk delivery into your agent host (hook / shim / injection)",
     "  hook        Agent-host hook runtime: decide command rewrites & governance",
     "  inspect     Scan agent history for token-saving opportunities; print a ranked report",
+    "  debug       Bundle tk's own diagnostics into one self-contained markdown report",
     "  optimize    Apply the context-file optimizations that inspect found",
     "  gain        Show measured token savings (totals, trends, failures, quota)",
     "  config      Manage the tk config file",
@@ -86,6 +88,15 @@ function help(): string {
     "  --copilot-context            Static-context analysis only (skip the runtime scan)",
     "  --surface <s>                Restrict to one surface (instructions|prompts|agents|skills)",
     "  --fail-on <severity>         Exit non-zero when a finding reaches info|warn|error",
+    "",
+    "tk debug [--out <path>] [--full] [--redact]",
+    "  Run once on a tester's machine to produce ONE self-contained markdown bundle",
+    "  diagnosing tk itself (version stamp, delivery health, command history, anomaly",
+    "  payloads, usage aggregates, debug.log + host configs). Reviews tk, not your agent",
+    "  history (that's `inspect`). No network, no telemetry — writes only the --out file.",
+    "  --out <path>   Destination (default: reports/debug-<ts>.md)",
+    "  --full         Attach every row's payload, not just anomalies'",
+    "  --redact       Length/label only — no command text, payload bytes, or config bodies",
     "",
     "tk optimize [--dry-run] [--apply] [--backup [files...]] [--restore] [--write-advice]",
     "            [--token-budget-block] [--surface <name>] [--project|--user] [--vscode-settings]",
@@ -188,6 +199,9 @@ async function main(): Promise<number> {
   }
   if (parsed.mode === "inspect") {
     return runInspect(parsed.subArgs ?? []);
+  }
+  if (parsed.mode === "debug") {
+    return runDebug(parsed.subArgs ?? []);
   }
   if (parsed.mode === "optimize") {
     return runOptimize(parsed.subArgs ?? []);

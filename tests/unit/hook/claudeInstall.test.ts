@@ -207,4 +207,69 @@ describe("claudeHookStatus", () => {
     expect(s.present).toBe(true);
     expect(s.pointsAtTk).toBe(false);
   });
+
+  // Regression: a hook installed by the GLOBAL tk binary (`node /abs/bin/tk hook
+  // claude`) must read as pointsAtTk EVEN WHEN the status probe runs from a
+  // different tk (a dev checkout, or after an nvm node upgrade), where the exact
+  // command no longer matches. The `tk` binary sits behind a `/` separator, which
+  // the old whitespace-only boundary missed → a healthy install reported "NOT tk".
+  test("points at tk for an absolute global-binary hook under a different ourCommand", () => {
+    writeSettings({
+      hooks: {
+        PreToolUse: [
+          {
+            matcher: "Bash",
+            hooks: [
+              {
+                type: "command",
+                command:
+                  "/home/u/.nvm/versions/node/v22/bin/node /home/u/.nvm/versions/node/v22/bin/tk hook claude",
+              },
+            ],
+          },
+        ],
+      },
+    });
+    // ourCommand intentionally differs (different node + dev cli path).
+    const s = claudeHookStatus({ home }, "/usr/bin/node /repo/src/cli.ts hook claude");
+    expect(s.present).toBe(true);
+    expect(s.pointsAtTk).toBe(true);
+  });
+
+  test("points at tk for a quoted Windows tk.cmd hook", () => {
+    writeSettings({
+      hooks: {
+        PreToolUse: [
+          {
+            matcher: "Bash",
+            hooks: [
+              {
+                type: "command",
+                command: '"C:\\Users\\x\\AppData\\Roaming\\npm\\tk.cmd" hook claude',
+              },
+            ],
+          },
+        ],
+      },
+    });
+    const s = claudeHookStatus({ home }, TK_CMD);
+    expect(s.pointsAtTk).toBe(true);
+  });
+
+  // The broadened boundary must still reject a foreign `rtk` at an absolute path.
+  test("NOT tk for an absolute-path foreign rtk hook", () => {
+    writeSettings({
+      hooks: {
+        PreToolUse: [
+          {
+            matcher: "Bash",
+            hooks: [{ type: "command", command: "/opt/rtk/bin/rtk hook claude" }],
+          },
+        ],
+      },
+    });
+    const s = claudeHookStatus({ home }, TK_CMD);
+    expect(s.present).toBe(true);
+    expect(s.pointsAtTk).toBe(false);
+  });
 });

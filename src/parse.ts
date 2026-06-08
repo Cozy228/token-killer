@@ -47,6 +47,7 @@ const RESERVED_SUBCOMMANDS = new Set<ParsedArgv["mode"]>([
   "init",
   "hook",
   "inspect",
+  "debug",
   "optimize",
   "gain",
   "config",
