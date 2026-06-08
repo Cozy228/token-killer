@@ -243,6 +243,7 @@ export function runInit(argv: string[]): number {
   // installs the shim.
   if (opts.dryRun) {
     out(`[dry-run] would install shim / injection for host: ${host}`);
+    writeGuidanceStep(host, true);
     return 0;
   }
 
@@ -252,6 +253,10 @@ export function runInit(argv: string[]): number {
   if (adapter.supportedTiers.includes("shim")) {
     const probe = installShim({ rc: false, vscode: true });
     if (selectTier(adapter.supportedTiers, hookAvailable, probe.pass) === "shim") {
+      // The usage guide is delivery-tier-independent — it teaches how to use tk
+      // well, not how commands are routed. VS Code's tier is the shim, so without
+      // this its users (who have a user-level guidance home) got no guide at all.
+      writeGuidanceStep(host, false);
       out(`Active tier: shim`);
       out(`Restart your terminal (or VS Code) for PATH changes to take effect.`);
       return 0;
@@ -262,6 +267,7 @@ export function runInit(argv: string[]): number {
   // Injection tier (unknown host, or shim probe failed). User-level by default.
   const target = injectionTarget(host);
   writeInjection(target);
+  writeGuidanceStep(host, false);
   out(`Active tier: injection`);
   out(`Wrote user instructions: ${target}`);
   if (host === "unknown") {

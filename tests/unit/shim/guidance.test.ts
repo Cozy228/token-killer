@@ -75,6 +75,34 @@ describe("writeGuidance — copilot-cli (no @import, inline instead)", () => {
   });
 });
 
+describe("writeGuidance — vscode (user-level .instructions.md, inlined)", () => {
+  test("writes an always-on .instructions.md with the inlined guide and no @import", () => {
+    const result = writeGuidance("vscode", home);
+
+    const file = path.join(home, ".copilot", "instructions", "token-killer.instructions.md");
+    expect(result.guidance).toBe(file);
+    expect(guidanceFilePath("vscode", home)).toBe(file);
+    // VS Code has no separate loader file — the .instructions.md IS auto-loaded.
+    expect(guidanceLoader("vscode", home)).toBeUndefined();
+    expect(result.loader).toBeUndefined();
+
+    const instr = readFileSync(file, "utf8");
+    // Always-on frontmatter the .instructions.md format requires (ADR 0008).
+    expect(instr.startsWith("---\napplyTo: '**'\n---\n")).toBe(true);
+    // Full guide inlined — VS Code does not resolve Claude Code's @import.
+    expect(instr).toContain("git status --short");
+    expect(instr).not.toContain("@TK.md");
+  });
+
+  test("unwriteGuidance removes the .instructions.md", () => {
+    writeGuidance("vscode", home);
+    const file = guidanceFilePath("vscode", home)!;
+    expect(readFileSync(file, "utf8")).toContain("applyTo");
+    unwriteGuidance("vscode", home);
+    expect(() => readFileSync(file, "utf8")).toThrow();
+  });
+});
+
 describe("unwriteGuidance", () => {
   test("deletes TK.md and strips the loader block, keeping user content", () => {
     const claudePath = path.join(home, ".claude", "CLAUDE.md");

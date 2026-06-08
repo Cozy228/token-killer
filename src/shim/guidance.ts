@@ -14,6 +14,14 @@ import { applyInjectionBlock, removeInjectionBlock } from "./injection.js";
 
 const GUIDANCE_FILENAME = "TK.md";
 
+// VS Code Copilot auto-loads a user-level `.instructions.md` from the user
+// profile (`~/.copilot/instructions`) across all workspaces (verified against the
+// VS Code custom-instructions docs, ADR 0008). Unlike claude-code (which pulls
+// TK.md in via an `@import` VS Code does NOT expand) the file IS the loaded
+// instruction, so tk writes the full guide inlined, under an `applyTo: '**'`
+// always-on frontmatter.
+const VSCODE_GUIDANCE_FILENAME = "token-killer.instructions.md";
+
 // Self-contained guidance doc. The whole file is tk's — overwritten on re-init,
 // deleted on uninstall — so it needs no inline markers.
 export function guidanceDoc(): string {
@@ -60,7 +68,18 @@ export function guidanceDoc(): string {
 export function guidanceFilePath(host: Host, home = homedir()): string | undefined {
   if (host === "claude-code") return join(home, ".claude", GUIDANCE_FILENAME);
   if (host === "copilot-cli") return join(home, ".copilot", GUIDANCE_FILENAME);
+  if (host === "vscode") return join(home, ".copilot", "instructions", VSCODE_GUIDANCE_FILENAME);
   return undefined;
+}
+
+// The exact bytes written to a host's guidance file. claude-code / copilot-cli get
+// the bare doc (claude pulls it via `@import`, copilot-cli also inlines it into its
+// loader). vscode's file is the auto-loaded instruction itself, so it carries the
+// `applyTo: '**'` always-on frontmatter the `.instructions.md` format requires and
+// inlines the full doc (no `@import` indirection — VS Code does not resolve it).
+export function guidanceFileContent(host: Host): string {
+  if (host === "vscode") return `---\napplyTo: '**'\n---\n\n${guidanceDoc()}`;
+  return guidanceDoc();
 }
 
 // The auto-loaded instructions file that must reference the guidance so the agent
@@ -100,7 +119,7 @@ export function writeGuidance(
   const guidancePath = guidanceFilePath(host, home);
   if (guidancePath) {
     mkdirSync(dirname(guidancePath), { recursive: true });
-    writeFileSync(guidancePath, guidanceDoc());
+    writeFileSync(guidancePath, guidanceFileContent(host));
     result.guidance = guidancePath;
   }
 
