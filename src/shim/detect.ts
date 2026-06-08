@@ -50,12 +50,19 @@ export function gatherDetectEnv(home = homedir()): DetectEnv {
   };
 }
 
-// The final tier given the detected host, whether a hook installer (Track B)
-// exists, and the live shim interception probe. Copilot CLI prefers the hook
-// seam; if it is not built, it (like VS Code) uses the shim when the probe
-// passes, else falls to injection. Unknown hosts always get injection.
-export function selectTier(host: Host, hookAvailable: boolean, shimProbePass: boolean): Tier {
-  if ((host === "copilot-cli" || host === "claude-code") && hookAvailable) return "hook";
-  if ((host === "copilot-cli" || host === "vscode") && shimProbePass) return "shim";
+// The final tier given a host's supported tiers (best-first, from its
+// HostAdapter), whether a hook installer (Track B) exists, and the live shim
+// interception probe. Reads `supportedTiers` rather than hardcoding host names so
+// it stays the single source of truth: a new host that lists "hook"/"shim" gets
+// that tier with no edit here. A host prefers the hook seam when it supports one
+// and a hook installer exists; else the shim when it supports one and the probe
+// passes; else injection.
+export function selectTier(
+  supportedTiers: Tier[],
+  hookAvailable: boolean,
+  shimProbePass: boolean,
+): Tier {
+  if (supportedTiers.includes("hook") && hookAvailable) return "hook";
+  if (supportedTiers.includes("shim") && shimProbePass) return "shim";
   return "injection";
 }

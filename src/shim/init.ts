@@ -1,27 +1,13 @@
 import { existsSync } from "node:fs";
 import { homedir } from "node:os";
 
-import { detectHost, gatherDetectEnv, type Host } from "./detect.js";
+import { detectHost, gatherDetectEnv, selectTier, type Host } from "./detect.js";
+import { adapters } from "./hostAdapter.js";
 import { vscodeUserDir } from "./hostConfig.js";
-import {
-  projectInjectionPath,
-  userInjectionPath,
-  unwriteInjection,
-  writeInjection,
-} from "./injection.js";
+import { projectInjectionPath, unwriteInjection, writeInjection } from "./injection.js";
 import { installShim, runShim } from "./cli.js";
-import {
-  copilotHookConfigStatus,
-  installCopilotHookConfig,
-  planCopilotHookConfig,
-  uninstallCopilotHookConfig,
-} from "../hook/install.js";
-import {
-  claudeHookStatus,
-  installClaudeHook,
-  planClaudeHookInstall,
-  uninstallClaudeHook,
-} from "../hook/claudeInstall.js";
+import { copilotHookConfigStatus, uninstallCopilotHookConfig } from "../hook/install.js";
+import { claudeHookStatus, uninstallClaudeHook } from "../hook/claudeInstall.js";
 import { guidanceFilePath, guidanceLoader, unwriteGuidance, writeGuidance } from "./guidance.js";
 
 // Unified `tk init` (goal Phase 3, ADR 0002 §5). Auto-detects the host and wires
@@ -32,34 +18,14 @@ function out(line: string): void {
   process.stdout.write(`${line}\n`);
 }
 
+// Hosts that drop a usage guide (TK.md), derived from the adapter table so a new
+// host with a guidance home is cleaned up by --uninstall without editing here.
+const guidanceHosts: Host[] = Object.values(adapters)
+  .filter((a) => a.guidancePath())
+  .map((a) => a.host);
+
 // Drop the tk usage guidance (TK.md) and wire it into the host's auto-loaded
 // instructions so the agent reads it. Hosts without a guidance home are a no-op.
-// A hook-config patch reports its action as a verb stem (create/replace/append/
-// overwrite/unchanged). Naively suffixing "d" produces "appendd"/"overwrited", so
-// map each to a correct past tense for the applied-change line.
-function actionDone(action: string): string {
-  switch (action) {
-    case "unchanged":
-      return "Up to date";
-    case "append":
-      return "Appended";
-    case "replace":
-      return "Replaced";
-    case "create":
-      return "Created";
-    case "overwrite":
-      return "Rewrote";
-    default:
-      return `${action}d`;
-  }
-}
-
-// For the `[dry-run] would <verb>` line: "would unchanged" is not English, so a
-// no-op patch reads "would leave unchanged"; every other action is already a verb.
-function actionWould(action: string): string {
-  return action === "unchanged" ? "leave unchanged" : action;
-}
-
 function writeGuidanceStep(host: Host, dryRun: boolean): void {
   if (dryRun) {
     const file = guidanceFilePath(host);
@@ -119,7 +85,7 @@ export function parseInitArgs(argv: string[]): InitArgs {
 
 function injectionTarget(host: Host): string {
   const vscodeDir = existsSync(vscodeUserDir()) ? vscodeUserDir() : undefined;
-  return userInjectionPath(host, homedir(), vscodeDir);
+  return adapters[host].injectionPath(homedir(), vscodeDir);
 }
 
 function showStatus(): number {
@@ -167,8 +133,8 @@ function uninstall(opts: InitArgs): number {
   unwriteInjection(injectionTarget(host));
   out(`instruction injection: removed`);
   // Remove the usage guidance (TK.md) + its loader reference for any host that
-  // has one. detectHost may differ from the install-time host, so clear both.
-  for (const guidanceHost of ["claude-code", "copilot-cli"] as const) {
+  // has one. detectHost may differ from the install-time host, so clear all.
+  for (const guidanceHost of guidanceHosts) {
     unwriteGuidance(guidanceHost);
   }
   out(`usage guidance: removed`);
@@ -220,7 +186,7 @@ function uninstallDryRun(opts: InitArgs): number {
   out(
     `[dry-run] instruction injection: ${existsSync(target) ? `would remove ${target}` : "nothing to remove"}`,
   );
-  for (const guidanceHost of ["claude-code", "copilot-cli"] as const) {
+  for (const guidanceHost of guidanceHosts) {
     const guidance = guidanceFilePath(guidanceHost);
     if (guidance && existsSync(guidance)) {
       out(`[dry-run] usage guidance (${guidanceHost}): would remove ${guidance}`);
@@ -254,62 +220,38 @@ export function runInit(argv: string[]): number {
     }
   }
 
-  // Hook tier (Claude Code): patch ~/.claude/settings.json so the PreToolUse
-  // Bash hook invokes `tk hook claude`, replacing any `rtk hook claude` in place
-  // (true drop-in — rtk leaves the path). The rewritten command is bare
-  // `tk <cmd>`, so tk must be on PATH when Claude Code runs Bash.
-  if (host === "claude-code") {
-    if (opts.dryRun) {
-      const plan = planClaudeHookInstall({});
-      out(`[dry-run] would ${actionWould(plan.action)} claude-code settings hook: ${plan.path}`);
-      if (plan.previousCommand && plan.previousCommand !== plan.command) {
-        out(`  - ${plan.previousCommand}`);
-      }
-      out(`  + ${plan.command}`);
-      writeGuidanceStep(host, true);
-      out(`Active tier: hook`);
-      out(`Ensure tk is on PATH for Claude Code's Bash (e.g. pnpm build && npm link).`);
-      return 0;
-    }
-    const plan = installClaudeHook({});
-    out(`${actionDone(plan.action)} claude-code settings hook: ${plan.path}`);
-    writeGuidanceStep(host, false);
-    out(`Active tier: hook`);
-    out(`Ensure tk is on PATH for Claude Code's Bash (e.g. pnpm build && npm link).`);
-    return 0;
-  }
+  // Tier ladder (ADR 0002): Hook > Shim > Injection. The adapter carries the
+  // per-host facts; selectTier is the single tier exit. No hardcoded host `if`s.
+  const adapter = adapters[host];
+  const hookAvailable = Boolean(adapter.installHook);
 
-  // Hook tier (Copilot CLI only): write the host hook config pointing PreToolUse
-  // at `tk hook copilot` (Slices 1–2). This is the highest tier; the proxy
-  // compresses. Repo write only under --project.
-  if (host === "copilot-cli") {
+  // Hook tier. When a host has a hook installer it always wins over shim/injection
+  // (the shim probe — the only side-effecting signal — is irrelevant here, so pass
+  // false rather than install wrappers). Each adapter renders its own host-specific
+  // lines; init prints them around the shared guidance + tier line.
+  if (selectTier(adapter.supportedTiers, hookAvailable, false) === "hook") {
     const loc = { project: opts.project, cwd: process.cwd() };
-    if (opts.dryRun) {
-      const plan = planCopilotHookConfig(loc);
-      out(`[dry-run] would ${actionWould(plan.action)} copilot hook config: ${plan.path}`);
-      writeGuidanceStep(host, true);
-      out(`Active tier: hook`);
-      return 0;
-    }
-    const plan = installCopilotHookConfig(loc);
-    out(
-      `${plan.action === "unchanged" ? "Up to date" : "Wrote"} copilot hook config: ${plan.path}`,
-    );
-    writeGuidanceStep(host, false);
+    const step = opts.dryRun ? adapter.planHook!(loc) : adapter.installHook!(loc);
+    step.headerLines.forEach(out);
+    writeGuidanceStep(host, opts.dryRun);
     out(`Active tier: hook`);
+    step.trailerLines.forEach(out);
     return 0;
   }
 
+  // Below the hook tier, --dry-run only previews — it never runs the probe or
+  // installs the shim.
   if (opts.dryRun) {
     out(`[dry-run] would install shim / injection for host: ${host}`);
     return 0;
   }
 
-  // Shim tier (VS Code — command-compression's primary delivery there; Copilot
-  // CLI never reaches here, it returns on the hook tier above).
-  if (host === "vscode") {
+  // Shim tier. Only hosts whose supportedTiers include "shim" run the interception
+  // probe (VS Code — command-compression's primary delivery there); selectTier
+  // turns the probe result into the final tier.
+  if (adapter.supportedTiers.includes("shim")) {
     const probe = installShim({ rc: false, vscode: true });
-    if (probe.pass) {
+    if (selectTier(adapter.supportedTiers, hookAvailable, probe.pass) === "shim") {
       out(`Active tier: shim`);
       out(`Restart your terminal (or VS Code) for PATH changes to take effect.`);
       return 0;

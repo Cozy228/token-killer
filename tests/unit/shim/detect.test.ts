@@ -56,30 +56,30 @@ describe("detectHost", () => {
 
 describe("selectTier", () => {
   test("Claude Code → hook when the installer is available", () => {
-    expect(selectTier("claude-code", true, false)).toBe("hook");
+    expect(selectTier(["hook", "injection"], true, false)).toBe("hook");
   });
 
   test("Copilot CLI → hook when the installer is available", () => {
-    expect(selectTier("copilot-cli", true, true)).toBe("hook");
+    expect(selectTier(["hook", "shim", "injection"], true, true)).toBe("hook");
   });
 
   test("Copilot CLI degrades to shim when hook installer is missing", () => {
-    expect(selectTier("copilot-cli", false, true)).toBe("shim");
+    expect(selectTier(["hook", "shim", "injection"], false, true)).toBe("shim");
   });
 
   test("Copilot CLI degrades to injection when hook missing AND shim probe fails", () => {
-    expect(selectTier("copilot-cli", false, false)).toBe("injection");
+    expect(selectTier(["hook", "shim", "injection"], false, false)).toBe("injection");
   });
 
   test("VS Code → shim when the probe passes", () => {
-    expect(selectTier("vscode", false, true)).toBe("shim");
+    expect(selectTier(["shim", "injection"], false, true)).toBe("shim");
   });
 
   test("VS Code → injection when the probe fails", () => {
-    expect(selectTier("vscode", false, false)).toBe("injection");
+    expect(selectTier(["shim", "injection"], false, false)).toBe("injection");
   });
 
   test("unknown host always → injection", () => {
-    expect(selectTier("unknown", true, true)).toBe("injection");
+    expect(selectTier(["injection"], true, true)).toBe("injection");
   });
 });
