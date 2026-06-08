@@ -2,8 +2,14 @@
 // file:// URL). Serves both `tk gain report --html` and `tk inspect --html`: data
 // is injected as a JSON blob and a small vanilla renderer draws it. The audience
 // is the END USER, not a log reader: every field has a plain-language label and a
-// one-line explanation. Light theme, #001AFF brand. The honesty model still
-// holds — measured savings lead; the dollar figure and ③ are labelled estimates.
+// one-line explanation. The honesty model still holds — measured savings lead;
+// the dollar figure and ③ are labelled estimates.
+//
+// Visual language ported from the improve-codebase-architecture review: serif
+// display headings, an uppercase eyebrow label, white panel cards on a warm
+// stone canvas, a deep slate-gradient hero, and an indigo/emerald/amber/rose
+// palette. All inline — no Tailwind, no CDN, no fonts fetched — so the file stays
+// openable offline straight from file://.
 
 export type ReportKind = "gain" | "inspect";
 
@@ -26,127 +32,146 @@ function embed(data: unknown): string {
 
 const STYLE = `
 :root {
-  --bg: oklch(0.986 0.002 250);
-  --surface: oklch(1 0 0);
-  --surface-2: oklch(0.967 0.003 250);
-  --hair: oklch(0.3 0.02 260 / 0.08);
-  --border: oklch(0.915 0.004 250);
-  --ink: oklch(0.245 0.012 262);
-  --muted: oklch(0.47 0.012 262);
-  --faint: oklch(0.605 0.01 262);
-  /* Accent: a calmer blue than pure #001AFF — used sparingly (bars, links, key
-     stat, the fix line), never to drench the page. */
-  --accent: oklch(0.53 0.165 262);
-  --accent-ink: oklch(0.45 0.17 262);
-  --accent-soft: oklch(0.955 0.03 262);
-  --estimate: oklch(0.52 0.105 72);
-  --estimate-soft: oklch(0.973 0.025 82);
-  --hi: oklch(0.53 0.2 27);
-  --mid: oklch(0.55 0.12 66);
-  --lo: oklch(0.53 0.15 262);
+  --bg: #fafaf9;          /* stone-50 canvas */
+  --surface: #ffffff;
+  --ink: #0f172a;         /* slate-900 */
+  --slate700: #334155;
+  --slate600: #475569;
+  --slate500: #64748b;
+  --faint: #94a3b8;       /* slate-400 */
+  --slate300: #cbd5e1;
+  --slate100: #f1f5f9;
+  --border: #e2e8f0;      /* slate-200 */
+  --indigo: #4f46e5;
+  --indigo-ink: #4338ca;
+  --indigo-soft: #eef2ff;
+  --emerald: #059669;
+  --emerald-ink: #047857;
+  --emerald-soft: #ecfdf5;
+  --emerald-100: #d1fae5;
+  --emerald-300: #6ee7b7;
+  --amber-ink: #b45309;
+  --amber-deep: #78350f;
+  --amber-line: #fde68a;
+  --amber-soft: #fffbeb;
+  --rose: #e11d48;
+  /* Severity ramp reused by the inspect view (kept as hi/mid/lo for the renderer). */
+  --hi: #e11d48;
+  --mid: #b45309;
+  --lo: #4f46e5;
+  --deep: linear-gradient(135deg, #0f172a, #1e293b);
   --mono: ui-monospace, "SF Mono", "JetBrains Mono", Menlo, Consolas, monospace;
   --sans: system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+  --serif: ui-serif, Georgia, "Times New Roman", serif;
 }
 * { box-sizing: border-box; }
 body { margin: 0; background: var(--bg); color: var(--ink); font-family: var(--sans); font-size: 15px; line-height: 1.62; -webkit-font-smoothing: antialiased; }
-.wrap { max-width: 820px; margin: 0 auto; padding: 64px 28px 112px; }
+.wrap { max-width: 880px; margin: 0 auto; padding: 56px 24px 100px; }
 .num { font-family: var(--mono); font-variant-numeric: tabular-nums; }
+.lbl { font-size: 0.62rem; letter-spacing: 0.12em; text-transform: uppercase; font-weight: 600; }
 
-.head { display: flex; align-items: center; gap: 13px; }
-.mark { flex: none; width: 32px; height: 32px; border-radius: 8px; display: grid; place-items: center; background: var(--accent); color: #fff; font-family: var(--mono); font-weight: 700; font-size: 13px; }
-.head h1 { margin: 0; font-size: 1.3rem; font-weight: 600; letter-spacing: -0.02em; }
-.head .sub { color: var(--muted); font-size: 0.9rem; margin-top: 2px; }
-.meta { color: var(--faint); font-size: 0.82rem; margin: 18px 0 44px; }
-.meta b { color: var(--muted); font-weight: 500; }
+/* Page header */
+.pagehead { margin-bottom: 40px; }
+.pagehead > .lbl { color: var(--indigo); }
+.pagehead h1 { font-family: var(--serif); font-size: 2.4rem; font-weight: 600; letter-spacing: -0.02em; margin: 0.4rem 0 0; }
+.pagehead h1 .tk { color: var(--slate300); font-weight: 500; }
+.pagehead .sub { color: var(--slate500); font-size: 0.95rem; margin-top: 0.55rem; }
+.meta { color: var(--faint); font-size: 0.8rem; margin-top: 16px; padding-top: 14px; border-top: 1px solid var(--border); }
+.meta b { color: var(--slate600); font-weight: 500; }
+
+/* Deep slate emphasis surface */
+.deep { background: var(--deep); color: #fff; }
 
 /* Gain hero */
-.hero { background: var(--surface); border: 1px solid var(--border); border-radius: 16px; padding: 34px 34px 28px; }
-.kicker { color: var(--estimate); font-weight: 600; font-size: 0.92rem; }
-.kicker .q { font-family: var(--mono); }
-.kicker .meta2 { color: var(--faint); font-weight: 400; font-size: 0.8rem; margin-left: 6px; }
-.big { font-family: var(--mono); font-size: clamp(2.6rem, 7vw, 3.9rem); font-weight: 700; line-height: 1.04; color: var(--ink); letter-spacing: -0.03em; margin: 8px 0 0; }
-.big small { font-family: var(--sans); font-size: 1rem; font-weight: 500; color: var(--muted); letter-spacing: 0; margin-left: 11px; }
-.lead { color: var(--ink); font-size: 1.02rem; margin-top: 12px; max-width: 62ch; }
-.lead b { color: var(--accent-ink); font-weight: 600; }
-.beforeafter { display: flex; gap: 14px 28px; flex-wrap: wrap; margin-top: 24px; padding-top: 20px; border-top: 1px solid var(--hair); color: var(--muted); font-size: 0.9rem; }
-.beforeafter .n { color: var(--ink); font-family: var(--mono); font-weight: 600; }
+.hero { border-radius: 16px; padding: 38px 36px 30px; }
+.hero.deep .kick { color: var(--emerald-300); }
+.hero .big { font-family: var(--mono); font-size: clamp(2.6rem, 7vw, 3.9rem); font-weight: 700; line-height: 1.05; letter-spacing: -0.03em; margin: 12px 0 0; color: #fff; }
+.hero .big small { font-family: var(--sans); font-size: 1rem; font-weight: 500; color: var(--slate300); margin-left: 12px; letter-spacing: 0; }
+.hero .lead { color: #e2e8f0; font-size: 1.02rem; margin-top: 14px; max-width: 60ch; }
+.hero .lead b { color: #fff; font-weight: 600; }
+.hero .ba { display: flex; flex-wrap: wrap; gap: 10px 28px; margin-top: 24px; padding-top: 20px; border-top: 1px solid rgba(255,255,255,0.12); color: #94a3b8; font-size: 0.88rem; }
+.hero .ba .n { color: #fff; font-family: var(--mono); font-weight: 600; }
+.hero.light { background: var(--surface); border: 1px solid var(--border); color: var(--ink); box-shadow: 0 1px 2px rgba(15,23,42,0.04); }
+.hero.light .lead { color: var(--ink); }
 
-.section { margin-top: 52px; }
-.section > h2 { font-size: 1.1rem; font-weight: 600; margin: 0; letter-spacing: -0.01em; }
-.section > .exp { color: var(--muted); font-size: 0.92rem; margin: 5px 0 18px; max-width: 66ch; }
+/* Sections */
+.section { margin-top: 48px; }
+.section > h2 { font-family: var(--serif); font-size: 1.4rem; font-weight: 600; margin: 0; letter-spacing: -0.01em; }
+.section > .exp { color: var(--slate500); font-size: 0.9rem; margin: 6px 0 16px; max-width: 64ch; }
+.panel { background: var(--surface); border: 1px solid var(--border); border-radius: 14px; box-shadow: 0 1px 2px rgba(15,23,42,0.04); overflow: hidden; }
 
-table { width: 100%; border-collapse: collapse; font-size: 0.92rem; }
-th { text-align: left; color: var(--faint); font-weight: 500; font-size: 0.76rem; padding: 7px 10px; border-bottom: 1px solid var(--border); }
-td { padding: 11px 10px; border-bottom: 1px solid var(--hair); vertical-align: middle; }
+table { width: 100%; border-collapse: collapse; font-size: 0.9rem; }
+th { text-align: left; color: var(--faint); font-weight: 600; font-size: 0.6rem; letter-spacing: 0.1em; text-transform: uppercase; padding: 15px 16px 10px; border-bottom: 1px solid var(--border); }
+td { padding: 12px 16px; border-bottom: 1px solid var(--slate100); vertical-align: middle; }
 td.r, th.r { text-align: right; }
 tr:last-child td { border-bottom: none; }
-.hbar { position: relative; height: 6px; border-radius: 3px; background: var(--surface-2); overflow: hidden; min-width: 90px; }
-.hbar > i { position: absolute; inset: 0 auto 0 0; background: var(--accent); border-radius: 3px; opacity: 0.9; }
+.hbar { position: relative; height: 6px; border-radius: 3px; background: var(--slate100); overflow: hidden; min-width: 90px; }
+.hbar > i { position: absolute; inset: 0 auto 0 0; background: var(--emerald); border-radius: 3px; }
 
 /* Supporting cards */
 .cards { display: grid; gap: 18px; grid-template-columns: 1fr 1fr; margin-top: 18px; }
-.card { background: var(--surface); border: 1px solid var(--border); border-radius: 14px; padding: 24px; }
-.card.est { background: var(--estimate-soft); border-color: color-mix(in oklch, var(--estimate) 26%, var(--border)); }
-.card h3 { margin: 0; font-size: 1rem; font-weight: 600; }
-.card .exp { color: var(--muted); font-size: 0.86rem; margin: 6px 0 16px; }
-.card.est .exp { color: var(--estimate); }
-.kv { display: flex; justify-content: space-between; gap: 12px; padding: 9px 0; border-bottom: 1px solid var(--hair); font-size: 0.92rem; }
+.card { background: var(--surface); border: 1px solid var(--border); border-radius: 14px; box-shadow: 0 1px 2px rgba(15,23,42,0.04); padding: 24px; }
+.card.est { background: var(--amber-soft); border-color: var(--amber-line); }
+.card h3 { font-family: var(--serif); font-size: 1.15rem; font-weight: 600; margin: 0; }
+.card.est h3 { color: var(--amber-deep); }
+.card .exp { color: var(--slate500); font-size: 0.85rem; margin: 6px 0 16px; }
+.card.est .exp { color: var(--amber-ink); }
+.kv { display: flex; justify-content: space-between; gap: 12px; padding: 10px 0; border-bottom: 1px solid var(--slate100); font-size: 0.9rem; }
 .kv:last-of-type { border-bottom: none; }
-.kv .k { color: var(--muted); }
+.kv .k { color: var(--slate600); }
 .kv .v { font-family: var(--mono); font-weight: 600; }
 .kv .v.na { color: var(--faint); font-weight: 400; font-style: italic; }
-.est-num { font-family: var(--mono); font-size: 1.85rem; font-weight: 700; color: var(--estimate); margin-top: 18px; }
-.est-cap { color: var(--estimate); font-size: 0.82rem; margin-top: 4px; }
+.est-num { font-family: var(--mono); font-size: 1.85rem; font-weight: 700; color: var(--amber-ink); margin-top: 18px; }
+.est-cap { color: var(--amber-ink); font-size: 0.8rem; margin-top: 4px; }
 .naline { color: var(--faint); font-style: italic; font-size: 0.9rem; }
-.delta { display: grid; grid-template-columns: 1fr auto; gap: 2px 12px; padding: 13px 0; border-bottom: 1px solid var(--hair); }
+.delta { display: grid; grid-template-columns: 1fr auto; gap: 2px 12px; padding: 13px 0; border-bottom: 1px solid var(--slate100); }
 .delta:last-child { border-bottom: none; }
 .delta .nm { font-weight: 600; }
-.delta .sv { font-family: var(--mono); font-weight: 600; color: var(--accent-ink); text-align: right; }
+.delta .sv { font-family: var(--mono); font-weight: 600; color: var(--emerald-ink); text-align: right; }
 .delta .ex { color: var(--faint); font-size: 0.82rem; }
-.delta .ba { font-family: var(--mono); color: var(--muted); font-size: 0.84rem; text-align: right; }
+.delta .ba2 { font-family: var(--mono); color: var(--slate500); font-size: 0.84rem; text-align: right; }
 
 /* Inspect */
-.summary { background: var(--surface); border: 1px solid var(--border); border-radius: 14px; padding: 20px 24px; display: flex; align-items: center; gap: 12px 28px; flex-wrap: wrap; }
-.summary .big2 { font-family: var(--mono); font-size: 1.5rem; font-weight: 700; color: var(--ink); }
-.summary .txt { color: var(--ink); }
-.summary .txt b { color: var(--ink); }
-.summary .sub { color: var(--faint); font-size: 0.86rem; }
-.summary .pri { margin-left: auto; display: flex; gap: 18px; font-size: 0.86rem; }
-.summary .pri span { display: inline-flex; align-items: center; gap: 7px; color: var(--muted); }
+.summary { background: var(--surface); border: 1px solid var(--border); border-radius: 14px; box-shadow: 0 1px 2px rgba(15,23,42,0.04); padding: 22px 26px; display: flex; align-items: center; gap: 12px 28px; flex-wrap: wrap; }
+.summary .big2 { font-family: var(--mono); font-size: 1.7rem; font-weight: 700; color: var(--ink); }
+.summary .txt b { color: var(--ink); font-weight: 600; }
+.summary .sub { color: var(--faint); font-size: 0.85rem; }
+.summary .pri { margin-left: auto; display: flex; gap: 18px; font-size: 0.85rem; }
+.summary .pri span { display: inline-flex; align-items: center; gap: 7px; color: var(--slate600); }
 .dot { width: 8px; height: 8px; border-radius: 50%; flex: none; }
-.prigrp { margin-top: 40px; }
-.prigrp > h2 { font-size: 1.05rem; font-weight: 600; margin: 0 0 3px; display: flex; align-items: baseline; gap: 9px; }
-.prigrp > h2 .ct { font-family: var(--mono); color: var(--faint); font-size: 0.85rem; font-weight: 500; }
-.prigrp > .exp { color: var(--muted); font-size: 0.86rem; margin: 0 0 14px; }
-.item { background: var(--surface); border: 1px solid var(--border); border-radius: 12px; padding: 20px 22px; margin-bottom: 12px; }
+.prigrp { margin-top: 38px; }
+.prigrp > h2 { font-family: var(--serif); font-size: 1.3rem; font-weight: 600; margin: 0 0 3px; display: flex; align-items: baseline; gap: 10px; }
+.prigrp > h2 .ct { font-family: var(--mono); color: var(--faint); font-size: 0.8rem; font-weight: 500; }
+.prigrp > .exp { color: var(--slate500); font-size: 0.85rem; margin: 0 0 14px; }
+.item { background: var(--surface); border: 1px solid var(--border); border-radius: 12px; box-shadow: 0 1px 2px rgba(15,23,42,0.04); padding: 20px 22px; margin-bottom: 12px; }
 .item .ititle { display: flex; align-items: baseline; gap: 11px; }
-.item .ititle .glyph { font-size: 0.72rem; flex: none; }
-.item .ititle .pt { font-weight: 600; font-size: 1rem; }
-.item .ititle .tag { margin-left: auto; flex: none; font-size: 0.74rem; padding: 3px 10px; border-radius: 999px; background: var(--surface-2); color: var(--muted); border: 1px solid var(--border); white-space: nowrap; }
-.item .ititle .tag.auto { background: var(--accent-soft); color: var(--accent-ink); border-color: color-mix(in oklch, var(--accent) 22%, transparent); }
-.field { display: grid; grid-template-columns: 56px 1fr; gap: 5px 14px; margin-top: 13px; font-size: 0.92rem; }
-.field .lab { color: var(--faint); font-size: 0.82rem; padding-top: 1px; }
+.item .ititle .glyph { font-size: 0.7rem; flex: none; }
+.item .ititle .pt { font-weight: 600; font-size: 1.02rem; }
+.item .ititle .tag { margin-left: auto; flex: none; font-size: 0.6rem; letter-spacing: 0.08em; text-transform: uppercase; font-weight: 600; padding: 4px 10px; border-radius: 6px; background: var(--slate100); color: var(--slate600); border: 1px solid var(--border); white-space: nowrap; }
+.item .ititle .tag.auto { background: var(--emerald-soft); color: var(--emerald-ink); border-color: var(--emerald-100); }
+.field { display: grid; grid-template-columns: 54px 1fr; gap: 5px 14px; margin-top: 13px; font-size: 0.9rem; }
+.field .lab { color: var(--faint); font-size: 0.6rem; letter-spacing: 0.1em; text-transform: uppercase; padding-top: 3px; }
 .field .val { color: var(--ink); }
-.field .val.where { font-family: var(--mono); color: var(--muted); font-size: 0.88rem; }
-.field .val.fix { color: var(--accent-ink); }
-.actions { display: flex; align-items: center; gap: 10px 14px; flex-wrap: wrap; margin-top: 15px; padding-left: 70px; }
-.copybtn { font: inherit; font-size: 0.82rem; font-weight: 550; cursor: pointer; color: var(--accent-ink); background: var(--accent-soft); border: 1px solid color-mix(in oklch, var(--accent) 22%, transparent); border-radius: 8px; padding: 6px 13px; transition: background 0.15s, color 0.15s; }
-.copybtn:hover { background: color-mix(in oklch, var(--accent) 14%, var(--surface)); }
-.copybtn.ok { background: var(--accent); color: #fff; border-color: var(--accent); }
+.field .val.where { font-family: var(--mono); color: var(--slate600); font-size: 0.86rem; }
+.field .val.fix { color: var(--emerald-ink); }
+.actions { display: flex; align-items: center; gap: 10px 14px; flex-wrap: wrap; margin-top: 15px; padding-left: 68px; }
+.copybtn { font: inherit; font-size: 0.82rem; font-weight: 600; cursor: pointer; color: var(--indigo-ink); background: var(--indigo-soft); border: 1px solid #c7d2fe; border-radius: 8px; padding: 6px 13px; transition: background 0.15s, color 0.15s; }
+.copybtn:hover { background: #e0e7ff; }
+.copybtn.ok { background: var(--emerald); color: #fff; border-color: var(--emerald); }
 .ahint { color: var(--faint); font-size: 0.82rem; }
-.cmd { color: var(--muted); font-size: 0.82rem; }
-.cmd code { font-family: var(--mono); font-size: 0.82rem; background: var(--surface-2); padding: 1px 6px; border-radius: 5px; }
+.cmd { color: var(--slate500); font-size: 0.82rem; }
+.cmd code { font-family: var(--mono); font-size: 0.82rem; background: var(--slate100); padding: 1px 6px; border-radius: 5px; }
 .allbar { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; margin-top: 18px; }
-.empty { background: var(--surface); border: 1px solid var(--border); border-radius: 14px; text-align: center; padding: 60px; color: var(--muted); margin-top: 24px; }
+.empty { background: var(--surface); border: 1px solid var(--border); border-radius: 14px; text-align: center; padding: 60px; color: var(--slate500); margin-top: 24px; }
 .empty b { color: var(--ink); }
 
-.foot { margin-top: 64px; color: var(--faint); font-size: 0.78rem; }
+.foot { margin-top: 60px; color: var(--faint); font-size: 0.78rem; }
 
 @media (prefers-reduced-motion: no-preference) {
-  .hero, .summary, .card, .item, .section { animation: rise 0.4s cubic-bezier(0.22,1,0.36,1) both; }
+  .hero, .summary, .card, .item, .section, .panel { animation: rise 0.4s cubic-bezier(0.22,1,0.36,1) both; }
 }
 @keyframes rise { from { opacity: 0; transform: translateY(7px); } to { opacity: 1; transform: none; } }
-@media (max-width: 640px) { .cards { grid-template-columns: 1fr; } .wrap { padding: 40px 18px 72px; } .summary .pri { margin-left: 0; width: 100%; } }
+@media (max-width: 640px) { .cards { grid-template-columns: 1fr; } .wrap { padding: 40px 18px 72px; } .summary .pri { margin-left: 0; width: 100%; } .pagehead h1 { font-size: 2rem; } }
 `;
 
 const SCRIPT = String.raw`
@@ -204,20 +229,21 @@ function renderGain(L) {
   const m = L.measured_command_savings || {};
   const out = [];
 
-  // Hero — the one thing the user should take away.
+  // Hero — the one thing the user should take away. Deep slate surface so the
+  // measured number is the loudest thing on the page.
   if (isNa(m)) {
-    out.push('<div class="hero"><div class="lead">' + esc(m.note) + '</div></div>');
+    out.push('<div class="hero light"><div class="lead">' + esc(m.note) + '</div></div>');
   } else {
     const usd = money(L.estimated_savings_usd);
     const price = L.price_per_mtok || 3;
-    let h = '<div class="hero">';
-    if (usd) h += '<div class="kicker">≈ <span class="q">' + usd + '</span> saved in model spend<span class="meta2">estimated at $' + price + ' per 1M tokens</span></div>';
+    let h = '<section class="hero deep">';
+    if (usd) h += '<p class="lbl kick">≈ ' + usd + ' saved in model spend · estimated at $' + price + ' / 1M tokens</p>';
     h += '<div class="big">' + n(m.saved_tokens) + '<small>tokens saved (measured)</small></div>';
     h += '<div class="lead">Token Killer trimmed your command output by <b>' + pct(m.savings_pct) + '</b> before it reached the model, across <b>' + n(m.commands) + '</b> commands.</div>';
-    h += '<div class="beforeafter"><span>Output without tk: <span class="n">' + n(m.raw_tokens) + '</span> tokens</span>' +
+    h += '<div class="ba"><span>Output without tk: <span class="n">' + n(m.raw_tokens) + '</span> tokens</span>' +
       '<span>Sent to the model: <span class="n">' + n(m.output_tokens) + '</span> tokens</span>' +
       '<span>Avg saved per command: <span class="n">' + n(m.avg_savings_per_command) + '</span></span></div>';
-    h += '</div>';
+    h += '</section>';
     out.push(h);
 
     const bh = Array.isArray(m.by_handler) ? m.by_handler.slice(0, 12) : [];
@@ -225,12 +251,12 @@ function renderGain(L) {
       const max = Math.max.apply(null, bh.map((h2) => h2.saved || 0).concat([1]));
       out.push('<div class="section"><h2>Where the savings came from</h2>' +
         '<p class="exp">The commands whose output Token Killer compressed the most.</p>' +
-        '<table><thead><tr><th>Command</th><th>Share of savings</th><th class="r">Tokens saved</th><th class="r">Reduced by</th><th class="r">Times run</th></tr></thead><tbody>' +
+        '<div class="panel"><table><thead><tr><th>Command</th><th>Share of savings</th><th class="r">Tokens saved</th><th class="r">Reduced by</th><th class="r">Times run</th></tr></thead><tbody>' +
         bh.map((h2) =>
           '<tr><td class="num">' + esc(h2.handler) + '</td>' +
           '<td style="width:32%"><div class="hbar"><i style="width:' + Math.max(3, Math.round(((h2.saved || 0) / max) * 100)) + '%"></i></div></td>' +
           '<td class="r num">' + n(h2.saved) + '</td><td class="r num">' + pct(h2.pct) + '</td><td class="r num">' + n(h2.count) + '</td></tr>').join("") +
-        '</tbody></table></div>');
+        '</tbody></table></div></div>');
     }
   }
 
@@ -247,7 +273,7 @@ function renderGain(L) {
       '<div class="delta"><div class="nm">' + esc(SURFACE_NAMES[s.surface] || s.surface) + '</div>' +
       '<div class="sv">−' + n(s.delta_tokens) + ' tokens</div>' +
       '<div class="ex">' + esc(EXPOSURE_PLAIN[s.exposure_class] || s.exposure_class) + '</div>' +
-      '<div class="ba">' + n(s.before_tokens) + ' → ' + n(s.after_tokens) + '</div></div>').join("");
+      '<div class="ba2">' + n(s.before_tokens) + ' → ' + n(s.after_tokens) + '</div></div>').join("");
   }
   cards.push(cardHtml("", "Smaller context files", "Config and instruction files you optimized now load fewer tokens in every session.", c2));
 
@@ -423,6 +449,8 @@ render();
 `;
 
 export function renderReportHtml(doc: ReportDoc): string {
+  const kicker =
+    doc.kind === "gain" ? "Token savings · measured" : "Token optimization · opportunities";
   return `<!doctype html>
 <html lang="en">
 <head>
@@ -433,14 +461,12 @@ export function renderReportHtml(doc: ReportDoc): string {
 </head>
 <body>
 <div class="wrap">
-  <header class="head">
-    <div class="mark">tk</div>
-    <div>
-      <h1>${escapeHtml(doc.title)}</h1>
-      <div class="sub">${escapeHtml(doc.subtitle)}</div>
-    </div>
+  <header class="pagehead">
+    <p class="lbl">${escapeHtml(kicker)}</p>
+    <h1>${escapeHtml(doc.title)} <span class="tk">/ tk</span></h1>
+    <div class="sub">${escapeHtml(doc.subtitle)}</div>
+    <div class="meta" id="meta"></div>
   </header>
-  <div class="meta" id="meta"></div>
   <main id="app"></main>
   <div class="foot">Generated by Token Killer on ${escapeHtml(doc.generatedAt)}. This report was built on your machine; nothing was uploaded.</div>
 </div>

@@ -281,7 +281,7 @@ export function runInspect(
     if (opts.html) {
       emitHtmlReport({
         kind: "inspect",
-        title: "Context cleanup report",
+        title: "Ways to optimize your token usage",
         subtitle: "Where your AI setup wastes tokens, and how to fix it.",
         generatedAt: new Date(nowMs).toISOString(),
         data: {
