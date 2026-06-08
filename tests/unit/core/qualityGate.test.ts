@@ -100,4 +100,19 @@ describe("filtered output quality gate", () => {
     expect(result.qualityStatus).toBe("passed");
     expect(result.savedTokens).toBeGreaterThan(0);
   });
+
+  // A Tier-3 passthrough that rebuilds output as `${stdout}\n${stderr}` appends a
+  // newline when stderr is empty. On a tiny output that 1-char growth used to trip
+  // the zero-tolerance budget and flag a false `inflated` row. Edge whitespace
+  // carries no dropped content, so the gate must treat it as a clean passthrough.
+  test("does not flag inflation when output only adds edge whitespace", async () => {
+    const result = await makeFilteredResult(
+      { name: "custom" },
+      raw("vitest/4.1.8 darwin-arm64 node-v22.22.2\n"),
+      "vitest/4.1.8 darwin-arm64 node-v22.22.2\n\n",
+      options,
+    );
+
+    expect(result.qualityStatus).toBe("passed");
+  });
 });

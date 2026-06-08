@@ -221,6 +221,16 @@ async function renderText(ctx: GainContext, args: GainArgs, now: Date): Promise<
   return `${sections.join("\n\n")}\n`;
 }
 
+// The stored quality_status values are accurate for the gate's internal logic but
+// read as alarming in a user-facing summary: `inflated` does NOT mean tk shipped
+// bloated output — it means the gate caught a compression that would have grown or
+// dropped content and REVERTED to raw (the safe, correct output went out). Relabel
+// for display only; the JSON/telemetry surfaces keep the raw status names.
+const QUALITY_DISPLAY_LABELS: Record<string, string> = {
+  inflated: "reverted-to-raw",
+  empty_output: "reverted-to-raw (empty)",
+};
+
 function renderSummary(s: GainSummary, scope: string): string {
   const top = s.by_handler
     .slice(0, 5)
@@ -228,7 +238,7 @@ function renderSummary(s: GainSummary, scope: string): string {
     .join("\n");
   const quality = Object.entries(s.quality_status_counts)
     .sort(([a], [b]) => a.localeCompare(b))
-    .map(([status, count]) => `  - ${status}: ${count}`)
+    .map(([status, count]) => `  - ${QUALITY_DISPLAY_LABELS[status] ?? status}: ${count}`)
     .join("\n");
   return [
     `Token savings — ${scope}`,

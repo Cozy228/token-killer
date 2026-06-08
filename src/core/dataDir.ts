@@ -1,5 +1,5 @@
 import { createHash } from "node:crypto";
-import { realpathSync } from "node:fs";
+import { readFileSync, realpathSync, statSync } from "node:fs";
 import os from "node:os";
 import path from "node:path";
 
@@ -11,6 +11,54 @@ function resolveProjectRoot(cwd: string): string {
   }
 }
 
+// Resolve a directory to the root of the git repository that contains it, so a
+// project gets ONE fingerprint regardless of which subdirectory a command runs
+// from OR which linked worktree it lives in. Keying on the raw cwd path (the old
+// behaviour) fragmented a single project across many `repo:` buckets — every
+// `cd src && …` and every worktree-isolated subagent minted its own — and
+// `tk gain` then under-counted by reporting just one shard. The walk is in-process
+// (stat/readFile up the tree, no `git` fork) to stay cheap on the compression hot
+// path. A non-git directory returns undefined and the caller falls back to the
+// cwd hash, so the fingerprint of the main repo ROOT is byte-identical to before.
+function gitRepoAnchor(start: string): string | undefined {
+  let dir = start;
+  for (let depth = 0; depth < 64; depth += 1) {
+    const dotgit = path.join(dir, ".git");
+    let stat: ReturnType<typeof statSync> | undefined;
+    try {
+      stat = statSync(dotgit);
+    } catch {
+      stat = undefined;
+    }
+    if (stat) {
+      // A `.git` DIRECTORY marks the main worktree / repo root.
+      if (stat.isDirectory()) return dir;
+      // A `.git` FILE marks a linked worktree: `gitdir: <common>/worktrees/<name>`.
+      // The repo identity we want to share is the common dir's parent (the main
+      // worktree root), three levels up from `.../.git/worktrees/<name>`.
+      try {
+        const match = /gitdir:\s*(.+?)\s*$/m.exec(readFileSync(dotgit, "utf8"));
+        if (match) {
+          const gitdir = path.resolve(dir, match[1]);
+          if (gitdir.includes(`${path.sep}worktrees${path.sep}`)) {
+            // realpath the main-repo root so it matches the fingerprint computed
+            // when running FROM that repo (resolveProjectRoot already realpaths,
+            // which on macOS rewrites /var → /private/var).
+            return resolveProjectRoot(path.resolve(gitdir, "..", "..", ".."));
+          }
+        }
+      } catch {
+        // Unparseable .git file: anchor to this directory rather than guessing.
+      }
+      return dir;
+    }
+    const parent = path.dirname(dir);
+    if (parent === dir) break;
+    dir = parent;
+  }
+  return undefined;
+}
+
 export function tokenKillerHome(): string {
   if (process.env.TOKEN_KILLER_HOME) {
     return path.resolve(process.env.TOKEN_KILLER_HOME);
@@ -20,7 +68,8 @@ export function tokenKillerHome(): string {
 
 export function projectFingerprint(cwd: string): string {
   const normalized = resolveProjectRoot(cwd);
-  const hash = createHash("sha256").update(normalized).digest("hex").slice(0, 12);
+  const anchor = gitRepoAnchor(normalized) ?? normalized;
+  const hash = createHash("sha256").update(anchor).digest("hex").slice(0, 12);
   return `repo:${hash}`;
 }
 
@@ -63,7 +112,5 @@ export function rawOutputPathRelative(cwd: string, fileName: string): string {
 }
 
 export function resolveStoredPath(storedPath: string): string {
-  return path.isAbsolute(storedPath)
-    ? storedPath
-    : path.join(tokenKillerHome(), storedPath);
+  return path.isAbsolute(storedPath) ? storedPath : path.join(tokenKillerHome(), storedPath);
 }

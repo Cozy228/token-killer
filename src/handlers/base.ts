@@ -122,8 +122,17 @@ export async function makeFilteredResult(
   const inflationBudget =
     cleanRaw.length <= 200 ? 0 : Math.max(80, Math.floor(cleanRaw.length * 0.05));
   const inflationExempt = handler.traits?.structural === true;
+  // A Tier-3 passthrough whose only difference from raw is surrounding whitespace
+  // is NOT inflation — shipping it wastes nothing, so it must not be reverted. A
+  // handler that rebuilds output as `${stdout}\n${stderr}` appends a newline when
+  // stderr is empty; on a tiny output (`vitest --version`, `eslint --version`) the
+  // raw ≤ 200 → zero-tolerance budget then trips on that 1-char growth and the row
+  // is needlessly flagged inflated, inflating the quality metric with false
+  // positives. Edge whitespace never carries dropped content, so exempt it.
+  const isEdgeWhitespaceGrowth = cleanOutput.trim() === cleanRaw.trim();
   const outputInflatesRaw =
     !inflationExempt &&
+    !isEdgeWhitespaceGrowth &&
     rawHasContent &&
     outputHasContent &&
     cleanOutput.length > cleanRaw.length + inflationBudget;

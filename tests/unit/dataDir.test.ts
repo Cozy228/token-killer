@@ -1,4 +1,4 @@
-import { mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
+import { mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { spawnSync } from "node:child_process";
 import { tmpdir } from "node:os";
 import path from "node:path";
@@ -31,9 +31,7 @@ describe("dataDir", () => {
 
     expect(tokenKillerHome()).toBe(home);
     expect(fingerprint).toMatch(/^repo:[a-f0-9]{12}$/);
-    expect(historyFile(cwd)).toBe(
-      path.join(home, "projects", fingerprint, "history.jsonl"),
-    );
+    expect(historyFile(cwd)).toBe(path.join(home, "projects", fingerprint, "history.jsonl"));
     expect(rawOutputPathRelative(cwd, "sample.log")).toBe(
       path.join("projects", fingerprint, "raw", "sample.log"),
     );
@@ -41,11 +39,48 @@ describe("dataDir", () => {
     await rm(home, { recursive: true, force: true });
   });
 
+  test("anchors the fingerprint to the git repo root across subdirs and worktrees", async () => {
+    const repo = await mkdtemp(path.join(tmpdir(), "tk-repo-"));
+    await mkdir(path.join(repo, ".git"));
+    const nested = path.join(repo, "src", "handlers");
+    await mkdir(nested, { recursive: true });
+
+    // A subdirectory of the repo shares the repo root's fingerprint — running a
+    // command from `src/handlers` must NOT mint a separate `repo:` bucket.
+    expect(projectFingerprint(nested)).toBe(projectFingerprint(repo));
+
+    // A linked worktree (`.git` is a file pointing at <repo>/.git/worktrees/<name>)
+    // resolves to the SAME main-repo fingerprint, so isolated agents don't fragment.
+    const worktree = await mkdtemp(path.join(tmpdir(), "tk-wt-"));
+    await writeFile(
+      path.join(worktree, ".git"),
+      `gitdir: ${path.join(repo, ".git", "worktrees", "wt")}\n`,
+    );
+    expect(projectFingerprint(worktree)).toBe(projectFingerprint(repo));
+
+    await rm(repo, { recursive: true, force: true });
+    await rm(worktree, { recursive: true, force: true });
+  });
+
+  test("falls back to the cwd hash outside a git repo", async () => {
+    const a = await mkdtemp(path.join(tmpdir(), "tk-nogit-a-"));
+    const b = await mkdtemp(path.join(tmpdir(), "tk-nogit-b-"));
+    // Two unrelated non-git directories keep distinct fingerprints (no anchor).
+    expect(projectFingerprint(a)).not.toBe(projectFingerprint(b));
+    expect(projectFingerprint(a)).toMatch(/^repo:[a-f0-9]{12}$/);
+    await rm(a, { recursive: true, force: true });
+    await rm(b, { recursive: true, force: true });
+  });
+
   test("spawn passes TOKEN_KILLER_HOME under vitest", () => {
-    const probe = spawnSync(process.execPath, ["-e", "console.log(process.env.TOKEN_KILLER_HOME || 'missing')"], {
-      encoding: "utf8",
-      env: { ...process.env, TOKEN_KILLER_HOME: "/tmp/tk-probe-home" },
-    });
+    const probe = spawnSync(
+      process.execPath,
+      ["-e", "console.log(process.env.TOKEN_KILLER_HOME || 'missing')"],
+      {
+        encoding: "utf8",
+        env: { ...process.env, TOKEN_KILLER_HOME: "/tmp/tk-probe-home" },
+      },
+    );
     expect(probe.stdout.trim()).toBe("/tmp/tk-probe-home");
   });
 
@@ -56,15 +91,11 @@ describe("dataDir", () => {
     const cli = path.join(repoRoot, "src/cli.ts");
     await writeFile(path.join(dir, "sample.txt"), "hello\n");
     const tsxLoader = path.join(repoRoot, "node_modules/tsx/dist/loader.mjs");
-    const result = spawnSync(
-      process.execPath,
-      ["--import", tsxLoader, cli, "cat", "sample.txt"],
-      {
-        cwd: dir,
-        encoding: "utf8",
-        env: { ...process.env, TOKEN_KILLER_HOME: tkHome },
-      },
-    );
+    const result = spawnSync(process.execPath, ["--import", tsxLoader, cli, "cat", "sample.txt"], {
+      cwd: dir,
+      encoding: "utf8",
+      env: { ...process.env, TOKEN_KILLER_HOME: tkHome },
+    });
 
     expect(result.status, result.stderr || result.stdout).toBe(0);
     process.env.TOKEN_KILLER_HOME = tkHome;

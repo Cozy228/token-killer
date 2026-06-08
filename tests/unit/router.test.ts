@@ -1,6 +1,6 @@
 import { describe, expect, test } from "vitest";
 
-import { routeCommand } from "../../src/router.js";
+import { routeCommand, routeSpecific } from "../../src/router.js";
 import type { ParsedCommand } from "../../src/types.js";
 
 function command(original: string[]): ParsedCommand {
@@ -66,5 +66,30 @@ describe("routeCommand", () => {
     [["custom-tool"], "generic"],
   ])("%s routes to %s", (argv, handlerName) => {
     expect(routeCommand(command(argv)).name).toBe(handlerName);
+  });
+});
+
+describe("routeSpecific probe guard", () => {
+  // A pure --version/--help probe must skip compression (→ null = passthrough) so
+  // a name-only handler like eslint can't hijack `eslint --version` into a bogus
+  // "0 problems" reformat that the inflation gate then reverts and logs as inflated.
+  test.each([
+    [["eslint", "--version"]],
+    [["vitest", "--version"]],
+    [["tsc", "--version"]],
+    [["javac", "-version"]],
+    [["pnpm", "--help"]],
+    [["git", "--help"]],
+  ])("%s is a passthrough probe", (argv) => {
+    expect(routeSpecific(command(argv))).toBeNull();
+  });
+
+  // Overloaded short flags are NOT probes: grep -v inverts, ls -h is human-readable.
+  test.each([
+    [["grep", "-v", "pattern", "."], "search-like"],
+    [["ls", "-h"], "ls"],
+    [["eslint", ".", "--version"], "eslint"],
+  ])("%s still routes to a real handler", (argv, handlerName) => {
+    expect(routeSpecific(command(argv))?.name).toBe(handlerName);
   });
 });
