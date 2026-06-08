@@ -12,24 +12,23 @@ export type ContextSurface =
   | "skill"
   | "stable_prefix";
 
+// Map a user-facing `--surface` selector to the concrete surfaces it covers.
+// Shared by the analyzer (filtering findings) and the optimize CLI (arg parsing
+// + apply scoping) so the two never drift.
+export const SURFACE_SELECTORS: Record<string, ContextSurface[]> = {
+  instructions: ["copilot_instructions", "path_instructions", "agent_instructions"],
+  prompts: ["prompt_file"],
+  agents: ["custom_agent"],
+  skills: ["skill"],
+};
+
 // Shared with runtime findings. "delivery" belongs to runtime findings (install
 // shim/hook); static-context findings only use the other four classes.
-export type FixClass =
-  | "safe_mechanical"
-  | "suggested_diff"
-  | "advisory"
-  | "delivery"
-  | "non_goal";
+export type FixClass = "safe_mechanical" | "suggested_diff" | "advisory" | "delivery" | "non_goal";
 
 export type FindingSeverity = "info" | "warn" | "error";
 
-export type ContextAdapter =
-  | "copilot"
-  | "vscode"
-  | "claude"
-  | "gemini"
-  | "codex"
-  | "generic";
+export type ContextAdapter = "copilot" | "vscode" | "claude" | "gemini" | "codex" | "generic";
 
 export type ContextScope = "user" | "project";
 

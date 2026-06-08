@@ -15,6 +15,7 @@ import { mkdir, readFile, readdir, writeFile } from "node:fs/promises";
 import path from "node:path";
 
 import { projectDataDir, projectFingerprint, tokenKillerHome } from "./dataDir.js";
+import { parseJsonl } from "./jsonl.js";
 import type { GovernanceKind } from "../hook/govern.js";
 
 export type { GovernanceKind };
@@ -52,16 +53,7 @@ export async function recordGovernance(
 }
 
 function parseLines(text: string): GovernanceRecord[] {
-  return text
-    .split(/\r?\n/)
-    .filter(Boolean)
-    .flatMap((line) => {
-      try {
-        return [JSON.parse(line) as GovernanceRecord];
-      } catch {
-        return [];
-      }
-    });
+  return parseJsonl<GovernanceRecord>(text);
 }
 
 export async function readGovernance(cwd: string): Promise<GovernanceRecord[]> {
@@ -126,7 +118,8 @@ export function summarizeGovernance(records: GovernanceRecord[]): GovernanceLedg
   for (const record of records) {
     counts[record.kind] += 1;
     if (record.estimated_tokens && record.estimated_tokens > 0) {
-      avoided += record.estimated_tokens * (record.decision === "deny" ? DENY_WEIGHT : SUGGEST_WEIGHT);
+      avoided +=
+        record.estimated_tokens * (record.decision === "deny" ? DENY_WEIGHT : SUGGEST_WEIGHT);
     }
   }
   return {

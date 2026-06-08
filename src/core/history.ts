@@ -4,6 +4,7 @@ import { mkdir, readFile, readdir, writeFile } from "node:fs/promises";
 import path from "node:path";
 
 import type { FilteredResult, RawResult, TkOptions } from "../types.js";
+import { parseJsonl } from "./jsonl.js";
 import {
   historyFile,
   projectFingerprint,
@@ -139,10 +140,7 @@ export async function readHistory(cwd: string): Promise<HistoryRecord[]> {
 }
 
 function parseHistoryLines(text: string): HistoryRecord[] {
-  return text
-    .split(/\r?\n/)
-    .filter(Boolean)
-    .map((line) => JSON.parse(line) as HistoryRecord);
+  return parseJsonl<HistoryRecord>(text);
 }
 
 // User-level read (ADR 0004 §3): enumerate every project's history.jsonl under

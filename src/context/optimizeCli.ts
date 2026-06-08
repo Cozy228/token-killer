@@ -21,7 +21,8 @@ import {
   type ContextPatchPlan,
   type PlanOutcome,
 } from "./patchPlan.js";
-import type { ContextFinding, ContextScope, ContextSurface } from "./types.js";
+import { SURFACE_SELECTORS } from "./types.js";
+import type { ContextFinding, ContextScope } from "./types.js";
 
 export type OptimizeArgs = {
   dryRun: boolean;
@@ -36,13 +37,6 @@ export type OptimizeArgs = {
   scopeProject: boolean;
   surface?: string;
   error?: string;
-};
-
-const SURFACE_SELECTORS: Record<string, ContextSurface[]> = {
-  instructions: ["copilot_instructions", "path_instructions", "agent_instructions"],
-  prompts: ["prompt_file"],
-  agents: ["custom_agent"],
-  skills: ["skill"],
 };
 
 export function parseOptimizeArgs(argv: string[]): OptimizeArgs {

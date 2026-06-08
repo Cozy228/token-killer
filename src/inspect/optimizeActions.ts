@@ -14,6 +14,7 @@
 import { appendFileSync, existsSync, mkdirSync, readFileSync } from "node:fs";
 import { join } from "node:path";
 
+import { parseJsonl } from "../core/jsonl.js";
 import type { ContextSurface } from "../context/types.js";
 import { inspectBucketDir, type ScopeBucket } from "./persist.js";
 
@@ -65,10 +66,7 @@ export function readOptimizeActions(bucket: ScopeBucket): OptimizeAction[] {
   const path = optimizeActionsPath(bucket);
   if (!existsSync(path)) return [];
   try {
-    return readFileSync(path, "utf8")
-      .split(/\r?\n/)
-      .filter(Boolean)
-      .map((line) => JSON.parse(line) as OptimizeAction);
+    return parseJsonl<OptimizeAction>(readFileSync(path, "utf8"));
   } catch {
     return [];
   }

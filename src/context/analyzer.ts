@@ -6,19 +6,11 @@
 
 import { createHash } from "node:crypto";
 
-import {
-  discoverContextFiles,
-  readContextFile,
-  type DiscoveredFile,
-} from "./discover.js";
+import { discoverContextFiles, readContextFile, type DiscoveredFile } from "./discover.js";
 import { computeBodyMetrics, type BodyMetrics } from "./metrics.js";
 import { parseMarkdown, type ParsedMarkdown } from "./parseMarkdown.js";
-import type {
-  ContextFinding,
-  ContextFindingType,
-  ContextScope,
-  ContextSurface,
-} from "./types.js";
+import { SURFACE_SELECTORS } from "./types.js";
+import type { ContextFinding, ContextFindingType, ContextScope, ContextSurface } from "./types.js";
 
 export type AnalyzedFile = {
   file: DiscoveredFile;
@@ -63,14 +55,6 @@ export function makeFindingId(
   const key = `${type}|${file ?? ""}|${startLine ?? ""}|${extra}`;
   return `sc_${createHash("sha256").update(key).digest("hex").slice(0, 10)}`;
 }
-
-// Map a user-facing `--surface` selector to the concrete surfaces it covers.
-const SURFACE_SELECTORS: Record<string, ContextSurface[]> = {
-  instructions: ["copilot_instructions", "path_instructions", "agent_instructions"],
-  prompts: ["prompt_file"],
-  agents: ["custom_agent"],
-  skills: ["skill"],
-};
 
 export function resolveSurfaceSelector(selector: string): ContextSurface[] | undefined {
   return SURFACE_SELECTORS[selector];
