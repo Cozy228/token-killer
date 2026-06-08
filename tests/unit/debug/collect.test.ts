@@ -4,7 +4,11 @@ import path from "node:path";
 
 import { afterEach, beforeEach, describe, expect, test } from "vitest";
 
-import { collectDebugBundle } from "../../../src/debug/collect.js";
+import {
+  collectDebugBundle,
+  probeHookBinary,
+  tokenizeCommand,
+} from "../../../src/debug/collect.js";
 import type { HistoryRecord } from "../../../src/core/history.js";
 
 let tkHome: string;
@@ -131,5 +135,47 @@ describe("collectDebugBundle — delivery & redaction", () => {
     expect(snap.available).toBe(true);
     expect(snap.content).toBeUndefined();
     expect(snap.bytes).toBe("SECRET_BYTES".length);
+  });
+});
+
+describe("tokenizeCommand", () => {
+  test("splits on whitespace and honors quoted paths with spaces", () => {
+    expect(tokenizeCommand('"/a b/node" "/c d/tk" hook claude')).toEqual([
+      "/a b/node",
+      "/c d/tk",
+      "hook",
+      "claude",
+    ]);
+    expect(tokenizeCommand("node /abs/bin/tk hook claude")).toEqual([
+      "node",
+      "/abs/bin/tk",
+      "hook",
+      "claude",
+    ]);
+  });
+});
+
+describe("probeHookBinary — does the wired binary actually run", () => {
+  test("no installed command → not probed", () => {
+    const p = probeHookBinary(undefined);
+    expect(p.ran).toBe(false);
+    expect(p.ok).toBe(false);
+  });
+
+  test("dangling binary path → ran but BROKEN (MODULE_NOT_FOUND)", () => {
+    // `node /no/such/tk --version` after stripping the trailing `hook claude`.
+    const p = probeHookBinary(`${process.execPath} /no/such/dir/tk hook claude`);
+    expect(p.ran).toBe(true);
+    expect(p.ok).toBe(false);
+    expect(p.detail.toLowerCase()).toMatch(/cannot find module|no such file/);
+  });
+
+  test("loadable binary → ran ok with a version line", () => {
+    // Strips `hook claude` → runs `node --version`, which prints `vX.Y.Z`, exit 0.
+    const p = probeHookBinary(`${process.execPath} hook claude`);
+    expect(p.ran).toBe(true);
+    expect(p.ok).toBe(true);
+    expect(p.exitCode).toBe(0);
+    expect(p.detail).toMatch(/^v\d+\./);
   });
 });

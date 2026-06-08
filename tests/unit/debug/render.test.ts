@@ -46,6 +46,7 @@ function bundle(overrides: Partial<DebugBundle> = {}): DebugBundle {
         present: false,
         pointsAtTk: false,
         command: "node cli hook claude",
+        exec: { ran: false, ok: false, exitCode: null, detail: "no claude hook installed" },
       },
       copilotHook: { path: "/c/tk.json", present: true, managed: true },
       injection: { path: "/c/inj.md", present: false },
@@ -61,6 +62,7 @@ function bundle(overrides: Partial<DebugBundle> = {}): DebugBundle {
       rewriteProbes: [{ command: "git status", decision: "rewrite", detail: "tk git status" }],
       recentFailures: [],
       anyWired: true,
+      brokenHook: false,
     },
     commands: [],
     anomalies: [],
@@ -113,6 +115,56 @@ describe("renderDebug — delivery health", () => {
       }),
     );
     expect(notWired).toContain("NOT wired into any host");
+  });
+
+  test("wired but the binary fails to run → INSTALLED-BUT-BROKEN, not a clean wired", () => {
+    const out = renderDebug(
+      bundle({
+        delivery: {
+          ...bundle().delivery,
+          anyWired: true,
+          brokenHook: true,
+          claudeHook: {
+            path: "/c/settings.json",
+            present: true,
+            pointsAtTk: true,
+            command: "node /abs/bin/tk hook claude",
+            exec: {
+              ran: true,
+              ok: false,
+              exitCode: 1,
+              detail: "Cannot find module '/abs/bin/tk'",
+            },
+          },
+        },
+      }),
+    );
+    expect(out).toContain("INSTALLED-BUT-BROKEN");
+    expect(out).toContain("Cannot find module");
+    expect(out).toContain("binary runs: **NO — BROKEN");
+    // Must NOT show the healthy banner.
+    expect(out).not.toContain("wired into at least one tier");
+  });
+
+  test("wired and the binary runs → healthy, shows the version line", () => {
+    const out = renderDebug(
+      bundle({
+        delivery: {
+          ...bundle().delivery,
+          anyWired: true,
+          brokenHook: false,
+          claudeHook: {
+            path: "/c/settings.json",
+            present: true,
+            pointsAtTk: true,
+            command: "node /abs/bin/tk hook claude",
+            exec: { ran: true, ok: true, exitCode: 0, detail: "0.1.0" },
+          },
+        },
+      }),
+    );
+    expect(out).toContain("binary runs: YES ✅");
+    expect(out).not.toContain("INSTALLED-BUT-BROKEN");
   });
 });
 

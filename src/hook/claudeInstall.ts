@@ -214,7 +214,7 @@ export function uninstallClaudeHook(
 export function claudeHookStatus(
   loc: ClaudeLocation,
   ourCommand: string = claudeHookCommand(),
-): { path: string; present: boolean; pointsAtTk: boolean } {
+): { path: string; present: boolean; pointsAtTk: boolean; installedCommand?: string } {
   const path = claudeSettingsPath(loc);
   if (!existsSync(path)) return { path, present: false, pointsAtTk: false };
   let settings: ClaudeSettings;
@@ -228,9 +228,15 @@ export function claudeHookStatus(
     ? groups.flatMap((g) => (Array.isArray(g.hooks) ? g.hooks : []))
     : [];
   const claudeHooks = hooks.filter((h) => isClaudeRewriteHook(h.command));
+  // The ACTUAL command string installed in settings.json (ours if present, else the
+  // first foreign rewrite hook) — `tk debug` runs it to verify the binary it names
+  // can actually load, not just that the string looks like tk.
+  const installed =
+    claudeHooks.find((h) => isOurClaudeHook(h.command, ourCommand)) ?? claudeHooks[0];
   return {
     path,
     present: claudeHooks.length > 0,
     pointsAtTk: claudeHooks.some((h) => isOurClaudeHook(h.command, ourCommand)),
+    installedCommand: installed?.command,
   };
 }

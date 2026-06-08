@@ -65,10 +65,15 @@ export async function runDebug(argv: string[], cwd: string = process.cwd()): Pro
     const outPath = path.resolve(cwd, opts.out ?? defaultOut(cwd, new Date()));
     await mkdir(path.dirname(outPath), { recursive: true });
     await writeFile(outPath, markdown, "utf8");
+    const delivery = bundle.delivery.brokenHook
+      ? "wired but BROKEN"
+      : bundle.delivery.anyWired
+        ? "wired"
+        : "NOT wired";
     process.stdout.write(
       `Wrote tk debug bundle: ${outPath}\n` +
         `  ${bundle.commands.length} commands · ${bundle.anomalies.length} anomalies · ` +
-        `delivery ${bundle.delivery.anyWired ? "wired" : "NOT wired"}${opts.redact ? " · redacted" : ""}\n`,
+        `delivery ${delivery}${opts.redact ? " · redacted" : ""}\n`,
     );
     return 0;
   } catch (error) {

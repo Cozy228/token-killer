@@ -16,6 +16,7 @@ import {
   LARGE_RAW_TOKENS,
   type AnomalyRow,
   type DebugBundle,
+  type ExecProbe,
   type FileCapture,
 } from "./collect.js";
 
@@ -73,6 +74,14 @@ function bytesLabel(c: FileCapture): string {
   return c.bytes === undefined ? "" : ` (${c.bytes} bytes)`;
 }
 
+// The "does the wired binary actually run" verdict for §2. Not-run ⇒ neutral; ok ⇒
+// the version line; failed ⇒ the loud BROKEN reason (a dangling/corrupt install).
+function renderExec(e: ExecProbe): string {
+  if (!e.ran) return "not probed";
+  if (e.ok) return `YES ✅ (\`${e.detail}\`)`;
+  return `**NO — BROKEN 🔴** (\`${e.detail.replace(/\|/g, "\\|")}\`)`;
+}
+
 // ── Section 1: version & environment ────────────────────────────────────────────
 function renderEnv(b: DebugBundle): string {
   const e = b.env;
@@ -117,6 +126,11 @@ function renderDelivery(b: DebugBundle): string {
       "> ⚠️ **tk is NOT wired into any host.** No claude/copilot hook, no shim on PATH, no instruction injection were found. tk only runs when invoked explicitly as `tk <cmd>`. This is *not wired*, distinct from *installed but broken* below.",
       "",
     );
+  } else if (d.brokenHook) {
+    lines.push(
+      `> 🔴 **tk is wired but INSTALLED-BUT-BROKEN.** The claude-code hook points at tk, but the binary it names failed to run (\`${d.claudeHook.exec.detail}\`). The hook crashes on every tool call (non-blocking), so NOTHING is compressed even though the wiring looks correct. Fix the binary path (re-run \`tk init\`) — this is *not* a healthy install.`,
+      "",
+    );
   } else {
     lines.push("> tk delivery is wired into at least one tier (details below).", "");
   }
@@ -126,6 +140,7 @@ function renderDelivery(b: DebugBundle): string {
     "",
     `- **claude-code hook**: ${d.claudeHook.present ? (d.claudeHook.pointsAtTk ? "present, points at tk ✅" : "present, but NOT tk ⚠️") : "absent"} — \`${scrubHome(d.claudeHook.path)}\``,
     `  - expected command: \`${scrubHome(d.claudeHook.command)}\``,
+    `  - binary runs: ${renderExec(d.claudeHook.exec)}`,
     `- **copilot-cli hook**: ${d.copilotHook.present ? (d.copilotHook.managed ? "present, managed by tk ✅" : "present, NOT managed by tk ⚠️") : "absent"} — \`${scrubHome(d.copilotHook.path)}\``,
     `- **instruction injection**: ${d.injection.present ? "present ✅" : "absent"} — \`${scrubHome(d.injection.path)}\``,
     "",

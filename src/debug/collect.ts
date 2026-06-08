@@ -71,6 +71,19 @@ export type FileCapture = {
 
 export type RewriteProbe = { command: string; decision: string; detail?: string };
 
+// The result of actually RUNNING the binary a wired hook points at. `pointsAtTk`
+// only proves the settings string looks like tk; it says nothing about whether the
+// referenced binary still exists or loads. A dangling path (nvm node bumped, `npm
+// rm -g`), a corrupt dist, or the wrong node makes the hook crash on every tool
+// call while still reading as "wired" — the "installed but broken" case the spec
+// exists to surface. `ran:false` ⇒ nothing to probe (no installed command).
+export type ExecProbe = {
+  ran: boolean;
+  ok: boolean;
+  exitCode: number | null;
+  detail: string; // version line on success, or the failure reason
+};
+
 export type AnomalyRow = {
   record: HistoryRecord;
   snapshot: FileCapture; // the raw_output_path snapshot, or available:false if missing
@@ -96,7 +109,13 @@ export type DebugBundle = {
     execPath: string;
   };
   delivery: {
-    claudeHook: { path: string; present: boolean; pointsAtTk: boolean; command: string };
+    claudeHook: {
+      path: string;
+      present: boolean;
+      pointsAtTk: boolean;
+      command: string;
+      exec: ExecProbe;
+    };
     copilotHook: { path: string; present: boolean; managed: boolean };
     injection: { path: string; present: boolean };
     shim: {
@@ -111,6 +130,9 @@ export type DebugBundle = {
     rewriteProbes: RewriteProbe[];
     recentFailures: HistoryRecord[];
     anyWired: boolean;
+    // A hook is wired (string matches tk) but the binary it points at failed to run
+    // — installed-but-broken. The headline distinguishes this from a clean "wired".
+    brokenHook: boolean;
   };
   commands: HistoryRecord[];
   anomalies: AnomalyRow[];
@@ -177,6 +199,67 @@ function detectCodepage(): string | undefined {
   }
 }
 
+// Split a hook command string into argv, honoring the double/single quotes that
+// resolveHookCommand adds around paths containing spaces.
+export function tokenizeCommand(cmd: string): string[] {
+  const tokens: string[] = [];
+  const re = /"([^"]*)"|'([^']*)'|(\S+)/g;
+  let m: RegExpExecArray | null;
+  while ((m = re.exec(cmd)) !== null) tokens.push(m[1] ?? m[2] ?? m[3] ?? "");
+  return tokens;
+}
+
+// Run the binary a hook command points at to confirm it actually loads. We strip
+// the trailing `hook <surface>` and run the same `<node> <cli>` with `--version`
+// instead — side-effect-free (a real hook event would append to debug.log), but it
+// exercises the exact module-resolution path that a dangling/corrupt install fails.
+// MODULE_NOT_FOUND or a non-zero exit ⇒ the hook crashes on every tool call.
+export function probeHookBinary(command: string | undefined): ExecProbe {
+  if (!command || command.trim() === "") {
+    return { ran: false, ok: false, exitCode: null, detail: "no installed command" };
+  }
+  const argv = tokenizeCommand(command);
+  // Drop a trailing `hook <surface>` so we invoke `<node> <cli> --version`; keep at
+  // least the first token if the command is unexpectedly short.
+  const endsWithHook = argv.length >= 2 && argv[argv.length - 2] === "hook";
+  const head = endsWithHook ? argv.slice(0, -2) : argv.slice();
+  const [bin, ...rest] = head.length > 0 ? head : argv;
+  if (!bin) return { ran: false, ok: false, exitCode: null, detail: "empty command" };
+  try {
+    const r = spawnSync(bin, [...rest, "--version"], {
+      encoding: "utf8",
+      timeout: 5000,
+      windowsHide: true,
+    });
+    if (r.error) {
+      return { ran: true, ok: false, exitCode: null, detail: r.error.message };
+    }
+    const out = `${r.stdout ?? ""}${r.stderr ?? ""}`.trim();
+    const moduleError = /cannot find module|module_not_found|no such file/i.test(out);
+    const ok = r.status === 0 && !moduleError;
+    const lines = out.split("\n").map((l) => l.trim());
+    // On success the (only) line is the version. On failure Node's first stderr line
+    // is the useless loader-frame header (`node:internal/modules/cjs/loader:…`); pick
+    // the actual `Error:`/module-resolution line so the bundle shows why it broke.
+    const errorLine = lines.find((l) =>
+      /error:|cannot find module|module_not_found|no such file/i.test(l),
+    );
+    return {
+      ran: true,
+      ok,
+      exitCode: r.status,
+      detail: ok ? lines[0] || "ran ok" : errorLine || lines[0] || `exit ${r.status}`,
+    };
+  } catch (error) {
+    return {
+      ran: true,
+      ok: false,
+      exitCode: null,
+      detail: error instanceof Error ? error.message : String(error),
+    };
+  }
+}
+
 function collectEnv(host: Host): DebugBundle["env"] {
   let locale: string | undefined;
   try {
@@ -235,12 +318,21 @@ function collectDelivery(host: Host, records: HistoryRecord[]): DebugBundle["del
     .filter((r) => r.quality_status === "failure")
     .slice(-RECENT_FAILURES);
 
+  // Run the binary the installed claude hook actually names — the "装坏" check. Only
+  // a present hook is worth probing; absent ⇒ ran:false. Best-effort, never throws.
+  const claudeExec = claude.present
+    ? probeHookBinary(claude.installedCommand)
+    : { ran: false, ok: false, exitCode: null, detail: "no claude hook installed" };
+  // Wired by string but the binary won't run = installed-but-broken.
+  const brokenHook = claude.present && claude.pointsAtTk && claudeExec.ran && !claudeExec.ok;
+
   return {
     claudeHook: {
       path: claude.path,
       present: claude.present,
       pointsAtTk: claude.pointsAtTk,
       command: resolveHookCommand("claude"),
+      exec: claudeExec,
     },
     copilotHook: { path: copilot.path, present: copilot.present, managed: copilot.managed },
     injection: { path: injectionPath, present: injectionPresent },
@@ -258,6 +350,7 @@ function collectDelivery(host: Host, records: HistoryRecord[]): DebugBundle["del
     rewriteProbes,
     recentFailures,
     anyWired: claude.pointsAtTk || copilot.managed || pathPosition >= 0 || injectionPresent,
+    brokenHook,
   };
 }
 
