@@ -56,8 +56,12 @@ describe("normalizeCommand + entryKey", () => {
     );
   });
 
-  test("collapses whitespace and trims", () => {
-    expect(normalizeCommand(cmd("git", ["  status", ""]))).toBe("git status");
+  test("preserves whitespace inside an arg token so distinct commands get distinct keys", () => {
+    // A grep pattern with two spaces must NOT collapse into the single-space form.
+    expect(normalizeCommand(cmd("grep", ["foo  bar", "src"]))).toBe("grep foo  bar src");
+    expect(entryKey(normalizeCommand(cmd("grep", ["foo  bar"])))).not.toBe(
+      entryKey(normalizeCommand(cmd("grep", ["foo bar"]))),
+    );
   });
 
   test("different commands get different keys", () => {

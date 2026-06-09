@@ -1,6 +1,6 @@
 import { describe, expect, test } from "vitest";
 
-import { isReadOnlyCommand } from "../../../src/core/readonly.js";
+import { isReadOnlyForHandler } from "../../../src/core/readonly.js";
 import type { ParsedCommand } from "../../../src/types.js";
 
 function cmd(program: string, args: string[]): ParsedCommand {
@@ -12,68 +12,81 @@ function cmd(program: string, args: string[]): ParsedCommand {
   };
 }
 
-describe("isReadOnlyCommand — the dedup read-only gate (ADR 0009)", () => {
-  test("git read subcommands are read-only", () => {
-    expect(isReadOnlyCommand(cmd("git", ["status"]))).toBe(true);
-    expect(isReadOnlyCommand(cmd("git", ["log", "--oneline"]))).toBe(true);
-    expect(isReadOnlyCommand(cmd("git", ["diff", "--stat"]))).toBe(true);
-    expect(isReadOnlyCommand(cmd("git", ["show", "HEAD"]))).toBe(true);
-    expect(isReadOnlyCommand(cmd("git", ["branch"]))).toBe(true);
-    expect(isReadOnlyCommand(cmd("git", ["branch", "--list"]))).toBe(true);
+describe("isReadOnlyForHandler — the dedup read-only gate (ADR 0009)", () => {
+  test("pure-read handlers are always read-only", () => {
+    expect(isReadOnlyForHandler("ls", cmd("ls", ["-la"]))).toBe(true);
+    expect(isReadOnlyForHandler("tree", cmd("tree", ["-L", "2"]))).toBe(true);
+    expect(isReadOnlyForHandler("search-like", cmd("rg", ["TODO", "src"]))).toBe(true);
+    expect(isReadOnlyForHandler("wc", cmd("wc", ["-l", "f"]))).toBe(true);
+    expect(isReadOnlyForHandler("read", cmd("cat", ["f"]))).toBe(true);
+    expect(isReadOnlyForHandler("read-like", cmd("less", ["f"]))).toBe(true);
+    expect(isReadOnlyForHandler("env", cmd("env", []))).toBe(true);
+    expect(isReadOnlyForHandler("git-status", cmd("git", ["status"]))).toBe(true);
+    expect(isReadOnlyForHandler("git-log", cmd("git", ["log", "--oneline"]))).toBe(true);
+    expect(isReadOnlyForHandler("git-diff", cmd("git", ["diff", "--stat"]))).toBe(true);
+    expect(isReadOnlyForHandler("package-list", cmd("pnpm", ["list"]))).toBe(true);
   });
 
-  test("git mutating subcommands are NOT read-only", () => {
-    for (const sub of [
-      "commit",
-      "push",
-      "pull",
-      "checkout",
-      "switch",
-      "reset",
-      "add",
-      "rm",
-      "merge",
-      "rebase",
-      "stash",
-      "clean",
-      "tag",
-    ]) {
-      expect(isReadOnlyCommand(cmd("git", [sub]))).toBe(false);
-    }
+  test("an unknown / non-cacheable handler is denied (default-deny)", () => {
+    expect(isReadOnlyForHandler("totally-unknown", cmd("whatever", []))).toBe(false);
+    // npmHandler is not cacheable; its name is not in the allowlist, so even if it
+    // somehow reached the gate it is denied rather than blindly trusted.
+    expect(isReadOnlyForHandler("npm", cmd("npm", ["install"]))).toBe(false);
   });
 
-  test("git branch with a mutating flag is NOT read-only", () => {
-    expect(isReadOnlyCommand(cmd("git", ["branch", "-d", "feature"]))).toBe(false);
-    expect(isReadOnlyCommand(cmd("git", ["branch", "-D", "feature"]))).toBe(false);
-    expect(isReadOnlyCommand(cmd("git", ["branch", "-m", "old", "new"]))).toBe(false);
-    expect(isReadOnlyCommand(cmd("git", ["branch", "--delete", "feature"]))).toBe(false);
+  test("eslint: read-only unless --fix / --fix-type (robust to npx/pnpm wrappers)", () => {
+    expect(isReadOnlyForHandler("eslint", cmd("eslint", ["src/"]))).toBe(true);
+    expect(isReadOnlyForHandler("eslint", cmd("eslint", ["--fix", "src/"]))).toBe(false);
+    expect(isReadOnlyForHandler("eslint", cmd("eslint", ["--fix-type", "problem"]))).toBe(false);
+    // The bypass the review caught: program is pnpm/npx, the tool + flag live in args.
+    expect(isReadOnlyForHandler("eslint", cmd("pnpm", ["eslint", "--fix", "src/"]))).toBe(false);
+    expect(isReadOnlyForHandler("eslint", cmd("npx", ["eslint", "src/"]))).toBe(true);
+    // --fix-dry-run reports but does not write.
+    expect(isReadOnlyForHandler("eslint", cmd("eslint", ["--fix-dry-run", "src/"]))).toBe(true);
   });
 
-  test("an absolute program path is normalized for the gate", () => {
-    expect(isReadOnlyCommand(cmd("/usr/bin/git", ["commit"]))).toBe(false);
-    expect(isReadOnlyCommand(cmd("/usr/bin/git", ["status"]))).toBe(true);
+  test("ruff: check is read-only; --fix and format mutate", () => {
+    expect(isReadOnlyForHandler("ruff", cmd("ruff", ["check", "."]))).toBe(true);
+    expect(isReadOnlyForHandler("ruff", cmd("ruff", ["check", "--fix", "."]))).toBe(false);
+    expect(isReadOnlyForHandler("ruff", cmd("ruff", ["format", "."]))).toBe(false);
+    expect(isReadOnlyForHandler("ruff", cmd("ruff", ["format", "--check", "."]))).toBe(true);
   });
 
-  test("docker read vs write subcommands", () => {
-    expect(isReadOnlyCommand(cmd("docker", ["ps"]))).toBe(true);
-    expect(isReadOnlyCommand(cmd("docker", ["images"]))).toBe(true);
-    expect(isReadOnlyCommand(cmd("docker", ["compose", "ps"]))).toBe(true);
-    expect(isReadOnlyCommand(cmd("docker", ["rm", "c1"]))).toBe(false);
-    expect(isReadOnlyCommand(cmd("docker", ["run", "img"]))).toBe(false);
-    expect(isReadOnlyCommand(cmd("docker", ["build", "."]))).toBe(false);
+  test("tsc: read-only only with --noEmit (emits .js by default)", () => {
+    expect(isReadOnlyForHandler("tsc", cmd("tsc", ["--noEmit"]))).toBe(true);
+    expect(isReadOnlyForHandler("tsc", cmd("tsc", []))).toBe(false);
+    expect(isReadOnlyForHandler("tsc", cmd("tsc", ["-p", "tsconfig.json"]))).toBe(false);
+    expect(isReadOnlyForHandler("tsc", cmd("npx", ["tsc", "--noEmit"]))).toBe(true);
   });
 
-  test("kubectl read vs write subcommands", () => {
-    expect(isReadOnlyCommand(cmd("kubectl", ["get", "pods"]))).toBe(true);
-    expect(isReadOnlyCommand(cmd("kubectl", ["describe", "pod", "x"]))).toBe(true);
-    expect(isReadOnlyCommand(cmd("kubectl", ["delete", "pod", "x"]))).toBe(false);
-    expect(isReadOnlyCommand(cmd("kubectl", ["apply", "-f", "x.yaml"]))).toBe(false);
+  test("find (list-like): -exec / -delete mutate, plain listing is read-only", () => {
+    expect(isReadOnlyForHandler("list-like", cmd("find", [".", "-name", "*.ts"]))).toBe(true);
+    expect(
+      isReadOnlyForHandler("list-like", cmd("find", [".", "-exec", "chmod", "+x", "{}", "+"])),
+    ).toBe(false);
+    expect(isReadOnlyForHandler("list-like", cmd("find", [".", "-delete"]))).toBe(false);
   });
 
-  test("pure-read tools default to read-only", () => {
-    expect(isReadOnlyCommand(cmd("ls", ["-la"]))).toBe(true);
-    expect(isReadOnlyCommand(cmd("rg", ["TODO", "src"]))).toBe(true);
-    expect(isReadOnlyCommand(cmd("wc", ["-l", "file"]))).toBe(true);
-    expect(isReadOnlyCommand(cmd("tsc", ["--noEmit"]))).toBe(true);
+  test("git-branch: read-only listing, -d/-m/--delete mutate", () => {
+    expect(isReadOnlyForHandler("git-branch", cmd("git", ["branch"]))).toBe(true);
+    expect(isReadOnlyForHandler("git-branch", cmd("git", ["branch", "--list"]))).toBe(true);
+    expect(isReadOnlyForHandler("git-branch", cmd("git", ["branch", "-d", "x"]))).toBe(false);
+    expect(isReadOnlyForHandler("git-branch", cmd("git", ["branch", "--move", "a", "b"]))).toBe(
+      false,
+    );
+  });
+
+  test("docker / kubectl read vs write subcommands", () => {
+    expect(isReadOnlyForHandler("docker", cmd("docker", ["ps"]))).toBe(true);
+    expect(isReadOnlyForHandler("docker", cmd("docker", ["compose", "ps"]))).toBe(true);
+    expect(isReadOnlyForHandler("docker", cmd("docker", ["rm", "c"]))).toBe(false);
+    expect(isReadOnlyForHandler("docker", cmd("docker", ["build", "."]))).toBe(false);
+    expect(isReadOnlyForHandler("kubectl", cmd("kubectl", ["get", "pods"]))).toBe(true);
+    expect(isReadOnlyForHandler("kubectl", cmd("kubectl", ["delete", "pod", "x"]))).toBe(false);
+  });
+
+  test("mypy: read-only unless --install-types", () => {
+    expect(isReadOnlyForHandler("mypy", cmd("mypy", ["src"]))).toBe(true);
+    expect(isReadOnlyForHandler("mypy", cmd("mypy", ["--install-types"]))).toBe(false);
   });
 });

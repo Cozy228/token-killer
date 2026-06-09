@@ -1,10 +1,11 @@
+import { existsSync, readdirSync } from "node:fs";
 import { access, mkdtemp, readFile, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import { afterEach, beforeEach, describe, expect, test } from "vitest";
 
 import { applySessionDedup } from "../../../src/core/sessionDedup.js";
-import { dedupStoreFile, resolveStoredPath } from "../../../src/core/dataDir.js";
+import { dedupStoreFile, rawOutputDir, resolveStoredPath } from "../../../src/core/dataDir.js";
 import { estimateTokens } from "../../../src/core/savings.js";
 import type {
   CommandHandler,
@@ -157,10 +158,13 @@ describe("applySessionDedup — exact-compare forces a re-emit on any change", (
 });
 
 describe("applySessionDedup — gates", () => {
-  test("a mutating command is never deduped (read-only gate)", async () => {
-    const commit = command("git", ["commit", "-m", "x"]);
-    expect(await run({ command: commit, now: T0 })).toBeNull();
-    expect(await run({ command: commit, now: T0 + 1000 })).toBeNull();
+  test("a mutating form is never deduped (read-only gate, keyed on handler name)", async () => {
+    // eslint is cacheable, but `eslint --fix` rewrites files — the gate must deny it
+    // even though the real command runs both times and emits a byte-identical report.
+    const eslint: CommandHandler = { ...handler("medium"), name: "eslint" };
+    const fix = command("eslint", ["--fix", "src/"]);
+    expect(await run({ handler: eslint, command: fix, now: T0 })).toBeNull();
+    expect(await run({ handler: eslint, command: fix, now: T0 + 1000 })).toBeNull();
   });
 
   test("tiny output skips dedup (never make worse)", async () => {
@@ -196,7 +200,7 @@ describe("applySessionDedup — gates", () => {
   });
 });
 
-describe("applySessionDedup — session attribute (wording + slow-class gate)", () => {
+describe("applySessionDedup — session attribute (marker wording only)", () => {
   test("same session says 'in this session'", async () => {
     await run({ options: mkOptions({ sessionId: "s1" }), now: T0 });
     const hit = await run({ options: mkOptions({ sessionId: "s1" }), now: T0 + 1000 });
@@ -211,14 +215,46 @@ describe("applySessionDedup — session attribute (wording + slow-class gate)", 
     expect(hit!.output).not.toContain("in this session");
   });
 
-  test("a different session on a slow command re-emits (optional same-session gate)", async () => {
+  test("a different session still dedups — session is wording-only, never a gate", async () => {
+    // Exact-compare + TTL are the only hit conditions; a second session that produces
+    // identical output dedups too (lossless), worded "here" rather than "in this session".
     const slow = handler("slow");
     await run({ handler: slow, options: mkOptions({ sessionId: "s1" }), now: T0 });
-    const crossed = await run({
+    const hit = await run({
       handler: slow,
       options: mkOptions({ sessionId: "s2" }),
       now: T0 + 1000,
     });
-    expect(crossed).toBeNull();
+    expect(hit).not.toBeNull();
+    expect(hit!.output).toContain("here");
+    expect(hit!.output).not.toContain("in this session");
+  });
+});
+
+describe("applySessionDedup — lazy recovery snapshot (review #5)", () => {
+  test("the establishing MISS writes no raw snapshot; the first HIT creates one", async () => {
+    expect(await run({ now: T0 })).toBeNull(); // establish — should NOT snapshot
+    const dir = rawOutputDir(cwd);
+    const afterMiss = existsSync(dir) ? readdirSync(dir).length : 0;
+    expect(afterMiss).toBe(0);
+
+    const hit = await run({ now: T0 + 1000 }); // first hit — snapshots now
+    expect(hit).not.toBeNull();
+    const ptr = /full: (\S+)/.exec(hit!.output)![1]!;
+    expect(existsSync(resolveStoredPath(ptr))).toBe(true);
+    const recovered = await readFile(resolveStoredPath(ptr), "utf8");
+    expect(recovered).toContain("RAWMARK");
+  });
+});
+
+describe("applySessionDedup — honest HIT savings (review #9)", () => {
+  test("the marker result's baseline is the suppressed compressed output, not raw", async () => {
+    await run({ now: T0 });
+    const hit = await run({ now: T0 + 1000 });
+    // rawChars reflects the compressed repeat we suppressed (OUT), not the larger raw,
+    // so --stats shows the incremental dedup saving without double-counting compression.
+    expect(hit!.rawChars).toBe(OUT.length);
+    expect(hit!.rawChars).toBeLessThan(RAWOUT.length);
+    expect(hit!.savedTokens).toBeGreaterThan(0);
   });
 });

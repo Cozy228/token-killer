@@ -58,8 +58,10 @@ and need not, invalidate on file writes.
   for recovery**; no second recovery store is invented. Trap: `maybeSaveRawOutput`
   only persists on exit≠0 or >20 KB by default, so a small `git status` would have
   **no** snapshot — the very output we want to dedup. The dedup stage therefore
-  **force-persists raw when it establishes a cache entry**, so every marker has a
-  live recovery pointer.
+  **snapshots the raw lazily on the first actual HIT** (the re-run produces
+  byte-identical output, so the current raw is a valid recovery source), so every
+  marker has a live recovery pointer while a command that never repeats pays for no
+  snapshot at all.
 - `src/handlers/*` declare cacheability through `handler.traits` (the same seam
   that already carries `structural` / `masksSecrets` / `ladder` name-facts).
 - `tk gain` (`src/core/gain.ts`) reads the rollup cache (`src/core/rollup.ts`) over
@@ -90,9 +92,12 @@ store already lives:
   hit decision.
 
 The agent session id (when the host supplies one) is stored as a **best-effort
-property on the entry**, used only to sharpen the marker's wording ("in this
-session" vs "here") and an optional same-session gate on the long slow-class window
-— never to key, gate the hit, or invalidate. This is the ztk/VS Code answer; tk's
+property on the entry**, used **only** to sharpen the marker's wording ("in this
+session" vs "here") — never to key, gate the hit, or invalidate. (An earlier draft
+also gated same-session on the long slow-class window; it was removed because it made
+the session marginally load-bearing and caused two alternating sessions to thrash —
+exact-compare already makes a cross-session hit correct and lossless.) This is the
+ztk/VS Code answer; tk's
 per-project store is the only addition.
 
 ### Carrying the session id through to the `tk` subprocess
@@ -136,12 +141,13 @@ normally and upsert the store.
 1. **A recovery pointer.** ztk's hit emits an "unchanged" summary with no path back
    to the full output. tk's marker carries the `rawStore` pointer, so a dedup is
    always recoverable — tk's standing lossless contract (ADR 0001). The single most
-   important upgrade; the stage force-persists raw on establish so the pointer is
-   always live.
-2. **Session + cwd in the key.** ztk keys on `XxHash64(cmd)` alone in one global
-   `/tmp/ztk-state`; the same command in two repos collides. tk keys on
-   `sha256(cwd \0 normCmd)` inside a **per-session file** under
-   `~/.token-killer/projects/<fingerprint>/dedup/<session>.json`.
+   important upgrade; the stage snapshots raw **lazily on the first hit**, so the
+   pointer is always live yet a never-repeated command writes no snapshot.
+2. **Per-project key (cwd isolation for free).** ztk keys on `XxHash64(cmd)` alone in
+   one global `/tmp/ztk-state`; the same command in two repos collides. tk keys on
+   `(project_fingerprint, normCmd)` — `sha256(normCmd)` inside a **single per-project
+   file** `~/.token-killer/projects/<fingerprint>/dedup.json`, the fingerprint implicit
+   in the path. The session id is an entry attribute, never part of the key.
 3. **Honest separated accounting.** ztk just substitutes the output. tk records a
    `dedup` dimension in a dedicated `dedup-events.jsonl`; `tk gain` shows dedup
    savings on a separate line, **never summed** into ledger ①'s filter savings
@@ -150,16 +156,23 @@ normally and upsert the store.
    code and never dedups a non-zero or changed-exit result. Errors/stderr always
    pass through.
 
-**Key normalization.** `normCmd = basename(program) + " " + args`, whitespace
-collapsed, so `ls` and `/bin/ls` share a key. Reuses the existing `ParsedCommand`;
-no second parser.
+**Key normalization.** `normCmd = basename(program) + " " + args`, joined with single
+spaces at the **seams only** (token-internal whitespace preserved, so a grep pattern
+`'foo  bar'` stays a distinct key from `'foo bar'`), so `ls` and `/bin/ls` share a
+key. Reuses the existing `ParsedCommand`; no second parser.
 
-**Read-only gate (mandatory).** Eligibility requires `handler.traits.cacheable ===
-true` **and** `isReadOnlyCommand(command)`. Subcommand-ambiguous tools are gated at
-runtime: `git branch -d/-m/...`, mutating `docker`/`kubectl` verbs, etc. are never
-cacheable. Unknown / no-handler commands are not cacheable (default deny). A
-mutating command is never deduped even if its output happens to be byte-identical,
-because "unchanged" would wrongly imply "nothing happened".
+**Read-only gate (mandatory, default-deny).** Eligibility requires
+`handler.traits.cacheable === true` **and** `isReadOnlyForHandler(handler.name,
+command)`. The gate keys on the **handler name**, not the program, and **positively
+proves** the matched form is read-only — defaulting to DENY for anything it does not
+recognise. This matters because handlers match across wrappers (`matchesEslint` /
+`matchesTsc` fire on `npx eslint`, `pnpm eslint --fix`, where the *program* is
+`npx`/`pnpm`): a program-keyed gate would mis-classify `pnpm eslint --fix` as
+read-only. So `eslint --fix`, `ruff check --fix` / `ruff format`, `find … -exec`, a
+bare `tsc` that emits, and `git branch -d` are each denied for the exact mutating
+form, while pure-read handlers assert read-only unconditionally. A mutating command is
+never deduped even if its output is byte-identical — the real command always runs, so
+"unchanged" would wrongly imply "nothing happened".
 
 **Re-anchor window by `ttlClass`** — measured from the **last full emit**
 (`lastEmittedAt`), not refreshed on a hit, so a long run of hits still re-anchors
@@ -221,7 +234,7 @@ dedup dimension only and never double-counted as a filter win. On a miss the nor
 - **A second recovery store for the compressed output** (like ztk's mmap data
   region). Rejected: tk already persists raw via `rawStore`, and the recovery
   contract (ADR 0001) points at that snapshot. Reusing it keeps one recovery channel
-  and one mental model; the only addition is force-persisting on cache establish.
+  and one mental model; the only addition is the lazy snapshot taken on the first hit.
 - **Crediting the repeat to ledger ① and dedup separately.** Rejected as
   double-counting: the goal is explicit that a dedup hit's bytes are counted under
   the dedup dimension *only*, and that a `gain --history` row must read as a dedup,
@@ -244,3 +257,16 @@ write). The store is size-bounded (drop entries past the slow window + a hard ca
 
 If any precondition is unclear at runtime, the stage returns "no dedup" and the full
 output is emitted. Under-dedup is fine; a wrong "unchanged" is not.
+
+## Known follow-ups (deferred from review)
+
+- **`rawStore` raw-log GC.** The `raw/*.log` snapshots have never been garbage-collected
+  (a pre-existing `rawStore` gap, not introduced here). The lazy snapshot above sharply
+  reduces volume — only an *actual repeat* writes a `.log`, and subsequent hits reuse it
+  — but a long session over many distinct repeated commands still grows the dir. A
+  time-based sweep of `rawOutputDir` (independent of dedup entries, so it never orphans
+  a marker still in the model's context) is the proper fix.
+- **Windows `rename`-over-open-reader.** Reads are lock-free; if a reader holds
+  `dedup.json` open at the instant a writer renames over it, `MoveFileEx` can fail
+  (EPERM/EBUSY). It is already fail-open (swallowed → under-dedup, no corruption); a
+  bounded rename retry would reduce the intermittent under-dedup on Windows.

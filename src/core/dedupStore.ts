@@ -59,7 +59,11 @@ function emptyStore(): Store {
 // no second parser.
 export function normalizeCommand(command: ParsedCommand): string {
   const prog = basename(command.program) || command.program;
-  return [prog, ...command.args].join(" ").replace(/\s+/g, " ").trim();
+  // Join with single spaces at the SEAMS only; never collapse whitespace INSIDE a
+  // token, or two distinct commands map to one key — a grep pattern `'foo  bar'`
+  // must stay distinct from `'foo bar'`. (Exact outHash still guards content; this
+  // keeps the key — and the marker's command label — honest.)
+  return [prog, ...command.args].join(" ").trim();
 }
 
 // key = (project_fingerprint, normCmd). The fingerprint is implicit in the file

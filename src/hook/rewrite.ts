@@ -17,6 +17,7 @@
 // interactive, non-mutating match is rewritten. The registry does not fork or
 // re-implement the compressor.
 
+import { sanitizeSessionId } from "../parse.js";
 import { routeSpecific } from "../router.js";
 import { isInteractive } from "../shim/interactive.js";
 import type { ParsedCommand } from "../types.js";
@@ -127,18 +128,14 @@ function toParsed(tokens: string[]): ParsedCommand {
   };
 }
 
-// ADR 0009: a session id is only injected into the rewritten command string when
-// it matches this conservative charset — otherwise it is dropped (no flag). This
-// is a shell-injection guard: a raw id is NEVER interpolated, so `abc; rm -rf /`
-// can never become shell syntax. Mirrors parse.ts::SESSION_ID_RE.
-const SESSION_ID_RE = /^[A-Za-z0-9._-]{1,128}$/;
-
 // Build the `tk ` (or `tk --session <id> `) prefix prepended to each eligible
-// segment. No/invalid session → exactly `tk ` (byte-identical to the no-session
-// rewrite), so non-session callers are never affected.
+// segment. The id is validated by the SINGLE shared `sanitizeSessionId` (parse.ts)
+// — a raw id is NEVER interpolated, so `abc; rm -rf /` can never become shell syntax,
+// and there is no second copy of the charset to drift out of sync. No/invalid session
+// → exactly `tk ` (byte-identical to the no-session rewrite).
 function tkPrefix(session?: string): string {
-  const id = typeof session === "string" ? session.trim() : "";
-  return SESSION_ID_RE.test(id) ? `tk --session ${id} ` : "tk ";
+  const id = sanitizeSessionId(session);
+  return id ? `tk --session ${id} ` : "tk ";
 }
 
 // Mutating ops are never rewritten (goal guardrail / DESIGN §14). routeSpecific

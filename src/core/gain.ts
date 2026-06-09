@@ -122,7 +122,9 @@ async function loadGainContext(cwd: string, user: boolean): Promise<GainContext>
     const userRollup = mergeRollups(allProjects);
     const events = user ? await listAllDedupEvents() : await readDedupEvents(cwd);
     const dedup = summarizeDedup(events);
-    const recentDedup = recentDedupEvents(events, 100);
+    // Keep all events; renderText slices to args.history (don't pre-cap at 100, or
+    // `--history N` would honor N>100 for filter rows but silently truncate dedup rows).
+    const recentDedup = events;
     if (user) {
       return { rollup: userRollup, perProject: allProjects, userRollup, dedup, recentDedup };
     }
