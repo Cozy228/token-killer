@@ -144,16 +144,37 @@ tk optimize --vscode-settings --restore  # revert
   (`chat.mcp.discovery.enabled`), a high per-request tool budget
   (`chat.agent.maxRequests`). `tk` flags them; you decide.
 
-## Measure savings
+## Measure savings — two honest denominators
+
+`tk` answers two different questions, both from **measured** `raw − delivered` (never
+estimated, never summed across the four ledgers):
+
+**Per command** — `tk gain` — of a command's output, how much `tk` squeezed:
+
+| command      | savings |
+| ------------ | ------: |
+| `rg` (broad) |   88.5% |
+| `git log`    |     82% |
+| `git status` |     39% |
+| `git diff`   |     24% |
+
+Range is ~60–90% on dev commands; an already-terse form (`git status --short`)
+healthily shows ~0% — `tk` doesn't pad what's already minimal.
+
+**Per session** — `tk gain --session` — of the whole session's token usage after you
+onboarded `tk` (not just one command's output), `tk` saves **~27–28%** on real Claude
+Code sessions. The denominator is the session's **unique content** — what would
+actually enter context without `tk`, counted once — so prompt-cache churn doesn't
+inflate it. (`tk` reaches ~40% of that content, shell output, and compresses ~67% of
+it.) Per host: Claude Code / Codex computable; VS Code shows `n/a` (no token usage in
+its transcripts).
 
 ```bash
-tk gain               # measured token savings (never estimated)
-tk gain --history     # recent commands + per-command savings
+tk gain               # per-command savings
+tk gain --session     # per-session footprint savings (+ --json)
+tk gain --history     # recent commands
 tk gain report        # full report (--scope user|project|runtime, --json, --csv)
 ```
-
-Reported from **measured** `raw − delivered` only, across four independent ledgers
-that are **never summed** — filter savings and dedup savings stay separate.
 
 ## Current Handler Coverage
 
