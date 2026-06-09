@@ -156,6 +156,7 @@ function formatPackageList(text: string): LadderResult {
 
 export const packageListHandler = defineHandler({
   name: "package-list",
+  traits: { cacheable: true, ttlClass: "slow" },
 
   match: matchesPackageList,
 

@@ -38,6 +38,9 @@ export type HistoryRecord = {
   // ToolEvent.model). The shell command-proxy path has no model and leaves it absent;
   // absent rows price at the default constant. Never inferred — absent is honest.
   model?: string;
+  // ADR 0009: best-effort agent session id (from `--session <id>` / `TK_SESSION`).
+  // Honest-absent like `model` — only stamped when the delivery surface supplied it.
+  session_id?: string;
 };
 
 export async function recordHistory(
@@ -65,6 +68,7 @@ export async function recordHistory(
     raw_output_path: filtered.rawOutputPath,
     quality_status: filtered.qualityStatus,
   };
+  if (options.sessionId) record.session_id = options.sessionId;
 
   await writeFile(file, `${JSON.stringify(record)}\n`, { encoding: "utf8", flag: "a" });
   await maybeWriteProjectMeta(options.cwd);

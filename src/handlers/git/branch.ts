@@ -126,6 +126,7 @@ export function buildBranchArgs(args: string[]): string[] {
 
 export const gitBranchHandler: CommandHandler = {
   name: "git-branch",
+  traits: { cacheable: true, ttlClass: "fast" },
   programs: ["git"],
 
   matches(command) {

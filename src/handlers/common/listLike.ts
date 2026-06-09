@@ -217,6 +217,7 @@ async function executeDirInternally(command: ParsedCommand): Promise<RawResult |
 
 export const listLikeHandler: CommandHandler = {
   name: "list-like",
+  traits: { cacheable: true, ttlClass: "fast" },
   // ls/tree have dedicated handlers (lsHandler, treeHandler) that own those
   // wrappers; `dir` is a shell builtin. `find` is the real PATH tool here.
   programs: ["find"],

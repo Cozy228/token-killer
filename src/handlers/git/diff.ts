@@ -21,7 +21,7 @@ function formatDiff(text: string): { output: string; omission?: OmissionDeclarat
 
 export const gitDiffHandler = defineHandler({
   name: "git-diff",
-  traits: { structural: true, ladder: true },
+  traits: { structural: true, ladder: true, cacheable: true, ttlClass: "fast" },
   programs: ["git"],
 
   match(command) {

@@ -29,6 +29,9 @@ type ClaudePreToolUse = {
   hook_event_name?: string;
   tool_name?: string;
   tool_input?: { command?: string };
+  // Claude Code stamps the conversation id at the top level of every hook payload.
+  // Carried into the rewrite as `--session <id>` so tk's history stamps it (ADR 0009).
+  session_id?: string;
 };
 
 // The exact output Claude Code honors as a command rewrite (verified live
@@ -60,7 +63,7 @@ export function decide(input: unknown): ClaudeHookOutput | null {
     return null;
   }
 
-  const r = rewriteCommand(command);
+  const r = rewriteCommand(command, payload.session_id);
   // The load-bearing diagnostic: WHY a command was / wasn't rewritten.
   hookDebug("claude:decision", {
     command,

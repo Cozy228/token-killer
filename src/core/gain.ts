@@ -27,6 +27,14 @@ import {
   type RollupFailure,
   type RollupRecent,
 } from "./rollup.js";
+import {
+  type DedupEvent,
+  type DedupSummary,
+  listAllDedupEvents,
+  readDedupEvents,
+  recentDedupEvents,
+  summarizeDedup,
+} from "./dedupLedger.js";
 import { runColdPathTelemetry, type DispatchParams } from "../telemetry/dispatch.js";
 
 type Bucketing = "none" | "daily" | "weekly" | "monthly" | "all";
@@ -48,7 +56,13 @@ type GainContext = {
   rollup: MergedRollup;
   perProject: ProjectRollup[];
   userRollup: MergedRollup;
+  // ADR 0009: session dedup is a SEPARATE dimension — never folded into the rollup
+  // totals above, so it can never be summed with filter savings.
+  dedup: DedupSummary;
+  recentDedup: DedupEvent[];
 };
+
+const EMPTY_DEDUP: DedupSummary = { hits: 0, saved_tokens: 0, by_command: [] };
 
 const SPARK_BLOCKS = "▁▂▃▄▅▆▇█";
 
@@ -106,14 +120,23 @@ async function loadGainContext(cwd: string, user: boolean): Promise<GainContext>
   try {
     const allProjects = await listProjectRollups();
     const userRollup = mergeRollups(allProjects);
+    const events = user ? await listAllDedupEvents() : await readDedupEvents(cwd);
+    const dedup = summarizeDedup(events);
+    const recentDedup = recentDedupEvents(events, 100);
     if (user) {
-      return { rollup: userRollup, perProject: allProjects, userRollup };
+      return { rollup: userRollup, perProject: allProjects, userRollup, dedup, recentDedup };
     }
     const rollup = await ensureProjectRollup(cwd);
-    return { rollup, perProject: [rollup], userRollup };
+    return { rollup, perProject: [rollup], userRollup, dedup, recentDedup };
   } catch {
     const empty = emptyRollup(projectFingerprint(cwd));
-    return { rollup: empty, perProject: [], userRollup: empty };
+    return {
+      rollup: empty,
+      perProject: [],
+      userRollup: empty,
+      dedup: EMPTY_DEDUP,
+      recentDedup: [],
+    };
   }
 }
 
@@ -132,7 +155,9 @@ export async function runGain(
   const ctx = await loadGainContext(cwd, args.user);
 
   if (args.format === "json") {
-    process.stdout.write(`${JSON.stringify(buildGainJson(ctx.rollup, args, now), null, 2)}\n`);
+    process.stdout.write(
+      `${JSON.stringify(buildGainJson(ctx.rollup, args, now, ctx.dedup), null, 2)}\n`,
+    );
   } else if (args.format === "csv") {
     process.stdout.write(renderCsv(ctx.rollup, args, now));
   } else {
@@ -147,7 +172,12 @@ export async function runGain(
   return 0;
 }
 
-function buildGainJson(rollup: MergedRollup, args: GainArgs, now: Date): Record<string, unknown> {
+function buildGainJson(
+  rollup: MergedRollup,
+  args: GainArgs,
+  now: Date,
+  dedup: DedupSummary = EMPTY_DEDUP,
+): Record<string, unknown> {
   const summary = rollupToGainSummary(rollup);
   const json: Record<string, unknown> = { ...summary };
 
@@ -170,6 +200,10 @@ function buildGainJson(rollup: MergedRollup, args: GainArgs, now: Date): Record<
     }));
   }
   if (args.quota) json.estimated_savings_usd = quotaObject(rollup, args.quotaModel);
+  // ADR 0009: a SEPARATE key, only when there are hits — never summed into the
+  // filter totals above (mirrors VS Code PR #315905's `cacheHit`). Absent when zero
+  // so existing JSON consumers are unaffected until the feature is actually used.
+  if (dedup.hits > 0) json.session_dedup = dedup;
   return json;
 }
 
@@ -203,6 +237,9 @@ async function renderText(ctx: GainContext, args: GainArgs, now: Date): Promise<
   const summary = rollupToGainSummary(ctx.rollup);
   const sections: string[] = [renderSummary(summary, args.user ? "all projects" : "this project")];
 
+  // ADR 0009: shown as its own block, never folded into the summary above.
+  if (ctx.dedup.hits > 0) sections.push(renderDedup(ctx.dedup));
+
   if (args.user) sections.push(await renderPerProject(ctx.perProject));
 
   const buckets = bucketsFor(ctx.rollup, args.bucketing, now);
@@ -212,6 +249,9 @@ async function renderText(ctx: GainContext, args: GainArgs, now: Date): Promise<
 
   if (args.history !== undefined) {
     sections.push(renderHistory(recentRows(ctx.rollup.recent, args.history)));
+    if (ctx.recentDedup.length > 0) {
+      sections.push(renderDedupHistory(recentDedupEvents(ctx.recentDedup, args.history)));
+    }
   }
 
   if (args.failures) sections.push(renderFailures(ctx.rollup.failures));
@@ -284,6 +324,29 @@ function renderGraph(daily: TimeBucket[]): string {
 function renderHistory(rows: RollupRecent[]): string {
   const lines = rows.map((r) => `  ${r.timestamp}  ${r.handler}  ${r.savings_pct}%  ${r.command}`);
   return ["Recent commands:", lines.join("\n") || "  - none"].join("\n");
+}
+
+// ADR 0009: the dedup dimension, rendered apart from filter savings and explicitly
+// labeled "never summed" so the two are never read as one number.
+function renderDedup(d: DedupSummary): string {
+  const top = d.by_command
+    .slice(0, 5)
+    .map((c) => `  - ${c.command}: ${c.hits}× (${c.saved} saved)`)
+    .join("\n");
+  return [
+    "Session dedup — byte-identical repeats suppressed (separate from filter savings, never summed):",
+    `  Hits: ${d.hits}`,
+    `  Saved: ${d.saved_tokens} tokens`,
+    "Top deduped commands:",
+    top || "  - none",
+  ].join("\n");
+}
+
+function renderDedupHistory(rows: DedupEvent[]): string {
+  const lines = rows.map(
+    (r) => `  ${r.ts}  dedup  ${r.handler}  ${r.saved_tokens} saved  ${r.norm_cmd}`,
+  );
+  return ["Recent dedup hits (suppressed repeats):", lines.join("\n") || "  - none"].join("\n");
 }
 
 function renderFailures(rows: RollupFailure[]): string {

@@ -109,7 +109,7 @@ function formatMypy(text: string): string {
 
 export const mypyHandler = defineHandler({
   name: "mypy",
-  traits: { structural: true },
+  traits: { structural: true, cacheable: true, ttlClass: "medium" },
   programs: ["mypy"],
 
   match(command) {

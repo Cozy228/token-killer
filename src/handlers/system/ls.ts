@@ -256,6 +256,7 @@ export function buildLsArgs(userArgs: string[]): string[] {
 
 export const lsHandler: CommandHandler = {
   name: "ls",
+  traits: { cacheable: true, ttlClass: "fast" },
   programs: ["ls"],
   matches(command) {
     return command.program === "ls";

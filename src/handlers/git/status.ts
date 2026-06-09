@@ -179,7 +179,7 @@ function statusArgs(command: ParsedCommand): string[] {
 
 export const gitStatusHandler: CommandHandler = {
   name: "git-status",
-  traits: { structural: true },
+  traits: { structural: true, cacheable: true, ttlClass: "fast" },
   programs: ["git"],
 
   matches(command) {

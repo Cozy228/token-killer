@@ -133,6 +133,7 @@ function formatTree(raw: RawResult): string {
 
 export const treeHandler: CommandHandler = {
   name: "tree",
+  traits: { cacheable: true, ttlClass: "fast" },
   programs: ["tree"],
   matches(command) {
     return command.program === "tree";

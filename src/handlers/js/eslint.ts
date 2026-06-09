@@ -81,6 +81,7 @@ function formatEslint(text: string): string {
 
 export const eslintHandler = defineHandler({
   name: "eslint",
+  traits: { cacheable: true, ttlClass: "medium" },
   programs: ["eslint"],
 
   match: matchesEslint,

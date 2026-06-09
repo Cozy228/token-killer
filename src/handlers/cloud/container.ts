@@ -645,6 +645,7 @@ function matchesKubectl(command: ParsedCommand): boolean {
 
 export const dockerHandler: CommandHandler = {
   name: "docker",
+  traits: { cacheable: true, ttlClass: "fast" },
   programs: ["docker"],
 
   matches: matchesDocker,
@@ -668,6 +669,7 @@ export const dockerHandler: CommandHandler = {
 
 export const kubectlHandler: CommandHandler = {
   name: "kubectl",
+  traits: { cacheable: true, ttlClass: "fast" },
   programs: ["kubectl"],
 
   matches: matchesKubectl,

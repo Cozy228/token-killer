@@ -127,6 +127,20 @@ function toParsed(tokens: string[]): ParsedCommand {
   };
 }
 
+// ADR 0009: a session id is only injected into the rewritten command string when
+// it matches this conservative charset — otherwise it is dropped (no flag). This
+// is a shell-injection guard: a raw id is NEVER interpolated, so `abc; rm -rf /`
+// can never become shell syntax. Mirrors parse.ts::SESSION_ID_RE.
+const SESSION_ID_RE = /^[A-Za-z0-9._-]{1,128}$/;
+
+// Build the `tk ` (or `tk --session <id> `) prefix prepended to each eligible
+// segment. No/invalid session → exactly `tk ` (byte-identical to the no-session
+// rewrite), so non-session callers are never affected.
+function tkPrefix(session?: string): string {
+  const id = typeof session === "string" ? session.trim() : "";
+  return SESSION_ID_RE.test(id) ? `tk --session ${id} ` : "tk ";
+}
+
 // Mutating ops are never rewritten (goal guardrail / DESIGN §14). routeSpecific
 // already excludes most of them (only read-oriented handlers match), but git has
 // read and write subcommands under the same handlers, so guard them explicitly.
@@ -233,10 +247,15 @@ function pipesIntoXargs(segments: Segment[]): boolean {
   return segments.some((seg) => seg.precededBy === "|" && tokenize(seg.text)[0] === "xargs");
 }
 
-// Rewrite a raw shell command per DESIGN §3.8. Pure and total; never throws.
-export function rewriteCommand(raw: string): RewriteDecision {
+// Rewrite a raw shell command per DESIGN §3.8. Pure and total; never throws. When
+// a (sanitized) `session` is supplied, each rewritten segment carries it as
+// `tk --session <id> …` so the separate `tk` subprocess can stamp `session_id` on
+// its history row (ADR 0009). A portable flag — not a `TK_SESSION=…` env prefix,
+// which only works in POSIX sh and breaks on Windows pwsh.
+export function rewriteCommand(raw: string, session?: string): RewriteDecision {
   const command = (raw ?? "").trim();
   if (command.length === 0) return { decision: "pass", reason: "empty command" };
+  const prefix = tkPrefix(session);
 
   // Non-equivalent shells → pass.
   if (hasNonEquivalentRedirect(command)) {
@@ -260,7 +279,7 @@ export function rewriteCommand(raw: string): RewriteDecision {
       return seg;
     }
     changed = true;
-    return { ...seg, text: `tk ${seg.text.trim()}` };
+    return { ...seg, text: `${prefix}${seg.text.trim()}` };
   });
 
   if (!changed) return { decision: "pass", reason: passReason };

@@ -281,7 +281,13 @@ function isEnvListing(args: string[]): boolean {
 
 export const envHandler = defineHandler({
   name: "env",
-  traits: { structural: true, masksSecrets: true, ladder: true },
+  traits: {
+    structural: true,
+    masksSecrets: true,
+    ladder: true,
+    cacheable: true,
+    ttlClass: "medium",
+  },
   programs: ["env"],
   match(command) {
     return command.program === "env" && isEnvListing(command.args);

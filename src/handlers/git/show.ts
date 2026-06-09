@@ -79,7 +79,7 @@ function formatShow(
 
 export const gitShowHandler = defineHandler({
   name: "git-show",
-  traits: { structural: true, ladder: true },
+  traits: { structural: true, ladder: true, cacheable: true, ttlClass: "fast" },
   programs: ["git"],
 
   match(command) {

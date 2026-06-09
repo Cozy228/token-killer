@@ -107,6 +107,17 @@ export function rawOutputDir(cwd: string): string {
   return path.join(projectDataDir(cwd), "raw");
 }
 
+// ADR 0009 session dedup — both live under the per-project data dir, so the project
+// fingerprint (git-repo-anchored) is IMPLICIT in the key: one store per project,
+// keyed inside by the normalized command alone. No session id in the path.
+export function dedupStoreFile(cwd: string): string {
+  return path.join(projectDataDir(cwd), "dedup.json");
+}
+
+export function dedupEventsFile(cwd: string): string {
+  return path.join(projectDataDir(cwd), "dedup-events.jsonl");
+}
+
 export function rawOutputPathRelative(cwd: string, fileName: string): string {
   return path.join("projects", fingerprintSegment(projectFingerprint(cwd)), "raw", fileName);
 }

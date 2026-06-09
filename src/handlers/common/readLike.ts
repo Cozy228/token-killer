@@ -225,6 +225,7 @@ function addLineNumbers(text: string): string {
 
 export const readLikeHandler: CommandHandler = {
   name: "read-like",
+  traits: { cacheable: true, ttlClass: "fast" },
 
   matches(command) {
     return READ_PROGRAMS.has(command.program);

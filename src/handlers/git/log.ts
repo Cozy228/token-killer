@@ -104,6 +104,7 @@ function formatLog(text: string): string {
 
 export const gitLogHandler = defineHandler({
   name: "git-log",
+  traits: { cacheable: true, ttlClass: "slow" },
   programs: ["git"],
 
   match(command) {

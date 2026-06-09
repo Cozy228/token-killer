@@ -31,6 +31,19 @@ function parsePositiveInt(value: string, flag: string): number {
   return parsed;
 }
 
+// ADR 0009: validate a session id before it is trusted anywhere — history rows,
+// dedup entries, and (critically) interpolation into a rewritten command string in
+// hook/rewrite.ts. Anything outside this conservative charset is DROPPED (treated
+// as no session), never escaped-in-place, so a hostile id can never inject shell
+// syntax. Mirrors the identical guard in rewrite.ts.
+const SESSION_ID_RE = /^[A-Za-z0-9._-]{1,128}$/;
+
+export function sanitizeSessionId(raw: string | undefined): string | undefined {
+  if (typeof raw !== "string") return undefined;
+  const trimmed = raw.trim();
+  return SESSION_ID_RE.test(trimmed) ? trimmed : undefined;
+}
+
 function toCommand(tokens: string[]): ParsedCommand | undefined {
   if (tokens.length === 0) return undefined;
   return {
@@ -99,6 +112,15 @@ export function parseArgv(argv: string[]): ParsedArgv {
       index += 2;
       continue;
     }
+    if (token === "--session") {
+      // Consume BOTH tokens so the wrapped tool never sees `--session <id>`. The
+      // value is validated; an invalid id is ignored (falls back to TK_SESSION
+      // below), but the tokens are still dropped from the command argv.
+      const valid = sanitizeSessionId(requireValue(argv, index, token));
+      if (valid) options.sessionId = valid;
+      index += 2;
+      continue;
+    }
     if (token === "--save-raw") {
       options.saveRaw = true;
       index += 1;
@@ -106,6 +128,13 @@ export function parseArgv(argv: string[]): ParsedArgv {
     }
     if (token === "--no-save-raw") {
       options.saveRaw = false;
+      index += 1;
+      continue;
+    }
+    if (token === "--no-dedup") {
+      // ADR 0009 per-command opt-out: force the session-dedup stage off for this
+      // run regardless of the TK_SESSION_DEDUP / config gate.
+      options.dedup = false;
       index += 1;
       continue;
     }
@@ -139,6 +168,8 @@ export function parseArgv(argv: string[]): ParsedArgv {
   }
 
   options.reportFormat ??= "text";
+  // Precedence: `--session` flag (set above) > `TK_SESSION` env > absent.
+  options.sessionId ??= sanitizeSessionId(process.env.TK_SESSION);
   return {
     mode,
     options,

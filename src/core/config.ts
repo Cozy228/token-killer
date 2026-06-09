@@ -21,6 +21,11 @@ export type TgConfig = {
   // NETWORK upload opt-in over the build-time endpoint. Requires this AND a
   // non-empty endpoint to send anything.
   telemetry: boolean;
+  // ADR 0009: opt-in to cross-invocation session dedup. Default-off (absent ⇒
+  // false). `TK_SESSION_DEDUP` env overrides this. Optional, so it is NOT part of
+  // the default config object or the `tk config init` template — a user adds it by
+  // hand to opt in, exactly like the other consent flags stay false until set.
+  sessionDedup?: boolean;
 };
 
 export class ConfigError extends Error {}
@@ -55,7 +60,13 @@ const DEFAULT_CONFIG: TgConfig = {
   telemetry: TELEMETRY_DEFAULT_ENABLED,
 };
 
-const ALLOWED_KEYS = new Set(["inputType", "defaultSince", "telemetryExport", "telemetry"]);
+const ALLOWED_KEYS = new Set([
+  "inputType",
+  "defaultSince",
+  "telemetryExport",
+  "telemetry",
+  "sessionDedup",
+]);
 
 // Strip `//` line and `/* */` block comments outside of string literals so a plain
 // JSON.parse can read the JSONC body. No new dependency.
@@ -129,6 +140,12 @@ function validate(raw: unknown): TgConfig {
   if ("telemetry" in obj) {
     if (typeof obj.telemetry !== "boolean") throw new ConfigError("telemetry must be a boolean");
     config.telemetry = obj.telemetry;
+  }
+  if ("sessionDedup" in obj) {
+    if (typeof obj.sessionDedup !== "boolean") {
+      throw new ConfigError("sessionDedup must be a boolean");
+    }
+    config.sessionDedup = obj.sessionDedup;
   }
   return config;
 }

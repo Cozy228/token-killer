@@ -131,7 +131,9 @@ export function decide(ev: ToolEvent): Decision {
 
 function decidePreTool(ev: ToolEvent): Decision {
   if (isShellExecution(ev)) {
-    const r = rewriteCommand(ev.command ?? "");
+    // ADR 0009: carry the host session id (normalize.ts parses it) through the
+    // rewritten command so the separate `tk` subprocess stamps session_id.
+    const r = rewriteCommand(ev.command ?? "", ev.session);
     switch (r.decision) {
       case "rewrite":
         return { decision: "rewrite", rewritten_command: r.rewritten };

@@ -103,7 +103,7 @@ function formatTsc(text: string): string {
 
 export const tscHandler = defineHandler({
   name: "tsc",
-  traits: { structural: true },
+  traits: { structural: true, cacheable: true, ttlClass: "medium" },
   programs: ["tsc"],
 
   match: matchesTsc,

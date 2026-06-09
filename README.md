@@ -1,6 +1,6 @@
 # tk
 
-`tk` is Token Killer: a local command proxy that kills noisy agent output without killing evidence.
+`tk` is Token Killer: a local command proxy that kills noisy agent output without killing evidence — and stops re-billing you for output you've already seen.
 
 ```bash
 tk <original command> [...args]
@@ -22,6 +22,20 @@ The command after `tk` is the command you would normally run. `tk` executes it, 
 10. Deterministic, local, test-first.
 
 See [docs/PRINCIPLES.md](./docs/PRINCIPLES.md) for the product rationale and [docs/DESIGN.md](./docs/DESIGN.md) for the implementation contracts.
+
+## Install
+
+Wire `tk` into your agent (Claude Code / Copilot CLI / VS Code) — it picks the
+highest delivery tier available per host:
+
+```bash
+tk init            # auto-detect host, install
+tk init --show     # show what's wired
+tk init --uninstall
+```
+
+Once wired, compression **and session dedup** apply automatically to the agent's
+commands. `tk gain` shows measured savings; `tk gain --history` lists recent runs.
 
 ## Usage
 
@@ -53,6 +67,7 @@ tk --max-lines 200 <command...>
 tk --max-chars 12000 <command...>
 tk --save-raw <command...>
 tk --no-save-raw <command...>
+tk --no-dedup <command...>
 tk --report
 tk --report --json
 tk --report --csv
@@ -61,6 +76,84 @@ tk --version
 ```
 
 `## Token Savings` is not printed by default. It appears only with `--stats`, `--verbose`, or `--report`.
+
+## Session dedup
+
+When an agent re-runs the same **read-only** command in the same directory and the
+compressed output is **byte-identical** to what it last produced, `tk` replaces the
+repeat with a one-line marker instead of re-emitting it:
+
+```text
+[tk] unchanged since 14:02:11 — same as the earlier `git status` here; full: <pointer>
+```
+
+Lossless and recoverable: the full output was already delivered earlier in the
+session; `tk` always re-runs the command and exact-compares the fresh output (any
+real change re-emits in full), and the marker carries a pointer back to the saved
+original. A changed exit code is never deduped.
+
+- `tk --raw <command>` bypasses dedup (and all compression).
+- `TK_SESSION_DEDUP=0` (or the config key) disables it.
+- Dedup savings show as a **separate line** in `tk gain` — never summed with filter savings.
+
+## Optimize your agent's context
+
+Compression saves tokens at runtime. The other half is **context hygiene** — the
+instructions, skills, agents, and editor settings that silently bloat every request.
+
+```bash
+tk inspect                # read-only audit: runtime sessions + static context files
+tk inspect --advice       # ranked, actionable findings
+tk optimize               # dry-run plan from the audit
+tk optimize --apply       # apply safe, mechanical fixes (backs up first)
+tk optimize --restore     # revert
+```
+
+`tk inspect` scans both your agent's session history (what wasted tokens at runtime)
+and your static context files (instructions / prompts / agents / skills).
+`tk optimize` consumes that audit and **downshifts each rule to the narrowest place it
+still works** (always-on instruction → path-scoped → on-demand). User-level by
+default; add `--project` to include the current repo. It never edits your project repo
+unless asked.
+
+## Best-practice guidance
+
+`tk init` delivers a short usage guide so the agent spends tokens well by default —
+prefer terse forms (`git status --short`, `git log --oneline`, `rg -c`), read `gain`
+honestly. It writes:
+
+- **`TK.md`** — the usage guide, in your config dir.
+- A **guard-wrapped, idempotent block** wired into the agent's instruction file
+  (`CLAUDE.md` for Claude Code, `copilot-instructions.md` for Copilot / VS Code).
+  Re-running replaces the block; `tk init --uninstall` removes it. Your own content is
+  never touched. `tk optimize --token-budget-block` keeps the block in sync.
+
+## VS Code settings
+
+```bash
+tk optimize --vscode-settings            # advisory review
+tk optimize --vscode-settings --apply    # apply (backs up first)
+tk optimize --vscode-settings --restore  # revert
+```
+
+- **One setting is auto-changed and one-click reversible**: VS Code's built-in
+  terminal-output compression (`chat.tools.compressOutput.enabled`).
+- Riskier ones are **advice-only** — too many auto-loaded instruction files
+  (`chat.includeReferencedInstructions`), extra readable dirs
+  (`github.copilot.chat.additionalReadAccessFolders`), MCP auto-discovery
+  (`chat.mcp.discovery.enabled`), a high per-request tool budget
+  (`chat.agent.maxRequests`). `tk` flags them; you decide.
+
+## Measure savings
+
+```bash
+tk gain               # measured token savings (never estimated)
+tk gain --history     # recent commands + per-command savings
+tk gain report        # full report (--scope user|project|runtime, --json, --csv)
+```
+
+Reported from **measured** `raw − delivered` only, across four independent ledgers
+that are **never summed** — filter savings and dedup savings stay separate.
 
 ## Current Handler Coverage
 
@@ -97,27 +190,8 @@ Planned:
 - more real-command integration tests when optional tools are installed
 - per-handler raw-save and filter-fallback tests
 
-## Development
+## Recover the original
 
-```bash
-pnpm install
-pnpm run typecheck
-pnpm test
-pnpm run build
-```
-
-Build output:
-
-```text
-dist/cli.js
-```
-
-The built CLI preserves the shebang and is exposed through npm:
-
-```json
-{
-  "bin": {
-    "tk": "./dist/cli.js"
-  }
-}
-```
+A dedup marker or a truncated handler always carries a pointer to the saved raw
+output. `tk --raw <command>` re-runs without any compression when you need the
+exact bytes.

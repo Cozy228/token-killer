@@ -148,6 +148,7 @@ function help(): string {
     "  --max-chars <n>       Limit compressed output to n chars",
     "  --save-raw            Always save the raw output",
     "  --no-save-raw         Never save the raw output",
+    "  --no-dedup            Disable session dedup for this command (ADR 0009)",
     "  --report [--json|--csv]   Legacy aggregate report",
     "  --help                Show this help",
     "  --version             Show the tk version",

@@ -151,6 +151,7 @@ function formatWc(raw: RawResult, command: ParsedCommand): string {
 
 export const wcHandler = defineHandler({
   name: "wc",
+  traits: { cacheable: true, ttlClass: "fast" },
   programs: ["wc"],
   match(command) {
     return command.program === "wc";

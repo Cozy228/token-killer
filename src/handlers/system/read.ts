@@ -447,7 +447,7 @@ function formatRead(
 
 export const readHandler: CommandHandler = {
   name: "read",
-  traits: { structural: true, ladder: true },
+  traits: { structural: true, ladder: true, cacheable: true, ttlClass: "fast" },
   programs: ["cat"],
   // tk maps `cat` onto RTK read semantics (system/read.rs); `read`/`type`/`less`
   // stay on the existing read-like handler, which owns stdin/multi-file execution.

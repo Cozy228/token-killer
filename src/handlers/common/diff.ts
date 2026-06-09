@@ -205,7 +205,7 @@ async function diffFromStdin(command: ParsedCommand): Promise<RawResult> {
 
 export const diffHandler: CommandHandler = {
   name: "diff",
-  traits: { structural: true, ladder: true },
+  traits: { structural: true, ladder: true, cacheable: true, ttlClass: "fast" },
   programs: ["diff"],
 
   matches(command) {

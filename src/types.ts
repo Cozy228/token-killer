@@ -68,6 +68,13 @@ export type TkOptions = {
   saveRaw: boolean | "auto";
   cwd: string;
   reportFormat?: "text" | "json" | "csv";
+  // ADR 0009: best-effort agent session id, carried through the rewritten command
+  // via `--session <id>` (portable across sh/pwsh) or the `TK_SESSION` env. Stamped
+  // onto history rows (`session_id`) and dedup entries; never part of the dedup key.
+  sessionId?: string;
+  // ADR 0009: per-command opt-out (`--no-dedup`). undefined ⇒ follow the
+  // TK_SESSION_DEDUP / config gate; false ⇒ force the dedup stage off for this run.
+  dedup?: boolean;
 };
 
 export type ParseMode =
@@ -109,7 +116,19 @@ export type HandlerTraits = {
   structural?: boolean;
   masksSecrets?: boolean;
   ladder?: boolean;
+  // ADR 0009 session dedup: this handler's matched commands are read-only, so a
+  // byte-identical repeat within the re-anchor window can be suppressed with a
+  // recoverable marker. Opt-in; the runtime read-only gate (isReadOnlyCommand)
+  // still excludes subcommand-mutating forms (`git branch -d`, `docker rm`, …).
+  cacheable?: boolean;
+  // The re-anchor window class for a cacheable handler (default "fast"). Bounds
+  // recoverable-context staleness, NOT correctness (exact-compare is the spine).
+  ttlClass?: TtlClass;
 };
+
+// ADR 0009 re-anchor window classes (wall-clock TTL): fast 30s, medium 120s,
+// slow 300s. Measured from the last full emit, never refreshed on a hit.
+export type TtlClass = "fast" | "medium" | "slow";
 
 export interface CommandHandler {
   name: string;

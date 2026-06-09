@@ -119,6 +119,7 @@ function grepOptionsForLevel(level: CompressionLevel): GrepGroupOptions {
 
 export const searchLikeHandler: CommandHandler = {
   name: "search-like",
+  traits: { cacheable: true, ttlClass: "fast" },
   programs: ["rg", "grep"],
 
   matches(command) {

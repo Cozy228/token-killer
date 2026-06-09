@@ -203,7 +203,7 @@ export function buildRuffArgs(userArgs: string[]): string[] {
 
 export const ruffHandler: CommandHandler = {
   name: "ruff",
-  traits: { ladder: true },
+  traits: { ladder: true, cacheable: true, ttlClass: "medium" },
   programs: ["ruff"],
 
   matches: matchesRuff,
