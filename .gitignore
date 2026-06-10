@@ -4,3 +4,8 @@ dist/
 rtk/
 headroom/
 ztk/
+
+# OS / editor junk
+.DS_Store
+Thumbs.db
+*.swp
