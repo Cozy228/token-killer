@@ -6,6 +6,7 @@ import { randomUUID } from "node:crypto";
 
 import type { GainSummary, TimeBucket } from "./aggregate.js";
 import { projectFingerprint } from "./dataDir.js";
+import { gcRawStore } from "./gc.js";
 import { readProjectMeta } from "./history.js";
 import {
   DEFAULT_INPUT_PRICE_PER_MTOK,
@@ -171,6 +172,10 @@ export async function runGain(
   } catch {
     // telemetry must never break gain
   }
+
+  // H4: GC the raw snapshot dir on this cold path so it cannot grow without bound.
+  // Best-effort and fail-open — never blocks or breaks gain.
+  await gcRawStore(cwd, now.getTime());
   return 0;
 }
 

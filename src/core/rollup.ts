@@ -296,15 +296,21 @@ export function rollupToGainSummary(rollup: MergedRollup): GainSummary {
     }))
     .sort((a, b) => b.saved - a.saved);
 
+  // L1: the headline figure is the NET (raw − output). A handler that legitimately
+  // inflates (a structural reformat larger than raw) then REDUCES the total instead of
+  // being clamped to 0 per-row and silently rounded up. Clamp once here at the display
+  // boundary so the number is never negative; per-command rows stay clamped (a single
+  // inflating command shows 0, the aggregate nets it out honestly).
+  const netSaved = Math.max(0, totals.raw_tokens - totals.output_tokens);
+
   return {
     estimate_kind: "measured",
     commands: totals.commands,
     raw_tokens: totals.raw_tokens,
     output_tokens: totals.output_tokens,
-    saved_tokens: totals.saved_tokens,
-    savings_pct: pct(totals.saved_tokens, totals.raw_tokens),
-    avg_savings_per_command:
-      totals.commands === 0 ? 0 : Math.round(totals.saved_tokens / totals.commands),
+    saved_tokens: netSaved,
+    savings_pct: pct(netSaved, totals.raw_tokens),
+    avg_savings_per_command: totals.commands === 0 ? 0 : Math.round(netSaved / totals.commands),
     total_duration_ms: totals.total_duration_ms,
     by_handler,
     quality_status_counts: { ...rollup.quality_status_counts },
@@ -479,6 +485,11 @@ export async function ensureProjectRollup(cwd: string): Promise<ProjectRollup> {
   }
 
   const rebuilt = await rebuildRollupFromJsonl(cwd);
+  // The cache key is the PHYSICAL line count (countJsonlLines). applyRecord counts
+  // only PARSED records, so a single corrupt/blank line left source_lines < lineCount
+  // and every `tk gain` rebuilt + rewrote the rollup forever (M5). Pin source_lines to
+  // the physical count so an unchanged file is a cache hit next time.
+  rebuilt.source_lines = lineCount;
   try {
     await saveRollup(cwd, rebuilt);
   } catch {

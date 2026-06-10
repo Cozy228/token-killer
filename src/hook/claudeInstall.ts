@@ -18,7 +18,8 @@
 // embedded absolute cli path IS the marker that proves an entry is ours, so
 // `--uninstall` removes only tk's entry and never a user's own `rtk` hook.
 
-import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, readFileSync } from "node:fs";
+import { writeFileAtomicSync } from "../core/atomicWrite.js";
 import { homedir } from "node:os";
 import { dirname, join } from "node:path";
 
@@ -163,7 +164,7 @@ export function installClaudeHook(loc: ClaudeLocation, command?: string): Claude
   const plan = planClaudeHookInstall(loc, command);
   if (plan.action !== "unchanged") {
     mkdirSync(dirname(plan.path), { recursive: true });
-    writeFileSync(plan.path, plan.contents);
+    writeFileAtomicSync(plan.path, plan.contents);
   }
   return plan;
 }
@@ -207,7 +208,7 @@ export function uninstallClaudeHook(
     ...settings,
     hooks: { ...settings.hooks, PreToolUse: nextGroups },
   };
-  writeFileSync(path, serialize(next));
+  writeFileAtomicSync(path, serialize(next));
   return { path, removed: true };
 }
 

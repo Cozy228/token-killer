@@ -131,11 +131,14 @@ export function isReadOnlyForHandler(handlerName: string, command: ParsedCommand
     case "wc":
     case "read":
     case "read-like":
-    case "search-like":
     case "diff":
     case "env":
     case "package-list":
       return true;
+    case "search-like":
+      // `rg --pre <cmd>` runs an arbitrary preprocessor command per file — it can
+      // execute/mutate, so it must NOT count as read-only for the dedup gate (L12).
+      return !command.args.some((a) => a === "--pre" || a === "--pre-glob");
     case "mypy":
       return !command.args.includes("--install-types"); // --install-types mutates the env
     case "git-branch":

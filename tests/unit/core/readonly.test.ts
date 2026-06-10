@@ -27,6 +27,16 @@ describe("isReadOnlyForHandler — the dedup read-only gate (ADR 0009)", () => {
     expect(isReadOnlyForHandler("package-list", cmd("pnpm", ["list"]))).toBe(true);
   });
 
+  test("L12: rg --pre runs an arbitrary preprocessor command → NOT read-only", () => {
+    expect(isReadOnlyForHandler("search-like", cmd("rg", ["--pre", "sh", "TODO", "."]))).toBe(
+      false,
+    );
+    expect(isReadOnlyForHandler("search-like", cmd("rg", ["--pre-glob", "*.md", "TODO"]))).toBe(
+      false,
+    );
+    expect(isReadOnlyForHandler("search-like", cmd("rg", ["TODO", "src"]))).toBe(true);
+  });
+
   test("an unknown / non-cacheable handler is denied (default-deny)", () => {
     expect(isReadOnlyForHandler("totally-unknown", cmd("whatever", []))).toBe(false);
     // npmHandler is not cacheable; its name is not in the allowlist, so even if it

@@ -1,4 +1,5 @@
-import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, readFileSync } from "node:fs";
+import { writeFileAtomicSync } from "../core/atomicWrite.js";
 import { homedir } from "node:os";
 import { dirname, join } from "node:path";
 
@@ -45,12 +46,12 @@ export function applyRcBlock(content: string, shimDir: string): string {
 
 export function patchRc(rcPath: string, shimDir: string): void {
   const content = existsSync(rcPath) ? readFileSync(rcPath, "utf8") : "";
-  writeFileSync(rcPath, applyRcBlock(content, shimDir));
+  writeFileAtomicSync(rcPath, applyRcBlock(content, shimDir));
 }
 
 export function unpatchRc(rcPath: string): void {
   if (!existsSync(rcPath)) return;
-  writeFileSync(rcPath, removeRcBlock(readFileSync(rcPath, "utf8")));
+  writeFileAtomicSync(rcPath, removeRcBlock(readFileSync(rcPath, "utf8")));
 }
 
 // ---------------------------------------------------------------------------
@@ -67,13 +68,20 @@ function pathDelimiterFor(platform: NodeJS.Platform): string {
   return platform === "win32" ? ";" : ":";
 }
 
-export function vscodeUserDir(platform: NodeJS.Platform = process.platform, home = homedir()): string {
+export function vscodeUserDir(
+  platform: NodeJS.Platform = process.platform,
+  home = homedir(),
+): string {
   if (platform === "darwin") return join(home, "Library", "Application Support", "Code", "User");
-  if (platform === "win32") return join(process.env.APPDATA ?? join(home, "AppData", "Roaming"), "Code", "User");
+  if (platform === "win32")
+    return join(process.env.APPDATA ?? join(home, "AppData", "Roaming"), "Code", "User");
   return join(home, ".config", "Code", "User");
 }
 
-export function vscodeSettingsPath(platform: NodeJS.Platform = process.platform, home = homedir()): string {
+export function vscodeSettingsPath(
+  platform: NodeJS.Platform = process.platform,
+  home = homedir(),
+): string {
   return join(vscodeUserDir(platform, home), "settings.json");
 }
 
@@ -116,8 +124,7 @@ export function removeVscodeEnv(
 
   delete env.TK_SHIM_DIR;
   if (typeof env.PATH === "string") {
-    const rest = env.PATH
-      .split(delim)
+    const rest = env.PATH.split(delim)
       .filter((entry) => entry !== "" && entry !== shimDir)
       .join(delim);
     if (rest === "" || rest === ref) delete env.PATH;
@@ -146,7 +153,7 @@ export function readSettings(settingsPath: string): Record<string, unknown> {
 
 export function writeSettings(settingsPath: string, settings: Record<string, unknown>): void {
   mkdirSync(dirname(settingsPath), { recursive: true });
-  writeFileSync(settingsPath, `${JSON.stringify(settings, null, 2)}\n`);
+  writeFileAtomicSync(settingsPath, `${JSON.stringify(settings, null, 2)}\n`);
 }
 
 export function patchVscodeSettings(

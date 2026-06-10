@@ -1,7 +1,10 @@
 import type { ParsedArgv, ParsedCommand, TkOptions } from "./types.js";
 
-const DEFAULT_MAX_LINES = 120;
-const DEFAULT_MAX_CHARS = 12000;
+// Default = "no cap": --max-lines/--max-chars are opt-in DISPLAY caps applied to the
+// final compressed output (see core/outputLimit.ts). A finite default would silently
+// truncate every output; the cap fires only when the user passes a finite value (H18).
+const DEFAULT_MAX_LINES = Number.POSITIVE_INFINITY;
+const DEFAULT_MAX_CHARS = Number.POSITIVE_INFINITY;
 
 function defaultOptions(): TkOptions {
   return {

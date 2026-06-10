@@ -1,4 +1,5 @@
-import { existsSync, mkdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, readFileSync, rmSync } from "node:fs";
+import { writeFileAtomicSync } from "../core/atomicWrite.js";
 import { homedir } from "node:os";
 import { dirname, join } from "node:path";
 
@@ -54,11 +55,11 @@ function isOwnedInstructionsFile(filePath: string): boolean {
 export function writeInjection(filePath: string, body = injectionBody()): void {
   mkdirSync(dirname(filePath), { recursive: true });
   if (isOwnedInstructionsFile(filePath)) {
-    writeFileSync(filePath, `---\napplyTo: '**'\n---\n\n${injectionBlock(body)}\n`);
+    writeFileAtomicSync(filePath, `---\napplyTo: '**'\n---\n\n${injectionBlock(body)}\n`);
     return;
   }
   const content = existsSync(filePath) ? readFileSync(filePath, "utf8") : "";
-  writeFileSync(filePath, applyInjectionBlock(content, body));
+  writeFileAtomicSync(filePath, applyInjectionBlock(content, body));
 }
 
 export function unwriteInjection(filePath: string): void {
@@ -76,7 +77,7 @@ export function unwriteInjection(filePath: string): void {
     rmSync(filePath, { force: true });
     return;
   }
-  writeFileSync(filePath, stripped);
+  writeFileAtomicSync(filePath, stripped);
 }
 
 // User-level instruction file for a host (the DEFAULT target — never the repo).

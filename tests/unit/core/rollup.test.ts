@@ -13,6 +13,7 @@ import {
   rollupToGainSummary,
 } from "../../../src/core/rollup.js";
 import { recordHistory } from "../../../src/core/history.js";
+import { historyFile } from "../../../src/core/dataDir.js";
 import type { FilteredResult, RawResult, TkOptions } from "../../../src/types.js";
 
 const previousHome = process.env.TOKEN_KILLER_HOME;
@@ -79,6 +80,27 @@ describe("rollup", () => {
     expect(rollup.failures).toHaveLength(1);
   });
 
+  test("L1: an inflating command nets out of the headline saved figure (not rounded up)", () => {
+    const rollup = emptyRollup("repo:l1");
+    // One compressing command and one INFLATING command (output > raw; its per-row
+    // saved is clamped to 0). The clamped sum would round the total up to 60.
+    applyRecord(rollup, sampleRecord({ raw_tokens: 100, output_tokens: 40, saved_tokens: 60 }));
+    applyRecord(
+      rollup,
+      sampleRecord({
+        timestamp: "2026-06-07T12:00:00.000Z",
+        raw_tokens: 10,
+        output_tokens: 30,
+        saved_tokens: 0,
+      }),
+    );
+
+    expect(rollup.totals.saved_tokens).toBe(60); // internal clamped accumulation, unchanged
+    const summary = rollupToGainSummary(mergeRollups([rollup]));
+    // Headline = NET (110 raw − 70 output) = 40: the inflation is subtracted, not hidden.
+    expect(summary.saved_tokens).toBe(40);
+  });
+
   test("mergeRollups combines projects", () => {
     const a = emptyRollup("repo:a");
     const b = emptyRollup("repo:b");
@@ -131,6 +153,53 @@ describe("rollup", () => {
 
       const rollupText = await readFile(rollupFile(home), "utf8");
       expect(rollupText).toContain('"source_lines":1');
+    });
+  });
+
+  test("M5: source_lines tracks PHYSICAL lines so one corrupt line never forces a perpetual rebuild", async () => {
+    await withHome(async (home) => {
+      const opts: TkOptions = {
+        raw: false,
+        stats: false,
+        verbose: false,
+        maxLines: 120,
+        maxChars: 12000,
+        saveRaw: false,
+        cwd: home,
+        reportFormat: "text",
+      };
+      const filtered: FilteredResult = {
+        handler: "git-status",
+        output: "ok",
+        rawChars: 2,
+        outputChars: 2,
+        rawTokens: 10,
+        outputTokens: 4,
+        savedTokens: 6,
+        savingsPct: 60,
+        exitCode: 0,
+        qualityStatus: "passed",
+      };
+      const rawRec: RawResult = {
+        command: "git status",
+        stdout: "ok",
+        stderr: "",
+        exitCode: 0,
+        durationMs: 1,
+      };
+      await recordHistory(rawRec, filtered, opts);
+      await recordHistory(rawRec, filtered, opts);
+      // Inject a corrupt (unparseable) line: 3 PHYSICAL lines, only 2 parseable.
+      await writeFile(historyFile(home), "not-json-garbage\n", { flag: "a" });
+
+      // Keyed on the physical line count (3), not the parsed-record count (2):
+      // otherwise the cache key never matches and every `tk gain` rebuilds forever.
+      const rollup = await ensureProjectRollup(home);
+      expect(rollup.source_lines).toBe(3);
+
+      // A second call with the file unchanged is a cache HIT (same source_lines).
+      const again = await ensureProjectRollup(home);
+      expect(again.source_lines).toBe(3);
     });
   });
 

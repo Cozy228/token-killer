@@ -3,11 +3,11 @@ import { describe, expect, test } from "vitest";
 import { calculateSavings, estimateTokens } from "../../src/core/savings.js";
 
 describe("savings", () => {
-  test("estimates tokens as ceil chars divided by four", () => {
+  test("estimates ASCII at ceil(chars/4) and CJK at ~1 token each (L2)", () => {
     expect(estimateTokens("")).toBe(0);
     expect(estimateTokens("abcd")).toBe(1);
     expect(estimateTokens("abcde")).toBe(2);
-    expect(estimateTokens("中文测试")).toBe(1);
+    expect(estimateTokens("中文测试")).toBe(4);
   });
 
   test("calculates 75 percent savings", () => {
