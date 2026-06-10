@@ -17,6 +17,7 @@
 // interactive, non-mutating match is rewritten. The registry does not fork or
 // re-implement the compressor.
 
+import { isProgramAvailable } from "../executor.js";
 import { sanitizeSessionId } from "../parse.js";
 import { routeSpecific } from "../router.js";
 import { isInteractive } from "../shim/interactive.js";
@@ -194,7 +195,7 @@ function isMutating(parsed: ParsedCommand): boolean {
 // common hook question). Total; never throws.
 type Eligibility = { eligible: true } | { eligible: false; reason: string };
 
-function eligibility(tokens: string[]): Eligibility {
+function eligibility(tokens: string[], isAvailable: (program: string) => boolean): Eligibility {
   if (tokens.length === 0) return { eligible: false, reason: "empty segment" };
   if (tokens[0] === "tk") return { eligible: false, reason: "already a tk command" };
   // `test`/`[` are shell conditional builtins (`test -f x`, `[ -z "$v" ]`), never a
@@ -207,6 +208,14 @@ function eligibility(tokens: string[]): Eligibility {
   const parsed = toParsed(tokens);
   if (routeSpecific(parsed) === null) {
     return { eligible: false, reason: `no tk handler for '${parsed.program}'` };
+  }
+  // tk wraps real tools; it must not claim a command whose binary is absent. On a
+  // stock Windows box `cat`/`ls`/`wc`/`env` are shell aliases, not executables, so
+  // rewriting `cat foo` → `tk cat foo` would shell out to a missing binary and
+  // break a command the shell would otherwise have run via its cmdlet alias (D2).
+  // Off Windows this is always true (the gate is a Windows-only safety net).
+  if (!isAvailable(parsed.program)) {
+    return { eligible: false, reason: `no '${parsed.program}' binary on PATH` };
   }
   if (isInteractive(parsed)) return { eligible: false, reason: "interactive command" };
   if (isMutating(parsed)) return { eligible: false, reason: "mutating git subcommand" };
@@ -256,7 +265,13 @@ function pipesIntoXargs(segments: Segment[]): boolean {
 // `tk --session <id> …` so the separate `tk` subprocess can stamp `session_id` on
 // its history row (ADR 0009). A portable flag — not a `TK_SESSION=…` env prefix,
 // which only works in POSIX sh and breaks on Windows pwsh.
-export function rewriteCommand(raw: string, session?: string): RewriteDecision {
+export function rewriteCommand(
+  raw: string,
+  session?: string,
+  // Presence check, injectable for tests. Defaults to the real PATH lookup so the
+  // hook never rewrites a command whose binary is absent (D2).
+  isAvailable: (program: string) => boolean = isProgramAvailable,
+): RewriteDecision {
   const command = (raw ?? "").trim();
   if (command.length === 0) return { decision: "pass", reason: "empty command" };
   const prefix = tkPrefix(session);
@@ -285,7 +300,7 @@ export function rewriteCommand(raw: string, session?: string): RewriteDecision {
       return seg;
     }
     const tokens = tokenize(seg.text);
-    const elig = eligibility(tokens);
+    const elig = eligibility(tokens, isAvailable);
     if (!elig.eligible) {
       if (passReason === undefined) passReason = elig.reason;
       return seg;

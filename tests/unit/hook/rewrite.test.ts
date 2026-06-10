@@ -162,3 +162,27 @@ describe("rewriteCommand — chains", () => {
     expect(r.rewritten).toBe('tk rg "a && b" src');
   });
 });
+
+describe("rewriteCommand — presence gate (D2)", () => {
+  // tk wraps real tools; it must not rewrite a command whose binary is absent (on
+  // a stock Windows box `cat`/`ls` are pwsh cmdlet aliases, not executables, so
+  // `tk cat` would shell out to a missing binary and break them). The PATH check
+  // is injected here for a deterministic, cross-platform assertion.
+  test("passes a command whose binary is absent (no rewrite)", () => {
+    const r = rewriteCommand("cat file.txt", undefined, () => false);
+    expect(r.decision).toBe("pass");
+    expect(r.reason).toContain("no 'cat' binary on PATH");
+  });
+
+  test("rewrites the same command when the binary is present", () => {
+    const r = rewriteCommand("cat file.txt", undefined, () => true);
+    expect(r.decision).toBe("rewrite");
+    expect(r.rewritten).toBe("tk cat file.txt");
+  });
+
+  test("in a chain, absent-binary segments pass while present ones rewrite", () => {
+    const r = rewriteCommand("git status && cat foo", undefined, (p) => p === "git");
+    expect(r.decision).toBe("rewrite");
+    expect(r.rewritten).toBe("tk git status && cat foo");
+  });
+});

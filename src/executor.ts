@@ -142,6 +142,20 @@ export function resolveProgram(program: string, pathValue: string | undefined): 
   return program;
 }
 
+// True when `program` is backed by a real executable reachable on the child
+// PATH. tk wraps real tools; it must never claim a command whose binary is
+// absent. On a stock Windows box `cat`/`ls`/`wc`/`env` are not executables —
+// PowerShell aliases them to cmdlets — so intercepting them (hook rewrite or
+// shim wrapper) only breaks what the shell would otherwise have run. The check
+// is Windows-only: off Windows tk's handled tools are present and resolveProgram
+// is a no-op, so this returns true without touching the filesystem, leaving
+// POSIX behavior (and every existing test) unchanged.
+export function isProgramAvailable(program: string): boolean {
+  if (process.platform !== "win32") return true;
+  const childPath = process.env.TK_SHIM_DIR ? buildChildPath() : process.env.PATH;
+  return resolveProgram(program, childPath) !== program;
+}
+
 function isBatchScript(file: string): boolean {
   const lower = file.toLowerCase();
   return lower.endsWith(".cmd") || lower.endsWith(".bat");
