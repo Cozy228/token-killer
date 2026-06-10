@@ -36,11 +36,11 @@ tk --version
 ### Wire into your agent host
 
 ```bash
-tk init --show                              # inspect current delivery tier
-tk init --host copilot-cli                  # Copilot CLI → hook tier
-tk init                                     # VS Code → shim tier (PATH wrappers)
-tk init --project                           # optional: project-level instruction injection
-tk init --uninstall                         # remove all tk-installed artifacts
+tk status                              # inspect current delivery tier
+tk install --host copilot-cli                  # Copilot CLI → hook tier
+tk install                                     # VS Code → shim tier (PATH wrappers)
+tk install --project                           # optional: project-level instruction injection
+tk uninstall                         # remove all tk-installed artifacts
 ```
 
 Data and config live under `~/.token-killer/` (override with `TOKEN_KILLER_HOME`).
@@ -168,7 +168,7 @@ Follow [Conventional Commits](https://www.conventionalcommits.org/). Bump `versi
 ## Uninstall
 
 ```bash
-tk init --uninstall
+tk uninstall
 npm uninstall -g @your-org/token-killer
 
 # Optional: remove local data

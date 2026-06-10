@@ -1,6 +1,10 @@
 import { describe, expect, test } from "vitest";
 
-import { buildAdvice, renderAdviceFile, renderAdviceMarkdown } from "../../../src/inspect/advice.js";
+import {
+  buildAdvice,
+  renderAdviceFile,
+  renderAdviceMarkdown,
+} from "../../../src/inspect/advice.js";
 import type { Opportunity, ScanResult } from "../../../src/inspect/scan.js";
 
 function opp(over: Partial<Opportunity> & Pick<Opportunity, "key" | "kind">): Opportunity {
@@ -37,17 +41,17 @@ function scanWith(inputType: ScanResult["inputType"], opportunities: Opportunity
 }
 
 describe("buildAdvice — delivery recommendation leads", () => {
-  test("vscode with raw compressible commands → recommend the shim (tk init)", () => {
+  test("vscode with raw compressible commands → recommend the shim (tk install)", () => {
     const scan = scanWith("vscode", [
       opp({ key: "git status", kind: "shell", compressible: true, count: 6 }),
     ]);
     const findings = buildAdvice(scan);
     expect(findings[0].type).toBe("delivery");
-    expect(findings[0].recommendation).toContain("tk init");
+    expect(findings[0].recommendation).toContain("tk install");
     expect(findings[0].recommendation).not.toContain("--host copilot-cli");
   });
 
-  test("copilot-cli → recommend tk init --host copilot-cli", () => {
+  test("copilot-cli → recommend tk install --host copilot-cli", () => {
     const scan = scanWith("copilot-cli", [
       opp({ key: "npm test", kind: "shell", compressible: true, count: 5 }),
     ]);
@@ -57,12 +61,16 @@ describe("buildAdvice — delivery recommendation leads", () => {
   });
 
   test("no delivery finding when raw compressible volume below threshold", () => {
-    const scan = scanWith("vscode", [opp({ key: "git status", kind: "shell", compressible: true, count: 1 })]);
+    const scan = scanWith("vscode", [
+      opp({ key: "git status", kind: "shell", compressible: true, count: 1 }),
+    ]);
     expect(buildAdvice(scan).some((f) => f.type === "delivery")).toBe(false);
   });
 
   test("already-tk commands are not counted as raw", () => {
-    const scan = scanWith("vscode", [opp({ key: "tk", kind: "shell", compressible: true, count: 20 })]);
+    const scan = scanWith("vscode", [
+      opp({ key: "tk", kind: "shell", compressible: true, count: 20 }),
+    ]);
     expect(buildAdvice(scan).some((f) => f.type === "delivery")).toBe(false);
   });
 });
@@ -70,7 +78,13 @@ describe("buildAdvice — delivery recommendation leads", () => {
 describe("buildAdvice — per-command & governance findings", () => {
   test("shell-noise rewrite advice for frequent raw commands", () => {
     const scan = scanWith("vscode", [
-      opp({ key: "git status", kind: "shell", compressible: true, count: 4, total_output_tokens: 90 }),
+      opp({
+        key: "git status",
+        kind: "shell",
+        compressible: true,
+        count: 4,
+        total_output_tokens: 90,
+      }),
     ]);
     const shell = buildAdvice(scan).find((f) => f.type === "shell-noise");
     expect(shell?.recommendation).toContain("tk git status");
@@ -88,24 +102,36 @@ describe("buildAdvice — per-command & governance findings", () => {
 
   test("workflow-friction for long-output hotspots", () => {
     const scan = scanWith("vscode", [
-      opp({ key: "read_file", kind: "direct", count: 3, large_output_count: 3, max_output_chars: 20000 }),
+      opp({
+        key: "read_file",
+        kind: "direct",
+        count: 3,
+        large_output_count: 3,
+        max_output_chars: 20000,
+      }),
     ]);
     expect(buildAdvice(scan).some((f) => f.type === "workflow-friction")).toBe(true);
   });
 
   test("thresholds filter out low-occurrence / low-confidence findings", () => {
-    const scan = scanWith("vscode", [opp({ key: "git status", kind: "shell", compressible: true, count: 4 })]);
+    const scan = scanWith("vscode", [
+      opp({ key: "git status", kind: "shell", compressible: true, count: 4 }),
+    ]);
     expect(buildAdvice(scan, { minConfidence: 0.6, minOccurrences: 10 })).toEqual([]);
   });
 
   test("findings never contain raw evidence (keys are sanitized)", () => {
-    const scan = scanWith("vscode", [opp({ key: "git status", kind: "shell", compressible: true, count: 5 })]);
+    const scan = scanWith("vscode", [
+      opp({ key: "git status", kind: "shell", compressible: true, count: 5 }),
+    ]);
     expect(JSON.stringify(buildAdvice(scan))).not.toMatch(/node_modules|\/Users\/|SECRET/);
   });
 });
 
 describe("rendering", () => {
-  const scan = scanWith("vscode", [opp({ key: "git status", kind: "shell", compressible: true, count: 6 })]);
+  const scan = scanWith("vscode", [
+    opp({ key: "git status", kind: "shell", compressible: true, count: 6 }),
+  ]);
 
   test("markdown shows corrections + recommendations", () => {
     const md = renderAdviceMarkdown(buildAdvice(scan));

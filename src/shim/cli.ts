@@ -31,7 +31,7 @@ function err(line: string): void {
 
 export type InstallShimOptions = {
   // Which host configs to patch. `tk shim install` patches both available
-  // surfaces; `tk init` patches the one for the detected host.
+  // surfaces; `tk install` patches the one for the detected host.
   rc?: boolean;
   vscode?: boolean;
   quiet?: boolean;
@@ -166,7 +166,7 @@ function status(): number {
 export function runShim(argv: string[]): number {
   const dryRun = argv.includes("--dry-run");
   // The subcommand is the first non-flag token, so `--dry-run` can appear in any
-  // position (e.g. `tk init shim install --dry-run`).
+  // position (e.g. `tk shim install --dry-run`).
   const sub = argv.find((token) => !token.startsWith("-"));
   switch (sub) {
     case "install":

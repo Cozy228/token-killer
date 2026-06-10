@@ -5,7 +5,7 @@
 //   tk hook check <cmd>  dry-run: show how a command would be rewritten (mirrors
 //                        `rtk hook check`); the test/debug surface
 //
-// Installation is NOT here — it is `tk init`'s job (DESIGN §3.1). There is no
+// Installation is NOT here — it is `tk install`'s job (DESIGN §3.1). There is no
 // `tk hook install`/`init`/`status`.
 
 import { runHookCopilot } from "./copilot.js";

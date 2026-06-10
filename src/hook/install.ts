@@ -1,8 +1,8 @@
 // Slice 3 — Copilot hook config writer (DESIGN §3.1).
 //
-// This is NOT an installer command — installation is `tk init`'s job (there is no
+// This is NOT an installer command — installation is `tk install`'s job (there is no
 // `tk hook install`). This module is the config-writing routine that
-// `tk init --host copilot-cli` calls. It writes the host hook config that points
+// `tk install --host copilot-cli` calls. It writes the host hook config that points
 // PreToolUse at `tk hook copilot`; the proxy does the compression.
 //
 // Scope (DESIGN §15, §3.0): user-level by default — `~/.copilot/hooks/
@@ -30,7 +30,7 @@ const CONFIG_FILENAME = "tk-rewrite.json";
 // CommandNotFoundException (the spike only worked with an absolute node path), so a
 // hook installed there is inert. Resolve the absolute node executable + the running
 // cli.js at install time instead. `process.argv[1]` is the script node executed for
-// `tk init`; fall back to this module's own bundled path.
+// `tk install`; fall back to this module's own bundled path.
 function quoteArg(p: string): string {
   return /\s/.test(p) ? `"${p}"` : p;
 }
@@ -54,7 +54,7 @@ export type CopilotHookConfig = {
 
 export type ConfigLocation = { project: boolean; home?: string; cwd?: string };
 
-// The config artifact, format verified from `rtk init --copilot`'s
+// The config artifact, format verified from `rtk install --copilot`'s
 // `.github/hooks/rtk-rewrite.json` (DESIGN §3.1).
 export function buildCopilotHookConfig(command: string = resolveHookCommand()): CopilotHookConfig {
   return {
@@ -82,7 +82,7 @@ export type HookConfigPlan = {
   contents: string;
 };
 
-// Compute what install WOULD do without writing — backs `tk init --dry-run`.
+// Compute what install WOULD do without writing — backs `tk install --dry-run`.
 export function planCopilotHookConfig(loc: ConfigLocation): HookConfigPlan {
   const path = copilotHookConfigPath(loc);
   const contents = serialize(buildCopilotHookConfig());

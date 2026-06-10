@@ -6,7 +6,7 @@ import { delimiter } from "node:path";
 // to PATH, and confirm a shimmed program resolves INTO the shim dir. This proves
 // the load-bearing assumption — that the injected PATH is actually honored —
 // rather than silently shipping a no-op shim. PASS/FAIL is reported by status
-// and consulted by `tk init` to fall back to injection when the shim is dead.
+// and consulted by `tk install` to fall back to injection when the shim is dead.
 
 export type ProbeResult = { pass: boolean; resolved: string | null; program: string };
 
@@ -24,7 +24,11 @@ export function runInterceptionProbe(
   let resolved: string | null = null;
   if (platform === "win32") {
     const r = spawnSync("where", [program], { encoding: "utf8", env });
-    resolved = (r.stdout ?? "").split(/\r?\n/).find((l) => l.trim() !== "")?.trim() ?? null;
+    resolved =
+      (r.stdout ?? "")
+        .split(/\r?\n/)
+        .find((l) => l.trim() !== "")
+        ?.trim() ?? null;
   } else {
     const r = spawnSync("sh", ["-c", `command -v ${program}`], { encoding: "utf8", env });
     resolved = (r.stdout ?? "").trim() || null;

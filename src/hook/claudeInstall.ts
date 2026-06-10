@@ -1,6 +1,6 @@
 // Claude Code settings patcher (goal §2) — the config-writing routine that
-// `tk init --host claude-code` calls. It is NOT a standalone installer; like
-// `install.ts` (Copilot), installation is `tk init`'s job.
+// `tk install --host claude-code` calls. It is NOT a standalone installer; like
+// `install.ts` (Copilot), installation is `tk install`'s job.
 //
 // Claude Code's hook config lives in `~/.claude/settings.json` and uses a
 // nested shape — an array of `{ matcher, hooks: [{ type, command }] }` groups —
@@ -50,7 +50,7 @@ function isClaudeRewriteHook(command: string | undefined): boolean {
 
 // Is this hook OURS (tk), as opposed to a foreign `rtk hook claude` the user may
 // keep? Used by uninstall (so we never remove someone else's hook) and by the
-// `pointsAtTk` status probe (`tk debug` §2 / `tk init --show`). Ours is the exact
+// `pointsAtTk` status probe (`tk debug` §2 / `tk status`). Ours is the exact
 // command we'd write, OR any invocation of a `tk` binary — `node /abs/bin/tk hook
 // claude`, a bare `tk hook claude`, or the Windows `tk.cmd`/`tk.exe` shim. The
 // binary may sit behind any absolute path, so the boundary before `tk` must allow
@@ -128,7 +128,7 @@ export type ClaudeInstallPlan = {
 
 function readSettings(path: string): ClaudeSettings {
   // A present-but-invalid settings.json must NOT be clobbered — surface the
-  // parse error to the caller (tk init) instead of overwriting the user's file.
+  // parse error to the caller (tk install) instead of overwriting the user's file.
   return JSON.parse(readFileSync(path, "utf8")) as ClaudeSettings;
 }
 
@@ -145,7 +145,7 @@ function currentClaudeCommand(settings: ClaudeSettings): string | undefined {
   return undefined;
 }
 
-// Compute what install WOULD do without writing — backs `tk init --dry-run`.
+// Compute what install WOULD do without writing — backs `tk install --dry-run`.
 export function planClaudeHookInstall(
   loc: ClaudeLocation,
   command: string = claudeHookCommand(),

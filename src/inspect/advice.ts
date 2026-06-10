@@ -53,7 +53,8 @@ function deliveryFinding(scan: ScanResult, rawTotal: number): AdviceFinding {
       detail: `${rawTotal} compressible terminal commands ran raw (no tk prefix).`,
       occurrences: rawTotal,
       confidence: 0.9,
-      recommendation: "Run `tk init --host copilot-cli` to install the rewrite hook, then apply the per-command rewrites below.",
+      recommendation:
+        "Run `tk install --host copilot-cli` to install the rewrite hook, then apply the per-command rewrites below.",
     };
   }
   // vscode (default): the Copilot-CLI hook does not fire here — the shim is the
@@ -64,11 +65,14 @@ function deliveryFinding(scan: ScanResult, rawTotal: number): AdviceFinding {
     detail: `${rawTotal} compressible terminal commands ran raw (no tk prefix). VS Code cannot use the Copilot-CLI hook; the shim is the deterministic path.`,
     occurrences: rawTotal,
     confidence: 0.9,
-    recommendation: "Run `tk init` (installs the PATH shim) and restart VS Code.",
+    recommendation: "Run `tk install` (installs the PATH shim) and restart VS Code.",
   };
 }
 
-export function buildAdvice(scan: ScanResult, opts: AdviceOptions = DEFAULT_ADVICE_OPTIONS): AdviceFinding[] {
+export function buildAdvice(
+  scan: ScanResult,
+  opts: AdviceOptions = DEFAULT_ADVICE_OPTIONS,
+): AdviceFinding[] {
   const findings: AdviceFinding[] = [];
   const raw = compressibleRaw(scan);
   const rawTotal = raw.reduce((sum, o) => sum + o.count, 0);
@@ -100,7 +104,8 @@ export function buildAdvice(scan: ScanResult, opts: AdviceOptions = DEFAULT_ADVI
         detail: `${o.governed_deny} reads targeted dependency dirs, build output, or lockfiles.`,
         occurrences: o.governed_deny,
         confidence: 0.85,
-        recommendation: "Read source instead of generated files (direct-tool result compression is not yet delivered; this is governance advice).",
+        recommendation:
+          "Read source instead of generated files (direct-tool result compression is not yet delivered; this is governance advice).",
       });
     }
     if (o.governed_suggest >= opts.minOccurrences) {
@@ -124,21 +129,24 @@ export function buildAdvice(scan: ScanResult, opts: AdviceOptions = DEFAULT_ADVI
         detail: `${o.large_output_count} invocations each produced a large output (max ${o.max_output_chars} chars).`,
         occurrences: o.large_output_count,
         confidence: 0.7,
-        recommendation: o.kind === "shell"
-          ? `Run via \`tk ${o.key}\` to cut output, or add a filter/limit.`
-          : "Narrow the request (range/scope) to reduce output volume.",
+        recommendation:
+          o.kind === "shell"
+            ? `Run via \`tk ${o.key}\` to cut output, or add a filter/limit.`
+            : "Narrow the request (range/scope) to reduce output volume.",
       });
     }
   }
 
-  return findings
-    .filter((f) => f.confidence >= opts.minConfidence && f.occurrences >= opts.minOccurrences)
-    // Impact = confidence × occurrences. Delivery always leads on ties.
-    .sort((a, b) => {
-      if (a.type === "delivery") return -1;
-      if (b.type === "delivery") return 1;
-      return b.confidence * b.occurrences - a.confidence * a.occurrences;
-    });
+  return (
+    findings
+      .filter((f) => f.confidence >= opts.minConfidence && f.occurrences >= opts.minOccurrences)
+      // Impact = confidence × occurrences. Delivery always leads on ties.
+      .sort((a, b) => {
+        if (a.type === "delivery") return -1;
+        if (b.type === "delivery") return 1;
+        return b.confidence * b.occurrences - a.confidence * a.occurrences;
+      })
+  );
 }
 
 const MARKDOWN_TOP = 5;

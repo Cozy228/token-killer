@@ -128,7 +128,7 @@ function renderDelivery(b: DebugBundle): string {
     );
   } else if (d.brokenHook) {
     lines.push(
-      `> 🔴 **tk is wired but INSTALLED-BUT-BROKEN.** The claude-code hook points at tk, but the binary it names failed to run (\`${d.claudeHook.exec.detail}\`). The hook crashes on every tool call (non-blocking), so NOTHING is compressed even though the wiring looks correct. Fix the binary path (re-run \`tk init\`) — this is *not* a healthy install.`,
+      `> 🔴 **tk is wired but INSTALLED-BUT-BROKEN.** The claude-code hook points at tk, but the binary it names failed to run (\`${d.claudeHook.exec.detail}\`). The hook crashes on every tool call (non-blocking), so NOTHING is compressed even though the wiring looks correct. Fix the binary path (re-run \`tk install\`) — this is *not* a healthy install.`,
       "",
     );
   } else {

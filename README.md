@@ -29,9 +29,9 @@ Wire `tk` into your agent (Claude Code / Copilot CLI / VS Code) — it picks the
 highest delivery tier available per host:
 
 ```bash
-tk init            # auto-detect host, install
-tk init --show     # show what's wired
-tk init --uninstall
+tk install            # auto-detect host, install
+tk status             # show what's wired
+tk uninstall          # remove everything tk installed (add --purge-data to wipe metrics)
 ```
 
 Once wired, compression **and session dedup** apply automatically to the agent's
@@ -118,14 +118,14 @@ unless asked.
 
 ## Best-practice guidance
 
-`tk init` delivers a short usage guide so the agent spends tokens well by default —
+`tk install` delivers a short usage guide so the agent spends tokens well by default —
 prefer terse forms (`git status --short`, `git log --oneline`, `rg -c`), read `gain`
 honestly. It writes:
 
 - **`TK.md`** — the usage guide, in your config dir.
 - A **guard-wrapped, idempotent block** wired into the agent's instruction file
   (`CLAUDE.md` for Claude Code, `copilot-instructions.md` for Copilot / VS Code).
-  Re-running replaces the block; `tk init --uninstall` removes it. Your own content is
+  Re-running replaces the block; `tk uninstall` removes it. Your own content is
   never touched. `tk optimize --token-budget-block` keeps the block in sync.
 
 ## VS Code settings

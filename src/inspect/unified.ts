@@ -51,7 +51,7 @@ function opportunityToFinding(o: Opportunity): RuntimeFinding {
   let recommendation: string;
   let fix_class: RuntimeFinding["fix_class"] = "advisory";
   if (o.compressible) {
-    recommendation = `Route \`${o.key}\` through Token Killer (install shim/hook with \`tk init\`).`;
+    recommendation = `Route \`${o.key}\` through Token Killer (install shim/hook with \`tk install\`).`;
     fix_class = "delivery";
   } else if (o.governed_deny > 0) {
     recommendation = `Govern dependency-dir reads for \`${o.key}\` via a hook pretool deny.`;

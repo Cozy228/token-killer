@@ -88,7 +88,7 @@ export type InstallOptions = {
 // Is a real `program` executable resolvable on PATH, excluding our own shim dir
 // (so a re-install never counts a previously-written wrapper as "the binary")?
 // Windows-only: off Windows tk's fronted tools are present, so every program is
-// shimmable and the set is unchanged. Exported so `tk init shim install --dry-run`
+// shimmable and the set is unchanged. Exported so `tk shim install --dry-run`
 // previews the exact same install/skip partition the real install would write.
 export function realBinaryPresent(program: string, shimDirPath: string): boolean {
   if (process.platform !== "win32") return true;

@@ -98,7 +98,7 @@ export function userInjectionPath(
   return join(tokenKillerHome(), "copilot-instructions.md");
 }
 
-// Project-level target — the ONLY project-repo write, gated behind `tk init
+// Project-level target — the ONLY project-repo write, gated behind `tk install
 // --project`.
 export function projectInjectionPath(cwd: string): string {
   return join(cwd, ".github", "copilot-instructions.md");

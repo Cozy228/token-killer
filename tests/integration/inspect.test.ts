@@ -124,7 +124,7 @@ describe("tk inspect --advice / --write-advice / --telemetry-export (Slice 5)", 
     expect(r.status).toBe(0);
     expect(r.stdout).toContain("## Advice");
     expect(r.stdout).toContain("shim");
-    expect(r.stdout).toContain("tk init");
+    expect(r.stdout).toContain("tk install");
   });
 
   test("--json --advice includes the advice array", () => {
