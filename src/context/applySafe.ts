@@ -7,7 +7,8 @@
 // the most recent apply.
 
 import { createHash } from "node:crypto";
-import { existsSync, mkdirSync, readFileSync, readdirSync, statSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, readFileSync, readdirSync, statSync } from "node:fs";
+import { writeFileAtomicSync } from "../core/atomicWrite.js";
 import { basename, join } from "node:path";
 
 import { tokenKillerHome } from "../core/dataDir.js";
@@ -99,7 +100,7 @@ export function writeBackup(path: string, content: string, nowMs: number): strin
   mkdirSync(dir, { recursive: true });
   const tag = createHash("sha256").update(path).digest("hex").slice(0, 6);
   const backupName = `${basename(path)}.${tag}`;
-  writeFileSync(join(dir, backupName), content);
+  writeFileAtomicSync(join(dir, backupName), content);
 
   const manifestPath = join(dir, "manifest.json");
   let entries: ManifestEntry[] = [];
@@ -111,7 +112,7 @@ export function writeBackup(path: string, content: string, nowMs: number): strin
     }
   }
   if (!entries.some((e) => e.target === path)) entries.push({ target: path, backup: backupName });
-  writeFileSync(manifestPath, JSON.stringify(entries, null, 2));
+  writeFileAtomicSync(manifestPath, JSON.stringify(entries, null, 2));
   return join(dir, backupName);
 }
 
@@ -150,7 +151,7 @@ export function runRestore(_nowMs: number): number {
     try {
       const content = readFileSync(join(root, latest!, entry.backup), "utf8");
       mkdirSync(join(entry.target, ".."), { recursive: true });
-      writeFileSync(entry.target, content);
+      writeFileAtomicSync(entry.target, content);
       process.stdout.write(`Restored ${entry.target}\n`);
       restored += 1;
     } catch (error) {
@@ -228,7 +229,7 @@ export function applyMarkerBlock(home: string, mode: "insert" | "remove", nowMs:
     process.stdout.write(`Backup: ${backup}\n`);
   }
   mkdirSync(join(target, ".."), { recursive: true });
-  writeFileSync(target, next);
+  writeFileAtomicSync(target, next);
   process.stdout.write(
     `${mode === "insert" ? "Installed" : "Removed"} Token Killer managed block in ${target}\n`,
   );
@@ -261,7 +262,12 @@ function setFrontmatterKey(content: string, key: string, value: unknown): string
       lines.splice(end, 0, newLine);
       return lines.join("\n");
     }
+    // M2: an opening `---` with NO closing `---` is MALFORMED frontmatter. Prepending a
+    // fresh `---` block here would nest a second block and corrupt the file. Refuse:
+    // return the content unchanged so the write is a no-op, never a corruption.
+    return content;
   }
+  // No frontmatter at all → safe to prepend a fresh block.
   return `---\n${newLine}\n---\n${content}`;
 }
 
@@ -390,7 +396,7 @@ export async function runApply(
   for (const w of writes.values()) {
     writeBackup(w.livePath, w.original, nowMs);
     mkdirSync(join(w.livePath, ".."), { recursive: true });
-    writeFileSync(w.livePath, w.next);
+    writeFileAtomicSync(w.livePath, w.next);
     applied += 1;
     // Ledger 2: one append-only record per applied action (best-effort, never a
     // path leak — before/after_hash are body hashes in inspect's space).

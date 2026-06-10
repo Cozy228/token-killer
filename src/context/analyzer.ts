@@ -7,7 +7,7 @@
 import { createHash } from "node:crypto";
 
 import { discoverContextFiles, readContextFile, type DiscoveredFile } from "./discover.js";
-import { computeBodyMetrics, type BodyMetrics } from "./metrics.js";
+import { computeBodyMetrics, hashText, type BodyMetrics } from "./metrics.js";
 import { parseMarkdown, type ParsedMarkdown } from "./parseMarkdown.js";
 import { SURFACE_SELECTORS } from "./types.js";
 import type { ContextFinding, ContextFindingType, ContextScope, ContextSurface } from "./types.js";
@@ -78,10 +78,12 @@ export function clearRules(): void {
 }
 
 function withBodyHash(findings: ContextFinding[], af: AnalyzedFile): ContextFinding[] {
+  const contentHash = hashText(af.content);
   for (const f of findings) {
     f.scope ??= af.file.scope;
     f.adapter ??= af.file.adapter;
     f.body_hash ??= af.metrics.body_hash;
+    f.content_hash ??= contentHash; // full-file hash for the M3 frontmatter stale-check
   }
   return findings;
 }

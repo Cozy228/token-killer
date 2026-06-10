@@ -91,6 +91,15 @@ describe("marker block helpers", () => {
     expect(next).toContain("body text");
     expect(next).toContain("name: deploy");
   });
+
+  test("M2: setFrontmatterKey refuses MALFORMED (unterminated) frontmatter — no second --- block", () => {
+    // Opening `---` with no closing fence: prepending a fresh block would nest a
+    // second one and corrupt the file. The write must be a no-op instead.
+    const content = ["---", "name: deploy", "# heading, no closing fence", "body"].join("\n");
+    const next = setFrontmatterKey(content, "disable-model-invocation", true);
+    expect(next).toBe(content);
+    expect(next.match(/^---$/gm)?.length ?? 0).toBeLessThanOrEqual(1);
+  });
 });
 
 describe("tk optimize --token-budget-block (folds in the former agentsmd)", () => {
@@ -166,6 +175,34 @@ describe("runOptimize --apply", () => {
     expect(await runOptimize(["--restore"], 2000, home, cwd, {})).toBe(0);
     s2.mockRestore();
     expect(readFileSync(skill, "utf8")).not.toContain("disable-model-invocation: true");
+  });
+
+  test("M3: a frontmatter edit between inspect and apply is detected (no silent clobber)", async () => {
+    const skill = join(home, ".claude", "skills", "deploy", "SKILL.md");
+    mkdirSync(dirname(skill), { recursive: true });
+    const body = ["# Deploy", "Run the deploy and publish."];
+    writeFileSync(skill, ["---", "name: deploy", "description: Deploy", "---", ...body].join("\n"));
+
+    const trigger = vi.fn((_s: "user" | "project", h: string, c: string, n: number) => {
+      runInspect(["--user"], n, h, c);
+      // The user edits the FRONTMATTER after inspect captured the finding (body is
+      // unchanged, so body_hash still matches — only the full-file content_hash moves).
+      writeFileSync(
+        skill,
+        ["---", "name: deploy", "description: Deploy", "owner: alice", "---", ...body].join("\n"),
+      );
+    });
+
+    const s = silenceStdout();
+    await runOptimize(["--user", "--surface", "skills", "--apply"], 1000, home, cwd, {
+      triggerInspect: trigger,
+    });
+    s.mockRestore();
+
+    const after = readFileSync(skill, "utf8");
+    // The stale-patch guard detected the frontmatter change → apply did NOT write.
+    expect(after).not.toContain("disable-model-invocation");
+    expect(after).toContain("owner: alice"); // the user's concurrent edit is intact
   });
 });
 

@@ -69,4 +69,9 @@ export type ContextFinding = {
   // consumer re-reads the live file and validates against this before emitting a
   // diff — never persist the raw body itself.
   body_hash?: string;
+  // Hash of the FULL file (frontmatter + body) at inspect time. body_hash does not
+  // cover the frontmatter region that a `frontmatter_set` op writes, so the apply
+  // path validates this for auto-applied findings to detect a frontmatter edit made
+  // between inspect and apply (M3).
+  content_hash?: string;
 };

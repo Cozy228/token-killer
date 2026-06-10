@@ -10,7 +10,8 @@ import type { ContextFinding } from "../types.js";
 import { buildFinding, hasFrontmatterKey } from "./helpers.js";
 
 const SIDE_EFFECT_VERBS = /\b(commit|push|deploy|publish|release|send|delete|archive)\b/i;
-const READONLY_HINT = /\b(read|review|summari[sz]e|explain|list|describe|analy[sz]e|reference|lookup)\b/i;
+const READONLY_HINT =
+  /\b(read|review|summari[sz]e|explain|list|describe|analy[sz]e|reference|lookup)\b/i;
 const KNOWLEDGE_HINT = /\b(background|knowledge|reference|guide|conventions?|glossary)\b/i;
 
 const ENTRYPOINT_LINE_LIMIT = 500;
@@ -35,17 +36,23 @@ export const skillInvocationPolicyRule: PerFileRule = {
     const haystack = `${name}\n${af.parsed.body}`;
 
     const hasSideEffect = SIDE_EFFECT_VERBS.test(haystack);
-    const disableSet = af.parsed.frontmatter.values["disable-model-invocation"] === true;
+    // M1: fire only when the key is ABSENT. An explicit `disable-model-invocation:
+    // false` is a deliberate user choice — a safe_mechanical fix must FILL an absent
+    // key, never FLIP an explicit value (the old `=== true` check treated explicit
+    // false as unset and `--apply` overwrote it to true).
+    const disablePresent = hasFrontmatterKey(af, "disable-model-invocation");
 
     // Side-effect workflow that the model can auto-invoke.
-    if (hasSideEffect && !disableSet) {
+    if (hasSideEffect && !disablePresent) {
       findings.push(
         buildFinding(af, {
           type: "skill_invocation_policy",
           severity: "warn",
           confidence: 0.85,
-          evidence: "Skill performs side-effect/high-cost actions but disable-model-invocation is not set.",
-          recommendation: "Add `disable-model-invocation: true` so the model cannot auto-invoke this side-effect workflow.",
+          evidence:
+            "Skill performs side-effect/high-cost actions but disable-model-invocation is not set.",
+          recommendation:
+            "Add `disable-model-invocation: true` so the model cannot auto-invoke this side-effect workflow.",
           // High-confidence, deterministic frontmatter add — safe_mechanical at
           // either scope (`tk optimize --apply` discloses, backs up, and is
           // reversible via --restore, so project-tracked skills are eligible too).
@@ -57,15 +64,19 @@ export const skillInvocationPolicyRule: PerFileRule = {
     }
 
     // Background-knowledge skill with no slash action and user-invocable unset.
-    const isKnowledge = KNOWLEDGE_HINT.test(`${name} ${af.parsed.frontmatter.values.description ?? ""}`);
+    const isKnowledge = KNOWLEDGE_HINT.test(
+      `${name} ${af.parsed.frontmatter.values.description ?? ""}`,
+    );
     if (!hasSideEffect && isKnowledge && !hasFrontmatterKey(af, "user-invocable")) {
       findings.push(
         buildFinding(af, {
           type: "skill_invocation_policy",
           severity: "info",
           confidence: 0.55,
-          evidence: "Background-knowledge skill leaves user-invocable unset and has no meaningful slash-command action.",
-          recommendation: "Add `user-invocable: false` so background knowledge is not offered as a user command.",
+          evidence:
+            "Background-knowledge skill leaves user-invocable unset and has no meaningful slash-command action.",
+          recommendation:
+            "Add `user-invocable: false` so background knowledge is not offered as a user command.",
           fix_class: "suggested_diff",
           start_line: fmEnd,
           idExtra: "user-invocable",
@@ -82,7 +93,8 @@ export const skillInvocationPolicyRule: PerFileRule = {
           severity: "info",
           confidence: 0.5,
           evidence: "Read-only skill does not declare allowed-tools (least-privilege).",
-          recommendation: "Add an `allowed-tools` list scoping the skill to the tools it actually needs.",
+          recommendation:
+            "Add an `allowed-tools` list scoping the skill to the tools it actually needs.",
           fix_class: "suggested_diff",
           start_line: fmEnd,
           idExtra: "allowed-tools",
