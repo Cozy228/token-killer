@@ -192,6 +192,16 @@ Both remaining items were fixed immediately after this re-run:
 - **T1 fixed** (`scripts/windows-dogfood.ps1`): the 5 stale assertions were updated to the
   current shapes — Copilot CLI flat `modifiedArgs`/`permissionDecision` (ADR 0005),
   empty-stdout fail-open via a new `-ExpectEmpty` mode, `init shim status` path, and the
-  absolute-hook-path config match. Edits were matched against the exact stdout captured
-  live in §3/§6 this session; a live `pnpm test:windows-dogfood` re-run to confirm
-  40+5→45 green is **pending the next box power-on** (box was shut down after the re-run).
+  absolute-hook-path config match (new `-ExpectEmpty` mode for the fail-open contract).
+
+**Live re-verification on the GBK box (same day, box powered back on):**
+- **T1 — `pnpm test:windows-dogfood` → `Results: 45 passed, 0 failed`** (was 40/5). All five
+  previously-stale assertions now pass against tk's real output; the harness is green for
+  the right reasons.
+- **O1 — verified live:** fresh `copilot-instructions.md` → `--token-budget-block` creates
+  it (550 B) → `--restore` **deletes** it (`ABSENT`), no 0-byte leftover.
+- Box left clean: shim + copilot hook uninstalled, bundle removed, repo `git status` empty
+  (owner WIP preserved in `stash@{0}`), then shut down.
+
+**Final state: D1/D2/D3/O1 all fixed & verified live; T1 dogfood 45/0 green.** No open
+items remain from the 2026-06-09 Windows dogfood.
