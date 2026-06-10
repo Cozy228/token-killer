@@ -1,0 +1,5 @@
+import { api } from "./api";
+export type OrderPayload = { id: string };
+export async function submitOrder(payload: OrderPayload) {
+  return api.submit(payload);
+}

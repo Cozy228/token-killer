@@ -1,0 +1,1 @@
+{"config":{},"stats":{"startTime":"2026-01-01T00:00:00.000Z","expected":7,"unexpected":0,"skipped":0,"flaky":0,"duration":7300.5},"suites":[{"title":"auth","specs":[],"suites":[{"title":"login.spec.ts","specs":[{"title":"should login","ok":true,"tests":[{"status":"expected","results":[{"status":"passed","errors":[],"duration":2300}]}]}],"suites":[]}]}],"errors":[]}

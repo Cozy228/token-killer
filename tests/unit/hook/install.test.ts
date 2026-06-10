@@ -1,0 +1,102 @@
+import { afterEach, beforeEach, describe, expect, test } from "vitest";
+import { mkdtempSync, readFileSync, rmSync, writeFileSync, mkdirSync, existsSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
+
+import {
+  buildCopilotHookConfig,
+  copilotHookConfigPath,
+  copilotHookConfigStatus,
+  installCopilotHookConfig,
+  planCopilotHookConfig,
+  uninstallCopilotHookConfig,
+} from "../../../src/hook/install.js";
+
+let home: string;
+let cwd: string;
+
+beforeEach(() => {
+  home = mkdtempSync(join(tmpdir(), "tk-hookcfg-home-"));
+  cwd = mkdtempSync(join(tmpdir(), "tk-hookcfg-proj-"));
+});
+afterEach(() => {
+  rmSync(home, { recursive: true, force: true });
+  rmSync(cwd, { recursive: true, force: true });
+});
+
+describe("config artifact (DESIGN §3.1)", () => {
+  test("matches the rtk-verified shape with a fixed command", () => {
+    const config = buildCopilotHookConfig("tk hook copilot");
+    expect(config.hooks.PreToolUse).toEqual([
+      { type: "command", command: "tk hook copilot", cwd: ".", timeout: 5 },
+    ]);
+    expect(config.managedBy).toBe("token-killer");
+  });
+
+  // Audit #13 / ADR 0005 §5: the default command resolves an ABSOLUTE node + cli
+  // path (a bare `tk` is inert on Windows PowerShell), still ending in `hook copilot`.
+  test("default command resolves absolute node + cli, not a bare `tk`", () => {
+    const command = buildCopilotHookConfig().hooks.PreToolUse[0]!.command;
+    expect(command.endsWith("hook copilot")).toBe(true);
+    expect(command.startsWith("tk ")).toBe(false);
+    expect(command).toContain(process.execPath);
+  });
+});
+
+describe("paths — user-level default, repo only under --project", () => {
+  test("user-level → ~/.copilot/hooks/tk-rewrite.json", () => {
+    expect(copilotHookConfigPath({ project: false, home })).toBe(
+      join(home, ".copilot", "hooks", "tk-rewrite.json"),
+    );
+  });
+
+  test("project → <cwd>/.github/hooks/tk-rewrite.json", () => {
+    expect(copilotHookConfigPath({ project: true, cwd })).toBe(
+      join(cwd, ".github", "hooks", "tk-rewrite.json"),
+    );
+  });
+});
+
+describe("install / plan / uninstall", () => {
+  test("install writes the user-level config", () => {
+    const plan = installCopilotHookConfig({ project: false, home });
+    expect(plan.action).toBe("create");
+    const written = JSON.parse(readFileSync(plan.path, "utf8"));
+    expect(written.hooks.PreToolUse[0].command.endsWith("hook copilot")).toBe(true);
+  });
+
+  test("install is idempotent (second run → unchanged)", () => {
+    installCopilotHookConfig({ project: false, home });
+    expect(installCopilotHookConfig({ project: false, home }).action).toBe("unchanged");
+  });
+
+  test("plan does not write (dry-run backing)", () => {
+    const plan = planCopilotHookConfig({ project: false, home });
+    expect(plan.action).toBe("create");
+    expect(existsSync(plan.path)).toBe(false);
+  });
+
+  test("uninstall removes only our marker-bearing file", () => {
+    installCopilotHookConfig({ project: false, home });
+    const removed = uninstallCopilotHookConfig({ project: false, home });
+    expect(removed.removed).toBe(true);
+    expect(existsSync(removed.path)).toBe(false);
+  });
+
+  test("uninstall refuses to delete a non-tk hooks file (no marker)", () => {
+    const path = copilotHookConfigPath({ project: false, home });
+    mkdirSync(join(home, ".copilot", "hooks"), { recursive: true });
+    writeFileSync(path, JSON.stringify({ hooks: { PreToolUse: [] } }));
+    const removed = uninstallCopilotHookConfig({ project: false, home });
+    expect(removed.removed).toBe(false);
+    expect(existsSync(path)).toBe(true);
+  });
+
+  test("status reports presence and managed marker", () => {
+    expect(copilotHookConfigStatus({ project: false, home }).present).toBe(false);
+    installCopilotHookConfig({ project: false, home });
+    const s = copilotHookConfigStatus({ project: false, home });
+    expect(s.present).toBe(true);
+    expect(s.managed).toBe(true);
+  });
+});

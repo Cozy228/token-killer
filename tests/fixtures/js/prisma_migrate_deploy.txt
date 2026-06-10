@@ -1,0 +1,13 @@
+Environment variables loaded from .env
+Prisma schema loaded from prisma/schema.prisma
+Datasource "db": PostgreSQL database "app" at "localhost:5432"
+
+3 migrations found in prisma/migrations
+
+Applying migration 20260101_init
+The following migration have been applied:
+✓ 20260101_init applied
+✓ 20260115_add_users applied
+✓ 20260128_add_sessions applied
+
+All migrations have been successfully applied.

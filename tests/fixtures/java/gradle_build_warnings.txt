@@ -1,0 +1,6 @@
+> Task :app:compileDebugKotlin
+w: /src/Foo.kt: (42, 5): Parameter 'unused' is never used
+warning: [options] bootstrap class path not set
+Warning: Gradle deprecation detected
+
+BUILD SUCCESSFUL in 4s

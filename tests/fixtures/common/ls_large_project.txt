@@ -1,0 +1,7 @@
+./src/cli.ts
+./src/parse.ts
+./tests/unit/parse.test.ts
+./README.md
+./package.json
+./node_modules/pkg/index.js
+./dist/cli.js

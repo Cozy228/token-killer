@@ -1,0 +1,9 @@
+ docs/testing-and-migration-audit.md           | 164 +++++++++++++++++---------
+ package.json                                  |   6 +-
+ tests/helpers/fixtureCases.ts                 | 156 ++++++++++++++++++++++++
+ tests/smoke/smoke.sh                          |   8 +-
+ tests/unit/handlers/fixtureContent.test.ts    |  57 ---------
+ tests/unit/handlers/syntheticTestDebt.test.ts |   5 +-
+ tests/unit/rtkScriptParity.test.ts            |   6 +-
+ vitest.config.ts                              |  26 ++--
+ 8 files changed, 290 insertions(+), 138 deletions(-)

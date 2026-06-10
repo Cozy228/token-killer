@@ -1,0 +1,24 @@
+src/core/history.ts:export type HistoryRecord = {
+src/core/history.ts:export async function recordHistory(
+src/core/history.ts:export async function readHistory(cwd: string): Promise<HistoryRecord[]> {
+src/core/pipeline.ts:export type PipelineResult = {
+src/core/pipeline.ts:export async function runPipeline(
+src/core/savings.ts:export type Savings = {
+src/core/savings.ts:export function estimateTokens(text: string): number {
+src/core/savings.ts:export function calculateSavings(raw: string, output: string): Savings {
+src/core/report.ts:export async function buildReport(options: TkOptions): Promise<string> {
+src/handlers/index.ts:export const handlers: CommandHandler[] = [
+src/handlers/generic.ts:export const genericHandler: CommandHandler = {
+src/handlers/base.ts:export function rawText(raw: RawResult): string {
+src/handlers/common/searchLike.ts:export const searchLikeHandler: CommandHandler = {
+src/handlers/common/listLike.ts:export const listLikeHandler: CommandHandler = {
+src/handlers/common/readLike.ts:export const readLikeHandler: CommandHandler = {
+src/handlers/git/status.ts:export const gitStatusHandler: CommandHandler = {
+src/handlers/git/diff.ts:export const gitDiffHandler: CommandHandler = {
+src/handlers/git/log.ts:export const gitLogHandler: CommandHandler = {
+src/handlers/git/branch.ts:export const gitBranchHandler: CommandHandler = {
+src/types.ts:export type ParsedCommand = {
+src/types.ts:export type RawResult = {
+src/types.ts:export type FilteredResult = {
+src/types.ts:export type TkOptions = {
+src/types.ts:export interface CommandHandler {

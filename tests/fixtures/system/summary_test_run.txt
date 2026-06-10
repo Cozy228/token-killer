@@ -1,0 +1,4 @@
+PASS src/a.test.ts
+FAIL src/b.test.ts
+Tests: 1 failed, 12 passed, 13 total
+Snapshots: 0 total

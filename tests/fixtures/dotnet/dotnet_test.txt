@@ -1,0 +1,5 @@
+Determining projects to restore...
+All projects are up-to-date for restore.
+Failed OrderTests.PreventsDuplicateSubmit [42 ms]
+Error Message: Expected false but was true
+Total tests: 12. Passed: 11. Failed: 1. Skipped: 0.

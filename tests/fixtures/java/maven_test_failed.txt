@@ -1,0 +1,3 @@
+[INFO] order-service ..................................... FAILURE
+[ERROR]   OrderServiceTest.preventsDuplicateSubmit:82 expected:<1> but was:<2>
+[ERROR] Tests run: 120, Failures: 1, Errors: 0, Skipped: 0

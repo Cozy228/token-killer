@@ -1,0 +1,19 @@
+============================= test session starts ==============================
+platform darwin -- Python 3.11.0, pytest-8.1.0, pluggy-1.4.0
+rootdir: /Users/dev/project
+collected 119 items
+
+tests/order/test_submit.py .....................F......................  [100%]
+
+=================================== FAILURES ===================================
+___________________________ test_duplicate_submit ______________________________
+
+    def test_duplicate_submit():
+        result = submit(order)
+>       assert result.calls == 1
+E       AssertionError: expected 1 call, got 2
+
+src/order/submit.py:82: AssertionError
+=========================== short test summary info ============================
+FAILED tests/order/test_submit.py::test_duplicate_submit - AssertionError: expected 1 call, got 2
+=================== 1 failed, 118 passed, 4 warnings in 3.50s ===================

@@ -1,0 +1,8 @@
+# Reject AI/tool co-author trailers (Claude Code, Cursor, etc.)
+if grep -qiE '^Co-Authored-By:' "$1"; then
+  echo "error: Co-Authored-By trailer is not allowed."
+  echo "hint: set attribution.commit to \"\" in .claude/settings.json"
+  exit 1
+fi
+
+pnpm exec commitlint --edit "$1"

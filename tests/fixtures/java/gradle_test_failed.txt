@@ -1,0 +1,5 @@
+> Task :order-service:test FAILED
+OrderServiceTest > preventsDuplicateSubmit FAILED
+    org.opentest4j.AssertionFailedError: expected: <1> but was: <2>
+        at com.company.OrderServiceTest.preventsDuplicateSubmit(OrderServiceTest.java:82)
+BUILD FAILED in 12s

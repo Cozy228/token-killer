@@ -1,0 +1,12 @@
+commit abc123def4567890
+Author: Test User <test@example.com>
+Date:   Tue Jun 02 10:00:00 2026 +0800
+
+    retained commit subject
+
+diff --git a/src/order/submit.ts b/src/order/submit.ts
+--- a/src/order/submit.ts
++++ b/src/order/submit.ts
+@@ -10,6 +10,8 @@ export function submitOrder(payload) {
+-  return api.submit(payload)
++  return api.submit(payload, { retry: false })

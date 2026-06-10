@@ -1,0 +1,3 @@
+src/order/submit.py:82: error: Argument 1 has incompatible type "str"; expected "Order"  [arg-type]
+src/order/api.py:31: error: Item "None" of "Order | None" has no attribute "id"  [union-attr]
+Found 2 errors in 2 files

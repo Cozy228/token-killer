@@ -1,0 +1,21 @@
+On branch token-killer-node-cli
+Your branch is up to date with 'origin/token-killer-node-cli'.
+
+Changes not staged for commit:
+  (use "git add <file>..." to update what will be committed)
+  (use "git restore <file>..." to discard changes in working directory)
+	modified:   docs/testing-and-migration-audit.md
+	modified:   package.json
+	modified:   tests/helpers/fixtureCases.ts
+	modified:   tests/smoke/smoke.sh
+	modified:   tests/unit/handlers/fixtureContent.test.ts
+	modified:   tests/unit/handlers/syntheticTestDebt.test.ts
+	modified:   tests/unit/rtkScriptParity.test.ts
+	modified:   vitest.config.ts
+
+Untracked files:
+  (use "git add <file>..." to include in what will be committed)
+	tests/unit/handlers/fixtureWiring.test.ts
+	vitest.migration.config.ts
+
+no changes added to commit (use "git add" and/or "git commit -a")

@@ -1,0 +1,5 @@
+info: starting build
+warning: deprecated option --legacy
+error: build failed
+  at src/app.ts:10
+info: done

@@ -1,0 +1,6 @@
+diff --git a/src/order/submit.ts b/src/order/submit.ts
+--- a/src/order/submit.ts
++++ b/src/order/submit.ts
+@@ -40,7 +40,9 @@ export async function submitOrder(payload) {
+-  return api.submit(payload)
++  return api.submit({ ...payload, idempotencyKey })

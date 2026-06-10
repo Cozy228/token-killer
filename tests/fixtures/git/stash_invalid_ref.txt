@@ -1,0 +1,1 @@
+error: stash@{999999} is not a valid reference

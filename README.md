@@ -1,321 +1,218 @@
-# Token Guard
+# tk
 
-**Copilot cost-control CLI for usage-based billing.**
+`tk` is Token Killer: a local command proxy that kills noisy agent output without killing evidence — and stops re-billing you for output you've already seen.
 
-Token Guard reduces avoidable GitHub Copilot token spend by guiding agent workflows toward compact command output, bounded file reads, shorter prompts, and reviewable project instructions.
-
-GitHub announced that Copilot moves to usage-based billing on June 1, 2026. GitHub AI Credits are consumed based on token usage, including input, output, and cached tokens. For agentic coding, noisy tool output is no longer just annoying. It is expensive.
-
-Read the announcement: [GitHub Copilot is moving to usage-based billing](https://github.blog/news-insights/company-news/github-copilot-is-moving-to-usage-based-billing/).
-
-## What Token Guard Does
-
-Token Guard is a CLI companion for Copilot. Developers keep using VS Code Copilot, Copilot CLI, and GitHub-hosted agent workflows. `tg` sits beside those tools to:
-
-- install supported hooks;
-- suggest compact shell commands;
-- run token-friendly command wrappers;
-- scan token-heavy skills and instructions;
-- report avoidable context waste;
-- restore its project changes when needed.
-
-It does not replace Copilot or require developers to learn a new coding assistant.
-
-## Expected Savings
-
-Actual savings depend on repository size, command habits, and hook support. The table below shows the kind of waste Token Guard is designed to reduce in a typical agent-heavy coding session.
-
-| Operation | Raw workflow | With `tg` | Typical reduction |
-| --- | ---: | ---: | ---: |
-| Search results | 8,000 tokens | 1,500 tokens | 80% |
-| File reads | 20,000 tokens | 6,000 tokens | 70% |
-| Test output | 25,000 tokens | 2,500 tokens | 90% |
-| Git diff/status | 8,000 tokens | 2,000 tokens | 75% |
-| Logs | 12,000 tokens | 2,000 tokens | 80% |
-
-These are estimates for product planning, not billing guarantees.
-
-## Installation
-
-Internal preview distribution is expected to use npm. On Windows, npm exposes `tg` through the normal `tg.cmd` shim.
-
-```powershell
-npm install -g @company/token-guard
+```bash
+tk <original command> [...args]
 ```
 
-Verify the install:
+The command after `tk` is the command you would normally run. `tk` executes it, captures stdout/stderr/exit code, compresses output locally, records token savings, and exits with the original command exit code.
 
-```powershell
-tg --version
-tg config show
+## Principles
+
+1. Retention before compression.
+2. Raw output is always a valid result.
+3. Never hide actionable facts behind placeholders.
+4. Command-aware beats generic summarization.
+5. Compress structure and noise, not evidence.
+6. Full diffs, full matches, and source content are passthrough by default.
+7. Every handler must prove preservation or fall back to raw.
+8. High savings with wrong content is worse than zero savings.
+9. Evaluation is based on agent next-action equivalence.
+10. Deterministic, local, test-first.
+
+See [docs/PRINCIPLES.md](./docs/PRINCIPLES.md) for the product rationale and [docs/DESIGN.md](./docs/DESIGN.md) for the implementation contracts.
+
+## Install
+
+Wire `tk` into your agent (Claude Code / Copilot CLI / VS Code) — it picks the
+highest delivery tier available per host:
+
+```bash
+tk install            # auto-detect host, install
+tk status             # show what's wired
+tk uninstall          # remove everything tk installed (add --purge-data to wipe metrics)
 ```
 
-## Quick Start
+Once wired, compression **and session dedup** apply automatically to the agent's
+commands. `tk gain` shows measured savings; `tk gain --history` lists recent runs.
 
-Initialize Token Guard in a repository:
+## Usage
 
-```powershell
-tg init --mode balanced
+```bash
+tk git status
+tk git diff
+tk diff old.txt new.txt
+tk rg "submitOrder" src
+tk cat package.json
+tk read --level balanced src/cli.ts
+tk ls .
+tk npm test
+tk tsc --noEmit
+tk npx tsc --noEmit
+tk dotnet test
+tk deps
+tk err npm run build
+tk summary npm test
+tk smart src/main.ts
 ```
 
-Check what was configured:
+## Flags
 
-```powershell
-tg hook status
-tg config show
+```bash
+tk --raw <command...>
+tk --stats <command...>
+tk --verbose <command...>
+tk --max-lines 200 <command...>
+tk --max-chars 12000 <command...>
+tk --save-raw <command...>
+tk --no-save-raw <command...>
+tk --no-dedup <command...>
+tk --report
+tk --report --json
+tk --report --csv
+tk --help
+tk --version
 ```
 
-Use Copilot normally. When a supported hook can intervene, Token Guard suggests compact commands. Developers can also run compact wrappers directly.
+`## Token Savings` is not printed by default. It appears only with `--stats`, `--verbose`, or `--report`.
 
-## How It Works
+## Session dedup
 
-Without Token Guard:
+When an agent re-runs the same **read-only** command in the same directory and the
+compressed output is **byte-identical** to what it last produced, `tk` replaces the
+repeat with a one-line marker instead of re-emitting it:
 
 ```text
-Copilot -> shell command -> raw output -> model context
+[tk] unchanged since 14:02:11 — same as the earlier `git status` here; full: <pointer>
 ```
 
-With Token Guard:
+Lossless and recoverable: the full output was already delivered earlier in the
+session; `tk` always re-runs the command and exact-compares the fresh output (any
+real change re-emits in full), and the marker carries a pointer back to the saved
+original. A changed exit code is never deduped.
 
-```text
-Copilot -> tg suggestion or compact wrapper -> filtered output -> model context
+- `tk --raw <command>` bypasses dedup (and all compression).
+- `TK_SESSION_DEDUP=0` (or the config key) disables it.
+- Dedup savings show as a **separate line** in `tk gain` — never summed with filter savings.
+
+## Optimize your agent's context
+
+Compression saves tokens at runtime. The other half is **context hygiene** — the
+instructions, skills, agents, and editor settings that silently bloat every request.
+
+```bash
+tk inspect                # read-only audit: runtime sessions + static context files
+tk inspect --advice       # ranked, actionable findings
+tk optimize               # dry-run plan from the audit
+tk optimize --apply       # apply safe, mechanical fixes (backs up first)
+tk optimize --restore     # revert
 ```
 
-Token Guard applies four strategies:
+`tk inspect` scans both your agent's session history (what wasted tokens at runtime)
+and your static context files (instructions / prompts / agents / skills).
+`tk optimize` consumes that audit and **downshifts each rule to the narrowest place it
+still works** (always-on instruction → path-scoped → on-demand). User-level by
+default; add `--project` to include the current repo. It never edits your project repo
+unless asked.
 
-1. **Filtering**: remove progress bars, repeated lines, boilerplate, and generated noise.
-2. **Bounding**: cap file reads, search results, logs, and command output.
-3. **Grouping**: group errors, warnings, test failures, and search matches by file or category.
-4. **Reporting**: show where the session spent or saved context.
+## Best-practice guidance
 
-## Commands
+`tk install` delivers a short usage guide so the agent spends tokens well by default —
+prefer terse forms (`git status --short`, `git log --oneline`, `rg -c`), read `gain`
+honestly. It writes:
 
-### Search
+- **`TK.md`** — the usage guide, in your config dir.
+- A **guard-wrapped, idempotent block** wired into the agent's instruction file
+  (`CLAUDE.md` for Claude Code, `copilot-instructions.md` for Copilot / VS Code).
+  Re-running replaces the block; `tk uninstall` removes it. Your own content is
+  never touched. `tk optimize --token-budget-block` keeps the block in sync.
 
-```powershell
-tg rg "submitOrder"
+## VS Code settings
+
+```bash
+tk optimize --vscode-settings            # advisory review
+tk optimize --vscode-settings --apply    # apply (backs up first)
+tk optimize --vscode-settings --restore  # revert
 ```
 
-Searches the repo while applying ignore rules and compact output limits. Use this instead of raw `rg` when an agent only needs relevant matches.
+- **One setting is auto-changed and one-click reversible**: VS Code's built-in
+  terminal-output compression (`chat.tools.compressOutput.enabled`).
+- Riskier ones are **advice-only** — too many auto-loaded instruction files
+  (`chat.includeReferencedInstructions`), extra readable dirs
+  (`github.copilot.chat.additionalReadAccessFolders`), MCP auto-discovery
+  (`chat.mcp.discovery.enabled`), a high per-request tool budget
+  (`chat.agent.maxRequests`). `tk` flags them; you decide.
 
-### File Reads
+## Measure savings — two honest denominators
 
-```powershell
-tg cat src/order/submit.ts --head 160
-tg cat src/order/submit.ts --around submitOrder
+`tk` answers two different questions, both from **measured** `raw − delivered` (never
+estimated, never summed across the four ledgers):
+
+**Per command** — `tk gain` — of a command's output, how much `tk` squeezed:
+
+| command      | savings |
+| ------------ | ------: |
+| `rg` (broad) |   88.5% |
+| `git log`    |     82% |
+| `git status` |     39% |
+| `git diff`   |     24% |
+
+Range is ~60–90% on dev commands; an already-terse form (`git status --short`)
+healthily shows ~0% — `tk` doesn't pad what's already minimal.
+
+**Per session** — `tk gain --session` — of the whole session's token usage after you
+onboarded `tk` (not just one command's output), `tk` saves **~27–28%** on real Claude
+Code sessions. The denominator is the session's **unique content** — what would
+actually enter context without `tk`, counted once — so prompt-cache churn doesn't
+inflate it. (`tk` reaches ~40% of that content, shell output, and compresses ~67% of
+it.) Per host: Claude Code / Codex computable; VS Code shows `n/a` (no token usage in
+its transcripts).
+
+```bash
+tk gain               # per-command savings
+tk gain --session     # per-session footprint savings (+ --json)
+tk gain --history     # recent commands
+tk gain report        # full report (--scope user|project|runtime, --json, --csv)
 ```
 
-Reads a bounded slice of a file instead of dumping the whole file into context.
-
-### Tests
-
-```powershell
-tg test "npm test"
-tg test "pnpm test"
-```
-
-Keeps failures, errors, and summaries while dropping repetitive passing output and progress noise.
-
-### Git
-
-```powershell
-tg diff
-```
-
-Shows changed files and useful hunks without flooding the agent with the entire patch when it is not needed.
-
-### Logs
-
-```powershell
-tg logs app.log
-```
-
-Keeps errors, warnings, timeouts, and repeated-line summaries. Useful before pasting logs into Copilot.
-
-### Generic Compaction
-
-```powershell
-some-command | tg compact
-```
-
-Applies Token Guard's generic output filter to command output from tools that do not yet have a dedicated wrapper.
-
-### Analytics
-
-```powershell
-tg report
-```
-
-Shows suggested commands, compacted output, blocked waste, and estimated savings.
-
-## Examples
-
-**Search output**
-
-```text
-# raw rg
-120 matches across 34 files, including generated and dependency output
-
-# tg rg
-34 files matched, showing top 40 lines
-src/order/submit.ts:42 submitOrder(...)
-src/order/useSubmitOrder.ts:18 submitOrder(...)
-```
-
-**Test output**
-
-```text
-# raw npm test
-hundreds of passing tests, progress lines, setup logs, and one failure
-
-# tg test "npm test"
-FAILED: 1 suite, 2 tests
-src/order/submit.test.ts
-  - rejects duplicate submit
-  - preserves idempotency key
-```
-
-**Logs**
-
-```text
-# raw logs
-10,000 lines with repeated heartbeat and polling messages
-
-# tg logs app.log
-ERROR x3 payment timeout
-WARN x18 retry scheduled
-INFO repeated heartbeat x8,421
-```
-
-## Project Setup Commands
-
-Install or inspect hooks:
-
-```powershell
-tg hook init
-tg hook status
-```
-
-Patch or restore `AGENTS.md`:
-
-```powershell
-tg agentsmd patch
-tg agentsmd restore
-```
-
-Scan skills:
-
-```powershell
-tg skill scan
-tg skill optimize --dry-run
-```
-
-Apply skill changes only after reviewing the proposed patch:
-
-```powershell
-tg skill optimize --apply
-tg skill restore
-```
-
-## Modes
-
-Token Guard supports three rollout modes:
-
-| Mode | Behavior |
-| --- | --- |
-| `passive` | Only reports and suggests. Good for evaluation. |
-| `balanced` | Suggests most of the time and blocks obvious waste. Recommended default. |
-| `strict` | Enforces stronger limits for teams that want tighter cost control. |
-
-Change mode:
-
-```powershell
-tg config set mode balanced
-```
-
-## Supported Copilot Surfaces
-
-Hook behavior depends on what the host exposes.
-
-| Surface | Expected behavior |
-| --- | --- |
-| VS Code Copilot Chat / Agent | Hook can suggest or update supported shell commands when the host allows it. |
-| GitHub Copilot CLI | Hook may need to deny with a compact-command suggestion, then let the agent retry. |
-| GitHub-hosted coding agent | Support depends on the available hook and instruction surface. |
-| No hook support | Developers can still run `tg` wrappers directly. |
-
-## Windows
-
-Token Guard is designed for Windows enterprise rollout:
-
-- npm installation creates a normal `tg.cmd` shim;
-- commands work in PowerShell and Windows Terminal;
-- project setup should be reversible;
-- hook behavior may vary by Copilot surface.
-
-## Command Reference
-
-Core:
-
-```powershell
-tg init
-tg hook init
-tg hook status
-tg config show
-tg config set mode balanced
-tg report
-```
-
-Compact wrappers:
-
-```powershell
-tg rg
-tg cat
-tg test
-tg diff
-tg logs
-tg compact
-```
-
-Project helpers:
-
-```powershell
-tg agentsmd patch
-tg agentsmd restore
-tg skill scan
-tg skill optimize --dry-run
-tg skill optimize --apply
-tg skill restore
-```
-
-Preview commands:
-
-```powershell
-tg plan
-tg impl
-tg review
-```
-
-## Restore
-
-Token Guard should be reversible. Use restore commands to remove project changes:
-
-```powershell
-tg agentsmd restore
-tg skill restore
-tg hook remove
-```
-
-By default, Token Guard appends small marked blocks, creates reviewable patches, and avoids replacing existing agents or skills.
-
-## Privacy
-
-Token Guard should not record source code, prompts, raw logs, secrets, or file contents. Reports should store command categories, byte counts, policy decisions, and estimated savings only.
-
-## Documentation
-
-- [DESIGN.md](./DESIGN.md): implementation design and product decisions.
-
-## Status
-
-Token Guard is an internal preview tool. Hook behavior differs between VS Code Copilot Chat, Copilot CLI, and GitHub-hosted agent surfaces, so some features may be advisory rather than fully automatic.
+## Current Handler Coverage
+
+Implemented:
+
+- read-like: `cat`, `type`, `less`
+- explicit read: `read --level minimal|balance|balanced|aggressive`
+- list-like: `ls`, `dir`, `find`, `tree`
+- search-like: `rg`, `grep`
+- diff: `diff`
+- git status
+- git diff
+- git log
+- git show
+- git branch
+- pytest
+- ruff
+- mypy
+- pip list/freeze
+- npm/pnpm/yarn test, vitest, jest
+- eslint
+- tsc
+- npm/pnpm/yarn list
+- mvn/maven
+- gradle
+- javac
+- dotnet (test, test --logger trx, msbuild -bl, format)
+- generic wrappers: `err <cmd>`, `summary <cmd>`, `test <cmd>`, `deps`, `smart <file>`, `npx <tool>`
+- generic fallback
+
+Planned:
+
+- broader fixture corpus for every handler
+- more real-command integration tests when optional tools are installed
+- per-handler raw-save and filter-fallback tests
+
+## Recover the original
+
+A dedup marker or a truncated handler always carries a pointer to the saved raw
+output. `tk --raw <command>` re-runs without any compression when you need the
+exact bytes.

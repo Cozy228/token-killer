@@ -1,0 +1,295 @@
+import { describe, expect, test } from "vitest";
+
+import { expectRtkParity, filterRtkOutput } from "../../helpers/rtkCommandHarness.js";
+import { buildDockerArgs } from "../../../src/handlers/cloud/container.js";
+
+// RTK: container.rs command construction — the real CLI path rewrites each handled
+// subcommand into a fixed `--format`/`--tail` invocation so the headerless,
+// tab-separated shape the formatter parses is guaranteed. The migration harness
+// only exercises filter(); these assert the execute() command-rewrite directly.
+describe("RTK docker command construction (buildDockerArgs)", () => {
+  test("docker ps forces the ID/Names/Status/Image/Ports --format template", () => {
+    expect(buildDockerArgs(["ps"])).toEqual([
+      "ps",
+      "--format",
+      "{{.ID}}\t{{.Names}}\t{{.Status}}\t{{.Image}}\t{{.Ports}}",
+    ]);
+  });
+  test("docker ps -a prepends State and keeps -a", () => {
+    expect(buildDockerArgs(["ps", "-a"])).toEqual([
+      "ps",
+      "-a",
+      "--format",
+      "{{.State}}\t{{.ID}}\t{{.Names}}\t{{.Status}}\t{{.Image}}\t{{.Ports}}",
+    ]);
+  });
+  test("docker images forces the Repository:Tag/Size --format template", () => {
+    expect(buildDockerArgs(["images"])).toEqual([
+      "images",
+      "--format",
+      "{{.Repository}}:{{.Tag}}\t{{.Size}}",
+    ]);
+  });
+  test("docker compose ps forces the Name/Image/Status/Ports template, preserving -a", () => {
+    expect(buildDockerArgs(["compose", "ps"])).toEqual([
+      "compose",
+      "ps",
+      "--format",
+      "{{.Name}}\t{{.Image}}\t{{.Status}}\t{{.Ports}}",
+    ]);
+    expect(buildDockerArgs(["compose", "ps", "-a"])).toEqual([
+      "compose",
+      "ps",
+      "-a",
+      "--format",
+      "{{.Name}}\t{{.Image}}\t{{.Status}}\t{{.Ports}}",
+    ]);
+  });
+  // ADR 0001 decision 8 (divergence from RTK): the capture-time `--tail 100`
+  // injection RTK uses is REMOVED — pre-truncating the fetch discards the very
+  // bytes the recovery contract relies on. So `logs` keeps the container but tk
+  // never adds `--tail 100`; value-flags (--since/-n/--tail/--index) are stripped
+  // so the formatter sees a clean stream, and a live `-f`/`--follow` passes through
+  // wholesale (it never exits and cannot be captured).
+  test("compose logs keeps the service and never injects --tail (ADR 0001 lossless capture)", () => {
+    expect(buildDockerArgs(["compose", "logs"])).toEqual(["compose", "logs"]);
+    expect(buildDockerArgs(["compose", "logs", "web"])).toEqual(["compose", "logs", "web"]);
+  });
+  test("docker logs keeps the container and never injects --tail", () => {
+    expect(buildDockerArgs(["logs", "api"])).toEqual(["logs", "api"]);
+  });
+  test("docker logs picks the container, stripping a value-flag's argument", () => {
+    // `--since 1h` consumes `1h`; the container is the following positional `web`.
+    expect(buildDockerArgs(["logs", "--since", "1h", "web"])).toEqual(["logs", "web"]);
+    expect(buildDockerArgs(["logs", "-n", "50", "web"])).toEqual(["logs", "web"]);
+    // `--tail=50` carries its own value inline — stripped, not honored as a cap.
+    expect(buildDockerArgs(["logs", "--tail=50", "web"])).toEqual(["logs", "web"]);
+  });
+  test("compose logs picks the service, stripping a value-flag's argument", () => {
+    expect(buildDockerArgs(["compose", "logs", "--since", "1h", "web"])).toEqual([
+      "compose",
+      "logs",
+      "web",
+    ]);
+    // compose logs shares docker's `-n`/`--tail` alias, so `-n 50` consumes `50`.
+    expect(buildDockerArgs(["compose", "logs", "-n", "50", "web"])).toEqual([
+      "compose",
+      "logs",
+      "web",
+    ]);
+    expect(buildDockerArgs(["compose", "logs", "--index", "2", "web"])).toEqual([
+      "compose",
+      "logs",
+      "web",
+    ]);
+  });
+  test("compose build and unhandled subcommands pass through unchanged", () => {
+    expect(buildDockerArgs(["compose", "build"])).toEqual(["compose", "build"]);
+    expect(buildDockerArgs(["pull", "nginx"])).toEqual(["pull", "nginx"]);
+  });
+});
+
+describe("RTK docker behavior", () => {
+  // RTK: cloud/container.rs::format_compose_ps + test_format_compose_ps_basic /
+  // _long_image_path / _no_ports / _exited_service. Tab-separated --format rows
+  // "Name\tImage\tStatus\tPorts"; image shortened to last path segment, empty
+  // ports drop the bracket suffix.
+  test("compose ps keeps service status and strips long image registry prefixes", async () => {
+    const result = await filterRtkOutput(
+      ["docker", "compose", "ps"],
+      [
+        "web\tghcr.io/example/very/long/web:latest\tUp 2 hours\t0.0.0.0:8080->80/tcp",
+        "api\tghcr.io/example/very/long/api:latest\tUp 2 hours\t0.0.0.0:3000->3000/tcp",
+        "db\tpostgres:16\tExited (0)\t",
+      ].join("\n"),
+    );
+
+    expectRtkParity(result, {
+      critical: ["web", "api", "db", "Up 2 hours"],
+      forbidden: [/ghcr\.io\/example\/very\/long/, /\] \[/],
+      exact: [
+        "[compose] 3 services:",
+        "  web (web:latest) Up 2 hours [8080]",
+        "  api (api:latest) Up 2 hours [3000]",
+        "  db (postgres:16) Exited (0)",
+      ].join("\n"),
+    });
+  });
+
+  // ADR 0001 decision 2: RTK's CAP_LIST (20) + "… +N more" cap is REMOVED. A
+  // service list that fits the token budget ships IN FULL — every service renders,
+  // none suppressed, and NO "… +N more" marker is invented. The real compression
+  // is the per-row reformat (image shortened to its last path segment, ports
+  // compacted to `[port]`), ~49% char savings, fully lossless.
+  test("compose ps ships every service in full with no overflow marker", async () => {
+    const rows = Array.from(
+      { length: 20 },
+      (_, i) =>
+        `svc-${i}\tghcr.io/example/very/long/path/nginx:latest\tUp 1 hour\t0.0.0.0:${8000 + i}->80/tcp`,
+    ).join("\n");
+
+    const result = await filterRtkOutput(["docker", "compose", "ps"], rows);
+
+    expectRtkParity(result, {
+      critical: [
+        "[compose] 20 services:",
+        "  svc-0 (nginx:latest) Up 1 hour [8000]",
+        "  svc-19 (nginx:latest) Up 1 hour [8019]", // the 20th still renders at the cap
+      ],
+      // At the cap nothing is dropped, so NO truncation marker is invented, and the
+      // long registry prefix is stripped from every row.
+      forbidden: [/… \+\d+ more/, /ghcr\.io\/example\/very\/long/],
+      // Token count barely moves (the header offsets the dropped prefixes), so pin
+      // the real win on chars: ~49% of the raw bytes removed.
+      minSavingsRatio: 0.4,
+    });
+  });
+
+  // RTK: cloud/container.rs::format_compose_build + test_format_compose_build_basic.
+  // Emits the FINISHED summary line, unique service names from "[svc N/M]"
+  // steps, and the count of " => " steps.
+  test("compose build collapses the build graph to summary, services, and step count", async () => {
+    const raw = [
+      "[+] Building 12.3s (8/8) FINISHED",
+      " => [web internal] load build definition from Dockerfile           0.0s",
+      " => [web internal] load metadata for docker.io/library/node:20     1.2s",
+      " => [web 1/4] FROM docker.io/library/node:20@sha256:abc123         0.0s",
+      " => [web 2/4] WORKDIR /app                                         0.1s",
+      " => [web 3/4] COPY package*.json ./                                0.1s",
+      " => [web 4/4] RUN npm install                                      8.5s",
+      " => [web] exporting to image                                       2.3s",
+      " => => naming to docker.io/library/myapp-web                       0.0s",
+    ].join("\n");
+
+    const result = await filterRtkOutput(["docker", "compose", "build"], raw);
+
+    expectRtkParity(result, {
+      critical: ["[compose] [+] Building 12.3s (8/8) FINISHED", "  Services: web", "  Steps: 8"],
+      minTokenSavingsRatio: 0.5,
+    });
+  });
+
+  // RTK: cloud/container.rs::docker_ps + format_container_line_from_parts.
+  // tk receives the `--format "{{.ID}}\t{{.Names}}\t{{.Status}}\t{{.Image}}\t{{.Ports}}"`
+  // stdout RTK produces internally: id truncated to 12 chars, image last segment.
+  test("docker ps shortens ids/images and brackets compacted ports", async () => {
+    const result = await filterRtkOutput(
+      ["docker", "ps"],
+      [
+        "0123456789abcdefffff\tweb\tUp 2 hours\tghcr.io/org/web:latest\t0.0.0.0:8080->80/tcp",
+        "fedcba9876543210aaaa\tredis\tUp 5 hours\tredis:7\t",
+      ].join("\n"),
+    );
+
+    expectRtkParity(result, {
+      critical: [
+        "[docker] 2 containers:",
+        "  0123456789ab web (web:latest) Up 2 hours [8080]",
+        "  fedcba987654 redis (redis:7) Up 5 hours",
+      ],
+      forbidden: [/0123456789abcdef/, /ghcr\.io\/org/],
+    });
+  });
+
+  // RTK: cloud/container.rs::docker_ps_all — first column is State; running/
+  // restarting group under "running:", others under "stopped/exited:". Uses a
+  // large fleet so the regrouped summary beats the verbose `--format` dump.
+  test("docker ps -a splits running from stopped using the State column", async () => {
+    const rows: string[] = [
+      "running\t0123456789abcdef0000\tweb\tUp 2 hours\tregistry.example.com/team/nginx:latest\t0.0.0.0:80->80/tcp",
+      "exited\tabcdef0123456789aaaa\tjob\tExited (0) 3 minutes ago\tregistry.example.com/team/busybox:latest\t",
+    ];
+    for (let i = 0; i < 8; i += 1) {
+      rows.push(
+        `running\t${i}123456789abcdef0000\tsvc-${i}\tUp 4 hours\tregistry.example.com/team/app-${i}:latest\t0.0.0.0:${9000 + i}->${9000 + i}/tcp`,
+      );
+    }
+
+    const result = await filterRtkOutput(["docker", "ps", "-a"], rows.join("\n"));
+
+    expectRtkParity(result, {
+      critical: [
+        "[docker] 9 running:",
+        "  0123456789ab web (nginx:latest) Up 2 hours [80]",
+        "[docker] 1 stopped/exited:",
+        "  abcdef012345 job (busybox:latest) Exited (0) 3 minutes ago",
+      ],
+      forbidden: [/registry\.example\.com/, /0123456789abcdef/],
+    });
+  });
+
+  // ADR 0001 decision 2: RTK's CAP_INVENTORY (50) + "… +N more" cap is REMOVED.
+  // The genuinely-shipping images path is the size-summing header + the drop of the
+  // verbose IMAGE ID / CREATED columns a real `docker images` capture carries (the
+  // full line keeps col 0 = repo:tag and col 1 = size). Every image is listed, the
+  // total is summed into the header, and NO "… +N more" marker is invented.
+  test("docker images sums sizes into a header and lists each image", async () => {
+    // Realistic `docker images` rows: repo:tag, size, IMAGE ID, CREATED. The digest
+    // sums the SIZE column and keeps repo:tag, dropping id/created → real shrink.
+    const rows = [
+      "registry.example.com/team/nginx:latest\t512MB\tsha256:0123456789ab\t3 weeks ago",
+      "registry.example.com/team/node:20\t1.5GB\tsha256:fedcba987654\t2 months ago",
+      "registry.example.com/team/redis:7\t128MB\tsha256:abcdef012345\t5 days ago",
+    ];
+    for (let i = 0; i < 15; i += 1) {
+      rows.push(
+        `registry.example.com/team/app-${i}:latest\t10MB\tsha256:a${i}b${i}c${i}d${i}\t1 day ago`,
+      );
+    }
+
+    const result = await filterRtkOutput(["docker", "images"], rows.join("\n"));
+
+    // 512 + 1536 + 128 + 15*10 = 2326MB -> 2.3GB
+    expectRtkParity(result, {
+      critical: [
+        "[docker] 18 images (2.3GB)",
+        "  registry.example.com/team/nginx:latest [512MB]",
+        "  registry.example.com/team/app-14:latest [10MB]", // last image still listed
+      ],
+      // Under the cap, nothing is suppressed — no fake overflow marker — and the
+      // verbose id/created columns are dropped from every row.
+      forbidden: [/… \+\d+ more/, /sha256:/, /weeks ago/, /days ago/],
+      minTokenSavingsRatio: 0.4,
+    });
+  });
+
+  // ADR 0001 decisions 2/5/7: over budget, `docker ps` runs the two-step ladder
+  // instead of reverting to raw (the old revert-to-raw bug). The step-1 lossless
+  // digest keeps EVERY container's identity (name + status) and drops the
+  // id/image/ports decoration, declaring `omission.kind === "digest"`. No
+  // "… +N more" is ever emitted — the agent sees all 200 containers, compressed.
+  test("docker ps over budget ships the lossless name/status digest, not raw", async () => {
+    const rows = Array.from(
+      { length: 200 },
+      (_, i) =>
+        `id${i}xxxxxxxxxx\tcontainer-name-${i}\tUp 3 hours\tregistry.example.com/team/service:latest\t0.0.0.0:${8000 + i}->80/tcp`,
+    ).join("\n");
+
+    const result = await filterRtkOutput(["docker", "ps"], rows);
+
+    // Not reverted to the raw tab-separated dump.
+    expect(result.output).not.toContain("\t");
+    expect(result.qualityStatus).toBe("passed");
+    expect(result.omission?.kind).toBe("digest");
+    // Every container survives in the digest (first and 200th), identity-only.
+    expect(result.output).toContain("[docker] 200 containers:");
+    expect(result.output).toContain("  container-name-0 Up 3 hours");
+    expect(result.output).toContain("  container-name-199 Up 3 hours");
+    expectRtkParity(result, {
+      critical: ["[docker] 200 containers:"],
+      // No fake-complete cap marker, and the decoration columns are gone.
+      forbidden: [/… \+\d+ more/, /registry\.example\.com/, /\[8000\]/],
+      minSavingsRatio: 0.5,
+    });
+  });
+
+  // RTK: cloud/container.rs::format_compose_ps test_format_compose_ps_empty /
+  // _whitespace_only — whitespace-only input collapses to a zero summary.
+  test("compose ps reports zero services on whitespace-only input", async () => {
+    const empty = await filterRtkOutput(
+      ["docker", "compose", "ps"],
+      `${" ".repeat(80)}\n${" ".repeat(90)}\n${" ".repeat(100)}`,
+    );
+    expect(empty.output.trim()).toBe("[compose] 0 services");
+  });
+});

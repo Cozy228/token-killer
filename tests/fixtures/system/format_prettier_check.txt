@@ -1,0 +1,7 @@
+Checking formatting...
+src/components/button.tsx
+src/state/session.ts
+src/utils/format-helpers.ts
+src/api/client.ts
+src/index.ts
+Code style issues found in the above file(s). Forgot to run Prettier? Run Prettier to fix.

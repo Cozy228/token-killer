@@ -1,0 +1,10 @@
+2024-01-01 10:00:00 ERROR: Connection failed to /api/server
+2024-01-01 10:00:01 ERROR: Connection failed to /api/server
+2024-01-01 10:00:02 ERROR: Connection failed to /api/server
+2024-01-01 10:00:03 ERROR: Disk write to /var/log/app.log failed
+2024-01-01 10:00:04 WARN: Retrying connection to /api/server
+2024-01-01 10:00:05 WARN: Retrying connection to /api/server
+2024-01-01 10:00:06 WARN: Cache miss for /tmp/cache/object
+2024-01-01 10:00:07 INFO: Connected to /api/server
+2024-01-01 10:00:08 INFO: Request served from /tmp/cache/object
+2024-01-01 10:00:09 INFO: Connected to /api/server
