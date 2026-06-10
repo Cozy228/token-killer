@@ -41,6 +41,12 @@ describe("detectHost", () => {
     expect(detectHost(env({ termProgram: "vscode" }))).toBe("vscode");
   });
 
+  test("a live VS Code terminal beats a lingering ~/.copilot dir", () => {
+    // Running inside VS Code's integrated terminal is a live signal; a `~/.copilot`
+    // dir is weak persistent config that can exist for a pure-VS-Code user too.
+    expect(detectHost(env({ termProgram: "vscode", copilotDirExists: true }))).toBe("vscode");
+  });
+
   test("VS Code when code resolves on PATH", () => {
     expect(detectHost(env({ codeOnPath: true }))).toBe("vscode");
   });

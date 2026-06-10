@@ -22,14 +22,19 @@ export type DetectEnv = {
   vscodeUserDirExists: boolean;
 };
 
-// Pure host detection from observable signals. A live Claude Code session
-// (env markers) wins outright. Otherwise Copilot CLI when its dir exists, then a
-// persistent Claude Code config, then VS Code, then unknown.
+// Pure host detection from observable signals. Live-session markers win first —
+// a live Claude Code session (CLAUDECODE env) or VS Code's integrated terminal
+// (TERM_PROGRAM=vscode) — because they prove the host you are running INSIDE right
+// now, which beats weaker persistent config that only shows a host is installed.
+// Then persistent config, strongest first: Copilot CLI's `~/.copilot` dir (which
+// can linger even for a pure-VS-Code user, so it must not outrank a live VS Code
+// terminal), a Claude Code settings file, an installed VS Code, then unknown.
 export function detectHost(env: DetectEnv): Host {
   if (env.claudeEnv) return "claude-code";
+  if (env.termProgram === "vscode") return "vscode";
   if (env.copilotDirExists) return "copilot-cli";
   if (env.claudeSettingsExists) return "claude-code";
-  if (env.termProgram === "vscode" || env.codeOnPath || env.vscodeUserDirExists) return "vscode";
+  if (env.codeOnPath || env.vscodeUserDirExists) return "vscode";
   return "unknown";
 }
 
