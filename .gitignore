@@ -5,6 +5,9 @@ rtk/
 headroom/
 ztk/
 
+# Pack artifacts (regenerate with `pnpm pack`)
+*.tgz
+
 # OS / editor junk
 .DS_Store
 Thumbs.db
