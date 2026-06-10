@@ -5,7 +5,8 @@ actually passes through tk so the output gets compressed. SSH can't show this (V
 GUI), so it needs you at the keyboard once. ~10 minutes.
 
 **You need:** a Windows machine with VS Code + GitHub Copilot (Business), and a git repo with
-some history (≥20 commits). `atlas` on the box works; any real repo does.
+some history (≥20 commits) — the `token-killer` repo you clone in Step 0 has 160+ commits and
+works fine as the target.
 
 **The decisive signal:** after Copilot runs a command, `tk gain --history` either shows that
 command with a savings % (**tk engaged** ✅) or shows nothing new (**tk did NOT engage** ❌).
@@ -13,25 +14,64 @@ Both outcomes are useful — ❌ is a finding, not a failure on your part.
 
 ---
 
-## Step 0 — setup (PowerShell, once)
+## Step 0 — setup (PowerShell)
+
+Pick the path that matches how you got the code. **The Windows fixes live on the
+`token-killer-node-cli` branch — not `main` — so a source clone MUST check that branch out,
+and that branch must be pushed/current on the remote first.**
+
+### Option A — from source (company Windows PC)
+
+Prereqs: Node 20+ (`node --version`), git, and a package manager (pnpm via corepack, or npm).
 
 ```powershell
-tk --version                 # expect 0.1.0  (if missing: npm i -g .\token-killer-0.1.0.tgz)
-tk init --host vscode        # wires tk into VS Code's integrated terminal
-tk init --show               # expect: host vscode, shim on PATH, probe PASS
+# 1. Clone and switch to the branch with the Windows fixes (NOT main)
+git clone https://github.com/Cozy228/token-killer.git token-killer
+cd token-killer
+git checkout token-killer-node-cli
+
+# 2. Install deps + build
+corepack enable              # enables pnpm (ships with Node 20+); skip if pnpm already present
+pnpm install
+pnpm build                   # produces dist\cli.js
+node dist\cli.js --version   # expect 0.1.0
+
+# 3. Expose `tk` globally (from the repo dir)
+npm link                     # creates the global `tk` command -> this repo's dist
+tk --version                 # expect 0.1.0
 ```
 
-Then **fully quit and reopen VS Code** (File → Exit, not just reload — the terminal must
-pick up the new PATH).
+If corporate policy blocks a step:
+- `corepack enable` blocked → use `npm install` + `npm run build` instead (npm works too).
+- `npm link` blocked (permissions) → skip it and use `node dist\cli.js` everywhere `tk`
+  appears below (e.g. `node dist\cli.js init --host vscode`).
+- Behind a proxy → set it once before installing: `npm config set proxy http://host:port`
+  (and `npm config set https-proxy http://host:port`).
 
-Optional baseline so you can see the delta:
+### Option B — from the prebuilt tarball (other testers, no build)
+
+```powershell
+npm i -g .\token-killer-0.1.0.tgz
+tk --version                 # expect 0.1.0
+```
+
+### Then (both paths) — wire VS Code
+
+```powershell
+tk init --host vscode        # patches VS Code settings.json: shim dir -> integrated-terminal PATH
+tk init --show               # expect: shim installed, probe PASS
+```
+
+Then **fully quit and reopen VS Code** (File → Exit, not just reload — the integrated terminal
+must pick up the new PATH). Optional baseline so you can see the delta afterward:
 ```powershell
 tk gain                      # note the current total (may be empty)
 ```
 
 ## Step 1 — open a repo and Copilot agent mode
 
-1. In VS Code, open a folder that is a git repo with history (e.g. `atlas`).
+1. In VS Code, open a folder that is a git repo with history (e.g. the `token-killer` repo you
+   just cloned, or any real repo).
 2. Open Copilot Chat (the chat icon / `Ctrl+Alt+I`).
 3. Switch the chat mode to **Agent** (the dropdown at the top of the chat — must be Agent,
    not Ask/Edit, so it actually runs terminal commands).
