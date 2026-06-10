@@ -77,10 +77,18 @@ export function commandStem(raw: string): string {
   if (cmd.startsWith("tk ")) cmd = cmd.slice(3).trim();
   if (!cmd) return "";
 
-  const tokens = splitCommandTokens(cmd);
+  let tokens = splitCommandTokens(cmd);
+  // Strip leading `KEY=value` env-assignment tokens (`DATABASE_URL=… npm run …`): they
+  // are environment setup, not the program, and can carry secrets/URLs. Without this
+  // the assignment was returned verbatim as the "redacted" stem (H1).
+  while (tokens.length > 0 && /^[A-Za-z_]\w*=/.test(tokens[0]!)) tokens = tokens.slice(1);
   if (tokens.length === 0) return "";
 
-  const program = tokens[0];
+  const program = tokens[0]!;
+  // The program slot must pass the SAME arg-token guard as every other position — a
+  // leading path / URL / hash / `=` token is never a stable program name and may leak
+  // a secret, so generalize it rather than emit it raw (H1).
+  if (isArgToken(program)) return "other";
   const parts = [program];
 
   if (!SECOND_TOKEN_PROGRAMS.has(program)) return program;

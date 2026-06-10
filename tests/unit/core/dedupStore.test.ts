@@ -37,7 +37,7 @@ function cmd(program: string, args: string[]): ParsedCommand {
 function entry(over: Partial<DedupEntry> = {}): DedupEntry {
   return {
     normCmd: "git status",
-    outHash: "abc",
+    rawHash: "abc",
     exitCode: 0,
     ttlClass: "fast",
     lastEmittedAt: 1000,
@@ -91,19 +91,19 @@ describe("isFresh — wall-clock TTL by class", () => {
 describe("readStore — fail-open", () => {
   test("missing file reads as empty", async () => {
     const store = await readStore(path.join(dir, "nope.json"));
-    expect(store).toEqual({ v: 1, entries: {} });
+    expect(store).toEqual({ v: 2, entries: {} });
   });
 
   test("corrupt file reads as empty (never throws)", async () => {
     const file = path.join(dir, "dedup.json");
     await writeFile(file, "{ not json", "utf8");
-    expect(await readStore(file)).toEqual({ v: 1, entries: {} });
+    expect(await readStore(file)).toEqual({ v: 2, entries: {} });
   });
 
   test("wrong-version file reads as empty", async () => {
     const file = path.join(dir, "dedup.json");
     await writeFile(file, JSON.stringify({ v: 99, entries: { a: entry() } }), "utf8");
-    expect(await readStore(file)).toEqual({ v: 1, entries: {} });
+    expect(await readStore(file)).toEqual({ v: 2, entries: {} });
   });
 });
 
@@ -117,11 +117,11 @@ describe("upsertEntry — atomic, locked, fail-open", () => {
 
   test("upserting the same key updates in place", async () => {
     const file = path.join(dir, "dedup.json");
-    await upsertEntry(file, "k1", entry({ outHash: "v1" }), 2000);
-    await upsertEntry(file, "k1", entry({ outHash: "v2" }), 3000);
+    await upsertEntry(file, "k1", entry({ rawHash: "v1" }), 2000);
+    await upsertEntry(file, "k1", entry({ rawHash: "v2" }), 3000);
     const store = await readStore(file);
     expect(Object.keys(store.entries)).toHaveLength(1);
-    expect(store.entries.k1?.outHash).toBe("v2");
+    expect(store.entries.k1?.rawHash).toBe("v2");
   });
 
   test("hard-expired entries are pruned on write", async () => {
@@ -142,7 +142,7 @@ describe("upsertEntry — atomic, locked, fail-open", () => {
     await Promise.all(writers);
     // The file is always a complete, valid store — never a torn write.
     const store = await readStore(file);
-    expect(store.v).toBe(1);
+    expect(store.v).toBe(2);
     expect(Object.keys(store.entries).length).toBeGreaterThan(0);
     // And the raw bytes parse as JSON (no partial write survived).
     const raw = await readFile(file, "utf8");

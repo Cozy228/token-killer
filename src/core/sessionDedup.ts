@@ -16,6 +16,7 @@ import type {
   TkOptions,
   TtlClass,
 } from "../types.js";
+import { removeAnsi } from "./ansi.js";
 import { readConfig } from "./config.js";
 import { dedupStoreFile, resolveStoredPath } from "./dataDir.js";
 import { appendDedupEvent } from "./dedupLedger.js";
@@ -79,9 +80,11 @@ export function buildMarker(opts: {
   sameSession: boolean;
 }): string {
   const where = opts.sameSession ? "in this session" : "here";
+  // Show an ABSOLUTE pointer: the agent's cwd is the project, not ~/.token-killer, so a
+  // home-relative path would `cat`-fail (H20). The stored entry keeps the relative form.
   return `[tk] unchanged since ${formatClock(opts.lastDifferedAt)} — same as the earlier \`${shortCmd(
     opts.normCmd,
-  )}\` ${where}; full: ${opts.rawPointer}\n`;
+  )}\` ${where}; full: ${resolveStoredPath(opts.rawPointer)}\n`;
 }
 
 // The FilteredResult emitted on a HIT. Its savings are measured against the
@@ -146,6 +149,7 @@ export async function applySessionDedup(input: DedupInput): Promise<FilteredResu
   if (options.saveRaw === false) return null; // no recovery channel possible → never dedup
   if (raw.exitCode !== 0) return null; // exit identity / errors always pass through
   if (!handler.traits?.cacheable) return null; // opt-in only
+  if (handler.traits?.masksSecrets) return null; // never snapshot a masking handler's raw (H21)
   if (!isReadOnlyForHandler(handler.name, command)) return null; // mandatory read-only gate
   if (filtered.output.length < MIN_DEDUP_BYTES) return null; // tiny / structured → skip
 
@@ -153,7 +157,10 @@ export async function applySessionDedup(input: DedupInput): Promise<FilteredResu
   const sessionId = options.sessionId; // already validated by parse.ts; may be absent
   const normCmd = normalizeCommand(command);
   const key = entryKey(normCmd);
-  const outHash = hashOutput(filtered.output);
+  // H2: hash the RAW (ANSI-stripped), not the compressed view. A lossy/capped handler
+  // can emit byte-identical compressed output from two different raws; keying on the
+  // compressed view would dedup them and hand back a stale recovery pointer.
+  const rawHash = hashOutput(removeAnsi(`${raw.stdout}${raw.stderr}`));
   const file = dedupStoreFile(options.cwd);
 
   let prev: DedupEntry | undefined;
@@ -168,10 +175,11 @@ export async function applySessionDedup(input: DedupInput): Promise<FilteredResu
   // Session id is NOT part of the hit decision, only the marker's wording — so two
   // sessions that produce identical output in one repo both dedup (correct + lossless;
   // exact-compare is the spine, the wall-clock TTL the freshness bound).
-  if (prev && isFresh(prev, now) && prev.outHash === outHash) {
+  if (prev && isFresh(prev, now) && prev.rawHash === rawHash) {
     // Resolve a live recovery pointer LAZILY: reuse the stored snapshot if it still
-    // exists on disk, else snapshot the current raw now (it produces byte-identical
-    // output). A command that never repeats therefore pays for no snapshot at all.
+    // exists on disk, else snapshot the current raw now. Keying on rawHash means the
+    // current raw is BYTE-IDENTICAL to the establishing run's, so the snapshot it
+    // names is faithful. A command that never repeats pays for no snapshot at all.
     let rawPointer =
       prev.rawPointer && existsSync(resolveStoredPath(prev.rawPointer))
         ? prev.rawPointer
@@ -211,10 +219,10 @@ export async function applySessionDedup(input: DedupInput): Promise<FilteredResu
   // MISS (new / changed / expired) — establish or refresh the entry. The recovery
   // snapshot is DEFERRED to the first actual HIT (above), so a never-repeated command
   // writes no extra raw log; reuse the filter's own snapshot here when it made one.
-  const differed = !prev || prev.outHash !== outHash;
+  const differed = !prev || prev.rawHash !== rawHash;
   const entry: DedupEntry = {
     normCmd,
-    outHash,
+    rawHash,
     exitCode: raw.exitCode,
     ttlClass,
     lastEmittedAt: now,

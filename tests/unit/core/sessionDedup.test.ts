@@ -137,10 +137,24 @@ describe("applySessionDedup — exact-compare forces a re-emit on any change", (
   test("a byte difference (state changed) re-emits in full, no stale hit", async () => {
     await run({ now: T0 });
     const changed = await run({
+      raw: mkRaw(`${RAWOUT} STATE CHANGED`),
       filtered: mkFiltered(`${OUT}new untracked line padding here\n`),
       now: T0 + 1000,
     });
     expect(changed).toBeNull();
+  });
+
+  test("H2: identical compressed output but DIFFERENT raw → MISS (no false 'unchanged')", async () => {
+    // A capped/lossy handler can compress two different raws to byte-identical output
+    // (content changed only beyond a per-file cap). Keying on the compressed view would
+    // emit a false "unchanged" + a stale recovery pointer; keying on raw re-emits.
+    await run({ raw: mkRaw(`${RAWOUT} v1`), filtered: mkFiltered(OUT), now: T0 });
+    const second = await run({
+      raw: mkRaw(`${RAWOUT} v2`),
+      filtered: mkFiltered(OUT), // SAME compressed output as the first run
+      now: T0 + 1000,
+    });
+    expect(second).toBeNull();
   });
 
   test("a changed / non-zero exit code is never deduped", async () => {

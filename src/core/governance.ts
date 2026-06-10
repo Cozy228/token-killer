@@ -116,7 +116,10 @@ export function summarizeGovernance(records: GovernanceRecord[]): GovernanceLedg
   };
   let avoided = 0;
   for (const record of records) {
-    counts[record.kind] += 1;
+    // A corrupt / future-version record may carry an unknown kind. `counts[unknown]`
+    // is undefined, and `undefined + 1 = NaN` would poison the whole JSON summary, so
+    // only tally kinds we know (L8).
+    if (record.kind in counts) counts[record.kind] += 1;
     if (record.estimated_tokens && record.estimated_tokens > 0) {
       avoided +=
         record.estimated_tokens * (record.decision === "deny" ? DENY_WEIGHT : SUGGEST_WEIGHT);

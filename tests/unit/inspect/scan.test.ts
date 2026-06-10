@@ -28,9 +28,21 @@ function discovery(transcriptFiles: string[], sessionFiles: string[] = []): Sour
 describe("scan — aggregation & ranking", () => {
   test("aggregates shell + direct tools into ranked opportunities", () => {
     const file = writeTranscript("t.jsonl", [
-      { toolName: "bash", toolArgs: JSON.stringify({ command: "git status" }), toolResult: "x".repeat(100) },
-      { toolName: "bash", toolArgs: JSON.stringify({ command: "git status" }), toolResult: "x".repeat(300) },
-      { tool_name: "read_file", tool_input: { filePath: "src/a.ts" }, tool_response: "y".repeat(50) },
+      {
+        toolName: "bash",
+        toolArgs: JSON.stringify({ command: "git status" }),
+        toolResult: "x".repeat(100),
+      },
+      {
+        toolName: "bash",
+        toolArgs: JSON.stringify({ command: "git status" }),
+        toolResult: "x".repeat(300),
+      },
+      {
+        tool_name: "read_file",
+        tool_input: { filePath: "src/a.ts" },
+        tool_response: "y".repeat(50),
+      },
     ]);
     const r = scan(discovery([file]));
     expect(r.tool_event_count).toBe(3);
@@ -51,7 +63,11 @@ describe("scan — aggregation & ranking", () => {
 
   test("shell key is sanitized — no argument values leak", () => {
     const file = writeTranscript("t.jsonl", [
-      { toolName: "bash", toolArgs: JSON.stringify({ command: "rg SECRET_PATTERN ./src/secrets" }), toolResult: "" },
+      {
+        toolName: "bash",
+        toolArgs: JSON.stringify({ command: "rg SECRET_PATTERN ./src/secrets" }),
+        toolResult: "",
+      },
     ]);
     const r = scan(discovery([file]));
     expect(r.opportunities[0].key).toBe("rg");
@@ -59,9 +75,30 @@ describe("scan — aggregation & ranking", () => {
     expect(JSON.stringify(r)).not.toContain("secrets");
   });
 
+  test("H1: a leading KEY=value env-assignment never leaks into the inspect key", () => {
+    const file = writeTranscript("t.jsonl", [
+      {
+        toolName: "bash",
+        toolArgs: JSON.stringify({
+          command: "DATABASE_URL=postgres://user:pass@host npm run migrate",
+        }),
+        toolResult: "z".repeat(40),
+      },
+    ]);
+    const r = scan(discovery([file]));
+    expect(r.opportunities[0].key).toBe("npm run");
+    expect(JSON.stringify(r)).not.toContain("pass@host");
+    expect(JSON.stringify(r)).not.toContain("DATABASE_URL");
+  });
+
   test("failure detection via exitCode / isError", () => {
     const file = writeTranscript("t.jsonl", [
-      { toolName: "bash", toolArgs: JSON.stringify({ command: "npm test" }), exitCode: 1, toolResult: "boom" },
+      {
+        toolName: "bash",
+        toolArgs: JSON.stringify({ command: "npm test" }),
+        exitCode: 1,
+        toolResult: "boom",
+      },
       { toolName: "bash", toolArgs: JSON.stringify({ command: "npm test" }), toolResult: "ok" },
     ]);
     const r = scan(discovery([file]));
@@ -72,7 +109,10 @@ describe("scan — aggregation & ranking", () => {
 
   test("session inventory and transcript coverage are NOT collapsed", () => {
     const sess = join(dir, "s.jsonl");
-    writeFileSync(sess, [JSON.stringify({ id: "a" }), JSON.stringify({ id: "b" })].join("\n") + "\n");
+    writeFileSync(
+      sess,
+      [JSON.stringify({ id: "a" }), JSON.stringify({ id: "b" })].join("\n") + "\n",
+    );
     const withEvents = writeTranscript("t1.jsonl", [
       { toolName: "bash", toolArgs: JSON.stringify({ command: "git log" }), toolResult: "x" },
     ]);

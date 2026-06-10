@@ -21,10 +21,10 @@ export type TgConfig = {
   // NETWORK upload opt-in over the build-time endpoint. Requires this AND a
   // non-empty endpoint to send anything.
   telemetry: boolean;
-  // ADR 0009: opt-in to cross-invocation session dedup. Default-off (absent ⇒
-  // false). `TK_SESSION_DEDUP` env overrides this. Optional, so it is NOT part of
-  // the default config object or the `tk config init` template — a user adds it by
-  // hand to opt in, exactly like the other consent flags stay false until set.
+  // ADR 0009: cross-invocation session dedup. DEFAULT-ON (absent ⇒ enabled; only an
+  // explicit `false` disables it — see sessionDedupEnabled). `TK_SESSION_DEDUP` env
+  // overrides this. Optional and NOT part of the default config object or the `tk
+  // config init` template — a user adds `false` by hand only to OPT OUT.
   sessionDedup?: boolean;
 };
 

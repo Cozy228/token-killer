@@ -81,8 +81,18 @@ describe("ADR 0001 over-budget ladder", () => {
 
   test("ruff under budget lists full messages and declares no omission", async () => {
     const diagnostics = [
-      { filename: "/repo/src/a.py", code: "F401", location: { row: 1, column: 1 }, message: "unused import" },
-      { filename: "/repo/src/b.py", code: "E501", location: { row: 9, column: 1 }, message: "line too long" },
+      {
+        filename: "/repo/src/a.py",
+        code: "F401",
+        location: { row: 1, column: 1 },
+        message: "unused import",
+      },
+      {
+        filename: "/repo/src/b.py",
+        code: "E501",
+        location: { row: 9, column: 1 },
+        message: "line too long",
+      },
     ];
     const result = await run(["ruff", "check", "."], JSON.stringify(diagnostics), options());
     expect(result.output).toContain("unused import");
@@ -92,7 +102,11 @@ describe("ADR 0001 over-budget ladder", () => {
 
   test("json over budget with persistence ships a replacement + snapshot pointer", async () => {
     const big = Array.from({ length: 4000 }, (_, i) => ({ id: i, name: `item-${i}` }));
-    const result = await run(["json", "data.json"], JSON.stringify(big), options({ saveRaw: "auto" }));
+    const result = await run(
+      ["json", "data.json"],
+      JSON.stringify(big),
+      options({ saveRaw: "auto" }),
+    );
 
     expect(result.omission?.kind).toBe("replacement");
     expect(result.output).toContain("JSON array: 4000 items (over budget)");
@@ -153,6 +167,13 @@ describe("ADR 0001 over-budget ladder", () => {
     expect(result.omission?.kind).toBe("replacement");
     expect(result.omission?.rawPointer).toBeTruthy();
     expect(result.output).not.toMatch(NO_OVERFLOW_MARKER);
+
+    // H21: the persisted snapshot the pointer names must hold the MASKED full — never
+    // the raw secret. (Before the fix it stored unmasked raw and the marker handed the
+    // agent the pointer.) Every var is present; the secret value is not.
+    const snapshot = readFileSync(path.join(workdir, result.rawOutputPath!), "utf8");
+    expect(snapshot).not.toContain("SUPERSECRETVALUE_DO_NOT_LEAK_12345");
+    expect(snapshot).toContain("AWS_CONFIG_599=config-value-number-599");
   });
 
   test("env under budget masks the secret value but keeps every var", async () => {
@@ -173,7 +194,11 @@ describe("ADR 0001 over-budget ladder", () => {
     const rows = Array.from({ length: 3000 }, (_, i) => ` ${i} | user_with_a_longish_name_${i}`);
     const stdout = [header, sep, ...rows, "(3000 rows)", ""].join("\n");
 
-    const result = await run(["psql", "-c", "select * from users"], stdout, options({ saveRaw: "auto" }));
+    const result = await run(
+      ["psql", "-c", "select * from users"],
+      stdout,
+      options({ saveRaw: "auto" }),
+    );
 
     expect(result.omission?.kind).toBe("replacement");
     expect(result.output).toContain("3000 rows (over budget)");

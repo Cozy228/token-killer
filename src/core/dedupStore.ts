@@ -22,8 +22,11 @@ export const TTL_MS: Record<TtlClass, number> = {
 export type DedupEntry = {
   // The normalized command this entry caches (debug / marker wording).
   normCmd: string;
-  // sha256 of the COMPRESSED output (the exact-compare key).
-  outHash: string;
+  // sha256 of the RAW output (ANSI-stripped) — the exact-compare key. Keying on RAW,
+  // not the compressed view, keeps dedup honest for lossy/capped handlers: two
+  // different raws can compress to identical bytes, and keying on the compressed view
+  // would emit a false "unchanged" marker + a stale recovery pointer (H2).
+  rawHash: string;
   // Part of identity — never dedup a changed-exit result.
   exitCode: number;
   ttlClass: TtlClass;
@@ -34,11 +37,11 @@ export type DedupEntry = {
   // rawStore recovery pointer (relative path) — the marker's "full: <pointer>".
   rawPointer: string;
   // Best-effort session id that established this entry. ATTRIBUTE ONLY — never part
-  // of the key; used to sharpen marker wording and the slow-class same-session gate.
+  // of the key; used solely to sharpen marker wording ("in this session" vs "here").
   session_id?: string;
 };
 
-const STORE_VERSION = 1 as const;
+const STORE_VERSION = 2 as const; // bumped: rawHash replaces the old compressed-output hash (H2)
 type Store = { v: typeof STORE_VERSION; entries: Record<string, DedupEntry> };
 
 const MAX_ENTRIES = 512;
@@ -61,7 +64,7 @@ export function normalizeCommand(command: ParsedCommand): string {
   const prog = basename(command.program) || command.program;
   // Join with single spaces at the SEAMS only; never collapse whitespace INSIDE a
   // token, or two distinct commands map to one key — a grep pattern `'foo  bar'`
-  // must stay distinct from `'foo bar'`. (Exact outHash still guards content; this
+  // must stay distinct from `'foo bar'`. (Exact rawHash still guards content; this
   // keeps the key — and the marker's command label — honest.)
   return [prog, ...command.args].join(" ").trim();
 }

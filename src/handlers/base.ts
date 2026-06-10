@@ -7,7 +7,7 @@ import type {
 } from "../types.js";
 import { calculateSavings } from "../core/savings.js";
 import { maybeSaveRawOutput } from "../core/rawStore.js";
-import { limitOutput } from "../core/outputLimit.js";
+import { resolveStoredPath } from "../core/dataDir.js";
 import { removeAnsi } from "../core/ansi.js";
 
 export function rawText(raw: RawResult): string {
@@ -113,10 +113,11 @@ export async function makeFilteredResult(
   // here instead of leaving a `+N more` marker for the sniff to (maybe) catch.
   omission?: OmissionDeclaration,
 ): Promise<FilteredResult> {
-  const unlimitedRaw = removeAnsi(rawText(raw));
-  const unlimitedOutput = removeAnsi(output);
-  const cleanRaw = limitOutput(unlimitedRaw, options);
-  const cleanOutput = limitOutput(unlimitedOutput, options);
+  // The quality gate compares uncapped output: --max-lines/--max-chars are an opt-in
+  // DISPLAY cap applied later at the cli layer (core/outputLimit.ts), never here, so a
+  // user cap can never interfere with the inflation/omission checks (H18).
+  const cleanRaw = removeAnsi(rawText(raw));
+  const cleanOutput = removeAnsi(output);
   const rawHasContent = cleanRaw.trim().length > 0;
   const outputHasContent = cleanOutput.trim().length > 0;
   const inflationBudget =
@@ -163,7 +164,15 @@ export async function makeFilteredResult(
   const declared = !!omission && initialStatus === "passed";
   const saveOptions: TkOptions =
     declared && options.saveRaw !== false ? { ...options, saveRaw: true } : options;
-  const rawOutputPath = await maybeSaveRawOutput(raw, saveOptions);
+  // H21: a MASKING handler's RAW holds unmasked secrets. Persisting it would write
+  // plaintext keys to disk AND the recovery pointer would hand them straight back to
+  // the agent. Snapshot the MASKED full instead (omission.safeFull, else the masked
+  // on-screen output) so the recovery channel leaks nothing. Non-masking handlers
+  // snapshot raw unchanged. (rawStore additionally writes mode 0600.)
+  const snapshotSource: RawResult = masking
+    ? { ...raw, stdout: removeAnsi(omission?.safeFull ?? output), stderr: "" }
+    : raw;
+  const rawOutputPath = await maybeSaveRawOutput(snapshotSource, saveOptions);
 
   // A step-2 `replacement` genuinely drops evidence, so it is honest ONLY if the
   // snapshot it points at exists. If persistence was disabled (--no-save-raw) there
@@ -206,7 +215,10 @@ export async function makeFilteredResult(
     // Decision 6: the inline recovery pointer names the persisted snapshot FILE
     // path — never a `tk --raw` re-run (which can drift / re-fire a mutation).
     if (rawOutputPath) {
-      limited = `${limited.replace(/\n+$/, "")}\n[full output: ${rawOutputPath}]\n`;
+      // Show an ABSOLUTE path: the agent's cwd is the project, not ~/.token-killer, so
+      // the home-relative stored form would `cat`-fail (H20). The result FIELD keeps
+      // the relative form for home-relocatability; only the printed pointer resolves.
+      limited = `${limited.replace(/\n+$/, "")}\n[full output: ${resolveStoredPath(rawOutputPath)}]\n`;
     }
     omissionField = { kind: omission!.kind, rawPointer: rawOutputPath };
   }

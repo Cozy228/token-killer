@@ -475,11 +475,14 @@ export function renderReportHtml(doc: ReportDoc): string {
 (function () {
   var d = window.__TK_REPORT__;
   var meta = document.getElementById("meta");
+  // Escape every interpolated value before innerHTML. scope/since are enum/ISO today,
+  // but the meta block must not be the one place an unescaped value could inject (L9).
+  function esc(s){return String(s).replace(/[&<>"']/g,function(c){return {'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c];});}
   var bits = [];
   var scopeLabel = d.data && d.data.scope === "user" ? "all your projects" : d.data && d.data.scope === "project" ? "this project" : d.data && d.data.scope;
-  if (scopeLabel) bits.push('<span>Covers <b>' + scopeLabel + '</b></span>');
-  if (d.data && d.data.since) bits.push('<span>since <b>' + d.data.since + '</b></span>');
-  bits.push('<span>as of ' + new Date(d.generatedAt).toLocaleString() + '</span>');
+  if (scopeLabel) bits.push('<span>Covers <b>' + esc(scopeLabel) + '</b></span>');
+  if (d.data && d.data.since) bits.push('<span>since <b>' + esc(d.data.since) + '</b></span>');
+  bits.push('<span>as of ' + esc(new Date(d.generatedAt).toLocaleString()) + '</span>');
   meta.innerHTML = bits.join(" &middot; ");
 })();
 </script>

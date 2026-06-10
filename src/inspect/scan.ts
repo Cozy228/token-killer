@@ -60,8 +60,24 @@ export type ScanOptions = {
 
 // Multiplexer programs whose first sub-verb is a meaningful, non-sensitive label.
 const MULTIPLEXERS = new Set([
-  "git", "npm", "pnpm", "yarn", "npx", "docker", "kubectl", "cargo", "go",
-  "dotnet", "mvn", "gradle", "gh", "glab", "pip", "pip3", "terraform", "bun",
+  "git",
+  "npm",
+  "pnpm",
+  "yarn",
+  "npx",
+  "docker",
+  "kubectl",
+  "cargo",
+  "go",
+  "dotnet",
+  "mvn",
+  "gradle",
+  "gh",
+  "glab",
+  "pip",
+  "pip3",
+  "terraform",
+  "bun",
 ]);
 
 function basename(token: string): string {
@@ -73,9 +89,16 @@ function basename(token: string): string {
 // A sanitized signature for a shell command: program (+ first sub-verb for known
 // multiplexers). Strips paths and NEVER includes file/pattern arguments.
 function shellKey(command: string): string {
-  const tokens = command.trim().split(/\s+/).filter(Boolean);
+  let tokens = command.trim().split(/\s+/).filter(Boolean);
+  // Strip leading `KEY=value` env-assignment tokens — environment setup, not the
+  // program, and they can carry secrets/URLs that must never enter the key (H1).
+  while (tokens.length > 0 && /^[A-Za-z_]\w*=/.test(tokens[0]!)) tokens = tokens.slice(1);
   if (tokens.length === 0) return "shell";
-  const program = basename(tokens[0]).toLowerCase();
+  const first = tokens[0]!;
+  // A program slot that is itself a URL or assignment (not a plain name/path) is never
+  // a stable label and may carry a secret — generalize it (H1).
+  if (first.includes("://") || first.includes("=")) return "other";
+  const program = basename(first).toLowerCase();
   if (MULTIPLEXERS.has(program)) {
     const sub = tokens.slice(1).find((t) => !t.startsWith("-"));
     if (sub && /^[a-z][\w-]*$/i.test(sub)) return `${program} ${sub.toLowerCase()}`;
@@ -221,7 +244,9 @@ export function scan(discovery: SourceDiscovery, opts: ScanOptions = {}): ScanRe
 
       const ev = normalize(record);
       const isShell = ev.category === "execute_adjacent" && typeof ev.command === "string";
-      const key = isShell ? shellKey(ev.command ?? "") : (ev.toolName.toLowerCase() || classifyTool(""));
+      const key = isShell
+        ? shellKey(ev.command ?? "")
+        : ev.toolName.toLowerCase() || classifyTool("");
       const kind: "shell" | "direct" = isShell ? "shell" : "direct";
 
       const acc = accs.get(key) ?? blankAcc(key, kind, ev.category);

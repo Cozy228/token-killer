@@ -16,4 +16,16 @@ describe("commandStem", () => {
     expect(commandStem("curl -s https://api.example.com/v1/secret")).toBe("curl");
     expect(commandStem("docker compose ps my-service")).toBe("docker compose ps");
   });
+
+  test("H1: leading KEY=value env-assignment tokens never become the stem", () => {
+    // The assignment is environment setup, not the program — and can carry a secret;
+    // it was previously returned verbatim as the "redacted" stem.
+    expect(commandStem("DATABASE_URL=postgres://user:pass@host npm run migrate")).toBe("npm run");
+    expect(commandStem("FOO=1 BAR=2 git status")).toBe("git status");
+    // After stripping assignments a path/URL program slot is generalized, never raw.
+    expect(commandStem("API_KEY=sk-secret-12345 ./deploy.sh")).toBe("other");
+    expect(commandStem("DATABASE_URL=postgres://user:pass@host npm run migrate")).not.toContain(
+      "pass",
+    );
+  });
 });
