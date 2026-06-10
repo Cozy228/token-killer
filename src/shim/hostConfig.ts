@@ -86,9 +86,13 @@ export function vscodeSettingsPath(
 }
 
 // Pure transform of a parsed settings object. Prepends shimDir to the per-OS
-// terminal env PATH (via VS Code's ${env:PATH} substitution) and sets
-// TK_SHIM_DIR. Idempotent: an existing shimDir entry is removed before
-// prepending, so re-running does not stack duplicates.
+// terminal env PATH (via VS Code's ${env:PATH} substitution), sets TK_SHIM_DIR,
+// and opts this terminal in to TTY compression (R1). VS Code Copilot's agent runs
+// run_in_terminal in a ConPTY (stdout.isTTY=true), so without TK_COMPRESS_TTY the
+// gate would pass every agent command through raw; setting it here — alongside the
+// shim PATH the agent terminal inherits — is what makes the agent's output actually
+// compress. Idempotent: an existing shimDir entry is removed before prepending, so
+// re-running does not stack duplicates.
 export function applyVscodeEnv(
   settings: Record<string, unknown>,
   shimDir: string,
@@ -106,6 +110,7 @@ export function applyVscodeEnv(
     .join(delim);
   env.PATH = rest ? `${shimDir}${delim}${rest}` : shimDir;
   env.TK_SHIM_DIR = shimDir;
+  env.TK_COMPRESS_TTY = "1";
 
   return { ...settings, [key]: env };
 }
@@ -123,6 +128,7 @@ export function removeVscodeEnv(
   if (Object.keys(env).length === 0) return settings;
 
   delete env.TK_SHIM_DIR;
+  delete env.TK_COMPRESS_TTY;
   if (typeof env.PATH === "string") {
     const rest = env.PATH.split(delim)
       .filter((entry) => entry !== "" && entry !== shimDir)

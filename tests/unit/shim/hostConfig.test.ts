@@ -73,6 +73,23 @@ describe("VS Code settings env", () => {
     expect(twice).toEqual(once);
   });
 
+  test("sets TK_COMPRESS_TTY=1 so the agent's TTY commands compress (R1)", () => {
+    const result = applyVscodeEnv({}, SHIM, "linux") as Record<string, Record<string, string>>;
+    expect(result["terminal.integrated.env.linux"]!.TK_COMPRESS_TTY).toBe("1");
+  });
+
+  test("remove strips TK_COMPRESS_TTY alongside TK_SHIM_DIR/PATH", () => {
+    const before = { "terminal.integrated.env.linux": { MY_VAR: "x" } };
+    const patched = applyVscodeEnv(before, SHIM, "linux");
+    const removed = removeVscodeEnv(patched, SHIM, "linux") as Record<
+      string,
+      Record<string, string>
+    >;
+    const env = removed["terminal.integrated.env.linux"]!;
+    expect(env.TK_COMPRESS_TTY).toBeUndefined();
+    expect(env).toEqual({ MY_VAR: "x" });
+  });
+
   test("preserves unrelated settings and existing env vars", () => {
     const before = {
       "editor.fontSize": 14,
@@ -94,7 +111,10 @@ describe("VS Code settings env", () => {
   test("remove keeps the user's own env vars", () => {
     const before = { "terminal.integrated.env.linux": { MY_VAR: "x" } };
     const patched = applyVscodeEnv(before, SHIM, "linux");
-    const removed = removeVscodeEnv(patched, SHIM, "linux") as Record<string, Record<string, string>>;
+    const removed = removeVscodeEnv(patched, SHIM, "linux") as Record<
+      string,
+      Record<string, string>
+    >;
     expect(removed["terminal.integrated.env.linux"]).toEqual({ MY_VAR: "x" });
   });
 
