@@ -133,6 +133,22 @@ describe("tk optimize --token-budget-block (folds in the former agentsmd)", () =
     expect(code).toBe(0);
     expect(hasMarkerBlock(readFileSync(userTargetPath(home), "utf8"))).toBe(true);
   });
+
+  test("O1: --restore deletes a file the block-install created (no 0-byte leftover)", async () => {
+    const target = userTargetPath(home);
+    expect(existsSync(target)).toBe(false);
+
+    const s = silenceStdout();
+    expect(await runOptimize(["--token-budget-block"], 1000, home, cwd, {})).toBe(0);
+    s.mockRestore();
+    expect(existsSync(target)).toBe(true); // created fresh, block is the only content
+
+    const s2 = silenceStdout();
+    expect(await runOptimize(["--token-budget-block", "--restore"], 2000, home, cwd, {})).toBe(0);
+    s2.mockRestore();
+    // The block was the sole content → file is deleted, NOT left as a 0-byte file.
+    expect(existsSync(target)).toBe(false);
+  });
 });
 
 describe("runOptimize --apply", () => {

@@ -7,7 +7,7 @@
 // the most recent apply.
 
 import { createHash } from "node:crypto";
-import { existsSync, mkdirSync, readFileSync, readdirSync, statSync } from "node:fs";
+import { existsSync, mkdirSync, readFileSync, readdirSync, rmSync, statSync } from "node:fs";
 import { writeFileAtomicSync } from "../core/atomicWrite.js";
 import { basename, join } from "node:path";
 
@@ -228,6 +228,17 @@ export function applyMarkerBlock(home: string, mode: "insert" | "remove", nowMs:
     const backup = writeBackup(target, existing, nowMs);
     process.stdout.write(`Backup: ${backup}\n`);
   }
+
+  // O1: when removing the block empties the file (it was the file's only content —
+  // i.e. the insert created the file), DELETE it rather than leaving a 0-byte file.
+  // tk should not litter an empty instructions file it itself created. The backup
+  // above preserves the prior bytes, so this stays reversible.
+  if (mode === "remove" && next.trim() === "") {
+    rmSync(target, { force: true });
+    process.stdout.write(`Removed Token Killer managed block and deleted now-empty ${target}\n`);
+    return 0;
+  }
+
   mkdirSync(join(target, ".."), { recursive: true });
   writeFileAtomicSync(target, next);
   process.stdout.write(

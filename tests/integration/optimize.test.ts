@@ -51,7 +51,10 @@ function gitInit(): void {
 
 describe("tk optimize", () => {
   test("--dry-run triggers inspect when the bucket is absent and prints a plan, no writes", () => {
-    write("AGENTS.md", `# Rules\n${Array.from({ length: 300 }, (_, i) => `line ${i}`).join("\n")}\n`);
+    write(
+      "AGENTS.md",
+      `# Rules\n${Array.from({ length: 300 }, (_, i) => `line ${i}`).join("\n")}\n`,
+    );
     const r = runTk(["optimize", "--project", "--dry-run"]);
     expect(r.status).toBe(0);
     expect(r.stdout).toContain("scope = project");
@@ -63,14 +66,20 @@ describe("tk optimize", () => {
   });
 
   test("a leading `context` token is still accepted (back-compat)", () => {
-    write("AGENTS.md", `# Rules\n${Array.from({ length: 300 }, (_, i) => `line ${i}`).join("\n")}\n`);
+    write(
+      "AGENTS.md",
+      `# Rules\n${Array.from({ length: 300 }, (_, i) => `line ${i}`).join("\n")}\n`,
+    );
     const r = runTk(["optimize", "context", "--project", "--dry-run"]);
     expect(r.status).toBe(0);
     expect(r.stdout).toContain("scope = project");
   });
 
   test("--write-advice writes a project advice file under ~/.token-killer/advice/context", () => {
-    write("AGENTS.md", `# Rules\n${Array.from({ length: 300 }, (_, i) => `line ${i}`).join("\n")}\n`);
+    write(
+      "AGENTS.md",
+      `# Rules\n${Array.from({ length: 300 }, (_, i) => `line ${i}`).join("\n")}\n`,
+    );
     const r = runTk(["optimize", "--project", "--write-advice"]);
     expect(r.status).toBe(0);
     expect(r.stdout).toContain("Wrote context advice");
@@ -89,7 +98,10 @@ describe("tk optimize", () => {
   });
 
   test("--apply discloses free-form suggestions but does not rewrite the file", () => {
-    write("AGENTS.md", `# Rules\n${Array.from({ length: 300 }, (_, i) => `line ${i}`).join("\n")}\n`);
+    write(
+      "AGENTS.md",
+      `# Rules\n${Array.from({ length: 300 }, (_, i) => `line ${i}`).join("\n")}\n`,
+    );
     const before = readFileSync(path.join(project, "AGENTS.md"), "utf8");
     const r = runTk(["optimize", "--project", "--apply"]);
     expect(r.status).toBe(0);
@@ -107,7 +119,9 @@ describe("tk optimize", () => {
 
     const remove = runTk(["optimize", "--token-budget-block", "--restore"]);
     expect(remove.status).toBe(0);
-    expect(readFileSync(target, "utf8")).not.toContain("tk:token_budget:start");
+    // O1: the block was the file's only content (install created it), so restore
+    // deletes the file rather than leaving a 0-byte leftover.
+    expect(existsSync(target)).toBe(false);
   });
 
   // End-to-end: inspect flags a project-tracked skill that the model can
@@ -119,7 +133,14 @@ describe("tk optimize", () => {
     mkdirSync(path.dirname(skillAbs), { recursive: true });
     writeFileSync(
       skillAbs,
-      ["---", "name: deploy", "description: Deploy the service", "---", "# Deploy", "Run the deploy and publish the release."].join("\n"),
+      [
+        "---",
+        "name: deploy",
+        "description: Deploy the service",
+        "---",
+        "# Deploy",
+        "Run the deploy and publish the release.",
+      ].join("\n"),
     );
 
     const before = readFileSync(skillAbs, "utf8");

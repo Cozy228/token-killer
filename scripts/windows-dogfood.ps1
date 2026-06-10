@@ -166,7 +166,7 @@ function Test-HookCheck {
 }
 
 function Test-HookCopilot {
-  param([string] $Name, [string] $Payload, [string] $ExpectedSubstr)
+  param([string] $Name, [string] $Payload, [string] $ExpectedSubstr, [switch] $ExpectEmpty)
   $psi = New-Object System.Diagnostics.ProcessStartInfo
   $psi.FileName = $Script:TkBin
   foreach ($a in $Script:TkCliArgs) { $psi.ArgumentList.Add($a) | Out-Null }
@@ -182,7 +182,11 @@ function Test-HookCopilot {
   $stdout = $p.StandardOutput.ReadToEnd()
   $stderr = $p.StandardError.ReadToEnd()
   $p.WaitForExit()
-  if ($p.ExitCode -eq 0 -and $stdout -match $ExpectedSubstr) {
+  # Copilot-CLI fail-open contract: a bad/unrewritable event yields EMPTY stdout
+  # (= allow, host runs the command verbatim). Otherwise match the expected shape.
+  $ok = if ($ExpectEmpty) { $p.ExitCode -eq 0 -and $stdout.Trim().Length -eq 0 }
+        else { $p.ExitCode -eq 0 -and $stdout -match $ExpectedSubstr }
+  if ($ok) {
     Write-Pass $Name $stdout.Trim()
   } else {
     Write-Fail $Name "exit=$($p.ExitCode) stdout=$stdout stderr=$stderr"
@@ -326,11 +330,13 @@ try {
 
   # ── Phase 4: Hook copilot protocol (stdin) ────────────────────────
   Write-Section "Hook copilot (stdin protocol)"
+  # ADR 0005 per-dialect shapes: Copilot CLI gets a FLAT decision (permissionDecision
+  # + modifiedArgs), not the legacy rewritten_command/decision fields.
   $rewritePayload = '{"event":"preToolUse","toolName":"bash","toolArgs":"{\"command\":\"git status\"}"}'
-  Test-HookCopilot "hook copilot: rewrite git status" $rewritePayload '"rewritten_command"\s*:\s*"tk git status"'
+  Test-HookCopilot "hook copilot: rewrite git status" $rewritePayload '"modifiedArgs"\s*:\s*\{\s*"command"\s*:\s*"tk git status"'
   $denyPayload = '{"event":"preToolUse","tool_name":"read_file","tool_input":{"filePath":"node_modules/x/i.js"}}'
-  Test-HookCopilot "hook copilot: deny node_modules" $denyPayload '"decision"\s*:\s*"deny"'
-  Test-HookCopilot "hook copilot: fail-open bad json" "}{" '"decision"\s*:\s*"allow"'
+  Test-HookCopilot "hook copilot: deny node_modules" $denyPayload '"permissionDecision"\s*:\s*"deny"'
+  Test-HookCopilot "hook copilot: fail-open bad json" "}{" -ExpectEmpty
 
   # ── Phase 5: VS Code shim lifecycle ───────────────────────────────
   Write-Section "VS Code shim lifecycle"
@@ -346,7 +352,7 @@ try {
     else { Write-Fail "shim wrapper git.cmd exists" }
     if (Test-Path -LiteralPath (Join-Path $ShimDir "rg.cmd")) { Write-Pass "shim wrapper rg.cmd exists" }
     else { Write-Fail "shim wrapper rg.cmd exists" }
-    $status = Invoke-Tk @("shim", "status")
+    $status = Invoke-Tk @("init", "shim", "status")
     if ($status.ExitCode -eq 0 -and $status.AllText -match "probe:\s+PASS") {
       Write-Pass "shim status + probe PASS"
     } else {
@@ -381,7 +387,9 @@ try {
     }
     if (Test-Path -LiteralPath $CopilotHook) {
       $hookText = Get-Content -LiteralPath $CopilotHook -Raw
-      if ($hookText -match "tk hook copilot" -and $hookText -match "PreToolUse") {
+      # Windows PATH fix writes an ABSOLUTE command ("…node.exe …\dist\cli.js hook
+      # copilot"), not a bare "tk hook copilot" — match the verb, not the launcher.
+      if ($hookText -match "hook copilot" -and $hookText -match "PreToolUse") {
         Write-Pass "Copilot hook config tk-rewrite.json" $CopilotHook
       } else {
         Write-Fail "Copilot hook config content" $CopilotHook

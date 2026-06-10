@@ -177,3 +177,21 @@ All mutations made during this run were reverted and verified:
 **Bottom line:** all three actionable defects from the prior Windows dogfood are fixed
 and confirmed on the GBK box; O1 and T1 remain as logged lower-severity items. The D2
 fix is safe (no POSIX impact, no new dogfood failures, 1454 tests green).
+
+---
+
+## 9. Follow-up — O1 + T1 fixed (same day, after box shutdown)
+
+Both remaining items were fixed immediately after this re-run:
+
+- **O1 fixed** (`src/context/applySafe.ts` `applyMarkerBlock`): when `--token-budget-block
+  --restore` empties a file the install created (block was the sole content), tk now
+  **deletes** the file instead of leaving a 0-byte leftover. The pre-restore backup still
+  preserves the bytes, so it stays reversible. Regression tests added
+  (`applySafe.test.ts`, `optimize.test.ts`); 1457 tests green.
+- **T1 fixed** (`scripts/windows-dogfood.ps1`): the 5 stale assertions were updated to the
+  current shapes — Copilot CLI flat `modifiedArgs`/`permissionDecision` (ADR 0005),
+  empty-stdout fail-open via a new `-ExpectEmpty` mode, `init shim status` path, and the
+  absolute-hook-path config match. Edits were matched against the exact stdout captured
+  live in §3/§6 this session; a live `pnpm test:windows-dogfood` re-run to confirm
+  40+5→45 green is **pending the next box power-on** (box was shut down after the re-run).
