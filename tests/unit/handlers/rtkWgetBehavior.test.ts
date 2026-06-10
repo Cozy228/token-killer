@@ -152,13 +152,14 @@ describe("RTK wget behavior", () => {
   // RTK #[test]: test_compact_url_truncates_long_url — URLs over 50 chars (after
   // stripping the protocol) collapse to "{first 25}...{last 20}".
   test("truncates a long URL with an ellipsis", async () => {
-    const longUrl =
-      "https://example.com/very/long/path/that/exceeds/fifty/characters/archive.zip";
+    const longUrl = "https://example.com/very/long/path/that/exceeds/fifty/characters/archive.zip";
     const result = await runWget(
       ["wget", longUrl],
       "Saving to: 'archive.zip'\n2026-06-04 (1.00 MB/s) - 'archive.zip' saved [4096/4096]",
     );
-    expect(result.output).toMatch(/^example\.com\/very\/long\/pat\.\.\..*archive\.zip ok \| archive\.zip \| 4\.0KB$/);
+    expect(result.output).toMatch(
+      /^example\.com\/very\/long\/pat\.\.\..*archive\.zip ok \| archive\.zip \| 4\.0KB$/,
+    );
     expect(result.output).toContain("...");
     expectRtkParity(result, {
       critical: ["archive.zip", "4.0KB"],
@@ -223,5 +224,52 @@ describe("RTK wget behavior", () => {
       critical: ["FAILED:", "SSL/TLS error"],
       exact: "self-signed.example/file.bin FAILED: SSL/TLS error",
     });
+  });
+});
+
+// ─── Regression tests for adversarial-audit findings ───────────────────────
+
+describe("C5-wget regression: -O - body is emitted", () => {
+  // C5-wget: wget -O - writes the body to stdout. The success branch must emit
+  // the body rather than the filename/size summary.
+  test("-O - emits the body bytes (size-gated, not the filename/size summary)", async () => {
+    const body = "<html><title>Test</title></html>";
+    const result = await runWget(
+      ["wget", "-O", "-", "https://example.com/page.html"],
+      "Connecting to example.com|93.184.216.34|:443... connected.\n",
+      0,
+      body,
+    );
+    expect(result.output).toContain(body);
+    expect(result.output).not.toContain("ok |");
+    expect(result.output).not.toContain("index.html");
+  });
+
+  test("-O - truncates large bodies and emits byte-count marker", async () => {
+    const body = "x".repeat(1000);
+    const result = await runWget(["wget", "-O", "-", "https://example.com/big"], "", 0, body);
+    expect(result.output).toContain("bytes total");
+    expect(result.output).not.toContain("ok |");
+  });
+});
+
+describe("M12-wget regression: anchored HTTP status code detection", () => {
+  // M12-wget: a body/header that contains "15000" (contains "500") should NOT
+  // be labeled "500 Server Error" — the regex must be anchored to HTTP status lines.
+  test("body containing '15000' on a failed download is not labeled '500 Server Error'", async () => {
+    const result = await runWget(
+      ["wget", "https://example.com/data"],
+      [
+        "--2026-06-10 10:00:00--  https://example.com/data",
+        "Resolving example.com... 93.184.216.34",
+        "HTTP request sent, awaiting response... 404 Not Found",
+        "Length: 15000 [application/json]",
+      ].join("\n"),
+      8,
+    );
+    // "15000" contains "500" as a substring — the old code falsely matched it.
+    expect(result.output).not.toContain("500 Server Error");
+    // The actual 404 should still be detected.
+    expect(result.output).toContain("404 Not Found");
   });
 });

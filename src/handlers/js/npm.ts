@@ -16,6 +16,19 @@ function matchesNpm(command: ParsedCommand): boolean {
   return first !== "list" && first !== "ls";
 }
 
+// H14: ERESOLVE peer-dep warnings carry actionable package conflict info — keep them.
+// Other generic npm WARN lines (deprecated packages, peer notices) are still stripped.
+function isEresolveWarn(line: string): boolean {
+  const trimmed = line.trimStart();
+  return (
+    trimmed.startsWith("npm WARN") &&
+    (trimmed.includes("ERESOLVE") ||
+      trimmed.includes("peer dep") ||
+      trimmed.includes("Could not resolve") ||
+      trimmed.includes("conflicting peer"))
+  );
+}
+
 // RTK: js/npm_cmd.rs::filter_npm_output — strip boilerplate, progress bars, npm WARN.
 function filterNpmOutput(output: string): string {
   const result: string[] = [];
@@ -25,8 +38,11 @@ function filterNpmOutput(output: string): string {
     if (line.startsWith(">") && line.includes("@")) {
       continue;
     }
-    // Skip npm WARN lines (after leading whitespace).
+    // H14: keep ERESOLVE / peer-dep conflict warnings (actionable); strip others.
     if (line.trimStart().startsWith("npm WARN")) {
+      if (isEresolveWarn(line)) {
+        result.push(line.trimStart());
+      }
       continue;
     }
     // Skip npm notice lines (after leading whitespace).

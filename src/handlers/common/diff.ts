@@ -129,7 +129,15 @@ function condenseUnifiedDiff(text: string): string {
       continue;
     }
 
-    if (line.startsWith("diff --git") || line.startsWith("--- ") || line.startsWith("@@")) {
+    if (line.startsWith("diff --git") || line.startsWith("--- ")) {
+      continue;
+    }
+
+    // H8-diff fix: keep @@ hunk headers — they locate the change in the file
+    // (line numbers) and are essential for "did it change and where?" checks.
+    // The old code dropped them, which also broke binary/rename detection.
+    if (line.startsWith("@@")) {
+      changes.push(line);
       continue;
     }
 
@@ -153,6 +161,13 @@ async function diffInternally(
   const [oldPath, newPath] = fileArgs(command);
   if (!oldPath || !newPath) return undefined;
 
+  // H8-diff fix: if any flag is present (-w/-i/-q/-u/etc.), fall through to the
+  // real `diff` so the flags are honoured and the exit code is correct. The LCS
+  // path ignores flags and always returns exitCode:0 even when files differ,
+  // breaking "did it change?" checks. -q in particular REQUIRES exit 1 on diff.
+  const hasFlags = command.args.some((a) => a.startsWith("-"));
+  if (hasFlags) return undefined;
+
   const started = Date.now();
   try {
     const oldAbsolute = path.resolve(options.cwd, oldPath);
@@ -172,11 +187,15 @@ async function diffInternally(
       return undefined;
     }
 
+    const changes = lcsChanges(splitLines(oldText), splitLines(newText));
+    // H8-diff fix: propagate the correct exit code. GNU diff exits 1 when files
+    // differ and 0 when identical — the LCS result tells us which.
+    const exitCode = changes.length > 0 ? 1 : 0;
     return {
       command: command.displayCommand,
       stdout: formatDiffOutput(oldPath, newPath, oldInfo.mtime, newInfo.mtime, oldText, newText),
       stderr: "",
-      exitCode: 0,
+      exitCode,
       durationMs: Date.now() - started,
     };
   } catch {
@@ -213,7 +232,17 @@ export const diffHandler: CommandHandler = {
   },
 
   async execute(command, options) {
-    if (command.args.includes("-")) {
+    const fileOperands = fileArgs(command); // real file paths (excludes flags and `-`)
+    const hasStdin = command.args.includes("-");
+    // `diff <file> -` (a real file PLUS stdin) is a real diff against stdin — run the
+    // real `diff` so flags are honoured and exit 1 propagates on a difference (H8).
+    if (hasStdin && fileOperands.length >= 1) {
+      return executeCommand(command);
+    }
+    // A BARE `diff -` (the only operand is `-`) is the RTK convention for "condense a
+    // unified diff piped on stdin" (`git diff | tk diff -`), NOT a real diff — real
+    // `diff -` errors with "missing operand". Read stdin so filter() can condense it.
+    if (hasStdin) {
       return diffFromStdin(command);
     }
     return (await diffInternally(command, options)) ?? executeCommand(command);

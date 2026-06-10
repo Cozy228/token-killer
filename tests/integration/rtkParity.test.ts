@@ -168,7 +168,9 @@ describe("RTK-style CLI integration parity", () => {
       expect(result.stdout).toContain("[file] src/main.ts (+1 -0)");
       expect(result.stdout).toContain('  +  console.log("hello");');
       expect(result.stdout).not.toContain("diff --git");
-      expect(result.stdout).not.toContain("@@ -1,2");
+      // H8: @@ hunk headers are now RETAINED — they locate the change (line numbers)
+      // and are essential for "did it change and where?"; dropping them was the bug.
+      expect(result.stdout).toContain("@@ -1,2 +1,3 @@");
     } finally {
       await rm(dir, { recursive: true, force: true });
     }

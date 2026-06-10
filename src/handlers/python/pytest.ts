@@ -208,7 +208,22 @@ export const pytestHandler = defineHandler({
   match: matchesPytest,
 
   format: (raw, _command, options) => {
-    const { output, omission } = filterPytestOutput(`${raw.stdout}\n${raw.stderr}`);
+    const combined = `${raw.stdout}\n${raw.stderr}`;
+    const { output, omission } = filterPytestOutput(combined);
+
+    // C2-pytest fix: pytest exit 2 = collection error (e.g. import/syntax
+    // error) and exit 4 = usage error. In both cases the formatter may produce
+    // the vacuous "No tests collected" because all counts are zero AND no
+    // failure blocks were parsed (ERRORS sections are not captured). Return raw
+    // so the traceback is preserved for the agent. Exit 5 = "no tests found"
+    // is a normal outcome and does legitimately produce "No tests collected".
+    if (
+      (raw.exitCode === 2 || raw.exitCode === 4) &&
+      output.trimEnd() === "Pytest: No tests collected"
+    ) {
+      return { output: `${combined.trimEnd()}\n` };
+    }
+
     return { output: `${output}\n`, omission };
   },
 });

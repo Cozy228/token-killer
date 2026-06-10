@@ -155,4 +155,45 @@ describe("RTK gt behavior", () => {
       exact: "ok created feat/new-feature",
     });
   });
+
+  // H9b regression: on nonzero exit, gt filters only read raw.stdout and can
+  // produce a fabricated success summary (e.g. "pushed feature-1") even when the
+  // exit code indicates an error (rate-limited, auth failure, etc.).
+  describe("H9b: gt nonzero exit surfaces stderr, not a fabricated summary", () => {
+    test("gt submit exit-1 with rate limit error surfaces the error, not 'pushed ...'", async () => {
+      const result = await filterRtkOutput(
+        ["gt", "submit"],
+        "Pushed branch feat/add-auth\n",
+        1,
+        "ERROR: rate limited. Try again in 60 seconds.\n",
+      );
+
+      expect(result.output).toContain("rate limited");
+      // Must NOT produce a fabricated "pushed feat/add-auth" summary.
+      expect(result.output).not.toContain("pushed feat/add-auth");
+    });
+
+    test("gt log exit-1 with auth error surfaces the stderr message", async () => {
+      const result = await filterRtkOutput(
+        ["gt", "log"],
+        "",
+        1,
+        "ERROR: not authenticated. Run `gt auth login`.\n",
+      );
+
+      expect(result.output).toContain("not authenticated");
+    });
+
+    test("gt submit exit-0 still produces the normal summary", async () => {
+      const result = await filterRtkOutput(
+        ["gt", "submit"],
+        "Pushed branch feat/add-auth\nCreated pull request #42 for feat/add-auth\n",
+        0,
+        "",
+      );
+
+      expect(result.output).toContain("pushed feat/add-auth");
+      expect(result.output).toContain("created PR #42");
+    });
+  });
 });

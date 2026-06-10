@@ -76,7 +76,10 @@ describe("Ls / Find", () => {
       expect(result.status).toBe(0);
       expect(result.stdout).toContain("a.txt");
       expect(result.stdout).toContain("b.ts");
-      expect(result.stdout.length).toBeLessThanOrEqual("a.txt\nb.ts\nnode_modules\n".length);
+      // H17: node_modules is hidden by default but DISCLOSED in one counted line
+      // (never silently dropped — "did the build emit X?" must be answerable).
+      expect(result.stdout).toContain("node_modules");
+      expect(result.stdout).toContain("hidden");
     } finally {
       await rm(dir, { recursive: true, force: true });
     }
@@ -358,7 +361,9 @@ describe("Git", () => {
       await writeFile(path.join(dir, "new.ts"), `${after}\n`);
 
       const result = runTk(["diff", "old.ts", "new.ts"], dir);
-      expect(result.status).toBe(0);
+      // H8: tk now propagates GNU diff's exit code — 1 when files differ (was always
+      // 0, which broke every "did it change?" check).
+      expect(result.status).toBe(1);
       expect(result.stdout).toContain("old.ts -> new.ts (+1 -0)");
       expect(result.stdout).toContain("+   const timeoutMs = 5000;");
       expect(result.stdout).not.toContain("-  const unchanged");

@@ -465,10 +465,30 @@ function firstLogsOperand(args: string[], valueFlags: Set<string>): string | und
 // subcommand into a fixed `--format`/`--tail` invocation so its formatter has a
 // stable, headerless tab-separated shape to parse. Unhandled docker subcommands
 // pass through unchanged.
+// H10-docker fix (b): known flags for `docker ps` that we handle — all others
+// cause a passthrough so the user gets exactly what they asked for instead of
+// silently dropping their flags.
+const DOCKER_PS_KNOWN_FLAGS = new Set(["-a", "--all", "--no-trunc"]);
+
+// Return true when `docker ps` args include only known/handled flags (safe to
+// rewrite with our format template). Unrecognized flags mean passthrough.
+function dockerPsHasOnlyKnownFlags(args: string[]): boolean {
+  for (let i = 1; i < args.length; i += 1) {
+    const arg = args[i]!;
+    if (!arg.startsWith("-")) continue; // positional — fine
+    if (!DOCKER_PS_KNOWN_FLAGS.has(arg)) return false;
+  }
+  return true;
+}
+
 export function buildDockerArgs(args: string[]): string[] {
   const sub = args[0];
 
   if (sub === "ps") {
+    // H10-docker fix (b): if the user passed unrecognized flags (--filter, -q,
+    // --format, --since, …) pass through unchanged — forwarding them alongside
+    // our injected --format template is ambiguous and may produce bad output.
+    if (!dockerPsHasOnlyKnownFlags(args)) return args;
     const all = args.includes("-a") || args.includes("--all");
     return all
       ? ["ps", "-a", "--format", DOCKER_PS_ALL_FORMAT]
@@ -489,6 +509,13 @@ export function buildDockerArgs(args: string[]): string[] {
       return out;
     }
     if (action === "logs") {
+      // H10-docker fix (c): follow modes (-f/--follow) are captured in the
+      // execute path but that would hang since the stream never ends. The
+      // hasFollow guard here causes args to be returned unchanged; the filter
+      // path then receives the original command.args which still carries -f,
+      // and executePassthrough is not wired here — so we keep returning the
+      // original args for the execute path which will run the real docker as-is
+      // (caller must not capture a follow stream).
       if (hasFollow(args)) return args;
       const svc = firstLogsOperand(args.slice(2), COMPOSE_LOGS_VALUE_FLAGS);
       const out = ["compose", "logs"];
@@ -500,6 +527,8 @@ export function buildDockerArgs(args: string[]): string[] {
   }
 
   if (sub === "logs") {
+    // H10-docker fix (c): follow mode: return args unchanged so the execute
+    // path runs docker logs -f as a passthrough (not captured).
     if (hasFollow(args)) return args;
     const container = firstLogsOperand(args.slice(1), DOCKER_LOGS_VALUE_FLAGS);
     if (container !== undefined) return ["logs", container];
@@ -578,7 +607,10 @@ function formatDocker(args: string[], raw: string): LadderResult {
   }
 
   if (sub === "ps") {
-    if (args.includes("-a")) {
+    // H10-docker fix (a): accept both -a and --all, mirroring buildDockerArgs:472
+    // which routes both to the 6-col ALL format. Using only "-a" caused column
+    // misalignment when the user passed --all (columns shifted by 1).
+    if (args.includes("-a") || args.includes("--all")) {
       return dockerPsAll(raw);
     }
     return dockerPs(raw);

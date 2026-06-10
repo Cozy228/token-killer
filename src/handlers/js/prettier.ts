@@ -36,7 +36,7 @@ function isFormattableFile(trimmed: string): boolean {
 }
 
 // RTK: js/prettier_cmd.rs::filter_prettier_output — faithful port (cap → ladder).
-function filterPrettierOutput(output: string): LadderResult {
+function filterPrettierOutput(output: string, exitCode: number): LadderResult {
   // RTK: #221 — empty or whitespace-only output means prettier didn't run.
   if (output.trim() === "") {
     return { text: "Error: prettier produced no output" };
@@ -54,7 +54,18 @@ function filterPrettierOutput(output: string): LadderResult {
       isCheckMode = true;
     }
 
-    // Count files that need formatting (check mode).
+    // C2-prettier: prettier-v3 emits `[warn] <file>` for files needing formatting.
+    // These ARE files-to-format evidence; the old code excluded them, inverting
+    // failure to success. Collect them as formatting candidates.
+    if (trimmed.startsWith("[warn]") && !trimmed.startsWith("[warn] ⚠")) {
+      const filePart = trimmed.slice("[warn]".length).trim();
+      if (isFormattableFile(filePart)) {
+        filesToFormat.push(filePart);
+      }
+      continue;
+    }
+
+    // Count files that need formatting (check mode): bare path lines.
     if (
       trimmed !== "" &&
       !trimmed.startsWith("Checking") &&
@@ -78,7 +89,13 @@ function filterPrettierOutput(output: string): LadderResult {
   }
 
   // Check if all files are formatted.
-  if (filesToFormat.length === 0 && output.includes("All matched files use Prettier")) {
+  // C2-prettier: never report "All files formatted correctly" on nonzero exit —
+  // a nonzero exit means files need formatting or prettier crashed.
+  if (
+    filesToFormat.length === 0 &&
+    exitCode === 0 &&
+    output.includes("All matched files use Prettier")
+  ) {
     return { text: "Prettier: All files formatted correctly" };
   }
 
@@ -92,8 +109,14 @@ function filterPrettierOutput(output: string): LadderResult {
     return { text: `Prettier: ${filesToFormat.length} files formatted` };
   }
 
+  // C2-prettier: nonzero exit with zero files parsed → unrecognised format; passthrough.
+  if (filesToFormat.length === 0 && exitCode !== 0) {
+    return { text: output };
+  }
+
   // Check mode: show files that need formatting.
-  if (filesToFormat.length === 0) {
+  // C2-prettier: never say "All files formatted correctly" when exit is nonzero.
+  if (filesToFormat.length === 0 && exitCode === 0) {
     return { text: "Prettier: All files formatted correctly" };
   }
 
@@ -124,7 +147,7 @@ export const prettierHandler = defineHandler({
   match: matchesPrettier,
 
   format: (raw, _command, options) => {
-    const { text, omission } = filterPrettierOutput(`${raw.stdout}\n${raw.stderr}`);
+    const { text, omission } = filterPrettierOutput(`${raw.stdout}\n${raw.stderr}`, raw.exitCode);
     return { output: `${text}\n`, omission };
   },
 });

@@ -1,6 +1,7 @@
 import type { ParsedCommand } from "../../types.js";
 import { defineHandler } from "../define.js";
 import { removeAnsi } from "../../core/ansi.js";
+import { overBudgetLadder } from "../common/budget.js";
 
 // RTK: js/next_cmd.rs — filter Next.js `next build` output down to a route/bundle
 // summary. Counts routes by status symbol, extracts bundle sizes, counts
@@ -15,7 +16,11 @@ const ROUTE_PATTERN = /^[○●◐λ✓]\s+(\/[^\s]*)\s+(\d+(?:\.\d+)?)\s*(kB|B)
 const BUNDLE_PATTERN =
   /^[○●◐λ✓]\s+([\w/\-.]+)\s+(\d+(?:\.\d+)?)\s*(kB|B)\s+(\d+(?:\.\d+)?)\s*(kB|B)/;
 
-// RTK: core/truncate.rs::CAP_WARNINGS = 10 (max bundles shown).
+// M20: CAP_WARNINGS was a hard cap that emitted `... +N more routes` which the
+// base sniffer detected as an undeclared omission, reverting to raw (0% saved +
+// false `inflated`). Replaced with a declared over-budget ladder (ADR 0001): within
+// budget all bundles are listed; over budget only the count line is emitted.
+// Keep the constant as the "show N bundles in the full listing" threshold only.
 const CAP_WARNINGS = 10;
 
 type Bundle = {
@@ -48,8 +53,9 @@ export function extractTime(line: string): string | undefined {
   return `${match[1]}${match[2]}`;
 }
 
-// RTK: js/next_cmd.rs::filter_next_build.
-function filterNextBuild(output: string): string {
+// RTK: js/next_cmd.rs::filter_next_build — returns the assembled summary lines
+// (pre-join) so the caller can run the over-budget ladder on them.
+function buildNextSummaryLines(output: string): string[] {
   void ROUTE_PATTERN;
 
   let routesStatic = 0;
@@ -123,9 +129,10 @@ function filterNextBuild(output: string): string {
   if (bundles.length > 0) {
     result.push("Bundles:");
 
-    // Sort by size (descending) and show top 10.
+    // Sort by size (descending).
     bundles.sort((a, b) => b.total - a.total);
 
+    // Show top CAP_WARNINGS bundles in the full listing.
     const shown = bundles.slice(0, CAP_WARNINGS);
     for (const { route, total, pctChange } of shown) {
       let warningMarker = "";
@@ -137,10 +144,9 @@ function filterNextBuild(output: string): string {
       result.push(`  ${routeCol} ${sizeCol} kB${warningMarker}`);
     }
 
-    if (bundles.length > CAP_WARNINGS) {
-      result.push("");
-      result.push(`  ... +${bundles.length - CAP_WARNINGS} more routes`);
-    }
+    // M20: no `... +N more routes` marker — that string trips the base sniffer
+    // (undeclared omission → revert to raw). The over-budget ladder in
+    // filterNextBuild handles the > CAP_WARNINGS case as a declared replacement.
 
     result.push("");
   }
@@ -153,18 +159,60 @@ function filterNextBuild(output: string): string {
   statusLine += `Errors: ${errors} | Warnings: ${warnings}`;
   result.push(statusLine);
 
-  return result.join("\n").trim();
+  return result;
+}
+
+// M20: wrap the summary builder with an over-budget ladder so a long bundle list
+// ships a declared replacement (count-only) instead of a `+N more routes` marker
+// that the base sniffer flags as undeclared omission and reverts to raw.
+function filterNextBuild(output: string): string {
+  const lines = buildNextSummaryLines(output);
+  const full = lines.join("\n").trim();
+
+  // Build a replacement that keeps the header + status but drops the bundle rows.
+  const replacement = (): string => {
+    const keep: string[] = [];
+    let inBundles = false;
+    for (const line of lines) {
+      if (line === "Bundles:") {
+        inBundles = true;
+        continue;
+      }
+      if (inBundles && line === "") {
+        inBundles = false;
+        continue;
+      }
+      if (!inBundles) keep.push(line);
+    }
+    return keep.join("\n").trim();
+  };
+
+  const { text } = overBudgetLadder({ full, replacement });
+  return text;
 }
 
 export const nextHandler = defineHandler({
   name: "next",
+  // The build summary is a structural reformat (header + counts) that can edge past a
+  // tiny raw build log; without this the inflation check reverts it to raw on small
+  // fixtures (same class as maven/summary — see base.ts structural rationale).
+  traits: { structural: true },
   programs: ["next"],
 
   match(command: ParsedCommand): boolean {
     return command.program === "next";
   },
 
-  format: (raw, _command, options) => {
+  format: (raw, command, options) => {
+    // M18: gate the build formatter on `next build` only. Other subcommands
+    // (`next lint`, `next dev`, `next start`, `next info`) produce output that is
+    // not a build summary and must not be flattened to "Errors: N / Warnings: N".
+    // Pass them through (respecting the exit-code guard from above).
+    const subcommand = command.args[0];
+    if (subcommand !== "build") {
+      return `${raw.stdout}${raw.stderr}`;
+    }
+
     // A FAILED build's `file:line` compile/type error is the evidence the agent
     // acts on; the route/bundle summary flattens it to "Errors: N" (audit #16). On
     // a non-zero exit, pass the raw build output through so the error detail (and

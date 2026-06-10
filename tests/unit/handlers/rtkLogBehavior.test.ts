@@ -184,3 +184,48 @@ describe("RTK log behavior", () => {
     expect(result.output).not.toContain("0 errors (0 unique)");
   });
 });
+
+// Regression tests for audit findings.
+describe("log audit regressions", () => {
+  // H15-log: `log show` and `log stream` are macOS log subcommands, not file paths.
+  // They must NOT be routed to the file-digest handler (which would hang on `log stream`).
+  test("H15-log: log show is not matched by the file-digest handler", async () => {
+    const { logHandler } = await import("../../../src/handlers/system/log.js");
+
+    const showCmd = {
+      program: "log",
+      args: ["show", "--last", "1m", "--predicate", "subsystem == 'foo'"],
+      original: ["log", "show", "--last", "1m"],
+      displayCommand: "log show --last 1m",
+    };
+
+    // The handler must NOT match `log show` (show is a macOS log subcommand, not a file).
+    expect(logHandler.matches(showCmd)).toBe(false);
+  });
+
+  test("H15-log: log stream is not matched by the file-digest handler", async () => {
+    const { logHandler } = await import("../../../src/handlers/system/log.js");
+
+    const streamCmd = {
+      program: "log",
+      args: ["stream", "--level", "debug"],
+      original: ["log", "stream", "--level", "debug"],
+      displayCommand: "log stream --level debug",
+    };
+
+    expect(logHandler.matches(streamCmd)).toBe(false);
+  });
+
+  test("H15-log: log <file> is still matched and summarized", async () => {
+    const { logHandler } = await import("../../../src/handlers/system/log.js");
+
+    const fileCmd = {
+      program: "log",
+      args: ["/var/log/system.log"],
+      original: ["log", "/var/log/system.log"],
+      displayCommand: "log /var/log/system.log",
+    };
+
+    expect(logHandler.matches(fileCmd)).toBe(true);
+  });
+});

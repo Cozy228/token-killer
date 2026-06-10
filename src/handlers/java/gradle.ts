@@ -1,10 +1,12 @@
+import type { OmissionDeclaration } from "../../types.js";
+import { overBudgetLadder } from "../common/budget.js";
 import { defineHandler } from "../define.js";
 
-function formatGradle(text: string): string {
+function formatGradle(text: string): { output: string; omission?: OmissionDeclaration } {
   const important = text
     .split(/\r?\n/)
     .filter((line) =>
-      /FAILED|Assertion|expected|BUILD FAILED|BUILD SUCCESSFUL|tests completed|Tests run:|actionable tasks|See the report at|file:\/\/|StringFormatInvalid|ContentDescription|errors?, \d+ warnings|^\s*\^$|String\.format|getString|<ImageView|^e: |^w: |^warning: |^Warning: |\.java:\d+|\.kt:/.test(
+      /FAILED|Assertion|expected|BUILD FAILED|BUILD SUCCESSFUL|tests completed|Tests run:|actionable tasks|See the report at|file:\/\/|StringFormatInvalid|ContentDescription|errors?, \d+ warnings|^\s*\^$|String\.format|getString|<ImageView|^e: |^w: |^warning: |^Warning: |\.java:\d+|\.kt:|Caused by:/.test(
         line,
       ),
     )
@@ -14,11 +16,25 @@ function formatGradle(text: string): string {
           line,
         ),
     )
-    .slice(0, 80)
     .map((line) => line.trim());
 
+  // Note: heading is intentionally conditional on BUILD SUCCESSFUL (not "failed" always).
   const heading = /BUILD SUCCESSFUL/.test(text) ? "Gradle" : "Gradle failed";
-  return `${[heading, ...important].join("\n")}\n`;
+
+  const render = (items: string[]): string => `${[heading, ...items].join("\n")}\n`;
+
+  const full = render(important);
+
+  // ADR 0001 over-budget ladder: declared cap, never a silent slice.
+  const ladder = overBudgetLadder({
+    full,
+    digest: important.length > 0 ? () => render(important.slice(0, 40)) : undefined,
+    replacement: () => {
+      const failCount = important.filter((l) => /FAILED|BUILD FAILED/.test(l)).length;
+      return `${heading}: ${failCount} failure line(s) (over budget)\n`;
+    },
+  });
+  return { output: ladder.text, omission: ladder.omission };
 }
 
 export const gradleHandler = defineHandler({
@@ -34,5 +50,8 @@ export const gradleHandler = defineHandler({
     );
   },
 
-  format: (raw, _command, options) => formatGradle(`${raw.stdout}\n${raw.stderr}`),
+  format: (raw, _command, options) => {
+    const { output, omission } = formatGradle(`${raw.stdout}\n${raw.stderr}`);
+    return { output, omission };
+  },
 });

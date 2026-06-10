@@ -33,8 +33,15 @@ describe("RTK diff behavior", () => {
 
     expectRtkParity(result, {
       critical: ["[file] new.ts (+1 -1)", "-const value = 1;", "+const value = 2;"],
-      forbidden: [/^--- old\.ts$/m, /^@@ /m],
-      exact: ["[file] new.ts (+1 -1)", "  -const value = 1;", "  +const value = 2;"].join("\n"),
+      // H8-diff fix: @@ hunk headers are now kept (they locate the change in the
+      // file); --- metadata lines are still dropped.
+      forbidden: [/^--- old\.ts$/m],
+      exact: [
+        "[file] new.ts (+1 -1)",
+        "  @@ -1,2 +1,2 @@",
+        "  -const value = 1;",
+        "  +const value = 2;",
+      ].join("\n"),
     });
   });
 
@@ -95,6 +102,85 @@ describe("RTK diff behavior", () => {
       expect(result.output).toContain(`+new_value_${i}`);
       expect(result.output).toContain(`-old_value_${i}`);
     }
+  });
+});
+
+// H5 regression: rename, binary, and mode-only facts must survive compactUnifiedDiff.
+describe("H5: compactUnifiedDiff retains semantic metadata lines", () => {
+  test("rename from/to lines survive the compact pass", async () => {
+    const renameDiff = [
+      "diff --git a/old-name.ts b/new-name.ts",
+      "similarity index 100%",
+      "rename from old-name.ts",
+      "rename to new-name.ts",
+    ].join("\n");
+
+    const result = await filterRtkOutput(["git", "diff", "HEAD"], renameDiff);
+
+    expect(result.output).toContain("rename from old-name.ts");
+    expect(result.output).toContain("rename to new-name.ts");
+    // Label uses the rename target
+    expect(result.output).toContain("new-name.ts");
+  });
+
+  test("Binary files line survives the compact pass", async () => {
+    const binaryDiff = [
+      "diff --git a/img.png b/img.png",
+      "index abc1234..def5678 100644",
+      "Binary files a/img.png and b/img.png differ",
+    ].join("\n");
+
+    const result = await filterRtkOutput(["git", "diff", "HEAD"], binaryDiff);
+
+    expect(result.output).toContain("Binary files");
+    expect(result.output).toContain("img.png");
+  });
+
+  test("mode-only change lines (old/new mode) survive the compact pass", async () => {
+    const modeDiff = [
+      "diff --git a/script.sh b/script.sh",
+      "old mode 100644",
+      "new mode 100755",
+    ].join("\n");
+
+    const result = await filterRtkOutput(["git", "diff", "HEAD"], modeDiff);
+
+    expect(result.output).toContain("old mode 100644");
+    expect(result.output).toContain("new mode 100755");
+  });
+
+  test("new file mode line survives the compact pass", async () => {
+    const newFileDiff = [
+      "diff --git a/added.ts b/added.ts",
+      "new file mode 100644",
+      "--- /dev/null",
+      "+++ b/added.ts",
+      "@@ -0,0 +1,2 @@",
+      "+const x = 1;",
+      "+export default x;",
+    ].join("\n");
+
+    const result = await filterRtkOutput(["git", "diff", "HEAD"], newFileDiff);
+
+    expect(result.output).toContain("new file mode 100644");
+    expect(result.output).toContain("+const x = 1;");
+  });
+
+  test("deleted file mode line survives the compact pass", async () => {
+    const deletedFileDiff = [
+      "diff --git a/removed.ts b/removed.ts",
+      "deleted file mode 100644",
+      "--- a/removed.ts",
+      "+++ /dev/null",
+      "@@ -1,2 +0,0 @@",
+      "-const x = 1;",
+      "-export default x;",
+    ].join("\n");
+
+    const result = await filterRtkOutput(["git", "diff", "HEAD"], deletedFileDiff);
+
+    expect(result.output).toContain("deleted file mode 100644");
+    expect(result.output).toContain("-const x = 1;");
   });
 });
 

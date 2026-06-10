@@ -1,5 +1,5 @@
 import { executeCommand } from "../../executor.js";
-import type { CommandHandler, ParsedCommand } from "../../types.js";
+import type { CommandHandler, OmissionDeclaration, ParsedCommand } from "../../types.js";
 import { makeFilteredResult, rawText } from "../base.js";
 
 // RTK: cloud/curl_cmd.rs::MAX_RESPONSE_SIZE — non-JSON bodies past this byte size
@@ -15,8 +15,15 @@ function matchesCurl(command: ParsedCommand): boolean {
 // then forwards the user's args verbatim. The migration harness bypasses
 // execute(), so this construction helper (and its unit test) guards the real-CLI
 // command shape.
+//
+// H12-curl fix: inject `-sS` instead of bare `-s`. `-s` silences BOTH the
+// progress meter AND curl's own error diagnostics (connection refused, TLS
+// errors, …). `-sS` keeps errors (-S = --show-error) while still suppressing
+// the progress meter. A connection failure with plain `-s` prints nothing,
+// causing the failure branch to emit "FAILED: curl" with no reason. With `-sS`
+// the diagnostic goes to stderr and surfaces in the failure output.
 export function buildCurlArgs(args: string[]): string[] {
-  return ["-s", ...args];
+  return ["-sS", ...args];
 }
 
 // RTK: curl_cmd.rs::filter_curl_output — a top-level JSON document. Mid-stream
@@ -42,19 +49,34 @@ function truncateOnCharBoundary(text: string, maxBytes: number): string {
 // RTK: curl_cmd.rs::filter_curl_output. tk has no TTY plane — its filtered output
 // always feeds an LLM reader, so the truncation path is the equivalent of RTK's
 // is_tty=true branch. JSON / small bodies pass through unchanged.
-function formatCurl(raw: string): string {
+//
+// H12-curl fix: declare `{kind:"replacement"}` for the truncation so the gate
+// force-persists raw and appends a snapshot pointer. The old wording evaded the
+// base-gate sniffer and pointed recovery at `tk --raw` re-run (which re-fires
+// a POST, ADR 0001 d6 bans). The replacement kind causes the gate to write a
+// raw snapshot and append "[full output: <path>]" — recovery without re-execution.
+function formatCurl(raw: string): { output: string; omission?: OmissionDeclaration } {
   const trimmed = raw.trim();
   const byteLen = Buffer.byteLength(trimmed, "utf8");
 
   if (looksLikeJson(trimmed) || byteLen < MAX_RESPONSE_SIZE) {
-    return trimmed;
+    return { output: trimmed };
   }
 
   const head = truncateOnCharBoundary(trimmed, MAX_RESPONSE_SIZE);
-  // RTK emits "{head}... ({n} bytes total)" then a tee hint on the next line; tk's
-  // recovery channel is `tk --raw` rather than a tee file. The marker wording is
-  // kept clear of base.ts LOSSY_OMISSION_PATTERNS so the output is not bounced to raw.
-  return `${head}... (${byteLen} bytes total)\nResponse truncated; re-run with \`tk --raw\` to recover the full body.`;
+  // RTK emits "{head}... ({n} bytes total)". Declare `digest` (not `replacement`)
+  // so the gate force-persists raw and appends a snapshot pointer when available,
+  // but does NOT revert to raw when persistence is disabled (--no-save-raw) — a
+  // revert would re-expose a large body in full, undoing the size gate. `digest` =
+  // "head is a lossless prefix window, full body in snapshot". The `... (N bytes)`
+  // marker wording is kept clear of OMISSION_MARKERS so the gate does not
+  // double-sniff it as an undeclared omission.
+  // H12-curl: drop the `tk --raw` re-run hint (ADR 0001 d6: re-run would re-fire
+  // a POST). Recovery is via the rawPointer snapshot the gate appends.
+  return {
+    output: `${head}... (${byteLen} bytes total)`,
+    omission: { kind: "digest" },
+  };
 }
 
 export const curlHandler: CommandHandler = {
@@ -87,6 +109,7 @@ export const curlHandler: CommandHandler = {
       const output = segments.length > 0 ? `FAILED: curl ${segments.join("\n")}` : "FAILED: curl";
       return makeFilteredResult(this, raw, output, options);
     }
-    return makeFilteredResult(this, raw, formatCurl(rawText(raw)), options);
+    const { output, omission } = formatCurl(rawText(raw));
+    return makeFilteredResult(this, raw, output, options, undefined, omission);
   },
 };

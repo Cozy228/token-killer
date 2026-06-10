@@ -174,22 +174,51 @@ function formatRuff(
   return renderIssues(issues, fixableLine?.trim());
 }
 
+// Known ruff subcommands that are NOT check-mode runs — they must pass through
+// unchanged. Any first token matching one of these is a non-check subcommand.
+const RUFF_NON_CHECK_SUBCOMMANDS = new Set([
+  "format",
+  "version",
+  "rule",
+  "linter",
+  "config",
+  "clean",
+  "server",
+  "analyze",
+]);
+
+// Flags that are incompatible with forced JSON output — if any are present in
+// a check invocation we pass through so the user's intended output is preserved.
+const RUFF_PASSTHROUGH_FLAGS = new Set(["--statistics", "--diff", "--watch", "-W"]);
+
 // RTK: ruff_cmd.rs::run — force `check --output-format=json` for check-mode
 // invocations (unless the user already set an output format). `format`/`version`
-// and explicit flags pass through. When only flags remain, default the target to
-// `.` like RTK.
+// and all other non-check subcommands pass through unchanged. Invocations that
+// contain --statistics/--diff/--watch also pass through (output shape is
+// incompatible with JSON). When only flags remain, default the target to `.`
+// like RTK.
 export function buildRuffArgs(userArgs: string[]): string[] {
   const first = userArgs[0];
-  const isCheck =
+
+  // H11-ruff fix: only rewrite when the invocation is a check run — either
+  // explicit `check`, a bare invocation (no subcommand), or a path argument
+  // (starts with `.` or `/` or does NOT start with `-` but also is not one of
+  // the known non-check subcommands). Everything else passes through.
+  const isCheckSubcommand = first === "check";
+  const isBareOrPath =
     userArgs.length === 0 ||
-    first === "check" ||
-    (!!first && !first.startsWith("-") && first !== "format" && first !== "version");
+    (!!first && !first.startsWith("-") && !RUFF_NON_CHECK_SUBCOMMANDS.has(first));
+  const isCheck = isCheckSubcommand || isBareOrPath;
+
   if (!isCheck) return userArgs;
+
+  // Pass through if incompatible flags are present.
+  if (userArgs.some((a) => RUFF_PASSTHROUGH_FLAGS.has(a))) return userArgs;
 
   const hasFormat = userArgs.some(
     (a) => a === "--output-format" || a.startsWith("--output-format="),
   );
-  const rest = first === "check" ? userArgs.slice(1) : userArgs;
+  const rest = isCheckSubcommand ? userArgs.slice(1) : userArgs;
   const out = ["check"];
   if (!hasFormat) out.push("--output-format=json");
   out.push(...rest);

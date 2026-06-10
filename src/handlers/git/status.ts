@@ -219,8 +219,15 @@ export const gitStatusHandler: CommandHandler = {
       return makeFilteredResult(this, raw, `${filterStatusWithArgs(raw.stdout)}\n`, options);
     }
 
-    if (raw.exitCode !== 0 && /not a git repository/.test(raw.stderr)) {
-      return makeFilteredResult(this, raw, "Not a git repository\n", options);
+    if (raw.exitCode !== 0) {
+      // C2-status: any nonzero exit (not just "not a git repository") must return
+      // raw stdout+stderr — falling through to formatStatusOutput("") would emit
+      // "Clean working tree" and discard the real error (index.lock, dubious
+      // ownership, etc.).
+      if (/not a git repository/.test(raw.stderr)) {
+        return makeFilteredResult(this, raw, "Not a git repository\n", options);
+      }
+      return makeFilteredResult(this, raw, `${raw.stdout}${raw.stderr}`, options);
     }
 
     const human = raw.auxStdout ?? "";

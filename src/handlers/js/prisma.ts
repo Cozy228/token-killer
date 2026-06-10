@@ -283,6 +283,14 @@ function filterDbPush(output: string): string {
 }
 
 function formatPrisma(raw: RawResult, command: ParsedCommand): string {
+  // C2-prisma: nonzero exit means the command failed (schema error, DB unreachable,
+  // invalid migration, etc.). Passing it through formatPrismaGenerate/filterDbPush
+  // would produce "Prisma Client generated" or "Schema pushed to database" on failure,
+  // destroying the `-->schema.prisma:12` error locations the agent needs to act on.
+  if (raw.exitCode !== 0) {
+    return rawText(raw);
+  }
+
   const mode = detectMode(command.args);
   const output = rawText(raw);
   switch (mode) {

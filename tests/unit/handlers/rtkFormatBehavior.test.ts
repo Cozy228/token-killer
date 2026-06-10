@@ -61,7 +61,12 @@ describe("RTK format behavior", () => {
     );
 
     expectRtkParity(result, {
-      critical: ["3 files need formatting", "main.py", "test_utils.py", "12 files already formatted"],
+      critical: [
+        "3 files need formatting",
+        "main.py",
+        "test_utils.py",
+        "12 files already formatted",
+      ],
       forbidden: [/Oh no!/, /would reformat:/, /would be left unchanged/],
       exact: [
         "Format (black): 3 files need formatting",
@@ -124,7 +129,12 @@ describe("RTK format behavior", () => {
     );
 
     expectRtkParity(result, {
-      critical: ["7 files need formatting", "main.py", "test_utils.py", "20 files already formatted"],
+      critical: [
+        "7 files need formatting",
+        "main.py",
+        "test_utils.py",
+        "20 files already formatted",
+      ],
       forbidden: [/Would reformat:/, /would be reformatted/],
       exact: [
         "Ruff format: 7 files need formatting",
@@ -142,5 +152,58 @@ describe("RTK format behavior", () => {
         "[hint] Run `ruff format` to format these files",
       ].join("\n"),
     });
+  });
+});
+
+// Regression tests for audit findings.
+describe("format audit regressions", () => {
+  // C2-format: prettier-v3 [warn] lines must be treated as needs-format entries,
+  // not excluded. On exit 1, "All files formatted correctly" must never appear.
+  test("C2-format: prettier-v3 [warn]-only output on exit 1 shows needs-formatting, not success", async () => {
+    const result = await filterRtkOutput(
+      ["format", "prettier"],
+      [
+        "[warn] src/components/Button.tsx",
+        "[warn] src/utils/helpers.ts",
+        "[warn] src/pages/index.tsx",
+        "Code style issues found in the above file(s). Forgot to run Prettier?",
+      ].join("\n"),
+      1,
+    );
+
+    // Must report files need formatting, not success.
+    expect(result.output).not.toContain("All files formatted correctly");
+    expect(result.output).toMatch(/3 files need formatting|Button\.tsx|helpers\.ts/);
+  });
+
+  test("C2-format: nonzero exit never emits 'All files formatted correctly'", async () => {
+    // Call the handler directly because the raw passthrough would trip the
+    // no-passthrough assertion in filterRtkOutput.
+    const { formatHandler } = await import("../../../src/handlers/system/format.js");
+    const rawResult = {
+      command: "format prettier",
+      stdout: "All matched files use Prettier formatting!\n",
+      stderr: "",
+      exitCode: 1,
+      durationMs: 1,
+    };
+    const command = {
+      program: "format",
+      args: ["prettier"],
+      original: ["format", "prettier"],
+      displayCommand: "format prettier",
+    };
+    const options = {
+      raw: false,
+      stats: false,
+      verbose: false,
+      maxLines: 120,
+      maxChars: 12000,
+      saveRaw: false as const,
+      cwd: ".",
+    };
+    const result = await formatHandler.filter(rawResult, command, options);
+
+    expect(result.output).not.toContain("All files formatted correctly");
   });
 });

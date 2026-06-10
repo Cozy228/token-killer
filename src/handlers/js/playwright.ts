@@ -103,8 +103,28 @@ function parsePlaywrightJson(text: string): TestResult | undefined {
 // "(<value><unit>)" duration; returns undefined when no counts are found (→ Tier 3).
 const SUMMARY_RE = /(\d+)\s+(passed|failed|flaky|skipped)/g;
 const DURATION_RE = /\((\d+(?:\.\d+)?)(ms|s|m)\)/;
-// RTK: playwright_cmd.rs::extract_failures_regex — failing test lines marked with × or ✗.
-const FAILURE_RE = /[×✗]\s+.*?›\s+([^›]+\.spec\.[tj]sx?)/g;
+// M19: widened from `.spec.[tj]sx?` to capture any failing test identity.
+// The original FAILURE_RE required `.spec.` in the name, silently dropping
+// failures from files named `e2e/login.test.ts`, `tests/auth.ts`, etc.
+// The new pattern: `× <any text> › <test name>` (or without ›, just the name).
+// We capture the full match as the test name when no `›` separator is found.
+const FAILURE_RE = /[×✗]\s+(.*)/g;
+
+// M19: extract a failure message from the lines following a × line.
+function extractPlaywrightFailureMessage(lines: string[], startIdx: number): string {
+  const messageLines: string[] = [];
+  let i = startIdx;
+  while (i < lines.length) {
+    const line = lines[i] ?? "";
+    // Stop at the next failure marker, a summary line, or an empty separator.
+    if (/[×✗✓]\s+/.test(line) || /^\s*\d+\s+(passed|failed|skipped)/.test(line)) break;
+    const trimmed = line.trim();
+    if (trimmed !== "") messageLines.push(trimmed);
+    else if (messageLines.length > 0) break; // stop at first blank after content
+    i += 1;
+  }
+  return messageLines.join("\n");
+}
 
 function extractPlaywrightRegex(output: string): TestResult | undefined {
   const clean = removeAnsi(output);
@@ -136,8 +156,18 @@ function extractPlaywrightRegex(output: string): TestResult | undefined {
   if (total <= 0) return undefined;
 
   const failures: TestFailure[] = [];
-  for (const caps of clean.matchAll(FAILURE_RE)) {
-    failures.push({ testName: caps[0], errorMessage: "" });
+  const lines = clean.split(/\r?\n/);
+  for (let i = 0; i < lines.length; i += 1) {
+    const line = lines[i] ?? "";
+    const failMatch = line.match(/[×✗]\s+(.*)/);
+    if (!failMatch) continue;
+    const rawName = failMatch[1]?.trim() ?? "";
+    // M19: extract test name: prefer the last segment after `›`, else full text.
+    const parts = rawName.split("›").map((s) => s.trim());
+    const testName = parts[parts.length - 1] ?? rawName;
+    // M19: capture the error message from subsequent lines.
+    const errorMessage = extractPlaywrightFailureMessage(lines, i + 1);
+    failures.push({ testName, errorMessage });
   }
 
   return { total, passed, failed, skipped, durationMs, failures };

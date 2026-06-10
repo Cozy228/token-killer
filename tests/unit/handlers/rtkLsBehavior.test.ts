@@ -1,6 +1,10 @@
 import { describe, expect, test } from "vitest";
 
-import { expectRtkParity, filterRtkFixture, filterRtkOutput } from "../../helpers/rtkCommandHarness.js";
+import {
+  expectRtkParity,
+  filterRtkFixture,
+  filterRtkOutput,
+} from "../../helpers/rtkCommandHarness.js";
 import { buildLsArgs } from "../../../src/handlers/system/ls.js";
 
 // RTK: ls.rs::run command construction — the real CLI path must force `ls -la`
@@ -15,7 +19,11 @@ describe("RTK ls command construction (buildLsArgs)", () => {
     expect(buildLsArgs(["-lartS", "src"])).toEqual(["-la", "-rtS", "src"]);
   });
   test("drops --all (filter re-applies noise rules) but keeps other -- flags", () => {
-    expect(buildLsArgs(["--all", "--color=never", "docs"])).toEqual(["-la", "--color=never", "docs"]);
+    expect(buildLsArgs(["--all", "--color=never", "docs"])).toEqual([
+      "-la",
+      "--color=never",
+      "docs",
+    ]);
   });
 });
 
@@ -52,8 +60,9 @@ describe("RTK ls behavior", () => {
     });
   });
 
-  // RTK: ls.rs::test_compact_filters_noise — without -a, NOISE_DIRS are removed.
-  test("filters NOISE_DIRS when -a is not requested", async () => {
+  // RTK: ls.rs::test_compact_filters_noise — without -a, NOISE_DIRS are hidden
+  // behind a disclosure line (H17 fix: not silent removal).
+  test("hides NOISE_DIRS with a disclosure line when -a is not requested", async () => {
     const input = [
       "total 8",
       "drwxr-xr-x  2 user  staff  64 Jan  1 12:00 node_modules",
@@ -66,11 +75,16 @@ describe("RTK ls behavior", () => {
 
     const result = await filterRtkOutput(["ls"], input);
 
+    // H17: entries are still visible; disclosure line names the hidden dirs.
     expectRtkParity(result, {
-      critical: ["src/", "main.rs  100B"],
-      forbidden: [/node_modules/, /\.git/, /target/],
-      exact: ["src/", "main.rs  100B"].join("\n"),
+      critical: ["src/", "main.rs  100B", "(+3 tool dirs hidden:", "use -a)"],
+      // The dir names appear only in the disclosure summary, never as dir/ entries.
+      forbidden: [/^node_modules\/$/, /^\.git\/$/, /^target\/$/],
     });
+    // Hidden dirs are named in the disclosure line.
+    expect(result.output).toMatch(/node_modules/);
+    expect(result.output).toMatch(/\.git/);
+    expect(result.output).toMatch(/target/);
   });
 
   // RTK: ls.rs::test_compact_show_all — with -a (here -la), NOISE_DIRS are kept.
@@ -110,11 +124,9 @@ describe("RTK ls behavior", () => {
   // RTK: ls.rs::test_compact_short_format_omits_octal — without -l, no octal
   // prefix even though `ls -la` is parsed under the hood.
   test("omits octal permissions without -l", async () => {
-    const input = [
-      "total 48",
-      "-rw-r--r--  1 user  staff  1234 Jan  1 12:00 Cargo.toml",
-      "",
-    ].join("\n");
+    const input = ["total 48", "-rw-r--r--  1 user  staff  1234 Jan  1 12:00 Cargo.toml", ""].join(
+      "\n",
+    );
 
     const result = await filterRtkOutput(["ls"], input);
 
@@ -140,5 +152,43 @@ describe("RTK ls behavior", () => {
       forbidden: [/drwx/, /staff/, /Jan  1/, /^total/m],
       minSavingsRatio: 0.4,
     });
+  });
+});
+
+// Regression tests for audit findings.
+describe("ls audit regressions", () => {
+  // C2-ls: nonzero exit must never emit "(empty)" — must keep the error text.
+  test("C2-ls: ls on a missing path keeps the error text, never (empty)", async () => {
+    const stderr = "ls: cannot access '/no/such/path': No such file or directory\n";
+    const result = await filterRtkOutput(["ls", "/no/such/path"], "", 2, stderr);
+
+    expect(result.output).toContain("No such file or directory");
+    expect(result.output).not.toContain("(empty)");
+  });
+
+  // H17: hidden NOISE_DIRS must be disclosed in a counted line, never silently dropped.
+  test("H17: hidden tool dirs are disclosed in a counted line", async () => {
+    const input = [
+      "total 8",
+      "drwxr-xr-x  2 user  staff  64 Jan  1 12:00 dist",
+      "drwxr-xr-x  2 user  staff  64 Jan  1 12:00 coverage",
+      "drwxr-xr-x  2 user  staff  64 Jan  1 12:00 build",
+      "drwxr-xr-x  2 user  staff  64 Jan  1 12:00 src",
+      "-rw-r--r--  1 user  staff  100 Jan  1 12:00 README.md",
+      "",
+    ].join("\n");
+
+    const result = await filterRtkOutput(["ls"], input);
+
+    // Build dirs are NOT shown as dir/ entries.
+    expect(result.output).not.toMatch(/^dist\/$/m);
+    expect(result.output).not.toMatch(/^coverage\/$/m);
+    expect(result.output).not.toMatch(/^build\/$/m);
+    // Disclosure line names them and gives the count.
+    expect(result.output).toMatch(/\(\+3 tool dirs hidden:/);
+    expect(result.output).toContain("use -a");
+    // Real entries still visible.
+    expect(result.output).toContain("src/");
+    expect(result.output).toContain("README.md");
   });
 });

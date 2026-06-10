@@ -127,13 +127,21 @@ function filterTreeOutput(raw: string): string {
   return `${filtered.join("\n")}\n`;
 }
 
-function formatTree(raw: RawResult): string {
-  return filterTreeOutput(raw.stdout);
+function formatTree(raw: RawResult, noiseFiltered: boolean): string {
+  const tree = filterTreeOutput(raw.stdout);
+  // H17: when noise dirs were injected via -I, append ONE declared disclosure line
+  // so the agent knows tool dirs (dist, build, coverage, etc.) may be present.
+  if (noiseFiltered) {
+    return `${tree}(+N tool dirs may be hidden: use -a or -I to show — run tree -a for all)\n`;
+  }
+  return tree;
 }
 
 export const treeHandler: CommandHandler = {
   name: "tree",
-  traits: { cacheable: true, ttlClass: "fast" },
+  // H17: marked structural so the inflation check never reverts the output when
+  // the disclosure line makes it marginally longer than the filtered raw.
+  traits: { cacheable: true, ttlClass: "fast", structural: true },
   programs: ["tree"],
   matches(command) {
     return command.program === "tree";
@@ -166,6 +174,12 @@ export const treeHandler: CommandHandler = {
     return result;
   },
   async filter(raw, command, options: TkOptions) {
-    return makeFilteredResult(this, raw, formatTree(raw), options);
+    // H17: determine whether noise dirs were filtered so the disclosure line is
+    // appended — mirrors the same transparency fix applied to ls.ts.
+    const cleaned = stripLevelFlags(command.args);
+    const showAll = cleaned.some((a) => a === "-a" || a === "--all");
+    const hasIgnore = cleaned.some((a) => a === "-I" || a.startsWith("--ignore="));
+    const noiseFiltered = !showAll && !hasIgnore;
+    return makeFilteredResult(this, raw, formatTree(raw, noiseFiltered), options);
   },
 };

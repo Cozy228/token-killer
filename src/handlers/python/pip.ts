@@ -1,11 +1,9 @@
-import type { ParsedCommand } from "../../types.js";
+import type { OmissionDeclaration, ParsedCommand } from "../../types.js";
 import { defineHandler } from "../define.js";
+import { overBudgetLadder } from "../common/budget.js";
 
 // RTK: pip_cmd.rs uses a 39-char box-drawing separator under the summary line.
 const PIP_SEPARATOR = "═".repeat(39);
-// RTK: rtk/src/core/truncate.rs — CAP_INVENTORY for `pip list`, CAP_LIST for outdated.
-const CAP_INVENTORY = 50;
-const CAP_LIST = 20;
 
 type PipPackage = { name: string; version: string; latest?: string };
 
@@ -78,8 +76,10 @@ function parsePipOutdatedTable(text: string): PipPackage[] {
 }
 
 // RTK: pip_cmd.rs::filter_pip_list — header + inventory grouped by initial letter.
-function formatPipList(packages: PipPackage[]): string {
-  if (packages.length === 0) return "pip list: No packages installed";
+// M20-pip fix: the old per-letter `+N more` cap is replaced by the ADR 0001
+// over-budget ladder so the base sniffer never sees a bare `+N more` marker.
+function formatPipList(packages: PipPackage[]): { output: string; omission?: OmissionDeclaration } {
+  if (packages.length === 0) return { output: "pip list: No packages installed" };
 
   const byLetter = new Map<string, PipPackage[]>();
   for (const pkg of packages) {
@@ -89,63 +89,114 @@ function formatPipList(packages: PipPackage[]): string {
     byLetter.set(first, list);
   }
 
-  const out = [`pip list: ${packages.length} packages`, PIP_SEPARATOR];
-  for (const letter of [...byLetter.keys()].sort()) {
-    const pkgs = byLetter.get(letter)!;
-    out.push("", `[${letter.toUpperCase()}]`);
-    for (const pkg of pkgs.slice(0, CAP_INVENTORY)) out.push(`  ${pkg.name} (${pkg.version})`);
-    if (pkgs.length > CAP_INVENTORY) out.push(`  ... +${pkgs.length - CAP_INVENTORY} more`);
-  }
-  return out.join("\n");
+  // Full listing: every package under every letter, no cap.
+  const renderFull = (): string => {
+    const out = [`pip list: ${packages.length} packages`, PIP_SEPARATOR];
+    for (const letter of [...byLetter.keys()].sort()) {
+      const pkgs = byLetter.get(letter)!;
+      out.push("", `[${letter.toUpperCase()}]`);
+      for (const pkg of pkgs) out.push(`  ${pkg.name} (${pkg.version})`);
+    }
+    return out.join("\n");
+  };
+
+  // Step-1 lossless digest: names only (drop version strings to shrink tokens).
+  const renderDigest = (): string => {
+    const out = [`pip list: ${packages.length} packages`, PIP_SEPARATOR];
+    for (const letter of [...byLetter.keys()].sort()) {
+      const pkgs = byLetter.get(letter)!;
+      out.push("", `[${letter.toUpperCase()}]`);
+      for (const pkg of pkgs) out.push(`  ${pkg.name}`);
+    }
+    return out.join("\n");
+  };
+
+  const ladder = overBudgetLadder({
+    full: renderFull(),
+    digest: renderDigest,
+    replacement: () => `pip list: ${packages.length} packages (over budget)`,
+  });
+  return { output: ladder.text, omission: ladder.omission };
 }
 
 // RTK: pip_cmd.rs::filter_pip_outdated — numbered "name (current → latest)" list.
-function formatPipOutdated(packages: PipPackage[]): string {
-  if (packages.length === 0) return "pip outdated: All packages up to date";
+// M20-pip fix: the old `+N more` cap replaced by the ADR 0001 ladder.
+function formatPipOutdated(packages: PipPackage[]): {
+  output: string;
+  omission?: OmissionDeclaration;
+} {
+  if (packages.length === 0) return { output: "pip outdated: All packages up to date" };
 
-  const out = [`pip outdated: ${packages.length} packages`, PIP_SEPARATOR];
-  packages.slice(0, CAP_LIST).forEach((pkg, idx) => {
-    out.push(`${idx + 1}. ${pkg.name} (${pkg.version} → ${pkg.latest ?? "unknown"})`);
+  const renderFull = (): string => {
+    const out = [`pip outdated: ${packages.length} packages`, PIP_SEPARATOR];
+    packages.forEach((pkg, idx) => {
+      out.push(`${idx + 1}. ${pkg.name} (${pkg.version} → ${pkg.latest ?? "unknown"})`);
+    });
+    out.push("", "[hint] Run `pip install --upgrade <package>` to update");
+    return out.join("\n");
+  };
+
+  // Step-1 digest: drop the hint line and version arrows; keep names.
+  const renderDigest = (): string => {
+    const out = [`pip outdated: ${packages.length} packages`, PIP_SEPARATOR];
+    packages.forEach((pkg, idx) => {
+      out.push(`${idx + 1}. ${pkg.name} (${pkg.version} → ${pkg.latest ?? "unknown"})`);
+    });
+    return out.join("\n");
+  };
+
+  const ladder = overBudgetLadder({
+    full: renderFull(),
+    digest: renderDigest,
+    replacement: () => `pip outdated: ${packages.length} packages (over budget)`,
   });
-  if (packages.length > CAP_LIST) out.push("", `... +${packages.length - CAP_LIST} more packages`);
-  out.push("", "[hint] Run `pip install --upgrade <package>` to update");
-  return out.join("\n");
+  return { output: ladder.text, omission: ladder.omission };
 }
 
-function formatPip(text: string, command: ParsedCommand): string {
+function formatPip(
+  text: string,
+  command: ParsedCommand,
+): { output: string; omission?: OmissionDeclaration } {
   const trimmed = text.trim();
   const isOutdated = command.args.includes("--outdated");
   const isFreeze = command.args.includes("freeze");
 
   const json = parsePipJson(text);
-  if (json) return `${(isOutdated ? formatPipOutdated(json) : formatPipList(json)).trimEnd()}\n`;
+  if (json) {
+    const result = isOutdated ? formatPipOutdated(json) : formatPipList(json);
+    return { output: `${result.output.trimEnd()}\n`, omission: result.omission };
+  }
 
   // `pip freeze` is plain "name==version" lines RTK never reformats — pass through.
-  if (isFreeze) return trimmed ? `${trimmed}\n` : "\n";
+  if (isFreeze) return { output: trimmed ? `${trimmed}\n` : "\n" };
 
   // `pip list --outdated` table fallback must render the outdated (current → latest)
   // shape, not the plain inventory listing.
   if (isOutdated) {
-    if (trimmed.length === 0) return "pip outdated: All packages up to date\n";
+    if (trimmed.length === 0) return { output: "pip outdated: All packages up to date\n" };
     const outdated = parsePipOutdatedTable(text);
-    if (outdated.length > 0) return `${formatPipOutdated(outdated).trimEnd()}\n`;
-    return trimmed ? `${trimmed}\n` : "\n";
+    if (outdated.length > 0) {
+      const result = formatPipOutdated(outdated);
+      return { output: `${result.output.trimEnd()}\n`, omission: result.omission };
+    }
+    return { output: trimmed ? `${trimmed}\n` : "\n" };
   }
 
   const { packages, problems } = parsePipTable(text);
   if (packages.length > 0 || problems.length > 0) {
-    let out = formatPipList(packages);
+    const result = formatPipList(packages);
+    let out = result.output;
     if (problems.length > 0)
       out += `\n\nProblems:\n${problems.map((line) => `- ${line}`).join("\n")}`;
-    return `${out.trimEnd()}\n`;
+    return { output: `${out.trimEnd()}\n`, omission: result.omission };
   }
 
-  return trimmed ? `${trimmed}\n` : "\n";
+  return { output: trimmed ? `${trimmed}\n` : "\n" };
 }
 
 export const pipHandler = defineHandler({
   name: "pip",
-  traits: { structural: true },
+  traits: { structural: true, ladder: true },
   programs: ["pip"],
 
   match: matchesPip,

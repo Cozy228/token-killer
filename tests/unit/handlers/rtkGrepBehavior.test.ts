@@ -211,21 +211,24 @@ describe("RTK grep behavior", () => {
   // appends a `[+N more]` overflow marker. tk only caps OVER budget; below budget
   // it groups by file losslessly with NO `[+N more]`. (Over budget it now ships the
   // capped digest — searchLike declares the omission — see the over-budget test
-  // below.) So this exercises the lossless grouped path: every match is kept,
-  // grouped by file, and no overflow marker is invented.
-  test("groups default matches by file losslessly under the cap", async () => {
+  // below.) So this exercises the grouped path: every match is kept, grouped by
+  // file, and no count-overflow marker is invented.
+  // M7-grep: lines longer than 80 chars are truncated by cleanLine (lossy), so
+  // the recovery hint IS added when that occurs. Count-overflow markers are still banned.
+  test("groups default matches by file under the cap", async () => {
     const result = await filterRtkOutput(["grep", "-rn", "submitOrder", "src"], underCapMatches());
 
     expect(result.output).toContain("24 matches in 2 files:");
     expect(result.output).toContain("src/order/file0.ts:1:");
     expect(result.output).toContain("src/order/file1.ts:12:");
-    // Nothing suppressed below the cap, so no fake overflow marker.
+    // Count overflow marker not invented (no items were count-capped).
     expect(result.output).not.toMatch(/\[\+\d+ more\]/);
-    expect(result.output).not.toContain("# capped");
+    // M7-grep: 120-char lines ARE truncated (lossy), so the recovery hint appears.
+    // The hint is the lossless-option hint, NOT a +N more count marker.
 
     expectRtkParity(result, {
       critical: ["24 matches in 2 files:"],
-      forbidden: [/\[\+\d+ more\]/, /# capped/],
+      forbidden: [/\[\+\d+ more\]/],
       // Long lines trimmed to ~80 chars + grouping: a genuine shrink below raw.
       minSavingsRatio: 0.4,
     });
@@ -271,8 +274,10 @@ describe("RTK grep --level dial + lossless dedup", () => {
   });
 
   // balanced is the default level. Under the per-file / global cap, balanced groups
-  // by file losslessly — no cap marker, no recovery hint.
-  test("balanced groups by file losslessly under the cap (no cap marker)", async () => {
+  // by file — no count-overflow marker.
+  // M7-grep: 110-char content lines ARE truncated by cleanLine (80-char limit),
+  // so the recovery hint appears. Count-overflow marker is still banned.
+  test("balanced groups by file under the cap (no count-overflow marker)", async () => {
     const stdout = `${Array.from(
       { length: 18 },
       (_, i) =>
@@ -286,7 +291,7 @@ describe("RTK grep --level dial + lossless dedup", () => {
     expect(result.output).toContain("18 matches in 1 files:");
     expect(result.output).toContain("src/order/submit.ts:18:");
     expect(result.output).not.toMatch(/\[\+\d+ more\]/);
-    expect(result.output).not.toContain("# capped");
+    // M7-grep: line truncation triggers recovery hint — but NO count-overflow marker.
   });
 
   // Regression — the search-like 0%-savings bug. An OVER-budget balanced grep caps
@@ -522,5 +527,88 @@ describe("RTK grep groupGrepOutput fallback", () => {
     const raw =
       "src/core/history.ts:export type Foo = {\nsrc/core/history.ts:export const bar = 1\n";
     expect(groupGrepOutput(raw, "export")).toBeNull();
+  });
+});
+
+// ─── Regression tests for adversarial-audit findings ───────────────────────
+
+describe("H7-grep regression: cluster-aware context flag detection", () => {
+  // H7-grep: -rnA2 is a cluster containing -A; grouped short flags must be
+  // detected as context flags so the output passes through unchanged.
+  test("buildGrepArgs: -rnA2 cluster is detected as a context flag (passthrough, no -n -H injection)", () => {
+    expect(buildGrepArgs("grep", ["-rnA2", "pattern", "src/"])).toEqual([
+      "-rnA2",
+      "pattern",
+      "src/",
+    ]);
+  });
+
+  test("buildGrepArgs: -rnA 2 (split form) is detected as a context flag", () => {
+    expect(buildGrepArgs("grep", ["-rnA", "2", "pattern", "src/"])).toEqual([
+      "-rnA",
+      "2",
+      "pattern",
+      "src/",
+    ]);
+  });
+
+  test("groupGrepOutput: Binary file lines are passed through alongside parsed matches", () => {
+    const raw = [
+      "src/a.ts:5:const x = foo()",
+      "Binary file src/binary.bin matches",
+      "src/b.ts:10:const y = bar()",
+    ].join("\n");
+    const result = groupGrepOutput(raw, "foo");
+    expect(result).not.toBeNull();
+    expect(result).toContain("Binary file src/binary.bin matches");
+    expect(result).toContain("src/a.ts:5:");
+  });
+
+  test("groupGrepOutput: count is only parsed matches (Binary file not over-counted)", () => {
+    const raw = [
+      "src/a.ts:5:match here",
+      "Binary file src/binary.bin matches",
+      "src/b.ts:10:match there",
+    ].join("\n");
+    const result = groupGrepOutput(raw, "match");
+    expect(result).not.toBeNull();
+    // 2 parsed matches in 2 files — Binary file line is NOT counted.
+    expect(result).toContain("2 matches in 2 files:");
+  });
+});
+
+describe("M6-grep regression: -q/--quiet passthrough", () => {
+  // M6-grep: grep -q exit 0 means FOUND. The filter must not fabricate
+  // "0 matches for <pattern>" when stdout is empty and exit is 0.
+  test("grep -q success (exit 0) returns empty output, not '0 matches'", async () => {
+    const result = await filterRtkOutput(["grep", "-q", "pattern", "src/"], "", 0);
+    expect(result.output).not.toContain("0 matches");
+    expect(result.output.trim()).toBe("");
+  });
+
+  test("buildGrepArgs: -q is a format flag, no -n -H injected", () => {
+    expect(buildGrepArgs("grep", ["-q", "pattern", "src/"])).toEqual(["-q", "pattern", "src/"]);
+  });
+});
+
+describe("M7-grep regression: 80-char truncation triggers recovery hint", () => {
+  // M7-grep: when cleanLine truncates content (>80 chars), suppressed must be
+  // true so the recovery hint is appended.
+  test("a line longer than 80 chars triggers the recovery hint", () => {
+    const longLine = `src/a.ts:5:${"x".repeat(100)}`;
+    const result = groupGrepOutput(longLine, "x", {
+      recoveryHint: "# recovery-hint-marker",
+    });
+    expect(result).not.toBeNull();
+    expect(result).toContain("# recovery-hint-marker");
+  });
+
+  test("a line within 80 chars does NOT trigger the recovery hint", () => {
+    const shortLine = "src/a.ts:5:short content";
+    const result = groupGrepOutput(shortLine, "short", {
+      recoveryHint: "# recovery-hint-marker",
+    });
+    expect(result).not.toBeNull();
+    expect(result).not.toContain("# recovery-hint-marker");
   });
 });

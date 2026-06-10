@@ -6,10 +6,7 @@ import { expect } from "vitest";
 import { routeCommand } from "../../src/router.js";
 import type { FilteredResult, ParsedCommand, RawResult, TkOptions } from "../../src/types.js";
 
-const repoRoot = path.resolve(
-  path.dirname(fileURLToPath(import.meta.url)),
-  "../..",
-);
+const repoRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "../..");
 
 const options: TkOptions = {
   raw: false,
@@ -40,11 +37,7 @@ function raw(command: string[], stdout: string, exitCode = 0, stderr = ""): RawR
   };
 }
 
-export async function filterRtkFixture(
-  commandArgs: string[],
-  fixturePath: string,
-  exitCode = 0,
-) {
+export async function filterRtkFixture(commandArgs: string[], fixturePath: string, exitCode = 0) {
   const stdout = await readFile(path.join(repoRoot, fixturePath), "utf8");
   return filterRtkOutput(commandArgs, stdout, exitCode);
 }
@@ -63,11 +56,7 @@ export async function filterRtkOutput(
   return { ...result, rawOutput: stdout };
 }
 
-function assertNotUnfilteredPassthrough(
-  commandArgs: string[],
-  stdout: string,
-  output: string,
-) {
+function assertNotUnfilteredPassthrough(commandArgs: string[], stdout: string, output: string) {
   if (allowsRtkPassthrough(commandArgs, stdout)) {
     return;
   }
@@ -115,6 +104,11 @@ function allowsRtkPassthrough(commandArgs: string[], stdout: string): boolean {
           "-Z",
           "--null",
           "--json",
+          // -q/--quiet/--silent: grep exits 0/1 with NO stdout; tk passes through (M6),
+          // so output == raw "" is a genuine retention path, not a passthrough cheat.
+          "-q",
+          "--quiet",
+          "--silent",
           "-A",
           "-B",
           "-C",
@@ -153,10 +147,7 @@ function countTokens(text: string): number {
   return trimmed === "" ? 0 : trimmed.split(/\s+/).length;
 }
 
-export function expectRtkParity(
-  result: RtkParityResult,
-  expectation: RtkParityExpectation,
-) {
+export function expectRtkParity(result: RtkParityResult, expectation: RtkParityExpectation) {
   for (const expected of expectation.critical) {
     expect(result.output).toContain(expected);
   }

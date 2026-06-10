@@ -1,21 +1,43 @@
 import type { OmissionDeclaration } from "../../types.js";
 import { overBudgetLadder, withinBudget } from "../common/budget.js";
 
-type DiffLine = { kind: "hunk" | "change" | "context"; text: string };
+// H5: metadata lines that must not be silently dropped — they communicate
+// semantic change facts: renames, binary changes, mode-only changes, new/deleted
+// files. They are retained as "meta" kind so renderBlocks always emits them.
+const META_PREFIXES = [
+  "rename from ",
+  "rename to ",
+  "Binary files ",
+  "old mode ",
+  "new mode ",
+  "new file mode ",
+  "deleted file mode ",
+];
+
+function isMetaLine(line: string): boolean {
+  return META_PREFIXES.some((prefix) => line.startsWith(prefix));
+}
+
+type DiffLine = { kind: "hunk" | "change" | "context" | "meta"; text: string };
 type DiffFileBlock = { file: string; added: number; removed: number; lines: DiffLine[] };
 
-// Parse a unified diff into per-file blocks. Index/mode/`---`/`+++` header lines
+// Parse a unified diff into per-file blocks. Index/`---`/`+++` header lines
 // and `\ No newline` markers are noise and dropped (noise-removal, not omission);
-// every `@@` hunk header and every +/- changed line is kept.
+// every `@@` hunk header, every +/- changed line, and metadata lines (rename,
+// binary, mode changes) are kept.
 function parseUnifiedDiff(diff: string): DiffFileBlock[] {
   const files: DiffFileBlock[] = [];
   let current: DiffFileBlock | undefined;
   let inHunk = false;
-
   for (const line of diff.split(/\r?\n/)) {
     if (line.startsWith("diff --git")) {
+      // H5: derive the initial label from b/<path>; it will be overridden by a
+      // `rename to` line or `+++ b/<path>` for more accurate label derivation,
+      // handling diff.noprefix and core.quotePath variants.
+      const bSlash = line.split(" b/")[1];
+      const initialLabel = bSlash ?? line.replace("diff --git ", "");
       current = {
-        file: line.split(" b/")[1] ?? line.replace("diff --git ", ""),
+        file: initialLabel,
         added: 0,
         removed: 0,
         lines: [],
@@ -26,11 +48,40 @@ function parseUnifiedDiff(diff: string): DiffFileBlock[] {
     }
     if (!current) continue;
 
+    // H5: retain semantic metadata lines before the first hunk.
+    if (isMetaLine(line)) {
+      current.lines.push({ kind: "meta", text: line });
+      // Use `rename to` as the canonical file label (most accurate name).
+      if (line.startsWith("rename to ")) {
+        current.file = line.slice("rename to ".length).trim();
+      }
+      continue;
+    }
+
+    // H5: use the `+++ b/<path>` line to derive the label when no rename.
+    if (line.startsWith("+++ ")) {
+      const dest = line.slice(4);
+      // Strip b/ prefix when present; leave raw path otherwise (diff.noprefix).
+      const stripped = dest.startsWith("b/") ? dest.slice(2) : dest;
+      if (stripped !== "/dev/null") {
+        current.file = stripped;
+      }
+      inHunk = false;
+      continue;
+    }
+
     if (line.startsWith("@@")) {
       inHunk = true;
       current.lines.push({ kind: "hunk", text: line });
       continue;
     }
+
+    // Drop --- header lines (noise).
+    if (line.startsWith("--- ")) {
+      inHunk = false;
+      continue;
+    }
+
     if (!inHunk) continue;
 
     if (line.startsWith("+") && !line.startsWith("+++")) {
@@ -48,13 +99,15 @@ function parseUnifiedDiff(diff: string): DiffFileBlock[] {
 }
 
 // Full / step-1 digest rendering. The digest drops unchanged CONTEXT lines but
-// keeps every `@@` header and every +/- changed line — diff hunks are
-// location-class, so the changed lines (the evidence) are NEVER dropped.
+// keeps every `@@` header, every +/- changed line, and every metadata line
+// (rename, binary, mode) — diff hunks are location-class and meta lines carry
+// semantic facts that must never be dropped.
 function renderBlocks(files: DiffFileBlock[], opts: { context: boolean }): string {
   const out: string[] = [];
   for (const file of files) {
     out.push("", file.file);
     for (const line of file.lines) {
+      // H5: meta lines (rename/binary/mode) are always kept regardless of opts.
       if (line.kind === "context" && !opts.context) continue;
       out.push(`  ${line.text}`);
     }

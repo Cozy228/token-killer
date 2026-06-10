@@ -59,12 +59,69 @@ describe("RTK ruff behavior", () => {
     expect(result.output.length).toBeLessThan(JSON.stringify(diagnostics).length / 3);
   });
 
+  // H11-ruff regression: non-check subcommands must pass through unchanged —
+  // they must NOT be rewritten to `ruff check --output-format=json <subcommand>`.
+  test("passes through ruff rule F401 unchanged", () => {
+    expect(buildRuffArgs(["rule", "F401"])).toEqual(["rule", "F401"]);
+  });
+
+  test("passes through ruff linter unchanged", () => {
+    expect(buildRuffArgs(["linter"])).toEqual(["linter"]);
+  });
+
+  test("passes through ruff config unchanged", () => {
+    expect(buildRuffArgs(["config"])).toEqual(["config"]);
+  });
+
+  test("passes through ruff clean unchanged", () => {
+    expect(buildRuffArgs(["clean"])).toEqual(["clean"]);
+  });
+
+  test("passes through ruff analyze unchanged", () => {
+    expect(buildRuffArgs(["analyze", "graph"])).toEqual(["analyze", "graph"]);
+  });
+
+  test("passes through ruff check --statistics unchanged (incompatible flag)", () => {
+    expect(buildRuffArgs(["check", "--statistics"])).toEqual(["check", "--statistics"]);
+  });
+
+  test("passes through ruff check --diff unchanged (incompatible flag)", () => {
+    expect(buildRuffArgs(["check", "--diff", "."])).toEqual(["check", "--diff", "."]);
+  });
+
+  test("passes through ruff check --watch unchanged (incompatible flag)", () => {
+    expect(buildRuffArgs(["check", "--watch"])).toEqual(["check", "--watch"]);
+  });
+
+  test("still rewrites ruff check (bare subcommand) with JSON output", () => {
+    expect(buildRuffArgs(["check", "."])).toEqual(["check", "--output-format=json", "."]);
+  });
+
+  test("still rewrites bare ruff (no subcommand) to check with JSON output", () => {
+    expect(buildRuffArgs([])).toEqual(["check", "--output-format=json", "."]);
+  });
+
+  test("treats a path argument as a check target and rewrites", () => {
+    expect(buildRuffArgs(["src/"])).toEqual(["check", "--output-format=json", "src/"]);
+  });
+
   test("summarizes JSON violations with file, rule, fixable count", async () => {
     const result = await filterRtkOutput(
       ["ruff", "check", "."],
       JSON.stringify([
-        { filename: "/repo/main.py", code: "F401", location: { row: 1, column: 8 }, message: "unused import", fix: { applicability: "safe" } },
-        { filename: "/repo/utils.py", code: "E501", location: { row: 2, column: 1 }, message: "line too long" },
+        {
+          filename: "/repo/main.py",
+          code: "F401",
+          location: { row: 1, column: 8 },
+          message: "unused import",
+          fix: { applicability: "safe" },
+        },
+        {
+          filename: "/repo/utils.py",
+          code: "E501",
+          location: { row: 2, column: 1 },
+          message: "line too long",
+        },
       ]),
       1,
     );
@@ -76,15 +133,8 @@ describe("RTK ruff behavior", () => {
     expect(result.output).not.toMatch(/"filename"/);
 
     expectRtkParity(result, {
-      critical: [
-        "2 issues",
-        "1 fixable",
-        "F401",
-        "main.py",
-      ],
-      forbidden: [
-        /"filename"/,
-      ],
+      critical: ["2 issues", "1 fixable", "F401", "main.py"],
+      forbidden: [/"filename"/],
       maxOutputChars: 220,
     });
   });

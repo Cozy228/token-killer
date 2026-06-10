@@ -142,21 +142,46 @@ function stripFindRoot(pathValue: string, root: string): string {
 }
 
 function summarizeFindOutput(
-  text: string,
+  // H16-find fix: accept stdout and stderr separately so stderr lines are not
+  // parsed as filesystem paths.
+  stdout: string,
+  stderr: string,
   command: ParsedCommand,
 ): { output: string; omission?: OmissionDeclaration } {
   const root = findRoot(command);
+
+  // H16-find fix: track skipped paths (filtered by SKIP_DIRS) instead of
+  // silently discarding them. This prevents false "0 for 'pattern'" when the
+  // user explicitly targets a skip-listed directory (e.g. find . -path
+  // '*node_modules*'). Skipped paths get a declared "skip" line in the output.
+  let skippedCount = 0;
+  const rawLines = stdout.split(/\r?\n/).map((line) => stripFindRoot(line, root));
   const files = [
     ...new Set(
-      text
-        .split(/\r?\n/)
-        .map((line) => stripFindRoot(line, root))
-        .filter((line) => line && !line.split(/[\\/]+/).some((part) => SKIP_DIRS.has(part))),
+      rawLines.filter((line) => {
+        if (!line) return false;
+        if (line.split(/[\\/]+/).some((part) => SKIP_DIRS.has(part))) {
+          skippedCount += 1;
+          return false;
+        }
+        return true;
+      }),
     ),
   ].sort();
 
   // RTK: find_cmd.rs — empty result collapses to "0 for '<pattern>'".
-  if (files.length === 0) return { output: `0 for '${findPattern(command)}'\n` };
+  // H16-find fix: only report "0" when there are ALSO no skipped paths.
+  // If paths were silently dropped, show the skip count so the caller isn't misled.
+  if (files.length === 0) {
+    if (skippedCount > 0) {
+      let out = `0 for '${findPattern(command)}' (${skippedCount} skipped in build/generated dirs)\n`;
+      if (stderr.trim()) out += `[find stderr] ${stderr.trim()}\n`;
+      return { output: out };
+    }
+    let out = `0 for '${findPattern(command)}'\n`;
+    if (stderr.trim()) out += `[find stderr] ${stderr.trim()}\n`;
+    return { output: out };
+  }
 
   const byDir = new Map<string, string[]>();
   for (const file of files) {
@@ -171,7 +196,12 @@ function summarizeFindOutput(
 
   const dirs = [...byDir.keys()].sort();
   const totalFiles = files.length;
-  const header = `${totalFiles}F ${dirs.length}D:`;
+  // H16-find fix: include skipped count in header so users see what was omitted.
+  const skipSuffix = skippedCount > 0 ? ` (${skippedCount} skipped)` : "";
+  const header = `${totalFiles}F ${dirs.length}D:${skipSuffix}`;
+  // H16-find fix: any stderr from find (permission errors etc.) is shown after
+  // the listing rather than being parsed as a path.
+  const stderrSuffix = stderr.trim() ? `[find stderr] ${stderr.trim()}\n` : "";
 
   // ADR 0001 (intentional divergence from RTK's FIND_MAX_RESULTS=50 + `+N more`):
   // each path is location evidence and is never capped. Below budget every file
@@ -181,18 +211,19 @@ function summarizeFindOutput(
   const renderFull = (): string => {
     const lines = [header, ""];
     for (const dir of dirs) lines.push(`${dir}/ ${(byDir.get(dir) ?? []).sort().join(" ")}`);
-    return `${lines.join("\n")}\n`;
+    return `${lines.join("\n")}\n${stderrSuffix}`;
   };
   const renderDigest = (): string => {
     const lines = [header, ""];
     for (const dir of dirs) lines.push(`${dir}/ (${(byDir.get(dir) ?? []).length} files)`);
-    return `${lines.join("\n")}\n`;
+    return `${lines.join("\n")}\n${stderrSuffix}`;
   };
 
   const ladder = overBudgetLadder({
     full: renderFull(),
     digest: renderDigest,
-    replacement: () => `${totalFiles} files in ${dirs.length} directories (over budget)\n`,
+    replacement: () =>
+      `${totalFiles} files in ${dirs.length} directories (over budget)${skippedCount > 0 ? `, ${skippedCount} skipped` : ""}\n${stderrSuffix}`,
   });
   return { output: ladder.text, omission: ladder.omission };
 }
@@ -231,11 +262,14 @@ export const listLikeHandler: CommandHandler = {
   },
 
   async filter(raw, command, options) {
-    const text = `${raw.stdout}\n${raw.stderr}`;
     if (command.program === "find") {
-      const { output, omission } = summarizeFindOutput(text, command);
+      // H16-find fix: pass stdout and stderr separately so stderr lines are not
+      // mixed into the path stream and parsed as filesystem paths.
+      const { output, omission } = summarizeFindOutput(raw.stdout, raw.stderr, command);
       return makeFilteredResult(this, raw, output, options, undefined, omission);
     }
+    // For ls/tree/dir: merge stdout+stderr as before (they don't have a path parser).
+    const text = `${raw.stdout}\n${raw.stderr}`;
     const output = summarizeListing(command.program === "tree" ? flattenTreeOutput(text) : text);
     return makeFilteredResult(this, raw, output, options);
   },

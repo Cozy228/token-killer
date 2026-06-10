@@ -86,7 +86,14 @@ function filterPrettierOutput(output: string): string {
       isCheckMode = true;
     }
 
-    if (
+    // C2-format: prettier-v3 emits `[warn] <path>` for files that need formatting.
+    // Extract the path from a [warn] line and treat it as a needs-format entry.
+    if (trimmed.includes("[warn]") && !trimmed.includes("[warn] ignored")) {
+      const warnPath = trimmed.replace(/^\[warn\]\s*/, "").trim();
+      if (isFormattableFile(warnPath)) {
+        filesToFormat.push(warnPath);
+      }
+    } else if (
       trimmed !== "" &&
       !trimmed.startsWith("Checking") &&
       !trimmed.startsWith("All matched") &&
@@ -357,6 +364,21 @@ export const formatHandler = defineHandler({
 
   format: (raw, command, options) => {
     const formatter = detectFormatter(command.args);
-    return `${filterFormatOutput(formatter, `${raw.stdout}\n${raw.stderr}`)}\n`;
+    const combined = `${raw.stdout}\n${raw.stderr}`;
+    // C2-format: on nonzero exit, never emit an all-success message —
+    // return raw streams so the error text (and any [warn] lines) survives.
+    if (raw.exitCode !== 0) {
+      const filtered = filterFormatOutput(formatter, combined);
+      // If the filter claims success ("All files formatted correctly", etc.) on a
+      // failing exit, the formatter indicated a problem — return raw instead.
+      // The only legitimate non-zero paths mention a *count* of files that "need
+      // formatting"; bare "correctly" always means the check-mode filter falsely
+      // claimed no problems despite a nonzero exit code.
+      if (/all files formatted correctly|all matched files use prettier/i.test(filtered)) {
+        return `${combined.trim()}\n`;
+      }
+      return `${filtered}\n`;
+    }
+    return `${filterFormatOutput(formatter, combined)}\n`;
   },
 });

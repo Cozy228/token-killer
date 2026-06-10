@@ -20,6 +20,11 @@ export type GrepMatch = { file: string; line: number; content: string };
 // tk extension: `--json` (rg) emits structured records that the colon parser
 // would half-read, so it joins the passthrough guard — a JSON-shaped rg output is
 // never half-parsed.
+//
+// M6-grep fix: `-q/--quiet/--silent` (quiet mode) suppresses output entirely and
+// uses exit code to signal presence (0=found, 1=not-found). Fabricating "0 matches
+// for <pattern>" when exit=0 is wrong (exit 0 means FOUND). These flags are added
+// to the passthrough set so the raw stdout (empty) is returned unchanged.
 const FORMAT_FLAGS = new Set([
   "-c",
   "--count",
@@ -32,6 +37,9 @@ const FORMAT_FLAGS = new Set([
   "-Z",
   "--null",
   "--json",
+  "-q",
+  "--quiet",
+  "--silent",
 ]);
 
 export function hasFormatFlag(args: string[]): boolean {
@@ -54,10 +62,14 @@ const CONTEXT_FLAGS = new Set([
 export function hasContextFlag(args: string[]): boolean {
   return args.some((arg) => {
     if (CONTEXT_FLAGS.has(arg)) return true;
-    // -A2 / -B3 / -C1 attached-value forms.
+    // -A2 / -B3 / -C1 attached-value forms (standalone short flags).
     if (/^-[ABC]\d+$/.test(arg)) return true;
     // --after-context=N / --before-context=N / --context=N.
     if (/^--(after-context|before-context|context)=/.test(arg)) return true;
+    // H7-grep fix: cluster-aware detection — grouped short flags like -rnA2 or
+    // -rnA 2 (split form) include -A/-B/-C embedded anywhere in the cluster.
+    // A flag cluster starts with a single dash and no second dash.
+    if (/^-[^-]/.test(arg) && /[ABC]/.test(arg)) return true;
     return false;
   });
 }
@@ -98,7 +110,7 @@ export function cleanLine(line: string, maxLen: number, pattern: string): string
   const pos = patternLower === "" ? -1 : lower.indexOf(patternLower);
 
   if (pos >= 0) {
-    const charPos = [...lower.slice(0, pos)].length;
+    const charPos = lower.slice(0, pos).length;
     const charLen = chars.length;
     let start = Math.max(0, charPos - Math.floor(maxLen / 3));
     const end = Math.min(start + maxLen, charLen);
@@ -166,21 +178,40 @@ export function groupGrepOutput(
   const aggregate = options.aggregate ?? false;
 
   const lines = stdout.split(/\r?\n/).filter((line) => line.length > 0);
-  // RTK counts every emitted line as a match for the overflow total; it never
-  // caps this count before subtracting `shown` (test_grep_overflow_uses_uncapped_total).
-  // Dedup keeps this as raw match lines so `[+N more]` stays the true count.
-  const totalMatches = lines.length;
 
+  // H7-grep fix: count only successfully-parsed match lines (not unparseable
+  // lines like "Binary file X matches"). Using lines.length inflated the count
+  // when non-match lines were present.
   const byFile = new Map<string, GrepMatch[]>();
+  const passthroughLines: string[] = []; // lines that are not parseable matches
   for (const line of lines) {
     const parsed = parseMatchLine(line);
-    if (!parsed) continue;
+    if (!parsed) {
+      // H7-grep fix: "Binary file X matches" is informative — pass through
+      // rather than silently dropping it.
+      passthroughLines.push(line);
+      continue;
+    }
     const bucket = byFile.get(parsed.file) ?? [];
     bucket.push(parsed);
     byFile.set(parsed.file, bucket);
   }
 
-  if (byFile.size === 0) return null;
+  // RTK counts every emitted line as a match for the overflow total; it never
+  // caps this count before subtracting `shown` (test_grep_overflow_uses_uncapped_total).
+  // H7-grep fix: totalMatches now counts only the PARSED match lines, not the
+  // total raw line count — otherwise passthrough/binary lines inflate it.
+  const totalMatches = lines.length - passthroughLines.length;
+
+  if (byFile.size === 0) {
+    // No parsed matches at all — fall through to passthrough so the caller
+    // returns the raw output unchanged (e.g. grep without -n, or rg --json).
+    // H7-grep fix: "Binary file X matches" lines are now in passthroughLines,
+    // but if those are the ONLY lines, it means the output has no file:line:content
+    // matches at all and we still can't group anything — return null to trigger
+    // the filter's passthrough path.
+    return null;
+  }
 
   const out: string[] = [`${totalMatches} matches in ${byFile.size} files:`, ""];
 
@@ -224,7 +255,14 @@ export function groupGrepOutput(
         suppressed = true;
         break;
       }
-      out.push(`${fileDisplay}:${entry.lines.join(",")}:${cleanLine(entry.content, maxLen, pattern)}`);
+      const cleaned = cleanLine(entry.content, maxLen, pattern);
+      out.push(`${fileDisplay}:${entry.lines.join(",")}:${cleaned}`);
+      // M7-grep fix: when cleanLine truncated the content (content is lossy),
+      // set suppressed so the recovery hint is appended. A line ending with
+      // "..." was shortened — the full content was not shown.
+      if (cleaned.endsWith("...") && [...entry.content.trim()].length > maxLen) {
+        suppressed = true;
+      }
       matchesShown += entry.lines.length;
       entriesShown += 1;
       perFileShown += 1;
@@ -239,6 +277,14 @@ export function groupGrepOutput(
 
   if (suppressed && options.recoveryHint !== undefined) {
     out.push(options.recoveryHint);
+  }
+
+  // H7-grep fix: "Binary file X matches" lines and other non-parseable lines
+  // (that were alongside parseable matches) are appended verbatim so the caller
+  // sees them. This covers the case where a recursive grep hits both text files
+  // (with file:line:content output) AND binary files (with "Binary file X matches").
+  if (passthroughLines.length > 0) {
+    out.push(...passthroughLines);
   }
 
   return `${out.join("\n")}\n`;

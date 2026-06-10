@@ -1,3 +1,4 @@
+import { removeAnsi } from "../../core/ansi.js";
 import type { ParsedCommand } from "../../types.js";
 import { defineHandler } from "../define.js";
 
@@ -10,8 +11,21 @@ type EslintIssue = {
   rule: string;
 };
 
+// Known package-runner programs that may wrap eslint as their first non-flag argument.
+const RUNNERS = new Set(["npm", "pnpm", "yarn", "npx", "node"]);
+
+// M17: `command.program.includes("eslint")` catches path-relative binaries like
+// `./node_modules/.bin/eslint`. The `original` check catches package-runner
+// wrappers (`pnpm exec eslint .`, `npx eslint .`) — but only when the runner is a
+// known tool (first element), not when "eslint" appears as a plain argument to some
+// other program (e.g. `echo eslint` has program="echo", not a runner).
 function matchesEslint(command: ParsedCommand): boolean {
-  return command.program.includes("eslint") || command.original.includes("eslint");
+  if (command.program.includes("eslint")) return true;
+  // Only check original[1..] when the program is a known runner.
+  if (RUNNERS.has(command.program)) {
+    return command.original.slice(1).some((arg) => arg === "eslint");
+  }
+  return false;
 }
 
 function parseIssues(text: string): EslintIssue[] {
@@ -59,7 +73,10 @@ function parseIssues(text: string): EslintIssue[] {
 }
 
 function formatEslint(text: string): string {
-  const issues = parseIssues(text);
+  // C2-eslint: strip ANSI before parsing so ANSI-coloured output doesn't produce
+  // zero-parse false positives that we'd then incorrectly summarise as "0 problems".
+  const clean = removeAnsi(text);
+  const issues = parseIssues(clean);
   const byRule = new Map<string, EslintIssue[]>();
   for (const issue of issues) {
     const list = byRule.get(issue.rule) ?? [];
@@ -87,6 +104,28 @@ export const eslintHandler = defineHandler({
   match: matchesEslint,
 
   format: (raw, _command, options) => {
-    return formatEslint(`${raw.stdout}\n${raw.stderr}`);
+    // C2-eslint: nonzero exit → the run crashed (config error, exit 2) or there
+    // are real issues. If we parsed zero issues from a non-empty output the
+    // formatter is confused (e.g. -f junit, ANSI after removeAnsi fail, etc.).
+    // In all those cases return raw so no error detail is swallowed.
+    const text = `${raw.stdout}\n${raw.stderr}`;
+    if (raw.exitCode !== 0) {
+      const clean = removeAnsi(text);
+      const issues = parseIssues(clean);
+      if (issues.length === 0) {
+        // Non-zero exit, zero parsed issues → unrecognised output format; pass raw.
+        return text;
+      }
+      // Non-zero exit but we DID parse issues — format them normally (common case:
+      // exit 1 means "lint errors found").
+      return formatEslint(text);
+    }
+    const clean = removeAnsi(text);
+    const issues = parseIssues(clean);
+    // Zero issues on exit 0 with non-empty output: unrecognised format (-f html/junit).
+    if (issues.length === 0 && clean.trim() !== "") {
+      return text;
+    }
+    return formatEslint(text);
   },
 });

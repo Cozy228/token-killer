@@ -3,7 +3,11 @@ import { describe, expect, test, vi } from "vitest";
 import { buildTreeArgs, treeHandler } from "../../../src/handlers/system/tree.js";
 import { executeCommand } from "../../../src/executor.js";
 import type { ParsedCommand, RawResult } from "../../../src/types.js";
-import { expectRtkParity, filterRtkFixture, filterRtkOutput } from "../../helpers/rtkCommandHarness.js";
+import {
+  expectRtkParity,
+  filterRtkFixture,
+  filterRtkOutput,
+} from "../../helpers/rtkCommandHarness.js";
 
 // The migration harness only exercises filter(); the fail-open path lives in
 // execute(), so we mock executeCommand to drive the re-run without spawning tree.
@@ -104,7 +108,10 @@ describe("RTK tree behavior", () => {
 
   // RTK: tree.rs::test_filter_removes_summary + test_filter_preserves_structure.
   test("removes the summary line while preserving hierarchy structure", async () => {
-    const result = await filterRtkFixture(["tree", "."], "tests/fixtures/common/tree_with_summary.txt");
+    const result = await filterRtkFixture(
+      ["tree", "."],
+      "tests/fixtures/common/tree_with_summary.txt",
+    );
 
     expect(result.output).toContain("├── src");
     expect(result.output).toContain("│   ├── main.rs");
@@ -113,17 +120,11 @@ describe("RTK tree behavior", () => {
 
     expectRtkParity(result, {
       critical: ["├── src", "│   ├── main.rs", "│   └── lib.rs", "└── tests", "    └── test.rs"],
-      // Only the "N directories, M files" summary is removed.
+      // Only the "N directories, M files" summary is removed; H17 disclosure appended.
       forbidden: [/directories,/, /\d+ files?$/m],
-      exact: [
-        ".",
-        "├── src",
-        "│   ├── main.rs",
-        "│   └── lib.rs",
-        "└── tests",
-        "    └── test.rs",
-      ].join("\n"),
     });
+    // H17 disclosure line is present when noise dirs were filtered.
+    expect(result.output).toContain("tool dirs");
   });
 
   // tk divergence G3: filter_tree_output must PRESERVE tree's native
@@ -131,7 +132,10 @@ describe("RTK tree behavior", () => {
   // needs both "director" and "file", and the marker has "dir"/"file" but not
   // "director". A future edit must not regress this.
   test("preserves the exceeds-filelimit marker while stripping the summary", async () => {
-    const result = await filterRtkFixture(["tree", "."], "tests/fixtures/system/tree_filelimit.txt");
+    const result = await filterRtkFixture(
+      ["tree", "."],
+      "tests/fixtures/system/tree_filelimit.txt",
+    );
 
     // The oversized dir collapses to one line with the native count marker.
     expect(result.output).toContain("packages");
@@ -145,6 +149,7 @@ describe("RTK tree behavior", () => {
 
   // RTK: tree.rs::test_filter_summary_variations — different summary phrasings
   // (singular/plural directory/file) are all stripped, content is preserved.
+  // H17: a disclosure line is appended when noise dirs may have been hidden.
   test("strips summary variations regardless of singular/plural phrasing", async () => {
     const variations: Array<[string, string]> = [
       [".\n└── file.txt\n\n0 directories, 1 file\n", "1 file"],
@@ -153,7 +158,8 @@ describe("RTK tree behavior", () => {
     ];
 
     for (const [input, summaryFragment] of variations) {
-      const result = await filterRtkOutput(["tree", "."], input);
+      // Use -a so no disclosure line is added (this test focuses on summary stripping).
+      const result = await filterRtkOutput(["tree", "-a", "."], input);
       expect(result.output).not.toContain(summaryFragment);
       expect(result.output).toContain("file.txt");
       expect(result.output).toContain("└── file.txt");
@@ -162,13 +168,50 @@ describe("RTK tree behavior", () => {
 
   // RTK: tree.rs::test_filter_removes_trailing_empty_lines (combined with summary
   // removal so the change is visible past trim()) — trailing blank lines and the
-  // summary line are removed, leaving the hierarchy + a single final newline.
+  // summary line are removed, leaving the hierarchy + disclosure + a single final newline.
+  // H17: use -a to skip noise disclosure, isolating the trailing-empty-line behaviour.
   test("removes trailing empty lines and the summary line", async () => {
     const result = await filterRtkOutput(
-      ["tree", "."],
+      ["tree", "-a", "."],
       ".\n├── file.txt\n\n0 directories, 1 file\n\n\n",
     );
     expect(result.output).toBe(".\n├── file.txt\n");
+  });
+});
+
+// Regression tests for audit findings.
+describe("tree audit regressions", () => {
+  // H17: when tree's -I filter was injected (no -a / user -I), a disclosure line
+  // must appear so the agent knows tool dirs like dist/build/coverage may be hidden.
+  test("H17: disclosure line is present when noise dirs were filtered", async () => {
+    const result = await filterRtkOutput(
+      ["tree", "."],
+      ".\n├── src\n│   └── main.ts\n\n2 directories, 1 file\n",
+    );
+
+    // Structure is preserved.
+    expect(result.output).toContain("└── main.ts");
+    // Disclosure line is appended.
+    expect(result.output).toContain("tool dirs");
+    expect(result.output).toContain("use -a");
+  });
+
+  test("H17: no disclosure line when user passes -a (show all)", async () => {
+    const result = await filterRtkOutput(
+      ["tree", "-a", "."],
+      ".\n├── src\n│   └── main.ts\n\n2 directories, 1 file\n",
+    );
+
+    expect(result.output).not.toContain("tool dirs");
+  });
+
+  test("H17: no disclosure line when user passes their own -I pattern", async () => {
+    const result = await filterRtkOutput(
+      ["tree", "-I", "node_modules", "."],
+      ".\n├── src\n│   └── main.ts\n\n2 directories, 1 file\n",
+    );
+
+    expect(result.output).not.toContain("tool dirs");
   });
 });
 

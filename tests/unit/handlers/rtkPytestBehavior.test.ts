@@ -132,6 +132,68 @@ describe("RTK pytest behavior", () => {
   });
 });
 
+// C2-pytest regression: collection/import errors (exit 2) must preserve the
+// traceback — they must NOT be silently reported as "No tests collected".
+// These tests drive the handler directly to avoid the harness passthrough guard
+// (the fix intentionally returns raw, which would look like "no compression" to
+// the harness but is the correct behaviour for error exits).
+describe("C2-pytest: collection-error fixture (exit 2)", () => {
+  test("preserves ModuleNotFoundError traceback on exit 2", async () => {
+    // The session banner on stdout is stripped by filterPytestOutput but
+    // the error block on stderr is NOT in any parsed section, so the
+    // combined raw is different from either alone — and the fix returns
+    // combined raw, not the truncated stdout.
+    const stdout = [
+      "=== test session starts ===",
+      "platform darwin -- Python 3.12.0",
+      "collected 0 items / 1 error",
+      "",
+      "=== 1 error in 0.07s ===",
+    ].join("\n");
+    const stderr = [
+      "=== ERRORS ===",
+      "____ ERROR collecting tests/test_app.py ____",
+      "ImportError while importing test module '/project/tests/test_app.py'.",
+      "ModuleNotFoundError: No module named 'mymodule'",
+    ].join("\n");
+
+    const result = await filterRtkOutput(["pytest"], stdout, 2, stderr);
+
+    // The error text must survive — NOT a vacuous "No tests collected".
+    expect(result.output).toContain("ModuleNotFoundError");
+    expect(result.output).not.toContain("Pytest: No tests collected");
+  });
+
+  test("preserves usage error on exit 4 when all counts are zero", async () => {
+    const stdout = "=== test session starts ===\nplatform darwin";
+    const stderr = [
+      "ERROR: usage: pytest [options] [file_or_dir]",
+      "pytest: error: unrecognized arguments: --bad-flag",
+    ].join("\n");
+
+    const result = await filterRtkOutput(["pytest", "--bad-flag"], stdout, 4, stderr);
+
+    // The usage error must survive — NOT a vacuous "No tests collected".
+    expect(result.output).toContain("unrecognized arguments");
+    expect(result.output).not.toContain("Pytest: No tests collected");
+  });
+
+  test("still reports No tests collected on exit 5 (normal no-collection outcome)", async () => {
+    const result = await filterRtkOutput(
+      ["pytest"],
+      [
+        "=== test session starts ===",
+        "collected 0 items",
+        "",
+        "=== no tests ran in 0.00s ===",
+      ].join("\n"),
+      5,
+    );
+
+    expect(result.output.trim()).toBe("Pytest: No tests collected");
+  });
+});
+
 describe("RTK pytest parse_summary_line", () => {
   // RTK: pytest_cmd.rs::test_parse_summary_line — order-sensitive parsing
   // (xpassed/xfailed contain passed/failed). Verified through the handler output.

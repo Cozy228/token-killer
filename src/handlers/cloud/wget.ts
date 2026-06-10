@@ -105,13 +105,19 @@ function extractFilename(stderr: string, url: string, args: string[]): string {
 // RTK: wget_cmd.rs::parse_error — map well-known wget failure signatures to a
 // terse label; otherwise surface the first meaningful stderr line (skipping
 // "--" timestamp lines) truncated to 60 chars.
+//
+// M12-wget fix: use anchored patterns for HTTP status codes so that a body
+// containing e.g. "Length: 15000" (contains "500") is not falsely labelled
+// "500 Server Error". Match only when the status code appears as part of an
+// HTTP status line ("HTTP/... 404") or as a standalone token ("ERROR 404:").
 function parseError(stderr: string, stdout: string): string {
   const combined = `${stderr}\n${stdout}`;
 
-  if (combined.includes("404")) return "404 Not Found";
-  if (combined.includes("403")) return "403 Forbidden";
-  if (combined.includes("401")) return "401 Unauthorized";
-  if (combined.includes("500")) return "500 Server Error";
+  // Anchored HTTP status patterns: "HTTP/1.x NNN" or "ERROR NNN:" or "NNN Reason".
+  if (/\bHTTP\/\S+\s+404\b|ERROR\s+404\b|(?:^|\s)404\s/m.test(combined)) return "404 Not Found";
+  if (/\bHTTP\/\S+\s+403\b|ERROR\s+403\b|(?:^|\s)403\s/m.test(combined)) return "403 Forbidden";
+  if (/\bHTTP\/\S+\s+401\b|ERROR\s+401\b|(?:^|\s)401\s/m.test(combined)) return "401 Unauthorized";
+  if (/\bHTTP\/\S+\s+500\b|ERROR\s+500\b|(?:^|\s)500\s/m.test(combined)) return "500 Server Error";
   if (combined.includes("Connection refused")) return "Connection refused";
   if (combined.includes("unable to resolve") || combined.includes("Name or service not known")) {
     return "DNS lookup failed";
@@ -131,6 +137,28 @@ function parseError(stderr: string, stdout: string): string {
   }
 
   return "Unknown error";
+}
+
+// C5-wget: wget -O - / -qO- / --output-document - writes the body to stdout
+// rather than a file. This constant caps how many bytes are emitted inline (the
+// same limit curl uses for non-JSON bodies). Bodies below this threshold pass
+// through in full; larger ones are truncated with a byte-count marker.
+const WGET_MAX_BODY_SIZE = 500;
+
+// Return true when the user asked wget to write the body to stdout (-O - or
+// -qO- or --output-document -) so we should emit raw.stdout instead of the
+// filename/size summary.
+function isStdoutDownload(args: string[]): boolean {
+  for (let i = 0; i < args.length; i += 1) {
+    const arg = args[i]!;
+    if ((arg === "-O" || arg === "--output-document") && args[i + 1] === "-") return true;
+    if (arg === "-O-" || arg === "-qO-" || arg === "-qO -") return true;
+    // -qO- written as combined flags ending in "-O-".
+    if (arg.startsWith("-") && !arg.startsWith("--") && arg.includes("O") && arg.endsWith("-")) {
+      return true;
+    }
+  }
+  return false;
 }
 
 // RTK: wget_cmd.rs::run resolves the URL as the final positional argument and
@@ -183,6 +211,24 @@ export const wgetHandler = defineHandler({
       const error = parseError(raw.stderr, raw.stdout);
       const output = `${compactUrl(url)} FAILED: ${error}`;
       return output;
+    }
+
+    // C5-wget: -O -/-qO- writes the body to stdout; emit the body (size-gated,
+    // same policy as curl). Non-empty stdout on a success without this flag is
+    // also surfaced so wget --spider / wget with redirect output is not silently
+    // discarded.
+    if (isStdoutDownload(command.args) && raw.stdout.length > 0) {
+      const body = raw.stdout.trim();
+      const byteLen = Buffer.byteLength(body, "utf8");
+      if (byteLen <= WGET_MAX_BODY_SIZE) {
+        return body;
+      }
+      // Truncate on a char boundary (same approach as curl).
+      const buf = Buffer.from(body, "utf8");
+      let end = WGET_MAX_BODY_SIZE;
+      while (end > 0 && (buf[end]! & 0xc0) === 0x80) end -= 1;
+      const head = buf.subarray(0, end).toString("utf8");
+      return `${head}... (${byteLen} bytes total)`;
     }
 
     // RTK: wget_cmd.rs::run success branch — "{compact_url} ok | {filename} |

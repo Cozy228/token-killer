@@ -1,18 +1,25 @@
 import { describe, expect, test } from "vitest";
 
-import { expectRtkParity, filterRtkFixture, filterRtkOutput } from "../../helpers/rtkCommandHarness.js";
+import {
+  expectRtkParity,
+  filterRtkFixture,
+  filterRtkOutput,
+} from "../../helpers/rtkCommandHarness.js";
 import { buildCurlArgs } from "../../../src/handlers/cloud/curl.js";
 
 // RTK: curl_cmd.rs::run command construction — the real CLI path must prepend
 // `-s` so the progress meter never pollutes the captured body. The migration
 // harness only exercises filter(); these assert the execute() rewrite directly.
 describe("RTK curl command construction (buildCurlArgs)", () => {
-  test("prepends -s ahead of the user's args", () => {
-    expect(buildCurlArgs(["https://example.com"])).toEqual(["-s", "https://example.com"]);
+  // H12-curl fix: inject -sS (not bare -s). -s silences the progress meter;
+  // -S keeps curl's own error diagnostics so connection failures surface instead
+  // of printing nothing and emitting "FAILED: curl" with no reason.
+  test("prepends -sS ahead of the user's args (keeps error output, drops progress)", () => {
+    expect(buildCurlArgs(["https://example.com"])).toEqual(["-sS", "https://example.com"]);
   });
-  test("preserves the user's flags and order verbatim after -s", () => {
+  test("preserves the user's flags and order verbatim after -sS", () => {
     expect(buildCurlArgs(["-X", "POST", "-d", "k=v", "https://api.test"])).toEqual([
-      "-s",
+      "-sS",
       "-X",
       "POST",
       "-d",
@@ -52,14 +59,18 @@ describe("RTK curl behavior", () => {
 
   // RTK: cloud/curl_cmd.rs::test_filter_curl_long_output_truncated — a long
   // non-JSON body is cut at MAX_RESPONSE_SIZE bytes with a "... (N bytes total)"
-  // marker and a recovery hint. This is the curl compression path.
-  test("truncates long non-JSON bodies at 500 bytes with a recovery hint", async () => {
+  // marker. This is the curl compression path.
+  // H12-curl: the old `tk --raw` re-run hint is removed (ADR 0001 d6 bans it —
+  // re-running would re-fire a POST). Recovery is via the rawPointer snapshot the
+  // gate appends when saveRaw is enabled.
+  test("truncates long non-JSON bodies at 500 bytes with a size marker", async () => {
     const body = "x".repeat(1000);
     const result = await filterRtkOutput(["curl", "https://example.com/blob"], body);
 
     expect(result.output).toMatch(/^x+\.\.\. \(1000 bytes total\)/);
     expect(result.output).toContain("bytes total");
-    expect(result.output).toMatch(/tk --raw/);
+    // H12-curl: no tk --raw hint (re-run would re-fire a POST; recovery via snapshot).
+    expect(result.output).not.toMatch(/tk --raw/);
     // RTK asserts the truncated content is < 600 chars (head 500 + small marker).
     expect(result.output.split("\n")[0]!.length).toBeLessThan(600);
 
@@ -112,4 +123,35 @@ describe("RTK curl behavior", () => {
   // when it is non-empty, dropping the stdout body. That behavior is asserted in
   // curlProductBehavior.test.ts, NOT here, because this suite must only prove
   // RTK-faithful semantics. See docs/green-test-parity-audit.md (curl divergence).
+});
+
+// ─── Regression tests for adversarial-audit findings ───────────────────────
+
+describe("H12-curl regression: -sS keeps error diagnostics; no tk --raw hint", () => {
+  // H12-curl: with -sS (not bare -s), curl's connection/TLS error messages reach
+  // stderr and are surfaced in the failure output.
+  test("failed curl with stderr diagnostic includes the reason", async () => {
+    const stderrDiag =
+      "curl: (7) Failed to connect to unreachable.example port 443: Connection refused";
+    const result = await filterRtkOutput(
+      ["curl", "https://unreachable.example"],
+      "",
+      7,
+      stderrDiag,
+    );
+    expect(result.output).toContain("FAILED: curl");
+    expect(result.output).toContain("Connection refused");
+    // The diagnostic must not be silently dropped.
+    expect(result.output).not.toBe("FAILED: curl");
+  });
+
+  test("truncated body has no tk --raw hint (ADR 0001 d6)", async () => {
+    const body = "x".repeat(1000);
+    const result = await filterRtkOutput(["curl", "https://example.com/big"], body);
+    expect(result.output).toContain("bytes total");
+    // H12-curl fix: no tk --raw hint (re-run would re-fire a POST).
+    expect(result.output).not.toMatch(/tk --raw/);
+    // Gate ships the truncated output (not reverting to raw with digest omission).
+    expect(result.output.trim()).not.toBe(body.trim());
+  });
 });

@@ -180,12 +180,27 @@ function formatGh(raw: RawResult, command: ParsedCommand): LadderResult {
     };
   }
   if (resource === "pr" && action === "checks") {
-    return {
-      text: `${rawText
-        .split(/\r?\n/)
-        .filter((line) => /\bfail\b|failed/i.test(line))
-        .join("\n")}\n`,
-    };
+    // H9c: the original filter kept only fail lines, silently dropping passing
+    // and pending. Preserve failures verbatim and append a `N passing, M pending`
+    // summary so agents know the overall check status.
+    const lines = rawText.split(/\r?\n/);
+    const failing = lines.filter((line) => /\bfail\b|failed/i.test(line));
+    let passing = 0;
+    let pending = 0;
+    for (const line of lines) {
+      if (/\bpass\b|success/i.test(line) && !/\bfail\b|failed/i.test(line)) passing += 1;
+      else if (/\bpending\b|queued|in_progress/i.test(line) && !/\bfail\b|failed/i.test(line))
+        pending += 1;
+    }
+    const summary: string[] = [];
+    if (passing > 0 || pending > 0) {
+      const parts: string[] = [];
+      if (passing > 0) parts.push(`${passing} passing`);
+      if (pending > 0) parts.push(`${pending} pending`);
+      summary.push(parts.join(", "));
+    }
+    const out = [...failing, ...summary].join("\n");
+    return { text: `${out}\n` };
   }
   if (resource === "issue" && action === "list" && Array.isArray(json)) {
     // RTK: gh_cmd.rs::format_issue_list — "Issues\n  [open] #N title" (no labels;
@@ -291,7 +306,15 @@ function formatGlab(raw: RawResult, command: ParsedCommand): LadderResult {
     };
   }
   if (resource === "release" && action === "list") {
-    return { text: `${rawText.split(/\r?\n/).slice(0, 1).join("\n")}\n` };
+    // H9a: RTK truncated to the first line with no declared omission. Use the
+    // same overBudgetLadder as mr list so the omission is properly declared.
+    const lines = rawText.split(/\r?\n/).filter((l) => l.trim() !== "");
+    if (lines.length === 0) return { text: "No Releases\n" };
+    return overBudgetLadder({
+      full: `${lines.join("\n")}\n`,
+      digest: () => `${lines.slice(0, Math.max(1, Math.ceil(lines.length / 2))).join("\n")}\n`,
+      replacement: () => `${lines.length} releases\n`,
+    });
   }
   return { text: `${rawText}\n` };
 }

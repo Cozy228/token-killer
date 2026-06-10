@@ -190,3 +190,56 @@ describe("RTK json behavior", () => {
     });
   });
 });
+
+// Regression tests for audit findings.
+describe("json audit regressions", () => {
+  // M10-json: 64-bit integers must not be corrupted by JSON.parse double precision.
+  // The handler returns raw passthrough for payloads with big integers, so we
+  // call the handler directly (bypassing the no-passthrough assertion).
+  test("M10-json: raw is returned for payloads containing 64-bit integers", async () => {
+    const { jsonHandler } = await import("../../../src/handlers/system/json.js");
+    // 9007199254740993 = Number.MAX_SAFE_INTEGER + 2 → JSON.parse would yield 9007199254740992.
+    const rawJson = '{"id":9007199254740993,"name":"bignum"}';
+    const rawResult = {
+      command: "json data.json",
+      stdout: rawJson,
+      stderr: "",
+      exitCode: 0,
+      durationMs: 1,
+    };
+    const command = {
+      program: "json",
+      args: ["data.json"],
+      original: ["json", "data.json"],
+      displayCommand: "json data.json",
+    };
+    const options = {
+      raw: false,
+      stats: false,
+      verbose: false,
+      maxLines: 120,
+      maxChars: 12000,
+      saveRaw: false as const,
+      cwd: ".",
+    };
+    const result = await jsonHandler.filter(rawResult, command, options);
+
+    // The exact big integer must survive; not corrupted.
+    expect(result.output).toContain("9007199254740993");
+    expect(result.output).not.toContain("9007199254740992");
+  });
+
+  // M10-json: strings with embedded newlines must not break line structure.
+  test("M10-json: embedded newlines in string values are escaped", async () => {
+    const rawJson = JSON.stringify({ msg: "line1\nline2", key: "val" });
+    const result = await filterRtkOutput(["json", "data.json"], rawJson);
+
+    // The newline must be escaped in the output, not rendered as a literal newline
+    // that would break the compact single-line-per-entry format.
+    expect(result.output).toContain("\\n");
+    // The content is still present.
+    expect(result.output).toContain("msg:");
+    expect(result.output).toContain("line1");
+    expect(result.output).toContain("line2");
+  });
+});

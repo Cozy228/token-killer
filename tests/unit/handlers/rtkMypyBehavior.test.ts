@@ -8,7 +8,7 @@ describe("RTK mypy behavior", () => {
       ["mypy", "src"],
       [
         "src/user.py:10: error: Incompatible return value type [return-value]",
-        "src/auth.py:20: error: Name \"token\" is not defined [name-defined]",
+        'src/auth.py:20: error: Name "token" is not defined [name-defined]',
         "Found 2 errors in 2 files",
       ].join("\n"),
       1,
@@ -21,15 +21,8 @@ describe("RTK mypy behavior", () => {
     expect(result.output).not.toMatch(/Found 2 errors/);
 
     expectRtkParity(result, {
-      critical: [
-        "mypy: 2 errors in 2 files",
-        "user.py",
-        "auth.py",
-        "return-value",
-      ],
-      forbidden: [
-        /Found 2 errors/,
-      ],
+      critical: ["mypy: 2 errors in 2 files", "user.py", "auth.py", "return-value"],
+      forbidden: [/Found 2 errors/],
       // Pin RTK's filter_mypy_output shape exactly (stronger than a char cap).
       exact: [
         "mypy: 2 errors in 2 files",
@@ -129,6 +122,30 @@ describe("RTK mypy behavior", () => {
     );
 
     expect(result.output).toContain("mypy: No issues found");
+  });
+
+  // H13-mypy regression: long messages must not be silently clipped to 120 chars.
+  test("keeps full message text — long messages are NOT clipped at 120 chars", async () => {
+    const longMsg =
+      "Argument 1 to " +
+      '"do_something_with_a_very_long_function_name" ' +
+      "has incompatible type " +
+      '"Optional[VeryLongTypeNameThatExceedsOneHundredAndTwentyCharacters]"; ' +
+      'expected "VeryLongTypeNameThatExceedsOneHundredAndTwentyCharacters"';
+
+    // Ensure the message is definitely longer than 120 chars so truncation
+    // would have fired before the fix.
+    expect(longMsg.length).toBeGreaterThan(120);
+
+    const result = await filterRtkOutput(
+      ["mypy", "src"],
+      [`src/app.py:5: error: ${longMsg}  [arg-type]`, "Found 1 error in 1 file"].join("\n"),
+      1,
+    );
+
+    // The full message must appear — no trailing "..." truncation.
+    expect(result.output).toContain(longMsg);
+    expect(result.output).not.toMatch(/\.\.\.$/m);
   });
 
   // RTK: rtk/src/cmds/python/mypy_cmd.rs::test_filter_mypy_no_file_limit

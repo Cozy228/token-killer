@@ -31,18 +31,8 @@ describe("RTK git status behavior", () => {
     expect(result.output).not.toMatch(/^Untracked:/m);
 
     expectRtkParity(result, {
-      critical: [
-        "* main",
-        "R  old.rs -> new.rs",
-        "UU conflict.rs",
-        "MM mixed.rs",
-      ],
-      forbidden: [
-        /conflicts:/,
-        /^Branch:/m,
-        /^Modified:/m,
-        /^Untracked:/m,
-      ],
+      critical: ["* main", "R  old.rs -> new.rs", "UU conflict.rs", "MM mixed.rs"],
+      forbidden: [/conflicts:/, /^Branch:/m, /^Modified:/m, /^Untracked:/m],
       maxOutputChars: result.rawOutput.length,
     });
   });
@@ -62,17 +52,8 @@ describe("RTK git status behavior", () => {
     expect(result.output).not.toMatch(/^Untracked:/m);
 
     expectRtkParity(result, {
-      critical: [
-        "* main",
-        "🎉-party.txt",
-        "日本語ファイル.rs",
-        "สวัสดี.txt",
-      ],
-      forbidden: [
-        /^Branch:/m,
-        /^Modified:/m,
-        /^Untracked:/m,
-      ],
+      critical: ["* main", "🎉-party.txt", "日本語ファイル.rs", "สวัสดี.txt"],
+      forbidden: [/^Branch:/m, /^Modified:/m, /^Untracked:/m],
       maxOutputChars: result.rawOutput.length,
     });
   });
@@ -126,7 +107,9 @@ describe("RTK git status behavior", () => {
     });
 
     test("mixed changes keep raw porcelain XY codes, no section headers", () => {
-      const result = formatStatusOutput("## main\nM  staged.rs\n M modified.rs\nA  added.rs\n?? untracked.txt\n");
+      const result = formatStatusOutput(
+        "## main\nM  staged.rs\n M modified.rs\nA  added.rs\n?? untracked.txt\n",
+      );
       expect(result).toContain("* main");
       expect(result).toContain("M  staged.rs");
       expect(result).toContain(" M modified.rs");
@@ -154,7 +137,10 @@ describe("RTK git status behavior", () => {
     });
 
     test("detached HEAD shows the explicit ref, not the opaque porcelain string", () => {
-      const result = formatStatusOutput("## HEAD (no branch)\n M src/main.rs\n", "HEAD detached at abc1234");
+      const result = formatStatusOutput(
+        "## HEAD (no branch)\n M src/main.rs\n",
+        "HEAD detached at abc1234",
+      );
       expect(result).toContain("HEAD detached at abc1234");
       expect(result).not.toContain("HEAD (no branch)");
     });
@@ -190,7 +176,7 @@ describe("RTK git status behavior", () => {
       ],
       [
         "merge in progress. no conflicts",
-        "On branch main\n\nAll conflicts fixed but you are still merging.\n  (use \"git commit\" to conclude merge)\n\nChanges to be committed:\n\tmodified:   src/main.rs\n",
+        'On branch main\n\nAll conflicts fixed but you are still merging.\n  (use "git commit" to conclude merge)\n\nChanges to be committed:\n\tmodified:   src/main.rs\n',
       ],
       [
         "cherry-pick in progress",
@@ -264,6 +250,43 @@ describe("RTK git status behavior", () => {
 
       expect(result.output).toContain("unrecognized argument");
       expect(result.output.trim()).not.toBe("ok");
+    });
+  });
+
+  // C2-status regression: compact-path nonzero exits (index.lock, dubious ownership,
+  // etc.) must return the raw stderr, NOT "Clean working tree".
+  describe("C2-status: compact-path nonzero exit guard", () => {
+    test("exit-128 with index.lock error surfaces stderr, not 'Clean working tree'", async () => {
+      const stderr =
+        "fatal: Unable to create '/repo/.git/index.lock': File exists.\n" +
+        "Another git process seems to be running in this repository.\n";
+      const result = await filterRtkOutput(["git", "status"], "", 128, stderr);
+
+      expect(result.output).toContain("index.lock");
+      expect(result.output).not.toContain("Clean working tree");
+    });
+
+    test("exit-128 with dubious ownership surfaces stderr, not 'Clean working tree'", async () => {
+      const stderr =
+        "fatal: detected dubious ownership in repository at '/repo'\n" +
+        "To add an exception for this directory, call:\n" +
+        "\tgit config --global --add safe.directory /repo\n";
+      const result = await filterRtkOutput(["git", "status"], "", 128, stderr);
+
+      expect(result.output).toContain("dubious ownership");
+      expect(result.output).not.toContain("Clean working tree");
+    });
+
+    test("nonzero exit with 'not a git repository' still emits short summary", async () => {
+      const result = await filterRtkOutput(
+        ["git", "status"],
+        "",
+        128,
+        "fatal: not a git repository (or any of the parent directories): .git\n",
+      );
+
+      expect(result.output).toContain("Not a git repository");
+      expect(result.output).not.toContain("Clean working tree");
     });
   });
 });

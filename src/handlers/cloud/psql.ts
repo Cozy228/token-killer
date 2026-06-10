@@ -34,21 +34,75 @@ function isExpandedFormat(output: string): boolean {
   return EXPANDED_RECORD.test(output);
 }
 
+// M11-psql fix: parse the separator line ("----+-------+----------------") to
+// extract column split positions. The `+` characters in the separator mark
+// exactly where the `|` column delimiters appear in data rows — using those
+// offsets avoids splitting on `|` that appear inside cell values.
+function parseSeparatorOffsets(separatorLine: string): number[] {
+  const offsets: number[] = [];
+  for (let i = 0; i < separatorLine.length; i += 1) {
+    if (separatorLine[i] === "+") {
+      offsets.push(i);
+    }
+  }
+  return offsets;
+}
+
+// Split a psql row line using fixed column offsets derived from the separator
+// line. Falls back to naive split-on-pipe when offsets are not yet available.
+function splitRowByOffsets(line: string, offsets: number[]): string[] {
+  if (offsets.length === 0) {
+    // Fallback: no separator seen yet, use naive split.
+    return line.split("|").map((c) => c.trim());
+  }
+  // The leading `|` is at position 0 (or the line starts without one for
+  // non-bordered output). We use the `+` positions to find column boundaries.
+  // Between consecutive offsets (exclusive) lies one column's content.
+  const cols: string[] = [];
+  let prev = 0;
+  for (const off of offsets) {
+    cols.push(
+      line
+        .slice(prev, off)
+        .replace(/^\s*\|?\s*/, "")
+        .replace(/\s*$/, ""),
+    );
+    prev = off + 1;
+  }
+  // Last column runs from the last offset+1 to end (strip trailing |).
+  cols.push(
+    line
+      .slice(prev)
+      .replace(/^\s*\|?\s*/, "")
+      .replace(/\s*\|?\s*$/, ""),
+  );
+  return cols.map((c) => c.trim());
+}
+
 // RTK: cloud/psql_cmd.rs::filter_table — strip separator lines (----+----) and
 // the (N rows) footer, trim column padding, emit tab-separated rows. The header
 // row is always kept; data rows are capped at MAX_TABLE_ROWS with an overflow
 // summary.
+//
+// M11-psql fix: use separator-line column offsets to split rows so that `|`
+// inside cell values (e.g. JSON fragments, URLs) are not treated as column
+// delimiters.
 function filterTable(output: string): { text: string; header: string; dataRows: number } {
   const result: string[] = [];
   let header = "";
   let dataRows = 0;
   let totalRows = 0;
+  let columnOffsets: number[] = [];
 
   for (const line of output.split("\n")) {
     const trimmed = line.trim();
 
-    // Skip separator lines.
+    // Skip separator lines — but first capture their `+` positions as column
+    // boundary offsets (M11-psql fix).
     if (SEPARATOR.test(trimmed)) {
+      if (columnOffsets.length === 0) {
+        columnOffsets = parseSeparatorOffsets(line); // use original (not trimmed) for positions
+      }
       continue;
     }
 
@@ -65,10 +119,9 @@ function filterTable(output: string): { text: string; header: string; dataRows: 
     // A data or header row with | delimiters.
     if (trimmed.includes("|")) {
       totalRows += 1;
-      const cols = trimmed
-        .split("|")
-        .map((c) => c.trim())
-        .join("\t");
+      // M11-psql fix: split on column offsets rather than every `|` so that
+      // pipe characters inside cell values (e.g. "val1 | val2") don't over-split.
+      const cols = splitRowByOffsets(line, columnOffsets).join("\t");
       // First row is the header, don't count it as data.
       if (totalRows === 1) {
         header = cols;

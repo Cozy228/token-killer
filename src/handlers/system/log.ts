@@ -186,11 +186,29 @@ async function readLogFile(
   }
 }
 
+// H15-log: macOS `log show` / `log stream` are subcommands of the platform `log`
+// tool, not file arguments. Matching them here would: (a) hang on `log stream`
+// (it never exits under capture), and (b) run the file-digest logic on subcommand
+// output. Guard by checking the first non-flag arg against the known macOS log
+// subcommands; if it matches, fall through to raw passthrough.
+const MACOS_LOG_SUBCOMMANDS = new Set(["show", "stream", "collect", "config", "erase", "help"]);
+
+function isLogFileCommand(command: { args: string[] }): boolean {
+  const firstPositional = command.args.find((arg) => !arg.startsWith("-"));
+  // No positional arg → no file to read.
+  if (firstPositional === undefined) return false;
+  // Known macOS log subcommand → do NOT match; let execute passthrough.
+  if (MACOS_LOG_SUBCOMMANDS.has(firstPositional.toLowerCase())) return false;
+  return true;
+}
+
 export const logHandler: CommandHandler = {
   name: "log",
   traits: { structural: true },
   matches(command) {
-    return command.program === "log";
+    // H15-log: only match when the first non-flag arg looks like a file path
+    // (not a known macOS log subcommand like `show` or `stream`).
+    return command.program === "log" && isLogFileCommand(command);
   },
   async execute(command, options: TkOptions) {
     return (await readLogFile(command, options)) ?? executeCommand(command);

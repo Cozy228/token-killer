@@ -154,6 +154,8 @@ function parseLsArgs(args: string[]): LsArgs {
 function compactLs(raw: string, showAll: boolean, showLong: boolean): string {
   const dirs: Array<{ name: string; octal?: string }> = [];
   const files: Array<{ name: string; size: string; octal?: string }> = [];
+  // H17: track names of hidden tool dirs for the disclosure line.
+  const hiddenToolDirs: string[] = [];
   let linesSeen = 0;
   let parsedCount = 0;
   let dotdirs = 0;
@@ -174,6 +176,8 @@ function compactLs(raw: string, showAll: boolean, showLong: boolean): string {
     parsedCount += 1;
 
     if (!showAll && NOISE_DIRS.some((noise) => parsed.name === noise)) {
+      // H17: count hidden dirs so the disclosure line can be appended below.
+      hiddenToolDirs.push(parsed.name);
       continue;
     }
 
@@ -194,6 +198,11 @@ function compactLs(raw: string, showAll: boolean, showLong: boolean): string {
       // Real content that couldn't be parsed (e.g. non-English locale).
       return "";
     }
+    // H17: if every visible entry was a hidden tool dir, still emit the disclosure
+    // line rather than "(empty)" so the agent knows they exist.
+    if (hiddenToolDirs.length > 0) {
+      return `(+${hiddenToolDirs.length} tool dirs hidden: ${hiddenToolDirs.join(", ")} — use -a)\n`;
+    }
     return "(empty)\n";
   }
 
@@ -209,6 +218,11 @@ function compactLs(raw: string, showAll: boolean, showLong: boolean): string {
       entries += `${file.octal}  `;
     }
     entries += `${file.name}  ${file.size}\n`;
+  }
+  // H17: emit one declared disclosure line so the agent knows build/tool dirs exist.
+  // Never silent — "did the build emit dist/?" needs a truthful answer.
+  if (hiddenToolDirs.length > 0) {
+    entries += `(+${hiddenToolDirs.length} tool dirs hidden: ${hiddenToolDirs.join(", ")} — use -a)\n`;
   }
   return entries;
 }
@@ -272,6 +286,11 @@ export const lsHandler: CommandHandler = {
     return executeCommand(rewritten, { LC_ALL: "C" });
   },
   async filter(raw, command, options: TkOptions) {
+    // C2-ls: nonzero exit (e.g. "No such file or directory") must never render
+    // "(empty)" — return the raw streams so the error message survives.
+    if (raw.exitCode !== 0) {
+      return makeFilteredResult(this, raw, `${raw.stdout}${raw.stderr}`, options);
+    }
     return makeFilteredResult(this, raw, formatLs(raw, command), options);
   },
 };

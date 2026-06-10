@@ -66,7 +66,10 @@ function compactJson(value: JsonValue, depth: number, stackDepth = 0): string {
     return `${indent}${String(value)}`;
   }
   if (typeof value === "string") {
-    return `${indent}"${value}"`;
+    // M10-json: escape embedded newlines so line-based consumers never see a
+    // string value that spans multiple lines and breaks the compact format.
+    const escaped = value.replace(/\\/g, "\\\\").replace(/\n/g, "\\n").replace(/\r/g, "\\r");
+    return `${indent}"${escaped}"`;
   }
 
   if (Array.isArray(value)) {
@@ -122,11 +125,29 @@ function jsonReplacementSummary(value: JsonValue): string {
   return `JSON: scalar value (over budget)\n`;
 }
 
+// M10-json: detect big integers in the raw JSON text. JSON.parse uses IEEE 754
+// double, which cannot represent integers > Number.MAX_SAFE_INTEGER exactly —
+// 9007199254740993 becomes 9007199254740992 silently. Detect any integer literal
+// in the source that exceeds MAX_SAFE_INTEGER and fall back to raw output.
+const BIG_INT_RE = /(?<!["\w.])(\d{16,})(?![\d".])/;
+function hasBigInteger(text: string): boolean {
+  const match = BIG_INT_RE.exec(text);
+  if (!match) return false;
+  // Check if any matched run of 16+ digits exceeds MAX_SAFE_INTEGER.
+  return BigInt(match[1]!) > BigInt(Number.MAX_SAFE_INTEGER);
+}
+
 function formatJson(raw: RawResult): {
   output: string;
   error?: string;
   omission?: OmissionDeclaration;
 } {
+  // M10-json: big-integer guard — if the payload contains integers that would be
+  // corrupted by JSON.parse, return raw rather than emitting wrong numbers.
+  if (hasBigInteger(raw.stdout)) {
+    return { output: raw.stdout, error: "JSON: skipped (64-bit integer present)" };
+  }
+
   let value: JsonValue;
   try {
     value = JSON.parse(raw.stdout) as JsonValue;

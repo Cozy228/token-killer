@@ -291,7 +291,14 @@ function formatDotnet(
   const looksTrx = text.trimStart().startsWith("<");
   const hasTrxLogger = /--logger[\s:=]+trx/.test(joined) || args.includes("trx");
   if (looksTrx || hasTrxLogger) return formatDotnetTrx(text);
-  return formatDotnetTest(text);
+
+  // Only route `dotnet test` through the test parser. Other verbs (run, build,
+  // publish, restore, add, new, …) must not be mangled by the test parser —
+  // e.g. `dotnet run` output like `Failed to connect…` would become `Failed Tests: to`.
+  if (args[0] === "test") return formatDotnetTest(text);
+
+  // Passthrough for all other verbs.
+  return { output: text };
 }
 
 export const dotnetHandler = defineHandler({

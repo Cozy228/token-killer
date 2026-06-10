@@ -61,7 +61,11 @@ function parseListJson(text: string): DependencyState | undefined {
   return { totalPackages: deps.length, dependencies: deps };
 }
 
-const PROBLEM_RE = /invalid|unmet peer|missing|conflict|ERR!|ERROR|WARN/i;
+// H14: extended to catch `UNMET DEPENDENCY`, `extraneous`, and `invalid` package
+// states that npm ls emits on exit 1. These are real dependency problems that the
+// old regex missed, causing an exit-1 `npm ls` to render as a healthy package count.
+const PROBLEM_RE =
+  /invalid|unmet\s+(?:peer\s+)?dependency|extraneous|missing|conflict|ERR!|ERROR|WARN/i;
 const BOX_PREFIX_RE = /^[│├└─\s]+/;
 
 // RTK: pnpm_cmd.rs::extract_list_text (Tier 2) — recover the dependency listing from the

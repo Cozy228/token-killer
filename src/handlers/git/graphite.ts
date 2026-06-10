@@ -182,6 +182,12 @@ const GT_FILTERS: Record<string, (input: string) => LadderResult> = {
 function formatGt(raw: RawResult, command: ParsedCommand): LadderResult {
   const subcommand = command.args[0] ?? "";
   const filter = GT_FILTERS[subcommand];
+  // H9b: on nonzero exit, always return stdout+stderr verbatim so error messages
+  // (e.g. "ERROR: rate limited") survive instead of being swallowed by a filter
+  // that only reads raw.stdout and produces a fabricated "pushed ..." summary.
+  if (raw.exitCode !== 0) {
+    return { text: `${`${raw.stdout}${raw.stderr}`.trimEnd()}\n` };
+  }
   const stdout = raw.stdout.trim();
   if (!filter) return { text: `${`${raw.stdout}${raw.stderr}`.trimEnd()}\n` };
   const { text: body, omission } = filter(stdout);

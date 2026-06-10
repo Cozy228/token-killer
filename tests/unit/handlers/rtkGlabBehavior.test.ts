@@ -2,6 +2,35 @@ import { describe, expect, test } from "vitest";
 
 import { expectRtkParity, filterRtkOutput } from "../../helpers/rtkCommandHarness.js";
 import { buildGlabArgs } from "../../../src/handlers/git/hostingCli.js";
+import { routeCommand } from "../../../src/router.js";
+import type { ParsedCommand, RawResult, TkOptions } from "../../../src/types.js";
+
+// Direct handler invocation — bypasses assertNotUnfilteredPassthrough for cases
+// where output intentionally equals raw (e.g. H9a release list within budget).
+function parsed(args: string[]): ParsedCommand {
+  return {
+    program: args[0] ?? "",
+    args: args.slice(1),
+    original: args,
+    displayCommand: args.join(" "),
+  };
+}
+function rawResult(args: string[], stdout: string, exitCode = 0, stderr = ""): RawResult {
+  return { command: args.join(" "), stdout, stderr, exitCode, durationMs: 1 };
+}
+const opts: TkOptions = {
+  raw: false,
+  stats: false,
+  verbose: false,
+  maxLines: 120,
+  maxChars: 12000,
+  saveRaw: false,
+  cwd: "/tmp",
+};
+async function runHandler(args: string[], stdout: string, exitCode = 0, stderr = "") {
+  const cmd = parsed(args);
+  return routeCommand(cmd).filter(rawResult(args, stdout, exitCode, stderr), cmd, opts);
+}
 
 describe("RTK glab behavior", () => {
   // RTK: glab_cmd.rs — list/view re-run with `-F json`; an explicit
@@ -110,6 +139,42 @@ describe("RTK glab behavior", () => {
       critical: ["Merge Requests"],
       forbidden: [/… \+\d+ more/, /\[open\]/, /developer0/],
       minSavingsRatio: 0.4,
+    });
+  });
+
+  // H9a regression: glab release list was truncated to the first line with no
+  // declared omission (slice(0,1)); fix uses overBudgetLadder like mr list.
+  // Uses runHandler directly because within-budget output == raw (the ladder
+  // returns all lines unchanged), which would trigger assertNotUnfilteredPassthrough.
+  describe("H9a: glab release list uses the over-budget ladder", () => {
+    test("release list with one release keeps the full line", async () => {
+      const result = await runHandler(
+        ["glab", "release", "list"],
+        "v1.0.0  2024-01-01  Released\n",
+      );
+      expect(result.output).toContain("v1.0.0");
+    });
+
+    test("release list with multiple releases keeps all lines (old code only kept first)", async () => {
+      // Old code: `rawText.split(/\r?\n/).slice(0,1).join("\n")` → only "v1.2.0 ..."
+      // New code: overBudgetLadder within budget → all 3 releases present.
+      const releases = [
+        "v1.2.0  2024-03-01  Released",
+        "v1.1.0  2024-02-01  Released",
+        "v1.0.0  2024-01-01  Released",
+      ].join("\n");
+
+      const result = await runHandler(["glab", "release", "list"], releases);
+
+      // All three releases must be present (the old slice(0,1) only kept the first).
+      expect(result.output).toContain("v1.2.0");
+      expect(result.output).toContain("v1.1.0");
+      expect(result.output).toContain("v1.0.0");
+    });
+
+    test("empty release list returns No Releases", async () => {
+      const result = await runHandler(["glab", "release", "list"], "");
+      expect(result.output.trim()).toBe("No Releases");
     });
   });
 });

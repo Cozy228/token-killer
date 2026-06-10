@@ -141,22 +141,26 @@ export const searchLikeHandler: CommandHandler = {
     const cleanedArgs = stripLevelFlags(command.args);
     const pattern = searchPattern(cleanedArgs);
 
-    if (!raw.stdout.trim()) {
-      const output = `${raw.stderr || `0 matches for ${pattern}`}\n`;
-      return makeFilteredResult(this, raw, output, options);
-    }
-
-    // RTK: grep_cmd.rs — explicit format flags (-c/-l/-L/-o/-Z/--json) already
-    // produce small/structured output and context flags (-A/-B/-C) were an explicit
-    // request for surrounding lines, so both pass through verbatim. `--level none`
-    // is an explicit opt-out (= --raw).
+    // M6-grep fix: -q/--quiet/--silent passthrough — exit 0 means FOUND, exit 1
+    // means not-found. Fabricating "0 matches for <pattern>" on an empty-stdout
+    // success is wrong (it means the pattern WAS found). Format-flag passthrough
+    // must be checked BEFORE the empty-stdout guard.
     const level = parseLevel(command.args, { fallback: "balanced" });
     if (hasFormatFlag(cleanedArgs) || hasContextFlag(cleanedArgs) || level === "none") {
       return makeFilteredResult(this, raw, `${raw.stdout.trimEnd()}\n`, options);
     }
 
+    if (!raw.stdout.trim()) {
+      const output = `${raw.stderr || `0 matches for ${pattern}`}\n`;
+      return makeFilteredResult(this, raw, output, options);
+    }
+
     // Recovery contract item 3: when matches are suppressed, name how to recover.
-    const recoveryHint = `# capped — \`tk --raw ${command.program} …\` for all, \`--level minimal\` for lossless`;
+    // M7-grep fix: ADR 0001 d6 bans `tk --raw` re-run hints (a re-run would
+    // re-fire side-effecting commands like POST requests). Recovery is via the
+    // raw snapshot the gate persists (rawPointer) or `--level minimal` for a
+    // lossless group.
+    const recoveryHint = `# capped — use \`--level minimal\` for lossless or see rawPointer for full output`;
     const grouped = groupGrepOutput(raw.stdout, pattern, {
       ...grepOptionsForLevel(level),
       recoveryHint,
@@ -170,11 +174,15 @@ export const searchLikeHandler: CommandHandler = {
     // reverting the whole group back to raw — the search-like 0%-savings bug, where
     // a large `grep -r` shipped full raw despite a 200-line digest being ready.
     //
-    // Declared `digest` (not `replacement`), mirroring read.ts's line-window choice:
-    // a search's recovery channel is RE-EXECUTION (`tk --raw …`, named in the hint),
-    // always available, not a raw snapshot. `replacement` would fail open to the full
-    // raw search under --no-save-raw — reintroducing the exact bug this fixes — so
-    // even a capped group declares digest; the `[+N more]` count keeps it honest.
+    // The kind is `digest` when the grouping only de-dups/caps matches (all match
+    // content preserved within cap), or `replacement` when content was truncated
+    // (80-char window is lossy). The groupGrepOutput function signals this via the
+    // suppressed flag — when content was truncated, it appended the recoveryHint.
+    // Since we cannot distinguish the two cases after the fact here without
+    // duplicating state, we use `digest` consistently as before: the gate trusts
+    // it, force-persists raw, and appends a snapshot pointer that covers the
+    // content-truncation case too. `replacement` would fail open to raw under
+    // --no-save-raw, breaking the primary compression path.
     const omission: OmissionDeclaration = { kind: "digest" };
     return makeFilteredResult(this, raw, grouped, options, undefined, omission);
   },

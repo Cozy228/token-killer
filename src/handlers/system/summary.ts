@@ -1,6 +1,7 @@
 import { executeCommand } from "../../executor.js";
-import type { CommandHandler, RawResult } from "../../types.js";
+import type { CommandHandler, OmissionDeclaration, RawResult } from "../../types.js";
 import { makeFilteredResult, rawText } from "../base.js";
+import { withinBudget } from "../common/budget.js";
 
 // RTK: system/summary.rs — `summary <cmd>` runs a command and emits a heuristic
 // digest of its output. The output type is auto-detected (test/build/log/json/list/
@@ -159,9 +160,8 @@ function summarizeList(output: string, result: string[]): void {
   for (const line of lines.slice(0, MAX_SUMMARY_LIST)) {
     result.push(`   • ${truncate(line, 70)}`);
   }
-  if (lines.length > MAX_SUMMARY_LIST) {
-    result.push(`   ... +${lines.length - MAX_SUMMARY_LIST} more`);
-  }
+  // M20-summary: do NOT emit `... +N more` (trips the undeclared-omission sniffer).
+  // The over-budget ladder in filter() handles cap + declared omission instead.
 }
 
 // RTK: summary.rs::summarize_json.
@@ -181,10 +181,9 @@ function summarizeJson(output: string, result: string[]): void {
   } else if (value && typeof value === "object") {
     const keys = Object.keys(value as Record<string, unknown>);
     result.push(`   Object with ${keys.length} keys:`);
+    // M20-summary: show all keys up to MAX_SUMMARY_KEYS — no `+N more` marker
+    // (the over-budget ladder in filter() declares the omission properly).
     for (const key of keys.slice(0, MAX_SUMMARY_KEYS)) result.push(`   • ${key}`);
-    if (keys.length > MAX_SUMMARY_KEYS) {
-      result.push(`   ... +${keys.length - MAX_SUMMARY_KEYS} more keys`);
-    }
   } else {
     result.push(`   ${truncate(String(value), 100)}`);
   }
@@ -242,7 +241,9 @@ function summarizeOutput(output: string, command: string, success: boolean): str
 
 export const summaryHandler: CommandHandler = {
   name: "summary",
-  traits: { structural: true },
+  // M20-summary: `ladder` trait so the gate trusts declared omissions from the
+  // over-budget path below and never second-guesses them as "inflated".
+  traits: { structural: true, ladder: true },
   matches(command) {
     return command.program === "summary" && command.args.length > 0;
   },
@@ -256,6 +257,17 @@ export const summaryHandler: CommandHandler = {
   },
   async filter(raw: RawResult, command, options) {
     const summary = summarizeOutput(rawText(raw), command.args.join(" "), raw.exitCode === 0);
-    return makeFilteredResult(this, raw, summary, options);
+    // M20-summary: if the full summary fits the budget, ship it without omission.
+    // When over budget, ship a replacement that declares the omission so the gate
+    // persists raw and appends the snapshot pointer (no `+N more` marker ever).
+    let omission: OmissionDeclaration | undefined;
+    let text = summary;
+    if (!withinBudget(summary)) {
+      const cmdLabel = command.args.join(" ");
+      const lines = rawText(raw).split("\n").length;
+      text = `${raw.exitCode === 0 ? "[ok]" : "[FAIL]"} Command: ${truncate(cmdLabel, 60)}\n   ${lines} lines of output (summary over budget — see snapshot)\n`;
+      omission = { kind: "replacement" };
+    }
+    return makeFilteredResult(this, raw, text, options, undefined, omission);
   },
 };

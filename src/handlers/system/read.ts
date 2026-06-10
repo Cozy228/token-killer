@@ -420,8 +420,37 @@ function applyLevelFilter(content: string, level: ReadLevel, lang: Language): st
 // flags (--level/--max-lines/--tail-lines/--line-numbers), which `cat` would
 // reject. The filter still windows from the user's ORIGINAL args (see formatRead),
 // so the RTK semantics are applied to `cat`'s raw bytes.
+//
+// M9-cat: non-RTK flags (e.g. `-A`, `-b`, `-s`, `-e`, `-t`, `-v`) must be
+// forwarded to the real `cat`. Only the tk-owned flags are stripped.
 export function buildCatArgs(args: string[]): string[] {
-  return readOptions(args).files;
+  // Tk-owned flags that consume the NEXT token as their value: skip flag + value.
+  const TK_VALUE_FLAGS = new Set(["--level", "-l", "--max-lines", "-m", "--tail-lines"]);
+  // Tk-owned boolean flags (no following value): skip the flag alone.
+  const TK_BOOL_FLAGS = new Set(["--line-numbers", "-n"]);
+  // Tk-owned inline-value flag prefixes (--flag=value form): skip the whole token.
+  const TK_FLAG_PREFIXES = ["--level=", "--max-lines=", "--tail-lines="];
+
+  const out: string[] = [];
+  for (let i = 0; i < args.length; i += 1) {
+    const arg = args[i]!;
+    // Flags that consume the NEXT token as their value.
+    if (TK_VALUE_FLAGS.has(arg)) {
+      i += 1; // skip the value token (--level minimal, -m 50, etc.)
+      continue;
+    }
+    // Boolean tk flags — skip the flag but NOT the next token.
+    if (TK_BOOL_FLAGS.has(arg)) {
+      continue;
+    }
+    // Flags with inline values (--level=aggressive, etc.).
+    if (TK_FLAG_PREFIXES.some((p) => arg.startsWith(p))) {
+      continue;
+    }
+    // Everything else — file operands, stdin `-`, and real cat flags — is forwarded.
+    out.push(arg);
+  }
+  return out;
 }
 
 function formatRead(

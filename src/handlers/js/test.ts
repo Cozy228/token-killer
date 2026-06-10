@@ -14,15 +14,25 @@ type TestResult = {
   failures: TestFailure[];
 };
 
+// M17: `joined.includes(" test")` is a substring match that fires on
+// `pnpm install testlib` (contains " test" inside "testlib"). Fix: check exact
+// argv-element equality for the `test` subcommand after a known runner.
+// `run test` means args[0]==="run" && args[1]==="test"; bare `test` means args[0]==="test".
+// vitest/jest: exact-element check on original (not program-substring) so that
+// e.g. `jest-circus` doesn't misroute.
 function matchesJsTest(command: ParsedCommand): boolean {
-  const joined = command.original.join(" ");
+  const isPackageRunnerTest =
+    ["npm", "pnpm", "yarn"].includes(command.program) &&
+    (command.args[0] === "test" || (command.args[0] === "run" && command.args[1] === "test"));
+
   return (
-    (["npm", "pnpm", "yarn"].includes(command.program) &&
-      (command.args[0] === "test" || joined.includes(" run test") || joined.includes(" test"))) ||
-    command.program.includes("vitest") ||
-    command.program.includes("jest") ||
-    command.original.includes("vitest") ||
-    command.original.includes("jest")
+    isPackageRunnerTest ||
+    command.program === "vitest" ||
+    /(?:^|\/)vitest$/.test(command.program) ||
+    command.program === "jest" ||
+    /(?:^|\/)jest$/.test(command.program) ||
+    command.original.some((arg) => arg === "vitest") ||
+    command.original.some((arg) => arg === "jest")
   );
 }
 
@@ -112,8 +122,9 @@ function parseTestJson(text: string): TestResult | undefined {
 // counts and failures from the human reporter when JSON is unavailable. tk also accepts
 // the Jest comma-style summary line ("Tests: 3 failed, 215 passed, 218 total"), which
 // RTK never sees because it forces --json for jest.
-const VITEST_TESTS_RE = /Tests\s+(?:(\d+)\s+failed\s*\|\s*)?(\d+)\s+passed/;
-const JEST_TESTS_RE = /Tests:\s+(?:(\d+)\s+failed,\s+)?(\d+)\s+passed/;
+const VITEST_TESTS_RE =
+  /Tests\s+(?:(\d+)\s+failed\s*\|\s*)?(\d+)\s+passed(?:\s*\|\s*(\d+)\s+skipped)?/;
+const JEST_TESTS_RE = /Tests:\s+(?:(\d+)\s+failed,\s+)?(\d+)\s+passed(?:,\s+(\d+)\s+skipped)?/;
 const DURATION_RE = /Duration\s+([\d.]+)(ms|s)/;
 
 function isSummaryLine(line: string): boolean {
@@ -122,10 +133,14 @@ function isSummaryLine(line: string): boolean {
 
 function parseTextStats(text: string): TestResult | undefined {
   const clean = removeAnsi(text);
-  const countsMatch = clean.match(VITEST_TESTS_RE) ?? clean.match(JEST_TESTS_RE);
+  const vitestMatch = clean.match(VITEST_TESTS_RE);
+  const jestMatch = clean.match(JEST_TESTS_RE);
+  const countsMatch = vitestMatch ?? jestMatch;
   if (!countsMatch) return undefined;
   const failed = countsMatch[1] ? Number.parseInt(countsMatch[1], 10) : 0;
   const passed = countsMatch[2] ? Number.parseInt(countsMatch[2], 10) : 0;
+  // M14: capture skipped count from vitest and jest summary lines.
+  const skipped = countsMatch[3] ? Number.parseInt(countsMatch[3], 10) : 0;
   if (passed + failed === 0) return undefined;
 
   const durationMatch = clean.match(DURATION_RE);
@@ -142,17 +157,24 @@ function parseTextStats(text: string): TestResult | undefined {
     if (!header || isSummaryLine(lines[i] ?? "")) continue;
     const errorLines: string[] = [];
     let j = i + 1;
+    // M14: do NOT break on blank lines within a failure block — jest/vitest often
+    // separate "Expected:" from "Received:" with a blank line. Only stop at another
+    // FAIL header or a genuine summary line.
     while (j < lines.length) {
       const next = lines[j] ?? "";
-      if (next.trim() === "" || /^\s*FAIL\s+/.test(next) || isSummaryLine(next)) break;
+      if (/^\s*FAIL\s+/.test(next) || isSummaryLine(next)) break;
       errorLines.push(next.trim());
       j += 1;
+    }
+    // Trim trailing blank lines from the collected block.
+    while (errorLines.length > 0 && errorLines[errorLines.length - 1] === "") {
+      errorLines.pop();
     }
     failures.push({ testName: header[1]!.trim(), errorMessage: errorLines.join("\n") });
     i = j - 1;
   }
 
-  return { passed, failed, skipped: 0, durationMs, failures };
+  return { passed, failed, skipped, durationMs, failures };
 }
 
 // "PASS (p) FAIL (f)", then numbered failures with their message lines, then an
@@ -167,6 +189,12 @@ function formatCompact(result: TestResult): { output: string; omission?: Omissio
   const timeLine = result.durationMs !== undefined ? `\nTime: ${result.durationMs}ms` : "";
 
   if (result.failures.length === 0) {
+    // M14: when there are failures reported in the counts but no failure identities
+    // could be extracted (e.g. tier-2 regex got counts but found no FAIL blocks),
+    // make it explicit that only counts are known so the agent is not misled.
+    if (result.failed > 0) {
+      return { output: `${summary} (details unavailable)${timeLine}` };
+    }
     return { output: `${summary}${timeLine}` };
   }
 

@@ -144,3 +144,20 @@ describe("RTK read level filtering", () => {
 async function readSourceFixture(): Promise<string> {
   return readFile(path.join(repoRoot, "tests/fixtures/system/read_source.ts.txt"), "utf8");
 }
+
+// Regression tests for audit findings.
+describe("cat/read audit regressions", () => {
+  // M9-cat: real cat flags like -A must be forwarded; only tk-owned flags are stripped.
+  test("M9-cat: buildCatArgs forwards -A to real cat, strips only tk-owned flags", () => {
+    // -A is a real cat flag (show non-printing chars); must NOT be eaten.
+    expect(buildCatArgs(["-A", "file.txt"])).toEqual(["-A", "file.txt"]);
+    // -b is real cat (number non-empty lines); must NOT be eaten.
+    expect(buildCatArgs(["-b", "file.txt"])).toEqual(["-b", "file.txt"]);
+    // -s is real cat (squeeze blank lines); must NOT be eaten.
+    expect(buildCatArgs(["-s", "file.txt"])).toEqual(["-s", "file.txt"]);
+    // Tk flags -m and --tail-lines are stripped; -A passes through.
+    expect(buildCatArgs(["-A", "-m", "10", "file.txt"])).toEqual(["-A", "file.txt"]);
+    // -l (tk level flag) and its value are stripped; file operand is kept.
+    expect(buildCatArgs(["-l", "minimal", "file.txt"])).toEqual(["file.txt"]);
+  });
+});

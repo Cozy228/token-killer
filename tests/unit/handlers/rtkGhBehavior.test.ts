@@ -2,6 +2,35 @@ import { describe, expect, test } from "vitest";
 
 import { expectRtkParity, filterRtkOutput } from "../../helpers/rtkCommandHarness.js";
 import { buildGhArgs } from "../../../src/handlers/git/hostingCli.js";
+import { routeCommand } from "../../../src/router.js";
+import type { ParsedCommand, RawResult, TkOptions } from "../../../src/types.js";
+
+// Direct handler invocation for tests where output == raw (passthrough guard would fail).
+async function runGhHandler(stdout: string, args: string[] = ["gh", "pr", "checks"]) {
+  const cmd: ParsedCommand = {
+    program: args[0] ?? "gh",
+    args: args.slice(1),
+    original: args,
+    displayCommand: args.join(" "),
+  };
+  const raw: RawResult = {
+    command: args.join(" "),
+    stdout,
+    stderr: "",
+    exitCode: 0,
+    durationMs: 1,
+  };
+  const options: TkOptions = {
+    raw: false,
+    stats: false,
+    verbose: false,
+    maxLines: 120,
+    maxChars: 12000,
+    saveRaw: false,
+    cwd: "/tmp",
+  };
+  return routeCommand(cmd).filter(raw, cmd, options);
+}
 
 describe("RTK gh behavior", () => {
   // RTK: gh_cmd.rs — gh's human table is never trusted; RTK re-runs each
@@ -229,6 +258,60 @@ describe("RTK gh behavior", () => {
         "  7 stars | 2 forks",
         "  https://github.com/Cozy228/token-killer",
       ].join("\n"),
+    });
+  });
+
+  // H9c regression: `gh pr checks` kept only fail lines; passing/pending were
+  // silently dropped. Fix: keep fail lines verbatim AND append an `N passing,
+  // M pending` summary so agents can see overall check status.
+  describe("H9c: gh pr checks retains passing/pending summary", () => {
+    test("a mix of passing, pending, and failing checks surfaces a passing/pending summary", async () => {
+      const checksOutput = [
+        "lint   pass   https://ci.example.com/1",
+        "build  pass   https://ci.example.com/2",
+        "deploy pending  https://ci.example.com/3",
+        "e2e    failed  https://ci.example.com/4",
+      ].join("\n");
+
+      const result = await filterRtkOutput(["gh", "pr", "checks"], checksOutput);
+
+      // The failing line must be present.
+      expect(result.output).toContain("e2e    failed");
+      // The passing/pending summary line must be appended.
+      expect(result.output).toMatch(/\d+ passing/);
+      expect(result.output).toMatch(/\d+ pending/);
+    });
+
+    test("all checks passing emits only the summary, no failing lines", async () => {
+      const checksOutput = [
+        "lint   pass   https://ci.example.com/1",
+        "build  success  https://ci.example.com/2",
+        "test   pass   https://ci.example.com/3",
+      ].join("\n");
+
+      const result = await filterRtkOutput(["gh", "pr", "checks"], checksOutput);
+
+      // No failed checks present.
+      expect(result.output).not.toMatch(/failed/i);
+      // Passing summary must appear.
+      expect(result.output).toMatch(/\d+ passing/);
+    });
+
+    test("all checks failing surfaces failing lines (output same as old code, tested via direct handler)", async () => {
+      // When all checks fail there are no passing/pending lines — the output is just
+      // the failing lines, which equals the raw input. Use runGhHandler to bypass
+      // the filterRtkOutput passthrough guard.
+      const checksOutput = [
+        "lint  failed  https://ci.example.com/1",
+        "build failed  https://ci.example.com/2",
+        "test  failed  https://ci.example.com/3",
+      ].join("\n");
+
+      const result = await runGhHandler(checksOutput);
+
+      expect(result.output).toContain("lint  failed");
+      expect(result.output).toContain("build failed");
+      expect(result.output).toContain("test  failed");
     });
   });
 });
