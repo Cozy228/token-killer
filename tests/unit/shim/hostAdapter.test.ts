@@ -24,9 +24,11 @@ describe("adapters table", () => {
     expect(adapters.unknown.installHook).toBeUndefined();
   });
 
-  test("guidance-capable hosts expose a guidance path; unknown does not", () => {
+  test("guidance-capable hosts expose a standalone guidance path; others do not", () => {
     expect(adapters["claude-code"].guidancePath("/home/u")).toBe("/home/u/.claude/TK.md");
-    expect(adapters["copilot-cli"].guidancePath("/home/u")).toBe("/home/u/.copilot/TK.md");
+    // I4: copilot-cli reads only copilot-instructions.md (no import syntax), so it
+    // has NO standalone guidance file — the guide is inlined into the loader.
+    expect(adapters["copilot-cli"].guidancePath("/home/u")).toBeUndefined();
     // VS Code gets the guide as a user-level always-on .instructions.md (ADR 0008).
     expect(adapters.vscode.guidancePath("/home/u")).toBe(
       "/home/u/.copilot/instructions/token-killer.instructions.md",

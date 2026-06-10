@@ -1,4 +1,4 @@
-import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import path from "node:path";
 
@@ -72,6 +72,24 @@ describe("writeGuidance — copilot-cli (no @import, inline instead)", () => {
     // Inlined (copilot has no import syntax), under tk's guarded markers.
     expect(instr).toContain("git status --short");
     expect(instr).toContain("<!-- >>> token-killer >>> -->");
+  });
+
+  // I4: the standalone ~/.copilot/TK.md was dead weight — copilot has no import
+  // syntax so it only ever read copilot-instructions.md. It must NOT be written.
+  test("does NOT write a standalone ~/.copilot/TK.md", () => {
+    const result = writeGuidance("copilot-cli", home);
+    expect(result.guidance).toBeUndefined();
+    expect(guidanceFilePath("copilot-cli", home)).toBeUndefined();
+    expect(existsSync(path.join(home, ".copilot", "TK.md"))).toBe(false);
+  });
+
+  // The inlined block must still be cleaned up on uninstall.
+  test("unwriteGuidance strips the inlined copilot block", () => {
+    writeGuidance("copilot-cli", home);
+    const loader = path.join(home, ".copilot", "copilot-instructions.md");
+    expect(readFileSync(loader, "utf8")).toContain("git status --short");
+    unwriteGuidance("copilot-cli", home);
+    expect(readFileSync(loader, "utf8")).not.toContain("token-killer >>>");
   });
 });
 
