@@ -1,6 +1,8 @@
-import { existsSync } from "node:fs";
+import { existsSync, readdirSync, rmSync } from "node:fs";
 import { homedir } from "node:os";
+import { join } from "node:path";
 
+import { tokenKillerHome } from "../core/dataDir.js";
 import { detectHost, gatherDetectEnv, selectTier, type Host } from "./detect.js";
 import { adapters } from "./hostAdapter.js";
 import { vscodeUserDir } from "./hostConfig.js";
@@ -10,19 +12,27 @@ import { copilotHookConfigStatus, uninstallCopilotHookConfig } from "../hook/ins
 import { claudeHookStatus, uninstallClaudeHook } from "../hook/claudeInstall.js";
 import { guidanceFilePath, guidanceLoader, unwriteGuidance, writeGuidance } from "./guidance.js";
 
-// Unified `tk init` (goal Phase 3, ADR 0002 §5). Auto-detects the host and wires
-// the highest available delivery tier: Copilot CLI → hook seam (Track B), else
-// shim; VS Code → shim; neither / shim probe FAIL → instruction injection.
+// The install / uninstall / status surface (U1+U2, ADR 0002 §5). `tk install`
+// auto-detects the host and wires the highest available delivery tier (Copilot
+// CLI → hook seam; VS Code → shim; neither / shim probe FAIL → instruction
+// injection). `tk uninstall` removes what tk wrote (and, with --purge-data, the
+// metrics data). `tk status` reports the install without writing. These are
+// first-class top-level verbs so a tk verb can never fall through to passthrough
+// (the U2 bug that ran Bandizip's uninstaller); `tk init` was the old name and is
+// gone (cli.ts prints a rename hint). The shim tier has its own `tk shim` surface.
 
 function out(line: string): void {
   process.stdout.write(`${line}\n`);
 }
 
-// Hosts that drop a usage guide (TK.md), derived from the adapter table so a new
-// host with a guidance home is cleaned up by --uninstall without editing here.
-const guidanceHosts: Host[] = Object.values(adapters)
-  .filter((a) => a.guidancePath())
-  .map((a) => a.host);
+// Hosts that have any guidance to clean on uninstall — a standalone TK.md file
+// (claude-code, vscode) OR an inlined loader block (copilot-cli, claude-code).
+// Derived from the guidance module rather than the adapter's `guidancePath()`
+// alone, because copilot-cli now writes ONLY the inlined block (no standalone
+// file, I4) and must still be cleaned up.
+const guidanceHosts: Host[] = (Object.keys(adapters) as Host[]).filter(
+  (host) => Boolean(guidanceFilePath(host)) || Boolean(guidanceLoader(host)),
+);
 
 // Drop the tk usage guidance (TK.md) and wire it into the host's auto-loaded
 // instructions so the agent reads it. Hosts without a guidance home are a no-op.
@@ -39,56 +49,17 @@ function writeGuidanceStep(host: Host, dryRun: boolean): void {
   if (written.loader) out(`Referenced it from: ${written.loader}`);
 }
 
-type InitArgs = {
-  host: Host | "auto";
-  show: boolean;
-  project: boolean;
-  dryRun: boolean;
-  uninstall: boolean;
-};
-
-export function parseInitArgs(argv: string[]): InitArgs {
-  const args: InitArgs = {
-    host: "auto",
-    show: false,
-    project: false,
-    dryRun: false,
-    uninstall: false,
-  };
-  for (let i = 0; i < argv.length; i += 1) {
-    const token = argv[i];
-    if (token === "--host") {
-      const value = argv[i + 1];
-      if (
-        value === "copilot-cli" ||
-        value === "vscode" ||
-        value === "claude-code" ||
-        value === "auto"
-      ) {
-        args.host = value;
-      }
-      i += 1;
-    } else if (token === "--show") {
-      args.show = true;
-    } else if (token === "--project") {
-      args.project = true;
-    } else if (token === "--dry-run") {
-      args.dryRun = true;
-    } else if (token === "--uninstall") {
-      args.uninstall = true;
-    }
-    // Unknown tokens (e.g. a stray `-g` from rtk muscle memory) are ignored —
-    // every tk write is user-level, so there is no global/local switch to honor.
-  }
-  return args;
-}
-
 function injectionTarget(host: Host): string {
   const vscodeDir = existsSync(vscodeUserDir()) ? vscodeUserDir() : undefined;
   return adapters[host].injectionPath(homedir(), vscodeDir);
 }
 
-function showStatus(): number {
+// ---------------------------------------------------------------------------
+// tk status — read-only. Reports host / tier signals; mutates nothing (the shim
+// status probe only resolves a binary on PATH, it writes no files).
+// ---------------------------------------------------------------------------
+
+export function runStatus(_argv: string[] = []): number {
   const host = detectHost(gatherDetectEnv());
   out(`Detected host: ${host}`);
   const claude = claudeHookStatus({});
@@ -109,17 +80,44 @@ function showStatus(): number {
   return 0;
 }
 
-// Remove what tk installed. Marker-guarded — only files tk wrote are removed.
-// `--project` scopes removal to the repo's own artifacts (the project hook config
-// + project injection); without it, the user-level install is removed. The two are
-// installed independently, so uninstalling one must never nuke the other — e.g.
-// cleaning up a `--project` test must not delete the user's claude-code hook.
-function uninstall(opts: InitArgs): number {
-  // --dry-run must NOT remove anything — probe current state via the same status
-  // helpers `--show` uses and report what removal WOULD touch.
-  if (opts.dryRun) return uninstallDryRun(opts);
-  if (opts.project) return uninstallProject();
+// ---------------------------------------------------------------------------
+// tk uninstall
+// ---------------------------------------------------------------------------
 
+type UninstallArgs = { project: boolean; dryRun: boolean; purgeData: boolean };
+
+function parseUninstallArgs(argv: string[]): UninstallArgs {
+  const args: UninstallArgs = { project: false, dryRun: false, purgeData: false };
+  for (const token of argv) {
+    if (token === "--project") args.project = true;
+    else if (token === "--dry-run") args.dryRun = true;
+    else if (token === "--purge-data") args.purgeData = true;
+    // Unknown tokens ignored — every tk write is user-level (no -g/-l switch).
+  }
+  return args;
+}
+
+export function runUninstall(argv: string[]): number {
+  const opts = parseUninstallArgs(argv);
+  if (opts.dryRun) {
+    if (opts.project) uninstallProjectDryRun();
+    else uninstallUserDryRun();
+    if (opts.purgeData) reportPurgeDryRun();
+    return 0;
+  }
+  if (opts.project) uninstallProject();
+  else uninstallUser();
+  // --purge-data is honored last, after the artifacts are gone (G2). Without it,
+  // `tk uninstall` PRESERVES all metrics — uninstalling delivery must not silently
+  // wipe a user's measured savings history.
+  if (opts.purgeData) purgeData();
+  return 0;
+}
+
+// Remove what tk installed at the user level. Marker-guarded — only files tk
+// wrote are removed. The user and project installs are independent, so this must
+// never touch the repo's own artifacts.
+function uninstallUser(): void {
   const removedClaude = uninstallClaudeHook({});
   out(
     `claude-code settings hook: ${removedClaude.removed ? `removed tk entry from ${removedClaude.path}` : "nothing to remove"}`,
@@ -138,13 +136,12 @@ function uninstall(opts: InitArgs): number {
     unwriteGuidance(guidanceHost);
   }
   out(`usage guidance: removed`);
-  return 0;
 }
 
-// Project-scoped uninstall (`--uninstall --project`): only the repo's own
-// artifacts. Leaves every user-level tier (claude hook, shim, user injection,
-// user guidance) untouched.
-function uninstallProject(): number {
+// Project-scoped uninstall (`--project`): only the repo's own artifacts. Leaves
+// every user-level tier (claude hook, shim, user injection, user guidance)
+// untouched.
+function uninstallProject(): void {
   const cwd = process.cwd();
   const removedProjectHook = uninstallCopilotHookConfig({ project: true, cwd });
   out(
@@ -152,26 +149,10 @@ function uninstallProject(): number {
   );
   unwriteInjection(projectInjectionPath(cwd));
   out(`project instruction injection: removed`);
-  return 0;
 }
 
-// Read-only preview of `--uninstall`: report what removal WOULD touch without
-// deleting anything. Mirrors uninstall()'s scoping — `--project` previews only the
-// repo's artifacts, leaving the user-level tiers out.
-function uninstallDryRun(opts: InitArgs): number {
-  if (opts.project) {
-    const cwd = process.cwd();
-    const projectHook = copilotHookConfigStatus({ project: true, cwd });
-    out(
-      `[dry-run] project hook config: ${projectHook.present ? `would remove ${projectHook.path}` : "nothing to remove"}`,
-    );
-    const projectInjection = projectInjectionPath(cwd);
-    out(
-      `[dry-run] project instruction injection: ${existsSync(projectInjection) ? `would remove ${projectInjection}` : "nothing to remove"}`,
-    );
-    return 0;
-  }
-
+// Read-only preview of the user-level uninstall.
+function uninstallUserDryRun(): void {
   const claude = claudeHookStatus({});
   out(
     `[dry-run] claude-code settings hook: ${claude.present ? `would remove tk entry from ${claude.path}` : "nothing to remove"}`,
@@ -192,20 +173,84 @@ function uninstallDryRun(opts: InitArgs): number {
       out(`[dry-run] usage guidance (${guidanceHost}): would remove ${guidance}`);
     }
   }
-  return 0;
 }
 
-export function runInit(argv: string[]): number {
-  // `tk init shim <install|status|uninstall>` — explicit control of the shim
-  // delivery tier (formerly the top-level `tk shim`). The default `tk init`
-  // flow below already installs the shim as part of its tier ladder, so this
-  // is only for manual install/inspect/removal of the shim on its own.
-  if (argv[0] === "shim") return runShim(argv.slice(1));
+// Read-only preview of the project-scoped uninstall.
+function uninstallProjectDryRun(): void {
+  const cwd = process.cwd();
+  const projectHook = copilotHookConfigStatus({ project: true, cwd });
+  out(
+    `[dry-run] project hook config: ${projectHook.present ? `would remove ${projectHook.path}` : "nothing to remove"}`,
+  );
+  const projectInjection = projectInjectionPath(cwd);
+  out(
+    `[dry-run] project instruction injection: ${existsSync(projectInjection) ? `would remove ${projectInjection}` : "nothing to remove"}`,
+  );
+}
 
-  const opts = parseInitArgs(argv);
-  if (opts.show) return showStatus();
-  if (opts.uninstall) return uninstall(opts);
+// G2: delete the per-project metrics tree (`~/.token-killer/projects/`) and the
+// home dir if removal leaves it empty. Off by default — only `--purge-data` calls
+// this. Never throws: a partial/failed delete must not break the uninstall.
+function purgeData(): void {
+  const home = tokenKillerHome();
+  const projects = join(home, "projects");
+  if (existsSync(projects)) {
+    rmSync(projects, { recursive: true, force: true });
+    out(`metrics data: removed ${projects}`);
+  } else {
+    out(`metrics data: nothing to remove (${projects} absent)`);
+  }
+  try {
+    if (existsSync(home) && readdirSync(home).length === 0) {
+      rmSync(home, { recursive: true, force: true });
+      out(`metrics data: removed empty ${home}`);
+    }
+  } catch {
+    /* leaving an empty home behind is harmless */
+  }
+}
 
+function reportPurgeDryRun(): void {
+  const projects = join(tokenKillerHome(), "projects");
+  out(
+    `[dry-run] metrics data: ${existsSync(projects) ? `would remove ${projects}` : "nothing to remove"}`,
+  );
+}
+
+// ---------------------------------------------------------------------------
+// tk install
+// ---------------------------------------------------------------------------
+
+type InstallArgs = { host: Host | "auto"; project: boolean; dryRun: boolean };
+
+function parseInstallArgs(argv: string[]): InstallArgs {
+  const args: InstallArgs = { host: "auto", project: false, dryRun: false };
+  for (let i = 0; i < argv.length; i += 1) {
+    const token = argv[i];
+    if (token === "--host") {
+      const value = argv[i + 1];
+      if (
+        value === "copilot-cli" ||
+        value === "vscode" ||
+        value === "claude-code" ||
+        value === "auto"
+      ) {
+        args.host = value;
+      }
+      i += 1;
+    } else if (token === "--project") {
+      args.project = true;
+    } else if (token === "--dry-run") {
+      args.dryRun = true;
+    }
+    // Unknown tokens (e.g. a stray `-g` from rtk muscle memory) are ignored —
+    // every tk write is user-level, so there is no global/local switch to honor.
+  }
+  return args;
+}
+
+export function runInstall(argv: string[]): number {
+  const opts = parseInstallArgs(argv);
   const host = opts.host === "auto" ? detectHost(gatherDetectEnv()) : opts.host;
   out(`Detected host: ${host}`);
 
@@ -228,7 +273,7 @@ export function runInit(argv: string[]): number {
   // Hook tier. When a host has a hook installer it always wins over shim/injection
   // (the shim probe — the only side-effecting signal — is irrelevant here, so pass
   // false rather than install wrappers). Each adapter renders its own host-specific
-  // lines; init prints them around the shared guidance + tier line.
+  // lines; install prints them around the shared guidance + tier line.
   if (selectTier(adapter.supportedTiers, hookAvailable, false) === "hook") {
     const loc = { project: opts.project, cwd: process.cwd() };
     const step = opts.dryRun ? adapter.planHook!(loc) : adapter.installHook!(loc);

@@ -2,8 +2,12 @@
 import { parseArgv } from "./parse.js";
 import { routeCommand, routeSpecific } from "./router.js";
 import { executePassthrough } from "./executor.js";
-import { shouldCompress } from "./shim/gate.js";
-import { runInit } from "./shim/init.js";
+import { gateDecision } from "./shim/gate.js";
+import { isInteractive } from "./shim/interactive.js";
+import { runInstall, runStatus, runUninstall } from "./shim/init.js";
+import { runShim } from "./shim/cli.js";
+import { isShimmableProgram } from "./shim/programs.js";
+import { tkDebug } from "./hook/debug.js";
 import { runHook } from "./hook/cli.js";
 import { runInspect } from "./inspect/cli.js";
 import { runDebug } from "./debug/cli.js";
@@ -39,7 +43,10 @@ function help(): string {
     "  tk <subcommand> [options]   Manage delivery, inspect savings, configure tk",
     "",
     "Commands:",
-    "  init        Install & manage tk delivery into your agent host (hook / shim / injection)",
+    "  install     Install tk delivery into your agent host (hook / shim / injection)",
+    "  uninstall   Remove everything tk installed (optionally purge measured data)",
+    "  status      Show current install status (host, hook, shim, injection) — no writes",
+    "  shim        Manually control the shim tier (shell PATH + VS Code)",
     "  hook        Agent-host hook runtime: decide command rewrites & governance",
     "  inspect     Scan agent history for token-saving opportunities; print a ranked report",
     "  debug       Bundle tk's own diagnostics into one self-contained markdown report",
@@ -50,16 +57,30 @@ function help(): string {
     "",
     "Run `tk <command> --help`-style usage is summarized below.",
     "",
-    "tk init [--host auto|claude-code|copilot-cli|vscode] [--project] [--show] [--dry-run] [--uninstall]",
+    "tk install [--host auto|claude-code|copilot-cli|vscode] [--project] [--dry-run]",
     "  Auto-detects the host and wires the best delivery tier (hook > shim > injection),",
     "  and drops a usage guide (TK.md) referenced from the host's agent instructions.",
+    "  For VS Code it also writes TK_COMPRESS_TTY=1 into the integrated-terminal env so",
+    "  the agent's commands compress even though they run in a TTY.",
     "  --host <h>     Force the host instead of auto-detecting (claude-code patches",
     "                 ~/.claude/settings.json's PreToolUse Bash hook)",
     "  --project      Also write project-level instructions into the current repo",
-    "  --show         Show current install status (host, hook, shim, injection)",
     "  --dry-run      Preview what would change without writing",
-    "  --uninstall    Remove everything tk installed (hook config, shim, injection, TK.md)",
-    "  tk init shim <install|status|uninstall> [--dry-run]   Manually control the shim tier (shell PATH + VS Code)",
+    "",
+    "tk uninstall [--project] [--purge-data] [--dry-run]",
+    "  Remove everything tk installed (hook config, shim, injection, TK.md). Preserves",
+    "  your measured-savings data by default.",
+    "  --purge-data   Also delete ~/.token-killer/projects/ (your metrics history)",
+    "  --project      Remove only the current repo's artifacts (not the user install)",
+    "  --dry-run      Report what would be removed without deleting",
+    "",
+    "tk status",
+    "  Show the current install: detected host, claude/copilot hook config, shim status,",
+    "  injection file, usage guidance. Read-only — writes nothing.",
+    "",
+    "tk shim <install|status|uninstall> [--dry-run]",
+    "  Manually control the shim tier (shell PATH + VS Code). `tk install` already wires",
+    "  the shim as part of its tier ladder; this is the advanced/debug path.",
     "",
     "tk hook <copilot|claude|check <command...>>",
     "  copilot                Hook runtime: read a tool event on stdin, emit a rewrite/governance decision",
@@ -193,8 +214,17 @@ async function main(): Promise<number> {
     process.stdout.write(await buildReport(parsed.options));
     return 0;
   }
-  if (parsed.mode === "init") {
-    return runInit(parsed.subArgs ?? []);
+  if (parsed.mode === "install") {
+    return runInstall(parsed.subArgs ?? []);
+  }
+  if (parsed.mode === "uninstall") {
+    return runUninstall(parsed.subArgs ?? []);
+  }
+  if (parsed.mode === "status") {
+    return runStatus(parsed.subArgs ?? []);
+  }
+  if (parsed.mode === "shim") {
+    return runShim(parsed.subArgs ?? []);
   }
   if (parsed.mode === "hook") {
     return runHook(parsed.subArgs ?? []);
@@ -251,12 +281,50 @@ async function main(): Promise<number> {
     return raw.exitCode;
   }
 
-  // Shim gate (ADR 0002 §2-3): compress only on a specific match AND non-TTY
-  // stdout AND a non-interactive command. Everything else — generic
-  // fall-throughs, a human-watched TTY, interactive commands — passes through to
-  // the real tool with inherited stdio.
   const handler = routeSpecific(command);
-  if (!handler || !shouldCompress(command, Boolean(process.stdout.isTTY), handler)) {
+
+  // Passthrough hardening (U2). A DIRECT `tk <x>` — the shell did NOT resolve a
+  // real tool through the shim, so TK_SHIM_DIR is unset — may run a binary only
+  // when `<x>` is something tk genuinely fronts: a routable handler, or a known
+  // shimmable dev tool (covers probe forms like `git --version`). An unknown word
+  // is NEVER auto-spawned on PATH — that is the bug that ran Bandizip's
+  // `uninstall.EXE`. Shim-invoked passthrough (TK_SHIM_DIR set — the shell already
+  // resolved a real tool the user ran) stays transparent and UNCHANGED, so it
+  // still covers shimmable tools without a specific handler (e.g. curl). `--raw`
+  // (handled above) is the explicit escape hatch to force-run anything.
+  const shimInvoked = Boolean(process.env.TK_SHIM_DIR);
+  if (!shimInvoked && !handler && !isShimmableProgram(command.program)) {
+    if (command.program === "init") {
+      process.stderr.write("tk: `tk init` was renamed to `tk install` (see `tk --help`).\n");
+    } else {
+      process.stderr.write(
+        `tk: unknown command "${command.program}" — tk wraps known dev tools; ` +
+          `use \`tk --raw ${command.displayCommand}\` to run it anyway\n`,
+      );
+    }
+    return 1;
+  }
+
+  // Shim gate (ADR 0002 §2-3, R1): compress only on a specific match AND a
+  // non-interactive command AND either non-TTY stdout or an opted-in TK_COMPRESS_TTY
+  // terminal. Everything else passes through to the real tool with inherited stdio.
+  // The gate decision (+reason) is the single most diagnostic event in the system —
+  // trace it so `TK_DEBUG` answers "why wasn't this compressed?" from debug.log
+  // alone, on the exact (VS Code) path where stderr is invisible (D1).
+  const isTTY = Boolean(process.stdout.isTTY);
+  const decision = gateDecision(command, isTTY, handler);
+  tkDebug("gate", {
+    command: command.displayCommand,
+    handler: handler?.name,
+    isTTY,
+    interactive: isInteractive(command),
+    willCompress: decision.willCompress,
+    reason: decision.reason,
+  });
+  // willCompress is only ever true for a specific match (gateDecision returns
+  // "no-handler" when match is null), so handler is non-null here — the guard both
+  // narrows the type and stays a correct no-op fallback to passthrough.
+  if (!decision.willCompress || !handler) {
     return executePassthrough(command);
   }
 
@@ -269,14 +337,13 @@ async function main(): Promise<number> {
   } catch (error) {
     // The fail-open is silent by design (never surface compression noise to the
     // agent). TK_DEBUG opens a window into WHY a command fell back to passthrough
-    // — essential for diagnosing platform-specific compress-path failures.
-    if (process.env.TK_DEBUG) {
-      process.stderr.write(
-        `tk debug: compress failed for "${command.displayCommand}": ${
-          error instanceof Error ? (error.stack ?? error.message) : String(error)
-        }\n`,
-      );
-    }
+    // — essential for diagnosing platform-specific compress-path failures. Routed
+    // through the dual-sink tkDebug so it also lands in debug.log, not just the
+    // stderr the VS Code agent can't see (D1).
+    tkDebug("compress-failed", {
+      command: command.displayCommand,
+      error: error instanceof Error ? (error.stack ?? error.message) : String(error),
+    });
     return await failOpenPassthrough(command, error);
   }
 }
@@ -306,6 +373,15 @@ async function runCompress(
       command,
       options,
     ).then((result) => result.filtered);
+
+    // Compress succeeded — trace the savings to the same dual sink as the gate
+    // decision (D1), so a live `TK_DEBUG` session shows route → outcome in one log.
+    tkDebug("compress", {
+      handler: filtered.handler,
+      rawTokens: filtered.rawTokens,
+      outTokens: filtered.outputTokens,
+      savedPct: filtered.savingsPct,
+    });
 
     // Apply the opt-in --max-lines/--max-chars caps to the FINAL output (H18). A no-op
     // unless the user passed a finite limit; never touches the quality gate above.

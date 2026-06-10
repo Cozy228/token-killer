@@ -9,9 +9,22 @@ import { handlers } from "../handlers/index.js";
 // guarantee so a future `programs: ["node"]` declaration can never wire a
 // fork-bomb. Today no handler declares any of these — it is pure insurance.
 const NEVER_WRAP = new Set([
-  "node", "deno", "bun", "ts-node", "tsx",
-  "python", "python3", "ruby", "perl",
-  "sh", "bash", "zsh", "fish", "dash", "pwsh", "powershell",
+  "node",
+  "deno",
+  "bun",
+  "ts-node",
+  "tsx",
+  "python",
+  "python3",
+  "ruby",
+  "perl",
+  "sh",
+  "bash",
+  "zsh",
+  "fish",
+  "dash",
+  "pwsh",
+  "powershell",
   "tk",
 ]);
 
@@ -28,4 +41,13 @@ export function shimmablePrograms(): string[] {
     }
   }
   return [...seen].sort();
+}
+
+// True when `program` is a known dev tool tk fronts (a wrapper exists for it).
+// The passthrough-hardening guard (U2) uses this to decide whether a DIRECT
+// `tk <x>` (no TK_SHIM_DIR) is allowed to run a real tool that has no specific
+// handler but is still a tool tk knows — e.g. `git --version`, a shimmable tool
+// invoked in a probe form. An unknown word must never be auto-spawned on PATH.
+export function isShimmableProgram(program: string): boolean {
+  return shimmablePrograms().includes(program);
 }

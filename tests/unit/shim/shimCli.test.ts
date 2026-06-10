@@ -5,9 +5,10 @@ import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { spawnSync } from "node:child_process";
 
-// Sandboxed end-to-end for `tk init shim install|status|uninstall` (the shim tier
-// now lives under `tk init`). We point HOME at a temp dir so the installer writes
-// ~/.token-killer/shim and ~/.zshrc INSIDE the sandbox — never the real config.
+// Sandboxed end-to-end for `tk shim install|status|uninstall` (the top-level shim
+// surface; `tk install` wires it as part of its tier ladder). We point HOME at a
+// temp dir so the installer writes ~/.token-killer/shim and ~/.zshrc INSIDE the
+// sandbox — never the real config.
 
 const repoRoot = join(dirname(fileURLToPath(import.meta.url)), "../../..");
 const cli = join(repoRoot, "src/cli.ts");
@@ -38,12 +39,12 @@ afterEach(() => {
   rmSync(home, { recursive: true, force: true });
 });
 
-describe("tk init shim install/status/uninstall", () => {
+describe("tk shim install/status/uninstall", () => {
   test("install writes wrappers + manifest and patches the RC, then uninstall reverts", () => {
     const shimGit = join(home, ".token-killer", "shim", "git");
     const rc = join(home, ".zshrc");
 
-    const install = runTg(["init", "shim", "install"]);
+    const install = runTg(["shim", "install"]);
     expect(install.status).toBe(0);
     expect(existsSync(shimGit)).toBe(true);
     expect(existsSync(join(home, ".token-killer", "shim", "manifest.json"))).toBe(true);
@@ -51,11 +52,11 @@ describe("tk init shim install/status/uninstall", () => {
     // The probe should PASS: a shimmed `git` resolves into the shim dir.
     expect(install.stdout).toContain("probe");
 
-    const status = runTg(["init", "shim", "status"]);
+    const status = runTg(["shim", "status"]);
     expect(status.status).toBe(0);
     expect(status.stdout).toContain("programs");
 
-    const uninstall = runTg(["init", "shim", "uninstall"]);
+    const uninstall = runTg(["shim", "uninstall"]);
     expect(uninstall.status).toBe(0);
     expect(existsSync(join(home, ".token-killer", "shim"))).toBe(false);
     // RC restored byte-identically.
@@ -63,13 +64,13 @@ describe("tk init shim install/status/uninstall", () => {
   });
 
   test("unknown shim subcommand exits non-zero", () => {
-    const result = runTg(["init", "shim", "bogus"]);
+    const result = runTg(["shim", "bogus"]);
     expect(result.status).toBe(1);
     expect(result.stderr).toContain("unknown subcommand");
   });
 
   test("install --dry-run previews without writing anything", () => {
-    const result = runTg(["init", "shim", "install", "--dry-run"]);
+    const result = runTg(["shim", "install", "--dry-run"]);
     expect(result.status).toBe(0);
     expect(result.stdout).toContain("[dry-run]");
     // Nothing written: no shim dir, RC left byte-identical.
@@ -78,8 +79,8 @@ describe("tk init shim install/status/uninstall", () => {
   });
 
   test("uninstall --dry-run reports without removing the installed shim", () => {
-    runTg(["init", "shim", "install"]); // real install first
-    const dry = runTg(["init", "shim", "uninstall", "--dry-run"]);
+    runTg(["shim", "install"]); // real install first
+    const dry = runTg(["shim", "uninstall", "--dry-run"]);
     expect(dry.status).toBe(0);
     expect(dry.stdout).toContain("[dry-run]");
     // Still installed — dry-run removed nothing.

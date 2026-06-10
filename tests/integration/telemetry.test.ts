@@ -54,7 +54,10 @@ function stateLastSentAt(): string | null | undefined {
 
 describe("telemetry send path reachability", () => {
   test("tk <cmd> never reaches the telemetry trigger, even opted-in", () => {
-    const r = runTk(["echo", "hello"], repoRoot);
+    // A real handler command exercises the compress hot path (repoRoot is a git
+    // repo). Post-U2 a DIRECT `tk echo` would error before any hot path runs, so
+    // route through an actual handled tool instead.
+    const r = runTk(["git", "status"], repoRoot);
     expect(r.status).toBe(0);
     // The hot path must not create or stamp telemetry state.
     expect(stateLastSentAt()).toBeUndefined();

@@ -1,5 +1,5 @@
 import { mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
-import { mkdtempSync } from "node:fs";
+import { mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
@@ -17,7 +17,13 @@ const tsxLoader = path.join(repoRoot, "node_modules/tsx/dist/loader.mjs");
 // history into the developer's real ~/.token-killer/, polluting `tk gain`.
 const defaultTokenKillerHome = mkdtempSync(path.join(tmpdir(), "tk-test-home-"));
 
-function runTk(args: string[], cwd: string, input?: string, tokenKillerHomeDir?: string) {
+function runTk(
+  args: string[],
+  cwd: string,
+  input?: string,
+  tokenKillerHomeDir?: string,
+  extraEnv?: NodeJS.ProcessEnv,
+) {
   // Prepend the repo's local bin so handler-spawned CLIs (tsc, eslint, ...)
   // resolve to the project's installed versions instead of relying on a global
   // install that may be absent in CI or in out-of-repo temp dirs.
@@ -27,6 +33,7 @@ function runTk(args: string[], cwd: string, input?: string, tokenKillerHomeDir?:
     PATH: `${localBin}${path.delimiter}${process.env.PATH ?? ""}`,
     // Always isolate the data dir so tests never touch the real ~/.token-killer/.
     TOKEN_KILLER_HOME: tokenKillerHomeDir ?? defaultTokenKillerHome,
+    ...extraEnv,
   };
   return spawnSync(process.execPath, ["--import", tsxLoader, cli, ...args], {
     cwd,
@@ -36,6 +43,14 @@ function runTk(args: string[], cwd: string, input?: string, tokenKillerHomeDir?:
     env,
   });
 }
+
+// A throwaway shim dir for the generic-passthrough tests. Post-U2 hardening, a
+// DIRECT `tk <unknown>` errors; generic passthrough only runs when the shell
+// resolved a real tool through the shim (TK_SHIM_DIR set). These tests exercise
+// passthrough MECHANICS (output/exit/stderr preservation), so they run as
+// shim-invoked. The dir need not contain wrappers — the recursion guard strips it
+// from PATH and the real tools resolve elsewhere.
+const SHIM_INVOKED: NodeJS.ProcessEnv = { TK_SHIM_DIR: path.join(tmpdir(), "tk-fake-shim") };
 
 // ============================================================================
 // 1. Version & Help
@@ -55,6 +70,125 @@ describe("Version & Help", () => {
     expect(result.stdout).toContain("--raw");
     expect(result.stdout).toContain("--stats");
     expect(result.stdout).toContain("--report");
+  });
+});
+
+// ============================================================================
+// 1b. Passthrough hardening (U2) — a direct `tk <unknown>` must NEVER auto-spawn
+// an arbitrary PATH binary (the bug that ran Bandizip's uninstall.EXE).
+// ============================================================================
+
+describe("Passthrough hardening (U2)", () => {
+  // POSIX-only: plants an executable on PATH and checks tk's spawn policy. On
+  // Windows the executable-bit / shebang mechanics differ; the unit gate
+  // (routeSpecific/isShimmableProgram) is covered platform-agnostically elsewhere.
+  const posix = process.platform !== "win32";
+
+  function withPlantedBinary(
+    name: string,
+    run: (binDir: string, env: NodeJS.ProcessEnv) => ReturnType<typeof spawnSync>,
+  ) {
+    const binDir = mkdtempSync(path.join(tmpdir(), "tk-evil-"));
+    const script = path.join(binDir, name);
+    // Marker on stdout proves the binary actually ran.
+    writeFileSync(script, "#!/bin/sh\necho EVIL_RAN\n", { mode: 0o755 });
+    const env: NodeJS.ProcessEnv = {
+      ...process.env,
+      PATH: `${binDir}${path.delimiter}${process.env.PATH ?? ""}`,
+      TOKEN_KILLER_HOME: defaultTokenKillerHome,
+    };
+    try {
+      return run(binDir, env);
+    } finally {
+      rmSync(binDir, { recursive: true, force: true });
+    }
+  }
+
+  test.runIf(posix)("direct `tk <unknown>` errors and spawns nothing on PATH", () => {
+    const result = withPlantedBinary("uninstall", (_binDir, env) =>
+      spawnSync(process.execPath, ["--import", tsxLoader, cli, "uninstall-xyz"], {
+        cwd: repoRoot,
+        encoding: "utf8",
+        timeout: 15000,
+        env,
+      }),
+    );
+    // uninstall-xyz isn't a tk verb/handler/shimmable tool → error, never spawn.
+    expect(result.status).toBe(1);
+    expect(result.stdout).not.toContain("EVIL_RAN");
+    expect(result.stderr).toContain('unknown command "uninstall-xyz"');
+  });
+
+  test.runIf(posix)("`tk --raw <unknown>` force-runs the real binary", () => {
+    const result = withPlantedBinary("evilcmd", (_binDir, env) =>
+      spawnSync(process.execPath, ["--import", tsxLoader, cli, "--raw", "evilcmd"], {
+        cwd: repoRoot,
+        encoding: "utf8",
+        timeout: 15000,
+        env,
+      }),
+    );
+    expect(result.stdout).toContain("EVIL_RAN");
+  });
+
+  test.runIf(posix)(
+    "shim-invoked passthrough (TK_SHIM_DIR set) still runs an unhandled tool",
+    () => {
+      const result = withPlantedBinary("evilcmd", (binDir, env) =>
+        spawnSync(process.execPath, ["--import", tsxLoader, cli, "evilcmd"], {
+          cwd: repoRoot,
+          encoding: "utf8",
+          timeout: 15000,
+          // Shim-invoked: the shell already resolved a real tool the user ran. The
+          // shim dir is a separate empty dir so the recursion guard is a no-op.
+          env: { ...env, TK_SHIM_DIR: mkdtempSync(path.join(tmpdir(), "tk-shimdir-")) },
+        }),
+      );
+      expect(result.stdout).toContain("EVIL_RAN");
+    },
+  );
+});
+
+// ============================================================================
+// 1c. TK_DEBUG dual-sink (D1) — the compress path traces the gate decision +
+// savings to debug.log, not just stderr (which the VS Code agent can't see).
+// ============================================================================
+
+describe("TK_DEBUG dual-sink (D1)", () => {
+  test("a handler command writes the gate decision + savings to debug.log", () => {
+    const debugHome = mkdtempSync(path.join(tmpdir(), "tk-debug-home-"));
+    try {
+      // Piped stdout (spawnSync) ⇒ isTTY=false ⇒ gate reason=compress. The point is
+      // that the FILE is written by the compress path, with the gate trace + savings.
+      const result = runTk(["git", "status"], repoRoot, undefined, debugHome, { TK_DEBUG: "1" });
+      expect(result.status).toBe(0);
+      const log = readFileSync(path.join(debugHome, "debug.log"), "utf8");
+      expect(log).toContain("tk debug: gate");
+      expect(log).toContain("willCompress=true");
+      expect(log).toContain('reason="compress"');
+      // The savings trace from the same dual sink.
+      expect(log).toContain("tk debug: compress");
+      expect(log).toContain("savedPct=");
+    } finally {
+      rmSync(debugHome, { recursive: true, force: true });
+    }
+  });
+
+  test("a passed-through command records the gate reason (no-handler)", () => {
+    const debugHome = mkdtempSync(path.join(tmpdir(), "tk-debug-home-"));
+    try {
+      // Shim-invoked generic passthrough → no specific handler → reason=no-handler.
+      runTk(["echo", "hi"], repoRoot, undefined, debugHome, {
+        TK_DEBUG: "1",
+        TK_SHIM_DIR: path.join(tmpdir(), "tk-fake-shim"),
+      });
+      const log = readFileSync(path.join(debugHome, "debug.log"), "utf8");
+      expect(log).toContain("tk debug: gate");
+      expect(log).toContain('reason="no-handler"');
+      expect(log).toContain("willCompress=false");
+    } finally {
+      rmSync(debugHome, { recursive: true, force: true });
+    }
   });
 });
 
@@ -445,21 +579,29 @@ describe("Grep / Search", () => {
 // 6. Generic Passthrough
 // ============================================================================
 
-describe("Generic Passthrough", () => {
+// Post-U2 hardening these run as shim-invoked (the shell resolved a real tool
+// through the shim → TK_SHIM_DIR set); a DIRECT `tk echo` now errors instead.
+describe("Generic Passthrough (shim-invoked)", () => {
   test("tk echo passes through output", () => {
-    const result = runTk(["echo", "hello world"], repoRoot);
+    const result = runTk(["echo", "hello world"], repoRoot, undefined, undefined, SHIM_INVOKED);
     expect(result.status).toBe(0);
     expect(result.stdout).toContain("hello world");
   });
 
   test("tk node -e passes through output", () => {
-    const result = runTk(["node", "-e", "console.log('rtk-style')"], repoRoot);
+    const result = runTk(
+      ["node", "-e", "console.log('rtk-style')"],
+      repoRoot,
+      undefined,
+      undefined,
+      SHIM_INVOKED,
+    );
     expect(result.status).toBe(0);
     expect(result.stdout).toContain("rtk-style");
   });
 
   test("unknown commands pass through with generic handler", () => {
-    const result = runTk(["printf", "abc"], repoRoot);
+    const result = runTk(["printf", "abc"], repoRoot, undefined, undefined, SHIM_INVOKED);
     expect(result.status).toBe(0);
     expect(result.stdout).toContain("abc");
   });
@@ -598,22 +740,37 @@ describe("Error Handling", () => {
   });
 
   test("preserves original command exit code", () => {
-    const result = runTk([process.execPath, "-e", "process.exit(7)"], repoRoot);
+    const result = runTk(
+      [process.execPath, "-e", "process.exit(7)"],
+      repoRoot,
+      undefined,
+      undefined,
+      SHIM_INVOKED,
+    );
     expect(result.status).toBe(7);
   });
 
   test("passes through exit code 0", () => {
-    const result = runTk([process.execPath, "-e", "process.exit(0)"], repoRoot);
+    const result = runTk(
+      [process.execPath, "-e", "process.exit(0)"],
+      repoRoot,
+      undefined,
+      undefined,
+      SHIM_INVOKED,
+    );
     expect(result.status).toBe(0);
   });
 
   test("preserves stderr from failed commands", () => {
     // `node` is a generic command (no specific handler) → passthrough with
     // inherited stdio, so stderr stays on stderr (stream separation preserved)
-    // rather than being captured and reprinted to stdout.
+    // rather than being captured and reprinted to stdout. Shim-invoked (post-U2).
     const result = runTk(
       [process.execPath, "-e", "console.error('error msg'); process.exit(1)"],
       repoRoot,
+      undefined,
+      undefined,
+      SHIM_INVOKED,
     );
     expect(result.status).toBe(1);
     expect(result.stderr).toContain("error msg");

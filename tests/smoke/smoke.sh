@@ -53,6 +53,26 @@ assert_contains() {
     fi
 }
 
+# Like assert_contains but ignores the command's exit code — for tools that
+# legitimately exit non-zero on a successful run (e.g. `diff` exits 1 when the
+# files differ, mirroring real diff/git diff --exit-code).
+assert_contains_anyexit() {
+    local name="$1"
+    local needle="$2"
+    shift 2
+    local output
+    output=$("$@" 2>&1) || true
+    if echo "$output" | grep -q -- "$needle"; then
+        PASS=$((PASS + 1))
+        printf "  ${GREEN}PASS${NC}  %s\n" "$name"
+    else
+        FAIL=$((FAIL + 1))
+        FAILURES+=("$name")
+        printf "  ${RED}FAIL${NC}  %s\n" "$name"
+        printf "        expected: '%s'\n" "$needle"
+    fi
+}
+
 assert_not_contains() {
     local name="$1"
     local needle="$2"
@@ -149,8 +169,10 @@ section "Ls"
 
 assert_ok      "tk ls ."                        $TK ls .
 assert_contains "tk ls shows files"             "package.json" $TK ls .
-assert_contains "tk ls skips node_modules"      "package.json" $TK ls .
-assert_not_contains "tk ls skips node_modules"  "node_modules" $TK ls .
+assert_contains "tk ls lists files"             "package.json" $TK ls .
+# H17: node_modules is not listed as a normal entry but DISCLOSED in a counted
+# "hidden" line (never silently dropped), so it appears under that disclosure.
+assert_contains "tk ls discloses hidden dirs"   "hidden" $TK ls .
 assert_ok      "tk ls src/"                     $TK ls src/
 
 # ── 3. Read / Cat ────────────────────────────────────
@@ -184,9 +206,11 @@ section "Diff"
 DIFF_DIR="$(mktemp -d)"
 printf "export const value = 1;\n" > "$DIFF_DIR/old.ts"
 printf "export const value = 1;\nexport const extra = 2;\n" > "$DIFF_DIR/new.ts"
-assert_ok       "tk diff files"                 $TK diff "$DIFF_DIR/old.ts" "$DIFF_DIR/new.ts"
-assert_contains "tk diff summary"               "+1 -0" $TK diff "$DIFF_DIR/old.ts" "$DIFF_DIR/new.ts"
-assert_contains "tk diff added line"            "export const extra = 2;" $TK diff "$DIFF_DIR/old.ts" "$DIFF_DIR/new.ts"
+# `tk diff` exits 1 when the files differ (mirrors real diff), so these tolerate a
+# non-zero exit and assert on the compressed output.
+assert_contains_anyexit "tk diff files"         "->" $TK diff "$DIFF_DIR/old.ts" "$DIFF_DIR/new.ts"
+assert_contains_anyexit "tk diff summary"       "+1 -0" $TK diff "$DIFF_DIR/old.ts" "$DIFF_DIR/new.ts"
+assert_contains_anyexit "tk diff added line"    "export const extra = 2;" $TK diff "$DIFF_DIR/old.ts" "$DIFF_DIR/new.ts"
 rm -rf "$DIFF_DIR"
 
 # ── 6. Grep / Search ─────────────────────────────────
@@ -211,12 +235,20 @@ assert_contains "tk find shows directories"     "D:" $TK find src -name "*.ts"
 
 # ── 8. Generic passthrough ──────────────────────────
 
-section "Generic passthrough"
+section "Generic passthrough (shim-invoked)"
 
+# Post-U2 hardening: a DIRECT `tk <unknown>` errors and spawns nothing. Generic
+# passthrough runs only when the shell resolved a real tool through the shim
+# (TK_SHIM_DIR set), so these exercise it as shim-invoked.
+export TK_SHIM_DIR="${TMPDIR:-/tmp}/tk-smoke-fake-shim"
 assert_ok      "tk echo hello"                  $TK echo hello
 assert_contains "tk echo output"                "hello" $TK echo hello
 assert_ok      "tk node -e console.log"         $TK node -e "console.log('rtk-style')"
 assert_contains "tk node output"                "rtk-style" $TK node -e "console.log('rtk-style')"
+unset TK_SHIM_DIR
+
+# Direct (no shim): an unknown command must error, never auto-spawn a PATH binary.
+assert_fails   "tk <unknown> errors (U2)"       $TK definitely-not-a-real-tool-xyz
 
 # ── 9. Global flags ─────────────────────────────────
 
@@ -246,9 +278,13 @@ assert_contains "tk --report --csv header"      "commands,raw_tokens" $TK --repo
 
 section "Error handling"
 
-assert_fails   "tk (no command)"                $TK
+# Bare `tk` prints the command list (like --help) and exits 0 by design.
+assert_contains "tk (no command) prints help"   "Commands:" $TK
+# Exit-code passthrough is a shim-invoked concern (a direct `tk node` errors, U2).
+export TK_SHIM_DIR="${TMPDIR:-/tmp}/tk-smoke-fake-shim"
 assert_exit    "tk exit code passthrough" 7     $TK node -e "process.exit(7)"
 assert_exit    "tk failed command" 1            $TK node -e "process.exit(1)"
+unset TK_SHIM_DIR
 
 # ── 12. Tsc (conditional) ───────────────────────────
 
@@ -349,7 +385,10 @@ fi
 
 section "Large output passthrough"
 
+# Shim-invoked passthrough (a direct `tk node` errors post-U2).
+export TK_SHIM_DIR="${TMPDIR:-/tmp}/tk-smoke-fake-shim"
 LARGE_OUT=$($TK node -e "for(let i=0;i<200;i++) console.log('line '+i)" 2>&1)
+unset TK_SHIM_DIR
 LARGE_OUT_LINES="$(printf "%s\n" "$LARGE_OUT" | wc -l | tr -d ' ')"
 if [ "$LARGE_OUT_LINES" -eq 200 ]; then
     PASS=$((PASS + 1))

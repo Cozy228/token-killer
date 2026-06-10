@@ -58,9 +58,15 @@ function toCommand(tokens: string[]): ParsedCommand | undefined {
 }
 
 // Reserved subcommands intercepted BEFORE argv[0] is treated as a program, so a
-// shimmed `shim`/`init` program name can never reach the command router.
+// same-named program (e.g. a `shim`/`status` binary on PATH) can never reach the
+// command router and a tk verb can never fall through to passthrough (U2).
+// install / uninstall / status are first-class top-level verbs (U1+U2); `tk init`
+// is gone (renamed to `tk install`) and is handled with a hint in cli.ts.
 const RESERVED_SUBCOMMANDS = new Set<ParsedArgv["mode"]>([
-  "init",
+  "install",
+  "uninstall",
+  "status",
+  "shim",
   "hook",
   "inspect",
   "debug",
