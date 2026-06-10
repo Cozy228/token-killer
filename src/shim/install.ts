@@ -1,8 +1,9 @@
 import { chmodSync, mkdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { realpathSync } from "node:fs";
-import { join } from "node:path";
+import { delimiter, join } from "node:path";
 
 import { tokenKillerHome } from "../core/dataDir.js";
+import { resolveProgram } from "../executor.js";
 import { shimmablePrograms } from "./programs.js";
 
 // How a generated wrapper re-invokes tk. The wrapper calls tk by ABSOLUTE path
@@ -78,7 +79,24 @@ export type InstallOptions = {
   installedAt: number;
   version: string;
   platform?: NodeJS.Platform;
+  // Presence check, injectable for tests. Defaults to a real PATH lookup so a
+  // wrapper is only written for a program whose binary actually exists on the box
+  // (D2 — never shim `cat`/`ls` on a Windows host that lacks them).
+  isAvailable?: (program: string) => boolean;
 };
+
+// Is a real `program` executable resolvable on PATH, excluding our own shim dir
+// (so a re-install never counts a previously-written wrapper as "the binary")?
+// Windows-only: off Windows tk's fronted tools are present, so every program is
+// shimmable and the set is unchanged.
+function realBinaryPresent(program: string, shimDirPath: string): boolean {
+  if (process.platform !== "win32") return true;
+  const path = (process.env.PATH ?? "")
+    .split(delimiter)
+    .filter((entry) => entry && entry !== shimDirPath)
+    .join(delimiter);
+  return resolveProgram(program, path) !== program;
+}
 
 // Create the shim dir, write one executable wrapper per shimmable program, and a
 // manifest. Idempotent: re-running overwrites wrappers and prunes any wrapper no
@@ -86,7 +104,10 @@ export type InstallOptions = {
 export function installWrappers(opts: InstallOptions): ShimManifest {
   const home = opts.home ?? tokenKillerHome();
   const dir = shimDir(home);
-  const programs = (opts.programs ?? shimmablePrograms()).slice().sort();
+  // Only shim programs whose binary is actually present — never fabricate a
+  // wrapper for a tool the user hasn't installed (D2).
+  const isAvailable = opts.isAvailable ?? ((program: string) => realBinaryPresent(program, dir));
+  const programs = (opts.programs ?? shimmablePrograms()).slice().sort().filter(isAvailable);
   const tk = opts.tkExec ?? defaultTkExec();
   const platform = opts.platform ?? process.platform;
   const isWindows = platform === "win32";

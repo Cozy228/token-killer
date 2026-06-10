@@ -122,3 +122,29 @@ describe("installWrappers", () => {
     expect(existsSync(shimDir(home))).toBe(false);
   });
 });
+
+describe("installWrappers — presence gate (D2)", () => {
+  let home: string;
+  beforeEach(() => {
+    home = mkdtempSync(join(tmpdir(), "tk-shim-presence-"));
+  });
+  afterEach(() => {
+    rmSync(home, { recursive: true, force: true });
+  });
+
+  test("skips wrappers for programs whose binary is absent", () => {
+    const manifest = installWrappers({
+      home,
+      installedAt: 1,
+      version: "1",
+      platform: "win32",
+      programs: ["git", "cat", "ls"],
+      // Only `git` is present on this hypothetical box.
+      isAvailable: (program) => program === "git",
+    });
+    expect(manifest.programs).toEqual(["git"]);
+    expect(existsSync(join(shimDir(home), "git.cmd"))).toBe(true);
+    expect(existsSync(join(shimDir(home), "cat.cmd"))).toBe(false);
+    expect(existsSync(join(shimDir(home), "ls.cmd"))).toBe(false);
+  });
+});

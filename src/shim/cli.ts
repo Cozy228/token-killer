@@ -11,12 +11,7 @@ import {
   vscodeSettingsPath,
   vscodeUserDir,
 } from "./hostConfig.js";
-import {
-  installWrappers,
-  readManifest,
-  removeShimDir,
-  shimDir,
-} from "./install.js";
+import { installWrappers, readManifest, removeShimDir, shimDir } from "./install.js";
 import { runInterceptionProbe, type ProbeResult } from "./probe.js";
 import { shimmablePrograms } from "./programs.js";
 
@@ -45,10 +40,26 @@ export function installShim(opts: InstallShimOptions = {}): ProbeResult {
   const { rc = true, vscode = true, quiet = false } = opts;
   const log = quiet ? () => {} : out;
   const dir = shimDir();
-  const programs = shimmablePrograms();
-  installWrappers({ programs, installedAt: Date.now(), version: VERSION });
+  const requested = shimmablePrograms();
+  // installWrappers only writes wrappers for programs whose binary is present, so
+  // the manifest — not the requested candidate list — is the source of truth for
+  // what was actually installed (D2: never claim cat/ls/wc/env on a box without them).
+  const manifest = installWrappers({
+    programs: requested,
+    installedAt: Date.now(),
+    version: VERSION,
+  });
+  const installed = manifest.programs;
   log(`token-killer shim installed: ${dir}`);
-  log(`  wrappers: ${programs.length} (${programs.slice(0, 6).join(", ")}, …)`);
+  log(
+    `  wrappers: ${installed.length} (${installed.slice(0, 6).join(", ")}${installed.length > 6 ? ", …" : ""})`,
+  );
+  // Honest disclosure, not a silent drop: list the tools tk did NOT wrap because
+  // no binary was found on PATH (on stock Windows `cat`/`ls`/… are shell aliases).
+  const skipped = requested.filter((program) => !installed.includes(program));
+  if (skipped.length > 0) {
+    log(`  skipped ${skipped.length} not on PATH: ${skipped.join(", ")}`);
+  }
 
   if (rc) {
     const rcPath = defaultRcPath();
@@ -67,12 +78,16 @@ export function installShim(opts: InstallShimOptions = {}): ProbeResult {
       log(`  VS Code settings patched: ${settings}`);
     } catch {
       err(`  VS Code settings.json could not be parsed (comments?); patch it manually:`);
-      err(`    "terminal.integrated.env.*": { "TK_SHIM_DIR": "${dir}", "PATH": "${dir}${delimiter}\${env:PATH}" }`);
+      err(
+        `    "terminal.integrated.env.*": { "TK_SHIM_DIR": "${dir}", "PATH": "${dir}${delimiter}\${env:PATH}" }`,
+      );
     }
   }
 
   const probe = runInterceptionProbe(dir);
-  log(`  interception probe: ${probe.pass ? "PASS" : "FAIL"}${probe.resolved ? ` (${probe.resolved})` : ""}`);
+  log(
+    `  interception probe: ${probe.pass ? "PASS" : "FAIL"}${probe.resolved ? ` (${probe.resolved})` : ""}`,
+  );
   return probe;
 }
 
@@ -91,7 +106,9 @@ function uninstall(): number {
     try {
       unpatchVscodeSettings(settings, dir);
     } catch {
-      err(`  VS Code settings.json could not be parsed; remove the TK_SHIM_DIR/PATH keys manually.`);
+      err(
+        `  VS Code settings.json could not be parsed; remove the TK_SHIM_DIR/PATH keys manually.`,
+      );
     }
   }
   out(`token-killer shim removed: ${dir}`);
@@ -106,12 +123,16 @@ function status(): number {
 
   out(`token-killer shim status`);
   out(`  dir:            ${dir}${existsSync(dir) ? "" : " (not installed)"}`);
-  out(`  manifest:       ${manifest ? `v${manifest.version} schema ${manifest.schema}, ${manifest.programs.length} programs` : "absent"}`);
+  out(
+    `  manifest:       ${manifest ? `v${manifest.version} schema ${manifest.schema}, ${manifest.programs.length} programs` : "absent"}`,
+  );
   out(`  on PATH:        ${index >= 0 ? `yes (position ${index})` : "no"}`);
   out(`  first on PATH:  ${index === 0 ? "yes" : "no"}`);
 
   const probe = runInterceptionProbe(dir);
-  out(`  probe:          ${probe.pass ? "PASS" : "FAIL"}${probe.resolved ? ` → ${probe.resolved}` : ""}`);
+  out(
+    `  probe:          ${probe.pass ? "PASS" : "FAIL"}${probe.resolved ? ` → ${probe.resolved}` : ""}`,
+  );
   return 0;
 }
 
