@@ -108,11 +108,12 @@ is the single biggest unknown before a real rollout — run it once yourself.
 
 Record for each: did delivery engage (which tier), measured savings, any breakage.
 
-## 6. Known issues deferred (not blockers, logged not silently dropped)
+## 6. Follow-ups
 
-- **`tk init shim install --dry-run` actually writes.** The `--dry-run` flag is honored by
-  the top-level `tk init` (the documented path) but not by the manual `tk init shim
-  install` subcommand, which installs regardless. Pre-existing; off the primary path.
-  Use `tk init --dry-run` for a real preview.
+- **`tk init shim install --dry-run` now honored (FIXED, this session).** It previously
+  installed regardless of the flag (`runShim` only switched on `argv[0]` and never parsed
+  `--dry-run`). It now previews the exact install/skip set and the patches it would make,
+  writing nothing; `uninstall --dry-run` likewise. A sandboxed E2E test asserts no writes.
 - **Which tier VS Code Copilot actually uses** (PreToolUse hook vs terminal-env shim) is
-  unproven on the target — §5 is designed to answer exactly that.
+  still unproven on the target — §5 is designed to answer exactly that. This is the one
+  remaining gate before rollout.
