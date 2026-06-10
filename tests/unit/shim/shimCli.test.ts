@@ -20,7 +20,12 @@ function runTg(args: string[]) {
     cwd: repoRoot,
     encoding: "utf8",
     timeout: 20000,
-    env: { ...process.env, HOME: home, SHELL: "/bin/zsh", TOKEN_KILLER_HOME: join(home, ".token-killer") },
+    env: {
+      ...process.env,
+      HOME: home,
+      SHELL: "/bin/zsh",
+      TOKEN_KILLER_HOME: join(home, ".token-killer"),
+    },
   });
 }
 
@@ -61,5 +66,23 @@ describe("tk init shim install/status/uninstall", () => {
     const result = runTg(["init", "shim", "bogus"]);
     expect(result.status).toBe(1);
     expect(result.stderr).toContain("unknown subcommand");
+  });
+
+  test("install --dry-run previews without writing anything", () => {
+    const result = runTg(["init", "shim", "install", "--dry-run"]);
+    expect(result.status).toBe(0);
+    expect(result.stdout).toContain("[dry-run]");
+    // Nothing written: no shim dir, RC left byte-identical.
+    expect(existsSync(join(home, ".token-killer", "shim"))).toBe(false);
+    expect(readFileSync(join(home, ".zshrc"), "utf8")).toBe("export FOO=1\n");
+  });
+
+  test("uninstall --dry-run reports without removing the installed shim", () => {
+    runTg(["init", "shim", "install"]); // real install first
+    const dry = runTg(["init", "shim", "uninstall", "--dry-run"]);
+    expect(dry.status).toBe(0);
+    expect(dry.stdout).toContain("[dry-run]");
+    // Still installed — dry-run removed nothing.
+    expect(existsSync(join(home, ".token-killer", "shim"))).toBe(true);
   });
 });

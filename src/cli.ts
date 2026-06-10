@@ -59,7 +59,7 @@ function help(): string {
     "  --show         Show current install status (host, hook, shim, injection)",
     "  --dry-run      Preview what would change without writing",
     "  --uninstall    Remove everything tk installed (hook config, shim, injection, TK.md)",
-    "  tk init shim <install|status|uninstall>   Manually control the shim tier (shell PATH + VS Code)",
+    "  tk init shim <install|status|uninstall> [--dry-run]   Manually control the shim tier (shell PATH + VS Code)",
     "",
     "tk hook <copilot|claude|check <command...>>",
     "  copilot                Hook runtime: read a tool event on stdin, emit a rewrite/governance decision",

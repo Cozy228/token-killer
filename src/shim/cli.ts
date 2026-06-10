@@ -11,7 +11,13 @@ import {
   vscodeSettingsPath,
   vscodeUserDir,
 } from "./hostConfig.js";
-import { installWrappers, readManifest, removeShimDir, shimDir } from "./install.js";
+import {
+  installWrappers,
+  readManifest,
+  realBinaryPresent,
+  removeShimDir,
+  shimDir,
+} from "./install.js";
 import { runInterceptionProbe, type ProbeResult } from "./probe.js";
 import { shimmablePrograms } from "./programs.js";
 
@@ -29,6 +35,8 @@ export type InstallShimOptions = {
   rc?: boolean;
   vscode?: boolean;
   quiet?: boolean;
+  // Preview only — report what would be written/patched, touch nothing.
+  dryRun?: boolean;
 };
 
 // Install the shim tier: write wrappers + manifest, prepend the shim dir on the
@@ -37,26 +45,38 @@ export type InstallShimOptions = {
 // toward not breaking the user: a settings.json we cannot parse is reported, not
 // overwritten.
 export function installShim(opts: InstallShimOptions = {}): ProbeResult {
-  const { rc = true, vscode = true, quiet = false } = opts;
+  const { rc = true, vscode = true, quiet = false, dryRun = false } = opts;
   const log = quiet ? () => {} : out;
   const dir = shimDir();
+  // Partition candidates into present (wrapped) vs absent (skipped) up front, so a
+  // --dry-run preview and the real install report the exact same set (D2: never
+  // claim cat/ls/wc/env on a box without them).
   const requested = shimmablePrograms();
-  // installWrappers only writes wrappers for programs whose binary is present, so
-  // the manifest — not the requested candidate list — is the source of truth for
-  // what was actually installed (D2: never claim cat/ls/wc/env on a box without them).
-  const manifest = installWrappers({
-    programs: requested,
-    installedAt: Date.now(),
-    version: VERSION,
-  });
-  const installed = manifest.programs;
+  const installed = requested.filter((program) => realBinaryPresent(program, dir));
+  const skipped = requested.filter((program) => !installed.includes(program));
+  const wrapperList = `${installed.length} (${installed.slice(0, 6).join(", ")}${installed.length > 6 ? ", …" : ""})`;
+
+  if (dryRun) {
+    // --dry-run: report exactly what a real install would do, but write nothing.
+    log(`[dry-run] would install shim: ${dir}`);
+    log(`  [dry-run] wrappers: ${wrapperList}`);
+    if (skipped.length > 0) {
+      log(`  [dry-run] skip ${skipped.length} not on PATH: ${skipped.join(", ")}`);
+    }
+    if (rc) log(`  [dry-run] would patch shell RC: ${defaultRcPath()}`);
+    if (vscode && existsSync(vscodeUserDir())) {
+      log(`  [dry-run] would patch VS Code settings: ${vscodeSettingsPath()}`);
+    }
+    // Nothing was written, so there is nothing to probe. The return is ignored on
+    // the dry-run path (init handles its own preview); this is a valid placeholder.
+    return { pass: false, resolved: null, program: "git" };
+  }
+
+  installWrappers({ programs: installed, installedAt: Date.now(), version: VERSION });
   log(`token-killer shim installed: ${dir}`);
-  log(
-    `  wrappers: ${installed.length} (${installed.slice(0, 6).join(", ")}${installed.length > 6 ? ", …" : ""})`,
-  );
+  log(`  wrappers: ${wrapperList}`);
   // Honest disclosure, not a silent drop: list the tools tk did NOT wrap because
   // no binary was found on PATH (on stock Windows `cat`/`ls`/… are shell aliases).
-  const skipped = requested.filter((program) => !installed.includes(program));
   if (skipped.length > 0) {
     log(`  skipped ${skipped.length} not on PATH: ${skipped.join(", ")}`);
   }
@@ -91,14 +111,21 @@ export function installShim(opts: InstallShimOptions = {}): ProbeResult {
   return probe;
 }
 
-function install(): number {
-  installShim({ rc: true, vscode: true });
-  out(`Restart your terminal (or VS Code) for PATH changes to take effect.`);
+function install(dryRun: boolean): number {
+  installShim({ rc: true, vscode: true, dryRun });
+  if (!dryRun) out(`Restart your terminal (or VS Code) for PATH changes to take effect.`);
   return 0;
 }
 
-function uninstall(): number {
+function uninstall(dryRun: boolean): number {
   const dir = shimDir();
+  if (dryRun) {
+    out(`[dry-run] would remove shim: ${dir}${existsSync(dir) ? "" : " (absent)"}`);
+    out(`[dry-run] would unpatch shell RC: ${defaultRcPath()}`);
+    const settingsPath = vscodeSettingsPath();
+    if (existsSync(settingsPath)) out(`[dry-run] would unpatch VS Code settings: ${settingsPath}`);
+    return 0;
+  }
   removeShimDir();
   unpatchRc(defaultRcPath());
   const settings = vscodeSettingsPath();
@@ -137,12 +164,15 @@ function status(): number {
 }
 
 export function runShim(argv: string[]): number {
-  const sub = argv[0];
+  const dryRun = argv.includes("--dry-run");
+  // The subcommand is the first non-flag token, so `--dry-run` can appear in any
+  // position (e.g. `tk init shim install --dry-run`).
+  const sub = argv.find((token) => !token.startsWith("-"));
   switch (sub) {
     case "install":
-      return install();
+      return install(dryRun);
     case "uninstall":
-      return uninstall();
+      return uninstall(dryRun);
     case "status":
     case undefined:
       return status();
