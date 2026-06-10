@@ -19,7 +19,7 @@ import { governPrompt } from "./prompt.js";
 import { failureSourceAdapter, handleError } from "./error.js";
 import { recordHookFailure } from "../core/history.js";
 import { recordGovernance } from "../core/governance.js";
-import { hookDebug } from "./debug.js";
+import { tkDebug } from "./debug.js";
 
 const ALLOW: Decision = { decision: "allow" };
 
@@ -265,7 +265,7 @@ export async function runHookCopilot(): Promise<number> {
     raw = "";
   }
 
-  hookDebug("copilot:stdin", { bytes: raw.length });
+  tkDebug("copilot:stdin", { bytes: raw.length });
   let ev: ToolEvent | null = null;
   let decision: Decision = ALLOW;
   try {
@@ -279,7 +279,7 @@ export async function runHookCopilot(): Promise<number> {
     decision = ALLOW;
   }
 
-  hookDebug("copilot:decision", {
+  tkDebug("copilot:decision", {
     event: ev?.event,
     category: ev?.category,
     decision: decision.decision,

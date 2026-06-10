@@ -19,7 +19,7 @@
 
 import { rewriteCommand } from "./rewrite.js";
 import { readStreamWithTimeout } from "./copilot.js";
-import { hookDebug } from "./debug.js";
+import { tkDebug } from "./debug.js";
 
 // Ground-truth reason string Claude Code shows for the auto-rewrite (the tk
 // analogue of RTK's "RTK auto-rewrite").
@@ -48,24 +48,24 @@ export type ClaudeHookOutput = {
 // Pure, total decision: parsed payload → rewrite output or null. No I/O.
 export function decide(input: unknown): ClaudeHookOutput | null {
   if (!input || typeof input !== "object") {
-    hookDebug("claude:skip", { reason: "non-object payload" });
+    tkDebug("claude:skip", { reason: "non-object payload" });
     return null;
   }
   const payload = input as ClaudePreToolUse;
   // The host's hook matches `Bash` only; ignore anything else defensively.
   if (payload.tool_name !== "Bash") {
-    hookDebug("claude:skip", { reason: "non-Bash tool", tool: payload.tool_name });
+    tkDebug("claude:skip", { reason: "non-Bash tool", tool: payload.tool_name });
     return null;
   }
   const command = payload.tool_input?.command;
   if (typeof command !== "string" || command.length === 0) {
-    hookDebug("claude:skip", { reason: "empty command" });
+    tkDebug("claude:skip", { reason: "empty command" });
     return null;
   }
 
   const r = rewriteCommand(command, payload.session_id);
   // The load-bearing diagnostic: WHY a command was / wasn't rewritten.
-  hookDebug("claude:decision", {
+  tkDebug("claude:decision", {
     command,
     decision: r.decision,
     reason: r.reason,
@@ -111,9 +111,9 @@ export async function runHookClaude(): Promise<number> {
   } catch {
     raw = "";
   }
-  hookDebug("claude:stdin", { bytes: raw.length });
+  tkDebug("claude:stdin", { bytes: raw.length });
   const output = decideFromStdin(raw);
   if (output) process.stdout.write(JSON.stringify(output));
-  hookDebug("claude:emit", { rewrote: Boolean(output) });
+  tkDebug("claude:emit", { rewrote: Boolean(output) });
   return 0;
 }

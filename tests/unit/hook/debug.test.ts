@@ -3,7 +3,7 @@ import { existsSync, mkdtempSync, readFileSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
-import { debugLogPath, hookDebug, hookDebugEnabled } from "../../../src/hook/debug.js";
+import { debugLogPath, tkDebug, tkDebugEnabled } from "../../../src/hook/debug.js";
 
 let writes: string[];
 let dataHome: string;
@@ -28,18 +28,18 @@ afterEach(() => {
   else process.env.TOKEN_KILLER_HOME = originalHome;
 });
 
-describe("hookDebug — gated by TK_DEBUG", () => {
+describe("tkDebug — gated by TK_DEBUG", () => {
   test("silent when TK_DEBUG is unset — no stderr, no log file", () => {
     delete process.env.TK_DEBUG;
-    expect(hookDebugEnabled()).toBe(false);
-    hookDebug("claude:decision", { command: "git status", decision: "rewrite" });
+    expect(tkDebugEnabled()).toBe(false);
+    tkDebug("claude:decision", { command: "git status", decision: "rewrite" });
     expect(writes).toHaveLength(0);
     expect(existsSync(debugLogPath())).toBe(false);
   });
 
   test("writes a structured line to stderr when TK_DEBUG=1", () => {
     process.env.TK_DEBUG = "1";
-    hookDebug("claude:decision", { command: "git status", decision: "pass", reason: "mutating" });
+    tkDebug("claude:decision", { command: "git status", decision: "pass", reason: "mutating" });
     expect(writes).toHaveLength(1);
     const line = writes[0]!;
     expect(line).toMatch(/^tk debug: claude:decision /);
@@ -51,7 +51,7 @@ describe("hookDebug — gated by TK_DEBUG", () => {
 
   test("drops undefined fields so the trace shows only what applies", () => {
     process.env.TK_DEBUG = "1";
-    hookDebug("claude:decision", {
+    tkDebug("claude:decision", {
       command: "ls",
       decision: "rewrite",
       reason: undefined,
@@ -63,14 +63,14 @@ describe("hookDebug — gated by TK_DEBUG", () => {
 
   test("scope with no fields still emits a clean line", () => {
     process.env.TK_DEBUG = "1";
-    hookDebug("claude:skip");
+    tkDebug("claude:skip");
     expect(writes[0]).toBe("tk debug: claude:skip\n");
   });
 
   test("appends a timestamped line to the default debug log (not a ledger)", () => {
     process.env.TK_DEBUG = "1";
-    hookDebug("claude:stdin", { bytes: 90 });
-    hookDebug("claude:emit", { rewrote: true });
+    tkDebug("claude:stdin", { bytes: 90 });
+    tkDebug("claude:emit", { rewrote: true });
     const logPath = debugLogPath();
     expect(logPath).toBe(join(dataHome, "debug.log"));
     const lines = readFileSync(logPath, "utf8").trimEnd().split("\n");

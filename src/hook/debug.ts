@@ -1,5 +1,8 @@
-// Opt-in hook diagnostics, gated by the same `TK_DEBUG` switch the compress path
-// uses (src/cli.ts) — one env var lights up the whole tk runtime.
+// The one tk diagnostics emitter, gated by `TK_DEBUG` — one env var lights up the
+// whole tk runtime. Both the hook runtime AND the shim/compress path (src/cli.ts,
+// via the gate decision) call `tkDebug`, so every compress-vs-passthrough decision
+// leaves a footprint in the SAME place (D1: a debug switch that covered only the
+// hook path produced confident-but-empty logs and cost hours on the VS Code case).
 //
 // The hook runtime is fail-open and SILENT by design: on any problem it emits
 // empty stdout and exits 0, which keeps the agent unbroken but is opaque while
@@ -19,7 +22,7 @@ import { dirname, join } from "node:path";
 
 import { tokenKillerHome } from "../core/dataDir.js";
 
-export function hookDebugEnabled(): boolean {
+export function tkDebugEnabled(): boolean {
   return Boolean(process.env.TK_DEBUG);
 }
 
@@ -55,8 +58,8 @@ function appendToLog(line: string): void {
 // fields are dropped so a trace only shows what actually applies. The stderr
 // line stays clean; the file line is timestamped for correlation across a live
 // session.
-export function hookDebug(scope: string, fields: Record<string, unknown> = {}): void {
-  if (!hookDebugEnabled()) return;
+export function tkDebug(scope: string, fields: Record<string, unknown> = {}): void {
+  if (!tkDebugEnabled()) return;
   try {
     const parts = Object.entries(fields)
       .filter(([, v]) => v !== undefined)
