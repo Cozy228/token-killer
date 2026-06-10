@@ -197,6 +197,13 @@ type Eligibility = { eligible: true } | { eligible: false; reason: string };
 function eligibility(tokens: string[]): Eligibility {
   if (tokens.length === 0) return { eligible: false, reason: "empty segment" };
   if (tokens[0] === "tk") return { eligible: false, reason: "already a tk command" };
+  // `test`/`[` are shell conditional builtins (`test -f x`, `[ -z "$v" ]`), never a
+  // tool whose output is worth compressing. Rewriting to `tk test …` would run
+  // `args[0]` as a program and break the conditional with exit 127 (C3), so they are
+  // hard-ineligible regardless of what the test-runner handler's matcher accepts.
+  if (tokens[0] === "test" || tokens[0] === "[") {
+    return { eligible: false, reason: "shell conditional builtin" };
+  }
   const parsed = toParsed(tokens);
   if (routeSpecific(parsed) === null) {
     return { eligible: false, reason: `no tk handler for '${parsed.program}'` };
@@ -266,9 +273,17 @@ export function rewriteCommand(raw: string, session?: string): RewriteDecision {
   // The reason the FIRST evaluated (non-pipe-RHS) segment was not rewritten —
   // reported on `pass` so the debug trace can explain it.
   let passReason: string | undefined;
-  const out: Segment[] = segments.map((seg) => {
-    // Only the LHS of `|` is rewritten; the RHS (`| grep`, `| head`) passes.
+  const out: Segment[] = segments.map((seg, i) => {
+    // The RHS of `|` (`| grep`, `| head`) passes — ADR 0007 measured pipe tails as
+    // not worth compressing. A segment whose stdout FEEDS a pipe must ALSO pass:
+    // compressing a producer hands the downstream stage altered bytes, so e.g.
+    // `git diff | grep -c '^+'` would count the compacted diff, not the real one
+    // (C1). ADR 0007 follow-up #1 — never rewrite a segment followed by `|`.
     if (seg.precededBy === "|") return seg;
+    if (segments[i + 1]?.precededBy === "|") {
+      if (passReason === undefined) passReason = "stdout feeds a downstream pipe stage";
+      return seg;
+    }
     const tokens = tokenize(seg.text);
     const elig = eligibility(tokens);
     if (!elig.eligible) {

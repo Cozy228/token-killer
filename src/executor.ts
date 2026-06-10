@@ -110,7 +110,7 @@ function buildChildEnv(
 ): Record<string, string> | undefined {
   const shimDir = process.env.TK_SHIM_DIR;
   if (!shimDir) {
-    return extraEnv ? { ...process.env, ...extraEnv } as Record<string, string> : undefined;
+    return extraEnv ? ({ ...process.env, ...extraEnv } as Record<string, string>) : undefined;
   }
   const strippedPath = buildChildPath();
   assertNoRecursion(program, strippedPath);
@@ -179,6 +179,11 @@ export function buildSpawnTarget(
   return { file: resolved, args, windowsVerbatimArguments: false };
 }
 
+// Hard ceiling on captured child output (per stream). Above this we stop buffering so
+// a runaway producer can't OOM the process (H19). Far above any output a handler would
+// meaningfully compress; the marker tells the reader truncation happened.
+const MAX_CAPTURE_BYTES = 64 * 1024 * 1024;
+
 export function executeCommand(
   command: ParsedCommand,
   // Optional extra environment variables merged over process.env. RTK rewrites
@@ -188,11 +193,7 @@ export function executeCommand(
 ): Promise<RawResult> {
   const started = Date.now();
   const env = buildChildEnv(command.program, extraEnv);
-  const target = buildSpawnTarget(
-    command.program,
-    command.args,
-    env?.PATH ?? process.env.PATH,
-  );
+  const target = buildSpawnTarget(command.program, command.args, env?.PATH ?? process.env.PATH);
 
   return new Promise((resolve) => {
     const child = spawn(target.file, target.args, {
@@ -203,12 +204,37 @@ export function executeCommand(
       ...(env ? { env } : {}),
     });
 
+    // Cap captured output to bound memory: a handler-matched command on a huge repo
+    // (`git log`, `grep -r`) could otherwise buffer gigabytes via Buffer.concat and
+    // OOM-kill the process — and an OOM crash bypasses the fail-open catch entirely
+    // (H19). Past the cap we stop accumulating and mark truncation; the handler still
+    // compresses what it got and the exit code is preserved.
     const stdout: Buffer[] = [];
     const stderr: Buffer[] = [];
+    let stdoutBytes = 0;
+    let stderrBytes = 0;
+    let truncated = false;
 
-    child.stdout?.on("data", (chunk: Buffer) => stdout.push(chunk));
-    child.stderr?.on("data", (chunk: Buffer) => stderr.push(chunk));
+    child.stdout?.on("data", (chunk: Buffer) => {
+      if (stdoutBytes >= MAX_CAPTURE_BYTES) {
+        truncated = true;
+        return;
+      }
+      stdoutBytes += chunk.length;
+      stdout.push(chunk);
+    });
+    child.stderr?.on("data", (chunk: Buffer) => {
+      if (stderrBytes >= MAX_CAPTURE_BYTES) {
+        truncated = true;
+        return;
+      }
+      stderrBytes += chunk.length;
+      stderr.push(chunk);
+    });
     if (child.stdin) {
+      // Swallow EPIPE: a child that closes stdin early (e.g. `head`) would otherwise
+      // make this pipe emit an unhandled 'error' and crash the process (L6).
+      child.stdin.on("error", () => {});
       process.stdin.pipe(child.stdin);
     }
 
@@ -227,10 +253,15 @@ export function executeCommand(
     });
 
     child.on("close", (code, signal) => {
+      const stderrText = decodeChildOutput(Buffer.concat(stderr));
       resolve({
         command: command.displayCommand,
         stdout: decodeChildOutput(Buffer.concat(stdout)),
-        stderr: decodeChildOutput(Buffer.concat(stderr)),
+        stderr: truncated
+          ? `${stderrText}\n[tk] output exceeded ${Math.floor(
+              MAX_CAPTURE_BYTES / (1024 * 1024),
+            )}MB capture cap — truncated]\n`
+          : stderrText,
         exitCode: resolveExitCode(code, signal),
         durationMs: Date.now() - started,
       });
@@ -255,11 +286,7 @@ export function executePassthrough(
   opts: PassthroughOptions = {},
 ): Promise<number> {
   const env = buildChildEnv(command.program, opts.extraEnv);
-  const target = buildSpawnTarget(
-    command.program,
-    command.args,
-    env?.PATH ?? process.env.PATH,
-  );
+  const target = buildSpawnTarget(command.program, command.args, env?.PATH ?? process.env.PATH);
 
   return new Promise((resolve) => {
     const child = spawn(target.file, target.args, {

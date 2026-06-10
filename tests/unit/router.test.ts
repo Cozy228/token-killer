@@ -92,4 +92,14 @@ describe("routeSpecific probe guard", () => {
   ])("%s still routes to a real handler", (argv, handlerName) => {
     expect(routeSpecific(command(argv))?.name).toBe(handlerName);
   });
+
+  // C3: `test` is the shell conditional builtin. A flag-leading first arg is never a
+  // runnable program, so the test-runner handler must NOT match (else execute() would
+  // spawn the flag → exit 127). `test <prog>` (non-flag) still routes.
+  test.each([[["test", "-f", "package.json"]], [["test", "-z", "$x"]], [["[", "-f", "x", "]"]]])(
+    "%s (shell conditional) is a passthrough",
+    (argv) => {
+      expect(routeSpecific(command(argv))).toBeNull();
+    },
+  );
 });

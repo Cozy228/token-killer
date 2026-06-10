@@ -16,15 +16,15 @@ import {
 const tk: TkExec = { bin: "/usr/local/bin/node", args: ["/abs/dist/cli.js"] };
 
 describe("wrapper content", () => {
-  test("POSIX wrapper execs tk by absolute path and forwards args", () => {
-    expect(posixWrapper("git", tk)).toBe(
-      "#!/usr/bin/env sh\nexec '/usr/local/bin/node' '/abs/dist/cli.js' 'git' \"$@\"\n",
+  test("POSIX wrapper self-exports the baked shim dir, execs tk by absolute path", () => {
+    expect(posixWrapper("git", tk, "/abs/shim")).toBe(
+      "#!/usr/bin/env sh\nexport TK_SHIM_DIR='/abs/shim'\nexec '/usr/local/bin/node' '/abs/dist/cli.js' 'git' \"$@\"\n",
     );
   });
 
-  test("Windows wrapper forwards args via %*", () => {
-    expect(windowsWrapper("git", tk)).toBe(
-      '@"/usr/local/bin/node" "/abs/dist/cli.js" "git" %*\r\n',
+  test("Windows wrapper self-sets the baked shim dir under setlocal, forwards args via %*", () => {
+    expect(windowsWrapper("git", tk, "C:\\abs\\shim")).toBe(
+      '@echo off\r\nsetlocal\r\nset "TK_SHIM_DIR=C:\\abs\\shim"\r\n"/usr/local/bin/node" "/abs/dist/cli.js" "git" %*\r\n',
     );
   });
 });
@@ -89,14 +89,35 @@ describe("installWrappers", () => {
   });
 
   test("re-install prunes wrappers removed from the program set", () => {
-    installWrappers({ home, programs: ["git", "tsc"], tkExec: tk, installedAt: 1, version: "1", platform: "linux" });
-    installWrappers({ home, programs: ["git"], tkExec: tk, installedAt: 2, version: "1", platform: "linux" });
+    installWrappers({
+      home,
+      programs: ["git", "tsc"],
+      tkExec: tk,
+      installedAt: 1,
+      version: "1",
+      platform: "linux",
+    });
+    installWrappers({
+      home,
+      programs: ["git"],
+      tkExec: tk,
+      installedAt: 2,
+      version: "1",
+      platform: "linux",
+    });
     expect(existsSync(join(shimDir(home), "git"))).toBe(true);
     expect(existsSync(join(shimDir(home), "tsc"))).toBe(false);
   });
 
   test("removeShimDir deletes the dir", () => {
-    installWrappers({ home, programs: ["git"], tkExec: tk, installedAt: 1, version: "1", platform: "linux" });
+    installWrappers({
+      home,
+      programs: ["git"],
+      tkExec: tk,
+      installedAt: 1,
+      version: "1",
+      platform: "linux",
+    });
     removeShimDir(home);
     expect(existsSync(shimDir(home))).toBe(false);
   });

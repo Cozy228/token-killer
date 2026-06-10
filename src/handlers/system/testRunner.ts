@@ -96,7 +96,14 @@ export const testRunnerHandler: CommandHandler = {
   name: "test",
   traits: { structural: true, ladder: true },
   matches(command) {
-    return command.program === "test" && command.args.length > 0;
+    // `test` is also the POSIX shell conditional builtin (`test -f x`, `test a = b`).
+    // A flag-leading first arg is never a runnable program, so refuse it — otherwise
+    // execute() spawns the flag as the program (`-f` → exit 127) (C3). The hook path
+    // additionally hard-excludes `test`/`[` in rewrite.ts so conditionals are never
+    // auto-rewritten even in their non-flag forms.
+    return (
+      command.program === "test" && command.args.length > 0 && !command.args[0]?.startsWith("-")
+    );
   },
   execute(command) {
     return executeCommand({

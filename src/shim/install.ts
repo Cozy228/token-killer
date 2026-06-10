@@ -52,16 +52,23 @@ function shQuote(value: string): string {
 }
 
 // POSIX wrapper: `exec <tk...> <program> "$@"`. Forwards args and the exit code.
-export function posixWrapper(program: string, tk: TkExec): string {
+// It self-exports TK_SHIM_DIR (baked at install time, when the shim dir is known)
+// so tk's recursion guard strips the shim dir from the child PATH even when the
+// rc-exported var is absent — a subshell, an env-stripping host, or a manually-
+// PATH'd shim dir (C7 fork-bomb). The path is baked rather than derived from `$0`
+// because `$0` is the bare program name under PATH lookup, not the wrapper's path.
+export function posixWrapper(program: string, tk: TkExec, shimDir: string): string {
   const parts = [tk.bin, ...tk.args, program].map(shQuote).join(" ");
-  return `#!/usr/bin/env sh\nexec ${parts} "$@"\n`;
+  return `#!/usr/bin/env sh\nexport TK_SHIM_DIR=${shQuote(shimDir)}\nexec ${parts} "$@"\n`;
 }
 
 // Windows wrapper: a .cmd that forwards args via %*. cmd.exe and PowerShell both
-// resolve `git` → `git.cmd` through PATHEXT.
-export function windowsWrapper(program: string, tk: TkExec): string {
+// resolve `git` → `git.cmd` through PATHEXT. `setlocal` self-sets TK_SHIM_DIR for
+// the recursion guard (C7; Windows dogfood observed 2,599+ spawns) without leaking
+// it to the caller; the implicit endlocal at script end preserves the exit code.
+export function windowsWrapper(program: string, tk: TkExec, shimDir: string): string {
   const parts = [tk.bin, ...tk.args, program].map((v) => `"${v}"`).join(" ");
-  return `@${parts} %*\r\n`;
+  return `@echo off\r\nsetlocal\r\nset "TK_SHIM_DIR=${shimDir}"\r\n${parts} %*\r\n`;
 }
 
 export type InstallOptions = {
@@ -90,10 +97,10 @@ export function installWrappers(opts: InstallOptions): ShimManifest {
   mkdirSync(dir, { recursive: true });
   for (const program of programs) {
     if (isWindows) {
-      writeFileSync(join(dir, `${program}.cmd`), windowsWrapper(program, tk));
+      writeFileSync(join(dir, `${program}.cmd`), windowsWrapper(program, tk, dir));
     } else {
       const file = join(dir, program);
-      writeFileSync(file, posixWrapper(program, tk));
+      writeFileSync(file, posixWrapper(program, tk, dir));
       chmodSync(file, 0o755);
     }
   }

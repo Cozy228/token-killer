@@ -30,6 +30,14 @@ describe("rewriteCommand — rewrite table (DESIGN §3.8)", () => {
     const r = rewriteCommand('cat "my file.txt"');
     expect(r.rewritten).toBe('tk cat "my file.txt"');
   });
+
+  test("L15: rewrite is a byte-faithful prepend even with \\ / $() the tokenizer does not parse", () => {
+    // The tokenizer ignores backslash escapes and $(); the rewrite must stay exactly
+    // `tk ` + the original segment (prepend-only), never a re-quoted/normalized form.
+    for (const c of ['grep "a\\b" src', "rg $(date) src", "grep 'it'\\''s' ."]) {
+      expect(rewriteCommand(c).rewritten).toBe(`tk ${c}`);
+    }
+  });
 });
 
 describe("rewriteCommand — non-rewrite cases (pass)", () => {
@@ -120,15 +128,23 @@ describe("rewriteCommand — chains", () => {
     expect(r.rewritten).toBe("tk git status || tk git diff");
   });
 
-  test("pipe: only LHS is rewritten", () => {
+  test("pipe head is NOT rewritten — compressing the producer corrupts the tail (C1)", () => {
+    // `tk git log | head` would feed `head` the COMPACTED log, not the real one.
+    // ADR 0007 follow-up #1: a segment whose stdout flows into `|` passes untouched.
     const r = rewriteCommand("git log | head");
-    expect(r.decision).toBe("rewrite");
-    expect(r.rewritten).toBe("tk git log | head");
+    expect(r.decision).toBe("pass");
   });
 
   test("pipe RHS grep is left untouched", () => {
     const r = rewriteCommand("cat file.txt | grep TODO");
-    expect(r.rewritten).toBe("tk cat file.txt | grep TODO");
+    expect(r.decision).toBe("pass");
+  });
+
+  test("C1: counting filter over a handled producer keeps the real count", () => {
+    // `tk git diff | grep -c '^+'` would count `+` lines in the compacted diff (0),
+    // not the real diff. Neither segment may be rewritten.
+    const r = rewriteCommand("git diff | grep -c '^+'");
+    expect(r.decision).toBe("pass");
   });
 
   test("chain with an ineligible side rewrites only the eligible one", () => {

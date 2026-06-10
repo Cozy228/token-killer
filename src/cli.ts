@@ -17,6 +17,7 @@ import { runPipeline } from "./core/pipeline.js";
 import { recordHistory } from "./core/history.js";
 import { calculateSavings } from "./core/savings.js";
 import { maybeSaveRawOutput } from "./core/rawStore.js";
+import { limitOutput } from "./core/outputLimit.js";
 import { formatStats } from "./core/stats.js";
 import { failureHint } from "./core/failureHints.js";
 import { VERSION } from "./version.js";
@@ -240,7 +241,13 @@ async function main(): Promise<number> {
     const raw = await handler.execute(command, parsed.options);
     process.stdout.write(raw.stdout);
     process.stderr.write(raw.stderr);
-    await recordRawPassthrough(raw, parsed.options);
+    // Best-effort accounting; a write failure must never override the real exit code
+    // (C6) — the command already ran and its output is already on stdout/stderr.
+    try {
+      await recordRawPassthrough(raw, parsed.options);
+    } catch {
+      /* drop the accounting row; never alter the command's outcome */
+    }
     return raw.exitCode;
   }
 
@@ -281,33 +288,51 @@ async function runCompress(
 ): Promise<number> {
   const raw = await handler.execute(command, options);
 
-  const filtered = await runPipeline(
-    {
-      ...handler,
-      async execute() {
-        return raw;
+  // The command has now run exactly once. Everything past this point (filtering,
+  // accounting, printing) must NEVER propagate to the cli fail-open catch, which
+  // re-spawns the command via passthrough — that would double-execute side effects
+  // (C6). Post-execution failures are absorbed here: ship the captured raw and
+  // preserve the exit code. Pre-execution failures (handler.execute throwing before
+  // the child runs — ENOENT, ShimRecursionError) still reach the fail-open, where a
+  // re-spawn is correct because nothing ran.
+  try {
+    const filtered = await runPipeline(
+      {
+        ...handler,
+        async execute() {
+          return raw;
+        },
       },
-    },
-    command,
-    options,
-  ).then((result) => result.filtered);
+      command,
+      options,
+    ).then((result) => result.filtered);
 
-  process.stdout.write(filtered.output);
-  if (filtered.output.length > 0 && !filtered.output.endsWith("\n")) {
-    process.stdout.write("\n");
-  }
+    // Apply the opt-in --max-lines/--max-chars caps to the FINAL output (H18). A no-op
+    // unless the user passed a finite limit; never touches the quality gate above.
+    const display = limitOutput(filtered.output, options);
+    process.stdout.write(display);
+    if (display.length > 0 && !display.endsWith("\n")) {
+      process.stdout.write("\n");
+    }
 
-  // Inline failure-fix hint (scheme 2): presentation-layer only — appended after
-  // the compressed output, never part of it, so it can't trip the quality gate.
-  if (raw.exitCode !== 0) {
-    const hint = failureHint(raw, command);
-    if (hint) process.stdout.write(`tk hint: ${hint}\n`);
-  }
+    // Inline failure-fix hint (scheme 2): presentation-layer only — appended after
+    // the compressed output, never part of it, so it can't trip the quality gate.
+    if (raw.exitCode !== 0) {
+      const hint = failureHint(raw, command);
+      if (hint) process.stdout.write(`tk hint: ${hint}\n`);
+    }
 
-  if (options.stats || options.verbose) {
-    process.stdout.write(`\n${formatStats(filtered)}\n`);
+    if (options.stats || options.verbose) {
+      process.stdout.write(`\n${formatStats(filtered)}\n`);
+    }
+    return raw.exitCode;
+  } catch {
+    // Post-execution fallback: the command already ran; surface its captured output
+    // verbatim and preserve the exit code. Never re-spawn (C6).
+    process.stdout.write(raw.stdout);
+    process.stderr.write(raw.stderr);
+    return raw.exitCode;
   }
-  return raw.exitCode;
 }
 
 async function failOpenPassthrough(command: ParsedCommand, error: unknown): Promise<number> {

@@ -5,6 +5,8 @@ import { delimiter, dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { spawnSync } from "node:child_process";
 
+import { posixWrapper } from "../../../src/shim/install.js";
+
 // End-to-end checks for the recursion guard and the fail-open contract. We build
 // a real shim dir containing a `git` wrapper (`exec tk git "$@"`), put it on the
 // child PATH with TK_SHIM_DIR set, and drive the real CLI. The shim must NOT
@@ -57,6 +59,32 @@ describe("recursion guard e2e", () => {
     expect(result.signal).toBeNull();
     expect([0, 128]).toContain(result.status);
     expect(`${result.stdout}${result.stderr}`).not.toContain("exec tk git");
+  });
+
+  test("installed wrapper self-sets TK_SHIM_DIR → no fork-bomb when the var is UNSET in env (C7)", () => {
+    // Regression for C7/D3: the recursion guard only engages when TK_SHIM_DIR is set,
+    // and the old wrappers never set it. An installed POSIX wrapper must self-export
+    // the baked shim dir so a shell whose PATH has the shim dir first — but with NO
+    // TK_SHIM_DIR exported (subshell, env-stripping host) — still resolves the real
+    // tool instead of spawning wrapper→tk→wrapper forever.
+    const wrapShim = join(tmp, "wrapshim");
+    mkdirSync(wrapShim, { recursive: true });
+    const tkExec = { bin: process.execPath, args: ["--import", tsxLoader, cli] };
+    const gitWrapper = join(wrapShim, "git");
+    writeFileSync(gitWrapper, posixWrapper("git", tkExec, wrapShim));
+    chmodSync(gitWrapper, 0o755);
+
+    const env: NodeJS.ProcessEnv = { ...process.env, TOKEN_KILLER_HOME: tkHome };
+    delete env.TK_SHIM_DIR; // the whole point: the var is NOT in the environment
+    const result = spawnSync("sh", ["-c", "git status"], {
+      cwd: repoRoot,
+      encoding: "utf8",
+      timeout: 15000,
+      env: { ...env, PATH: `${wrapShim}${delimiter}${process.env.PATH ?? ""}` },
+    });
+    expect(result.signal).toBeNull(); // no timeout → no fork-bomb
+    expect([0, 128]).toContain(result.status);
+    expect(`${result.stdout}${result.stderr}`).not.toContain("export TK_SHIM_DIR");
   });
 
   test("fail-open: real git unreachable → clear error, non-128 exit, never crashes", () => {

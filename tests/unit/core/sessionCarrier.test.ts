@@ -99,9 +99,10 @@ describe("rewrite — --session injection", () => {
     expect(r.rewritten).toBe("tk --session abc git status && tk --session abc tsc --noEmit");
   });
 
-  test("only the LHS of a pipe is rewritten, with the session flag", () => {
+  test("a pipe is fully passed — the producer is not rewritten even with a session (C1)", () => {
+    // Rewriting the producer would feed `head` the compacted log, not the real one.
     const r = rewriteCommand("git log | head", "abc");
-    expect(r.rewritten).toBe("tk --session abc git log | head");
+    expect(r.decision).toBe("pass");
   });
 
   test("a session with shell metacharacters injects NO flag (sanitizer)", () => {

@@ -35,7 +35,16 @@ export async function runPipeline(
   }
   if (deduped) return { raw, filtered: deduped };
 
-  await recordHistory(raw, filtered, options);
+  // Accounting is best-effort and must NEVER throw into the caller. An unguarded
+  // throw here (unwritable TOKEN_KILLER_HOME — disk full, perms) used to propagate
+  // to cli.ts's fail-open catch, which re-ran the ALREADY-EXECUTED command via
+  // passthrough — double-executing side effects like `eslint --fix`/`git push` (C6).
+  // Fail-open like the dedup step above: record-keeping failure never re-runs work.
+  try {
+    await recordHistory(raw, filtered, options);
+  } catch {
+    // The command already ran and `filtered` already holds its output; drop the row.
+  }
   return { raw, filtered };
 }
 
