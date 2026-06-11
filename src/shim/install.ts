@@ -34,6 +34,13 @@ export function shimDir(home: string = tokenKillerHome()): string {
   return join(home, "shim");
 }
 
+// V8 compile-cache dir (2.3), under ~/.token-killer so a future AV folder exclusion
+// covers it. Baked into the wrapper env (NODE_COMPILE_CACHE) so node persists its
+// compiled bytecode across invocations; node auto-creates the dir on first use.
+export function compileCacheDir(home: string = tokenKillerHome()): string {
+  return join(home, "v8-cache");
+}
+
 export function manifestPath(home: string = tokenKillerHome()): string {
   return join(shimDir(home), "manifest.json");
 }
@@ -65,16 +72,23 @@ function shQuote(value: string): string {
 // PATH'd shim dir (C7 fork-bomb). The path is baked rather than derived from `$0`
 // because `$0` is the bare program name under PATH lookup, not the wrapper's path.
 // When `realBin` is known it also exports TK_REAL_BIN so tk can skip the per-command
-// PATH walk (2.1); omitted ⇒ byte-identical to the pre-2.1 wrapper.
+// PATH walk (2.1); omitted ⇒ byte-identical to the pre-2.1 wrapper. When
+// `compileCacheDir` is given it exports NODE_COMPILE_CACHE (2.3) BEFORE exec — node
+// reads it at process start, so only the wrapper (not tk code) can cache tk's own
+// bundle. Version-agnostic: Node 22.1+ honors it, older Node treats it as inert.
 export function posixWrapper(
   program: string,
   tk: TkExec,
   shimDir: string,
   realBin?: string,
+  compileCacheDir?: string,
 ): string {
   const parts = [tk.bin, ...tk.args, program].map(shQuote).join(" ");
   const realBinLine = realBin ? `export TK_REAL_BIN=${shQuote(realBin)}\n` : "";
-  return `#!/usr/bin/env sh\nexport TK_SHIM_DIR=${shQuote(shimDir)}\n${realBinLine}exec ${parts} "$@"\n`;
+  const cacheLine = compileCacheDir
+    ? `export NODE_COMPILE_CACHE=${shQuote(compileCacheDir)}\n`
+    : "";
+  return `#!/usr/bin/env sh\nexport TK_SHIM_DIR=${shQuote(shimDir)}\n${realBinLine}${cacheLine}exec ${parts} "$@"\n`;
 }
 
 // Windows wrapper: a .cmd that forwards args via %*. cmd.exe and PowerShell both
@@ -82,16 +96,20 @@ export function posixWrapper(
 // the recursion guard (C7; Windows dogfood observed 2,599+ spawns) without leaking
 // it to the caller; the implicit endlocal at script end preserves the exit code.
 // When `realBin` is known it also sets TK_REAL_BIN so tk can skip the per-command
-// PATH×PATHEXT walk (2.1); omitted ⇒ byte-identical to the pre-2.1 wrapper.
+// PATH×PATHEXT walk (2.1); omitted ⇒ byte-identical to the pre-2.1 wrapper. When
+// `compileCacheDir` is given it sets NODE_COMPILE_CACHE (2.3) before tk runs so
+// node can persist its compiled bytecode; version-agnostic (inert on Node <22.1).
 export function windowsWrapper(
   program: string,
   tk: TkExec,
   shimDir: string,
   realBin?: string,
+  compileCacheDir?: string,
 ): string {
   const parts = [tk.bin, ...tk.args, program].map((v) => `"${v}"`).join(" ");
   const realBinLine = realBin ? `set "TK_REAL_BIN=${realBin}"\r\n` : "";
-  return `@echo off\r\nsetlocal\r\nset "TK_SHIM_DIR=${shimDir}"\r\n${realBinLine}${parts} %*\r\n`;
+  const cacheLine = compileCacheDir ? `set "NODE_COMPILE_CACHE=${compileCacheDir}"\r\n` : "";
+  return `@echo off\r\nsetlocal\r\nset "TK_SHIM_DIR=${shimDir}"\r\n${realBinLine}${cacheLine}${parts} %*\r\n`;
 }
 
 export type InstallOptions = {
@@ -166,14 +184,21 @@ export function installWrappers(opts: InstallOptions): ShimManifest {
   // Prune stale wrappers from a previous install before writing the new set.
   pruneWrappers(dir, programs, isWindows);
 
+  // V8 compile-cache dir baked into every wrapper's env (2.3). Version-agnostic:
+  // honored by Node 22.1+, inert on older Node.
+  const cacheDir = compileCacheDir(home);
+
   mkdirSync(dir, { recursive: true });
   for (const program of programs) {
     const realBin = resolvedPaths[program];
     if (isWindows) {
-      writeFileSync(join(dir, `${program}.cmd`), windowsWrapper(program, tk, dir, realBin));
+      writeFileSync(
+        join(dir, `${program}.cmd`),
+        windowsWrapper(program, tk, dir, realBin, cacheDir),
+      );
     } else {
       const file = join(dir, program);
-      writeFileSync(file, posixWrapper(program, tk, dir, realBin));
+      writeFileSync(file, posixWrapper(program, tk, dir, realBin, cacheDir));
       chmodSync(file, 0o755);
     }
   }
@@ -208,4 +233,8 @@ export function readManifest(home: string = tokenKillerHome()): ShimManifest | n
 
 export function removeShimDir(home: string = tokenKillerHome()): void {
   rmSync(shimDir(home), { recursive: true, force: true });
+  // The V8 compile cache (2.3) is a shim-tier artifact — node regenerates it on the
+  // next shimmed run, so it is safe to drop with the wrappers. Never touches the
+  // user's measured-savings data (projects/), which uninstall preserves by default.
+  rmSync(compileCacheDir(home), { recursive: true, force: true });
 }

@@ -244,7 +244,17 @@ audit; no top-level await on the hot path (none exists); zero runtime deps so
 no dual-package hazard. The 1554-test suite is the gate. This reverses the
 chunk-split decision — record as an ADR with the AV file-count rationale.
 
-### 2.3 Compile-cache ladder across the distributed Node field
+### 2.3 Compile-cache ladder across the distributed Node field — ✅ DONE (top two rungs)
+
+**Status:** ≥22.8 rung unchanged (`module.enableCompileCache()`). 22.1–22.7 rung
+shipped: every shim wrapper now exports `NODE_COMPILE_CACHE=<home>/v8-cache`
+(`compileCacheDir`, baked in `installWrappers` → `posixWrapper`/`windowsWrapper`)
+— version-agnostic, inert on Node <22.1, and it also redirects ≥22.8's
+`enableCompileCache()` to the persistent `~/.token-killer/v8-cache` dir.
+`removeShimDir` drops the cache on uninstall (never `projects/`). The **20–22.0
+rung is explicitly DEFERRED** — it needs item 2.2's CJS bundle (`v8-compile-cache`
+only hooks CJS), out of scope here; that slice pays the uncached compile until 2.2
+ships (noted in `src/cli.ts`).
 
 Today: `module.enableCompileCache()` in `src/cli.ts` (try/catch). Per band:
 

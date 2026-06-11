@@ -3,6 +3,7 @@ import {
   accessSync,
   constants,
   existsSync,
+  mkdirSync,
   mkdtempSync,
   readFileSync,
   rmSync,
@@ -13,6 +14,7 @@ import { join } from "node:path";
 
 import {
   SHIM_MANIFEST_SCHEMA,
+  compileCacheDir,
   installWrappers,
   manifestPath,
   posixWrapper,
@@ -49,6 +51,22 @@ describe("wrapper content", () => {
     expect(windowsWrapper("git", tk, "C:\\abs\\shim", "C:\\Program Files\\Git\\bin\\git.exe")).toBe(
       '@echo off\r\nsetlocal\r\nset "TK_SHIM_DIR=C:\\abs\\shim"\r\n' +
         'set "TK_REAL_BIN=C:\\Program Files\\Git\\bin\\git.exe"\r\n' +
+        '"/usr/local/bin/node" "/abs/dist/cli.js" "git" %*\r\n',
+    );
+  });
+
+  test("POSIX wrapper bakes NODE_COMPILE_CACHE when given a cache dir (2.3)", () => {
+    expect(posixWrapper("git", tk, "/abs/shim", "/usr/bin/git", "/abs/home/v8-cache")).toBe(
+      "#!/usr/bin/env sh\nexport TK_SHIM_DIR='/abs/shim'\nexport TK_REAL_BIN='/usr/bin/git'\n" +
+        "export NODE_COMPILE_CACHE='/abs/home/v8-cache'\n" +
+        "exec '/usr/local/bin/node' '/abs/dist/cli.js' 'git' \"$@\"\n",
+    );
+  });
+
+  test("Windows wrapper bakes NODE_COMPILE_CACHE when given a cache dir (2.3)", () => {
+    expect(windowsWrapper("git", tk, "C:\\abs\\shim", undefined, "C:\\abs\\home\\v8-cache")).toBe(
+      '@echo off\r\nsetlocal\r\nset "TK_SHIM_DIR=C:\\abs\\shim"\r\n' +
+        'set "NODE_COMPILE_CACHE=C:\\abs\\home\\v8-cache"\r\n' +
         '"/usr/local/bin/node" "/abs/dist/cli.js" "git" %*\r\n',
     );
   });
@@ -152,6 +170,39 @@ describe("installWrappers", () => {
       "export TK_REAL_BIN='/usr/bin/git'",
     );
     expect(readFileSync(join(shimDir(home), "tsc"), "utf8")).not.toContain("TK_REAL_BIN");
+  });
+
+  test("bakes NODE_COMPILE_CACHE into every wrapper, pointed under the home (2.3)", () => {
+    installWrappers({
+      home,
+      programs: ["git"],
+      tkExec: tk,
+      installedAt: 1,
+      version: "1",
+      platform: "linux",
+      resolveRealBin: () => undefined,
+    });
+    const wrapper = readFileSync(join(shimDir(home), "git"), "utf8");
+    expect(wrapper).toContain(`export NODE_COMPILE_CACHE='${compileCacheDir(home)}'`);
+    expect(compileCacheDir(home)).toBe(join(home, "v8-cache"));
+  });
+
+  test("removeShimDir also drops the V8 compile cache (2.3), never projects/", () => {
+    installWrappers({
+      home,
+      programs: ["git"],
+      tkExec: tk,
+      installedAt: 1,
+      version: "1",
+      platform: "linux",
+      resolveRealBin: () => undefined,
+    });
+    // Simulate node having populated the cache, plus a measured-data dir.
+    mkdirSync(compileCacheDir(home), { recursive: true });
+    mkdirSync(join(home, "projects"), { recursive: true });
+    removeShimDir(home);
+    expect(existsSync(compileCacheDir(home))).toBe(false);
+    expect(existsSync(join(home, "projects"))).toBe(true); // measured data preserved
   });
 
   test("a schema-1 manifest (no resolvedPaths) still reads back (migration)", () => {
