@@ -156,9 +156,13 @@ export function decideFromStdin(raw: string): Decision {
   try {
     return decide(normalizeStdin(raw));
   } catch (error) {
-    process.stderr.write(
-      `tk hook copilot: ${error instanceof Error ? error.message : String(error)}\n`,
-    );
+    // Fail-open: a malformed/truncated payload is a non-event (the tool runs). Keep
+    // it OFF raw stderr — that line is what the host shows as a spurious "hook error"
+    // — and route it to the gated debug sink (TK_DEBUG / debug.log) instead.
+    tkDebug("copilot:parse-error", {
+      message: error instanceof Error ? error.message : String(error),
+      bytes: (raw ?? "").length,
+    });
     return ALLOW;
   }
 }

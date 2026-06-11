@@ -74,6 +74,31 @@ describe("decideFromStdin — fail-open (CONTEXT.md → Fail-open)", () => {
     expect(decideFromStdin("{ partial")).toBeNull();
   });
 
+  // Regression: a malformed/TRUNCATED payload (the long-command-truncation case)
+  // must NOT write to stderr — the host surfaces a fail-open hook's stderr as a
+  // spurious "hook error" even though exit is 0 and the command ran fine. The
+  // diagnostic belongs on the gated TK_DEBUG sink, not raw stderr.
+  test("truncated payload is SILENT on stderr (no spurious 'hook error')", () => {
+    const original = process.stderr.write.bind(process.stderr);
+    const written: string[] = [];
+    process.stderr.write = ((chunk: string) => {
+      written.push(String(chunk));
+      return true;
+    }) as typeof process.stderr.write;
+    const hadDebug = process.env.TK_DEBUG;
+    delete process.env.TK_DEBUG;
+    try {
+      // A long command whose JSON was cut off mid-string.
+      expect(
+        decideFromStdin(`{"tool_name":"Bash","tool_input":{"command":"rg ${"x".repeat(500)}`),
+      ).toBeNull();
+    } finally {
+      process.stderr.write = original;
+      if (hadDebug !== undefined) process.env.TK_DEBUG = hadDebug;
+    }
+    expect(written.join("")).toBe("");
+  });
+
   test("valid rewrite payload from a JSON string", () => {
     const raw = JSON.stringify(pre("git status"));
     expect(decideFromStdin(raw)?.hookSpecificOutput.updatedInput.command).toBe("tk git status");

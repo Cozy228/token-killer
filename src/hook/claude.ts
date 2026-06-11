@@ -91,9 +91,17 @@ export function decideFromStdin(raw: string): ClaudeHookOutput | null {
     if (trimmed.length === 0) return null;
     return decide(JSON.parse(trimmed));
   } catch (error) {
-    process.stderr.write(
-      `tk hook claude: ${error instanceof Error ? error.message : String(error)}\n`,
-    );
+    // Fail-open: a malformed or TRUNCATED payload (e.g. a long command whose JSON
+    // the host streamed in slower than the stdin-read budget, so it arrived cut off
+    // mid-string) is a NON-event — Claude Code runs the command unchanged. Writing
+    // this to raw stderr is what the host surfaces as a spurious "hook error" for a
+    // command that actually ran fine. Route it through the gated debug sink instead;
+    // `TK_DEBUG=1` (or $TOKEN_KILLER_HOME/debug.log) recovers the exact message and
+    // byte count on demand, and a genuine crash still hits logFatalError → errors.log.
+    tkDebug("claude:parse-error", {
+      message: error instanceof Error ? error.message : String(error),
+      bytes: (raw ?? "").length,
+    });
     return null;
   }
 }
