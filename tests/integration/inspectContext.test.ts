@@ -1,9 +1,17 @@
 // Slice 1 integration — static-context analyzers wired into the one `tk inspect`
-// (goal §"CLI contract", ADR 0003). Verifies scope axes, the --copilot-context
-// narrowing flag, mutual exclusivity, and per-scope bucket persistence.
+// (goal §"CLI contract", ADR 0003). Verifies scope axes, removed-flag handling,
+// and per-scope bucket persistence.
 
 import { afterEach, beforeEach, describe, expect, test } from "vitest";
-import { existsSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import {
+  existsSync,
+  mkdirSync,
+  mkdtempSync,
+  readdirSync,
+  readFileSync,
+  rmSync,
+  writeFileSync,
+} from "node:fs";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
@@ -46,31 +54,31 @@ function runTk(args: string[], cwd = project) {
 }
 
 describe("tk inspect — static context wiring", () => {
-  test("--project --copilot-context narrows to static findings and exits 0", () => {
+  test("--project --text surfaces static findings and exits 0", () => {
     write(project, ".github/copilot-instructions.md", "# Copilot\nproject rules\n");
     write(project, "AGENTS.md", "---\nbroken yaml\n---\n# Agents\n");
 
-    const r = runTk(["inspect", "--project", "--copilot-context"]);
+    const r = runTk(["inspect", "--project", "--text"]);
     expect(r.status).toBe(0);
     expect(r.stdout).toContain("source = static_context");
     // Malformed frontmatter surfaces as a finding.
     expect(r.stdout).toContain("malformed_frontmatter");
-    // No runtime table when --copilot-context turns runtime off.
-    expect(r.stdout).not.toContain("Opportunities (ranked");
   });
 
-  test("--project --copilot-context --json emits a unified findings array", () => {
+  test("--project --json emits a unified findings array", () => {
     write(project, "AGENTS.md", "---\nbroken yaml\n---\n# Agents\n");
-    const r = runTk(["inspect", "--project", "--copilot-context", "--json"]);
+    const r = runTk(["inspect", "--project", "--json"]);
     expect(r.status).toBe(0);
     const parsed = JSON.parse(r.stdout);
     expect(Array.isArray(parsed.findings)).toBe(true);
-    expect(parsed.static_context.findings.some((f: { source: string }) => f.source === "static_context")).toBe(true);
+    expect(
+      parsed.static_context.findings.some((f: { source: string }) => f.source === "static_context"),
+    ).toBe(true);
   });
 
   test("persists a project-scope bucket to ~/.token-killer/projects/<fp>/inspect/latest.json", () => {
     write(project, "AGENTS.md", "# Agents\n");
-    const r = runTk(["inspect", "--project", "--copilot-context"]);
+    const r = runTk(["inspect", "--project", "--text"]);
     expect(r.status).toBe(0);
     const projectsDir = path.join(home, ".token-killer", "projects");
     expect(existsSync(projectsDir)).toBe(true);
@@ -84,21 +92,23 @@ describe("tk inspect — static context wiring", () => {
     expect(report.fingerprint).toMatch(/^repo:/);
   });
 
-  test("--copilot-context with a runtime-only flag is an invalid-arg error (exit 1)", () => {
-    const r = runTk(["inspect", "--copilot-context", "--since", "7d"]);
-    expect(r.status).toBe(1);
-    expect(r.stderr).toContain("cannot be combined with runtime-only flags");
+  test("removed flags (--copilot-context/--repo-context/--telemetry-export) report unknown flag (exit 1)", () => {
+    for (const flag of ["--copilot-context", "--repo-context", "--telemetry-export"]) {
+      const r = runTk(["inspect", flag]);
+      expect(r.status).toBe(1);
+      expect(r.stderr).toContain("unknown flag");
+    }
   });
 
   test("--surface skills on an empty user scope reports zero and exits 2", () => {
     // No user-level skills present → static empty, runtime empty → exit 2.
-    const r = runTk(["inspect", "--copilot-context", "--surface", "skills"]);
+    const r = runTk(["inspect", "--surface", "skills"]);
     expect(r.status).toBe(2);
   });
 
   test("--fail-on warn exits 4 when a warn finding exists", () => {
     write(project, "AGENTS.md", "---\nbroken yaml\n---\n# Agents\n");
-    const r = runTk(["inspect", "--project", "--copilot-context", "--fail-on", "warn"]);
+    const r = runTk(["inspect", "--project", "--fail-on", "warn"]);
     expect(r.status).toBe(4);
   });
 });
