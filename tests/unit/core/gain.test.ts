@@ -19,12 +19,10 @@ function options(cwd: string): TkOptions {
   return {
     raw: false,
     stats: false,
-    verbose: false,
     maxLines: 120,
     maxChars: 12000,
     saveRaw: false,
     cwd,
-    reportFormat: "text",
   };
 }
 
@@ -69,8 +67,10 @@ function captureStdout(): { text: () => string } {
 describe("parseGainArgs", () => {
   test("flags and aliases", () => {
     expect(parseGainArgs(["--user", "--graph"]).user).toBe(true);
-    expect(parseGainArgs(["--json"]).format).toBe("json");
-    expect(parseGainArgs(["--csv"]).format).toBe("csv");
+    expect(parseGainArgs(["--json"]).output).toBe("json");
+    expect(parseGainArgs(["--csv"]).output).toBe("csv");
+    expect(parseGainArgs(["--text"]).output).toBe("text");
+    expect(parseGainArgs([]).output).toBe("html");
     expect(parseGainArgs(["--weekly"]).bucketing).toBe("weekly");
     expect(parseGainArgs(["--history"]).history).toBe(10);
     expect(parseGainArgs(["--history", "3"]).history).toBe(3);
@@ -138,7 +138,7 @@ describe("runGain --user", () => {
       await recordHistory(rawResult(), filtered(50), options(path.join(home, "proj-a")));
 
       const cap = captureStdout();
-      await runGain(["--user"], path.join(home, "proj-a"));
+      await runGain(["--user", "--text"], path.join(home, "proj-a"));
 
       expect(cap.text()).toContain("By project:");
       expect(cap.text()).toContain("proj-a");
@@ -171,7 +171,7 @@ describe("runGain fail-open", () => {
   test("empty store yields a zero summary, exit 0", async () => {
     await withHome(async (home) => {
       const cap = captureStdout();
-      const code = await runGain([], path.join(home, "empty"));
+      const code = await runGain(["--text"], path.join(home, "empty"));
       expect(code).toBe(0);
       expect(cap.text()).toContain("Commands: 0");
     });

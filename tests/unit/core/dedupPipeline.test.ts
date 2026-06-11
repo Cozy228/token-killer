@@ -64,7 +64,6 @@ function options(): TkOptions {
   return {
     raw: false,
     stats: false,
-    verbose: false,
     maxLines: 120,
     maxChars: 12000,
     saveRaw: "auto",
@@ -111,7 +110,7 @@ describe("runPipeline + session dedup — wiring & separated accounting", () => 
     await runPipeline(handler, command(), options());
 
     const out = captureStdout();
-    const code = await runGain([], cwd, new Date(), () => {});
+    const code = await runGain(["--text"], cwd, new Date(), () => {});
     expect(code).toBe(0);
     const text = out.text();
 

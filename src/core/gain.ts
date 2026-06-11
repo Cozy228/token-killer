@@ -39,7 +39,9 @@ import {
 import { runColdPathTelemetry, type DispatchParams } from "../telemetry/dispatch.js";
 
 type Bucketing = "none" | "daily" | "weekly" | "monthly" | "all";
-type Format = "text" | "json" | "csv";
+// Default output is the HTML report (opened in the browser, four ledger views).
+// --text/--json/--csv switch to the terminal forms.
+type Output = "html" | "text" | "json" | "csv";
 
 type GainArgs = {
   user: boolean;
@@ -49,7 +51,7 @@ type GainArgs = {
   failures: boolean;
   quota: boolean;
   quotaModel?: string;
-  format: Format;
+  output: Output;
   error?: string;
 };
 
@@ -74,7 +76,7 @@ export function parseGainArgs(argv: string[]): GainArgs {
     graph: false,
     failures: false,
     quota: false,
-    format: "text",
+    output: "html",
   };
   for (let i = 0; i < argv.length; i += 1) {
     const token = argv[i];
@@ -103,14 +105,10 @@ export function parseGainArgs(argv: string[]): GainArgs {
       } else {
         args.history = 10;
       }
-    } else if (token === "--json") args.format = "json";
-    else if (token === "--csv") args.format = "csv";
-    else if (token === "--format") {
-      const value = argv[i + 1];
-      i += 1;
-      if (value === "json" || value === "csv" || value === "text") args.format = value;
-      else args.error = `invalid --format '${value ?? ""}' (expected json | csv | text)`;
-    } else {
+    } else if (token === "--text") args.output = "text";
+    else if (token === "--json") args.output = "json";
+    else if (token === "--csv") args.output = "csv";
+    else {
       args.error = `unknown flag '${token}'`;
     }
   }
@@ -157,14 +155,19 @@ export async function runGain(
 
   const ctx = await loadGainContext(cwd, args.user);
 
-  if (args.format === "json") {
+  if (args.output === "json") {
     process.stdout.write(
       `${JSON.stringify(buildGainJson(ctx.rollup, args, now, ctx.dedup), null, 2)}\n`,
     );
-  } else if (args.format === "csv") {
+  } else if (args.output === "csv") {
     process.stdout.write(renderCsv(ctx.rollup, args, now));
-  } else {
+  } else if (args.output === "text") {
     process.stdout.write(await renderText(ctx, args, now));
+  } else {
+    // Default: the four-view HTML report (measured / optimizer / governance /
+    // quality), opened in the browser — same data the old `gain report` rendered.
+    const { emitGainHtml } = await import("./ledger.js");
+    await emitGainHtml({ scope: args.user ? "user" : "project", cwd }, now);
   }
 
   try {

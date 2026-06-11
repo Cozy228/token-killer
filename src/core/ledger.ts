@@ -247,26 +247,6 @@ export function renderText(ledgers: Ledgers): string {
   return out.join("\n");
 }
 
-export async function buildLedgerReport(opts: ReportOptions, json: boolean): Promise<string> {
-  const ledgers = await loadLedgers(opts);
-  return json ? renderJson(ledgers) : renderText(ledgers);
-}
-
-function parseScope(value: string): ReportScope {
-  if (value === "user" || value === "project" || value === "runtime") return value;
-  throw new Error(`tk report: --scope must be user|project|runtime (got '${value}')`);
-}
-
-function parseSince(value: string): Date {
-  const date = new Date(value);
-  if (Number.isNaN(date.getTime())) {
-    throw new Error(`tk report: --since must be an ISO date (got '${value}')`);
-  }
-  return date;
-}
-
-// `tk gain report [--scope user|project|runtime] [--project|--user] [--since <date>] [--json]`
-// (`tk report` is a back-compat alias for the same handler — see cli.ts / parse.ts.)
 // Headline dollar estimate for the HTML report — measured saved tokens valued at
 // the default input price. Always an estimate (the report labels it as such).
 function usdFields(ledgers: Ledgers): { estimated_savings_usd: number; price_per_mtok: number } {
@@ -278,68 +258,21 @@ function usdFields(ledgers: Ledgers): { estimated_savings_usd: number; price_per
   };
 }
 
-export async function runReport(argv: string[]): Promise<number> {
-  let scope: ReportScope = "user"; // user/project is the main axis; user default (ADR 0003)
-  let since: Date | undefined;
-  let json = false;
-  let text = false; // opt out of the default HTML report
-
-  try {
-    for (let i = 0; i < argv.length; i += 1) {
-      const token = argv[i];
-      switch (token) {
-        case "--scope":
-          scope = parseScope(argv[i + 1] ?? "");
-          i += 1;
-          break;
-        case "--project":
-          scope = "project";
-          break;
-        case "--user":
-          scope = "user";
-          break;
-        case "--runtime":
-          scope = "runtime";
-          break;
-        case "--since":
-          since = parseSince(argv[i + 1] ?? "");
-          i += 1;
-          break;
-        case "--json":
-          json = true;
-          break;
-        case "--text":
-          text = true;
-          break;
-        case "--html":
-          // Default already; accepted for explicitness.
-          break;
-        default:
-          throw new Error(`tk report: unknown argument '${token}'`);
-      }
-    }
-  } catch (error) {
-    process.stderr.write(`${error instanceof Error ? error.message : String(error)}\n`);
-    return 1;
-  }
-
-  const opts: ReportOptions = { scope, since, cwd: process.cwd() };
-
-  // Text/JSON only when explicitly asked; otherwise the default is the HTML
-  // report (built + opened).
-  if (json || text) {
-    process.stdout.write(await buildLedgerReport(opts, json));
-    return 0;
-  }
-
+// Build the four-view savings report (measured / optimizer / governance /
+// quality) and open it in the browser. This is the default `tk gain` surface —
+// `--text`/`--json`/`--csv` keep the terminal forms (see core/gain.ts). The four
+// ledgers are shown side by side, never summed.
+export async function emitGainHtml(opts: ReportOptions, now: Date = new Date()): Promise<void> {
   const ledgers = await loadLedgers(opts);
   const { emitHtmlReport } = await import("../report/open.js");
-  emitHtmlReport({
-    kind: "gain",
-    title: "Your token savings",
-    subtitle: "How much token spend Token Killer saved you, and where it came from.",
-    generatedAt: new Date().toISOString(),
-    data: { ...ledgers, ...usdFields(ledgers) },
-  });
-  return 0;
+  emitHtmlReport(
+    {
+      kind: "gain",
+      title: "Your token savings",
+      subtitle: "How much token spend Token Killer saved you, and where it came from.",
+      generatedAt: now.toISOString(),
+      data: { ...ledgers, ...usdFields(ledgers) },
+    },
+    now.getTime(),
+  );
 }
