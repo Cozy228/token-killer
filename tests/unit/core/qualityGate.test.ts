@@ -6,7 +6,6 @@ import type { RawResult, TkOptions } from "../../../src/types.js";
 const options: TkOptions = {
   raw: false,
   stats: false,
-  verbose: false,
   maxLines: 120,
   maxChars: 12000,
   saveRaw: false,

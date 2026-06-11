@@ -7,15 +7,11 @@ import { describe, expect, test } from "vitest";
 import { routeCommand } from "../../../src/router.js";
 import type { ParsedCommand, RawResult, TkOptions } from "../../../src/types.js";
 
-const repoRoot = path.resolve(
-  path.dirname(fileURLToPath(import.meta.url)),
-  "../../..",
-);
+const repoRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "../../..");
 
 const options: TkOptions = {
   raw: false,
   stats: false,
-  verbose: false,
   maxLines: 120,
   maxChars: 12000,
   saveRaw: false,

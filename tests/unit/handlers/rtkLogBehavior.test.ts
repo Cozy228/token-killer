@@ -16,7 +16,6 @@ const repoRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "../
 const execOptions: TkOptions = {
   raw: false,
   stats: false,
-  verbose: false,
   maxLines: 120,
   maxChars: 12000,
   saveRaw: false,

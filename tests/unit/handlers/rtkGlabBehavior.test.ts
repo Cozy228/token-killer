@@ -21,7 +21,6 @@ function rawResult(args: string[], stdout: string, exitCode = 0, stderr = ""): R
 const opts: TkOptions = {
   raw: false,
   stats: false,
-  verbose: false,
   maxLines: 120,
   maxChars: 12000,
   saveRaw: false,

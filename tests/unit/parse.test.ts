@@ -43,14 +43,6 @@ describe("parseArgv", () => {
     expect(parsed.command?.original).toEqual(["rg", "TODO", "."]);
   });
 
-  test("parses report json mode", () => {
-    const parsed = parseArgv(["--report", "--json"]);
-
-    expect(parsed.mode).toBe("report");
-    expect(parsed.options.reportFormat).toBe("json");
-    expect(parsed.command).toBeUndefined();
-  });
-
   test("does not consume tsc flags", () => {
     const parsed = parseArgv(["tsc", "--noEmit"]);
 

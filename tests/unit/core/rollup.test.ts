@@ -118,12 +118,10 @@ describe("rollup", () => {
       const opts: TkOptions = {
         raw: false,
         stats: false,
-        verbose: false,
         maxLines: 120,
         maxChars: 12000,
         saveRaw: false,
         cwd: home,
-        reportFormat: "text",
       };
       await recordHistory(
         { command: "git status", stdout: "ok", stderr: "", exitCode: 0, durationMs: 1 },
@@ -162,12 +160,10 @@ describe("rollup", () => {
       const opts: TkOptions = {
         raw: false,
         stats: false,
-        verbose: false,
         maxLines: 120,
         maxChars: 12000,
         saveRaw: false,
         cwd: home,
-        reportFormat: "text",
       };
       const filtered: FilteredResult = {
         handler: "git-status",
@@ -211,12 +207,10 @@ describe("rollup", () => {
       const opts: TkOptions = {
         raw: false,
         stats: false,
-        verbose: false,
         maxLines: 120,
         maxChars: 12000,
         saveRaw: false,
         cwd: home,
-        reportFormat: "text",
       };
       await recordHistory(
         { command: "git status", stdout: "a", stderr: "", exitCode: 0, durationMs: 1 },
@@ -256,12 +250,10 @@ describe("rollup", () => {
       const opts: TkOptions = {
         raw: false,
         stats: false,
-        verbose: false,
         maxLines: 120,
         maxChars: 12000,
         saveRaw: false,
         cwd: home,
-        reportFormat: "text",
       };
       await recordHistory(
         { command: "git status", stdout: "ok", stderr: "", exitCode: 0, durationMs: 1 },
@@ -301,12 +293,10 @@ describe("rollup", () => {
       const opts: TkOptions = {
         raw: false,
         stats: false,
-        verbose: false,
         maxLines: 120,
         maxChars: 12000,
         saveRaw: false,
         cwd: home,
-        reportFormat: "text",
       };
       await recordHistory(
         { command: "git status", stdout: "ok", stderr: "", exitCode: 0, durationMs: 1 },

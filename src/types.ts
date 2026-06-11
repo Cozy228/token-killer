@@ -62,12 +62,10 @@ export type FilteredResult = {
 export type TkOptions = {
   raw: boolean;
   stats: boolean;
-  verbose: boolean;
   maxLines: number;
   maxChars: number;
   saveRaw: boolean | "auto";
   cwd: string;
-  reportFormat?: "text" | "json" | "csv";
   // ADR 0009: best-effort agent session id, carried through the rewritten command
   // via `--session <id>` (portable across sh/pwsh) or the `TK_SESSION` env. Stamped
   // onto history rows (`session_id`) and dedup entries; never part of the dedup key.
@@ -79,7 +77,6 @@ export type TkOptions = {
 
 export type ParseMode =
   | "command"
-  | "report"
   | "help"
   | "version"
   | "install"

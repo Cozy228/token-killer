@@ -79,7 +79,6 @@ function mkOptions(over: Partial<TkOptions> = {}): TkOptions {
   return {
     raw: false,
     stats: false,
-    verbose: false,
     maxLines: 120,
     maxChars: 12000,
     saveRaw: "auto",

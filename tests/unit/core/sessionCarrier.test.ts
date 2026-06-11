@@ -70,13 +70,9 @@ describe("parse — --session flag", () => {
   });
 });
 
-describe("parse — --no-dedup", () => {
-  test("sets options.dedup=false and drops the flag from the command", () => {
-    const parsed = parseArgv(["--no-dedup", "git", "status"]);
-    expect(parsed.options.dedup).toBe(false);
-    expect(parsed.command?.original).toEqual(["git", "status"]);
-  });
-
+describe("parse — session dedup", () => {
+  // The `--no-dedup` per-command flag was removed (the internal options.dedup
+  // opt-out still exists for the pipeline; the gate is driven by TK_SESSION_DEDUP).
   test("absent ⇒ dedup undefined (follow the gate)", () => {
     expect(parseArgv(["git", "status"]).options.dedup).toBeUndefined();
   });
@@ -156,7 +152,6 @@ describe("recordHistory — session_id stamping", () => {
     return {
       raw: false,
       stats: false,
-      verbose: false,
       maxLines: 120,
       maxChars: 12000,
       saveRaw: false,

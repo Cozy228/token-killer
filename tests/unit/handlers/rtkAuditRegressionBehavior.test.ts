@@ -12,7 +12,6 @@ import { filterRtkOutput } from "../../helpers/rtkCommandHarness.js";
 const OPTIONS: TkOptions = {
   raw: false,
   stats: false,
-  verbose: false,
   maxLines: 120000,
   maxChars: 12000000,
   saveRaw: false,

@@ -13,7 +13,6 @@ function options(cwd: string): TkOptions {
   return {
     raw: false,
     stats: false,
-    verbose: false,
     maxLines: 120,
     maxChars: 12000,
     saveRaw: true,

@@ -69,7 +69,6 @@ describe("Version & Help", () => {
     expect(result.stdout).toContain("Usage:");
     expect(result.stdout).toContain("--raw");
     expect(result.stdout).toContain("--stats");
-    expect(result.stdout).toContain("--report");
   });
 });
 
@@ -684,12 +683,12 @@ describe("Global Flags", () => {
     }
   });
 
-  test("--verbose shows raw output path", async () => {
-    const dir = await mkdtemp(path.join(tmpdir(), "tk-verbose-"));
+  test("--stats shows raw output path", async () => {
+    const dir = await mkdtemp(path.join(tmpdir(), "tk-stats-"));
     try {
       await writeFile(path.join(dir, "sample.txt"), "alpha\n");
 
-      const result = runTk(["--verbose", "--save-raw", "cat", "sample.txt"], dir);
+      const result = runTk(["--stats", "--save-raw", "cat", "sample.txt"], dir);
       expect(result.status).toBe(0);
       expect(result.stdout).toContain("Raw output:");
     } finally {
@@ -699,36 +698,7 @@ describe("Global Flags", () => {
 });
 
 // ============================================================================
-// 8. Report
-// ============================================================================
-
-describe("Report", () => {
-  test("--report aggregates text json and csv history", async () => {
-    const dir = await mkdtemp(path.join(tmpdir(), "tk-report-"));
-    try {
-      await writeFile(path.join(dir, "sample.txt"), "alpha\nbeta\n");
-      expect(runTk(["--stats", "cat", "sample.txt"], dir).status).toBe(0);
-
-      const text = runTk(["--report"], dir);
-      expect(text.status).toBe(0);
-      expect(text.stdout).toContain("Token Savings Report");
-      expect(text.stdout).toContain("Commands: 1");
-
-      const json = runTk(["--report", "--json"], dir);
-      expect(json.status).toBe(0);
-      expect(JSON.parse(json.stdout)).toMatchObject({ commands: 1 });
-
-      const csv = runTk(["--report", "--csv"], dir);
-      expect(csv.status).toBe(0);
-      expect(csv.stdout).toContain("commands,raw_tokens,output_tokens,saved_tokens,savings_pct");
-    } finally {
-      await rm(dir, { recursive: true, force: true });
-    }
-  });
-});
-
-// ============================================================================
-// 9. Error Handling
+// 8. Error Handling
 // ============================================================================
 
 describe("Error Handling", () => {

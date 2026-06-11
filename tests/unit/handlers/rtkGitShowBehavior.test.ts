@@ -22,7 +22,6 @@ function raw(args: string[], stdout: string, exitCode = 0, stderr = ""): RawResu
 const options: TkOptions = {
   raw: false,
   stats: false,
-  verbose: false,
   maxLines: 120,
   maxChars: 12000,
   saveRaw: false,
