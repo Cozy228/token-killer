@@ -251,7 +251,8 @@ function parseInstallArgs(argv: string[]): InstallArgs {
 
 export function runInstall(argv: string[]): number {
   const opts = parseInstallArgs(argv);
-  const host = opts.host === "auto" ? detectHost(gatherDetectEnv()) : opts.host;
+  const env = gatherDetectEnv();
+  const host = opts.host === "auto" ? detectHost(env) : opts.host;
   out(`Detected host: ${host}`);
 
   // Project-level injection is an explicit, additive opt-in — the only write
@@ -262,6 +263,31 @@ export function runInstall(argv: string[]): number {
     else {
       writeInjection(projectFile);
       out(`Wrote project instructions: ${projectFile}`);
+    }
+  }
+
+  // Auto-detect resolves ONE primary host, but a machine commonly has more than one
+  // — e.g. Copilot CLI runs INSIDE the VS Code integrated terminal, so it inherits
+  // TERM_PROGRAM=vscode and the primary resolves to `vscode`, which used to leave the
+  // Copilot-CLI user with no hook at all. So in auto mode we don't STOP at the primary:
+  // we additively wire every OTHER present host that has an independent hook
+  // (claude-code → ~/.claude/settings.json, copilot-cli → ~/.copilot/hooks/). These
+  // are separate config files that don't conflict with the primary tier, and are
+  // fully reversible (uninstall removes them) if a host dir was merely lingering. A
+  // forced `--host X` stays single-host.
+  if (opts.host === "auto") {
+    const present: Host[] = [];
+    if (env.copilotDirExists) present.push("copilot-cli");
+    if (env.claudeSettingsExists || env.claudeEnv) present.push("claude-code");
+    for (const other of present) {
+      if (other === host) continue;
+      const adapter = adapters[other];
+      if (!adapter.installHook) continue;
+      const loc = { project: opts.project, cwd: process.cwd() };
+      out(`Also wiring ${other} (detected alongside ${host}):`);
+      const step = opts.dryRun ? adapter.planHook!(loc) : adapter.installHook(loc);
+      step.headerLines.forEach(out);
+      step.trailerLines.forEach(out);
     }
   }
 

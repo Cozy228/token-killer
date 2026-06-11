@@ -129,6 +129,28 @@ describe("tk install", () => {
     expect(result.stdout).toContain("Active tier: hook");
   });
 
+  test("auto-detect does not STOP at vscode — also wires copilot-cli when ~/.copilot exists", () => {
+    // VS Code primary (its terminal sets TERM_PROGRAM=vscode), and Copilot CLI is
+    // also installed (~/.copilot). install must wire BOTH, not just the primary.
+    mkdirSync(vscodeUserDir(process.platform, home), { recursive: true });
+    mkdirSync(join(home, ".copilot"), { recursive: true });
+    const result = runTg(["install"], { TERM_PROGRAM: "vscode" });
+    expect(result.status).toBe(0);
+    expect(result.stdout).toContain("Detected host: vscode");
+    expect(result.stdout).toContain("Also wiring copilot-cli");
+    expect(existsSync(join(home, ".token-killer", "shim", "git"))).toBe(true);
+    expect(existsSync(join(home, ".copilot", "hooks", "tk-rewrite.json"))).toBe(true);
+  });
+
+  test("a forced --host stays single-host (no secondary wiring)", () => {
+    mkdirSync(join(home, ".copilot"), { recursive: true });
+    mkdirSync(vscodeUserDir(process.platform, home), { recursive: true });
+    const result = runTg(["install", "--host", "vscode"]);
+    expect(result.status).toBe(0);
+    expect(result.stdout).not.toContain("Also wiring");
+    expect(existsSync(join(home, ".copilot", "hooks", "tk-rewrite.json"))).toBe(false);
+  });
+
   test("--host copilot-cli --dry-run writes nothing", () => {
     const result = runTg(["install", "--host", "copilot-cli", "--dry-run"]);
     expect(result.status).toBe(0);
