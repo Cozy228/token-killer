@@ -259,6 +259,45 @@ commit + tests) → I6 diagnosis → I3/I4 reader rewrite → I5 startup → I7 
 
 ---
 
+## Resolution (2026-06-11) — all seven issues fixed
+
+Worked in the order above; each issue landed as its own commit, 1516 tests green
+throughout. The README rewrite was kept out of these commits (still uncommitted).
+
+- **I1/I2 — FIXED** (`fix(jsonc): tolerant settings.json parse across all readers`).
+  Every settings reader now routes through `parseJsonc`; `config.ts`'s private
+  `stripJsonComments` folded into it (tk's own config.jsonc gains trailing-comma
+  tolerance for free); uninstall logs the reformat+backup symmetrically with install.
+  Pinned: the 2 stale tests rewritten (JSONC → ok, `applyCompress` reformats+backs up),
+  16-case `parseJsonc` unit suite, `patchVscodeSettings`-on-JSONC integration test
+  (env keys written + `.tk-backup` created) covering BOTH POSIX and Windows env keys.
+  TTY delivery (I2) rides the now-working settings patch.
+- **I6 — FIXED** (`fix(gain): normalize Windows drive-letter case`). `resolveProjectRoot`
+  uppercases the drive letter on win32 before hashing (fallback raw-cwd branch goes
+  through the same path); `c:`/`C:` now map to one bucket. No-op on POSIX. Regression
+  test on the exported `normalizeDriveCase`.
+- **I7 — FIXED** (`fix(inspect): use canonical project bucket segment`). `projectInspectDir`
+  uses `fingerprintSegment()` instead of stripping `repo:`, so inspect data lands in
+  the SAME bucket as the history it analyzes. `latest.json` is regenerated each run,
+  so stale stripped dirs are harmless (no migration needed).
+- **I3/I4 — FIXED** (`feat(inspect): read real VS Code session formats + emit gap analyzers`).
+  New `vscodeReader.ts` descends transcripts (`assistant.message.data.toolRequests[]`)
+  and chatSessions (`v.requests[].response[]`), verified against live on-disk storage;
+  `scan.ts` routes every line through `flatToolRecords` (flat CLI dialect OR the VS
+  Code extractor); `sources.ts` discovers chatSessions as `.json` AND `.jsonl`. The
+  dead `skill-gap`/`context-gap`/`storage-discovery` enum members now emit from
+  category-count signals (privacy-safe, threshold-gated). Verified end-to-end: inspect
+  extracts the real `git status` event where it previously reported zero. (Transcripts
+  record REQUESTS not outputs, so output-volume stays underivable from them — by design.)
+- **I5 — IMPROVED** (`perf(shim): lazy-load subcommands + compile cache`). Management
+  subcommands now `await import()` so the compress hot path loads only
+  router+executor+gate+pipeline; `module.enableCompileCache()` persists V8 bytecode;
+  tsdown code-splits each subcommand into its own chunk. Removes the bundle-load tax
+  from the per-command path. The node-cold-start floor is architectural (the AV-exclusion
+  → daemon/SEA ladder above still stands for the slow Windows box).
+
+---
+
 ## Review of the I1 fix (2026-06-11, post-hoc code review)
 
 Verdict: **direction and parser quality are good, but NOT committable yet** — the
