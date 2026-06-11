@@ -5,7 +5,7 @@
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 
-import { tokenKillerHome } from "../core/dataDir.js";
+import { fingerprintSegment, tokenKillerHome } from "../core/dataDir.js";
 import type { Finding } from "./unified.js";
 
 export function adviceDir(): string {
@@ -17,9 +17,7 @@ export function adviceDir(): string {
 // never duplicated across projects or left stale. `tk optimize context` reads
 // the matching bucket.
 
-export type ScopeBucket =
-  | { scope: "user" }
-  | { scope: "project"; fingerprint: string };
+export type ScopeBucket = { scope: "user" } | { scope: "project"; fingerprint: string };
 
 export type InspectBucketReport = {
   schemaVersion: "1";
@@ -35,15 +33,17 @@ export function userContextInspectDir(): string {
 }
 
 export function projectInspectDir(fingerprint: string): string {
-  // fingerprint is "repo:<hash>"; strip the prefix for a clean path segment.
-  const hash = fingerprint.replace(/^repo:/, "");
-  return join(tokenKillerHome(), "projects", hash, "inspect");
+  // Use the SAME canonical bucket segment as history/raw/dedup (I7): `repo:<hash>`
+  // on POSIX, `repo-<hash>` on Windows. The old behaviour stripped the `repo:`
+  // prefix entirely, landing inspect data in `projects/<hash>/` while the history
+  // it analyzes lived in `projects/repo:<hash>/` — two desynced buckets for one
+  // project. `latest.json` is a derived artifact regenerated every `tk inspect`, so
+  // any pre-existing stripped-prefix dir is simply stale and harmless (no migration).
+  return join(tokenKillerHome(), "projects", fingerprintSegment(fingerprint), "inspect");
 }
 
 export function inspectBucketDir(bucket: ScopeBucket): string {
-  return bucket.scope === "user"
-    ? userContextInspectDir()
-    : projectInspectDir(bucket.fingerprint);
+  return bucket.scope === "user" ? userContextInspectDir() : projectInspectDir(bucket.fingerprint);
 }
 
 export function inspectBucketPath(bucket: ScopeBucket): string {
