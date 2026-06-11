@@ -27,7 +27,7 @@ PROGRAMS=(
 FLAGS=(
     --raw
     --stats
-    --report
+    --text
 )
 
 echo "validate-docs: checking README.md documents all handler-covered commands..."

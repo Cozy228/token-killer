@@ -207,7 +207,7 @@ repeat with a marker instead of re-emitting it:
 Lossless and recoverable: tk always re-runs the real command and exact-compares the
 fresh output, so any real change re-emits in full; a changed exit code is never
 deduped. Dedup savings are reported on a **separate line** — never silently summed
-with filter savings. Toggle with `tk --no-dedup <cmd>` or `TK_SESSION_DEDUP=0`.
+with filter savings. Disabled by default; enable with `TK_SESSION_DEDUP=1`.
 
 ### Honest measurement — two denominators, both measured
 
@@ -215,10 +215,10 @@ Savings are always **measured** (`raw − delivered`), never estimated, never su
 across ledgers. `tk` answers two different questions:
 
 ```bash
-tk gain               # per-command: of a command's output, how much tk squeezed
-tk gain --session     # per-session: of the whole session's tokens, how much tk saved
-tk gain --history     # recent commands + per-command savings
-tk gain report        # full report (--scope user|project|runtime, --json, --csv)
+tk gain               # opens an HTML report: measured savings, four views side by side
+tk gain --text        # same, printed to the terminal instead
+tk gain --history     # recent commands + per-command savings (terminal)
+tk gain --json        # machine-readable; --csv for spreadsheets
 ```
 
 `tk gain --session` reports **~27–28%** on real Claude Code sessions — and the
@@ -233,9 +233,9 @@ instructions, skills, agents, and editor settings that silently bloat *every*
 request before any command runs.
 
 ```bash
-tk inspect            # read-only audit: runtime sessions + static context files
-tk inspect --advice   # ranked, actionable findings
-tk optimize           # dry-run plan from the audit
+tk inspect            # read-only audit (opens an HTML report); --text for the terminal
+tk inspect --advice   # ranked, actionable findings (with --text)
+tk optimize           # preview plan from the audit
 tk optimize --apply   # apply safe, mechanical fixes (backs up first)
 tk optimize --restore # revert
 ```
@@ -269,35 +269,22 @@ tk smart src/main.ts
 
 ```bash
 tk --raw <command...>          # run WITHOUT any compression (debugging / exact bytes)
-tk --stats <command...>        # append a token-savings summary
-tk --verbose <command...>
+tk --stats <command...>        # append a token-savings summary (+ saved raw-output path)
 tk --max-lines 200 <command...>
 tk --max-chars 12000 <command...>
 tk --save-raw <command...>     # always snapshot the full output
 tk --no-save-raw <command...>
-tk --no-dedup <command...>     # bypass session dedup
-tk --report                    # full savings report (--json, --csv)
 tk --help
 tk --version
 ```
 
-`## Token Savings` is **not** printed by default. It appears only with `--stats`,
-`--verbose`, or `--report`.
+`## Token Savings` is **not** printed by default. It appears only with `--stats`.
 
 ## VS Code settings
 
-`tk` can also tidy the VS Code / Copilot settings that quietly inflate context:
-
-```bash
-tk optimize --vscode-settings            # advisory review
-tk optimize --vscode-settings --apply    # apply (backs up first)
-tk optimize --vscode-settings --restore  # revert
-```
-
-One setting is auto-changed and one-click reversible — VS Code's built-in
-terminal-output compression (`chat.tools.compressOutput.enabled`). Riskier ones
-(too many auto-loaded instruction files, extra readable dirs, MCP auto-discovery, a
-high per-request tool budget) are **advice-only** — `tk` flags them; you decide.
+`tk inspect` flags VS Code's built-in terminal-output compression
+(`chat.tools.compressOutput.enabled`) when it's off, and `tk optimize --apply`
+turns it on for you (backs up first; `--restore` reverts) — no dedicated flag.
 
 <a id="best-practice-guidance"></a>
 

@@ -255,7 +255,6 @@ assert_fails   "tk <unknown> errors (U2)"       $TK definitely-not-a-real-tool-x
 section "Global flags"
 
 assert_contains "tk --stats shows savings"      "## Token Savings" $TK --stats ls .
-assert_contains "tk --verbose verbose"          "Token Savings" $TK --verbose ls .
 assert_ok      "tk --raw ls"                    $TK --raw ls .
 assert_contains "tk --raw raw output"           "package.json" $TK --raw ls .
 assert_ok      "tk --max-lines 5 ls"            $TK --max-lines 5 ls .
@@ -263,16 +262,17 @@ assert_ok      "tk --max-chars 500 ls"          $TK --max-chars 500 ls .
 assert_ok      "tk --save-raw ls"               $TK --save-raw ls .
 assert_ok      "tk --no-save-raw ls"            $TK --no-save-raw ls .
 
-# ── 10. Report ───────────────────────────────────────
+# ── 10. Gain (savings report) ────────────────────────
 
-section "Report"
+section "Gain"
 
-assert_ok      "tk --report"                    $TK --report
-assert_contains "tk --report title"             "Token Savings Report" $TK --report
-assert_ok      "tk --report --json"             $TK --report --json
-assert_contains "tk --report --json valid"      '"commands"' $TK --report --json
-assert_ok      "tk --report --csv"              $TK --report --csv
-assert_contains "tk --report --csv header"      "commands,raw_tokens" $TK --report --csv
+assert_ok      "tk gain --text"                 $TK gain --text
+assert_contains "tk gain --text title"          "Token savings" $TK gain --text
+assert_ok      "tk gain --json"                 $TK gain --json
+assert_contains "tk gain --json valid"          '"commands"' $TK gain --json
+assert_ok      "tk gain --csv"                  $TK gain --csv
+assert_contains "tk gain --csv header"          "commands,raw_tokens" $TK gain --csv
+assert_contains "tk gain default → HTML"        "Generated HTML report" env TK_NO_OPEN=1 $TK gain
 
 # ── 11. Error handling ──────────────────────────────
 
