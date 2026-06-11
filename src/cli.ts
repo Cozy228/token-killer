@@ -1,22 +1,25 @@
 #!/usr/bin/env node
+// I5 — shim startup cost. Every shimmed command re-invokes node and loads this
+// bundle, so the hot path (`tk git status`) must pull in ONLY the compression
+// machinery (router + executor + gate + pipeline). The management subcommands
+// (install/inspect/optimize/telemetry/report/…) are loaded with `await import()`
+// the moment they're actually requested, keeping them off the per-command path.
+// `module.enableCompileCache()` (Node ≥22.8) persists V8's compiled bytecode
+// across invocations, shaving the bundle-compile segment on every subsequent run.
+import module from "node:module";
+try {
+  (module as { enableCompileCache?: () => void }).enableCompileCache?.();
+} catch {
+  // Older Node, or a read-only cache dir — startup cost is unchanged, never fatal.
+}
+
 import { parseArgv } from "./parse.js";
 import { routeCommand, routeSpecific } from "./router.js";
 import { executePassthrough } from "./executor.js";
 import { gateDecision } from "./shim/gate.js";
 import { isInteractive } from "./shim/interactive.js";
-import { runInstall, runStatus, runUninstall } from "./shim/init.js";
-import { runShim } from "./shim/cli.js";
 import { isShimmableProgram } from "./shim/programs.js";
 import { tkDebug } from "./hook/debug.js";
-import { runHook } from "./hook/cli.js";
-import { runInspect } from "./inspect/cli.js";
-import { runDebug } from "./debug/cli.js";
-import { runOptimize } from "./context/optimizeCli.js";
-import { buildReport } from "./core/report.js";
-import { runReport } from "./core/ledger.js";
-import { runGain } from "./core/gain.js";
-import { runConfig } from "./core/configCli.js";
-import { runTelemetry } from "./telemetry/cli.js";
 import { runPipeline } from "./core/pipeline.js";
 import { recordHistory } from "./core/history.js";
 import { calculateSavings } from "./core/savings.js";
@@ -210,48 +213,50 @@ async function main(): Promise<number> {
     process.stdout.write(`${VERSION}\n`);
     return 0;
   }
+  // Management subcommands — lazily imported so the compression hot path never pays
+  // to load them (I5). Each branch loads exactly the module it dispatches to.
   if (parsed.mode === "report") {
-    process.stdout.write(await buildReport(parsed.options));
+    process.stdout.write(await (await import("./core/report.js")).buildReport(parsed.options));
     return 0;
   }
   if (parsed.mode === "install") {
-    return runInstall(parsed.subArgs ?? []);
+    return (await import("./shim/init.js")).runInstall(parsed.subArgs ?? []);
   }
   if (parsed.mode === "uninstall") {
-    return runUninstall(parsed.subArgs ?? []);
+    return (await import("./shim/init.js")).runUninstall(parsed.subArgs ?? []);
   }
   if (parsed.mode === "status") {
-    return runStatus(parsed.subArgs ?? []);
+    return (await import("./shim/init.js")).runStatus(parsed.subArgs ?? []);
   }
   if (parsed.mode === "shim") {
-    return runShim(parsed.subArgs ?? []);
+    return (await import("./shim/cli.js")).runShim(parsed.subArgs ?? []);
   }
   if (parsed.mode === "hook") {
-    return runHook(parsed.subArgs ?? []);
+    return (await import("./hook/cli.js")).runHook(parsed.subArgs ?? []);
   }
   if (parsed.mode === "inspect") {
-    return runInspect(parsed.subArgs ?? []);
+    return (await import("./inspect/cli.js")).runInspect(parsed.subArgs ?? []);
   }
   if (parsed.mode === "debug") {
-    return runDebug(parsed.subArgs ?? []);
+    return (await import("./debug/cli.js")).runDebug(parsed.subArgs ?? []);
   }
   if (parsed.mode === "optimize") {
-    return runOptimize(parsed.subArgs ?? []);
+    return (await import("./context/optimizeCli.js")).runOptimize(parsed.subArgs ?? []);
   }
   if (parsed.mode === "gain") {
     const sub = parsed.subArgs ?? [];
     // `tk gain report` — the detailed multi-view savings report (second layer
     // under `gain`). `tk report` stays as a back-compat alias (see parse.ts).
     if (sub[0] === "report") {
-      return runReport(sub.slice(1));
+      return (await import("./core/ledger.js")).runReport(sub.slice(1));
     }
-    return runGain(sub, parsed.options.cwd);
+    return (await import("./core/gain.js")).runGain(sub, parsed.options.cwd);
   }
   if (parsed.mode === "config") {
-    return runConfig(parsed.subArgs ?? []);
+    return (await import("./core/configCli.js")).runConfig(parsed.subArgs ?? []);
   }
   if (parsed.mode === "telemetry") {
-    return runTelemetry(parsed.subArgs ?? []);
+    return (await import("./telemetry/cli.js")).runTelemetry(parsed.subArgs ?? []);
   }
   if (!parsed.command) {
     // Bare `tk` (or flags with no command to run) has nothing to execute — print
