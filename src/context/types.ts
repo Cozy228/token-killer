@@ -1,4 +1,4 @@
-// Static-context optimizer types (context-optimizer-implementation-goal.md
+// Static-context optimizer types (docs/archive/context-optimizer-implementation-goal.md
 // "Data model"). A ContextFinding is the `source = "static_context"` slice of
 // inspect's unified Finding (DESIGN §9.0). It does NOT define its own report
 // envelope — inspect merges these into the one unified Finding[] report.

@@ -2,7 +2,7 @@
 // to keep OUTPUT terse. Output tokens are billed more than input (per provider
 // pricing), and a one-line "respond with code only, no prose explanation" directive
 // is reported to reduce output volume on coding tasks — a cheap, high-leverage edit.
-// (See reports/token-optimization-best-practices-20260611.md; figures reported there.)
+// (See docs/reports/token-optimization-best-practices-20260611.md; figures reported there.)
 //
 // Fires once per always-on instruction surface (CLAUDE.md / AGENTS.md /
 // copilot-instructions) that lacks any brevity directive. Advisory: appending a

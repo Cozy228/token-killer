@@ -154,7 +154,7 @@ function costTipFindings(
   const out: AdviceFinding[] = [];
   if (habits && habits.sessions > 0) {
     // Continuation depth — long agent loops re-send the whole transcript every turn.
-    // Practitioner guidance (see reports/token-optimization-best-practices): refresh
+    // Practitioner guidance (see docs/reports/token-optimization-best-practices): refresh
     // after ~15–20 turns; cost compounds because the transcript is re-sent each turn.
     if (habits.avg_tool_calls_per_session >= 20) {
       out.push({

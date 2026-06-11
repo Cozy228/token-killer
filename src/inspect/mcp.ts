@@ -3,7 +3,7 @@
 // number of servers can take a large share of the window (and a CLI is far cheaper
 // per call than its MCP). So the COUNT of configured servers is a standing token
 // cost worth flagging, independent of any one session — figures and sources are in
-// reports/token-optimization-best-practices-20260611.md, not asserted as fact here.
+// docs/reports/token-optimization-best-practices-20260611.md, not asserted as fact here.
 //
 // Read-only and privacy-safe: we count server keys and report names only — never
 // the server commands, args, env, or URLs (those can carry secrets).

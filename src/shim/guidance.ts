@@ -7,7 +7,7 @@ import { applyInjectionBlock, removeInjectionBlock } from "./injection.js";
 
 // Usage guidance tk drops at `tk install` so the agent SPENDS FEWER TOKENS — not
 // just the transparent `tk <cmd>` rewrite the hook/shim already does, but the
-// agent-actionable habits the research (reports/token-optimization-best-practices)
+// agent-actionable habits the research (docs/reports/token-optimization-best-practices)
 // found move the needle most: prefer a tool's native terse form, read/search with
 // the agent's own bounded tools instead of shelling out (orientation is where most
 // tokens leak), and keep the agent's own replies short (output is billed ~4× input).
