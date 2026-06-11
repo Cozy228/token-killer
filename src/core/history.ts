@@ -74,6 +74,58 @@ export async function recordHistory(
   await maybeWriteProjectMeta(options.cwd);
 }
 
+// A `--raw` passthrough that STREAMS via stdio:"inherit" (the light path) captures
+// no bytes, so it has no honest size to record. We persist only what we genuinely
+// know — exit code and wall-clock duration — and OMIT every byte/token field rather
+// than fabricate zeros that would read as "tk measured 0 bytes" (it measured none).
+// The read boundary (`coerceHistorySizes`) fills the absent fields with 0 so every
+// numeric consumer still aggregates safely; the on-disk row stays honest.
+type RawLiteRecord = Omit<
+  HistoryRecord,
+  "raw_chars" | "output_chars" | "raw_tokens" | "output_tokens" | "saved_tokens" | "savings_pct"
+>;
+
+export async function recordRawLitePassthrough(params: {
+  command: string;
+  exitCode: number;
+  durationMs: number;
+  cwd: string;
+  sessionId?: string;
+}): Promise<void> {
+  const file = historyFile(params.cwd);
+  await mkdir(path.dirname(file), { recursive: true });
+
+  const record: RawLiteRecord = {
+    timestamp: new Date().toISOString(),
+    command: params.command,
+    handler: "raw",
+    source_adapter: "shell",
+    project_fingerprint: projectFingerprint(params.cwd),
+    exit_code: params.exitCode,
+    duration_ms: params.durationMs,
+    quality_status: "passed",
+  };
+  if (params.sessionId) record.session_id = params.sessionId;
+
+  await writeFile(file, `${JSON.stringify(record)}\n`, { encoding: "utf8", flag: "a" });
+  await maybeWriteProjectMeta(params.cwd);
+}
+
+// Fill the byte/token fields a light `--raw` row honestly OMITS (see
+// recordRawLitePassthrough) with 0 at the read boundary, so numeric consumers never
+// see `undefined` (which would poison every sum into NaN). Mutates and returns the
+// row; the on-disk JSON is unchanged. Exported so the streaming rollup, which parses
+// rows itself instead of through parseHistoryLines, can apply the same coercion.
+export function coerceHistorySizes(record: HistoryRecord): HistoryRecord {
+  record.raw_chars ??= 0;
+  record.output_chars ??= 0;
+  record.raw_tokens ??= 0;
+  record.output_tokens ??= 0;
+  record.saved_tokens ??= 0;
+  record.savings_pct ??= 0;
+  return record;
+}
+
 // Lazily record the project's display label (directory basename only — never the
 // full path) for `tk gain --user` (ADR 0004 §3). Best-effort and idempotent: the
 // `wx` flag writes only when absent, and any error (already present, unwritable) is
@@ -144,7 +196,7 @@ export async function readHistory(cwd: string): Promise<HistoryRecord[]> {
 }
 
 function parseHistoryLines(text: string): HistoryRecord[] {
-  return parseJsonl<HistoryRecord>(text);
+  return parseJsonl<HistoryRecord>(text).map(coerceHistorySizes);
 }
 
 // User-level read (ADR 0004 §3): enumerate every project's history.jsonl under

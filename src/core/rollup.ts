@@ -15,7 +15,7 @@ import {
   tokenKillerHome,
   fingerprintSegment,
 } from "./dataDir.js";
-import type { HistoryRecord } from "./history.js";
+import { coerceHistorySizes, type HistoryRecord } from "./history.js";
 import { commandStem } from "../telemetry/commandStem.js";
 
 function pct(saved: number, raw: number): number {
@@ -139,6 +139,10 @@ function modelKey(record: HistoryRecord): string {
 }
 
 export function applyRecord(rollup: ProjectRollup, record: HistoryRecord, now = new Date()): void {
+  // A light `--raw` row omits its byte/token fields on disk (honest: it captured
+  // none). Fill them with 0 before summing so a missing field never poisons a total
+  // into NaN; the on-disk row is untouched.
+  coerceHistorySizes(record);
   rollup.source_lines += 1;
   rollup.totals.commands += 1;
   rollup.totals.raw_tokens += record.raw_tokens;

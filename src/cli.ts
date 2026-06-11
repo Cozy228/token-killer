@@ -22,7 +22,7 @@ import { isInteractive } from "./shim/interactive.js";
 import { isShimmableProgram } from "./shim/programs.js";
 import { tkDebug, logFatalError } from "./hook/debug.js";
 import { runPipeline } from "./core/pipeline.js";
-import { recordHistory } from "./core/history.js";
+import { recordHistory, recordRawLitePassthrough } from "./core/history.js";
 import { calculateSavings } from "./core/savings.js";
 import { maybeSaveRawOutput } from "./core/rawStore.js";
 import { limitOutput } from "./core/outputLimit.js";
@@ -249,17 +249,48 @@ async function main(): Promise<number> {
 
   const command = parsed.command;
 
-  // --raw: capture-then-print, unchanged. Uses the full router so every command
-  // (including generic fall-throughs) is captured and reprinted. Distinct from
-  // passthrough, which inherits stdio and never captures.
+  // --raw: print the real tool's output with NO compression. By default this now
+  // STREAMS via inherited stdio (executePassthrough) — the lightest path: no pipe,
+  // no decode, no per-byte capture, and output appears live instead of all at once
+  // when the child exits. We only fall back to the heavier capture-then-print path
+  // when accounting genuinely needs the bytes: `--stats` (token summary) or an
+  // explicit `--save-raw` (persist the raw log). `--no-save-raw`/auto-save never
+  // forces capture — streaming is the point of plain `--raw`.
   if (parsed.options.raw) {
+    // Correctness advisory for a misused `rg -r` (silently --replace). Goes to STDERR
+    // so stdout stays byte-verbatim — the whole point of --raw — while still warning.
+    // Needs only program+args, so it works on the streaming path too.
+    const footgunBanner = replaceFootgunBanner(command.program, command.args);
+    const needsCapture = parsed.options.stats || parsed.options.saveRaw === true;
+
+    if (!needsCapture) {
+      // Streaming path: inherited stdio, restore live output, capture nothing.
+      const started = Date.now();
+      const exitCode = await executePassthrough(command);
+      if (footgunBanner !== null) process.stderr.write(`${footgunBanner}\n`);
+      // Best-effort accounting; a write failure must never override the real exit
+      // code (C6). The light row records only what we truly know — exit code +
+      // duration — and omits byte/token counts we never captured (no fake sizes).
+      try {
+        await recordRawLitePassthrough({
+          command: command.displayCommand,
+          exitCode,
+          durationMs: Date.now() - started,
+          cwd: parsed.options.cwd,
+          sessionId: parsed.options.sessionId,
+        });
+      } catch {
+        /* drop the accounting row; never alter the command's outcome */
+      }
+      return exitCode;
+    }
+
+    // Capture path: --stats / --save-raw need the actual bytes. Uses the full router
+    // so every command (including generic fall-throughs) is captured and reprinted.
     const handler = routeCommand(command);
     const raw = await handler.execute(command, parsed.options);
     process.stdout.write(raw.stdout);
     process.stderr.write(raw.stderr);
-    // Correctness advisory for a misused `rg -r` (silently --replace). Goes to STDERR
-    // so stdout stays byte-verbatim — the whole point of --raw — while still warning.
-    const footgunBanner = replaceFootgunBanner(command.program, command.args);
     if (footgunBanner !== null) process.stderr.write(`${footgunBanner}\n`);
     // Best-effort accounting; a write failure must never override the real exit code
     // (C6) — the command already ran and its output is already on stdout/stderr.

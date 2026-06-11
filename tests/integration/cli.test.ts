@@ -655,7 +655,7 @@ describe("Global Flags", () => {
     expect(raw.stdout).toBe("raw retained\n");
   });
 
-  test("--raw still records history with zero savings", async () => {
+  test("--raw streams via inherited stdio and records an honest light history row", async () => {
     const dir = await mkdtemp(path.join(tmpdir(), "tk-raw-history-"));
     const tkHome = path.join(dir, "token-killer-data");
     try {
@@ -667,16 +667,55 @@ describe("Global Flags", () => {
       );
       process.env.TOKEN_KILLER_HOME = tkHome;
       expect(result.status).toBe(0);
+      // Streamed verbatim through the inherited stdout — no capture/reprint.
+      expect(result.stdout).toBe("raw retained\n");
 
       const history = await readFile(historyFile(dir), "utf8");
-      const record = JSON.parse(history.trim()) as {
-        handler: string;
-        saved_tokens: number;
-        savings_pct: number;
-      };
+      const record = JSON.parse(history.trim()) as Record<string, unknown>;
       expect(record.handler).toBe("raw");
+      expect(record.exit_code).toBe(0);
+      expect(typeof record.duration_ms).toBe("number");
+      // No fabricated byte/token counts: the streaming path captured nothing, so the
+      // size fields are absent on disk rather than written as fake zeros.
+      expect(record.raw_chars).toBeUndefined();
+      expect(record.output_chars).toBeUndefined();
+      expect(record.raw_tokens).toBeUndefined();
+      expect(record.output_tokens).toBeUndefined();
+      expect(record.saved_tokens).toBeUndefined();
+      expect(record.savings_pct).toBeUndefined();
+    } finally {
+      delete process.env.TOKEN_KILLER_HOME;
+      await rm(dir, { recursive: true, force: true });
+    }
+  });
+
+  test("--raw preserves a non-zero exit code while streaming", () => {
+    const result = runTk(["--raw", process.execPath, "-e", "process.exit(7)"], repoRoot);
+    expect(result.status).toBe(7);
+  });
+
+  test("--raw --save-raw captures the bytes and records a full history row", async () => {
+    const dir = await mkdtemp(path.join(tmpdir(), "tk-raw-capture-"));
+    const tkHome = path.join(dir, "token-killer-data");
+    try {
+      const result = runTk(
+        ["--raw", "--save-raw", process.execPath, "-e", "console.log('captured')"],
+        dir,
+        undefined,
+        tkHome,
+      );
+      process.env.TOKEN_KILLER_HOME = tkHome;
+      expect(result.status).toBe(0);
+      expect(result.stdout).toBe("captured\n");
+
+      const history = await readFile(historyFile(dir), "utf8");
+      const record = JSON.parse(history.trim()) as Record<string, unknown>;
+      expect(record.handler).toBe("raw");
+      // --save-raw forces the capture path, so the size fields are present and real.
+      expect(typeof record.raw_chars).toBe("number");
       expect(record.saved_tokens).toBe(0);
       expect(record.savings_pct).toBe(0);
+      expect(typeof record.raw_output_path).toBe("string");
     } finally {
       delete process.env.TOKEN_KILLER_HOME;
       await rm(dir, { recursive: true, force: true });
