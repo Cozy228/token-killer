@@ -43,13 +43,54 @@ export type HistoryRecord = {
   session_id?: string;
 };
 
+// In-process memo of which data dirs we have already ensured (2.4b). The project
+// dir is created once per process instead of mkdir(recursive) on every command. A
+// process is one tk invocation, so this never goes stale within a run.
+const ensuredDirs = new Set<string>();
+
+// In-process memo of which project fingerprints already have a meta.json (2.4c), so
+// the per-command `open(meta, "wx")` — which fired its syscall even on EEXIST — stops
+// firing after the first command. Keyed by fingerprint (the meta is per project).
+const metaEnsured = new Set<string>();
+
+// 2.4e — opt-out for latency-critical agents. Set TK_NO_HISTORY=1 to skip the history
+// row entirely (documented cost: `tk gain` will not see those commands). Any value
+// other than unset/""/"0"/"false" enables it.
+function historyDisabled(): boolean {
+  const v = process.env.TK_NO_HISTORY;
+  return v !== undefined && v !== "" && v !== "0" && v.toLowerCase() !== "false";
+}
+
+async function ensureDataDirOnce(dir: string): Promise<void> {
+  if (ensuredDirs.has(dir)) return;
+  await mkdir(dir, { recursive: true });
+  ensuredDirs.add(dir);
+}
+
+// Append one JSONL row with a single pre-serialized write (2.4d). The dir is ensured
+// once per process; if it was deleted mid-run the append's ENOENT self-heals with one
+// mkdir + retry, so the ledger-① row is never silently dropped.
+async function appendJsonLine(file: string, line: string): Promise<void> {
+  const dir = path.dirname(file);
+  await ensureDataDirOnce(dir);
+  try {
+    await writeFile(file, line, { encoding: "utf8", flag: "a" });
+  } catch (error) {
+    if ((error as NodeJS.ErrnoException).code !== "ENOENT") throw error;
+    ensuredDirs.delete(dir);
+    await mkdir(dir, { recursive: true });
+    ensuredDirs.add(dir);
+    await writeFile(file, line, { encoding: "utf8", flag: "a" });
+  }
+}
+
 export async function recordHistory(
   raw: RawResult,
   filtered: FilteredResult,
   options: TkOptions,
 ): Promise<void> {
+  if (historyDisabled()) return;
   const file = historyFile(options.cwd);
-  await mkdir(path.dirname(file), { recursive: true });
 
   const record: HistoryRecord = {
     timestamp: new Date().toISOString(),
@@ -70,7 +111,7 @@ export async function recordHistory(
   };
   if (options.sessionId) record.session_id = options.sessionId;
 
-  await writeFile(file, `${JSON.stringify(record)}\n`, { encoding: "utf8", flag: "a" });
+  await appendJsonLine(file, `${JSON.stringify(record)}\n`);
   await maybeWriteProjectMeta(options.cwd);
 }
 
@@ -92,8 +133,8 @@ export async function recordRawLitePassthrough(params: {
   cwd: string;
   sessionId?: string;
 }): Promise<void> {
+  if (historyDisabled()) return;
   const file = historyFile(params.cwd);
-  await mkdir(path.dirname(file), { recursive: true });
 
   const record: RawLiteRecord = {
     timestamp: new Date().toISOString(),
@@ -107,7 +148,7 @@ export async function recordRawLitePassthrough(params: {
   };
   if (params.sessionId) record.session_id = params.sessionId;
 
-  await writeFile(file, `${JSON.stringify(record)}\n`, { encoding: "utf8", flag: "a" });
+  await appendJsonLine(file, `${JSON.stringify(record)}\n`);
   await maybeWriteProjectMeta(params.cwd);
 }
 
@@ -129,8 +170,13 @@ export function coerceHistorySizes(record: HistoryRecord): HistoryRecord {
 // Lazily record the project's display label (directory basename only — never the
 // full path) for `tk gain --user` (ADR 0004 §3). Best-effort and idempotent: the
 // `wx` flag writes only when absent, and any error (already present, unwritable) is
-// swallowed so the hot-path command is never broken.
+// swallowed so the hot-path command is never broken. Guarded by an in-process flag
+// (2.4c) so the `open(wx)` syscall fires at most ONCE per fingerprint per process,
+// instead of every command (where it fired its open even to hit EEXIST).
 async function maybeWriteProjectMeta(cwd: string): Promise<void> {
+  const fingerprint = projectFingerprint(cwd);
+  if (metaEnsured.has(fingerprint)) return;
+  metaEnsured.add(fingerprint);
   try {
     const meta: ProjectMeta = { label: path.basename(cwd) };
     await writeFile(projectMetaFile(cwd), `${JSON.stringify(meta)}\n`, {
@@ -163,7 +209,6 @@ export async function recordHookFailure(params: {
   exitCode: number;
 }): Promise<void> {
   const file = historyFile(params.cwd);
-  await mkdir(path.dirname(file), { recursive: true });
 
   const record: HistoryRecord = {
     timestamp: new Date().toISOString(),
@@ -182,7 +227,7 @@ export async function recordHookFailure(params: {
     quality_status: "failure",
   };
 
-  await writeFile(file, `${JSON.stringify(record)}\n`, { encoding: "utf8", flag: "a" });
+  await appendJsonLine(file, `${JSON.stringify(record)}\n`);
 }
 
 export async function readHistory(cwd: string): Promise<HistoryRecord[]> {

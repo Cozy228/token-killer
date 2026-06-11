@@ -260,7 +260,18 @@ Point the cache dir under `~/.token-killer` so an eventual EDR folder
 exclusion covers it. *Grounded.* **Degrades, never errors** — each rung is
 additive and inert where unsupported.
 
-### 2.4 Per-command fs-op slimming (history, meta, fingerprint, config)
+### 2.4 Per-command fs-op slimming (history, meta, fingerprint, config) — ✅ DONE
+
+**Status:** implemented in `src/core/history.ts` + `src/core/dataDir.ts`.
+(a) `projectFingerprint(cwd)` is memoized at module level — the ≥3 walks/command
+collapse to one (highest-value sub-item); `resetFingerprintCacheForTests` is the
+test seam. (b) the project data dir is ensured once per process (`ensuredDirs`
+Set) instead of `mkdir(recursive)` per command; a mid-run deletion self-heals on
+the append's ENOENT so the ledger-① row is never dropped. (c) project meta is
+written at most once per fingerprint per process (`metaEnsured` Set), so the
+per-command `open(wx)` stops firing. (d) one pre-serialized append per row
+(`appendJsonLine`, awaited — NOT fire-and-forget). (e) `TK_NO_HISTORY=1` opt-out
+documented in `tk --help`. 1580 tests green.
 
 `recordHistory` (`src/core/history.ts`) + `maybeWriteProjectMeta` are 2–3
 EDR-intercepted opens/writes per command. Cheap fixes, in order: (a) write

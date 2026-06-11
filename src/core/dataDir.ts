@@ -80,11 +80,28 @@ export function tokenKillerHome(): string {
   return path.join(os.homedir(), ".token-killer");
 }
 
+// Memoize per cwd (2.4a). The git layout that pins a project's fingerprint does not
+// change within a single process run, so the (realpathSync + up-tree statSync walk)
+// is computed ONCE per distinct cwd and reused. recordHistory alone asks for it 3×
+// per command (historyFile, the record field, project meta), and governance/ledger
+// add more — all collapse to one walk. Keyed by the RAW cwd string the caller passed
+// (each tk invocation is a fresh process, so the cache never outlives one run).
+const fingerprintCache = new Map<string, string>();
+
 export function projectFingerprint(cwd: string): string {
+  const cached = fingerprintCache.get(cwd);
+  if (cached !== undefined) return cached;
   const normalized = resolveProjectRoot(cwd);
   const anchor = gitRepoAnchor(normalized) ?? normalized;
-  const hash = createHash("sha256").update(anchor).digest("hex").slice(0, 12);
-  return `repo:${hash}`;
+  const fingerprint = `repo:${createHash("sha256").update(anchor).digest("hex").slice(0, 12)}`;
+  fingerprintCache.set(cwd, fingerprint);
+  return fingerprint;
+}
+
+// Test-only seam: drop the memoized fingerprints so a test can exercise a changed
+// git layout for a cwd it has already queried within the same process.
+export function resetFingerprintCacheForTests(): void {
+  fingerprintCache.clear();
 }
 
 // Render a fingerprint (logical id `repo:<hash>`) into a filesystem-safe path

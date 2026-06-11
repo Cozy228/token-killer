@@ -168,6 +168,8 @@ function help(): string {
     "  --no-save-raw         Never save the raw output",
     "  --help                Show this help",
     "  --version             Show the tk version",
+    "  TK_NO_HISTORY=1       Skip writing the measured-savings history row (lowest",
+    "                        per-command latency; `tk gain` will not see those commands)",
     "",
   ].join("\n");
 }
