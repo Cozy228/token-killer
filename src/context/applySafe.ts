@@ -1,5 +1,5 @@
 // Apply + restore for `tk optimize`. `--apply` writes every deterministic
-// optimization (frontmatter sets and managed marker blocks) across the resolved
+// optimization inspect found (currently frontmatter sets) across the resolved
 // scopes (user-only off-git; user + project inside a git repo). Free-form
 // suggestions are printed for manual review, never written. Before any write the
 // full plan is disclosed, and every touched file is backed up under
@@ -26,60 +26,6 @@ import {
 } from "./optimizeCli.js";
 import { planForFinding } from "./patchPlan.js";
 import type { ContextScope, ContextSurface } from "./types.js";
-
-export const MARKER_START = "<!-- tk:token_budget:start -->";
-export const MARKER_END = "<!-- tk:token_budget:end -->";
-
-// Stable, cacheable managed block — no timestamps/IDs (cacheability_churn-clean),
-// ≤ 15 lines (DESIGN §5.3). Points at concrete, already-shipped read/rg/tree flags
-// instead of generic advice (docs/handler-compression-rg-tree-goal.md Phase 3).
-const MANAGED_BLOCK = [
-  MARKER_START,
-  "## Token Killer — managed token budget",
-  "- Large files: `tk read --max-lines 200 <file>` (or `--level aggressive` for a symbol outline).",
-  "- Searches: `tk rg <pattern> <path>` scoped to a directory — tk caps results automatically; `--level minimal` keeps every match (deduped, lossless), `--raw` for verbatim.",
-  "- Structure: `tk tree <path>` — tk auto-caps oversized directories; `-L <n>` to go shallower.",
-  "- Prefer `tk <command>` for any high-output shell command to reduce token pressure.",
-  MARKER_END,
-].join("\n");
-
-// Default user-level instruction target; overridable so a user-level AGENTS.md
-// can be the explicit instruction target (goal "Allowed writes").
-export function userTargetPath(home: string): string {
-  const override = process.env.TK_USER_AGENT_INSTRUCTIONS;
-  if (override && override.length > 0) return override;
-  return join(home, ".copilot", "copilot-instructions.md");
-}
-
-export function hasMarkerBlock(content: string): boolean {
-  return content.includes(MARKER_START) && content.includes(MARKER_END);
-}
-
-// Idempotent: replace an existing managed block, else append one.
-export function insertMarkerBlock(content: string): string {
-  if (hasMarkerBlock(content)) {
-    const start = content.indexOf(MARKER_START);
-    const end = content.indexOf(MARKER_END) + MARKER_END.length;
-    return `${content.slice(0, start)}${MANAGED_BLOCK}${content.slice(end)}`;
-  }
-  const sep = content.length === 0 || content.endsWith("\n") ? "" : "\n";
-  const lead = content.length === 0 ? "" : "\n";
-  return `${content}${sep}${lead}${MANAGED_BLOCK}\n`;
-}
-
-// Removes only the Token Killer managed block; leaves all other content intact.
-export function removeMarkerBlock(content: string): string {
-  if (!hasMarkerBlock(content)) return content;
-  const start = content.indexOf(MARKER_START);
-  const end = content.indexOf(MARKER_END) + MARKER_END.length;
-  let before = content.slice(0, start);
-  let after = content.slice(end);
-  // Collapse the blank line(s) the block left behind.
-  before = before.replace(/\n+$/, "\n");
-  after = after.replace(/^\n+/, "");
-  if (before === "") return after.replace(/^\n+/, "");
-  return `${before}${after}`;
-}
 
 function backupTimestamp(nowMs: number): string {
   return new Date(nowMs).toISOString().replace(/[:.]/g, "-");
@@ -207,47 +153,6 @@ export function runBackup(args: OptimizeArgs, nowMs: number, home: string, cwd: 
   return 0;
 }
 
-// ── Token-budget managed block (insert/remove) ───────────────────────────────
-
-export function applyMarkerBlock(home: string, mode: "insert" | "remove", nowMs: number): number {
-  const target = userTargetPath(home);
-  const existing = existsSync(target) ? readFileSync(target, "utf8") : "";
-
-  if (mode === "remove" && !hasMarkerBlock(existing)) {
-    process.stdout.write(`tk: no Token Killer managed block in ${target}\n`);
-    return 0;
-  }
-
-  const next = mode === "insert" ? insertMarkerBlock(existing) : removeMarkerBlock(existing);
-  if (next === existing) {
-    process.stdout.write(`tk: ${target} already up to date (idempotent, no change)\n`);
-    return 0;
-  }
-
-  if (existing.length > 0) {
-    const backup = writeBackup(target, existing, nowMs);
-    process.stdout.write(`Backup: ${backup}\n`);
-  }
-
-  // O1: when removing the block empties the file (it was the file's only content —
-  // i.e. the insert created the file), DELETE it rather than leaving a 0-byte file.
-  // tk should not litter an empty instructions file it itself created. The backup
-  // above preserves the prior bytes, so this stays reversible.
-  if (mode === "remove" && next.trim() === "") {
-    rmSync(target, { force: true });
-    process.stdout.write(`Removed Token Killer managed block and deleted now-empty ${target}\n`);
-    return 0;
-  }
-
-  mkdirSync(join(target, ".."), { recursive: true });
-  writeFileAtomicSync(target, next);
-  process.stdout.write(
-    `${mode === "insert" ? "Installed" : "Removed"} Token Killer managed block in ${target}\n`,
-  );
-  process.stdout.write(`${miniDiff(target, existing, next)}\n`);
-  return 0;
-}
-
 // ── Frontmatter safe applies (user-level only, explicit --surface) ───────────
 
 function setFrontmatterKey(content: string, key: string, value: unknown): string {
@@ -352,8 +257,6 @@ export async function runApply(
         }
         let next: string | undefined;
         if (op.kind === "frontmatter_set") next = setFrontmatterKey(live, op.key, op.value);
-        else if (op.kind === "insert_marker_block") next = insertMarkerBlock(live);
-        else if (op.kind === "remove_marker_block") next = removeMarkerBlock(live);
         if (next === undefined || next === live) continue;
         // One auto-write per file per run; further findings on the same file are
         // deferred so a later op never plans against stale content.

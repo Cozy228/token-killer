@@ -14,6 +14,7 @@ try {
 }
 
 import { parseArgv } from "./parse.js";
+import { replaceFootgunBanner } from "./handlers/common/searchLike.js";
 import { routeCommand, routeSpecific } from "./router.js";
 import { executePassthrough } from "./executor.js";
 import { gateDecision } from "./shim/gate.js";
@@ -127,7 +128,7 @@ function help(): string {
     "  --redact       Length/label only — no command text, payload bytes, or config bodies",
     "",
     "tk optimize [--dry-run] [--apply] [--backup [files...]] [--restore] [--write-advice]",
-    "            [--token-budget-block] [--surface <name>] [--project|--user] [--vscode-settings]",
+    "            [--surface <name>] [--project|--user] [--vscode-settings]",
     "  Applies the context-file optimizations inspect found. Read-only unless --apply.",
     "  Scope is git-aware: outside a git repo it works on your user-level files; inside",
     "  a git repo it works on both the project and user files.",
@@ -139,8 +140,6 @@ function help(): string {
     "                         so --restore can revert those edits. No files = all in-scope.",
     "  --restore              Revert the most recent backup (from --apply or --backup)",
     "  --write-advice         Write the context advice file instead of planning inline",
-    "  --token-budget-block   Install the managed token-budget block into your user-level",
-    "                         instructions (--restore removes it). Replaces `tk agentsmd`.",
     "  --surface <name>       Restrict to one surface (instructions|prompts|agents|skills)",
     "  --project | --user     Force a single scope instead of the git-aware default",
     "  --vscode-settings      Apply token-lean VS Code settings (--apply / --restore)",
@@ -279,6 +278,10 @@ async function main(): Promise<number> {
     const raw = await handler.execute(command, parsed.options);
     process.stdout.write(raw.stdout);
     process.stderr.write(raw.stderr);
+    // Correctness advisory for a misused `rg -r` (silently --replace). Goes to STDERR
+    // so stdout stays byte-verbatim — the whole point of --raw — while still warning.
+    const footgunBanner = replaceFootgunBanner(command.program, command.args);
+    if (footgunBanner !== null) process.stderr.write(`${footgunBanner}\n`);
     // Best-effort accounting; a write failure must never override the real exit code
     // (C6) — the command already ran and its output is already on stdout/stderr.
     try {

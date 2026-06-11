@@ -53,6 +53,94 @@ function searchPattern(args: string[]): string {
   return "";
 }
 
+// rg's `-r/--replace` takes a VALUE and rewrites every match with it — but grep
+// users reach for `-r` as the *recursive* flag (`rg -rn pattern`), which rg
+// silently parses as `--replace=n`, corrupting every match into the literal `n`
+// (a real correctness footgun seen repeatedly in dogfood). rg already recurses
+// by default, so a replace value that is just grep-style flag letters is almost
+// certainly this mistake. We detect it and surface a warning — WITHOUT changing
+// what rg runs (the value really was passed; tk only annotates the output).
+//
+// grep is excluded on purpose: there `-r` genuinely is recursive.
+const GREP_FLAG_LETTERS = new Set([
+  "n",
+  "i",
+  "l",
+  "L",
+  "c",
+  "o",
+  "w",
+  "v",
+  "H",
+  "h",
+  "s",
+  "a",
+  "E",
+  "F",
+  "R",
+  "r",
+]);
+
+function isFlagLetters(value: string): boolean {
+  return /^[a-zA-Z]+$/.test(value) && [...value].every((char) => GREP_FLAG_LETTERS.has(char));
+}
+
+// Returns the misused replacement value (e.g. "n" for `-rn`) when a `-r` looks
+// like a grep-recursive slip, else null. Cluster forms (`-rn`, `-rni`) are
+// high-confidence; the separate-arg form (`-r n`) only fires on a single
+// flag-letter so an intentional `rg -r foo` / `rg -r '$1'` is left alone.
+export function detectReplaceFootgun(program: string, args: string[]): string | null {
+  if (program !== "rg") return null;
+  for (let index = 0; index < args.length; index += 1) {
+    const arg = args[index];
+    if (arg === undefined) continue;
+    let value: string | undefined;
+    let fromCluster = false;
+    if (arg === "-r" || arg === "--replace") {
+      value = args[index + 1];
+    } else if (arg.startsWith("--replace=")) {
+      value = arg.slice("--replace=".length);
+    } else if (/^-[^-]*r/.test(arg)) {
+      // Short-flag cluster containing `r`. rg consumes the cluster remainder
+      // after `r` as the value; if `r` is last, the value is the next arg.
+      const afterR = arg.slice(arg.indexOf("r") + 1);
+      if (afterR.length > 0) {
+        value = afterR;
+        fromCluster = true;
+      } else {
+        value = args[index + 1];
+      }
+    } else {
+      continue;
+    }
+    if (value === undefined) value = "";
+    if (fromCluster) {
+      if (value === "" || isFlagLetters(value)) return value;
+    } else if (value === "" || (value.length === 1 && isFlagLetters(value))) {
+      return value;
+    }
+    return null; // a `-r` carrying a real replacement string — leave it alone.
+  }
+  return null;
+}
+
+function replaceFootgunWarning(value: string): string {
+  const shown = value === "" ? "" : ` with "${value}"`;
+  return (
+    `# ⚠ rg \`-r\`/\`--replace\` rewrote every match${shown} — it is NOT grep's ` +
+    "recursive flag (rg already recurses). If you meant a recursive search, drop " +
+    "`-r` (e.g. `rg -n <pattern> <path>`)."
+  );
+}
+
+// The advisory line for a misused `rg -r`, or null when the invocation is clean.
+// Shared by the handler (digest banner) and the `--raw` path (stderr advisory) so
+// the warning surfaces in both verbatim and compressed modes.
+export function replaceFootgunBanner(program: string, args: string[]): string | null {
+  const value = detectReplaceFootgun(program, args);
+  return value === null ? null : replaceFootgunWarning(value);
+}
+
 // RTK: grep_cmd.rs::run — RTK re-invokes the search with `-nH` so every match is
 // emitted as `file:line:content`, which is what the grouping parser needs. A raw
 // `grep -r pattern dir` omits line numbers (and, for a single file, the filename),
@@ -141,18 +229,31 @@ export const searchLikeHandler: CommandHandler = {
     const cleanedArgs = stripLevelFlags(command.args);
     const pattern = searchPattern(cleanedArgs);
 
+    // Correctness guard (banner only — rg already ran verbatim): flag a `rg -rn`-style
+    // slip that silently replaced matches instead of recursing. Passed as the banner
+    // arg so it survives a revert-to-raw and never trips the inflation gate itself.
+    const banner = replaceFootgunBanner(command.program, cleanedArgs) ?? undefined;
+
     // M6-grep fix: -q/--quiet/--silent passthrough — exit 0 means FOUND, exit 1
     // means not-found. Fabricating "0 matches for <pattern>" on an empty-stdout
     // success is wrong (it means the pattern WAS found). Format-flag passthrough
     // must be checked BEFORE the empty-stdout guard.
     const level = parseLevel(command.args, { fallback: "balanced" });
     if (hasFormatFlag(cleanedArgs) || hasContextFlag(cleanedArgs) || level === "none") {
-      return makeFilteredResult(this, raw, `${raw.stdout.trimEnd()}\n`, options);
+      return makeFilteredResult(
+        this,
+        raw,
+        `${raw.stdout.trimEnd()}\n`,
+        options,
+        undefined,
+        undefined,
+        banner,
+      );
     }
 
     if (!raw.stdout.trim()) {
       const output = `${raw.stderr || `0 matches for ${pattern}`}\n`;
-      return makeFilteredResult(this, raw, output, options);
+      return makeFilteredResult(this, raw, output, options, undefined, undefined, banner);
     }
 
     // Recovery contract item 3: when matches are suppressed, name how to recover.
@@ -166,7 +267,15 @@ export const searchLikeHandler: CommandHandler = {
       recoveryHint,
     });
     if (grouped === null) {
-      return makeFilteredResult(this, raw, `${raw.stdout.trimEnd()}\n`, options);
+      return makeFilteredResult(
+        this,
+        raw,
+        `${raw.stdout.trimEnd()}\n`,
+        options,
+        undefined,
+        undefined,
+        banner,
+      );
     }
 
     // ADR 0001 decision 5: declare the reduction so the gate trusts it instead of
@@ -184,6 +293,6 @@ export const searchLikeHandler: CommandHandler = {
     // content-truncation case too. `replacement` would fail open to raw under
     // --no-save-raw, breaking the primary compression path.
     const omission: OmissionDeclaration = { kind: "digest" };
-    return makeFilteredResult(this, raw, grouped, options, undefined, omission);
+    return makeFilteredResult(this, raw, grouped, options, undefined, omission, banner);
   },
 };

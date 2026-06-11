@@ -110,20 +110,6 @@ describe("tk optimize", () => {
     expect(readFileSync(path.join(project, "AGENTS.md"), "utf8")).toBe(before);
   });
 
-  test("--token-budget-block installs the managed block, --restore removes it", () => {
-    const install = runTk(["optimize", "--token-budget-block"]);
-    expect(install.status).toBe(0);
-    const target = path.join(home, ".copilot", "copilot-instructions.md");
-    expect(existsSync(target)).toBe(true);
-    expect(readFileSync(target, "utf8")).toContain("tk:token_budget:start");
-
-    const remove = runTk(["optimize", "--token-budget-block", "--restore"]);
-    expect(remove.status).toBe(0);
-    // O1: the block was the file's only content (install created it), so restore
-    // deletes the file rather than leaving a 0-byte leftover.
-    expect(existsSync(target)).toBe(false);
-  });
-
   // End-to-end: inspect flags a project-tracked skill that the model can
   // auto-invoke → `--apply` (git-aware, both scopes) writes the deterministic
   // frontmatter fix into the repo file, backs it up, and --restore reverts it.

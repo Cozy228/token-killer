@@ -23,13 +23,24 @@ afterEach(() => {
 });
 
 describe("guidanceDoc", () => {
-  test("teaches native terse forms and the gain-0% caveat", () => {
+  test("teaches agent-actionable token habits, not human analytics", () => {
     const doc = guidanceDoc();
+    // Terse-form habits stay.
     expect(doc).toContain("git status --short");
     expect(doc).toContain("git log --oneline");
     expect(doc).toContain("git diff --stat");
-    // The healthy-0% framing the user cares about.
-    expect(doc).toMatch(/0%.*HEALTHY/);
+    // The merged token-budget guidance: route output-heavy work through tk.
+    expect(doc).toMatch(/Route output-heavy commands through tk/);
+    expect(doc).toContain("tk read --max-lines 200");
+    expect(doc).toContain("tk rg <pattern> <path>");
+    expect(doc).toContain("tk tree <path>");
+    // Output-brevity habit (highest-ROI agent behavior).
+    expect(doc).toMatch(/Keep your own replies short/);
+    expect(doc).toMatch(/4× input/);
+    // Human-only analytics surfaces must NOT live in always-on agent context.
+    expect(doc).not.toContain("tk gain");
+    expect(doc).not.toContain("tk inspect");
+    expect(doc).not.toMatch(/Read `gain` honestly/);
   });
 });
 

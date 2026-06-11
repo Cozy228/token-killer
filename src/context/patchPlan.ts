@@ -11,8 +11,6 @@ import { parseMarkdown } from "./parseMarkdown.js";
 import type { ContextFinding, FixClass } from "./types.js";
 
 export type ContextPatchOperation =
-  | { kind: "insert_marker_block"; path: string; marker: "token_budget" }
-  | { kind: "remove_marker_block"; path: string; marker: "token_budget" }
   | { kind: "frontmatter_set"; path: string; key: string; value: unknown }
   | { kind: "suggested_diff"; path: string; diff: string };
 

@@ -12,7 +12,7 @@ import {
   hasFormatFlag,
   parseMatchLine,
 } from "../../../src/handlers/common/grepFilter.js";
-import { buildGrepArgs } from "../../../src/handlers/common/searchLike.js";
+import { buildGrepArgs, detectReplaceFootgun } from "../../../src/handlers/common/searchLike.js";
 import { parseLevel, stripLevelFlags } from "../../../src/handlers/common/level.js";
 
 describe("RTK grep command construction", () => {
@@ -610,5 +610,43 @@ describe("M7-grep regression: 80-char truncation triggers recovery hint", () => 
     });
     expect(result).not.toBeNull();
     expect(result).not.toContain("# recovery-hint-marker");
+  });
+});
+
+// `rg -rn` is the grep-recursive muscle-memory slip: rg parses `-r` as
+// `--replace` and rewrites every match with `n`. tk runs rg verbatim but flags it.
+describe("rg --replace footgun detection", () => {
+  test("flags the clustered `-rn` form (replace value = n)", () => {
+    expect(detectReplaceFootgun("rg", ["-rn", "tokenBudget", "src/"])).toBe("n");
+  });
+
+  test("flags longer flag-letter clusters like `-rni`", () => {
+    expect(detectReplaceFootgun("rg", ["-rni", "foo"])).toBe("ni");
+  });
+
+  test("flags the separate single-letter form `-r n`", () => {
+    expect(detectReplaceFootgun("rg", ["-r", "n", "foo"])).toBe("n");
+    expect(detectReplaceFootgun("rg", ["--replace", "l", "foo"])).toBe("l");
+  });
+
+  test("flags `r` last in a cluster (value taken from next arg)", () => {
+    expect(detectReplaceFootgun("rg", ["-nr", "n", "foo"])).toBe("n");
+  });
+
+  test("leaves an intentional replacement string alone", () => {
+    expect(detectReplaceFootgun("rg", ["-r", "$1", "foo(\\w+)"])).toBeNull();
+    expect(detectReplaceFootgun("rg", ["-r", "foo", "bar"])).toBeNull();
+    expect(detectReplaceFootgun("rg", ["--replace=REDACTED", "secret"])).toBeNull();
+    expect(detectReplaceFootgun("rg", ["-r$1", "foo(\\w+)"])).toBeNull();
+  });
+
+  test("never fires for grep (where -r is genuinely recursive)", () => {
+    expect(detectReplaceFootgun("grep", ["-rn", "foo", "src/"])).toBeNull();
+    expect(detectReplaceFootgun("grep", ["-r", "n", "foo"])).toBeNull();
+  });
+
+  test("ignores invocations without a replace flag", () => {
+    expect(detectReplaceFootgun("rg", ["-n", "foo", "src/"])).toBeNull();
+    expect(detectReplaceFootgun("rg", ["foo", "src/"])).toBeNull();
   });
 });

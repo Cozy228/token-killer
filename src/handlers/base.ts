@@ -112,6 +112,13 @@ export async function makeFilteredResult(
   // ADR 0001 decision 5: a handler that reduced an over-budget listing declares it
   // here instead of leaving a `+N more` marker for the sniff to (maybe) catch.
   omission?: OmissionDeclaration,
+  // A non-content advisory line prepended to whatever finally ships (digest OR a
+  // reverted-to-raw passthrough). It is metadata, NOT compressed output, so it is
+  // deliberately EXCLUDED from the inflation/omission gate math below — otherwise a
+  // banner on a tiny output would trip the inflation budget and get reverted away
+  // along with the very warning it carries. It IS counted in the shipped savings so
+  // the token accounting stays honest.
+  banner?: string,
 ): Promise<FilteredResult> {
   // The quality gate compares uncapped output: --max-lines/--max-chars are an opt-in
   // DISPLAY cap applied later at the cli layer (core/outputLimit.ts), never here, so a
@@ -223,11 +230,14 @@ export async function makeFilteredResult(
     omissionField = { kind: omission!.kind, rawPointer: rawOutputPath };
   }
 
-  const savings = calculateSavings(rawText(raw), limited);
+  // Prepend the advisory AFTER the gate has decided digest-vs-raw, so it always
+  // ships regardless of that decision and never influenced it.
+  const shipped = banner ? `${banner.replace(/\n*$/, "\n")}${limited}` : limited;
+  const savings = calculateSavings(rawText(raw), shipped);
 
   return {
     handler: handler.name,
-    output: limited,
+    output: shipped,
     rawChars: savings.rawChars,
     outputChars: savings.outputChars,
     rawTokens: savings.rawTokens,

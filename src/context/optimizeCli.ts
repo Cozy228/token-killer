@@ -28,7 +28,6 @@ export type OptimizeArgs = {
   dryRun: boolean;
   writeAdvice: boolean;
   apply: boolean;
-  tokenBudgetBlock: boolean;
   vscodeSettings: boolean;
   restore: boolean;
   backup: boolean;
@@ -44,7 +43,6 @@ export function parseOptimizeArgs(argv: string[]): OptimizeArgs {
     dryRun: false,
     writeAdvice: false,
     apply: false,
-    tokenBudgetBlock: false,
     vscodeSettings: false,
     restore: false,
     backup: false,
@@ -60,7 +58,6 @@ export function parseOptimizeArgs(argv: string[]): OptimizeArgs {
     if (t === "--dry-run") args.dryRun = true;
     else if (t === "--write-advice") args.writeAdvice = true;
     else if (t === "--apply") args.apply = true;
-    else if (t === "--token-budget-block") args.tokenBudgetBlock = true;
     else if (t === "--vscode-settings") args.vscodeSettings = true;
     else if (t === "--restore") args.restore = true;
     else if (t === "--backup") {
@@ -162,13 +159,6 @@ export async function runOptimize(
     return runVscodeSettings(args, nowMs, home);
   }
 
-  // Managed token-budget block (folds in the former `tk agentsmd`): a user-level
-  // marker-block write. `--restore` removes it; otherwise it is installed.
-  if (args.tokenBudgetBlock) {
-    const { applyMarkerBlock } = await import("./applySafe.js");
-    return applyMarkerBlock(home, args.restore ? "remove" : "insert", nowMs);
-  }
-
   // `--backup` snapshots files BEFORE they are edited (by an agent following a
   // copied prompt, or by hand), so `--restore` can later revert those edits.
   if (args.backup) {
@@ -177,8 +167,8 @@ export async function runOptimize(
   }
 
   // `--restore` reverts the most recent backup set — whether it was written by
-  // `--apply`, `--token-budget-block`, or a pre-edit `--backup` (so it can undo
-  // an agent's manual edits taken after that snapshot).
+  // `--apply` or a pre-edit `--backup` (so it can undo an agent's manual edits
+  // taken after that snapshot).
   if (args.restore) {
     const { runRestore } = await import("./applySafe.js");
     return runRestore(nowMs);
@@ -215,7 +205,6 @@ export async function runOptimize(
           generatedAt: new Date(nowMs).toISOString(),
           filesScanned: bucket?.files_scanned ?? 0,
           findings,
-          safeAppliesAvailable: scope === "user",
         });
         const path = writeContextAdvice(scope, fingerprint, content);
         process.stdout.write(`Wrote context advice: ${path}\n`);
@@ -309,10 +298,6 @@ export function renderPlan(plan: ContextPatchPlan, live: string | undefined): st
       );
     } else if (op.kind === "suggested_diff") {
       lines.push(...op.diff.split("\n").map((l) => `  ${l}`));
-    } else if (op.kind === "insert_marker_block") {
-      lines.push(`  + insert Token Killer ${op.marker} marker block in ${op.path}`);
-    } else if (op.kind === "remove_marker_block") {
-      lines.push(`  - remove Token Killer ${op.marker} marker block from ${op.path}`);
     } else if (op.kind === "frontmatter_set") {
       lines.push(`  + set ${op.key} = ${JSON.stringify(op.value)} in ${op.path}`);
     }
