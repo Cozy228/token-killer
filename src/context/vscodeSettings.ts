@@ -18,6 +18,7 @@ import { homedir } from "node:os";
 import { dirname, join } from "node:path";
 
 import { tokenKillerHome } from "../core/dataDir.js";
+import { parseJsonc } from "../core/jsonc.js";
 import { vscodeSettingsPath, writeSettings } from "../shim/hostConfig.js";
 import { writeBackup } from "./applySafe.js";
 import type { OptimizeArgs } from "./optimizeCli.js";
@@ -28,13 +29,41 @@ export const COMPRESS_KEY = "chat.tools.compressOutput.enabled";
 
 // §14 vscode_context_surface_risk — advisory only, never auto-changed.
 const CONTEXT_SURFACE_RULES: { key: string; risky: (v: unknown) => boolean; note: string }[] = [
-  { key: "chat.includeReferencedInstructions", risky: (v) => v === true, note: "auto-includes referenced instruction files in every request" },
-  { key: "chat.useNestedAgentsMdFiles", risky: (v) => v === true, note: "loads nested AGENTS.md files down the tree" },
-  { key: "chat.useCustomizationsInParentRepositories", risky: (v) => v === true, note: "pulls customizations from parent repositories" },
-  { key: "github.copilot.chat.additionalReadAccessFolders", risky: (v) => Array.isArray(v) && v.length > 0, note: "grants extra read-access folders" },
-  { key: "chat.mcp.discovery.enabled", risky: (v) => v === true, note: "auto-discovers MCP servers (extra tool surface)" },
-  { key: "github.copilot.chat.codesearch.enabled", risky: (v) => v === true, note: "enables repo-wide code-search context" },
-  { key: "github.copilot.chat.edits.suggestRelatedFilesFromGitHistory", risky: (v) => v === true, note: "pulls related files from git history" },
+  {
+    key: "chat.includeReferencedInstructions",
+    risky: (v) => v === true,
+    note: "auto-includes referenced instruction files in every request",
+  },
+  {
+    key: "chat.useNestedAgentsMdFiles",
+    risky: (v) => v === true,
+    note: "loads nested AGENTS.md files down the tree",
+  },
+  {
+    key: "chat.useCustomizationsInParentRepositories",
+    risky: (v) => v === true,
+    note: "pulls customizations from parent repositories",
+  },
+  {
+    key: "github.copilot.chat.additionalReadAccessFolders",
+    risky: (v) => Array.isArray(v) && v.length > 0,
+    note: "grants extra read-access folders",
+  },
+  {
+    key: "chat.mcp.discovery.enabled",
+    risky: (v) => v === true,
+    note: "auto-discovers MCP servers (extra tool surface)",
+  },
+  {
+    key: "github.copilot.chat.codesearch.enabled",
+    risky: (v) => v === true,
+    note: "enables repo-wide code-search context",
+  },
+  {
+    key: "github.copilot.chat.edits.suggestRelatedFilesFromGitHistory",
+    risky: (v) => v === true,
+    note: "pulls related files from git history",
+  },
 ];
 
 // §15 vscode_agent_budget_risk — advisory only.
@@ -78,9 +107,10 @@ export function readVscodeSettingsFile(settingsPath: string): ReadResult {
   const text = readFileSync(settingsPath, "utf8");
   if (text.trim() === "") return { status: "missing" };
   try {
-    return { status: "ok", settings: JSON.parse(text) as Record<string, unknown>, text };
+    // JSONC-tolerant: VS Code settings.json legally has comments / trailing commas.
+    return { status: "ok", settings: parseJsonc(text) as Record<string, unknown>, text };
   } catch {
-    // JSONC / malformed — never risk corrupting it; tell the user to edit manually.
+    // Genuinely malformed — never risk corrupting it; tell the user to edit manually.
     return { status: "parse_error" };
   }
 }
@@ -122,7 +152,9 @@ export function applyCompress(settingsPath: string, nowMs: number): number {
   }
   const settings = read.status === "ok" ? read.settings : {};
   if (settings[COMPRESS_KEY] === true) {
-    process.stdout.write(`tk optimize: ${COMPRESS_KEY} already enabled in ${settingsPath} (no change).\n`);
+    process.stdout.write(
+      `tk optimize: ${COMPRESS_KEY} already enabled in ${settingsPath} (no change).\n`,
+    );
     return 0;
   }
 
@@ -173,7 +205,9 @@ export function restoreCompress(settingsPath: string, nowMs: number): number {
 export function renderVscodeReport(settingsPath: string, a: VscodeSettingsAnalysis): string {
   const out: string[] = ["# tk optimize --vscode-settings", `Settings file: ${settingsPath}`, ""];
   if (a.compress === "on") {
-    out.push(`[ok] ${COMPRESS_KEY} is enabled — terminal output is compressed before reaching the model.`);
+    out.push(
+      `[ok] ${COMPRESS_KEY} is enabled — terminal output is compressed before reaching the model.`,
+    );
   } else {
     out.push(`[off] ${COMPRESS_KEY} is not enabled.`);
     out.push("  Apply with: tk optimize --vscode-settings --apply");

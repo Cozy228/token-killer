@@ -94,12 +94,15 @@ export function installShim(opts: InstallShimOptions = {}): ProbeResult {
   if (vscode && existsSync(vscodeUserDir())) {
     const settings = vscodeSettingsPath();
     try {
-      patchVscodeSettings(settings, dir);
+      const res = patchVscodeSettings(settings, dir);
       log(`  VS Code settings patched: ${settings}`);
+      if (res.reformatted && res.backupPath) {
+        log(`    (had comments — reformatted to strict JSON; original saved to ${res.backupPath})`);
+      }
     } catch {
-      err(`  VS Code settings.json could not be parsed (comments?); patch it manually:`);
+      err(`  VS Code settings.json is not valid JSON; patch it manually:`);
       err(
-        `    "terminal.integrated.env.*": { "TK_SHIM_DIR": "${dir}", "PATH": "${dir}${delimiter}\${env:PATH}" }`,
+        `    "terminal.integrated.env.*": { "TK_SHIM_DIR": "${dir}", "TK_COMPRESS_TTY": "1", "PATH": "${dir}${delimiter}\${env:PATH}" }`,
       );
     }
   }
@@ -131,7 +134,12 @@ function uninstall(dryRun: boolean): number {
   const settings = vscodeSettingsPath();
   if (existsSync(settings)) {
     try {
-      unpatchVscodeSettings(settings, dir);
+      const res = unpatchVscodeSettings(settings, dir);
+      if (res.reformatted && res.backupPath) {
+        out(
+          `  VS Code settings had comments — reformatted to strict JSON; original saved to ${res.backupPath}`,
+        );
+      }
     } catch {
       err(
         `  VS Code settings.json could not be parsed; remove the TK_SHIM_DIR/PATH keys manually.`,

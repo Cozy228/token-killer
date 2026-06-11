@@ -131,4 +131,27 @@ describe("VS Code settings env", () => {
       rmSync(dir, { recursive: true, force: true });
     }
   });
+
+  test("patches a JSONC settings.json: writes env + TK_COMPRESS_TTY, snapshots a backup", () => {
+    const dir = mkdtempSync(join(tmpdir(), "tk-vscode-"));
+    try {
+      const settings = join(dir, "settings.json");
+      // Real-world commented settings.json — strict JSON.parse would have thrown,
+      // silently aborting the PATH/TK_COMPRESS_TTY injection (I1).
+      writeFileSync(settings, '{\n  // editor prefs\n  "editor.fontSize": 14, // keep small\n}\n');
+      const res = patchVscodeSettings(settings, SHIM, "linux");
+      const after = JSON.parse(readFileSync(settings, "utf8")) as Record<string, unknown>;
+      const env = after["terminal.integrated.env.linux"] as Record<string, string>;
+      expect(env.TK_SHIM_DIR).toBe(SHIM);
+      expect(env.TK_COMPRESS_TTY).toBe("1");
+      expect(env.PATH).toBe(`${SHIM}:\${env:PATH}`);
+      expect(after["editor.fontSize"]).toBe(14);
+      // The original JSONC was reformatted to strict JSON, so a recoverable backup exists.
+      expect(res.reformatted).toBe(true);
+      expect(res.backupPath).toBe(`${settings}.tk-backup`);
+      expect(readFileSync(res.backupPath!, "utf8")).toContain("// editor prefs");
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
+  });
 });

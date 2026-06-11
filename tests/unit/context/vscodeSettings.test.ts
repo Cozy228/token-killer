@@ -65,9 +65,15 @@ describe("analyzeVscodeSettings", () => {
 });
 
 describe("readVscodeSettingsFile", () => {
-  test("missing file → missing; JSONC → parse_error; valid → ok", () => {
+  test("missing file → missing; JSONC parses OK; malformed → parse_error; valid → ok", () => {
     expect(readVscodeSettingsFile(settingsPath).status).toBe("missing");
+    // JSONC (comments + trailing comma) is legal in VS Code settings.json and now parses.
     writeFileSync(settingsPath, '{ "a": 1, /* comment */ }');
+    const jsonc = readVscodeSettingsFile(settingsPath);
+    expect(jsonc.status).toBe("ok");
+    expect(jsonc.status === "ok" && jsonc.settings.a).toBe(1);
+    // Genuinely malformed JSON still surfaces as parse_error.
+    writeFileSync(settingsPath, '{ "a": }');
     expect(readVscodeSettingsFile(settingsPath).status).toBe("parse_error");
     writeFileSync(settingsPath, '{ "a": 1 }');
     const ok = readVscodeSettingsFile(settingsPath);
@@ -82,7 +88,11 @@ describe("applyCompress", () => {
     expect(applyCompress(settingsPath, NOW)).toBe(0);
     expect(readKey()).toBe(true);
     // Other keys preserved.
-    expect((JSON.parse(readFileSync(settingsPath, "utf8")) as Record<string, unknown>)["editor.fontSize"]).toBe(13);
+    expect(
+      (JSON.parse(readFileSync(settingsPath, "utf8")) as Record<string, unknown>)[
+        "editor.fontSize"
+      ],
+    ).toBe(13);
     // Backup + state recorded.
     expect(existsSync(join(root, ".token-killer", "state", "vscode-compress.json"))).toBe(true);
     // Re-apply is a no-op (still true, no throw).
@@ -96,8 +106,21 @@ describe("applyCompress", () => {
     expect(readKey()).toBe(true);
   });
 
-  test("refuses JSONC (returns 1, leaves file untouched)", () => {
+  test("applies on JSONC, reformatting to strict JSON after backing up the original", () => {
     const original = '{ "a": 1, // keep\n}';
+    writeFileSync(settingsPath, original);
+    silence();
+    // JSONC is now readable, so apply succeeds (reformats to strict JSON).
+    expect(applyCompress(settingsPath, NOW)).toBe(0);
+    expect(readKey()).toBe(true);
+    const parsed = JSON.parse(readFileSync(settingsPath, "utf8")) as Record<string, unknown>;
+    expect(parsed.a).toBe(1);
+    // applySafe snapshots the pre-apply original under backups/context before reformatting.
+    expect(existsSync(join(root, ".token-killer", "backups", "context"))).toBe(true);
+  });
+
+  test("still refuses genuinely malformed JSON (returns 1, leaves file untouched)", () => {
+    const original = '{ "a": }';
     writeFileSync(settingsPath, original);
     vi.spyOn(process.stderr, "write").mockImplementation(() => true);
     expect(applyCompress(settingsPath, NOW)).toBe(1);
