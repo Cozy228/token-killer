@@ -7,6 +7,7 @@ import {
   debugLogPath,
   errorLogPath,
   logFatalError,
+  recordHookError,
   tkDebug,
   tkDebugEnabled,
 } from "../../../src/hook/debug.js";
@@ -110,5 +111,29 @@ describe("logFatalError — UNGATED crash breadcrumb", () => {
     expect(body).toMatch(/boom/);
     expect(body).toContain("tk fatal: ctx-b");
     expect(body).toContain("plain string failure");
+  });
+});
+
+describe("recordHookError — UNGATED fail-open breadcrumb", () => {
+  test("writes errors.log even when TK_DEBUG is unset (reconstructable after the fact)", () => {
+    delete process.env.TK_DEBUG;
+    expect(tkDebugEnabled()).toBe(false);
+    recordHookError("claude: stdin parse (fail-open)", new Error("Unterminated string in JSON"));
+    const body = readFileSync(errorLogPath(), "utf8");
+    expect(body).toContain("tk hook-error: claude: stdin parse (fail-open)");
+    expect(body).toContain("Unterminated string in JSON");
+  });
+
+  test("stays OFF stderr by default — a fail-open hook's stderr is a spurious host error", () => {
+    recordHookError("claude: stdin parse", new Error("boom"));
+    expect(writes.join("")).toBe("");
+  });
+
+  test("surfaceStderr ALSO writes stderr (safe on Copilot CLI's debug channel)", () => {
+    recordHookError("copilot: stdin parse", new Error("boom"), { surfaceStderr: true });
+    expect(writes.join("")).toContain("tk hook-error: copilot: stdin parse");
+    expect(writes.join("")).toContain("boom");
+    // and still persisted regardless of the stderr copy
+    expect(readFileSync(errorLogPath(), "utf8")).toContain("tk hook-error: copilot: stdin parse");
   });
 });

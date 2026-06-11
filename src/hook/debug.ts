@@ -86,22 +86,57 @@ export function errorLogPath(): string {
   return join(tokenKillerHome(), "errors.log");
 }
 
+// Best-effort append to errors.log; swallow every error (a logging failure must
+// never replace or compound the real error).
+function appendErrorLog(line: string): void {
+  try {
+    const path = errorLogPath();
+    mkdirSync(dirname(path), { recursive: true });
+    appendFileSync(path, line);
+  } catch {
+    /* best-effort */
+  }
+}
+
 // Record a FATAL tk error UNCONDITIONALLY — unlike tkDebug, this is NOT gated on
 // TK_DEBUG. Rationale: when the host reports "PreToolUse hook errored", tk exited
 // non-zero and its stderr was swallowed by the host; the user had no breadcrumb and
-// no reason to have set TK_DEBUG beforehand. This is the ONE place tk writes without
-// the gate — it fires only on the rare crash path (the top-level catch), never on a
-// healthy fail-open run (which exits 0 and never reaches here), so it can't grow on
-// the hot path. Best-effort and total: never throws, so it can't compound a crash.
+// no reason to have set TK_DEBUG beforehand. This is the crash-path writer — it
+// fires only on the top-level catch, never on a healthy fail-open run (which exits
+// 0 and never reaches here), so it can't grow on the hot path. Best-effort and
+// total: never throws, so it can't compound a crash.
 export function logFatalError(context: string, error: unknown): void {
   try {
     const detail = error instanceof Error ? (error.stack ?? error.message) : String(error);
     const line = `${timestamp()} tk fatal: ${context}\n${detail}\n`;
     process.stderr.write(line);
-    const path = errorLogPath();
-    mkdirSync(dirname(path), { recursive: true });
-    appendFileSync(path, line);
+    appendErrorLog(line);
   } catch {
     // a logging failure must never replace the original error
+  }
+}
+
+// Record a hook ANOMALY that was handled FAIL-OPEN (the tool still ran) —
+// UNCONDITIONALLY (not gated on TK_DEBUG), because a hook failure is observed only
+// after the fact: the host shows a bare "hook error" with no detail (Copilot CLI's
+// `preToolUse` denial message includes no hook output) or nothing at all, and the
+// user cannot retroactively have set TK_DEBUG. So the reason must always land in
+// errors.log, the one place reconstructable without prior setup. Kept OFF stdout
+// (the host's protocol channel). `surfaceStderr` ALSO writes stderr — safe and
+// correct on Copilot CLI, whose docs designate stderr a results-neutral debug
+// channel; left off for hosts that surface a fail-open hook's stderr as an error.
+// Best-effort and total: never throws (a fail-open path must stay unbroken).
+export function recordHookError(
+  context: string,
+  error: unknown,
+  opts: { surfaceStderr?: boolean } = {},
+): void {
+  try {
+    const detail = error instanceof Error ? error.message : String(error);
+    const line = `${timestamp()} tk hook-error: ${context}: ${detail}\n`;
+    if (opts.surfaceStderr) process.stderr.write(line);
+    appendErrorLog(line);
+  } catch {
+    /* a fail-open hook must never break on its own diagnostics */
   }
 }

@@ -19,7 +19,7 @@
 
 import { rewriteCommand } from "./rewrite.js";
 import { readStreamWithTimeout } from "./copilot.js";
-import { tkDebug } from "./debug.js";
+import { recordHookError, tkDebug } from "./debug.js";
 
 // Ground-truth reason string Claude Code shows for the auto-rewrite (the tk
 // analogue of RTK's "RTK auto-rewrite").
@@ -93,11 +93,12 @@ export function decideFromStdin(raw: string): ClaudeHookOutput | null {
   } catch (error) {
     // Fail-open: a malformed or TRUNCATED payload (e.g. a long command whose JSON
     // the host streamed in slower than the stdin-read budget, so it arrived cut off
-    // mid-string) is a NON-event — Claude Code runs the command unchanged. Writing
-    // this to raw stderr is what the host surfaces as a spurious "hook error" for a
-    // command that actually ran fine. Route it through the gated debug sink instead;
-    // `TK_DEBUG=1` (or $TOKEN_KILLER_HOME/debug.log) recovers the exact message and
-    // byte count on demand, and a genuine crash still hits logFatalError → errors.log.
+    // mid-string) is handled by running the command unchanged. Persist the reason to
+    // errors.log UNCONDITIONALLY so the scene is reconstructable after the fact —
+    // the host shows only a bare "hook error" (or nothing) and TK_DEBUG cannot be
+    // set retroactively. Kept OFF stderr: Claude Code surfaces a fail-open hook's
+    // stderr as a spurious error for a command that actually ran fine.
+    recordHookError("claude: stdin parse (fail-open, command ran unchanged)", error);
     tkDebug("claude:parse-error", {
       message: error instanceof Error ? error.message : String(error),
       bytes: (raw ?? "").length,

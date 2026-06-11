@@ -19,7 +19,7 @@ import { governPrompt } from "./prompt.js";
 import { failureSourceAdapter, handleError } from "./error.js";
 import { recordHookFailure } from "../core/history.js";
 import { recordGovernance } from "../core/governance.js";
-import { tkDebug } from "./debug.js";
+import { recordHookError, tkDebug } from "./debug.js";
 
 const ALLOW: Decision = { decision: "allow" };
 
@@ -156,9 +156,15 @@ export function decideFromStdin(raw: string): Decision {
   try {
     return decide(normalizeStdin(raw));
   } catch (error) {
-    // Fail-open: a malformed/truncated payload is a non-event (the tool runs). Keep
-    // it OFF raw stderr — that line is what the host shows as a spurious "hook error"
-    // — and route it to the gated debug sink (TK_DEBUG / debug.log) instead.
+    // Fail-open: a malformed/truncated payload is handled by allowing the tool.
+    // Persist the reason to errors.log UNCONDITIONALLY (reconstructable after the
+    // fact — TK_DEBUG can't be set retroactively, and Copilot CLI's preToolUse
+    // denial message carries no hook output). stderr IS surfaced here: Copilot CLI's
+    // docs designate stderr a results-neutral debug/log channel, so it's safe and
+    // gives the user the reason in the host's own logs without breaking fail-open.
+    recordHookError("copilot: stdin parse (fail-open, tool allowed)", error, {
+      surfaceStderr: true,
+    });
     tkDebug("copilot:parse-error", {
       message: error instanceof Error ? error.message : String(error),
       bytes: (raw ?? "").length,
