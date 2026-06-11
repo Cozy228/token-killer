@@ -21,10 +21,10 @@ describe("context/metrics", () => {
     expect(m.line_count).toBe(8);
   });
 
-  test("estimated tokens use the chars/4 heuristic", () => {
-    expect(estimateTokens("abcdefgh")).toBe(2);
+  test("estimated tokens use the shared segmented estimator", () => {
+    expect(estimateTokens("abcdefgh")).toBe(3); // 8 letters / 3.8 → ceil
     const m = computeBodyMetrics("abcd");
-    expect(m.estimated_tokens).toBe(1);
+    expect(m.estimated_tokens).toBe(2); // 4 / 3.8 → ceil
     expect(m.char_count).toBe(4);
   });
 

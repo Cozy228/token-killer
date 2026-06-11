@@ -14,6 +14,7 @@
   "scripts": {
     "dev": "tsx src/cli.ts",
     "build": "tsdown",
+    "calibrate-tokens": "tsx scripts/calibrate-tokens.ts",
     "test": "vitest --config vitest.config.ts",
     "test:product": "vitest run --config vitest.config.ts",
     "test:smoke": "bash tests/smoke/smoke.sh",

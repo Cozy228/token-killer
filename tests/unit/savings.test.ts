@@ -3,29 +3,30 @@ import { describe, expect, test } from "vitest";
 import { calculateSavings, estimateTokens } from "../../src/core/savings.js";
 
 describe("savings", () => {
-  test("estimates ASCII at ceil(chars/4) and CJK at ~1 token each (L2)", () => {
+  test("segments by content: letters ~3.8 cpt, CJK ~1 token each (L2)", () => {
     expect(estimateTokens("")).toBe(0);
-    expect(estimateTokens("abcd")).toBe(1);
-    expect(estimateTokens("abcde")).toBe(2);
-    expect(estimateTokens("中文测试")).toBe(4);
+    expect(estimateTokens("abcd")).toBe(2); // 4 / 3.8 → ceil
+    expect(estimateTokens("中文测试")).toBe(4); // 4 CJK codepoints
   });
 
-  test("calculates 75 percent savings", () => {
+  test("code/symbols tokenize denser than prose (the tool-output correction)", () => {
+    // Symbol-heavy text costs more tokens per char than the old flat /4 implied:
+    // 12 symbols / 2.2 ≈ 6 tokens, vs 12 / 4 = 3 under the old heuristic.
+    const symbols = "{}[]();:=>,.";
+    expect(estimateTokens(symbols)).toBeGreaterThan(Math.ceil(symbols.length / 4));
+  });
+
+  test("whitespace runs collapse — indentation is cheap", () => {
+    // A long run of spaces costs ~chars/6, far less than one-per-char or the old
+    // flat chars/4 (24 spaces → ~4 tokens, not 6).
+    expect(estimateTokens(" ".repeat(24))).toBeLessThan(24 / 4);
+  });
+
+  test("ratio survives the口径 change (~75% savings)", () => {
     const result = calculateSavings("a".repeat(4000), "b".repeat(1000));
-
-    expect(result.rawTokens).toBe(1000);
-    expect(result.outputTokens).toBe(250);
-    expect(result.savedTokens).toBe(750);
-    expect(result.savingsPct).toBe(75);
-  });
-
-  test("calculates 80 percent savings", () => {
-    const result = calculateSavings("a".repeat(10000), "b".repeat(2000));
-
-    expect(result.rawTokens).toBe(2500);
-    expect(result.outputTokens).toBe(500);
-    expect(result.savedTokens).toBe(2000);
-    expect(result.savingsPct).toBe(80);
+    expect(result.savedTokens).toBe(result.rawTokens - result.outputTokens);
+    expect(result.savingsPct).toBeGreaterThan(73);
+    expect(result.savingsPct).toBeLessThan(77);
   });
 
   test("does not report negative savings when output is longer", () => {
