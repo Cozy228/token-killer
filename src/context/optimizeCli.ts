@@ -13,7 +13,6 @@ import {
   type InspectBucketReport,
   type ScopeBucket,
 } from "../inspect/persist.js";
-import { renderContextAdvice, writeContextAdvice } from "./advice.js";
 import { contextProjectFingerprint, isGitProject, readContextFile } from "./discover.js";
 import {
   planForFinding,
@@ -25,10 +24,7 @@ import { SURFACE_SELECTORS } from "./types.js";
 import type { ContextFinding, ContextScope } from "./types.js";
 
 export type OptimizeArgs = {
-  dryRun: boolean;
-  writeAdvice: boolean;
   apply: boolean;
-  vscodeSettings: boolean;
   restore: boolean;
   backup: boolean;
   paths: string[]; // explicit files for --backup; empty → all in-scope context files
@@ -40,10 +36,7 @@ export type OptimizeArgs = {
 
 export function parseOptimizeArgs(argv: string[]): OptimizeArgs {
   const args: OptimizeArgs = {
-    dryRun: false,
-    writeAdvice: false,
     apply: false,
-    vscodeSettings: false,
     restore: false,
     backup: false,
     paths: [],
@@ -55,10 +48,7 @@ export function parseOptimizeArgs(argv: string[]): OptimizeArgs {
   const tokens = argv[0] === "context" ? argv.slice(1) : argv;
   for (let i = 0; i < tokens.length; i += 1) {
     const t = tokens[i];
-    if (t === "--dry-run") args.dryRun = true;
-    else if (t === "--write-advice") args.writeAdvice = true;
-    else if (t === "--apply") args.apply = true;
-    else if (t === "--vscode-settings") args.vscodeSettings = true;
+    if (t === "--apply") args.apply = true;
     else if (t === "--restore") args.restore = true;
     else if (t === "--backup") {
       args.backup = true;
@@ -118,9 +108,10 @@ async function defaultTriggerInspect(
 ): Promise<void> {
   // Dynamic import avoids a static inspect↔context cycle. A full inspect run
   // (runtime + static) keeps the persisted bucket complete (goal §"Optimize").
-  // We only want inspect's side effect (the persisted bucket), so its stdout
-  // report is suppressed — optimize owns the output stream.
-  const argv = scope === "user" ? ["--user"] : ["--project"];
+  // We only want inspect's side effect (the persisted bucket): force `--text` so it
+  // never writes/opens an HTML report, and its (text) stdout is suppressed below —
+  // optimize owns the output stream.
+  const argv = scope === "user" ? ["--user", "--text"] : ["--project", "--text"];
   const mod = await import("../inspect/cli.js");
   await withSuppressedStdout(() => {
     mod.runInspect(argv, nowMs, home, cwd);
@@ -149,14 +140,6 @@ export async function runOptimize(
   if (args.error) {
     process.stderr.write(`tk optimize: ${args.error}\n`);
     return 1;
-  }
-
-  // Scheme 1: VS Code token-lean settings is a self-contained, host-native path
-  // (apply/restore/report compressOutput; advisory on the rest). It does not use
-  // the inspect bucket / finding pipeline, so dispatch before anything else.
-  if (args.vscodeSettings) {
-    const { runVscodeSettings } = await import("./vscodeSettings.js");
-    return runVscodeSettings(args, nowMs, home);
   }
 
   // `--backup` snapshots files BEFORE they are edited (by an agent following a
@@ -198,20 +181,7 @@ export async function runOptimize(
 
       const findings = selectStaticFindings(bucket, args.surface);
 
-      if (args.writeAdvice) {
-        const content = renderContextAdvice({
-          scope,
-          fingerprint,
-          generatedAt: new Date(nowMs).toISOString(),
-          filesScanned: bucket?.files_scanned ?? 0,
-          findings,
-        });
-        const path = writeContextAdvice(scope, fingerprint, content);
-        process.stdout.write(`Wrote context advice: ${path}\n`);
-        continue;
-      }
-
-      // Default + --dry-run: plan patches and print, never write.
+      // Default (no action flag): plan patches and print, never write.
       printDryRun(findings, home, cwd, scope, bucketRef);
     }
     return 0;
@@ -244,7 +214,7 @@ function printDryRun(
   bucketRef: ScopeBucket,
 ): void {
   const out: string[] = [];
-  out.push(`# tk optimize (--dry-run, scope = ${scope})`);
+  out.push(`# tk optimize (preview, scope = ${scope})`);
   out.push(`Reading findings from: ${inspectBucketPath(bucketRef)}`);
   out.push(`Static-context findings: ${findings.length}`);
   out.push("");
@@ -256,6 +226,15 @@ function printDryRun(
   }
 
   for (const finding of findings) {
+    // The VS Code settings finding is JSON, not a markdown context file — it has no
+    // frontmatter/diff plan. Describe the settings edit `--apply` would make.
+    if (finding.type === "vscode_compress_disabled") {
+      out.push(`[${finding.severity}] ${finding.type} ${finding.file ?? ""}`);
+      out.push(`  fix: ${finding.fix_class}`);
+      out.push(`  ${finding.recommendation}`);
+      out.push("");
+      continue;
+    }
     const livePath = finding.file ? resolveLivePath(finding.file, home, cwd) : undefined;
     const live = livePath ? readContextFile(livePath) : undefined;
     const outcome = planForFinding(finding, live);

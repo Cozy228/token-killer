@@ -10,7 +10,11 @@ export type ContextSurface =
   | "prompt_file"
   | "custom_agent"
   | "skill"
-  | "stable_prefix";
+  | "stable_prefix"
+  // VS Code settings.json (host-native terminal-output compression toggle). Not a
+  // markdown context file — applied/reverted via the settings-JSON path, not the
+  // frontmatter machinery.
+  | "vscode_settings";
 
 // Map a user-facing `--surface` selector to the concrete surfaces it covers.
 // Shared by the analyzer (filtering findings) and the optimize CLI (arg parsing
@@ -49,7 +53,8 @@ export type ContextFindingType =
   | "copilot_review_truncation"
   | "cacheability_churn"
   | "malformed_frontmatter"
-  | "discovery_truncated";
+  | "discovery_truncated"
+  | "vscode_compress_disabled";
 
 // The static_context view of inspect's Finding. `source` is fixed to
 // "static_context"; surface/file/lines/adapter are the static-context locators.

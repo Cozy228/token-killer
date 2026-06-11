@@ -84,7 +84,7 @@ describe("runOptimize --apply", () => {
     );
 
     const trigger = vi.fn((_s: "user" | "project", h: string, c: string, n: number) => {
-      runInspect(["--user"], n, h, c);
+      runInspect(["--user", "--text"], n, h, c);
     });
 
     const s = silenceStdout();
@@ -116,7 +116,7 @@ describe("runOptimize --apply", () => {
     writeFileSync(skill, ["---", "name: deploy", "description: Deploy", "---", ...body].join("\n"));
 
     const trigger = vi.fn((_s: "user" | "project", h: string, c: string, n: number) => {
-      runInspect(["--user"], n, h, c);
+      runInspect(["--user", "--text"], n, h, c);
       // The user edits the FRONTMATTER after inspect captured the finding (body is
       // unchanged, so body_hash still matches — only the full-file content_hash moves).
       writeFileSync(

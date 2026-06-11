@@ -7,7 +7,7 @@
 // the most recent apply.
 
 import { createHash } from "node:crypto";
-import { existsSync, mkdirSync, readFileSync, readdirSync, rmSync, statSync } from "node:fs";
+import { existsSync, mkdirSync, readFileSync, readdirSync, statSync } from "node:fs";
 import { writeFileAtomicSync } from "../core/atomicWrite.js";
 import { basename, join } from "node:path";
 
@@ -230,6 +230,9 @@ export async function runApply(
   const writes = new Map<string, PlannedWrite>();
   const suggestions: { scope: ContextScope; file: string; diff: string }[] = [];
   const deferred = new Set<string>();
+  // VS Code settings.json compress toggles — applied via the settings-JSON path
+  // (applyCompress), not the markdown frontmatter machinery. Keyed by settings path.
+  const vscodeApplies = new Map<string, { scope: ContextScope; file: string }>();
 
   for (const scope of scopes) {
     const bucketRef: ScopeBucket =
@@ -244,6 +247,18 @@ export async function runApply(
 
     for (const finding of selectStaticFindings(bucket, args.surface)) {
       if (!finding.file) continue;
+
+      // The VS Code settings finding is JSON, not a markdown context file.
+      // safe_mechanical → enable compressOutput (host-native); advisory (parse
+      // error) → manual-review suggestion. Never goes through planForFinding.
+      if (finding.type === "vscode_compress_disabled") {
+        if (finding.fix_class === "safe_mechanical") {
+          vscodeApplies.set(finding.file, { scope, file: finding.file });
+        } else {
+          suggestions.push({ scope, file: finding.file, diff: finding.recommendation });
+        }
+        continue;
+      }
       const livePath = resolveLivePath(finding.file, home, cwd);
       const live = readContextFile(livePath);
       if (live === undefined) continue;
@@ -279,14 +294,20 @@ export async function runApply(
 
   // Disclosure — always printed in full before any file is touched.
   process.stdout.write(`# tk optimize --apply (scopes: ${scopes.join(", ")})\n`);
-  if (writes.size === 0 && suggestions.length === 0) {
+  if (writes.size === 0 && vscodeApplies.size === 0 && suggestions.length === 0) {
     process.stdout.write("Nothing to optimize — no changes or suggestions found.\n");
     return 0;
   }
-  process.stdout.write(`\nChanges to apply (${writes.size}):\n`);
+  process.stdout.write(`\nChanges to apply (${writes.size + vscodeApplies.size}):\n`);
   for (const w of writes.values()) {
     process.stdout.write(`\n[${w.scope}] ${w.displayFile} — ${w.type}\n`);
     process.stdout.write(`${miniDiff(w.displayFile, w.original, w.next)}\n`);
+  }
+  for (const v of vscodeApplies.values()) {
+    process.stdout.write(`\n[${v.scope}] ${v.file} — vscode_compress_disabled\n`);
+    process.stdout.write(
+      `  enable chat.tools.compressOutput.enabled (host-native terminal compression)\n`,
+    );
   }
   if (suggestions.length > 0) {
     process.stdout.write(`\nSuggestions for manual review (${suggestions.length}, not applied):\n`);
@@ -298,7 +319,7 @@ export async function runApply(
     );
   }
 
-  if (writes.size === 0) {
+  if (writes.size === 0 && vscodeApplies.size === 0) {
     process.stdout.write(
       `\nNo auto-applicable changes; the ${suggestions.length} suggestion(s) above are for manual review.\n`,
     );
@@ -307,6 +328,15 @@ export async function runApply(
 
   // Apply with reversible backups.
   let applied = 0;
+  // VS Code settings first — applyCompress writes its own backup into the same
+  // backup-set (nowMs), so `tk optimize --restore` reverts settings.json too.
+  // Dynamic import avoids a static cycle (vscodeSettings imports writeBackup here).
+  if (vscodeApplies.size > 0) {
+    const { applyCompress } = await import("./vscodeSettings.js");
+    for (const v of vscodeApplies.values()) {
+      if (applyCompress(v.file, nowMs) === 0) applied += 1;
+    }
+  }
   for (const w of writes.values()) {
     writeBackup(w.livePath, w.original, nowMs);
     mkdirSync(join(w.livePath, ".."), { recursive: true });

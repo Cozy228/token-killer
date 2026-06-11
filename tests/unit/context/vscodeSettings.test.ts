@@ -1,16 +1,16 @@
 import { afterEach, beforeEach, describe, expect, test, vi } from "vitest";
 import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
-import { join } from "node:path";
+import { dirname, join } from "node:path";
 
 import {
   COMPRESS_KEY,
-  analyzeVscodeSettings,
   applyCompress,
   readVscodeSettingsFile,
-  renderVscodeReport,
   restoreCompress,
+  vscodeCompressFinding,
 } from "../../../src/context/vscodeSettings.js";
+import { vscodeSettingsPath } from "../../../src/shim/hostConfig.js";
 
 let root: string;
 let settingsPath: string;
@@ -34,33 +34,36 @@ function readKey(): unknown {
   return (JSON.parse(readFileSync(settingsPath, "utf8")) as Record<string, unknown>)[COMPRESS_KEY];
 }
 
-describe("analyzeVscodeSettings", () => {
-  test("reports compress on/off and only flags risky values", () => {
-    const off = analyzeVscodeSettings({ "editor.fontSize": 13 });
-    expect(off.compress).toBe("off");
-    expect(off.contextRisks).toEqual([]);
-    expect(off.budgetRisks).toEqual([]);
-
-    const on = analyzeVscodeSettings({
-      [COMPRESS_KEY]: true,
-      "chat.mcp.discovery.enabled": true,
-      "github.copilot.chat.additionalReadAccessFolders": ["/a"],
-      "chat.agent.maxRequests": 25,
-      "github.copilot.chat.agent.autoFix": true,
-    });
-    expect(on.compress).toBe("on");
-    expect(on.contextRisks).toHaveLength(2);
-    expect(on.budgetRisks).toHaveLength(2);
-    expect(on.budgetRisks[0]).toContain("25");
+describe("vscodeCompressFinding", () => {
+  test("none when settings.json is missing (not a VS Code user)", () => {
+    expect(vscodeCompressFinding(process.platform, root)).toBeUndefined();
   });
 
-  test("maxRequests at or below 15 and empty read-folders are not flagged", () => {
-    const a = analyzeVscodeSettings({
-      "chat.agent.maxRequests": 12,
-      "github.copilot.chat.additionalReadAccessFolders": [],
-    });
-    expect(a.budgetRisks).toEqual([]);
-    expect(a.contextRisks).toEqual([]);
+  test("none when compress is already enabled", () => {
+    const p = vscodeSettingsPath(process.platform, root);
+    mkdirSync(dirname(p), { recursive: true });
+    writeFileSync(p, JSON.stringify({ [COMPRESS_KEY]: true }));
+    expect(vscodeCompressFinding(process.platform, root)).toBeUndefined();
+  });
+
+  test("safe_mechanical user-scope finding when present and off", () => {
+    const p = vscodeSettingsPath(process.platform, root);
+    mkdirSync(dirname(p), { recursive: true });
+    writeFileSync(p, JSON.stringify({ "editor.fontSize": 13 }));
+    const f = vscodeCompressFinding(process.platform, root)!;
+    expect(f.type).toBe("vscode_compress_disabled");
+    expect(f.fix_class).toBe("safe_mechanical");
+    expect(f.scope).toBe("user");
+    expect(f.surface).toBe("vscode_settings");
+    expect(f.file).toBe(p);
+  });
+
+  test("advisory finding when settings.json is unreadable", () => {
+    const p = vscodeSettingsPath(process.platform, root);
+    mkdirSync(dirname(p), { recursive: true });
+    writeFileSync(p, '{ "a": }');
+    const f = vscodeCompressFinding(process.platform, root)!;
+    expect(f.fix_class).toBe("advisory");
   });
 });
 
@@ -152,17 +155,5 @@ describe("restoreCompress", () => {
     writeFileSync(settingsPath, "{}");
     silence();
     expect(restoreCompress(settingsPath, NOW)).toBe(0);
-  });
-});
-
-describe("renderVscodeReport", () => {
-  test("off-state recommends apply; advisories listed but not applied", () => {
-    const report = renderVscodeReport(
-      settingsPath,
-      analyzeVscodeSettings({ "chat.mcp.discovery.enabled": true }),
-    );
-    expect(report).toContain("--vscode-settings --apply");
-    expect(report).toContain("advisory");
-    expect(report).toContain("chat.mcp.discovery.enabled");
   });
 });

@@ -31,6 +31,8 @@ export const SURFACE_EXPOSURE: Record<ContextSurface, ExposureClass> = {
   prompt_file: "on-invocation",
   custom_agent: "on-invocation",
   skill: "on-invocation",
+  // Host setting that compresses every session's terminal output → always-on.
+  vscode_settings: "always-on",
 };
 
 export function exposureForSurface(surface: ContextSurface): ExposureClass {

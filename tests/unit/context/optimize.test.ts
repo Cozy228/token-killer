@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, test, vi } from "vitest";
-import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 
@@ -49,17 +49,19 @@ function captureStdout(): { calls: string[]; restore: () => void } {
 describe("parseOptimizeArgs / scope", () => {
   test("`context` target is optional (accepted but no longer required)", () => {
     // A leading `context` token is still accepted for back-compat.
-    expect(parseOptimizeArgs(["context", "--dry-run"]).error).toBeUndefined();
+    expect(parseOptimizeArgs(["context"]).error).toBeUndefined();
     // Flags work directly with no `context` prefix.
-    expect(parseOptimizeArgs(["--dry-run"]).error).toBeUndefined();
+    expect(parseOptimizeArgs(["--apply"]).error).toBeUndefined();
     // A bare unknown token is a flag error.
     expect(parseOptimizeArgs(["skills"]).error).toMatch(/unknown flag/);
   });
 
   test("scope is git-aware: off-git defaults to user; --surface skills and --user select user", () => {
     // `cwd` here is a fresh temp dir, never a git repo → user-only default.
-    expect(resolveOptimizeScopes(parseOptimizeArgs(["--dry-run"]), cwd)).toEqual(["user"]);
-    expect(resolveOptimizeScopes(parseOptimizeArgs(["--surface", "skills"]), cwd)).toEqual(["user"]);
+    expect(resolveOptimizeScopes(parseOptimizeArgs([]), cwd)).toEqual(["user"]);
+    expect(resolveOptimizeScopes(parseOptimizeArgs(["--surface", "skills"]), cwd)).toEqual([
+      "user",
+    ]);
     expect(resolveOptimizeScopes(parseOptimizeArgs(["--user"]), cwd)).toEqual(["user"]);
     expect(resolveOptimizeScopes(parseOptimizeArgs(["--project"]), cwd)).toEqual(["project"]);
   });
@@ -73,8 +75,28 @@ describe("selectStaticFindings", () => {
       scope: "project" as const,
       files_scanned: 1,
       findings: [
-        { id: "rt", source: "runtime", type: "x", severity: "info", confidence: 1, evidence: "", recommendation: "", fix_class: "advisory", metrics: {} },
-        { id: "sc", source: "static_context", type: "always_on_bloat", severity: "warn", confidence: 1, surface: "agent_instructions", evidence: "", recommendation: "", fix_class: "advisory" },
+        {
+          id: "rt",
+          source: "runtime",
+          type: "x",
+          severity: "info",
+          confidence: 1,
+          evidence: "",
+          recommendation: "",
+          fix_class: "advisory",
+          metrics: {},
+        },
+        {
+          id: "sc",
+          source: "static_context",
+          type: "always_on_bloat",
+          severity: "warn",
+          confidence: 1,
+          surface: "agent_instructions",
+          evidence: "",
+          recommendation: "",
+          fix_class: "advisory",
+        },
       ] as never[],
     };
     const out = selectStaticFindings(bucket, undefined);
@@ -83,66 +105,48 @@ describe("selectStaticFindings", () => {
   });
 });
 
-describe("runOptimize --dry-run", () => {
+describe("runOptimize (default preview)", () => {
   test("triggers inspect when the bucket is absent, then plans (no writes)", async () => {
-    write("AGENTS.md", `# Rules\n${Array.from({ length: 300 }, (_, i) => `line ${i}`).join("\n")}\n`);
+    write(
+      "AGENTS.md",
+      `# Rules\n${Array.from({ length: 300 }, (_, i) => `line ${i}`).join("\n")}\n`,
+    );
 
     const trigger = vi.fn((scope: "user" | "project", h: string, c: string, n: number) => {
-      runInspect(scope === "user" ? ["--user"] : ["--project"], n, h, c);
+      runInspect(scope === "user" ? ["--user", "--text"] : ["--project", "--text"], n, h, c);
     });
 
     const { calls, restore } = captureStdout();
-    const code = await runOptimize(["context", "--project", "--dry-run"], 1000, home, cwd, { triggerInspect: trigger });
+    const code = await runOptimize(["context", "--project"], 1000, home, cwd, {
+      triggerInspect: trigger,
+    });
     restore();
 
     expect(code).toBe(0);
     expect(trigger).toHaveBeenCalledOnce();
     const out = calls.join("");
-    expect(out).toContain("--dry-run, scope = project");
+    expect(out).toContain("preview, scope = project");
     expect(out).toContain("always_on_bloat");
-    // No advice file is written in dry-run.
+    // No advice file is written in the default preview.
     expect(existsSync(join(home, ".token-killer", "advice", "context"))).toBe(false);
   });
 
   test("hash mismatch suppresses a stale diff and asks for re-inspect", async () => {
-    write("AGENTS.md", `# Rules\n${Array.from({ length: 300 }, (_, i) => `line ${i}`).join("\n")}\n`);
+    write(
+      "AGENTS.md",
+      `# Rules\n${Array.from({ length: 300 }, (_, i) => `line ${i}`).join("\n")}\n`,
+    );
     // First inspect persists the bucket with the current body_hash.
-    runInspect(["--project"], 1000, home, cwd);
+    runInspect(["--project", "--text"], 1000, home, cwd);
     // Now mutate the file so the live body no longer matches the stored hash.
     write("AGENTS.md", "# Rules\nshort now\n");
 
     const { calls, restore } = captureStdout();
-    const code = await runOptimize(["context", "--project", "--dry-run"], 1000, home, cwd, {
+    const code = await runOptimize(["context", "--project"], 1000, home, cwd, {
       triggerInspect: vi.fn(),
     });
     restore();
     expect(code).toBe(0);
     expect(calls.join("")).toContain("re-run `tk inspect`");
-  });
-});
-
-describe("runOptimize --write-advice", () => {
-  test("writes user-scope advice to ~/.token-killer/advice/context/user.md without raw bodies", async () => {
-    // Seed a user-level skill so static findings exist at user scope.
-    const skill = join(home, ".claude", "skills", "deploy", "SKILL.md");
-    mkdirSync(dirname(skill), { recursive: true });
-    writeFileSync(skill, ["---", "name: deploy", "description: Deploy", "---", "# Deploy", "Run the deploy and publish."].join("\n"));
-
-    const trigger = vi.fn((scope: "user" | "project", h: string, c: string, n: number) => {
-      runInspect(["--user"], n, h, c);
-    });
-
-    const { restore } = captureStdout();
-    const code = await runOptimize(["context", "--user", "--write-advice"], 1000, home, cwd, { triggerInspect: trigger });
-    restore();
-
-    expect(code).toBe(0);
-    const advicePath = join(home, ".token-killer", "advice", "context", "user.md");
-    expect(existsSync(advicePath)).toBe(true);
-    const content = readFileSync(advicePath, "utf8");
-    expect(content).toContain("# Copilot Context Advice");
-    expect(content).toContain("skill_invocation_policy");
-    // Sanitized: the raw skill body line is never persisted.
-    expect(content).not.toContain("Run the deploy and publish.");
   });
 });
