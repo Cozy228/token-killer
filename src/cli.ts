@@ -181,7 +181,7 @@ function help(): string {
   ].join("\n");
 }
 
-async function recordRawPassthrough(raw: RawResult, options: TkOptions): Promise<void> {
+async function recordRawPassthrough(raw: RawResult, options: TkOptions): Promise<FilteredResult> {
   const output = `${raw.stdout}${raw.stderr}`;
   const savings = calculateSavings(output, output);
   const rawOutputPath = await maybeSaveRawOutput(raw, options);
@@ -199,6 +199,7 @@ async function recordRawPassthrough(raw: RawResult, options: TkOptions): Promise
     qualityStatus: "passed",
   };
   await recordHistory(raw, filtered, options);
+  return filtered;
 }
 
 async function main(): Promise<number> {
@@ -304,7 +305,12 @@ async function main(): Promise<number> {
     // Best-effort accounting; a write failure must never override the real exit code
     // (C6) — the command already ran and its output is already on stdout/stderr.
     try {
-      await recordRawPassthrough(raw, parsed.options);
+      const filtered = await recordRawPassthrough(raw, parsed.options);
+      // --stats is what forced this capture path, so it must actually report (P2): the
+      // savings summary (and any saved raw-output path) goes to STDERR so stdout stays
+      // byte-verbatim — the whole contract of --raw. Savings are 0% (raw is uncompressed),
+      // which is the honest figure.
+      if (parsed.options.stats) process.stderr.write(`\n${formatStats(filtered)}\n`);
     } catch {
       /* drop the accounting row; never alter the command's outcome */
     }

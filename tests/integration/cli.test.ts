@@ -694,6 +694,20 @@ describe("Global Flags", () => {
     expect(result.status).toBe(7);
   });
 
+  test("--raw --stats reports the savings summary on stderr, stdout stays verbatim", () => {
+    const result = runTk(
+      ["--raw", "--stats", process.execPath, "-e", "console.log('verbatim out')"],
+      repoRoot,
+    );
+    expect(result.status).toBe(0);
+    // stdout is byte-verbatim — the stats summary must NOT contaminate it.
+    expect(result.stdout).toBe("verbatim out\n");
+    expect(result.stdout).not.toContain("Token Savings");
+    // The summary it forced the capture for is actually emitted (on stderr).
+    expect(result.stderr).toContain("## Token Savings");
+    expect(result.stderr).toContain("Saved:");
+  });
+
   test("--raw --save-raw captures the bytes and records a full history row", async () => {
     const dir = await mkdtemp(path.join(tmpdir(), "tk-raw-capture-"));
     const tkHome = path.join(dir, "token-killer-data");

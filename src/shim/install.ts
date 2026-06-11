@@ -81,7 +81,10 @@ function shQuote(value: string): string {
 // PATH walk (2.1); omitted ⇒ byte-identical to the pre-2.1 wrapper. When
 // `compileCacheDir` is given it exports NODE_COMPILE_CACHE (2.3) BEFORE exec — node
 // reads it at process start, so only the wrapper (not tk code) can cache tk's own
-// bundle. Version-agnostic: Node 22.1+ honors it, older Node treats it as inert.
+// bundle. Version-agnostic: Node 22.1+ honors it, older Node treats it as inert. It
+// first saves the caller's original NODE_COMPILE_CACHE in TK_NODE_COMPILE_CACHE_PREV
+// so tk can RESTORE it for any spawned real tool (buildChildEnv) — the cache redirect
+// must apply to tk's own node process only, never leak into npm/tsc/etc.
 export function posixWrapper(
   program: string,
   tk: TkExec,
@@ -97,7 +100,7 @@ export function posixWrapper(
     ? `export TK_REAL_BIN=${shQuote(realBin)}\n${pathHash ? `export TK_REAL_PATH_HASH=${shQuote(pathHash)}\n` : ""}`
     : "";
   const cacheLine = compileCacheDir
-    ? `export NODE_COMPILE_CACHE=${shQuote(compileCacheDir)}\n`
+    ? `export TK_NODE_COMPILE_CACHE_PREV="\${NODE_COMPILE_CACHE-}"\nexport NODE_COMPILE_CACHE=${shQuote(compileCacheDir)}\n`
     : "";
   return `#!/usr/bin/env sh\nexport TK_SHIM_DIR=${shQuote(shimDir)}\n${realBinLine}${cacheLine}exec ${parts} "$@"\n`;
 }
@@ -123,7 +126,11 @@ export function windowsWrapper(
   const realBinLine = realBin
     ? `set "TK_REAL_BIN=${realBin}"\r\n${pathHash ? `set "TK_REAL_PATH_HASH=${pathHash}"\r\n` : ""}`
     : "";
-  const cacheLine = compileCacheDir ? `set "NODE_COMPILE_CACHE=${compileCacheDir}"\r\n` : "";
+  // Save the caller's NODE_COMPILE_CACHE (empty if unset) so tk restores it for the
+  // spawned real tool; `if defined` avoids cmd's literal-`%VAR%` expansion when unset.
+  const cacheLine = compileCacheDir
+    ? `set "TK_NODE_COMPILE_CACHE_PREV="\r\nif defined NODE_COMPILE_CACHE set "TK_NODE_COMPILE_CACHE_PREV=%NODE_COMPILE_CACHE%"\r\nset "NODE_COMPILE_CACHE=${compileCacheDir}"\r\n`
+    : "";
   return `@echo off\r\nsetlocal\r\nset "TK_SHIM_DIR=${shimDir}"\r\n${realBinLine}${cacheLine}${parts} %*\r\n`;
 }
 

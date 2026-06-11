@@ -4,7 +4,7 @@ import { constants as osConstants } from "node:os";
 import { basename, delimiter, extname, join } from "node:path";
 
 import { resolveCachedBinary } from "./core/pathCache.js";
-import { assertNoRecursion, buildChildPath, hashResolutionEnv } from "./shim/path.js";
+import { assertNoRecursion, buildChildPath, hashResolutionEnv, resolveReal } from "./shim/path.js";
 import type { ParsedCommand, RawResult } from "./types.js";
 
 // Resolve a child's exit code, following the shell convention that a process
@@ -108,14 +108,35 @@ export function resetLegacyDecoderCache(): void {
 function buildChildEnv(
   program: string,
   extraEnv?: Record<string, string>,
-): Record<string, string> | undefined {
+): Record<string, string | undefined> | undefined {
   const shimDir = process.env.TK_SHIM_DIR;
   if (!shimDir) {
-    return extraEnv ? ({ ...process.env, ...extraEnv } as Record<string, string>) : undefined;
+    return extraEnv ? { ...process.env, ...extraEnv } : undefined;
   }
   const strippedPath = buildChildPath();
   assertNoRecursion(program, strippedPath);
-  return { ...process.env, ...extraEnv, PATH: strippedPath } as Record<string, string>;
+  const env: Record<string, string | undefined> = {
+    ...process.env,
+    ...extraEnv,
+    PATH: strippedPath,
+  };
+  restoreInjectedCompileCache(env);
+  return env;
+}
+
+// Undo the wrapper's NODE_COMPILE_CACHE injection (2.3) for the spawned REAL tool. The
+// wrapper points tk's OWN node at ~/.token-killer/v8-cache, but a child Node tool (tsc,
+// npm, …) must not inherit it — that would pollute tk's cache dir with the child's
+// bytecode AND override the user's own NODE_COMPILE_CACHE. The wrapper saved the
+// caller's original value in TK_NODE_COMPILE_CACHE_PREV; restore it (or remove
+// NODE_COMPILE_CACHE when the caller had none), then drop the bookkeeping var. Node's
+// spawn omits any env key whose value is undefined, so unsetting is clean. A no-op when
+// the var is absent (plain `tk`, or a wrapper built before 2.3's restore).
+function restoreInjectedCompileCache(env: Record<string, string | undefined>): void {
+  const prev = env.TK_NODE_COMPILE_CACHE_PREV;
+  if (prev === undefined) return;
+  env.TK_NODE_COMPILE_CACHE_PREV = undefined;
+  env.NODE_COMPILE_CACHE = prev === "" ? undefined : prev;
 }
 
 // Windows-only: resolve a bare program name to a full path honoring PATHEXT.
@@ -146,35 +167,16 @@ export function resolveProgram(program: string, pathValue: string | undefined): 
 // Resolve `program` to an ABSOLUTE executable path on `pathValue`, or undefined when
 // nothing is found. Unlike resolveProgram — which returns the bare name on a miss and
 // is a Windows-only no-op so spawn can do its own POSIX lookup — this resolves on BOTH
-// platforms and is used at INSTALL time to bake the path once (2.1). Windows honors
-// PATHEXT; POSIX takes the first PATH dir holding a file named `program`. A program
-// that already contains a path separator is returned verbatim if it exists.
+// platforms and is used at INSTALL time to bake the path once (2.1). Delegates to
+// resolveReal, which mirrors the shell's own lookup: it requires the candidate to be a
+// FILE and (on POSIX) to carry the execute bit. A bare existsSync would wrongly bake a
+// non-executable `git` that shadows a later executable one on PATH — the shell skips
+// the former and runs the latter, so the baked path must too. Windows honors PATHEXT.
 export function resolveBinaryPath(
   program: string,
   pathValue: string | undefined,
 ): string | undefined {
-  if (program.includes("\\") || program.includes("/")) {
-    return existsSync(program) ? program : undefined;
-  }
-  const dirs = (pathValue ?? "").split(delimiter).filter(Boolean);
-  if (process.platform === "win32") {
-    const exts = (process.env.PATHEXT ?? ".COM;.EXE;.BAT;.CMD")
-      .split(";")
-      .map((ext) => ext.trim())
-      .filter(Boolean);
-    for (const dir of dirs) {
-      for (const ext of exts) {
-        const candidate = join(dir, program + ext);
-        if (existsSync(candidate)) return candidate;
-      }
-    }
-    return undefined;
-  }
-  for (const dir of dirs) {
-    const candidate = join(dir, program);
-    if (existsSync(candidate)) return candidate;
-  }
-  return undefined;
+  return resolveReal(program, pathValue ?? "") ?? undefined;
 }
 
 // A baked, validated real-binary path (TK_REAL_BIN, exported by the shim wrapper at

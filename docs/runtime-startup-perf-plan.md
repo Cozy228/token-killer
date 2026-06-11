@@ -255,7 +255,12 @@ chunk-split decision — record as an ADR with the AV file-count rationale.
 ### 2.3 Compile-cache ladder across the distributed Node field — ✅ DONE (top two rungs)
 
 **Status:** ≥22.8 rung unchanged (`module.enableCompileCache()`). 22.1–22.7 rung
-shipped: every shim wrapper now exports `NODE_COMPILE_CACHE=<home>/v8-cache`
+shipped, with the leak fixed (review): the wrapper saves the caller's prior
+`NODE_COMPILE_CACHE` in `TK_NODE_COMPILE_CACHE_PREV` and `buildChildEnv` RESTORES
+it for every spawned real tool — so tk's cache redirect applies to tk's own node
+process only, never leaking into npm/tsc/etc (no cache-dir pollution, no override
+of the user's own setting). 22.1–22.7 rung: every shim wrapper exports
+`NODE_COMPILE_CACHE=<home>/v8-cache`
 (`compileCacheDir`, baked in `installWrappers` → `posixWrapper`/`windowsWrapper`)
 — version-agnostic, inert on Node <22.1, and it also redirects ≥22.8's
 `enableCompileCache()` to the persistent `~/.token-killer/v8-cache` dir.
@@ -283,13 +288,17 @@ additive and inert where unsupported.
 **Status:** implemented in `src/core/history.ts` + `src/core/dataDir.ts`.
 (a) `projectFingerprint(cwd)` is memoized at module level — the ≥3 walks/command
 collapse to one (highest-value sub-item); `resetFingerprintCacheForTests` is the
-test seam. (b) the project data dir is ensured once per process (`ensuredDirs`
-Set) instead of `mkdir(recursive)` per command; a mid-run deletion self-heals on
-the append's ENOENT so the ledger-① row is never dropped. (c) project meta is
-written at most once per fingerprint per process (`metaEnsured` Set), so the
-per-command `open(wx)` stops firing. (d) one pre-serialized append per row
-(`appendJsonLine`, awaited — NOT fire-and-forget). (e) `TK_NO_HISTORY=1` opt-out
-documented in `tk --help`. 1580 tests green.
+test seam. (b) **append-first** (`appendJsonLine`): each command is a fresh
+process so a process-scoped "ensured" memo would never hit — instead we append and
+pay `mkdir` only on ENOENT (the project's first-ever row, or after a deletion), so
+steady state is ZERO mkdir/command; the ENOENT path self-heals so the ledger-①
+row is never dropped. (c) project meta is written ONLY when the dir was just
+created (`appendJsonLine` returns `createdDir`), moving the `open(wx)` off the
+per-command hot path entirely. (d) one pre-serialized append per row (awaited —
+NOT fire-and-forget). (e) `TK_NO_HISTORY=1` opt-out documented in `tk --help`.
+(Review correction: the original process-scoped `ensuredDirs`/`metaEnsured` Sets
+did NOT reduce per-command ops — one process per command — so they were replaced
+by the append-first + meta-on-create design above.)
 
 `recordHistory` (`src/core/history.ts`) + `maybeWriteProjectMeta` are 2–3
 EDR-intercepted opens/writes per command. Cheap fixes, in order: (a) write

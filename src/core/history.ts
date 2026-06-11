@@ -43,16 +43,6 @@ export type HistoryRecord = {
   session_id?: string;
 };
 
-// In-process memo of which data dirs we have already ensured (2.4b). The project
-// dir is created once per process instead of mkdir(recursive) on every command. A
-// process is one tk invocation, so this never goes stale within a run.
-const ensuredDirs = new Set<string>();
-
-// In-process memo of which project fingerprints already have a meta.json (2.4c), so
-// the per-command `open(meta, "wx")` — which fired its syscall even on EEXIST — stops
-// firing after the first command. Keyed by fingerprint (the meta is per project).
-const metaEnsured = new Set<string>();
-
 // 2.4e — opt-out for latency-critical agents. Set TK_NO_HISTORY=1 to skip the history
 // row entirely (documented cost: `tk gain` will not see those commands). Any value
 // other than unset/""/"0"/"false" enables it.
@@ -61,26 +51,22 @@ function historyDisabled(): boolean {
   return v !== undefined && v !== "" && v !== "0" && v.toLowerCase() !== "false";
 }
 
-async function ensureDataDirOnce(dir: string): Promise<void> {
-  if (ensuredDirs.has(dir)) return;
-  await mkdir(dir, { recursive: true });
-  ensuredDirs.add(dir);
-}
-
-// Append one JSONL row with a single pre-serialized write (2.4d). The dir is ensured
-// once per process; if it was deleted mid-run the append's ENOENT self-heals with one
-// mkdir + retry, so the ledger-① row is never silently dropped.
-async function appendJsonLine(file: string, line: string): Promise<void> {
-  const dir = path.dirname(file);
-  await ensureDataDirOnce(dir);
+// Append one JSONL row with a single pre-serialized write (2.4d). APPEND-FIRST: each
+// tk command is a fresh process, so a process-scoped "already ensured" memo would
+// never hit — the mkdir would still fire every command. Instead we just append; only
+// when the dir does not yet exist (ENOENT — the project's first-ever row, or after a
+// deletion) do we pay one mkdir and retry. In steady state (dir present on disk) this
+// is ZERO mkdir per command. Returns whether the dir had to be created, so the caller
+// can write the per-project meta exactly then (and never on the hot path again).
+async function appendJsonLine(file: string, line: string): Promise<{ createdDir: boolean }> {
   try {
     await writeFile(file, line, { encoding: "utf8", flag: "a" });
+    return { createdDir: false };
   } catch (error) {
     if ((error as NodeJS.ErrnoException).code !== "ENOENT") throw error;
-    ensuredDirs.delete(dir);
-    await mkdir(dir, { recursive: true });
-    ensuredDirs.add(dir);
+    await mkdir(path.dirname(file), { recursive: true });
     await writeFile(file, line, { encoding: "utf8", flag: "a" });
+    return { createdDir: true };
   }
 }
 
@@ -111,8 +97,8 @@ export async function recordHistory(
   };
   if (options.sessionId) record.session_id = options.sessionId;
 
-  await appendJsonLine(file, `${JSON.stringify(record)}\n`);
-  await maybeWriteProjectMeta(options.cwd);
+  const { createdDir } = await appendJsonLine(file, `${JSON.stringify(record)}\n`);
+  if (createdDir) await writeProjectMeta(options.cwd);
 }
 
 // A `--raw` passthrough that STREAMS via stdio:"inherit" (the light path) captures
@@ -148,8 +134,8 @@ export async function recordRawLitePassthrough(params: {
   };
   if (params.sessionId) record.session_id = params.sessionId;
 
-  await appendJsonLine(file, `${JSON.stringify(record)}\n`);
-  await maybeWriteProjectMeta(params.cwd);
+  const { createdDir } = await appendJsonLine(file, `${JSON.stringify(record)}\n`);
+  if (createdDir) await writeProjectMeta(params.cwd);
 }
 
 // Fill the byte/token fields a light `--raw` row honestly OMITS (see
@@ -167,16 +153,12 @@ export function coerceHistorySizes(record: HistoryRecord): HistoryRecord {
   return record;
 }
 
-// Lazily record the project's display label (directory basename only — never the
-// full path) for `tk gain --user` (ADR 0004 §3). Best-effort and idempotent: the
-// `wx` flag writes only when absent, and any error (already present, unwritable) is
-// swallowed so the hot-path command is never broken. Guarded by an in-process flag
-// (2.4c) so the `open(wx)` syscall fires at most ONCE per fingerprint per process,
-// instead of every command (where it fired its open even to hit EEXIST).
-async function maybeWriteProjectMeta(cwd: string): Promise<void> {
-  const fingerprint = projectFingerprint(cwd);
-  if (metaEnsured.has(fingerprint)) return;
-  metaEnsured.add(fingerprint);
+// Record the project's display label (directory basename only — never the full path)
+// for `tk gain --user` (ADR 0004 §3). Called ONLY when the project data dir was just
+// created (2.4c) — the moment a project is first seen — so the per-command hot path
+// never pays for it. Best-effort: the `wx` flag and the swallowed catch keep it a
+// no-op when the meta already exists or the disk rejects the write (display-only).
+async function writeProjectMeta(cwd: string): Promise<void> {
   try {
     const meta: ProjectMeta = { label: path.basename(cwd) };
     await writeFile(projectMetaFile(cwd), `${JSON.stringify(meta)}\n`, {
@@ -227,7 +209,8 @@ export async function recordHookFailure(params: {
     quality_status: "failure",
   };
 
-  await appendJsonLine(file, `${JSON.stringify(record)}\n`);
+  const { createdDir } = await appendJsonLine(file, `${JSON.stringify(record)}\n`);
+  if (createdDir) await writeProjectMeta(params.cwd);
 }
 
 export async function readHistory(cwd: string): Promise<HistoryRecord[]> {

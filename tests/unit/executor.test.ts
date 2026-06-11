@@ -1,6 +1,8 @@
 import { afterEach, beforeEach, describe, expect, test } from "vitest";
 
-import { dirname } from "node:path";
+import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { dirname, join } from "node:path";
 
 import {
   buildSpawnTarget,
@@ -78,6 +80,25 @@ describe("resolveBinaryPath (install-time resolver, 2.1)", () => {
     expect(resolveBinaryPath("tk-nope-binary", dirname(process.execPath))).toBeUndefined();
   });
 
+  test.runIf(process.platform !== "win32")(
+    "skips a non-executable shadow and resolves the executable later on PATH (P1)",
+    () => {
+      const dirA = mkdtempSync(join(tmpdir(), "tk-noexec-"));
+      const dirB = mkdtempSync(join(tmpdir(), "tk-exec-"));
+      try {
+        // dirA/demo exists but is NOT executable; dirB/demo is. The shell skips the
+        // former and runs the latter — resolveBinaryPath must do the same, not bake A.
+        writeFileSync(join(dirA, "demo"), "#!/bin/sh\n", { mode: 0o644 });
+        writeFileSync(join(dirB, "demo"), "#!/bin/sh\n", { mode: 0o755 });
+        const resolved = resolveBinaryPath("demo", `${dirA}:${dirB}`);
+        expect(resolved).toBe(join(dirB, "demo"));
+      } finally {
+        rmSync(dirA, { recursive: true, force: true });
+        rmSync(dirB, { recursive: true, force: true });
+      }
+    },
+  );
+
   test("returns a path-qualified program verbatim only when it exists", () => {
     expect(resolveBinaryPath(process.execPath, undefined)).toBe(process.execPath);
     expect(resolveBinaryPath("/no/such/tk/binary", undefined)).toBeUndefined();
@@ -139,6 +160,45 @@ describe("buildSpawnTarget — baked TK_REAL_BIN (2.1)", () => {
     process.env.TK_REAL_BIN = process.execPath;
     const target = buildSpawnTarget("./node", [], PATHV);
     expect(target.file).toBe("./node");
+  });
+});
+
+describe("buildChildEnv — NODE_COMPILE_CACHE restore (2.3 leak fix)", () => {
+  const keys = ["TK_SHIM_DIR", "NODE_COMPILE_CACHE", "TK_NODE_COMPILE_CACHE_PREV"] as const;
+  const saved: Record<string, string | undefined> = {};
+  beforeEach(() => {
+    for (const k of keys) saved[k] = process.env[k];
+    // A shim dir not on PATH: the recursion guard is a no-op for the absolute-path
+    // `node` we spawn, but TK_SHIM_DIR being set routes through the env-building path.
+    process.env.TK_SHIM_DIR = tmpdir();
+    process.env.NODE_COMPILE_CACHE = "/tk/v8-cache"; // tk's injected dir
+  });
+  afterEach(() => {
+    for (const k of keys) {
+      if (saved[k] === undefined) delete process.env[k];
+      else process.env[k] = saved[k];
+    }
+  });
+
+  async function childCacheEnv(): Promise<string> {
+    const args = ["-e", "process.stdout.write(process.env.NODE_COMPILE_CACHE || 'UNSET')"];
+    const r = await executeCommand({
+      program: process.execPath,
+      args,
+      original: [process.execPath, ...args],
+      displayCommand: "node -e probe",
+    });
+    return r.stdout;
+  }
+
+  test("restores the caller's prior NODE_COMPILE_CACHE for the spawned child", async () => {
+    process.env.TK_NODE_COMPILE_CACHE_PREV = "/user/orig";
+    expect(await childCacheEnv()).toBe("/user/orig");
+  });
+
+  test("removes NODE_COMPILE_CACHE for the child when the caller had none", async () => {
+    process.env.TK_NODE_COMPILE_CACHE_PREV = "";
+    expect(await childCacheEnv()).toBe("UNSET");
   });
 });
 

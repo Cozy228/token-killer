@@ -70,17 +70,20 @@ describe("wrapper content", () => {
     );
   });
 
-  test("POSIX wrapper bakes NODE_COMPILE_CACHE when given a cache dir (2.3)", () => {
+  test("POSIX wrapper bakes NODE_COMPILE_CACHE + saves the caller's prior value (2.3)", () => {
     expect(posixWrapper("git", tk, "/abs/shim", "/usr/bin/git", "/abs/home/v8-cache")).toBe(
       "#!/usr/bin/env sh\nexport TK_SHIM_DIR='/abs/shim'\nexport TK_REAL_BIN='/usr/bin/git'\n" +
+        'export TK_NODE_COMPILE_CACHE_PREV="${NODE_COMPILE_CACHE-}"\n' +
         "export NODE_COMPILE_CACHE='/abs/home/v8-cache'\n" +
         "exec '/usr/local/bin/node' '/abs/dist/cli.js' 'git' \"$@\"\n",
     );
   });
 
-  test("Windows wrapper bakes NODE_COMPILE_CACHE when given a cache dir (2.3)", () => {
+  test("Windows wrapper bakes NODE_COMPILE_CACHE + saves the caller's prior value (2.3)", () => {
     expect(windowsWrapper("git", tk, "C:\\abs\\shim", undefined, "C:\\abs\\home\\v8-cache")).toBe(
       '@echo off\r\nsetlocal\r\nset "TK_SHIM_DIR=C:\\abs\\shim"\r\n' +
+        'set "TK_NODE_COMPILE_CACHE_PREV="\r\n' +
+        'if defined NODE_COMPILE_CACHE set "TK_NODE_COMPILE_CACHE_PREV=%NODE_COMPILE_CACHE%"\r\n' +
         'set "NODE_COMPILE_CACHE=C:\\abs\\home\\v8-cache"\r\n' +
         '"/usr/local/bin/node" "/abs/dist/cli.js" "git" %*\r\n',
     );

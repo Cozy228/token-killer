@@ -90,13 +90,14 @@ describe("recordHistory fs-op slimming (2.4)", () => {
     expect(row.project_fingerprint).toBe(projectFingerprint(cwd));
   });
 
-  test("writes project meta only ONCE per process (2.4c)", async () => {
+  test("writes project meta only when the project dir is first created (2.4c)", async () => {
     const cwd = join(home, "workspace");
-    await recordHistory(raw(), filtered(), options(cwd));
+    await recordHistory(raw(), filtered(), options(cwd)); // dir created → meta written
     expect(existsSync(projectMetaFile(cwd))).toBe(true);
 
-    // Delete the meta and record again: the in-process guard must skip the re-open,
-    // so the meta is NOT recreated — proving the open(wx) fires at most once per run.
+    // Delete the meta but leave the dir: a subsequent record APPENDS without recreating
+    // the dir, so meta is NOT rewritten — proving the open(wx) is off the hot path and
+    // fires only on first dir creation, not every command.
     rmSync(projectMetaFile(cwd));
     await recordHistory(raw(), filtered(), options(cwd));
     expect(existsSync(projectMetaFile(cwd))).toBe(false);
