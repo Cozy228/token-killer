@@ -52,21 +52,78 @@ export function renderJson(report: Report): string {
 }
 
 const MARKDOWN_TOP = 10;
+const ACTIONS_TOP = 5;
 
 function pct(share: number): string {
   return `${(share * 100).toFixed(1)}%`;
 }
 
+// Action items, in priority order, derived from the advice findings inspect already
+// computes. This is what the user should DO — printed first so the report leads with
+// next steps, not a raw data dump.
+function actionLines(report: Report): string[] {
+  const advice = report.advice ?? [];
+  if (advice.length === 0) return [];
+  const out: string[] = ["## What to do", ""];
+  advice.slice(0, ACTIONS_TOP).forEach((f, i) => {
+    out.push(`${i + 1}. ${f.title}`);
+    out.push(`   → ${f.recommendation}`);
+  });
+  if (advice.length > ACTIONS_TOP) {
+    out.push("");
+    out.push(`_+${advice.length - ACTIONS_TOP} more — see \`tk inspect --advice\`._`);
+  }
+  out.push("");
+  return out;
+}
+
+// Honest coverage line. The point of the I3/I4 work is that inspect must never
+// silently report a hollow number: if it discovered sessions but could not read any
+// tool activity out of them, it says so plainly and tells the user what to try —
+// rather than printing "Sessions: 8 / Tool actions: 0" and an empty table that reads
+// like everything is fine.
+function couldNotReadSessions(report: Report): string[] {
+  const inputHint =
+    report.inputType === "vscode"
+      ? "If you drive the agent from the Copilot CLI instead, run `tk inspect --input-type copilot-cli`."
+      : "If you use VS Code Copilot instead, run `tk inspect --input-type vscode`.";
+  return [
+    "## Couldn't read your agent activity",
+    "",
+    `Found ${report.session_inventory} session(s) but extracted **0 tool actions** from them — so there's nothing to analyze yet.`,
+    "",
+    "This usually means the transcripts live somewhere tk didn't look, or in a format it doesn't recognize. What to try:",
+    `- ${inputHint}`,
+    "- Run the agent through a turn that uses terminal/file tools, then re-run `tk inspect`.",
+    "- If this persists, the host changed its on-disk format — please file an issue with your host + version.",
+    "",
+  ];
+}
+
 export function renderMarkdown(report: Report): string {
-  const lines: string[] = [];
-  lines.push("# Token Killer Inspect");
+  const lines: string[] = ["# Token Killer Inspect", ""];
+
+  // Lead with action items (what to do), if inspect found anything actionable.
+  lines.push(...actionLines(report));
+
+  // Honest diagnostic: sessions discovered but nothing readable came out of them.
+  if (report.session_inventory > 0 && report.tool_event_count === 0) {
+    lines.push(...couldNotReadSessions(report));
+  }
+
+  // Plain-language coverage summary (honest counts, framed as supporting detail).
+  lines.push("## Coverage");
   lines.push("");
   lines.push(`- Input type: \`${report.inputType}\``);
-  lines.push(`- Session inventory: ${report.session_inventory}`);
-  lines.push(`- Transcript coverage (files with tool events): ${report.transcript_coverage}`);
-  lines.push(`- Tool events analyzed: ${report.tool_event_count}`);
-  lines.push(`- Unknown-time records: ${report.unknown_time_records}`);
-  if (report.coverage_errors > 0) lines.push(`- Coverage errors: ${report.coverage_errors}`);
+  lines.push(`- Sessions found: ${report.session_inventory}`);
+  lines.push(`- Sessions with readable tool activity: ${report.transcript_coverage}`);
+  lines.push(`- Tool actions analyzed: ${report.tool_event_count}`);
+  if (report.unknown_time_records > 0) {
+    lines.push(`- Records skipped (no reliable timestamp): ${report.unknown_time_records}`);
+  }
+  if (report.coverage_errors > 0) {
+    lines.push(`- Files tk could not read/parse: ${report.coverage_errors}`);
+  }
   lines.push("");
 
   if (report.repo_context) {
@@ -81,15 +138,21 @@ export function renderMarkdown(report: Report): string {
     lines.push("");
   }
 
-  lines.push("## Opportunities (ranked by output volume — cost heuristic, not a token bill)");
-  lines.push("");
   if (report.opportunities.length === 0) {
-    lines.push("_No tool events found to analyze._");
-    lines.push("");
+    // No table to show. The honest block above already explained an empty scan; a
+    // healthy scan with no opportunities means the activity is already lean.
+    if (report.tool_event_count > 0) {
+      lines.push("_No token-saving opportunities found — your agent activity is already lean._");
+      lines.push("");
+    }
     return `${lines.join("\n")}\n`;
   }
 
-  lines.push("| Command/Tool | count | share | out chars (≈tok) | avg out | max out | in chars | max in | ok | fail |");
+  lines.push("## Where the tokens go (cost heuristic, not a token bill)");
+  lines.push("");
+  lines.push(
+    "| Command/Tool | count | share | out chars (≈tok) | avg out | max out | in chars | max in | ok | fail |",
+  );
   lines.push("|---|--:|--:|--:|--:|--:|--:|--:|--:|--:|");
   for (const o of report.opportunities.slice(0, MARKDOWN_TOP)) {
     lines.push(

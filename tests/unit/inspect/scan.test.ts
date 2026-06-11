@@ -107,18 +107,19 @@ describe("scan — aggregation & ranking", () => {
     expect(npm.success_count).toBe(1);
   });
 
-  test("session inventory and transcript coverage are NOT collapsed", () => {
-    const sess = join(dir, "s.jsonl");
-    writeFileSync(
-      sess,
-      [JSON.stringify({ id: "a" }), JSON.stringify({ id: "b" })].join("\n") + "\n",
-    );
+  test("session inventory counts distinct session files, not their lines", () => {
+    // Two chatSessions files = two sessions. Each file's many lines are an
+    // incremental snapshot+patch of ONE session, so they must NOT inflate the count.
+    const sessA = join(dir, "a.jsonl");
+    writeFileSync(sessA, [JSON.stringify({ kind: 0, v: { requests: [] } }), "{}", "{}"].join("\n"));
+    const sessB = join(dir, "b.jsonl");
+    writeFileSync(sessB, JSON.stringify({ kind: 0, v: { requests: [] } }));
     const withEvents = writeTranscript("t1.jsonl", [
       { toolName: "bash", toolArgs: JSON.stringify({ command: "git log" }), toolResult: "x" },
     ]);
     const noEvents = writeTranscript("t2.jsonl", [{ note: "no tool here" }]);
-    const r = scan(discovery([withEvents, noEvents], [sess]));
-    expect(r.session_inventory).toBe(2);
+    const r = scan(discovery([withEvents, noEvents], [sessA, sessB]));
+    expect(r.session_inventory).toBe(2); // two sessions, not five lines
     expect(r.transcript_coverage).toBe(1); // only t1 had a tool event
   });
 

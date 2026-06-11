@@ -303,10 +303,13 @@ export function scan(discovery: SourceDiscovery, opts: ScanOptions = {}): ScanRe
     if (processFile(file)) transcriptCoverage += 1;
   }
 
-  // Session inventory = count of discovered session records (lines), distinct from
-  // transcript coverage. Session files (chatSessions) ALSO go through extraction so
-  // a populated snapshot contributes tool events (I4); on most versions their
-  // requests are empty and only the inventory count lands here.
+  // Session inventory = count of distinct SESSIONS discovered (one chatSessions file
+  // = one session), NOT a line count. The lines inside a chatSessions file are an
+  // incremental snapshot+patch serialization of a single session, so summing them
+  // produced a meaningless inflated number (e.g. "187") that read like real activity
+  // when it was not. Distinct from transcript coverage. Session files ALSO go through
+  // extraction so a populated snapshot contributes tool events (I4); on most versions
+  // their requests are empty and only the session count lands here.
   let sessionInventory = 0;
   for (const file of discovery.sessionFiles) {
     let text: string;
@@ -316,10 +319,10 @@ export function scan(discovery: SourceDiscovery, opts: ScanOptions = {}): ScanRe
       coverageErrors += 1;
       continue;
     }
-    const lines = text.split(/\r?\n/).filter((l) => l.trim().length > 0);
-    sessionInventory += Math.max(lines.length, 1);
+    sessionInventory += 1;
     const ctx: VscodeReadCtx = {};
-    for (const line of lines) {
+    for (const line of text.split(/\r?\n/)) {
+      if (line.trim().length === 0) continue;
       let json: unknown;
       try {
         json = JSON.parse(line);

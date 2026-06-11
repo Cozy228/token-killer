@@ -259,8 +259,11 @@ export function runInspect(
     const repoContext = opts.repoContext ? gatherRepoContext(cwd) : undefined;
 
     const adviceRequested = opts.advice || opts.writeAdvice;
+    // Advice is computed ALWAYS (not just under --advice) so the default report can
+    // LEAD with action items — what the user should do — instead of a raw data table.
+    // --advice/--write-advice still control the verbose appendix and on-disk artifacts.
     let findings: AdviceFinding[] = [];
-    if (adviceRequested && result) {
+    if (result) {
       findings = buildAdvice(result, {
         minConfidence: opts.minConfidence,
         minOccurrences: opts.minOccurrences,
@@ -271,7 +274,7 @@ export function runInspect(
       result ?? emptyScanResult(opts.inputType),
       new Date(nowMs).toISOString(),
       repoContext,
-      adviceRequested ? findings : undefined,
+      findings,
     );
     report.static_context = { files_scanned: sc.result.files_scanned, findings: staticFindings };
     report.findings = unifiedFindings;
