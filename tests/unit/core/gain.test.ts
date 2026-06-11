@@ -96,7 +96,7 @@ describe("runGain --json (ledger ① only)", () => {
       expect(json.commands).toBe(1);
       // no cross-ledger total / no estimate keys unless --quota
       expect(json).not.toHaveProperty("total");
-      expect(json).not.toHaveProperty("estimated_savings_usd");
+      expect(json).not.toHaveProperty("estimated_savings");
     });
   });
 
@@ -109,8 +109,15 @@ describe("runGain --json (ledger ① only)", () => {
       await runGain(["--json", "--quota"], cwd);
 
       const json = JSON.parse(cap.text());
-      expect(json.estimated_savings_usd.estimate_kind).toBe("heuristic");
-      expect(json.estimated_savings_usd).toHaveProperty("value_usd");
+      expect(json.estimated_savings.estimate_kind).toBe("heuristic");
+      expect(json.estimated_savings).toHaveProperty("value_usd");
+      // AI Credits is the headline value unit (1 credit = $0.01); USD retained.
+      expect(json.estimated_savings.value_ai_credits).toBeCloseTo(
+        json.estimated_savings.value_usd * 100,
+        6,
+      );
+      // GPT-5.5 cross-reference rides alongside the Claude default.
+      expect(json.estimated_savings.cross_reference.model).toBe("gpt-5.5");
       // the measured object must stay clean
       expect(json.estimate_kind).toBe("measured");
       expect(json).not.toHaveProperty("saved_tokens_usd");

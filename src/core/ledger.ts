@@ -17,7 +17,13 @@ import {
 } from "../inspect/optimizeActions.js";
 import { readInspectBucket, type ScopeBucket } from "../inspect/persist.js";
 import { summarize, type GainSummary } from "./aggregate.js";
-import { DEFAULT_INPUT_PRICE_PER_MTOK } from "./pricing.js";
+import {
+  CROSS_REFERENCE_MODEL,
+  DEFAULT_INPUT_PRICE_PER_MTOK,
+  priceForModel,
+  tokensToCredits,
+  tokensToUsd,
+} from "./pricing.js";
 import { projectFingerprint } from "./dataDir.js";
 import {
   listProjectGovernance,
@@ -247,14 +253,36 @@ export function renderText(ledgers: Ledgers): string {
   return out.join("\n");
 }
 
-// Headline dollar estimate for the HTML report — measured saved tokens valued at
-// the default input price. Always an estimate (the report labels it as such).
-function usdFields(ledgers: Ledgers): { estimated_savings_usd: number; price_per_mtok: number } {
+// Headline value estimate for the HTML report — measured saved tokens valued at
+// the default input price. AI Credits (1 credit = $0.01) is the headline value
+// unit; USD retained alongside. Always an estimate (the report labels it as such),
+// kept apart from the measured token counts it derives from.
+function usdFields(ledgers: Ledgers): {
+  estimated_savings_usd: number;
+  estimated_savings_ai_credits: number;
+  price_per_mtok: number;
+  cross_reference: {
+    model: string;
+    estimated_savings_usd: number;
+    estimated_savings_ai_credits: number;
+    price_per_mtok: number;
+  };
+} {
   const m = ledgers.measured_command_savings;
   const saved = isScopeNa(m) ? 0 : m.saved_tokens;
+  const crossRate = priceForModel(CROSS_REFERENCE_MODEL);
   return {
-    estimated_savings_usd: (saved / 1_000_000) * DEFAULT_INPUT_PRICE_PER_MTOK,
+    estimated_savings_usd: tokensToUsd(saved),
+    estimated_savings_ai_credits: tokensToCredits(saved),
     price_per_mtok: DEFAULT_INPUT_PRICE_PER_MTOK,
+    // Well-known cross-reference (GPT-5.5) so the OpenAI/Copilot world gets a
+    // recognizable number alongside the Sonnet 4.6 default.
+    cross_reference: {
+      model: CROSS_REFERENCE_MODEL,
+      estimated_savings_usd: tokensToUsd(saved, crossRate),
+      estimated_savings_ai_credits: tokensToCredits(saved, crossRate),
+      price_per_mtok: crossRate,
+    },
   };
 }
 

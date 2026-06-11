@@ -18,7 +18,7 @@ export type ReportDoc = {
   title: string;
   subtitle: string;
   generatedAt: string; // ISO
-  data: unknown; // gain → Ledgers (+ estimated_savings_usd, price_per_mtok); inspect → InspectReportData
+  data: unknown; // gain → Ledgers (+ estimated_savings_usd, estimated_savings_ai_credits, price_per_mtok); inspect → InspectReportData
 };
 
 // Escape a JSON string for safe embedding inside <script> (prevent </script>
@@ -235,9 +235,19 @@ function renderGain(L) {
     out.push('<div class="hero light"><div class="lead">' + esc(m.note) + '</div></div>');
   } else {
     const usd = money(L.estimated_savings_usd);
+    const credits = L.estimated_savings_ai_credits;
+    const creditStr = typeof credits === "number" && isFinite(credits) ? n(credits) : null;
     const price = L.price_per_mtok || 3;
+    const xr = L.cross_reference;
     let h = '<section class="hero deep">';
-    if (usd) h += '<p class="lbl kick">≈ ' + usd + ' saved in model spend · estimated at $' + price + ' / 1M tokens</p>';
+    // Value kicker: AI Credits (1 credit = $0.01) is the headline value unit, USD
+    // in parentheses. This is an ESTIMATE derived from the measured tokens below.
+    if (creditStr) h += '<p class="lbl kick">≈ ' + creditStr + ' AI Credits saved' + (usd ? ' (' + usd + ')' : '') + ' · estimated at $' + price + ' / 1M tokens (Sonnet 4.6)</p>';
+    else if (usd) h += '<p class="lbl kick">≈ ' + usd + ' saved in model spend · estimated at $' + price + ' / 1M tokens</p>';
+    // Cross-reference at a well-known model's rate (e.g. GPT-5.5).
+    if (xr && typeof xr.estimated_savings_ai_credits === "number" && isFinite(xr.estimated_savings_ai_credits)) {
+      h += '<p class="lbl kick xref">at ' + esc(xr.model) + ' rates ($' + xr.price_per_mtok + ' / 1M): ≈ ' + n(xr.estimated_savings_ai_credits) + ' AI Credits (' + (money(xr.estimated_savings_usd) || '') + ')</p>';
+    }
     h += '<div class="big">' + n(m.saved_tokens) + '<small>tokens saved (measured)</small></div>';
     h += '<div class="lead">Token Killer trimmed your command output by <b>' + pct(m.savings_pct) + '</b> before it reached the model, across <b>' + n(m.commands) + '</b> commands.</div>';
     h += '<div class="ba"><span>Output without tk: <span class="n">' + n(m.raw_tokens) + '</span> tokens</span>' +

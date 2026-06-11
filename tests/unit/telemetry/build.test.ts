@@ -58,6 +58,7 @@ const ALLOWED_KEYS = new Set([
   "active_days_30d",
   "source_adapter_mix",
   "estimated_savings_usd_30d",
+  "estimated_savings_ai_credits_30d",
   "inspect",
   "runId",
 ]);
@@ -78,6 +79,7 @@ describe("buildTelemetry — schema v1 shape", () => {
     expect(t.active_days_30d).toBe(1);
     expect(t.source_adapter_mix).toEqual({ shell: 2 });
     expect(t.estimated_savings_usd_30d).toBeCloseTo((100 / 1e6) * 3, 6);
+    expect(t.estimated_savings_ai_credits_30d).toBeCloseTo((100 / 1e6) * 3 * 100, 6);
   });
 
   test("quality signals: counts, fallback_count, parse_failure_24h", () => {
