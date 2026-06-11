@@ -15,7 +15,27 @@ import type { DiscoveredFile } from "../discover.js";
 import type { ContextFinding } from "../types.js";
 import { buildFinding, frontmatterString, hasFrontmatterKey } from "./helpers.js";
 
-const SIDE_EFFECT_VERBS = /\b(commit|push|deploy|publish|release|send|delete|archive)\b/i;
+// Side-effect ACTIONS, not their noun/adjective look-alikes. A skill that writes
+// "commit messages" or "release notes" or "publish-ready output" is describing its
+// OUTPUT, not performing a commit/release/publish — the bare verb list flagged
+// read/write/learn skills on exactly those compounds. Each verb excludes the
+// observed false-friend nouns and keeps real action forms (publishing, commits,
+// release the build, deploy the service).
+const SIDE_EFFECT_VERBS = new RegExp(
+  "\\b(?:" +
+    [
+      "deploy(?!ment)(?:s|ed|ing)?",
+      "delete(?:s|d)?",
+      "archive(?:s|d)?",
+      "commit(?:s|ted|ting)?(?![ -]+(?:messages?|msgs?|to)\\b)",
+      "push(?![ -]+(?:notification|request))(?:es|ed|ing)?",
+      "publish(?![ -]?ready)(?:es|ing|ed)?",
+      "release(?![ -]+(?:notes?|read\\w*))(?:s|d)?",
+      "send(?:s|ing)?",
+    ].join("|") +
+    ")\\b",
+  "i",
+);
 const READONLY_HINT =
   /\b(read|review|summari[sz]e|explain|list|describe|analy[sz]e|reference|lookup)\b/i;
 const KNOWLEDGE_HINT = /\b(background|knowledge|reference|guide|conventions?|glossary)\b/i;

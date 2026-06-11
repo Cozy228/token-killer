@@ -111,21 +111,22 @@ describe("skill_invocation_policy", () => {
     expect(userFindings().some((x) => x.type === "skill_invocation_policy")).toBe(false);
   });
 
-  test("FP fix: a side-effect verb in the BODY of a read-only skill is NOT flagged", () => {
-    // Real false positive: read/think/learn skills got flagged because words like
-    // "publish"/"release"/"send" appear in their prose. Classification is by the
-    // declared purpose (name + description), not the body.
-    writeUserSkill(
-      "learn",
-      [
-        "---",
-        "name: learn",
-        "description: Research a topic and summarize findings into a reference document.",
-        "---",
-        "# Learn",
-        "Produce a publish-ready article. You may send the draft for review and release notes.",
-      ].join("\n"),
-    );
+  test("FP fix: side-effect-verb NOUN/adjective compounds in the description are NOT flagged", () => {
+    // Real false positives, each a verb used as a noun/adjective, not an action:
+    //  - learn: "publish-ready output"     (publish = adjective)
+    //  - write: "commit messages, release notes"  (commit/release = nouns)
+    //  - prototype: "before committing to it"      (commit to = decide, not git)
+    const cases: Array<[string, string]> = [
+      ["learn", "Research a topic and turn material into publish-ready output."],
+      ["write", "Rewrite prose; not for commit messages, release notes, or inline docs."],
+      ["prototype", "Build a throwaway prototype to flesh out a design before committing to it."],
+    ];
+    for (const [name, description] of cases) {
+      writeUserSkill(
+        name,
+        ["---", `name: ${name}`, `description: ${description}`, "---", "# X", "Body."].join("\n"),
+      );
+    }
     const sideEffect = userFindings().filter(
       (x) =>
         x.type === "skill_invocation_policy" &&
