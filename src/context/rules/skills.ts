@@ -103,41 +103,31 @@ export const skillInvocationPolicyRule: PerFileRule = {
       );
     }
 
-    // Background-knowledge skill with no slash action and user-invocable unset.
-    const isKnowledge = KNOWLEDGE_HINT.test(
-      `${name} ${af.parsed.frontmatter.values.description ?? ""}`,
-    );
+    // Invocation-hygiene (info): the missing least-privilege / auto-invocation keys
+    // for a non-side-effect skill. Emitted as ONE finding per skill (not one per
+    // missing key) so a knowledge+read-only skill like `learn` no longer appears
+    // twice. The recommendation is one of a fixed set of strings so the renderer can
+    // group skills sharing the same gap.
+    const isKnowledge = KNOWLEDGE_HINT.test(`${name} ${description}`);
+    const readOnly = READONLY_HINT.test(intent) && !hasSideEffect;
+    const missing: string[] = [];
     if (!hasSideEffect && isKnowledge && !hasFrontmatterKey(af, "user-invocable")) {
+      missing.push("`user-invocable: false`");
+    }
+    if (readOnly && !hasFrontmatterKey(af, "allowed-tools")) {
+      missing.push("an `allowed-tools` list");
+    }
+    if (missing.length > 0) {
       findings.push(
         buildFinding(af, {
           type: "skill_invocation_policy",
           severity: "info",
           confidence: 0.55,
-          evidence:
-            "Background-knowledge skill leaves user-invocable unset and has no meaningful slash-command action.",
-          recommendation:
-            "Add `user-invocable: false` so background knowledge is not offered as a user command.",
+          evidence: "Read-only/background skill is missing least-privilege invocation frontmatter.",
+          recommendation: `Add ${missing.join(" and ")} so this skill is scoped and not auto-offered as a command.`,
           fix_class: "suggested_diff",
           start_line: fmEnd,
-          idExtra: "user-invocable",
-        }),
-      );
-    }
-
-    // Read-only skill without least-privilege allowed-tools.
-    const readOnly = READONLY_HINT.test(intent) && !hasSideEffect;
-    if (readOnly && !hasFrontmatterKey(af, "allowed-tools")) {
-      findings.push(
-        buildFinding(af, {
-          type: "skill_invocation_policy",
-          severity: "info",
-          confidence: 0.5,
-          evidence: "Read-only skill does not declare allowed-tools (least-privilege).",
-          recommendation:
-            "Add an `allowed-tools` list scoping the skill to the tools it actually needs.",
-          fix_class: "suggested_diff",
-          start_line: fmEnd,
-          idExtra: "allowed-tools",
+          idExtra: "hygiene",
         }),
       );
     }

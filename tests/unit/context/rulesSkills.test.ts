@@ -135,6 +135,28 @@ describe("skill_invocation_policy", () => {
     expect(sideEffect).toHaveLength(0);
   });
 
+  test("a knowledge+read-only skill yields ONE combined hygiene finding, not two", () => {
+    // learn-like: both background-knowledge (→ user-invocable) and read-only
+    // (→ allowed-tools). Must collapse to a single finding so it isn't listed twice.
+    writeUserSkill(
+      "learn",
+      [
+        "---",
+        "name: learn",
+        "description: Background reference: research a topic and summarize it.",
+        "---",
+        "# Learn",
+        "Body.",
+      ].join("\n"),
+    );
+    const infos = userFindings().filter(
+      (x) => x.type === "skill_invocation_policy" && x.severity === "info",
+    );
+    expect(infos).toHaveLength(1);
+    expect(infos[0].recommendation).toContain("user-invocable");
+    expect(infos[0].recommendation).toContain("allowed-tools");
+  });
+
   test("a genuine side-effect skill (verb in its description) is still flagged", () => {
     writeUserSkill(
       "shipit",
