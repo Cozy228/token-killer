@@ -12,7 +12,12 @@ import { instructionDuplicateRule } from "./duplicates.js";
 import { pathInstructionOverbreadthRule } from "./pathInstructions.js";
 import { promptMetadataGapRule } from "./prompts.js";
 import { copilotReviewTruncationRule } from "./reviewTruncation.js";
-import { skillEntrypointBloatRule, skillInvocationPolicyRule } from "./skills.js";
+import {
+  skillCountRule,
+  skillDescriptionBloatRule,
+  skillEntrypointBloatRule,
+  skillInvocationPolicyRule,
+} from "./skills.js";
 import { taskPromptInInstructionRule } from "./taskPrompt.js";
 
 let registered = false;
@@ -36,4 +41,6 @@ export function registerAllRules(): void {
   // Slice 4 — skill rules.
   registerPerFileRule(skillInvocationPolicyRule);
   registerPerFileRule(skillEntrypointBloatRule);
+  registerPerFileRule(skillDescriptionBloatRule);
+  registerCrossFileRule(skillCountRule);
 }

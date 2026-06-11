@@ -41,6 +41,8 @@ export type ContextFindingType =
   | "agent_overbreadth"
   | "skill_invocation_policy"
   | "skill_entrypoint_bloat"
+  | "skill_description_bloat"
+  | "skill_count_bloat"
   | "instruction_duplicate"
   | "instruction_conflict"
   | "copilot_review_truncation"

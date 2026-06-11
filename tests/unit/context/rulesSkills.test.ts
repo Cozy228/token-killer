@@ -163,6 +163,70 @@ describe("skill_entrypoint_bloat", () => {
   });
 });
 
+describe("skill_description_bloat", () => {
+  test("flags an over-long always-on description", () => {
+    writeUserSkill(
+      "verbose",
+      [
+        "---",
+        "name: verbose",
+        `description: ${"trigger words and explanation ".repeat(40)}`, // > 600 chars
+        "---",
+        "# Verbose",
+        "Body.",
+      ].join("\n"),
+    );
+    const f = userFindings().find((x) => x.type === "skill_description_bloat");
+    expect(f).toBeDefined();
+    expect(f!.recommendation).toContain("Tighten the description");
+  });
+
+  test("a concise description is not flagged", () => {
+    writeUserSkill(
+      "concise",
+      ["---", "name: concise", "description: Short and to the point.", "---", "# C", "Body."].join(
+        "\n",
+      ),
+    );
+    expect(userFindings().some((x) => x.type === "skill_description_bloat")).toBe(false);
+  });
+});
+
+describe("skill_count_bloat", () => {
+  function writeManyUserSkills(n: number): void {
+    for (let i = 0; i < n; i += 1) {
+      writeUserSkill(
+        `s${i}`,
+        ["---", `name: s${i}`, `description: skill ${i}`, "---", "# S"].join("\n"),
+      );
+    }
+  }
+
+  test("warns when more than 20 user-level skills are installed", () => {
+    writeManyUserSkills(21);
+    const f = userFindings().find((x) => x.type === "skill_count_bloat");
+    expect(f).toBeDefined();
+    expect(f!.severity).toBe("warn");
+    expect(f!.evidence).toContain("21 user-level skills");
+    expect(f!.recommendation).toContain("Prune");
+  });
+
+  test("does not fire at or below the threshold", () => {
+    writeManyUserSkills(20);
+    expect(userFindings().some((x) => x.type === "skill_count_bloat")).toBe(false);
+  });
+
+  test("project-scoped skills do not count toward the user-level total", () => {
+    for (let i = 0; i < 25; i += 1) {
+      writeProjectSkill(
+        `p${i}`,
+        ["---", `name: p${i}`, `description: p ${i}`, "---", "# P"].join("\n"),
+      );
+    }
+    expect(projectFindings().some((x) => x.type === "skill_count_bloat")).toBe(false);
+  });
+});
+
 describe("adapter labelling", () => {
   test("Claude-only skill metadata never appears on a copilot-adapter finding", () => {
     writeUserSkill(

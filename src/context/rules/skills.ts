@@ -4,10 +4,16 @@
 // skill features — never emitted as Copilot recommendations (findings stay
 // adapter-labeled "claude").
 
-import type { AnalyzedFile, PerFileRule } from "../analyzer.js";
+import {
+  makeFindingId,
+  type AnalyzedFile,
+  type CrossFileRule,
+  type PerFileRule,
+} from "../analyzer.js";
+import { estimateTokens } from "../../core/tokens.js";
 import type { DiscoveredFile } from "../discover.js";
 import type { ContextFinding } from "../types.js";
-import { buildFinding, hasFrontmatterKey } from "./helpers.js";
+import { buildFinding, frontmatterString, hasFrontmatterKey } from "./helpers.js";
 
 const SIDE_EFFECT_VERBS = /\b(commit|push|deploy|publish|release|send|delete|archive)\b/i;
 const READONLY_HINT =
@@ -16,6 +22,14 @@ const KNOWLEDGE_HINT = /\b(background|knowledge|reference|guide|conventions?|glo
 
 const ENTRYPOINT_LINE_LIMIT = 500;
 const ENTRYPOINT_FENCE_LIMIT = 60; // a single inline fence this long is "long example"
+// A skill's `description` is loaded into EVERY session at its scope so the model can
+// decide whether to invoke it — so an over-long description is paid on every turn.
+// Calibrated above the common 200–450 char range so only genuine outliers fire.
+const DESCRIPTION_CHAR_LIMIT = 600;
+// Each user-level skill contributes its name+description to the always-on invocation
+// surface. Past this many, the cumulative metadata is a standing token tax worth a
+// prune; the finding reports the estimated always-on cost so the number is concrete.
+const USER_SKILL_COUNT_LIMIT = 20;
 
 function isClaudeSkill(file: DiscoveredFile): boolean {
   return file.surface === "skill" && file.adapter === "claude";
@@ -125,6 +139,30 @@ function maxFenceRun(body: string): number {
   return max;
 }
 
+// DESIGN §4.2 "User skills → description 宽度". The description is always-on
+// invocation-routing metadata; an over-long one is re-sent every session.
+export const skillDescriptionBloatRule: PerFileRule = {
+  type: "skill_description_bloat",
+  appliesTo: isClaudeSkill,
+  run(af: AnalyzedFile): ContextFinding[] {
+    const description = frontmatterString(af, "description");
+    if (!description || description.length <= DESCRIPTION_CHAR_LIMIT) return [];
+    return [
+      buildFinding(af, {
+        type: "skill_description_bloat",
+        severity: "info",
+        confidence: 0.6,
+        evidence: `description is ${description.length} chars (~${estimateTokens(description)} tokens), over the ${DESCRIPTION_CHAR_LIMIT}-char budget; it loads into every session for invocation routing.`,
+        recommendation:
+          "Tighten the description to a concise trigger (what it does + when to use it) — keep the detail in the body, not the always-on frontmatter.",
+        fix_class: "advisory",
+        start_line: af.parsed.frontmatter.end_line ?? 1,
+        idExtra: "description",
+      }),
+    ];
+  },
+};
+
 export const skillEntrypointBloatRule: PerFileRule = {
   type: "skill_entrypoint_bloat",
   appliesTo: isClaudeSkill,
@@ -151,6 +189,44 @@ export const skillEntrypointBloatRule: PerFileRule = {
         start_line: 1,
         idExtra: "entrypoint",
       }),
+    ];
+  },
+};
+
+// DESIGN §4.2 "User skills". Aggregate (cross-file): how MANY user-level skills are
+// installed. Every user skill's name+description is loaded into every session so the
+// model can route to it, so a large collection is a standing always-on token tax —
+// the dimension a single per-file rule can't see. Project-scoped skills are excluded
+// (they only load inside their repo, a deliberate, scoped cost).
+export const skillCountRule: CrossFileRule = {
+  type: "skill_count_bloat",
+  run(files: AnalyzedFile[]): ContextFinding[] {
+    const userSkills = files.filter((af) => isClaudeSkill(af.file) && af.file.scope === "user");
+    if (userSkills.length <= USER_SKILL_COUNT_LIMIT) return [];
+
+    // Estimate the always-on metadata cost = sum of each skill's name + description.
+    let metadataChars = 0;
+    for (const af of userSkills) {
+      metadataChars +=
+        (frontmatterString(af, "name") ?? af.file.display).length +
+        (frontmatterString(af, "description") ?? "").length;
+    }
+    const anchor = userSkills[0]!;
+    return [
+      {
+        id: makeFindingId("skill_count_bloat", undefined, undefined, "user"),
+        source: "static_context",
+        type: "skill_count_bloat",
+        severity: "warn",
+        confidence: 0.7,
+        surface: "skill",
+        evidence: `${userSkills.length} user-level skills installed (> ${USER_SKILL_COUNT_LIMIT}); their name+description metadata (~${estimateTokens("x".repeat(metadataChars))} tokens) loads into every session for invocation routing.`,
+        recommendation:
+          "Prune or disable rarely-used skills, and move project-specific ones into their repo (project scope) so they only load where relevant.",
+        fix_class: "advisory",
+        scope: "user",
+        adapter: anchor.file.adapter,
+      },
     ];
   },
 };
