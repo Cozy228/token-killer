@@ -24,11 +24,11 @@ export type SourceDiscovery = {
   found: boolean;
 };
 
-function listJsonl(dir: string): string[] {
+function listByExt(dir: string, exts: string[]): string[] {
   if (!existsSync(dir)) return [];
   try {
     return readdirSync(dir)
-      .filter((f) => f.endsWith(".jsonl"))
+      .filter((f) => exts.some((ext) => f.endsWith(ext)))
       .map((f) => join(dir, f))
       .filter((p) => {
         try {
@@ -40,6 +40,18 @@ function listJsonl(dir: string): string[] {
   } catch {
     return [];
   }
+}
+
+// Transcripts are append-only JSON-Lines.
+function listJsonl(dir: string): string[] {
+  return listByExt(dir, [".jsonl"]);
+}
+
+// chatSessions are serialized ChatModels — `.jsonl` (incremental) on some builds,
+// a single-object `.json` on others (notably Windows). Discover BOTH, or the I3
+// reader never sees half the sessions (live Windows box: 5 of 7 were `.json`).
+function listSessions(dir: string): string[] {
+  return listByExt(dir, [".json", ".jsonl"]);
 }
 
 function listSubdirs(dir: string): string[] {
@@ -63,7 +75,7 @@ function discoverVscode(home: string, platform: NodeJS.Platform): SourceDiscover
 
   const roots = [join(userDir, "globalStorage"), ...listSubdirs(join(userDir, "workspaceStorage"))];
   for (const root of roots) {
-    sessionFiles.push(...listJsonl(join(root, "chatSessions")));
+    sessionFiles.push(...listSessions(join(root, "chatSessions")));
     transcriptFiles.push(...listJsonl(join(root, "GitHub.copilot-chat", "transcripts")));
     transcriptFiles.push(...listJsonl(join(root, "transcripts")));
   }

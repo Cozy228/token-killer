@@ -13,6 +13,7 @@ import { classifyTool, normalize, type ToolCategory } from "../hook/normalize.js
 import { governDirectTool } from "../hook/govern.js";
 import { rewriteCommand } from "../hook/rewrite.js";
 import type { InputType, SourceDiscovery } from "./sources.js";
+import { extractVscodeRecords, type VscodeReadCtx } from "./vscodeReader.js";
 
 // An output this large is a hotspot worth a guardrail (cost heuristic).
 const LARGE_OUTPUT_CHARS = 8000;
@@ -167,13 +168,25 @@ function isFailure(record: Record<string, unknown>, result: unknown): boolean {
   return false;
 }
 
-// A record is a tool event if it carries a recognizable tool field.
+// A record is a flat tool event if it carries a recognizable top-level tool field
+// (Copilot CLI dialect, or a host that already writes flat records).
 function isToolRecord(record: Record<string, unknown>): boolean {
   return (
     typeof record.toolName === "string" ||
     typeof record.tool_name === "string" ||
     typeof record.tool === "string"
   );
+}
+
+// One parsed JSON value → the flat tool record(s) it represents. A value that is
+// already a flat tool event yields itself (CLI dialect); otherwise we try the VS
+// Code typed-event / chatSession shapes (I3/I4). Anything unrecognized yields [].
+function flatToolRecords(
+  parsed: Record<string, unknown>,
+  ctx: VscodeReadCtx,
+): Record<string, unknown>[] {
+  if (isToolRecord(parsed)) return [parsed];
+  return extractVscodeRecords(parsed, ctx);
 }
 
 type Accumulator = Omit<Opportunity, "share" | "avg_output_chars">;
@@ -205,16 +218,70 @@ export function scan(discovery: SourceDiscovery, opts: ScanOptions = {}): ScanRe
   let coverageErrors = 0;
   let transcriptCoverage = 0;
 
-  for (const file of discovery.transcriptFiles) {
+  // Accumulate ONE flat tool record into the opportunity map. Returns true when the
+  // record passed the session/time filters and was counted (drives coverage).
+  function accumulate(record: Record<string, unknown>): boolean {
+    if (opts.session && recordSession(record) !== opts.session) return false;
+
+    // Time-window filter: records without a reliable timestamp are excluded from
+    // windowed analysis and counted separately (never an mtime fallback).
+    if (opts.sinceMs !== undefined) {
+      const ts = reliableTimestamp(record);
+      if (ts === undefined) {
+        unknownTime += 1;
+        return false;
+      }
+      if (ts < opts.sinceMs) return false;
+    }
+
+    const ev = normalize(record);
+    const isShell = ev.category === "execute_adjacent" && typeof ev.command === "string";
+    const key = isShell
+      ? shellKey(ev.command ?? "")
+      : ev.toolName.toLowerCase() || classifyTool("");
+    const kind: "shell" | "direct" = isShell ? "shell" : "direct";
+
+    const acc = accs.get(key) ?? blankAcc(key, kind, ev.category);
+    const outChars = outputLength(ev.toolResult);
+    const inChars = isShell ? (ev.command ?? "").length : stringLength(ev.toolInput);
+
+    acc.count += 1;
+    acc.total_output_chars += outChars;
+    acc.total_output_tokens += estimateTokens("x".repeat(outChars));
+    acc.max_output_chars = Math.max(acc.max_output_chars, outChars);
+    acc.total_input_chars += inChars;
+    acc.max_input_chars = Math.max(acc.max_input_chars, inChars);
+    if (isFailure(record, ev.toolResult)) acc.failure_count += 1;
+    else acc.success_count += 1;
+    if (outChars >= LARGE_OUTPUT_CHARS) acc.large_output_count += 1;
+
+    // Transient governance signals (Slice 5). The path/command stays local to this
+    // iteration — only the resulting counts/boolean are kept.
+    if (isShell) {
+      if (rewriteCommand(ev.command ?? "").decision === "rewrite") acc.compressible = true;
+    } else {
+      const verdict = governDirectTool(ev).decision;
+      if (verdict === "deny") acc.governed_deny += 1;
+      else if (verdict === "suggest") acc.governed_suggest += 1;
+    }
+    accs.set(key, acc);
+    toolEventCount += 1;
+    return true;
+  }
+
+  // Read one source file, extract+accumulate every tool record it carries. A fresh
+  // VscodeReadCtx per file threads the session id across that file's lines. Returns
+  // whether the file contributed any event (for transcript coverage).
+  function processFile(file: string): boolean {
     let text: string;
     try {
       text = readFileSync(file, "utf8");
     } catch {
       coverageErrors += 1;
-      continue;
+      return false;
     }
-
-    let fileHadEvent = false;
+    const ctx: VscodeReadCtx = {};
+    let hadEvent = false;
     for (const line of text.split(/\r?\n/)) {
       if (line.trim().length === 0) continue;
       let json: unknown;
@@ -225,71 +292,44 @@ export function scan(discovery: SourceDiscovery, opts: ScanOptions = {}): ScanRe
         continue;
       }
       if (typeof json !== "object" || json === null) continue;
-      const record = json as Record<string, unknown>;
-      if (!isToolRecord(record)) continue;
-
-      // Session filter.
-      if (opts.session && recordSession(record) !== opts.session) continue;
-
-      // Time-window filter: records without a reliable timestamp are excluded
-      // from windowed analysis and counted separately (never mtime fallback).
-      if (opts.sinceMs !== undefined) {
-        const ts = reliableTimestamp(record);
-        if (ts === undefined) {
-          unknownTime += 1;
-          continue;
-        }
-        if (ts < opts.sinceMs) continue;
+      for (const record of flatToolRecords(json as Record<string, unknown>, ctx)) {
+        if (accumulate(record)) hadEvent = true;
       }
-
-      const ev = normalize(record);
-      const isShell = ev.category === "execute_adjacent" && typeof ev.command === "string";
-      const key = isShell
-        ? shellKey(ev.command ?? "")
-        : ev.toolName.toLowerCase() || classifyTool("");
-      const kind: "shell" | "direct" = isShell ? "shell" : "direct";
-
-      const acc = accs.get(key) ?? blankAcc(key, kind, ev.category);
-      const outChars = outputLength(ev.toolResult);
-      const inChars = isShell ? (ev.command ?? "").length : stringLength(ev.toolInput);
-
-      acc.count += 1;
-      acc.total_output_chars += outChars;
-      acc.total_output_tokens += estimateTokens("x".repeat(outChars));
-      acc.max_output_chars = Math.max(acc.max_output_chars, outChars);
-      acc.total_input_chars += inChars;
-      acc.max_input_chars = Math.max(acc.max_input_chars, inChars);
-      if (isFailure(record, ev.toolResult)) acc.failure_count += 1;
-      else acc.success_count += 1;
-      if (outChars >= LARGE_OUTPUT_CHARS) acc.large_output_count += 1;
-
-      // Transient governance signals (Slice 5). The path/command stays local to
-      // this iteration — only the resulting counts/boolean are kept.
-      if (isShell) {
-        if (rewriteCommand(ev.command ?? "").decision === "rewrite") acc.compressible = true;
-      } else {
-        const verdict = governDirectTool(ev).decision;
-        if (verdict === "deny") acc.governed_deny += 1;
-        else if (verdict === "suggest") acc.governed_suggest += 1;
-      }
-      accs.set(key, acc);
-
-      toolEventCount += 1;
-      fileHadEvent = true;
     }
-    if (fileHadEvent) transcriptCoverage += 1;
+    return hadEvent;
   }
 
-  // Session inventory = count of discovered session records (lines), distinct
-  // from transcript coverage. Unreadable session files are coverage errors.
+  for (const file of discovery.transcriptFiles) {
+    if (processFile(file)) transcriptCoverage += 1;
+  }
+
+  // Session inventory = count of discovered session records (lines), distinct from
+  // transcript coverage. Session files (chatSessions) ALSO go through extraction so
+  // a populated snapshot contributes tool events (I4); on most versions their
+  // requests are empty and only the inventory count lands here.
   let sessionInventory = 0;
   for (const file of discovery.sessionFiles) {
+    let text: string;
     try {
-      const text = readFileSync(file, "utf8");
-      const lines = text.split(/\r?\n/).filter((l) => l.trim().length > 0);
-      sessionInventory += Math.max(lines.length, 1);
+      text = readFileSync(file, "utf8");
     } catch {
       coverageErrors += 1;
+      continue;
+    }
+    const lines = text.split(/\r?\n/).filter((l) => l.trim().length > 0);
+    sessionInventory += Math.max(lines.length, 1);
+    const ctx: VscodeReadCtx = {};
+    for (const line of lines) {
+      let json: unknown;
+      try {
+        json = JSON.parse(line);
+      } catch {
+        continue;
+      }
+      if (typeof json !== "object" || json === null) continue;
+      for (const record of flatToolRecords(json as Record<string, unknown>, ctx)) {
+        accumulate(record);
+      }
     }
   }
 

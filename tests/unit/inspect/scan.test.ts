@@ -122,6 +122,46 @@ describe("scan — aggregation & ranking", () => {
     expect(r.transcript_coverage).toBe(1); // only t1 had a tool event
   });
 
+  test("reads real VS Code transcript typed events (assistant.message.toolRequests)", () => {
+    // The shape inspect used to miss entirely: tool calls nested in typed events,
+    // no top-level toolName (I3). The reader must descend them.
+    const file = writeTranscript("transcript.jsonl", [
+      { type: "session.start", data: { sessionId: "S1" }, timestamp: "2026-06-07T11:40:08.130Z" },
+      { type: "user.message", data: { content: "run git status" } },
+      {
+        type: "assistant.message",
+        timestamp: "2026-06-07T11:40:11.839Z",
+        data: {
+          toolRequests: [
+            {
+              name: "run_in_terminal",
+              arguments: JSON.stringify({ command: "git status --short" }),
+            },
+          ],
+        },
+      },
+    ]);
+    const r = scan(discovery([file]));
+    expect(r.tool_event_count).toBe(1);
+    expect(r.transcript_coverage).toBe(1);
+    const git = r.opportunities.find((o) => o.key === "git status")!;
+    expect(git).toBeDefined();
+    expect(git.kind).toBe("shell");
+    expect(git.compressible).toBe(true);
+  });
+
+  test("transcript --session filter uses the session.start id from the event stream", () => {
+    const file = writeTranscript("transcript.jsonl", [
+      { type: "session.start", data: { sessionId: "WANT" } },
+      {
+        type: "assistant.message",
+        data: { toolRequests: [{ name: "run_in_terminal", arguments: '{"command":"git log"}' }] },
+      },
+    ]);
+    expect(scan(discovery([file]), { session: "WANT" }).tool_event_count).toBe(1);
+    expect(scan(discovery([file]), { session: "OTHER" }).tool_event_count).toBe(0);
+  });
+
   test("non-tool records are ignored", () => {
     const file = writeTranscript("t.jsonl", [{ role: "user", text: "hi" }, { kind: "summary" }]);
     expect(scan(discovery([file])).tool_event_count).toBe(0);

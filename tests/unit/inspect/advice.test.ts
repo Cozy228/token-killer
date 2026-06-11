@@ -128,6 +128,52 @@ describe("buildAdvice — per-command & governance findings", () => {
   });
 });
 
+describe("buildAdvice — workflow-signal gaps (skill / context / storage)", () => {
+  test("skill-gap when manual file reads repeat heavily", () => {
+    const scan = scanWith("vscode", [
+      opp({ key: "read_file", kind: "direct", category: "read", count: 8 }),
+    ]);
+    const f = buildAdvice(scan).find((x) => x.type === "skill-gap");
+    expect(f).toBeDefined();
+    expect(f!.recommendation).toContain("skill");
+  });
+
+  test("context-gap when repo searches repeat heavily", () => {
+    const scan = scanWith("vscode", [
+      opp({ key: "grep_search", kind: "direct", category: "search", count: 7 }),
+    ]);
+    const f = buildAdvice(scan).find((x) => x.type === "context-gap");
+    expect(f).toBeDefined();
+    expect(f!.recommendation).toMatch(/CONTEXT\.md|AGENTS\.md/);
+  });
+
+  test("storage-discovery when sessions exist but no tool events were read", () => {
+    const scan: ScanResult = {
+      inputType: "vscode",
+      session_inventory: 12,
+      transcript_coverage: 0,
+      tool_event_count: 0,
+      unknown_time_records: 0,
+      coverage_errors: 0,
+      opportunities: [],
+    };
+    const f = buildAdvice(scan).find((x) => x.type === "storage-discovery");
+    expect(f).toBeDefined();
+    expect(f!.occurrences).toBe(12);
+  });
+
+  test("no gap findings when reads/searches are incidental", () => {
+    const scan = scanWith("vscode", [
+      opp({ key: "read_file", kind: "direct", category: "read", count: 2 }),
+      opp({ key: "grep_search", kind: "direct", category: "search", count: 2 }),
+    ]);
+    const types = buildAdvice(scan).map((f) => f.type);
+    expect(types).not.toContain("skill-gap");
+    expect(types).not.toContain("context-gap");
+    expect(types).not.toContain("storage-discovery");
+  });
+});
+
 describe("rendering", () => {
   const scan = scanWith("vscode", [
     opp({ key: "git status", kind: "shell", compressible: true, count: 6 }),

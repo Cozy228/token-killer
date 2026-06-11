@@ -45,6 +45,72 @@ function compressibleRaw(scan: ScanResult): Opportunity[] {
   return scan.opportunities.filter((o) => o.kind === "shell" && o.compressible && o.key !== "tk");
 }
 
+// Total invocations across opportunities in the given tool categories.
+function countByCategory(scan: ScanResult, categories: string[]): number {
+  return scan.opportunities
+    .filter((o) => categories.includes(o.category))
+    .reduce((sum, o) => sum + o.count, 0);
+}
+
+// Workflow-signal analyzers (DESIGN §"Skill and context gap analyzer"). These were
+// declared AdviceTypes but never emitted (I3 root-cause c). They are diagnostic,
+// privacy-safe (derived from category COUNTS only), and identify gaps — they never
+// draft a SKILL.md or edit context files. Thresholds are deliberately above the
+// generic minOccurrences so a couple of incidental reads don't trip them.
+function workflowGapFindings(scan: ScanResult, opts: AdviceOptions): AdviceFinding[] {
+  const out: AdviceFinding[] = [];
+
+  // storage-discovery: sessions exist on disk but NOTHING analyzable came out of
+  // them — the transcripts are stored somewhere tk did not look, or in a format the
+  // reader could not descend. This is exactly the "inspect is empty" symptom; tell
+  // the user where coverage broke rather than silently reporting nothing.
+  if (scan.tool_event_count === 0 && scan.session_inventory >= opts.minOccurrences) {
+    out.push({
+      type: "storage-discovery",
+      title: "Sessions found but no analyzable tool activity",
+      detail: `${scan.session_inventory} session record(s) discovered but 0 tool events were read — transcripts may live elsewhere or in an unrecognized format.`,
+      occurrences: scan.session_inventory,
+      confidence: 0.7,
+      recommendation:
+        "Confirm the host stores Copilot transcripts under VS Code user storage; if it relocated them, re-run inspect once they are in the default location.",
+    });
+    // When we read nothing, the gap analyzers below have no signal — return early.
+    return out;
+  }
+
+  // skill-gap: heavy, repeated manual context-gathering (file reads) signals a
+  // recurring workflow a reusable prompt/skill would load in one step.
+  const reads = countByCategory(scan, ["read"]);
+  if (reads >= opts.minOccurrences * 2) {
+    out.push({
+      type: "skill-gap",
+      title: "Repeated manual file reads — candidate for a reusable skill",
+      detail: `${reads} file reads across the session(s) — recurring context-gathering done by hand.`,
+      occurrences: reads,
+      confidence: 0.65,
+      recommendation:
+        "Capture this recurring read pattern as a reusable prompt/skill so the agent loads the context in one step instead of re-reading each session.",
+    });
+  }
+
+  // context-gap: heavy, repeated repo searches signal the agent re-deriving project
+  // structure each session — durable context (CONTEXT.md / AGENTS.md) would prevent it.
+  const searches = countByCategory(scan, ["search", "list"]);
+  if (searches >= opts.minOccurrences * 2) {
+    out.push({
+      type: "context-gap",
+      title: "Repeated repo searches — missing durable context",
+      detail: `${searches} searches/listings across the session(s) — structure is being re-discovered each run.`,
+      occurrences: searches,
+      confidence: 0.65,
+      recommendation:
+        "Record the project's layout and key entry points in durable context (CONTEXT.md / AGENTS.md) so the agent stops re-searching for them.",
+    });
+  }
+
+  return out;
+}
+
 function deliveryFinding(scan: ScanResult, rawTotal: number): AdviceFinding {
   if (scan.inputType === "copilot-cli") {
     return {
@@ -120,7 +186,10 @@ export function buildAdvice(
     }
   }
 
-  // 4) Long-output hotspots (workflow-friction).
+  // 4) Workflow-signal gaps (skill-gap / context-gap / storage-discovery).
+  findings.push(...workflowGapFindings(scan, opts));
+
+  // 5) Long-output hotspots (workflow-friction).
   for (const o of scan.opportunities) {
     if (o.large_output_count >= opts.minOccurrences) {
       findings.push({
