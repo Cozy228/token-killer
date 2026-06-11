@@ -154,7 +154,8 @@ function costTipFindings(
   const out: AdviceFinding[] = [];
   if (habits && habits.sessions > 0) {
     // Continuation depth — long agent loops re-send the whole transcript every turn.
-    // Published guidance: refresh after ~15–20 turns; by turn 30 you pay ~31× turn 1.
+    // Practitioner guidance (see reports/token-optimization-best-practices): refresh
+    // after ~15–20 turns; cost compounds because the transcript is re-sent each turn.
     if (habits.avg_tool_calls_per_session >= 20) {
       out.push({
         type: "cost-tip",
@@ -163,7 +164,7 @@ function costTipFindings(
         occurrences: habits.total_tool_calls,
         confidence: 0.7,
         recommendation:
-          "Scope each session to one task and start fresh after ~15–20 turns — by turn 30 a conversation costs ~31× what turn 1 did.",
+          "Scope each session to one task and start a fresh session for the next — the whole transcript is re-sent every turn, so cost compounds as a session grows.",
       });
     }
     // Prompt length — over-long prompts are paid on every turn that re-sends them.
@@ -180,9 +181,9 @@ function costTipFindings(
     }
   }
   // Orientation cost — heavy reads+searches+lists mean the agent spends its budget
-  // LOCATING code, not solving the task (60–80% of tokens go to orientation). A
-  // code-intelligence/LSP plugin + scoped reads is the documented fix (tool calls
-  // −90%, cost −58%). Higher bar than skill-gap/context-gap: this is the aggregate.
+  // LOCATING code, not solving the task — practitioners report orientation as a
+  // large share of agent token spend, with code-intelligence/scoped reads as the fix
+  // (see the research report). Higher bar than skill-gap/context-gap: the aggregate.
   const orientation = countByCategory(scan, ["read", "search", "list"]);
   if (orientation >= opts.minOccurrences * 4) {
     out.push({
@@ -192,7 +193,7 @@ function costTipFindings(
       occurrences: orientation,
       confidence: 0.65,
       recommendation:
-        "Install a code-intelligence/LSP plugin and read scoped ranges instead of whole files — reported to cut tool calls ~90% and cost ~58%.",
+        "Install a code-intelligence/LSP plugin and read scoped ranges instead of whole files — precise symbol lookup is reported to sharply cut the read/search churn that dominates token spend.",
     });
   }
 
@@ -206,15 +207,15 @@ function costTipFindings(
         occurrences: o.failure_count,
         confidence: 0.7,
         recommendation:
-          "Record the working invocation / constraint in AGENTS.md (a good instructions file cuts agent token use 50–90%) so the agent stops retrying it.",
+          "Record the working invocation / constraint in AGENTS.md so the agent stops re-discovering the same failure — a good instructions file is reported to meaningfully cut repeated work.",
       });
     }
   }
   return out;
 }
 
-// Default: 3+ MCP servers is where their always-on tool schemas start to dominate
-// the window (three can eat ~72% of 200k).
+// Default: 3+ MCP servers is where their always-on tool schemas start to take a
+// large share of the context window (per the research report).
 export const MCP_SERVER_LIMIT = 3;
 
 // Standalone (config-derived, not scan-derived) so cli.ts can compute the MCP
@@ -233,7 +234,7 @@ export function mcpBloatFinding(
     occurrences: serverCount,
     confidence: 0.7,
     recommendation:
-      "Disable servers you aren't using in this workspace (≈72% of the window can go to 3 servers), and prefer a CLI (gh/aws/gcloud) over its MCP where one exists — measured at ~17× fewer tokens per call.",
+      "Disable servers you aren't using in this workspace — each one's tool schemas can take a large share of the context window — and prefer a CLI (gh/aws/gcloud) over its MCP where one exists, which is reported to use far fewer tokens per call.",
   };
 }
 

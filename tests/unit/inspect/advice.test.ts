@@ -199,7 +199,7 @@ describe("buildAdvice — habit-based cost tips (chronicle parity)", () => {
       }),
     ).find((x) => x.type === "cost-tip" && x.title.includes("Long agent loops"));
     expect(f).toBeDefined();
-    expect(f!.recommendation).toContain("15");
+    expect(f!.recommendation).toMatch(/fresh session|shorter|scope/i);
   });
 
   test("flags oversized prompts", () => {

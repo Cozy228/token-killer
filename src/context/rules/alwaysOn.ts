@@ -7,11 +7,10 @@ import { estimateTokens } from "../metrics.js";
 import type { ContextFinding } from "../types.js";
 import { buildFinding } from "./helpers.js";
 
-// Line limits aligned to published guidance: a CLAUDE.md over ~200 lines is the
-// documented bloat line (one 3847→312 tok trim was a 91.9% cut, no quality loss),
-// and AGENTS.md gains reverse past ~150 lines. The ~2000-token ceiling is the other
-// documented limit (a 2000-tok always-on file × 30 messages ≈ 60k tokens spent on
-// that file alone). See reports/token-optimization-best-practices-20260611.md.
+// Line limits informed by practitioner guidance (see the research report; figures
+// there are reported, not independently verified): ~200 lines for a CLAUDE.md, a
+// tighter ~150 for AGENTS.md, plus a ~2000-token ceiling — an always-on file is
+// re-sent every turn, so its size is paid repeatedly.
 const LINE_LIMIT = 200;
 const AGENTS_LINE_LIMIT = 150;
 const TOKEN_LIMIT = 2_000;

@@ -1,8 +1,8 @@
 // output_verbosity_unset — an always-on instruction file that never tells the agent
-// to keep OUTPUT terse. Output tokens are billed ~4× input, and a one-line "respond
-// with code only, no prose explanation" directive is reported to cut output volume
-// 40–70% on coding tasks — the highest ROI-per-byte change to an instructions file.
-// (github/copilot-token-optimization; see reports/token-optimization-best-practices.)
+// to keep OUTPUT terse. Output tokens are billed more than input (per provider
+// pricing), and a one-line "respond with code only, no prose explanation" directive
+// is reported to reduce output volume on coding tasks — a cheap, high-leverage edit.
+// (See reports/token-optimization-best-practices-20260611.md; figures reported there.)
 //
 // Fires once per always-on instruction surface (CLAUDE.md / AGENTS.md /
 // copilot-instructions) that lacks any brevity directive. Advisory: appending a
@@ -32,7 +32,7 @@ export const outputVerbosityRule: PerFileRule = {
         evidence:
           "This always-on instruction file sets no output-brevity directive; output tokens are billed ~4× input.",
         recommendation:
-          'Add a line like "Respond with code only — no prose explanation unless asked." Reported to cut output tokens 40–70% on coding tasks.',
+          'Add a line like "Respond with code only — no prose explanation unless asked." Output tokens are billed more than input, so trimming explanation is reported to reduce cost on coding tasks.',
         fix_class: "advisory",
         start_line: 1,
         idExtra: "verbosity",
