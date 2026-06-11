@@ -6,6 +6,7 @@
 // is `tk` even reaching this host?" the first question), then per-command and
 // governance findings.
 
+import { LONG_PROMPT_CHARS, type HabitStats } from "./habits.js";
 import type { Opportunity, ScanResult } from "./scan.js";
 
 export type AdviceType =
@@ -15,7 +16,10 @@ export type AdviceType =
   | "workflow-friction"
   | "skill-gap"
   | "context-gap"
-  | "storage-discovery";
+  | "storage-discovery"
+  // Habit-based cost tips (Copilot CLI `/chronicle cost tips` parity): how the user
+  // DRIVES the agent — turn depth, prompt length, repeated failures — costs tokens.
+  | "cost-tip";
 
 export type AdviceFinding = {
   type: AdviceType;
@@ -135,9 +139,65 @@ function deliveryFinding(scan: ScanResult, rawTotal: number): AdviceFinding {
   };
 }
 
+// Habit-based cost tips — tk's `/chronicle cost tips`. Each tip is grounded in a
+// published token-cost best practice (cited in the recommendation), and fires only
+// from privacy-safe COUNTS/LENGTHS the habit analyzer collected. `occurrences` is
+// set to a naturally-large representative count so a real habit clears the generic
+// minOccurrences filter.
+function costTipFindings(
+  scan: ScanResult,
+  habits: HabitStats | undefined,
+  opts: AdviceOptions,
+): AdviceFinding[] {
+  const out: AdviceFinding[] = [];
+  if (habits && habits.sessions > 0) {
+    // Continuation depth — long agent loops re-send the whole transcript every turn.
+    // Published guidance: refresh after ~15–20 turns; by turn 30 you pay ~31× turn 1.
+    if (habits.avg_tool_calls_per_session >= 20) {
+      out.push({
+        type: "cost-tip",
+        title: "Long agent loops — break work into shorter sessions",
+        detail: `Sessions average ${habits.avg_tool_calls_per_session} tool calls (max ${habits.max_tool_calls_in_session}); every extra turn re-sends the growing transcript.`,
+        occurrences: habits.total_tool_calls,
+        confidence: 0.7,
+        recommendation:
+          "Scope each session to one task and start fresh after ~15–20 turns — by turn 30 a conversation costs ~31× what turn 1 did.",
+      });
+    }
+    // Prompt length — over-long prompts are paid on every turn that re-sends them.
+    if (habits.long_prompt_count >= opts.minOccurrences) {
+      out.push({
+        type: "cost-tip",
+        title: "Trim oversized prompts",
+        detail: `${habits.long_prompt_count} prompt(s) exceeded ${LONG_PROMPT_CHARS} chars (avg ${habits.avg_prompt_chars}, max ${habits.max_prompt_chars}).`,
+        occurrences: habits.long_prompt_count,
+        confidence: 0.65,
+        recommendation:
+          "Point at files and name the exact decision instead of pasting context — write as little as required, as much as necessary.",
+      });
+    }
+  }
+  // Repeated failures → durable instructions (Copilot CLI `/chronicle improve`).
+  for (const o of scan.opportunities) {
+    if (o.failure_count >= opts.minOccurrences) {
+      out.push({
+        type: "cost-tip",
+        title: `Repeated failures of \`${o.key}\` — capture the fix once`,
+        detail: `\`${o.key}\` failed ${o.failure_count}× — each retry burns tokens re-discovering the same problem.`,
+        occurrences: o.failure_count,
+        confidence: 0.7,
+        recommendation:
+          "Record the working invocation / constraint in AGENTS.md (a good instructions file cuts agent token use 50–90%) so the agent stops retrying it.",
+      });
+    }
+  }
+  return out;
+}
+
 export function buildAdvice(
   scan: ScanResult,
   opts: AdviceOptions = DEFAULT_ADVICE_OPTIONS,
+  habits?: HabitStats,
 ): AdviceFinding[] {
   const findings: AdviceFinding[] = [];
   const raw = compressibleRaw(scan);
@@ -188,6 +248,9 @@ export function buildAdvice(
 
   // 4) Workflow-signal gaps (skill-gap / context-gap / storage-discovery).
   findings.push(...workflowGapFindings(scan, opts));
+
+  // 4b) Habit-based cost tips (how the user drives the agent).
+  findings.push(...costTipFindings(scan, habits, opts));
 
   // 5) Long-output hotspots (workflow-friction).
   for (const o of scan.opportunities) {

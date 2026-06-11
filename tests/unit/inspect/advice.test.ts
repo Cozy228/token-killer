@@ -174,6 +174,74 @@ describe("buildAdvice — workflow-signal gaps (skill / context / storage)", () 
   });
 });
 
+describe("buildAdvice — habit-based cost tips (chronicle parity)", () => {
+  const habits = (over: Partial<import("../../../src/inspect/habits.js").HabitStats> = {}) => ({
+    sessions: 1,
+    total_tool_calls: 0,
+    avg_tool_calls_per_session: 0,
+    max_tool_calls_in_session: 0,
+    prompt_count: 0,
+    avg_prompt_chars: 0,
+    max_prompt_chars: 0,
+    long_prompt_count: 0,
+    ...over,
+  });
+
+  test("flags long agent loops (high tool calls per session)", () => {
+    const scan = scanWith("vscode", []);
+    const f = buildAdvice(
+      scan,
+      undefined,
+      habits({
+        avg_tool_calls_per_session: 25,
+        total_tool_calls: 50,
+        max_tool_calls_in_session: 30,
+      }),
+    ).find((x) => x.type === "cost-tip" && x.title.includes("Long agent loops"));
+    expect(f).toBeDefined();
+    expect(f!.recommendation).toContain("15");
+  });
+
+  test("flags oversized prompts", () => {
+    const scan = scanWith("vscode", []);
+    const f = buildAdvice(
+      scan,
+      undefined,
+      habits({ long_prompt_count: 4, avg_prompt_chars: 3000, max_prompt_chars: 9000 }),
+    ).find((x) => x.type === "cost-tip" && x.title.includes("oversized prompts"));
+    expect(f).toBeDefined();
+    expect(f!.occurrences).toBe(4);
+  });
+
+  test("repeated failures → capture-the-fix (improve) even without habits", () => {
+    const scan = scanWith("vscode", [
+      opp({
+        key: "npm test",
+        kind: "shell",
+        category: "execute_adjacent",
+        count: 5,
+        failure_count: 4,
+      }),
+    ]);
+    const f = buildAdvice(scan).find(
+      (x) => x.type === "cost-tip" && x.title.includes("Repeated failures"),
+    );
+    expect(f).toBeDefined();
+    expect(f!.recommendation).toMatch(/AGENTS\.md/);
+  });
+
+  test("no cost tips for lean habits", () => {
+    const scan = scanWith("vscode", []);
+    expect(
+      buildAdvice(
+        scan,
+        undefined,
+        habits({ avg_tool_calls_per_session: 5, long_prompt_count: 0 }),
+      ).some((x) => x.type === "cost-tip"),
+    ).toBe(false);
+  });
+});
+
 describe("rendering", () => {
   const scan = scanWith("vscode", [
     opp({ key: "git status", kind: "shell", compressible: true, count: 6 }),

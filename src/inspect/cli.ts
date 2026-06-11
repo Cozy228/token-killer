@@ -24,6 +24,7 @@ import { renderStaticContextSection } from "../context/report.js";
 import type { ContextFinding, ContextScope, FindingSeverity } from "../context/types.js";
 import { writeAdviceArtifacts, writeTelemetryExport } from "./persist.js";
 import { emitHtmlReport } from "../report/open.js";
+import { analyzeHabits, type HabitStats } from "./habits.js";
 import { gatherRepoContext } from "./repoContext.js";
 import { buildReport, renderJson, renderMarkdown } from "./report.js";
 import { parseSince, scan, type ScanResult } from "./scan.js";
@@ -217,10 +218,13 @@ export function runInspect(
   try {
     // Runtime analysis (orthogonal to scope; off under --copilot-context).
     let result: ScanResult | undefined;
+    let habits: HabitStats | undefined;
     if (!opts.copilotContext) {
       const discovery = discoverSources(opts.inputType, home);
       if (discovery.found) {
         result = scan(discovery, { sinceMs, session: opts.session });
+        // Per-session habit metrics feed the cost-tips advice (chronicle parity).
+        habits = analyzeHabits(discovery);
       } else {
         process.stderr.write(
           `tk inspect: no ${opts.inputType} session sources found (this is normal if the host stores transcripts elsewhere).\n`,
@@ -264,10 +268,14 @@ export function runInspect(
     // --advice/--write-advice still control the verbose appendix and on-disk artifacts.
     let findings: AdviceFinding[] = [];
     if (result) {
-      findings = buildAdvice(result, {
-        minConfidence: opts.minConfidence,
-        minOccurrences: opts.minOccurrences,
-      });
+      findings = buildAdvice(
+        result,
+        {
+          minConfidence: opts.minConfidence,
+          minOccurrences: opts.minOccurrences,
+        },
+        habits,
+      );
     }
 
     const report = buildReport(
