@@ -3,7 +3,13 @@ import { existsSync, mkdtempSync, readFileSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
-import { debugLogPath, tkDebug, tkDebugEnabled } from "../../../src/hook/debug.js";
+import {
+  debugLogPath,
+  errorLogPath,
+  logFatalError,
+  tkDebug,
+  tkDebugEnabled,
+} from "../../../src/hook/debug.js";
 
 let writes: string[];
 let dataHome: string;
@@ -78,5 +84,31 @@ describe("tkDebug — gated by TK_DEBUG", () => {
     // ISO timestamp prefix + the same body as stderr
     expect(lines[0]).toMatch(/^\d{4}-\d{2}-\d{2}T.*Z tk debug: claude:stdin bytes=90$/);
     expect(lines[1]).toContain("tk debug: claude:emit rewrote=true");
+  });
+});
+
+describe("logFatalError — UNGATED crash breadcrumb", () => {
+  test("writes errors.log even when TK_DEBUG is unset", () => {
+    delete process.env.TK_DEBUG;
+    expect(tkDebugEnabled()).toBe(false);
+    logFatalError("tk hook copilot", new Error("Cannot find module './cli.js'"));
+    const path = errorLogPath();
+    expect(path).toBe(join(dataHome, "errors.log"));
+    const body = readFileSync(path, "utf8");
+    expect(body).toContain("tk fatal: tk hook copilot");
+    expect(body).toContain("Cannot find module './cli.js'");
+    // also mirrored to stderr (host swallows it, but local runs surface it)
+    expect(writes.join("")).toContain("tk fatal: tk hook copilot");
+  });
+
+  test("logs the stack for an Error and stringifies a non-Error", () => {
+    logFatalError("ctx-a", new Error("boom"));
+    logFatalError("ctx-b", "plain string failure");
+    const body = readFileSync(errorLogPath(), "utf8");
+    expect(body).toContain("tk fatal: ctx-a");
+    // Error path includes the stack (which contains the message)
+    expect(body).toMatch(/boom/);
+    expect(body).toContain("tk fatal: ctx-b");
+    expect(body).toContain("plain string failure");
   });
 });

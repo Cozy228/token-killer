@@ -19,7 +19,7 @@ import { executePassthrough } from "./executor.js";
 import { gateDecision } from "./shim/gate.js";
 import { isInteractive } from "./shim/interactive.js";
 import { isShimmableProgram } from "./shim/programs.js";
-import { tkDebug } from "./hook/debug.js";
+import { tkDebug, logFatalError } from "./hook/debug.js";
 import { runPipeline } from "./core/pipeline.js";
 import { recordHistory } from "./core/history.js";
 import { calculateSavings } from "./core/savings.js";
@@ -92,6 +92,9 @@ function help(): string {
     "  TK_DEBUG=1             Trace the hook runtime (stdin size, decision + why, what was emitted)",
     "                         to stderr AND append it to $TOKEN_KILLER_HOME/debug.log for live",
     "                         `tail -f`. stdout stays clean. Same switch the compress path uses.",
+    '                         If the host reports "hook errored", check',
+    "                         $TOKEN_KILLER_HOME/errors.log — fatal crashes are logged there",
+    "                         unconditionally (no TK_DEBUG needed).",
     "",
     "tk inspect [--json] [--html] [--since 7d] [--session <id>] [--input-type vscode|copilot-cli] [--repo-context]",
     "           [--advice] [--write-advice] [--telemetry-export|--no-telemetry-export]",
@@ -431,6 +434,11 @@ async function failOpenPassthrough(command: ParsedCommand, error: unknown): Prom
 try {
   process.exitCode = await main();
 } catch (error) {
-  process.stderr.write(`${error instanceof Error ? error.message : String(error)}\n`);
+  // A throw here means tk exited non-zero — for a hook invocation the host swallows
+  // stderr and surfaces only "PreToolUse hook errored". Persist the reason to
+  // errors.log (unconditionally, not gated on TK_DEBUG) so there is a breadcrumb to
+  // read after the fact. logFatalError also writes stderr, so this replaces the bare
+  // stderr write above.
+  logFatalError(`tk ${process.argv.slice(2).join(" ")}`, error);
   process.exitCode = 1;
 }

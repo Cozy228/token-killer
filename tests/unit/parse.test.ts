@@ -13,6 +13,20 @@ describe("parseArgv", () => {
     expect(parsed.command?.original).toEqual(["git", "diff", "--", "src"]);
   });
 
+  test("bare `help` / `version` are verbs, not passthrough commands", () => {
+    expect(parseArgv(["help"]).mode).toBe("help");
+    expect(parseArgv(["version"]).mode).toBe("version");
+    // The --flag form keeps working too.
+    expect(parseArgv(["--help"]).mode).toBe("help");
+    expect(parseArgv(["--version"]).mode).toBe("version");
+  });
+
+  test("`tk -- help` escape hatch still passes `help` through to a real program", () => {
+    const parsed = parseArgv(["--", "help"]);
+    expect(parsed.mode).toBe("command");
+    expect(parsed.command?.program).toBe("help");
+  });
+
   test("stops parsing at the original command", () => {
     const parsed = parseArgv(["pytest", "--maxfail=1"]);
 

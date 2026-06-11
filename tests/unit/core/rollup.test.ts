@@ -7,6 +7,7 @@ import {
   applyRecord,
   emptyRollup,
   ensureProjectRollup,
+  listProjectRollups,
   mergeRollups,
   rebuildRollupFromJsonl,
   rollupFile,
@@ -247,6 +248,89 @@ describe("rollup", () => {
       const rebuilt = await ensureProjectRollup(home);
       expect(rebuilt.source_lines).toBe(2);
       expect(rebuilt.totals.saved_tokens).toBe(102);
+    });
+  });
+
+  test("fast path: an unchanged (size, mtime) stamp skips re-reading history.jsonl", async () => {
+    await withHome(async (home) => {
+      const opts: TkOptions = {
+        raw: false,
+        stats: false,
+        verbose: false,
+        maxLines: 120,
+        maxChars: 12000,
+        saveRaw: false,
+        cwd: home,
+        reportFormat: "text",
+      };
+      await recordHistory(
+        { command: "git status", stdout: "ok", stderr: "", exitCode: 0, durationMs: 1 },
+        {
+          handler: "git-status",
+          output: "ok",
+          rawChars: 2,
+          outputChars: 2,
+          rawTokens: 10,
+          outputTokens: 4,
+          savedTokens: 6,
+          savingsPct: 60,
+          exitCode: 0,
+          qualityStatus: "passed",
+        },
+        opts,
+      );
+
+      // First call builds + persists the rollup with a (size, mtime) stamp.
+      const first = await ensureProjectRollup(home);
+      expect(first.source_bytes).toBeGreaterThan(0);
+      expect(first.source_mtime_ms).toBeGreaterThan(0);
+
+      // Poison the CACHED rollup's totals while leaving the stamp untouched and the
+      // history file unchanged. A correct fast path returns this poisoned value (it
+      // trusts the stamp and never re-reads history, which would yield 6).
+      const poisoned = { ...first, totals: { ...first.totals, saved_tokens: 999 } };
+      await writeFile(rollupFile(home), `${JSON.stringify(poisoned)}\n`, "utf8");
+
+      const second = await ensureProjectRollup(home);
+      expect(second.totals.saved_tokens).toBe(999);
+    });
+  });
+
+  test("listProjectRollups stamps size/mtime so subsequent --user reads take the fast path", async () => {
+    await withHome(async (home) => {
+      const opts: TkOptions = {
+        raw: false,
+        stats: false,
+        verbose: false,
+        maxLines: 120,
+        maxChars: 12000,
+        saveRaw: false,
+        cwd: home,
+        reportFormat: "text",
+      };
+      await recordHistory(
+        { command: "git status", stdout: "ok", stderr: "", exitCode: 0, durationMs: 1 },
+        {
+          handler: "git-status",
+          output: "ok",
+          rawChars: 2,
+          outputChars: 2,
+          rawTokens: 10,
+          outputTokens: 4,
+          savedTokens: 6,
+          savingsPct: 60,
+          exitCode: 0,
+          qualityStatus: "passed",
+        },
+        opts,
+      );
+
+      const rollups = await listProjectRollups();
+      expect(rollups).toHaveLength(1);
+      expect(rollups[0]!.totals.saved_tokens).toBe(6);
+      expect(rollups[0]!.source_lines).toBe(1);
+      expect(rollups[0]!.source_bytes).toBeGreaterThan(0);
+      expect(rollups[0]!.source_mtime_ms).toBeGreaterThan(0);
     });
   });
 });

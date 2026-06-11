@@ -3,7 +3,7 @@
 // updated on the `tk <cmd>` hot path so runtime is unaffected. Never deletes history.
 
 import { createReadStream } from "node:fs";
-import { readFile, writeFile } from "node:fs/promises";
+import { readFile, stat, writeFile } from "node:fs/promises";
 import { createInterface } from "node:readline";
 import path from "node:path";
 
@@ -54,6 +54,13 @@ export type RollupFailure = {
 export type ProjectRollup = {
   version: typeof ROLLUP_VERSION;
   source_lines: number;
+  // Fast-path cache stamp: history.jsonl is append-only, so an unchanged byte size
+  // AND mtime prove the rollup is still current WITHOUT reading the file to recount
+  // lines. Optional for back-compat — a rollup written before this existed simply
+  // misses the fast path once, gets stamped, then hits it. (Perf: see the read-skip
+  // in ensureProjectRollup / listProjectRollups — the dominant `tk gain --user` cost.)
+  source_bytes?: number;
+  source_mtime_ms?: number;
   project_fingerprint: string;
   totals: {
     commands: number;
@@ -473,14 +480,51 @@ export async function rebuildRollupFromJsonl(cwd: string): Promise<ProjectRollup
   return rollup;
 }
 
+// Cheap existence/size probe — one stat syscall, never reads file contents. Returns
+// null for a missing/unreadable file (treated as "no history").
+async function statHistory(file: string): Promise<{ size: number; mtimeMs: number } | null> {
+  try {
+    const s = await stat(file);
+    return { size: s.size, mtimeMs: s.mtimeMs };
+  } catch {
+    return null;
+  }
+}
+
+function stampMatches(rollup: ProjectRollup, st: { size: number; mtimeMs: number }): boolean {
+  return rollup.source_bytes === st.size && rollup.source_mtime_ms === st.mtimeMs;
+}
+
 export async function ensureProjectRollup(cwd: string): Promise<ProjectRollup> {
   const file = historyFile(cwd);
+  const st = await statHistory(file);
+  if (!st || st.size === 0) return emptyRollup(projectFingerprint(cwd));
+
+  const existing = await loadRollupFile(rollupFile(cwd));
+  // Fast path: append-only history with an unchanged (size, mtime) stamp ⇒ the rollup
+  // is current. Return it WITHOUT reading the file to count lines — that full read was
+  // the per-project cost behind slow `tk gain --user` (worst on Windows, where AV
+  // scans every file open).
+  if (existing && stampMatches(existing, st)) {
+    pruneHourBuckets(existing, new Date());
+    return existing;
+  }
+
   const lineCount = await countJsonlLines(file);
   if (lineCount === 0) return emptyRollup(projectFingerprint(cwd));
 
-  const existing = await loadRollupFile(rollupFile(cwd));
   if (existing && existing.source_lines === lineCount) {
+    // Line count matches but the byte/mtime stamp is absent or stale (a rollup written
+    // before the fast path existed). Refresh the stamp and persist so the NEXT read
+    // takes the fast path; no full rebuild needed.
+    existing.source_bytes = st.size;
+    existing.source_mtime_ms = st.mtimeMs;
     pruneHourBuckets(existing, new Date());
+    try {
+      await saveRollup(cwd, existing);
+    } catch {
+      // best-effort cache refresh
+    }
     return existing;
   }
 
@@ -490,6 +534,8 @@ export async function ensureProjectRollup(cwd: string): Promise<ProjectRollup> {
   // and every `tk gain` rebuilt + rewrote the rollup forever (M5). Pin source_lines to
   // the physical count so an unchanged file is a cache hit next time.
   rebuilt.source_lines = lineCount;
+  rebuilt.source_bytes = st.size;
+  rebuilt.source_mtime_ms = st.mtimeMs;
   try {
     await saveRollup(cwd, rebuilt);
   } catch {
@@ -512,19 +558,46 @@ export async function listProjectRollups(): Promise<ProjectRollup[]> {
   for (const entry of entries) {
     const hist = path.join(projectsDir, entry, "history.jsonl");
     const rollupPath = path.join(projectsDir, entry, "rollup.json");
+
+    const st = await statHistory(hist);
+    if (!st || st.size === 0) continue;
+
+    let rollup = await loadRollupFile(rollupPath);
+    // Fast path: append-only history with a matching (size, mtime) stamp ⇒ cached
+    // rollup is current; skip reading the file at all. This per-project full read was
+    // what made `tk gain --user` slow across many projects / on Windows.
+    if (rollup && stampMatches(rollup, st)) {
+      rollups.push(rollup);
+      continue;
+    }
+
     const lineCount = await countJsonlLines(hist);
     if (lineCount === 0) continue;
 
-    let rollup = await loadRollupFile(rollupPath);
     if (!rollup || rollup.source_lines !== lineCount) {
       try {
         rollup = await rebuildRollupAtPath(
           hist,
           rollup?.project_fingerprint ?? fingerprintFromDirEntry(entry),
         );
+        // Pin source_lines to the PHYSICAL count (M5) and stamp size/mtime so the next
+        // `--user` read takes the fast path instead of re-reading this file.
+        rollup.source_lines = lineCount;
+        rollup.source_bytes = st.size;
+        rollup.source_mtime_ms = st.mtimeMs;
         await writeFile(rollupPath, `${JSON.stringify(rollup)}\n`, "utf8");
       } catch {
         continue;
+      }
+    } else {
+      // Cache valid by line count but missing the byte/mtime stamp (older rollup) —
+      // stamp & persist so subsequent reads skip the file.
+      rollup.source_bytes = st.size;
+      rollup.source_mtime_ms = st.mtimeMs;
+      try {
+        await writeFile(rollupPath, `${JSON.stringify(rollup)}\n`, "utf8");
+      } catch {
+        // best-effort stamp refresh
       }
     }
     if (rollup) rollups.push(rollup);

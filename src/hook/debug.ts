@@ -79,3 +79,29 @@ function timestamp(): string {
     return "";
   }
 }
+
+// Persistent error log location, beside debug.log. Resolved per call so a test's
+// TOKEN_KILLER_HOME override is honored.
+export function errorLogPath(): string {
+  return join(tokenKillerHome(), "errors.log");
+}
+
+// Record a FATAL tk error UNCONDITIONALLY — unlike tkDebug, this is NOT gated on
+// TK_DEBUG. Rationale: when the host reports "PreToolUse hook errored", tk exited
+// non-zero and its stderr was swallowed by the host; the user had no breadcrumb and
+// no reason to have set TK_DEBUG beforehand. This is the ONE place tk writes without
+// the gate — it fires only on the rare crash path (the top-level catch), never on a
+// healthy fail-open run (which exits 0 and never reaches here), so it can't grow on
+// the hot path. Best-effort and total: never throws, so it can't compound a crash.
+export function logFatalError(context: string, error: unknown): void {
+  try {
+    const detail = error instanceof Error ? (error.stack ?? error.message) : String(error);
+    const line = `${timestamp()} tk fatal: ${context}\n${detail}\n`;
+    process.stderr.write(line);
+    const path = errorLogPath();
+    mkdirSync(dirname(path), { recursive: true });
+    appendFileSync(path, line);
+  } catch {
+    // a logging failure must never replace the original error
+  }
+}

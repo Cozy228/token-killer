@@ -63,6 +63,12 @@ function toCommand(tokens: string[]): ParsedCommand | undefined {
 // install / uninstall / status are first-class top-level verbs (U1+U2); `tk init`
 // is gone (renamed to `tk install`) and is handled with a hint in cli.ts.
 const RESERVED_SUBCOMMANDS = new Set<ParsedArgv["mode"]>([
+  // Bare-word `help`/`version` are verbs too — without these, `tk help` fell through
+  // to the command router and tried to passthrough a `help` program (only `tk --help`
+  // worked). `tk -- help` still reaches a literal `help` program (the `--` escape hatch
+  // is handled in the loop below, after this early return).
+  "help",
+  "version",
   "install",
   "uninstall",
   "status",
