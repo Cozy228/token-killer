@@ -4,7 +4,7 @@ import { constants as osConstants } from "node:os";
 import { basename, delimiter, extname, join } from "node:path";
 
 import { resolveCachedBinary } from "./core/pathCache.js";
-import { assertNoRecursion, buildChildPath } from "./shim/path.js";
+import { assertNoRecursion, buildChildPath, hashResolutionEnv } from "./shim/path.js";
 import type { ParsedCommand, RawResult } from "./types.js";
 
 // Resolve a child's exit code, following the shell convention that a process
@@ -179,16 +179,24 @@ export function resolveBinaryPath(
 
 // A baked, validated real-binary path (TK_REAL_BIN, exported by the shim wrapper at
 // install time) lets buildSpawnTarget skip the per-command PATH×PATHEXT walk — the
-// install paid that walk once (2.1). We trust it only after TWO cheap guards so a
-// stale/moved binary can never run the wrong thing: (1) the baked file's basename
+// install paid that walk once (2.1). We trust it only after THREE cheap guards so it
+// can never run a binary the shell would no longer pick: (1) the resolution-env hash
+// (TK_REAL_PATH_HASH) must equal a fresh hash of the CURRENT stripped PATH+PATHEXT —
+// if the user reordered/extended PATH since install a different binary may now win, so
+// this rejects the baked path and forces a live walk; (2) the baked file's basename
 // (minus extension) must equal the requested program, rejecting a leftover var from a
-// different wrapper; (2) one existsSync revalidation, rejecting a moved/uninstalled
-// binary. Either guard failing returns undefined and the caller falls back to today's
-// walk — worst case, one wasted stat. Skipped entirely for an explicit path program.
-function bakedRealBin(program: string): string | undefined {
+// different wrapper; (3) one existsSync revalidation, rejecting a moved/uninstalled
+// binary. Any guard failing returns undefined and the caller falls back to today's
+// walk — never a behavior change. Skipped entirely for an explicit-path program.
+function bakedRealBin(program: string, pathValue: string | undefined): string | undefined {
   const baked = process.env.TK_REAL_BIN;
   if (!baked) return undefined;
   if (program.includes("\\") || program.includes("/")) return undefined;
+  // PATH-equality gate: only trust the baked path while the resolution environment is
+  // byte-identical to install time. A bare TK_REAL_BIN with no/mismatched hash is NOT
+  // trusted (conservative); the walk fallback stays correct.
+  const bakedHash = process.env.TK_REAL_PATH_HASH;
+  if (!bakedHash || bakedHash !== hashResolutionEnv(pathValue ?? "")) return undefined;
   const stem = basename(baked, extname(baked));
   const matches =
     process.platform === "win32" ? stem.toLowerCase() === program.toLowerCase() : stem === program;
@@ -237,7 +245,7 @@ export function buildSpawnTarget(
   args: string[],
   pathValue: string | undefined,
 ): { file: string; args: string[]; windowsVerbatimArguments: boolean } {
-  const resolved = bakedRealBin(program) ?? resolveProgram(program, pathValue);
+  const resolved = bakedRealBin(program, pathValue) ?? resolveProgram(program, pathValue);
   if (process.platform === "win32" && isBatchScript(resolved)) {
     const comspec = process.env.ComSpec || "cmd.exe";
     const line = [resolved, ...args].map(cmdQuote).join(" ");

@@ -171,15 +171,23 @@ verifiable later by op-count without rework. They do **not** change the floor.
 **Status:** implemented. Install resolves each real binary once
 (`resolveRealBinaryPath` → `resolveBinaryPath`, excluding the shim dir) and bakes
 it: wrappers gain `export TK_REAL_BIN=…` / `set "TK_REAL_BIN=…"`, the manifest
-records `resolvedPaths` and bumps `SHIM_MANIFEST_SCHEMA` → 2. Runtime
-`buildSpawnTarget` short-circuits the PATH×PATHEXT walk via `bakedRealBin`
-(basename-match + one `existsSync` revalidation, else falls back). The hook path
+records `resolvedPaths` + `pathHash` and bumps `SHIM_MANIFEST_SCHEMA` → 2. Runtime
+`buildSpawnTarget` short-circuits the PATH×PATHEXT walk via `bakedRealBin`, gated
+by a **resolution-env hash** (`TK_REAL_PATH_HASH` = `hashResolutionEnv` of the
+shim-stripped PATH + PATHEXT, computed both at install and at runtime over the same
+`stripShimDir` output): the baked path is trusted ONLY while PATH is byte-identical
+to install — a reorder/extend changes the hash and forces a live walk, so tk never
+runs a stale binary the shell would no longer pick (closes the review's PATH-semantics
+gap). Plus basename-match + one `existsSync` revalidation. The hook path
 (no wrapper env) uses `~/.token-killer/path-cache.json` (`src/core/pathCache.ts`)
 keyed by `hash(PATH+PATHEXT)`, revalidated with one `existsSync` per hit. `tk
 status` surfaces stale / PATH-reorder-shadowed baked paths. Schema-1 manifests
-still read back (resolvedPaths absent). Self-healing manifest-on-fallback NOT
-done (the runtime revalidation + walk fallback already keeps it correct; re-run
-`tk install` to re-bake).
+still read back (resolvedPaths/pathHash absent). Self-healing manifest-on-fallback
+NOT done (the hash gate + walk fallback already keep it correct; re-run `tk install`
+to re-bake). Possible follow-up: on hash mismatch, fall the command-proxy path
+through the self-refreshing `path-cache` too (currently hook-only) to recover the
+speedup when the runtime PATH stably differs from install — deferred to avoid adding
+write-IO / a POSIX behavior change to the proxy hot path.
 
 **What.** `installWrappers` (`src/shim/install.ts:105`) already proves the real
 binary exists via `realBinaryPresent` → `resolveProgram` at install time — and

@@ -55,6 +55,21 @@ describe("wrapper content", () => {
     );
   });
 
+  test("POSIX wrapper bakes TK_REAL_PATH_HASH alongside TK_REAL_BIN (2.1 PATH gate)", () => {
+    expect(posixWrapper("git", tk, "/abs/shim", "/usr/bin/git", undefined, "abc123")).toBe(
+      "#!/usr/bin/env sh\nexport TK_SHIM_DIR='/abs/shim'\nexport TK_REAL_BIN='/usr/bin/git'\n" +
+        "export TK_REAL_PATH_HASH='abc123'\n" +
+        "exec '/usr/local/bin/node' '/abs/dist/cli.js' 'git' \"$@\"\n",
+    );
+  });
+
+  test("a path hash without a real bin bakes neither (the gate guards TK_REAL_BIN)", () => {
+    // No realBin → no TK_REAL_BIN and no TK_REAL_PATH_HASH (nothing to gate).
+    expect(posixWrapper("git", tk, "/abs/shim", undefined, undefined, "abc123")).toBe(
+      "#!/usr/bin/env sh\nexport TK_SHIM_DIR='/abs/shim'\nexec '/usr/local/bin/node' '/abs/dist/cli.js' 'git' \"$@\"\n",
+    );
+  });
+
   test("POSIX wrapper bakes NODE_COMPILE_CACHE when given a cache dir (2.3)", () => {
     expect(posixWrapper("git", tk, "/abs/shim", "/usr/bin/git", "/abs/home/v8-cache")).toBe(
       "#!/usr/bin/env sh\nexport TK_SHIM_DIR='/abs/shim'\nexport TK_REAL_BIN='/usr/bin/git'\n" +
@@ -165,11 +180,15 @@ describe("installWrappers", () => {
     });
     expect(manifest.schema).toBe(SHIM_MANIFEST_SCHEMA);
     expect(manifest.resolvedPaths).toEqual({ git: "/usr/bin/git" });
-    // git's wrapper bakes the path; tsc (unresolved) gets none.
-    expect(readFileSync(join(shimDir(home), "git"), "utf8")).toContain(
-      "export TK_REAL_BIN='/usr/bin/git'",
-    );
-    expect(readFileSync(join(shimDir(home), "tsc"), "utf8")).not.toContain("TK_REAL_BIN");
+    // 2.1 PATH gate: a stable per-install hash is recorded and baked beside TK_REAL_BIN.
+    expect(typeof manifest.pathHash).toBe("string");
+    const gitWrapper = readFileSync(join(shimDir(home), "git"), "utf8");
+    expect(gitWrapper).toContain("export TK_REAL_BIN='/usr/bin/git'");
+    expect(gitWrapper).toContain(`export TK_REAL_PATH_HASH='${manifest.pathHash}'`);
+    // tsc (unresolved) bakes neither TK_REAL_BIN nor the gate.
+    const tscWrapper = readFileSync(join(shimDir(home), "tsc"), "utf8");
+    expect(tscWrapper).not.toContain("TK_REAL_BIN");
+    expect(tscWrapper).not.toContain("TK_REAL_PATH_HASH");
   });
 
   test("bakes NODE_COMPILE_CACHE into every wrapper, pointed under the home (2.3)", () => {

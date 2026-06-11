@@ -4,6 +4,7 @@ import { delimiter, join } from "node:path";
 
 import { tokenKillerHome } from "../core/dataDir.js";
 import { resolveBinaryPath, resolveProgram } from "../executor.js";
+import { hashResolutionEnv, stripShimDir } from "./path.js";
 import { shimmablePrograms } from "./programs.js";
 
 // How a generated wrapper re-invokes tk. The wrapper calls tk by ABSOLUTE path
@@ -28,6 +29,11 @@ export type ShimManifest = {
   // could not resolve is simply absent here, and its wrapper bakes no TK_REAL_BIN
   // (falling back to today's per-command walk). Schema-1 manifests omit it entirely.
   resolvedPaths?: Record<string, string>;
+  // 2.1: hash of the resolution environment (shim-stripped PATH + PATHEXT) at install.
+  // Baked into wrappers as TK_REAL_PATH_HASH; the runtime trusts a baked path only
+  // while this still matches, so a PATH reorder forces a fresh walk instead of running
+  // a stale binary. Absent on schema-1 manifests.
+  pathHash?: string;
 };
 
 export function shimDir(home: string = tokenKillerHome()): string {
@@ -82,9 +88,14 @@ export function posixWrapper(
   shimDir: string,
   realBin?: string,
   compileCacheDir?: string,
+  pathHash?: string,
 ): string {
   const parts = [tk.bin, ...tk.args, program].map(shQuote).join(" ");
-  const realBinLine = realBin ? `export TK_REAL_BIN=${shQuote(realBin)}\n` : "";
+  // TK_REAL_PATH_HASH (2.1) gates TK_REAL_BIN at runtime: tk uses the baked path only
+  // while the resolution PATH is byte-identical to install. Baked as a pair.
+  const realBinLine = realBin
+    ? `export TK_REAL_BIN=${shQuote(realBin)}\n${pathHash ? `export TK_REAL_PATH_HASH=${shQuote(pathHash)}\n` : ""}`
+    : "";
   const cacheLine = compileCacheDir
     ? `export NODE_COMPILE_CACHE=${shQuote(compileCacheDir)}\n`
     : "";
@@ -105,9 +116,13 @@ export function windowsWrapper(
   shimDir: string,
   realBin?: string,
   compileCacheDir?: string,
+  pathHash?: string,
 ): string {
   const parts = [tk.bin, ...tk.args, program].map((v) => `"${v}"`).join(" ");
-  const realBinLine = realBin ? `set "TK_REAL_BIN=${realBin}"\r\n` : "";
+  // TK_REAL_PATH_HASH (2.1) gates TK_REAL_BIN — baked as a pair (see posixWrapper).
+  const realBinLine = realBin
+    ? `set "TK_REAL_BIN=${realBin}"\r\n${pathHash ? `set "TK_REAL_PATH_HASH=${pathHash}"\r\n` : ""}`
+    : "";
   const cacheLine = compileCacheDir ? `set "NODE_COMPILE_CACHE=${compileCacheDir}"\r\n` : "";
   return `@echo off\r\nsetlocal\r\nset "TK_SHIM_DIR=${shimDir}"\r\n${realBinLine}${cacheLine}${parts} %*\r\n`;
 }
@@ -187,6 +202,9 @@ export function installWrappers(opts: InstallOptions): ShimManifest {
   // V8 compile-cache dir baked into every wrapper's env (2.3). Version-agnostic:
   // honored by Node 22.1+, inert on older Node.
   const cacheDir = compileCacheDir(home);
+  // Resolution-env hash (2.1) over the SAME shim-stripped PATH the runtime resolves
+  // against (buildChildPath → stripShimDir), so an unchanged PATH matches at runtime.
+  const pathHash = hashResolutionEnv(stripShimDir(process.env.PATH, dir));
 
   mkdirSync(dir, { recursive: true });
   for (const program of programs) {
@@ -194,11 +212,11 @@ export function installWrappers(opts: InstallOptions): ShimManifest {
     if (isWindows) {
       writeFileSync(
         join(dir, `${program}.cmd`),
-        windowsWrapper(program, tk, dir, realBin, cacheDir),
+        windowsWrapper(program, tk, dir, realBin, cacheDir, pathHash),
       );
     } else {
       const file = join(dir, program);
-      writeFileSync(file, posixWrapper(program, tk, dir, realBin, cacheDir));
+      writeFileSync(file, posixWrapper(program, tk, dir, realBin, cacheDir, pathHash));
       chmodSync(file, 0o755);
     }
   }
@@ -211,6 +229,7 @@ export function installWrappers(opts: InstallOptions): ShimManifest {
     installedAt: opts.installedAt,
     tk,
     resolvedPaths,
+    pathHash,
   };
   writeFileSync(manifestPath(home), `${JSON.stringify(manifest, null, 2)}\n`);
   return manifest;

@@ -9,6 +9,7 @@ import {
   resetLegacyDecoderCache,
   resolveBinaryPath,
 } from "../../src/executor.js";
+import { hashResolutionEnv } from "../../src/shim/path.js";
 
 function withPlatform(platform: NodeJS.Platform, fn: () => void): void {
   const original = Object.getOwnPropertyDescriptor(process, "platform");
@@ -84,34 +85,59 @@ describe("resolveBinaryPath (install-time resolver, 2.1)", () => {
 });
 
 describe("buildSpawnTarget — baked TK_REAL_BIN (2.1)", () => {
-  const original = process.env.TK_REAL_BIN;
+  const PATHV = "/irrelevant/path";
+  const matchingHash = hashResolutionEnv(PATHV);
+  const originalBin = process.env.TK_REAL_BIN;
+  const originalHash = process.env.TK_REAL_PATH_HASH;
+
+  beforeEach(() => {
+    // The PATH-equality gate must pass for the fast path to engage; tests that probe
+    // the gate itself override this.
+    process.env.TK_REAL_PATH_HASH = matchingHash;
+  });
   afterEach(() => {
-    if (original === undefined) delete process.env.TK_REAL_BIN;
-    else process.env.TK_REAL_BIN = original;
+    if (originalBin === undefined) delete process.env.TK_REAL_BIN;
+    else process.env.TK_REAL_BIN = originalBin;
+    if (originalHash === undefined) delete process.env.TK_REAL_PATH_HASH;
+    else process.env.TK_REAL_PATH_HASH = originalHash;
   });
 
-  test("uses the baked path when it exists and the basename matches the program", () => {
+  test("uses the baked path when the PATH hash, basename, and existence all match", () => {
     process.env.TK_REAL_BIN = process.execPath; // basename "node"
-    const target = buildSpawnTarget("node", ["-v"], "/irrelevant/path");
+    const target = buildSpawnTarget("node", ["-v"], PATHV);
     expect(target.file).toBe(process.execPath);
+  });
+
+  test("ignores the baked path when the PATH hash does not match (PATH reordered)", () => {
+    process.env.TK_REAL_BIN = process.execPath;
+    // A different runtime PATH than install → hash mismatch → live walk fallback.
+    const target = buildSpawnTarget("node", ["-v"], "/a/totally/different/path");
+    expect(target.file).toBe("node");
+  });
+
+  test("ignores the baked path when TK_REAL_PATH_HASH is absent (ungated → conservative)", () => {
+    delete process.env.TK_REAL_PATH_HASH;
+    process.env.TK_REAL_BIN = process.execPath;
+    const target = buildSpawnTarget("node", ["-v"], PATHV);
+    expect(target.file).toBe("node");
   });
 
   test("ignores a baked path whose basename does not match the program", () => {
     process.env.TK_REAL_BIN = process.execPath; // basename "node", not "git"
-    const target = buildSpawnTarget("git", [], "/irrelevant/path");
+    const target = buildSpawnTarget("git", [], PATHV);
     // Falls back to resolveProgram, which on POSIX returns the bare name unchanged.
     expect(target.file).toBe("git");
   });
 
   test("ignores a baked path that no longer exists (stale → walk fallback)", () => {
     process.env.TK_REAL_BIN = "/no/such/dir/node";
-    const target = buildSpawnTarget("node", [], "/irrelevant/path");
+    const target = buildSpawnTarget("node", [], PATHV);
     expect(target.file).toBe("node");
   });
 
   test("ignores the baked path for a path-qualified program", () => {
     process.env.TK_REAL_BIN = process.execPath;
-    const target = buildSpawnTarget("./node", [], "/irrelevant/path");
+    const target = buildSpawnTarget("./node", [], PATHV);
     expect(target.file).toBe("./node");
   });
 });
