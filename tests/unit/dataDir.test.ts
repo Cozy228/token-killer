@@ -7,6 +7,7 @@ import { afterEach, describe, expect, test, vi } from "vitest";
 
 import {
   historyFile,
+  normalizeDriveCase,
   projectFingerprint,
   rawOutputPathRelative,
   tokenKillerHome,
@@ -70,6 +71,22 @@ describe("dataDir", () => {
     expect(projectFingerprint(a)).toMatch(/^repo:[a-f0-9]{12}$/);
     await rm(a, { recursive: true, force: true });
     await rm(b, { recursive: true, force: true });
+  });
+
+  test("normalizes Windows drive-letter case so c: and C: map to one bucket (I6)", () => {
+    // VS Code's agent run_in_terminal reports a lowercase drive while the user's
+    // interactive shell reports uppercase; realpathSync does not reconcile them, so
+    // the same repo would split into two un-mergeable buckets. Uppercase the drive.
+    expect(normalizeDriveCase("c:\\Users\\u\\token-killer", "win32")).toBe(
+      "C:\\Users\\u\\token-killer",
+    );
+    expect(normalizeDriveCase("C:\\Users\\u\\token-killer", "win32")).toBe(
+      "C:\\Users\\u\\token-killer",
+    );
+    // POSIX paths have no drive letter — identity (existing buckets untouched).
+    expect(normalizeDriveCase("/home/u/token-killer", "linux")).toBe("/home/u/token-killer");
+    // A lowercase first segment on POSIX must never be mistaken for a drive letter.
+    expect(normalizeDriveCase("/c/data", "linux")).toBe("/c/data");
   });
 
   test("spawn passes TOKEN_KILLER_HOME under vitest", () => {

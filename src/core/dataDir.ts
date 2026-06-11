@@ -3,11 +3,25 @@ import { readFileSync, realpathSync, statSync } from "node:fs";
 import os from "node:os";
 import path from "node:path";
 
+// Windows `realpathSync` does NOT normalize drive-letter case — it returns the
+// path with whatever case it was handed. VS Code's agent `run_in_terminal` reports
+// a lowercase drive (`c:\…`) while the user's interactive shell reports uppercase
+// (`C:\…`); since the resolved root is hashed as a raw string, the SAME repo would
+// split into two `repo:<hash>` buckets that `tk gain` (single-bucket) can never
+// reconcile (I6). Uppercasing the drive letter collapses both to one bucket. POSIX
+// paths have no drive letter, so this is a no-op there.
+export function normalizeDriveCase(
+  p: string,
+  platform: NodeJS.Platform = process.platform,
+): string {
+  return platform === "win32" ? p.replace(/^([a-z]):/, (_, d) => `${d.toUpperCase()}:`) : p;
+}
+
 function resolveProjectRoot(cwd: string): string {
   try {
-    return realpathSync(cwd);
+    return normalizeDriveCase(realpathSync(cwd));
   } catch {
-    return path.resolve(cwd);
+    return normalizeDriveCase(path.resolve(cwd));
   }
 }
 
