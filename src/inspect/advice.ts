@@ -19,7 +19,9 @@ export type AdviceType =
   | "storage-discovery"
   // Habit-based cost tips (Copilot CLI `/chronicle cost tips` parity): how the user
   // DRIVES the agent — turn depth, prompt length, repeated failures — costs tokens.
-  | "cost-tip";
+  | "cost-tip"
+  // Too many MCP servers configured — their tool schemas load every session.
+  | "mcp-bloat";
 
 export type AdviceFinding = {
   type: AdviceType;
@@ -177,6 +179,23 @@ function costTipFindings(
       });
     }
   }
+  // Orientation cost — heavy reads+searches+lists mean the agent spends its budget
+  // LOCATING code, not solving the task (60–80% of tokens go to orientation). A
+  // code-intelligence/LSP plugin + scoped reads is the documented fix (tool calls
+  // −90%, cost −58%). Higher bar than skill-gap/context-gap: this is the aggregate.
+  const orientation = countByCategory(scan, ["read", "search", "list"]);
+  if (orientation >= opts.minOccurrences * 4) {
+    out.push({
+      type: "cost-tip",
+      title: "High orientation cost — the agent spends tokens finding code",
+      detail: `${orientation} read/search/list actions locating code across the session(s).`,
+      occurrences: orientation,
+      confidence: 0.65,
+      recommendation:
+        "Install a code-intelligence/LSP plugin and read scoped ranges instead of whole files — reported to cut tool calls ~90% and cost ~58%.",
+    });
+  }
+
   // Repeated failures → durable instructions (Copilot CLI `/chronicle improve`).
   for (const o of scan.opportunities) {
     if (o.failure_count >= opts.minOccurrences) {
@@ -192,6 +211,30 @@ function costTipFindings(
     }
   }
   return out;
+}
+
+// Default: 3+ MCP servers is where their always-on tool schemas start to dominate
+// the window (three can eat ~72% of 200k).
+export const MCP_SERVER_LIMIT = 3;
+
+// Standalone (config-derived, not scan-derived) so cli.ts can compute the MCP
+// analysis once and fold the finding into the same advice stream.
+export function mcpBloatFinding(
+  serverCount: number,
+  serverNames: string[],
+  limit = MCP_SERVER_LIMIT,
+): AdviceFinding | undefined {
+  if (serverCount < limit) return undefined;
+  const shown = serverNames.slice(0, 6).join(", ");
+  return {
+    type: "mcp-bloat",
+    title: `${serverCount} MCP servers configured — their tool schemas load every session`,
+    detail: `${serverCount} server(s)${shown ? ` (${shown}${serverNames.length > 6 ? ", …" : ""})` : ""}; each injects its tool definitions into every session's context.`,
+    occurrences: serverCount,
+    confidence: 0.7,
+    recommendation:
+      "Disable servers you aren't using in this workspace (≈72% of the window can go to 3 servers), and prefer a CLI (gh/aws/gcloud) over its MCP where one exists — measured at ~17× fewer tokens per call.",
+  };
 }
 
 export function buildAdvice(

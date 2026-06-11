@@ -43,6 +43,7 @@ export type ContextFindingType =
   | "skill_entrypoint_bloat"
   | "skill_description_bloat"
   | "skill_count_bloat"
+  | "output_verbosity_unset"
   | "instruction_duplicate"
   | "instruction_conflict"
   | "copilot_review_truncation"

@@ -230,6 +230,18 @@ describe("buildAdvice — habit-based cost tips (chronicle parity)", () => {
     expect(f!.recommendation).toMatch(/AGENTS\.md/);
   });
 
+  test("flags high orientation cost (reads+searches+lists) → code intelligence", () => {
+    const scan = scanWith("vscode", [
+      opp({ key: "read_file", kind: "direct", category: "read", count: 8 }),
+      opp({ key: "grep_search", kind: "direct", category: "search", count: 5 }),
+    ]);
+    const f = buildAdvice(scan).find(
+      (x) => x.type === "cost-tip" && x.title.includes("orientation cost"),
+    );
+    expect(f).toBeDefined();
+    expect(f!.recommendation).toMatch(/code-intelligence|LSP|scoped/);
+  });
+
   test("no cost tips for lean habits", () => {
     const scan = scanWith("vscode", []);
     expect(

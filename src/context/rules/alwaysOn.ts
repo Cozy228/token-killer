@@ -7,8 +7,19 @@ import { estimateTokens } from "../metrics.js";
 import type { ContextFinding } from "../types.js";
 import { buildFinding } from "./helpers.js";
 
-const LINE_LIMIT = 250;
+// Line limits aligned to published guidance: a CLAUDE.md over ~200 lines is the
+// documented bloat line (one 3847→312 tok trim was a 91.9% cut, no quality loss),
+// and AGENTS.md gains reverse past ~150 lines. The ~2000-token ceiling is the other
+// documented limit (a 2000-tok always-on file × 30 messages ≈ 60k tokens spent on
+// that file alone). See reports/token-optimization-best-practices-20260611.md.
+const LINE_LIMIT = 200;
+const AGENTS_LINE_LIMIT = 150;
 const TOKEN_LIMIT = 2_000;
+
+// AGENTS.md has a tighter line budget than other always-on files.
+function lineLimitFor(af: AnalyzedFile): number {
+  return /(^|\/)AGENTS\.md$/i.test(af.file.display) ? AGENTS_LINE_LIMIT : LINE_LIMIT;
+}
 const SECTION_TOKEN_LIMIT = 800;
 const CODE_EXAMPLE_LINE_LIMIT = 80;
 const TASK_VERBS = ["review", "generate", "migrate", "release", "deploy", "triage", "translate"];
@@ -43,13 +54,14 @@ export const alwaysOnBloatRule: PerFileRule = {
     const findings: ContextFinding[] = [];
     const { metrics } = af;
 
-    if (metrics.line_count > LINE_LIMIT || metrics.estimated_tokens > TOKEN_LIMIT) {
+    const lineLimit = lineLimitFor(af);
+    if (metrics.line_count > lineLimit || metrics.estimated_tokens > TOKEN_LIMIT) {
       findings.push(
         buildFinding(af, {
           type: "always_on_bloat",
           severity: "warn",
           confidence: 0.8,
-          evidence: `${metrics.line_count} lines, ~${metrics.estimated_tokens} estimated tokens in an always-on file.`,
+          evidence: `${metrics.line_count} lines (> ${lineLimit}), ~${metrics.estimated_tokens} estimated tokens in an always-on file.`,
           recommendation: MOVE_RECO,
           fix_class: "suggested_diff",
           start_line: 1,
@@ -89,7 +101,8 @@ export const alwaysOnBloatRule: PerFileRule = {
           severity: "warn",
           confidence: 0.7,
           evidence: `A code fence spans ${maxFenceRun} lines (> ${CODE_EXAMPLE_LINE_LIMIT}); long examples bloat always-on context.`,
-          recommendation: "Trim the example or move it to a referenced file outside always-on instructions.",
+          recommendation:
+            "Trim the example or move it to a referenced file outside always-on instructions.",
           fix_class: "advisory",
           start_line: 1,
           idExtra: "codefence",
@@ -112,7 +125,8 @@ export const alwaysOnBloatRule: PerFileRule = {
             .map((s) => s.start_line)
             .slice(0, 3)
             .join(", ")}).`,
-          recommendation: "Move repeatable task workflows to .github/prompts/*.prompt.md and keep only a one-line route.",
+          recommendation:
+            "Move repeatable task workflows to .github/prompts/*.prompt.md and keep only a one-line route.",
           fix_class: "advisory",
           start_line: verbHeadings[0].start_line,
           idExtra: "taskverbs",

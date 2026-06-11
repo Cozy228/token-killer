@@ -49,6 +49,30 @@ describe("always_on_bloat", () => {
     write("AGENTS.md", ["# Project rules", "- Use pnpm", "- Be concise"].join("\n"));
     expect(types()).not.toContain("always_on_bloat");
   });
+
+  test("AGENTS.md has the tighter 150-line budget (160 short lines fires)", () => {
+    // 160 short lines is well under the 2000-token ceiling, so only the AGENTS.md
+    // line budget (150) can trip it — proves the per-file threshold is applied.
+    const body = [
+      "# A",
+      "Respond with code only.",
+      ...Array.from({ length: 160 }, (_, i) => `- r${i}`),
+    ].join("\n");
+    write("AGENTS.md", `${body}\n`);
+    expect(types()).toContain("always_on_bloat");
+  });
+});
+
+describe("output_verbosity_unset", () => {
+  test("flags an always-on instruction file with no brevity directive", () => {
+    write("AGENTS.md", ["# Rules", "- Use pnpm", "- Write tests"].join("\n"));
+    expect(types()).toContain("output_verbosity_unset");
+  });
+
+  test("no finding when a brevity directive is present", () => {
+    write("AGENTS.md", ["# Rules", "- Respond with code only, no prose explanation."].join("\n"));
+    expect(types()).not.toContain("output_verbosity_unset");
+  });
 });
 
 describe("path_instruction_overbreadth", () => {
@@ -60,7 +84,7 @@ describe("path_instruction_overbreadth", () => {
   test("flags broad applyTo glob", () => {
     write(
       ".github/instructions/api.instructions.md",
-      ['---', 'applyTo: "**"', '---', "# API", "Use zod."].join("\n"),
+      ["---", 'applyTo: "**"', "---", "# API", "Use zod."].join("\n"),
     );
     expect(types()).toContain("path_instruction_overbreadth");
   });
@@ -68,7 +92,7 @@ describe("path_instruction_overbreadth", () => {
   test("no finding for a narrow applyTo", () => {
     write(
       ".github/instructions/api.instructions.md",
-      ['---', 'applyTo: "src/api/**/*.ts"', '---', "# API", "Use zod."].join("\n"),
+      ["---", 'applyTo: "src/api/**/*.ts"', "---", "# API", "Use zod."].join("\n"),
     );
     expect(types()).not.toContain("path_instruction_overbreadth");
   });

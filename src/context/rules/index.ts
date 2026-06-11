@@ -11,6 +11,7 @@ import { instructionConflictRule } from "./conflicts.js";
 import { instructionDuplicateRule } from "./duplicates.js";
 import { pathInstructionOverbreadthRule } from "./pathInstructions.js";
 import { promptMetadataGapRule } from "./prompts.js";
+import { outputVerbosityRule } from "./outputVerbosity.js";
 import { copilotReviewTruncationRule } from "./reviewTruncation.js";
 import {
   skillCountRule,
@@ -28,6 +29,7 @@ export function registerAllRules(): void {
   clearRules();
   // Slice 2 — low-risk rules.
   registerPerFileRule(alwaysOnBloatRule);
+  registerPerFileRule(outputVerbosityRule);
   registerPerFileRule(pathInstructionOverbreadthRule);
   registerPerFileRule(promptMetadataGapRule);
   registerPerFileRule(copilotReviewTruncationRule);

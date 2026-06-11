@@ -10,10 +10,12 @@ import { homedir } from "node:os";
 import {
   buildAdvice,
   DEFAULT_ADVICE_OPTIONS,
+  mcpBloatFinding,
   renderAdviceFile,
   renderAdviceMarkdown,
   type AdviceFinding,
 } from "./advice.js";
+import { analyzeMcpServers } from "./mcp.js";
 import { readConfig } from "../core/config.js";
 import { listProjectHistoriesSync } from "../core/history.js";
 import { buildTelemetry } from "../telemetry/build.js";
@@ -277,6 +279,11 @@ export function runInspect(
         habits,
       );
     }
+    // MCP server-count advice is config-derived (not from the session scan), so it
+    // applies even with no runtime data. Surfaced in the same action stream.
+    const mcp = analyzeMcpServers(home, cwd);
+    const mcpFinding = mcpBloatFinding(mcp.servers.length, mcp.servers);
+    if (mcpFinding) findings = [...findings, mcpFinding];
 
     const report = buildReport(
       result ?? emptyScanResult(opts.inputType),
