@@ -47,9 +47,15 @@ export const skillInvocationPolicyRule: PerFileRule = {
     const findings: ContextFinding[] = [];
     const fmEnd = af.parsed.frontmatter.end_line ?? 1;
     const name = skillName(af);
-    const haystack = `${name}\n${af.parsed.body}`;
+    const description = frontmatterString(af, "description") ?? "";
+    // Classify by the skill's DECLARED PURPOSE (name + description) — the text the
+    // model actually routes on — NOT the whole body. Scanning the body matched a
+    // side-effect verb anywhere in prose (e.g. a read-only "learn" skill that says
+    // "publish-ready", or "think" that mentions "release a plan") and wrongly flagged
+    // read/knowledge skills as side-effect workflows (confirmed false positives).
+    const intent = `${name}\n${description}`;
 
-    const hasSideEffect = SIDE_EFFECT_VERBS.test(haystack);
+    const hasSideEffect = SIDE_EFFECT_VERBS.test(intent);
     // M1: fire only when the key is ABSENT. An explicit `disable-model-invocation:
     // false` is a deliberate user choice — a safe_mechanical fix must FILL an absent
     // key, never FLIP an explicit value (the old `=== true` check treated explicit
@@ -99,7 +105,7 @@ export const skillInvocationPolicyRule: PerFileRule = {
     }
 
     // Read-only skill without least-privilege allowed-tools.
-    const readOnly = READONLY_HINT.test(haystack) && !hasSideEffect;
+    const readOnly = READONLY_HINT.test(intent) && !hasSideEffect;
     if (readOnly && !hasFrontmatterKey(af, "allowed-tools")) {
       findings.push(
         buildFinding(af, {

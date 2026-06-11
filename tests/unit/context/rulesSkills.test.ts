@@ -111,6 +111,50 @@ describe("skill_invocation_policy", () => {
     expect(userFindings().some((x) => x.type === "skill_invocation_policy")).toBe(false);
   });
 
+  test("FP fix: a side-effect verb in the BODY of a read-only skill is NOT flagged", () => {
+    // Real false positive: read/think/learn skills got flagged because words like
+    // "publish"/"release"/"send" appear in their prose. Classification is by the
+    // declared purpose (name + description), not the body.
+    writeUserSkill(
+      "learn",
+      [
+        "---",
+        "name: learn",
+        "description: Research a topic and summarize findings into a reference document.",
+        "---",
+        "# Learn",
+        "Produce a publish-ready article. You may send the draft for review and release notes.",
+      ].join("\n"),
+    );
+    const sideEffect = userFindings().filter(
+      (x) =>
+        x.type === "skill_invocation_policy" &&
+        x.recommendation.includes("disable-model-invocation"),
+    );
+    expect(sideEffect).toHaveLength(0);
+  });
+
+  test("a genuine side-effect skill (verb in its description) is still flagged", () => {
+    writeUserSkill(
+      "shipit",
+      [
+        "---",
+        "name: shipit",
+        "description: Commit, push, and publish a release.",
+        "---",
+        "# Ship",
+        "Body.",
+      ].join("\n"),
+    );
+    expect(
+      userFindings().some(
+        (x) =>
+          x.type === "skill_invocation_policy" &&
+          x.recommendation.includes("disable-model-invocation"),
+      ),
+    ).toBe(true);
+  });
+
   test("M1: explicit disable-model-invocation:false gets NO finding (never flip explicit intent to true)", () => {
     writeUserSkill(
       "deploy",

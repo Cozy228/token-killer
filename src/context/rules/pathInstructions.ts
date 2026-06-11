@@ -7,7 +7,11 @@ import type { ContextFinding } from "../types.js";
 import { buildFinding, frontmatterString, hasFrontmatterKey } from "./helpers.js";
 
 // Content hints that a rule is local-only / unsuitable for cloud code review.
-const REVIEW_UNSAFE = /\b(secret|credential|token|password|\.env|local(?:-only)?\b|do not run|run locally)\b/i;
+// Deliberately SPECIFIC: bare "token" (e.g. "token budget", "auth token docs") and
+// bare "local" ("local development") are common, non-secret words that produced
+// false positives — require a secrets-bearing phrase, not one overloaded keyword.
+const REVIEW_UNSAFE =
+  /\b(secret|credential|password|api[ -]?key|access[ -]?token|private[ -]?key|\.env\b|local-only|do not run|run locally)\b/i;
 
 const BROAD_GLOBS = new Set(["**", "**/*", "*"]);
 
