@@ -28,8 +28,35 @@ source tk doesn't have yet (would require reading host config files or a usage A
 - Model routing (Opus for trivial tasks) — up to 10× cost multiplier
 - Prompt-cache hit rate (target ≥ 60%; 90% cheaper cached) — ProjectDiscovery 7%→84%
 - Extended-thinking budget on simple tasks — max effort = 10× low effort
-- MCP server count / tool-schema bloat — 3 servers ≈ 72% of a 200k window; MCP vs CLI 17× — *partially detectable by reading ~/.copilot/mcp-config.json or Claude settings*
+- ~~MCP server count~~ — **IMPLEMENTED** (`mcp-bloat` advice, reads the 5 config locations).
 - Batch API + caching for non-realtime jobs — down to 5% of list price
+
+## Plan — checks that need data tk doesn't have yet (feasibility verdict, 2026-06-11)
+
+Probed the real on-disk VS Code data to decide what's even possible:
+
+- **Transcripts** (`*/transcripts/*.jsonl`): grep for model/token/usage/cache/effort/
+  thinking fields → **NONE**. Transcripts are tool-request + message events only.
+- **chatSessions** (the populated `.jsonl`): DO carry `modelId`
+  (e.g. `"copilot/oswe-vscode-prime"`) and a `tokens` field — but the observed
+  `tokens` values are `0` (not a usable cost signal), and there is **no** cache-hit
+  or thinking-token field anywhere.
+
+Verdict per requested check:
+- **Model-choice check** — *feasible* from chatSessions `modelId`. Limited value: tk
+  can't reliably classify task complexity, so the honest version is a REPORT of the
+  model mix per session (+ a soft tip if a heavy model dominates trivial-looking,
+  short sessions). Build only if the user wants the reporting; not a strong tip yet.
+- **Cache-hit rate** — *NOT feasible*: no field in either VS Code source. Would need
+  a provider usage API tk doesn't integrate.
+- **Extended-thinking budget** — *NOT feasible*: no thinking-token field on disk.
+- **Exact cost / token budget alarms** — *NOT feasible from VS Code* (tokens=0/absent).
+  Copilot CLI's own `/usage` + `/chronicle cost` imply it tracks tokens in its
+  session-state, but that format is unverified (no live CLI session-state on this box).
+
+Recommendation: ship the model-mix REPORT (low effort, honest) if wanted; defer
+cache/thinking/cost until a usage source exists. Do NOT fabricate a cost number from
+the `tokens:0` field — that would violate tk's "never fabricate" principle.
 
 ## ROI-ranked interventions (from the sources)
 
