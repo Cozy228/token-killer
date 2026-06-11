@@ -166,7 +166,20 @@ uncertainty range (each strictly removes ops and degrades to today's behavior),
 they help every Windows user with bloated PATHs even off this box, and they are
 verifiable later by op-count without rework. They do **not** change the floor.
 
-### 2.1 Bake the resolved binary path at install time  ⟶ largest removable op-count
+### 2.1 Bake the resolved binary path at install time  ⟶ largest removable op-count — ✅ DONE
+
+**Status:** implemented. Install resolves each real binary once
+(`resolveRealBinaryPath` → `resolveBinaryPath`, excluding the shim dir) and bakes
+it: wrappers gain `export TK_REAL_BIN=…` / `set "TK_REAL_BIN=…"`, the manifest
+records `resolvedPaths` and bumps `SHIM_MANIFEST_SCHEMA` → 2. Runtime
+`buildSpawnTarget` short-circuits the PATH×PATHEXT walk via `bakedRealBin`
+(basename-match + one `existsSync` revalidation, else falls back). The hook path
+(no wrapper env) uses `~/.token-killer/path-cache.json` (`src/core/pathCache.ts`)
+keyed by `hash(PATH+PATHEXT)`, revalidated with one `existsSync` per hit. `tk
+status` surfaces stale / PATH-reorder-shadowed baked paths. Schema-1 manifests
+still read back (resolvedPaths absent). Self-healing manifest-on-fallback NOT
+done (the runtime revalidation + walk fallback already keeps it correct; re-run
+`tk install` to re-bake).
 
 **What.** `installWrappers` (`src/shim/install.ts:105`) already proves the real
 binary exists via `realBinaryPresent` → `resolveProgram` at install time — and

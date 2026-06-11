@@ -16,6 +16,7 @@ import {
   readManifest,
   realBinaryPresent,
   removeShimDir,
+  resolveRealBinaryPath,
   shimDir,
 } from "./install.js";
 import { runInterceptionProbe, type ProbeResult } from "./probe.js";
@@ -163,6 +164,31 @@ function status(): number {
   );
   out(`  on PATH:        ${index >= 0 ? `yes (position ${index})` : "no"}`);
   out(`  first on PATH:  ${index === 0 ? "yes" : "no"}`);
+
+  // Baked real-binary paths (2.1). Each was resolved once at install so the runtime
+  // skips the per-command PATH walk. Re-validate here (status is not a hot path):
+  //  - stale    = the baked binary moved/was uninstalled → runtime falls back to a walk
+  //  - shadowed = PATH was reordered so a DIFFERENT binary now wins; tk still runs the
+  //               baked one, so re-run `tk install` to re-bake against the new PATH.
+  const baked = Object.entries(manifest?.resolvedPaths ?? {});
+  if (baked.length > 0) {
+    let stale = 0;
+    let shadowed = 0;
+    for (const [program, bakedPath] of baked) {
+      if (!existsSync(bakedPath)) {
+        stale += 1;
+        continue;
+      }
+      const current = resolveRealBinaryPath(program, dir);
+      if (current && current !== bakedPath) shadowed += 1;
+    }
+    const flags: string[] = [];
+    if (stale > 0) flags.push(`${stale} stale (binary moved)`);
+    if (shadowed > 0) flags.push(`${shadowed} shadowed by PATH reorder — re-run \`tk install\``);
+    out(
+      `  baked paths:    ${baked.length}${flags.length > 0 ? ` (${flags.join("; ")})` : " all valid"}`,
+    );
+  }
 
   const probe = runInterceptionProbe(dir);
   out(

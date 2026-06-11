@@ -1,9 +1,13 @@
-import { beforeEach, describe, expect, test } from "vitest";
+import { afterEach, beforeEach, describe, expect, test } from "vitest";
+
+import { dirname } from "node:path";
 
 import {
+  buildSpawnTarget,
   decodeChildOutput,
   executeCommand,
   resetLegacyDecoderCache,
+  resolveBinaryPath,
 } from "../../src/executor.js";
 
 function withPlatform(platform: NodeJS.Platform, fn: () => void): void {
@@ -20,10 +24,7 @@ describe("executeCommand", () => {
   test("captures stdout, stderr, and preserves exit code", async () => {
     const result = await executeCommand({
       program: process.execPath,
-      args: [
-        "-e",
-        "process.stdout.write('out'); process.stderr.write('err'); process.exit(7);",
-      ],
+      args: ["-e", "process.stdout.write('out'); process.stderr.write('err'); process.exit(7);"],
       original: [
         process.execPath,
         "-e",
@@ -63,6 +64,58 @@ describe("executeCommand", () => {
   });
 });
 
+describe("resolveBinaryPath (install-time resolver, 2.1)", () => {
+  test("resolves a real binary to its absolute path", () => {
+    // process.execPath ("node") lives in its own dir; resolving "node" against that
+    // dir must return the same absolute path.
+    const dir = dirname(process.execPath);
+    const resolved = resolveBinaryPath("node", dir);
+    expect(resolved).toBe(process.execPath);
+  });
+
+  test("returns undefined when nothing resolves", () => {
+    expect(resolveBinaryPath("tk-nope-binary", dirname(process.execPath))).toBeUndefined();
+  });
+
+  test("returns a path-qualified program verbatim only when it exists", () => {
+    expect(resolveBinaryPath(process.execPath, undefined)).toBe(process.execPath);
+    expect(resolveBinaryPath("/no/such/tk/binary", undefined)).toBeUndefined();
+  });
+});
+
+describe("buildSpawnTarget — baked TK_REAL_BIN (2.1)", () => {
+  const original = process.env.TK_REAL_BIN;
+  afterEach(() => {
+    if (original === undefined) delete process.env.TK_REAL_BIN;
+    else process.env.TK_REAL_BIN = original;
+  });
+
+  test("uses the baked path when it exists and the basename matches the program", () => {
+    process.env.TK_REAL_BIN = process.execPath; // basename "node"
+    const target = buildSpawnTarget("node", ["-v"], "/irrelevant/path");
+    expect(target.file).toBe(process.execPath);
+  });
+
+  test("ignores a baked path whose basename does not match the program", () => {
+    process.env.TK_REAL_BIN = process.execPath; // basename "node", not "git"
+    const target = buildSpawnTarget("git", [], "/irrelevant/path");
+    // Falls back to resolveProgram, which on POSIX returns the bare name unchanged.
+    expect(target.file).toBe("git");
+  });
+
+  test("ignores a baked path that no longer exists (stale → walk fallback)", () => {
+    process.env.TK_REAL_BIN = "/no/such/dir/node";
+    const target = buildSpawnTarget("node", [], "/irrelevant/path");
+    expect(target.file).toBe("node");
+  });
+
+  test("ignores the baked path for a path-qualified program", () => {
+    process.env.TK_REAL_BIN = process.execPath;
+    const target = buildSpawnTarget("./node", [], "/irrelevant/path");
+    expect(target.file).toBe("./node");
+  });
+});
+
 describe("decodeChildOutput", () => {
   beforeEach(() => {
     resetLegacyDecoderCache();
@@ -73,9 +126,7 @@ describe("decodeChildOutput", () => {
   });
 
   test("keeps ASCII byte-exact", () => {
-    expect(decodeChildOutput(Buffer.from("on branch main\n", "utf8"))).toBe(
-      "on branch main\n",
-    );
+    expect(decodeChildOutput(Buffer.from("on branch main\n", "utf8"))).toBe("on branch main\n");
   });
 
   test("returns an empty string for empty output", () => {

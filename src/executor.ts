@@ -1,8 +1,9 @@
 import { spawn, spawnSync } from "node:child_process";
 import { existsSync } from "node:fs";
 import { constants as osConstants } from "node:os";
-import { delimiter, join } from "node:path";
+import { basename, delimiter, extname, join } from "node:path";
 
+import { resolveCachedBinary } from "./core/pathCache.js";
 import { assertNoRecursion, buildChildPath } from "./shim/path.js";
 import type { ParsedCommand, RawResult } from "./types.js";
 
@@ -142,6 +143,60 @@ export function resolveProgram(program: string, pathValue: string | undefined): 
   return program;
 }
 
+// Resolve `program` to an ABSOLUTE executable path on `pathValue`, or undefined when
+// nothing is found. Unlike resolveProgram — which returns the bare name on a miss and
+// is a Windows-only no-op so spawn can do its own POSIX lookup — this resolves on BOTH
+// platforms and is used at INSTALL time to bake the path once (2.1). Windows honors
+// PATHEXT; POSIX takes the first PATH dir holding a file named `program`. A program
+// that already contains a path separator is returned verbatim if it exists.
+export function resolveBinaryPath(
+  program: string,
+  pathValue: string | undefined,
+): string | undefined {
+  if (program.includes("\\") || program.includes("/")) {
+    return existsSync(program) ? program : undefined;
+  }
+  const dirs = (pathValue ?? "").split(delimiter).filter(Boolean);
+  if (process.platform === "win32") {
+    const exts = (process.env.PATHEXT ?? ".COM;.EXE;.BAT;.CMD")
+      .split(";")
+      .map((ext) => ext.trim())
+      .filter(Boolean);
+    for (const dir of dirs) {
+      for (const ext of exts) {
+        const candidate = join(dir, program + ext);
+        if (existsSync(candidate)) return candidate;
+      }
+    }
+    return undefined;
+  }
+  for (const dir of dirs) {
+    const candidate = join(dir, program);
+    if (existsSync(candidate)) return candidate;
+  }
+  return undefined;
+}
+
+// A baked, validated real-binary path (TK_REAL_BIN, exported by the shim wrapper at
+// install time) lets buildSpawnTarget skip the per-command PATH×PATHEXT walk — the
+// install paid that walk once (2.1). We trust it only after TWO cheap guards so a
+// stale/moved binary can never run the wrong thing: (1) the baked file's basename
+// (minus extension) must equal the requested program, rejecting a leftover var from a
+// different wrapper; (2) one existsSync revalidation, rejecting a moved/uninstalled
+// binary. Either guard failing returns undefined and the caller falls back to today's
+// walk — worst case, one wasted stat. Skipped entirely for an explicit path program.
+function bakedRealBin(program: string): string | undefined {
+  const baked = process.env.TK_REAL_BIN;
+  if (!baked) return undefined;
+  if (program.includes("\\") || program.includes("/")) return undefined;
+  const stem = basename(baked, extname(baked));
+  const matches =
+    process.platform === "win32" ? stem.toLowerCase() === program.toLowerCase() : stem === program;
+  if (!matches) return undefined;
+  if (!existsSync(baked)) return undefined;
+  return baked;
+}
+
 // True when `program` is backed by a real executable reachable on the child
 // PATH. tk wraps real tools; it must never claim a command whose binary is
 // absent. On a stock Windows box `cat`/`ls`/`wc`/`env` are not executables —
@@ -153,7 +208,9 @@ export function resolveProgram(program: string, pathValue: string | undefined): 
 export function isProgramAvailable(program: string): boolean {
   if (process.platform !== "win32") return true;
   const childPath = process.env.TK_SHIM_DIR ? buildChildPath() : process.env.PATH;
-  return resolveProgram(program, childPath) !== program;
+  // 2.1 item 4: the hook path has no baked TK_REAL_BIN wrapper env, so memoize the
+  // PATH×PATHEXT walk across invocations (revalidated with one existsSync per hit).
+  return resolveCachedBinary(program, childPath) !== undefined;
 }
 
 function isBatchScript(file: string): boolean {
@@ -180,7 +237,7 @@ export function buildSpawnTarget(
   args: string[],
   pathValue: string | undefined,
 ): { file: string; args: string[]; windowsVerbatimArguments: boolean } {
-  const resolved = resolveProgram(program, pathValue);
+  const resolved = bakedRealBin(program) ?? resolveProgram(program, pathValue);
   if (process.platform === "win32" && isBatchScript(resolved)) {
     const comspec = process.env.ComSpec || "cmd.exe";
     const line = [resolved, ...args].map(cmdQuote).join(" ");
