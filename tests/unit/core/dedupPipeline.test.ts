@@ -1,4 +1,5 @@
-import { mkdtemp, rm } from "node:fs/promises";
+import { existsSync } from "node:fs";
+import { mkdtemp, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import { afterEach, beforeEach, describe, expect, test, vi } from "vitest";
@@ -6,6 +7,8 @@ import { afterEach, beforeEach, describe, expect, test, vi } from "vitest";
 import { runPipeline } from "../../../src/core/pipeline.js";
 import { readHistory } from "../../../src/core/history.js";
 import { readDedupEvents } from "../../../src/core/dedupLedger.js";
+import { dedupStoreFile } from "../../../src/core/dataDir.js";
+import { entryKey, normalizeCommand, readStore } from "../../../src/core/dedupStore.js";
 import { runGain } from "../../../src/core/gain.js";
 import { makeFilteredResult } from "../../../src/handlers/base.js";
 import type { CommandHandler, ParsedCommand, RawResult, TkOptions } from "../../../src/types.js";
@@ -84,8 +87,13 @@ function captureStdout(): { text: () => string } {
 describe("runPipeline + session dedup — wiring & separated accounting", () => {
   test("a repeated cacheable command emits the marker, not a second ledger-① row", async () => {
     const handler = stubHandler();
+    // Accounting is now deferred to commit() — emit-then-commit, exactly as runCompress
+    // drives it. The second run's HIT decision depends on the first run's store write,
+    // so commit each before the next, mirroring the real per-command lifecycle.
     const first = await runPipeline(handler, command(), options());
+    await first.commit();
     const second = await runPipeline(handler, command(), options());
+    await second.commit();
 
     // First emits the full compressed output; the repeat emits the recoverable marker.
     expect(first.filtered.output).toBe(OUT);
@@ -106,8 +114,8 @@ describe("runPipeline + session dedup — wiring & separated accounting", () => 
 
   test("`tk gain` reports dedup on a separate line, never summed into ① commands", async () => {
     const handler = stubHandler();
-    await runPipeline(handler, command(), options());
-    await runPipeline(handler, command(), options());
+    await runPipeline(handler, command(), options()).then((r) => r.commit());
+    await runPipeline(handler, command(), options()).then((r) => r.commit());
 
     const out = captureStdout();
     const code = await runGain(["--text"], cwd, new Date(), () => {});
@@ -120,5 +128,55 @@ describe("runPipeline + session dedup — wiring & separated accounting", () => 
     expect(text).toContain("Session dedup");
     expect(text).toContain("Hits: 1");
     expect(text).toContain("never summed");
+  });
+});
+
+describe("runPipeline — accounting deferred to commit() (ordering invariant)", () => {
+  test("the history row is written by commit(), not before it", async () => {
+    const handler = stubHandler();
+    const result = await runPipeline(handler, command(), options());
+
+    // Before commit: the decision is made and `filtered` is ready to emit, but the
+    // ledger-① history row has NOT been written yet — it is off the latency path.
+    expect(await readHistory(cwd)).toHaveLength(0);
+
+    await result.commit();
+    // After commit: exactly the one row lands.
+    expect(await readHistory(cwd)).toHaveLength(1);
+  });
+
+  test("the MISS-path dedup store upsert is written by commit(), not before it", async () => {
+    const handler = stubHandler();
+    const result = await runPipeline(handler, command(), options());
+    const store = dedupStoreFile(cwd);
+    const key = entryKey(normalizeCommand(command()));
+
+    // Before commit: a fresh MISS makes no store entry — the hot-path lock+rename
+    // write is deferred until after the output would have been emitted.
+    const before = existsSync(store) ? (await readStore(store)).entries[key] : undefined;
+    expect(before).toBeUndefined();
+
+    await result.commit();
+    // After commit: the entry exists, ready to drive a later HIT.
+    expect((await readStore(store)).entries[key]).toBeDefined();
+  });
+
+  test("a commit() write failure is absorbed — never throws, output stays intact", async () => {
+    const handler = stubHandler();
+    const result = await runPipeline(handler, command(), options());
+
+    // Point the data home at a path UNDER a file: every fs write below it fails with
+    // ENOTDIR. commit() must swallow both the dedup upsert and recordHistory failures
+    // (the command already ran — a throw here would re-spawn it via cli fail-open, C6).
+    const blocker = path.join(home, "blocker");
+    await writeFile(blocker, "x");
+    const prevHome = process.env.TOKEN_KILLER_HOME;
+    process.env.TOKEN_KILLER_HOME = path.join(blocker, "home");
+    try {
+      await expect(result.commit()).resolves.toBeUndefined();
+      expect(result.filtered.output).toBe(OUT);
+    } finally {
+      process.env.TOKEN_KILLER_HOME = prevHome;
+    }
   });
 });

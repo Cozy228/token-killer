@@ -399,7 +399,7 @@ async function runCompress(
   // the child runs — ENOENT, ShimRecursionError) still reach the fail-open, where a
   // re-spawn is correct because nothing ran.
   try {
-    const filtered = await runPipeline(
+    const result = await runPipeline(
       {
         ...handler,
         async execute() {
@@ -408,7 +408,8 @@ async function runCompress(
       },
       command,
       options,
-    ).then((result) => result.filtered);
+    );
+    const filtered = result.filtered;
 
     // Compress succeeded — trace the savings to the same dual sink as the gate
     // decision (D1), so a live `TK_DEBUG` session shows route → outcome in one log.
@@ -437,6 +438,12 @@ async function runCompress(
     if (options.stats) {
       process.stdout.write(`\n${formatStats(filtered)}\n`);
     }
+
+    // The compressed output is already on stdout; only NOW do the deferred accounting
+    // (dedup store/ledger writes + the history row). Kept inside this absorb-try so a
+    // commit failure can never reach the cli fail-open catch, which would re-spawn the
+    // ALREADY-EXECUTED command (C6). Awaited so exit-code timing stays deterministic.
+    await result.commit();
     return raw.exitCode;
   } catch {
     // Post-execution fallback: the command already ran; surface its captured output
