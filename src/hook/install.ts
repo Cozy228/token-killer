@@ -15,6 +15,7 @@ import {
   mkdirSync,
   readdirSync,
   readFileSync,
+  renameSync,
   rmdirSync,
   rmSync,
   writeFileSync,
@@ -112,14 +113,49 @@ export function planCopilotHookConfig(loc: ConfigLocation): HookConfigPlan {
 
 // Write the config (user-level by default). Idempotent. Returns the plan. Writes
 // only when we own the destination — `skipped-unmanaged` and `unchanged` are no-ops.
-export function installCopilotHookConfig(loc: ConfigLocation): HookConfigPlan {
-  const plan = planCopilotHookConfig(loc);
+//
+// The write is atomic: contents go to a same-directory temp file, then `renameSync`
+// swaps it into place (the rawStore pattern, sync). A crash/disk failure mid-write
+// can only leave a stray `.tmp` — never a torn or zero-byte destination. This matters
+// directly to the unmanaged-guard: an in-place truncating `writeFileSync` that died
+// after `O_TRUNC` would leave an unparseable file that the guard then permanently
+// refuses to repair (issue #11). Atomicity removes that self-inflicted lockout.
+export function installCopilotHookConfig(
+  loc: ConfigLocation,
+  // Test seam: inject a pre-computed plan to model the TOCTOU window — a plan made
+  // when the file was managed, replayed after it flipped unmanaged. Production never
+  // passes this; the revalidation below is what protects the live race.
+  precomputedPlan?: HookConfigPlan,
+): HookConfigPlan {
+  const plan = precomputedPlan ?? planCopilotHookConfig(loc);
   if (plan.action === "create" || plan.action === "overwrite") {
-    mkdirSync(dirname(plan.path), { recursive: true });
-    writeFileSync(plan.path, plan.contents);
+    const dir = dirname(plan.path);
+    mkdirSync(dir, { recursive: true });
+    // Unique same-directory temp so `renameSync` is atomic (same filesystem).
+    const tmpPath = join(dir, `.${CONFIG_FILENAME}.${process.pid}.${(writeCounter += 1)}.tmp`);
+    writeFileSync(tmpPath, plan.contents);
+    try {
+      // TOCTOU guard: ownership was checked during planning, but the destination may
+      // have changed since (a concurrent user edit). Before replacing an EXISTING
+      // file, re-confirm it is still ours; if it became unmanaged, abort rather than
+      // clobber it — convert to `skipped-unmanaged` and drop the temp.
+      if (plan.action === "overwrite" && !isManaged(plan.path)) {
+        rmSync(tmpPath, { force: true });
+        return { ...plan, action: "skipped-unmanaged" };
+      }
+      renameSync(tmpPath, plan.path);
+    } catch (err) {
+      // Rename failed (e.g. read-only parent) — leave the destination as-is and clean
+      // up the temp so a failed attempt never strands a file or torn target.
+      rmSync(tmpPath, { force: true });
+      throw err;
+    }
   }
   return plan;
 }
+
+// Per-process counter making the temp filename unique within a directory.
+let writeCounter = 0;
 
 // Remove our config — only if the marker proves we wrote it (never clobber a
 // user's own hooks file).
