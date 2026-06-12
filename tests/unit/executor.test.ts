@@ -23,6 +23,20 @@ function withPlatform(platform: NodeJS.Platform, fn: () => void): void {
   }
 }
 
+// Run `fn` with a specific value (or absence) of an env var, then restore.
+function withEnv(name: string, value: string | undefined, fn: () => void): void {
+  const had = Object.prototype.hasOwnProperty.call(process.env, name);
+  const original = process.env[name];
+  if (value === undefined) delete process.env[name];
+  else process.env[name] = value;
+  try {
+    fn();
+  } finally {
+    if (had) process.env[name] = original;
+    else delete process.env[name];
+  }
+}
+
 describe("executeCommand", () => {
   test("captures stdout, stderr, and preserves exit code", async () => {
     const result = await executeCommand({
@@ -64,6 +78,135 @@ describe("executeCommand", () => {
     });
 
     expect(result.exitCode).toBe(143);
+  });
+});
+
+describe("buildSpawnTarget (win32 .cmd/.bat %-expansion)", () => {
+  // A resolved batch-script path on PATH. resolveProgram returns `program`
+  // unchanged when it already contains a separator, so passing an absolute
+  // .cmd path keeps the test independent of any real filesystem.
+  const PNPM_CMD = "C:\\Users\\t\\AppData\\pnpm\\pnpm.cmd";
+
+  test("%-free args produce a byte-identical spawn line (fast path untouched)", () => {
+    withPlatform("win32", () => {
+      withEnv("TK_PCT", undefined, () => {
+        const target = buildSpawnTarget(PNPM_CMD, ["install", "--frozen-lockfile"], "");
+        expect(target.file).toBe(process.env.ComSpec || "cmd.exe");
+        // No % anywhere → no rewrite, no TK_PCT injection.
+        expect(target.args).toEqual(["/d", "/s", "/c", `"${PNPM_CMD} install --frozen-lockfile"`]);
+        expect(target.windowsVerbatimArguments).toBe(true);
+        expect(target.extraEnv).toBeUndefined();
+      });
+    });
+  });
+
+  test("rewrites %VAR% in a single arg to %TK_PCT%…%TK_PCT% and injects TK_PCT", () => {
+    withPlatform("win32", () => {
+      withEnv("TK_PCT", undefined, () => {
+        const target = buildSpawnTarget(PNPM_CMD, ["echo", "%PATH%"], "");
+        // Each literal % becomes %TK_PCT%; cmd expands %TK_PCT% → "%" once,
+        // reconstructing the literal "%PATH%" the real tool must receive.
+        // cmdQuote wraps the token because it now contains % metacharacters.
+        expect(target.args[3]).toBe(`"${PNPM_CMD} echo "%TK_PCT%PATH%TK_PCT%""`);
+        expect(target.extraEnv).toEqual({ TK_PCT: "%" });
+      });
+    });
+  });
+
+  test("rewrites a lone trailing % (100%)", () => {
+    withPlatform("win32", () => {
+      withEnv("TK_PCT", undefined, () => {
+        const target = buildSpawnTarget(PNPM_CMD, ["echo", "100%"], "");
+        expect(target.args[3]).toBe(`"${PNPM_CMD} echo "100%TK_PCT%""`);
+        expect(target.extraEnv).toEqual({ TK_PCT: "%" });
+      });
+    });
+  });
+
+  test("neutralizes a %-pair that forms ACROSS two args (the case naive fixes miss)", () => {
+    withPlatform("win32", () => {
+      withEnv("TK_PCT", undefined, () => {
+        // cmd expansion scans the JOINED line: `a%b c%d` would let cmd see
+        // `%b c%` as one expandable reference. Per-arg quoting cannot stop it.
+        // After rewrite every % is its own %TK_PCT% reference, so no stray
+        // pair can form regardless of how the line is joined.
+        const target = buildSpawnTarget(PNPM_CMD, ["a%b", "c%d"], "");
+        expect(target.args[3]).toBe(`"${PNPM_CMD} "a%TK_PCT%b" "c%TK_PCT%d""`);
+        // Sanity: no bare % remains except those inside a %TK_PCT% token.
+        const stripped = target.args[3].replace(/%TK_PCT%/g, "");
+        expect(stripped.includes("%")).toBe(false);
+        expect(target.extraEnv).toEqual({ TK_PCT: "%" });
+      });
+    });
+  });
+
+  test("leaves an undefined-var reference literal too (%UNDEFINED_XYZ%)", () => {
+    withPlatform("win32", () => {
+      withEnv("TK_PCT", undefined, () => {
+        const target = buildSpawnTarget(PNPM_CMD, ["%UNDEFINED_XYZ%"], "");
+        expect(target.args[3]).toBe(`"${PNPM_CMD} "%TK_PCT%UNDEFINED_XYZ%TK_PCT%""`);
+        expect(target.extraEnv).toEqual({ TK_PCT: "%" });
+      });
+    });
+  });
+
+  test("rewrites % in the resolved batch path itself", () => {
+    withPlatform("win32", () => {
+      withEnv("TK_PCT", undefined, () => {
+        const weird = "C:\\dir%x\\tool.cmd";
+        const target = buildSpawnTarget(weird, ["go"], "");
+        // After %→%TK_PCT% the path now carries % metacharacters, so cmdQuote
+        // wraps it in double quotes (its existing behavior for %-tokens).
+        expect(target.args[3]).toBe(`""C:\\dir%TK_PCT%x\\tool.cmd" go"`);
+        expect(target.extraEnv).toEqual({ TK_PCT: "%" });
+      });
+    });
+  });
+
+  test("collision-safe: TK_PCT already set to % is fine (idempotent, still injects %)", () => {
+    withPlatform("win32", () => {
+      withEnv("TK_PCT", "%", () => {
+        const target = buildSpawnTarget(PNPM_CMD, ["echo", "%PATH%"], "");
+        expect(target.args[3]).toBe(`"${PNPM_CMD} echo "%TK_PCT%PATH%TK_PCT%""`);
+        expect(target.extraEnv).toEqual({ TK_PCT: "%" });
+      });
+    });
+  });
+
+  test("collision-safe: user TK_PCT set to something else → refuse rewrite, fall back to status-quo line", () => {
+    withPlatform("win32", () => {
+      withEnv("TK_PCT", "not-a-percent", () => {
+        const target = buildSpawnTarget(PNPM_CMD, ["echo", "%PATH%"], "");
+        // Fall back to the pre-existing (no-worse-than-native) behavior:
+        // cmdQuote only, no TK_PCT rewrite, no env injection.
+        expect(target.args[3]).toBe(`"${PNPM_CMD} echo "%PATH%""`);
+        expect(target.extraEnv).toBeUndefined();
+      });
+    });
+  });
+
+  test("non-batch win32 target (.exe) is unaffected — spawns directly, no cmd, no rewrite", () => {
+    withPlatform("win32", () => {
+      withEnv("TK_PCT", undefined, () => {
+        const target = buildSpawnTarget("C:\\bin\\node.exe", ["-e", "%PATH%"], "");
+        expect(target.file).toBe("C:\\bin\\node.exe");
+        expect(target.args).toEqual(["-e", "%PATH%"]);
+        expect(target.windowsVerbatimArguments).toBe(false);
+        expect(target.extraEnv).toBeUndefined();
+      });
+    });
+  });
+
+  test("non-win32 platform: % args pass straight through (POSIX path untouched)", () => {
+    withPlatform("linux", () => {
+      withEnv("TK_PCT", undefined, () => {
+        const target = buildSpawnTarget("pnpm", ["echo", "%PATH%"], "/usr/bin");
+        expect(target.file).toBe("pnpm");
+        expect(target.args).toEqual(["echo", "%PATH%"]);
+        expect(target.windowsVerbatimArguments).toBe(false);
+        expect(target.extraEnv).toBeUndefined();
+      });
+    });
   });
 });
 

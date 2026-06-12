@@ -238,19 +238,90 @@ function cmdQuote(token: string): string {
   return `"${token.replace(/"/g, '""')}"`;
 }
 
+// Env-var indirection to neutralize cmd.exe's `%VAR%` expansion (Plan 005).
+//
+// cmd.exe expands `%name%` in its earliest parsing phase, scanning the WHOLE
+// command line and IGNORING quote state — so quoting a `.cmd`/`.bat` argument
+// cannot stop `%PATH%`, `%CD%`, or a `%…%` pair that forms across two args from
+// being rewritten before the real tool sees it. Caret-escaping doesn't work
+// inside quotes (and `%` can't be caret-escaped on a `/c` line); `%%` is a
+// batch-file-only escape, not a `cmd /c` one.
+//
+// Fix: set TK_PCT=% in the spawned child's env and replace every literal `%`
+// in the line with `%TK_PCT%`. cmd expands `%TK_PCT%` → a single `%` in one
+// pass (the substituted `%` is not re-scanned), reconstructing the literal text
+// exactly once. Because every `%` becomes its own self-contained reference, no
+// two stray `%` can ever pair up — this is immune to the cross-arg-pair case
+// that defeats per-token quoting, and immune to quote state.
+const PCT_ENV_NAME = "TK_PCT";
+const PCT_ENV_VALUE = "%";
+
+function neutralizePercent(token: string): string {
+  return token.replace(/%/g, `%${PCT_ENV_NAME}%`);
+}
+
+// Merge a spawn target's `extraEnv` (currently only TK_PCT=%) over the child
+// env a caller already computed. When neither is set we return `env` unchanged
+// so the %-free / non-Windows / non-shim path stays byte-identical (the child
+// keeps inheriting process.env implicitly via spawn). When extraEnv is present
+// but `env` was undefined we must materialize an explicit env from process.env
+// so the indirection variable actually reaches the child.
+export function mergeSpawnEnv(
+  env: Record<string, string | undefined> | undefined,
+  extraEnv: Record<string, string> | undefined,
+): Record<string, string | undefined> | undefined {
+  if (!extraEnv) return env;
+  const base = env ?? (process.env as Record<string, string | undefined>);
+  return { ...base, ...extraEnv };
+}
+
 // Resolve the actual spawn target. On Windows a resolved .cmd/.bat must go
 // through ComSpec: CreateProcess can't execute a batch script and Node refuses
 // .bat/.cmd without a shell (CVE-2024-27980). Everything else — plain .exe and
 // all non-Windows — spawns directly with the resolved path.
+//
+// `extraEnv`, when present, MUST be merged over the child env by the caller
+// (see executeCommand / executePassthrough). It carries TK_PCT=% for the
+// %-neutralization above; it is only set on the win32 batch path and only when
+// the line actually contains `%`.
 export function buildSpawnTarget(
   program: string,
   args: string[],
   pathValue: string | undefined,
-): { file: string; args: string[]; windowsVerbatimArguments: boolean } {
+): {
+  file: string;
+  args: string[];
+  windowsVerbatimArguments: boolean;
+  extraEnv?: Record<string, string>;
+} {
   const resolved = bakedRealBin(program, pathValue) ?? resolveProgram(program, pathValue);
   if (process.platform === "win32" && isBatchScript(resolved)) {
     const comspec = process.env.ComSpec || "cmd.exe";
-    const line = [resolved, ...args].map(cmdQuote).join(" ");
+    const tokens = [resolved, ...args];
+    const hasPercent = tokens.some((t) => t.includes("%"));
+
+    // Collision guard: the indirection is only sound when TK_PCT either is
+    // unset or already equals exactly "%". If the user's env binds TK_PCT to
+    // anything else, rewriting `%`→`%TK_PCT%` would expand to their value and
+    // corrupt the argument — worse than the status quo. In that case refuse the
+    // rewrite and fall back to the pre-existing cmdQuote-only line (no env
+    // injection), which is no worse than the native no-tk path.
+    const existing = process.env[PCT_ENV_NAME];
+    const canIndirect = existing === undefined || existing === PCT_ENV_VALUE;
+
+    if (hasPercent && canIndirect) {
+      const line = tokens.map((t) => cmdQuote(neutralizePercent(t))).join(" ");
+      return {
+        file: comspec,
+        args: ["/d", "/s", "/c", `"${line}"`],
+        windowsVerbatimArguments: true,
+        extraEnv: { [PCT_ENV_NAME]: PCT_ENV_VALUE },
+      };
+    }
+
+    // %-free fast path (and the refused-collision fallback): byte-identical to
+    // the pre-fix line, no env injection.
+    const line = tokens.map(cmdQuote).join(" ");
     return {
       file: comspec,
       args: ["/d", "/s", "/c", `"${line}"`],
@@ -275,6 +346,7 @@ export function executeCommand(
   const started = Date.now();
   const env = buildChildEnv(command.program, extraEnv);
   const target = buildSpawnTarget(command.program, command.args, env?.PATH ?? process.env.PATH);
+  const spawnEnv = mergeSpawnEnv(env, target.extraEnv);
 
   return new Promise((resolve) => {
     const child = spawn(target.file, target.args, {
@@ -282,7 +354,7 @@ export function executeCommand(
       shell: false,
       windowsHide: true,
       windowsVerbatimArguments: target.windowsVerbatimArguments,
-      ...(env ? { env } : {}),
+      ...(spawnEnv ? { env: spawnEnv } : {}),
     });
 
     // Cap captured output to bound memory: a handler-matched command on a huge repo
@@ -368,6 +440,7 @@ export function executePassthrough(
 ): Promise<number> {
   const env = buildChildEnv(command.program, opts.extraEnv);
   const target = buildSpawnTarget(command.program, command.args, env?.PATH ?? process.env.PATH);
+  const spawnEnv = mergeSpawnEnv(env, target.extraEnv);
 
   return new Promise((resolve) => {
     const child = spawn(target.file, target.args, {
@@ -376,7 +449,7 @@ export function executePassthrough(
       stdio: "inherit",
       windowsHide: true,
       windowsVerbatimArguments: target.windowsVerbatimArguments,
-      ...(env ? { env } : {}),
+      ...(spawnEnv ? { env: spawnEnv } : {}),
     });
 
     child.on("error", (error: NodeJS.ErrnoException) => {
