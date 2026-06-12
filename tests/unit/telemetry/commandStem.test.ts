@@ -12,9 +12,26 @@ describe("commandStem", () => {
   });
 
   test("drops secrets and URLs from stems", () => {
-    expect(commandStem("deploy --secret=SUPERSECRETTOKEN /private/keys/id_rsa")).toBe("deploy");
+    // `deploy` is not a known program — the closed program vocabulary degrades it to
+    // "other" (issue #10), keeping any pasted secret/path off the wire regardless.
+    expect(commandStem("deploy --secret=SUPERSECRETTOKEN /private/keys/id_rsa")).toBe("other");
     expect(commandStem("curl -s https://api.example.com/v1/secret")).toBe("curl");
     expect(commandStem("docker compose ps my-service")).toBe("docker compose ps");
+  });
+
+  test("issue #10: the program slot is closed — only known programs emit, else 'other'", () => {
+    // Codex counterexamples: a token that merely passes the `isArgToken` shape guard is
+    // NOT a known program and must never reach the wire verbatim.
+    expect(commandStem("sk_live_51SUPERSECRETVALUE anything")).toBe("other");
+    expect(commandStem("AKIAIOSFODNN7EXAMPLE")).toBe("other");
+    expect(commandStem('"customer secret" arg')).toBe("other");
+    expect(commandStem("ｇｉｔ status")).toBe("other");
+    // None of the above leaks its input.
+    expect(commandStem("sk_live_51SUPERSECRETVALUE anything")).not.toContain("SUPERSECRET");
+    expect(commandStem("AKIAIOSFODNN7EXAMPLE")).not.toContain("AKIA");
+    expect(commandStem('"customer secret" arg')).not.toContain("secret");
+    // Happy path: a known program is still emitted.
+    expect(commandStem("node script.js")).toBe("node");
   });
 
   test("issue #10: programs whose position-2 is user content never emit a second token", () => {

@@ -435,6 +435,108 @@ const DOCKER_COMPOSE_SUBCOMMANDS: ReadonlySet<string> = new Set([
   "events",
 ]);
 
+// Closed program vocabulary (issue #10, program-slot leak). The program token (position 1)
+// is emitted ONLY when it is a member of this set; anything else degrades to "other". This
+// closes the first-token channel the same way KNOWN_SUBCOMMANDS closed positions ≥2: an
+// unknown program name on the wire could be a pasted secret (`sk_live_…`), a bare credential
+// (`AKIA…`), a quoted multi-word user token, or a Unicode lookalike — none of which is a
+// stable program worth counting. Unknown-but-legitimate custom tools/aliases degrading to
+// "other" is the safe direction for telemetry. Members are the keys of KNOWN_SUBCOMMANDS,
+// `docker`, the deliberately entry-less programs (rg/grep/curl/wget/psql/npx/jest/…), plus
+// other common tools worth counting. Closed lowercase ASCII literals only; never add a
+// pattern. Anyone adding a program here SHOULD also give it a closed subcommand set above
+// (or rely on it being a program-only tool whose position 2 is user content).
+const KNOWN_PROGRAMS: ReadonlySet<string> = new Set([
+  // Programs with closed subcommand vocabularies (KNOWN_SUBCOMMANDS keys).
+  ...Object.keys(KNOWN_SUBCOMMANDS),
+  // docker is special-cased but is still a known program.
+  "docker",
+  // Program-only tools whose position 2 is user content (search pattern / host / file /
+  // db name / package) — counted as programs, second token never emitted.
+  "rg",
+  "grep",
+  "curl",
+  "wget",
+  "psql",
+  "ag",
+  "fd",
+  "fzf",
+  "jq",
+  "sqlite3",
+  "mysql",
+  "redis-cli",
+  "mongo",
+  // Common interpreters, shells, and core CLI tools worth counting in telemetry.
+  "node",
+  "python",
+  "python3",
+  "tsx",
+  "bun",
+  "deno",
+  "ruby",
+  "php",
+  "perl",
+  "java",
+  "bash",
+  "sh",
+  "zsh",
+  "fish",
+  "pwsh",
+  "ls",
+  "cat",
+  "find",
+  "sed",
+  "awk",
+  "head",
+  "tail",
+  "tree",
+  "wc",
+  "sort",
+  "uniq",
+  "cut",
+  "diff",
+  "make",
+  "cmake",
+  "ninja",
+  "pip",
+  "pip3",
+  "poetry",
+  "brew",
+  "apt",
+  "apt-get",
+  "yum",
+  "dnf",
+  "pacman",
+  "ssh",
+  "scp",
+  "rsync",
+  "tar",
+  "zip",
+  "unzip",
+  "gzip",
+  "gunzip",
+  "openssl",
+  "git-lfs",
+  "helm",
+  "ansible",
+  "vagrant",
+  "prettier",
+  "biome",
+  "oxlint",
+  "rustc",
+  "rustup",
+  "swift",
+  "kotlin",
+  "dart",
+  "flutter",
+  "ng",
+  "vite",
+  "webpack",
+  "rollup",
+  "esbuild",
+  "tsup",
+]);
+
 // Returns e.g. "git diff", "vitest run", "ruff check" — never file paths, flags, or user
 // content. A position-≥2 token is emitted ONLY via a closed-vocabulary `.has()` hit.
 export function commandStem(raw: string): string {
@@ -450,10 +552,15 @@ export function commandStem(raw: string): string {
   if (tokens.length === 0) return "";
 
   const program = tokens[0]!;
-  // The program slot must pass the SAME arg-token guard as every other position — a
-  // leading path / URL / hash / `=` token is never a stable program name and may leak
-  // a secret, so generalize it rather than emit it raw (H1).
+  // The program slot is closed the same way positions ≥2 are: emit the program ONLY when
+  // it is a member of the closed KNOWN_PROGRAMS vocabulary; anything else → "other". The
+  // earlier `isArgToken` shape heuristic remains as a cheap early guard (a leading path /
+  // URL / hash / `=` token is plainly not a program), but the EMISSION DECISION is set
+  // membership — a token that merely passes the shape guard (a pasted secret like
+  // `sk_live_…`, a bare `AKIA…` credential, a quoted multi-word user token, or a Unicode
+  // lookalike `ｇｉｔ`) is NOT in the set and degrades to "other", never emitted raw (#10).
   if (isArgToken(program)) return "other";
+  if (!KNOWN_PROGRAMS.has(program)) return "other";
 
   const second = tokens[1];
   if (second === undefined) return program;
