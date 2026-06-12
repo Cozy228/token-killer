@@ -59,6 +59,8 @@ Not yet on npm (publication is planned) — get `tk` on your PATH from source:
 git clone https://github.com/Cozy228/token-killer.git
 cd token-killer
 pnpm install && pnpm build
+pnpm setup            # one-time: configures pnpm's global bin dir on PATH
+# reload your shell first run only: `source ~/.zshrc` (or ~/.bashrc), or open a new terminal
 pnpm link --global    # puts `tk` on your PATH
 ```
 
