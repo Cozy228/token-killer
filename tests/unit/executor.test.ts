@@ -369,3 +369,78 @@ describe("decodeChildOutput after capture-cap trim (end-to-end)", () => {
     });
   });
 });
+
+// Mixed-stream regression for issue #9: one shared `truncated` flag used to route
+// an INTACT, uncapped stream through trimIncompleteUtf8Tail whenever the OTHER
+// stream crossed the cap. Per-stream flags now gate the trim independently, so a
+// complete GBK stream keeps its lead-shaped final byte (`c4`) — the byte whose
+// loss decodes `中文` as `中�` on a Windows legacy code page. These spawn a real
+// child that overflows ONE stream past the 64MB cap while emitting the intact GBK
+// bytes on the other, exercising the full executeCommand close handler.
+describe("executeCommand mixed-stream truncation (issue #9)", () => {
+  // GBK bytes for 中文; the trailing C4 is a valid 2-byte UTF-8 lead shape, so a
+  // wrongly-applied trim would shed it. With one shared truncated flag, a capped
+  // stdout would route this complete stderr through trimIncompleteUtf8Tail and
+  // drop the c4 — decoding 中文 as 中� on a Windows legacy code page. Per-stream
+  // flags must leave the uncapped stream byte-identical, so its decode equals the
+  // full 4-byte buffer's decode. We recompute that off a freshly-reset decoder
+  // cache (same as the executor's own decode) so the assertion holds on any
+  // platform regardless of test ordering.
+  const GBK = Buffer.from([0xd6, 0xd0, 0xce, 0xc4]);
+  const CAP = 64 * 1024 * 1024;
+
+  // Node one-liner: write `over` bytes of ASCII to one stream (overflowing the
+  // cap) and the raw GBK bytes to the other. The GBK bytes travel as a hex arg so
+  // they never sit in the source-file encoding.
+  const gbkHex = GBK.toString("hex");
+  const overflowChunk = `Buffer.alloc(${CAP + 1024}, 0x61)`; // 'a' * (cap + slack)
+
+  // The trim genuinely sheds the c4 — confirming the two paths are distinguishable
+  // and the test would catch a regression to the shared-flag behavior.
+  test("trim of the GBK fixture drops exactly the trailing c4 (distinguishable paths)", () => {
+    const trimmed = trimIncompleteUtf8Tail(GBK);
+    expect(trimmed).toEqual(Buffer.from([0xd6, 0xd0, 0xce]));
+  });
+
+  function intactDecode(): string {
+    resetLegacyDecoderCache();
+    return decodeChildOutput(GBK);
+  }
+
+  test("capped stdout leaves a complete GBK stderr intact (stderr keeps its c4)", async () => {
+    const script =
+      `process.stdout.write(${overflowChunk});` +
+      `process.stderr.write(Buffer.from(process.argv[1], 'hex'));`;
+    resetLegacyDecoderCache(); // executor decodes on the real platform; pin a clean cache
+    const result = await executeCommand({
+      program: process.execPath,
+      args: ["-e", script, gbkHex],
+      original: [process.execPath, "-e", script, gbkHex],
+      displayCommand: "node -e overflow-stdout",
+    });
+
+    // stderr never hit the cap → must NOT be trimmed → it decodes like the full
+    // 4-byte buffer (its c4 preserved), then the truncation marker is appended
+    // because stdout crossed the cap. Were the shared flag back, stderr would lose
+    // its c4 and this prefix check would fail on the dropped character.
+    expect(result.stderr.startsWith(intactDecode())).toBe(true);
+    expect(result.stderr).toContain("capture cap — truncated");
+  }, 30000);
+
+  test("capped stderr leaves a complete GBK stdout intact (stdout keeps its c4)", async () => {
+    const script =
+      `process.stderr.write(${overflowChunk});` +
+      `process.stdout.write(Buffer.from(process.argv[1], 'hex'));`;
+    resetLegacyDecoderCache();
+    const result = await executeCommand({
+      program: process.execPath,
+      args: ["-e", script, gbkHex],
+      original: [process.execPath, "-e", script, gbkHex],
+      displayCommand: "node -e overflow-stderr",
+    });
+
+    // stdout never hit the cap → must NOT be trimmed → byte-identical full decode.
+    expect(result.stdout).toBe(intactDecode());
+    expect(result.stderr).toContain("capture cap — truncated");
+  }, 30000);
+});

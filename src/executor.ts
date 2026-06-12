@@ -329,11 +329,16 @@ export function executeCommand(
     const stderr: Buffer[] = [];
     let stdoutBytes = 0;
     let stderrBytes = 0;
-    let truncated = false;
+    // Track truncation per stream: the UTF-8 tail trim must run ONLY on the
+    // stream that actually hit the cap. A shared flag would route an intact,
+    // uncapped stream through the trim too — shedding a legitimate lead-shaped
+    // final byte (e.g. GBK `c4`) and corrupting its legacy decode (issue #9).
+    let stdoutTruncated = false;
+    let stderrTruncated = false;
 
     child.stdout?.on("data", (chunk: Buffer) => {
       if (stdoutBytes >= MAX_CAPTURE_BYTES) {
-        truncated = true;
+        stdoutTruncated = true;
         return;
       }
       stdoutBytes += chunk.length;
@@ -341,7 +346,7 @@ export function executeCommand(
     });
     child.stderr?.on("data", (chunk: Buffer) => {
       if (stderrBytes >= MAX_CAPTURE_BYTES) {
-        truncated = true;
+        stderrTruncated = true;
         return;
       }
       stderrBytes += chunk.length;
@@ -370,15 +375,18 @@ export function executeCommand(
 
     child.on("close", (code, signal) => {
       // Capture stops at a chunk boundary that may split a multibyte UTF-8
-      // sequence; trim the incomplete tail before strict decode — but ONLY when
-      // truncated, since a complete buffer must reach the decoder byte-identical
-      // (legacy-encoded output relies on strict UTF-8 failing on the whole buffer).
-      const stdoutBuf = truncated
+      // sequence; trim the incomplete tail before strict decode — but ONLY on a
+      // stream that was actually truncated, since a complete buffer must reach
+      // the decoder byte-identical (legacy-encoded output relies on strict UTF-8
+      // failing on the whole buffer). Each stream gates on its OWN flag so a
+      // capped stdout never trims an intact stderr (issue #9), and vice versa.
+      const stdoutBuf = stdoutTruncated
         ? trimIncompleteUtf8Tail(Buffer.concat(stdout))
         : Buffer.concat(stdout);
-      const stderrBuf = truncated
+      const stderrBuf = stderrTruncated
         ? trimIncompleteUtf8Tail(Buffer.concat(stderr))
         : Buffer.concat(stderr);
+      const truncated = stdoutTruncated || stderrTruncated;
       const stderrText = decodeChildOutput(stderrBuf);
       resolve({
         command: command.displayCommand,
