@@ -3,8 +3,8 @@
 **A local command proxy that compresses noisy CLI output _before_ it reaches your
 AI coding agent — cutting the tokens you pay for, without losing evidence.**
 
-Works with Claude Code, GitHub Copilot (CLI + VS Code), and Codex. Deterministic,
-local, test-first. Nothing leaves your machine.
+Works with Claude Code and GitHub Copilot (CLI + VS Code); Codex support is
+planned. Deterministic, local, test-first. Nothing leaves your machine.
 
 ```bash
 tk install        # wire it into your agent — then commands compress automatically
@@ -53,8 +53,17 @@ never an estimate.
 
 ## Install
 
-`tk install` auto-detects your agent and picks the highest delivery tier it supports
-(a hook where possible, a PATH shim otherwise). Restart your agent afterward.
+Not yet on npm (publication is planned) — get `tk` on your PATH from source:
+
+```bash
+git clone https://github.com/Cozy228/token-killer.git
+cd token-killer
+pnpm install && pnpm build
+pnpm link --global    # puts `tk` on your PATH
+```
+
+Then `tk install` auto-detects your agent and picks the highest delivery tier it
+supports (a hook where possible, a PATH shim otherwise). Restart your agent afterward.
 
 ```bash
 tk install            # auto-detect host, wire everything in
