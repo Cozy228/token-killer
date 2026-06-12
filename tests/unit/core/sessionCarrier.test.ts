@@ -70,14 +70,6 @@ describe("parse — --session flag", () => {
   });
 });
 
-describe("parse — session dedup", () => {
-  // The `--no-dedup` per-command flag was removed (the internal options.dedup
-  // opt-out still exists for the pipeline; the gate is driven by TK_SESSION_DEDUP).
-  test("absent ⇒ dedup undefined (follow the gate)", () => {
-    expect(parseArgv(["git", "status"]).options.dedup).toBeUndefined();
-  });
-});
-
 describe("rewrite — --session injection", () => {
   test("injects the flag when a valid session is supplied", () => {
     const r = rewriteCommand("git status", "abc");

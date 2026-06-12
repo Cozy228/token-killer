@@ -205,12 +205,6 @@ describe("applySessionDedup — gates", () => {
     expect(await run({ options: opts, now: T0 })).toBeNull();
     expect(await run({ options: opts, now: T0 + 1000 })).toBeNull();
   });
-
-  test("--no-dedup forces the stage off even when enabled and eligible", async () => {
-    const opts = mkOptions({ dedup: false });
-    expect(await run({ options: opts, now: T0 })).toBeNull();
-    expect(await run({ options: opts, now: T0 + 1000 })).toBeNull();
-  });
 });
 
 describe("applySessionDedup — session attribute (marker wording only)", () => {

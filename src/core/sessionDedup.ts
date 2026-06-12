@@ -40,9 +40,8 @@ const MIN_DEDUP_BYTES = 256;
 
 // ADR 0009: session dedup ships **default-ON** (it is lossless + recoverable). It is
 // disabled only by an explicit opt-out — `TK_SESSION_DEDUP=0` (env), `sessionDedup:
-// false` (config), `--no-dedup` (per command), or `--raw`. A non-empty env value is
-// the override; an empty/unset value falls through to the config, whose absence is
-// the default (on).
+// false` (config), or `--raw`. A non-empty env value is the override; an empty/unset
+// value falls through to the config, whose absence is the default (on).
 export function sessionDedupEnabled(env: NodeJS.ProcessEnv = process.env): boolean {
   const v = env.TK_SESSION_DEDUP;
   if (v !== undefined && v.trim() !== "") {
@@ -143,7 +142,6 @@ export async function applySessionDedup(input: DedupInput): Promise<FilteredResu
   const now = input.now ?? Date.now();
 
   // Eligibility gates (any "no" → emit the full output, no dedup).
-  if (options.dedup === false) return null; // `--no-dedup` per-command opt-out
   if (!sessionDedupEnabled(env)) return null;
   if (options.raw) return null; // --raw never compresses (belt-and-braces; cli bypasses too)
   if (options.saveRaw === false) return null; // no recovery channel possible → never dedup
