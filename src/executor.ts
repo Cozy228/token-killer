@@ -100,6 +100,41 @@ export function resetLegacyDecoderCache(): void {
   legacyDecoder = undefined;
 }
 
+// When capture stops at MAX_CAPTURE_BYTES the buffer ends at an arbitrary chunk
+// boundary that may fall mid-way through a multibyte UTF-8 sequence. A single
+// split codepoint at the tail makes the whole buffer fail strict decode, which
+// on Windows reroutes ALL of it to the legacy code-page decoder (mojibake). Trim
+// only a *plausible incomplete trailing sequence*: a lead byte whose declared
+// length overruns the end, preceded solely by valid continuation bytes. We
+// inspect at most the last 3 bytes (a 4-byte sequence has 3 trailing
+// continuations). Mid-buffer garbage and pure-continuation tails are left
+// untouched so genuinely-legacy output still reaches the fallback decoder. Apply
+// ONLY on the truncation path — a complete buffer must decode byte-identical.
+export function trimIncompleteUtf8Tail(buf: Buffer): Buffer {
+  // Sequence length declared by a lead byte; 0 means not a UTF-8 lead byte.
+  const leadLen = (b: number): number => {
+    if ((b & 0x80) === 0x00) return 1; // 0xxxxxxx — ASCII, complete by itself
+    if ((b & 0xe0) === 0xc0) return 2; // 110xxxxx
+    if ((b & 0xf0) === 0xe0) return 3; // 1110xxxx
+    if ((b & 0xf8) === 0xf0) return 4; // 11110xxx
+    return 0; // continuation byte (10xxxxxx) or invalid
+  };
+  const isCont = (b: number): boolean => (b & 0xc0) === 0x80;
+
+  // Scan back over up to 3 trailing continuation bytes to find the lead byte.
+  for (let back = 1; back <= 3 && back <= buf.length; back++) {
+    const i = buf.length - back; // candidate lead-byte index
+    const byte = buf[i];
+    if (isCont(byte)) continue; // still inside the trailing run; keep scanning
+    const declared = leadLen(byte);
+    if (declared === 0) return buf; // mid-buffer garbage / stray continuation
+    // `back` is how many bytes from the lead to the end inclusive.
+    if (declared > back) return buf.subarray(0, i); // incomplete tail — trim it
+    return buf; // sequence is complete (or over-long, i.e. real garbage)
+  }
+  return buf; // all of the last <=3 bytes are continuations: not a split lead
+}
+
 // Build the env passed to a spawned real tool. When TK_SHIM_DIR is set (running
 // behind the shim) the child PATH has the shim dir stripped so the real tool —
 // not the wrapper — is resolved, and the sentinel hard-errors if the only
@@ -334,10 +369,20 @@ export function executeCommand(
     });
 
     child.on("close", (code, signal) => {
-      const stderrText = decodeChildOutput(Buffer.concat(stderr));
+      // Capture stops at a chunk boundary that may split a multibyte UTF-8
+      // sequence; trim the incomplete tail before strict decode — but ONLY when
+      // truncated, since a complete buffer must reach the decoder byte-identical
+      // (legacy-encoded output relies on strict UTF-8 failing on the whole buffer).
+      const stdoutBuf = truncated
+        ? trimIncompleteUtf8Tail(Buffer.concat(stdout))
+        : Buffer.concat(stdout);
+      const stderrBuf = truncated
+        ? trimIncompleteUtf8Tail(Buffer.concat(stderr))
+        : Buffer.concat(stderr);
+      const stderrText = decodeChildOutput(stderrBuf);
       resolve({
         command: command.displayCommand,
-        stdout: decodeChildOutput(Buffer.concat(stdout)),
+        stdout: decodeChildOutput(stdoutBuf),
         stderr: truncated
           ? `${stderrText}\n[tk] output exceeded ${Math.floor(
               MAX_CAPTURE_BYTES / (1024 * 1024),
