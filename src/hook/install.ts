@@ -78,28 +78,12 @@ function serialize(config: CopilotHookConfig): string {
 
 export type HookConfigPlan = {
   path: string;
-  action: "create" | "overwrite" | "unchanged";
+  // `skipped-unmanaged`: a file exists at the path, differs from ours, and lacks
+  // our marker (or is unparseable) — install must NOT clobber it. Mirrors the
+  // marker discipline uninstall already applies; see `installCopilotHookConfig`.
+  action: "create" | "overwrite" | "unchanged" | "skipped-unmanaged";
   contents: string;
 };
-
-// Compute what install WOULD do without writing — backs `tk install --dry-run`.
-export function planCopilotHookConfig(loc: ConfigLocation): HookConfigPlan {
-  const path = copilotHookConfigPath(loc);
-  const contents = serialize(buildCopilotHookConfig());
-  if (!existsSync(path)) return { path, action: "create", contents };
-  const current = readFileSync(path, "utf8");
-  return { path, action: current === contents ? "unchanged" : "overwrite", contents };
-}
-
-// Write the config (user-level by default). Idempotent. Returns the plan.
-export function installCopilotHookConfig(loc: ConfigLocation): HookConfigPlan {
-  const plan = planCopilotHookConfig(loc);
-  if (plan.action !== "unchanged") {
-    mkdirSync(dirname(plan.path), { recursive: true });
-    writeFileSync(plan.path, plan.contents);
-  }
-  return plan;
-}
 
 function isManaged(path: string): boolean {
   if (!existsSync(path)) return false;
@@ -109,6 +93,32 @@ function isManaged(path: string): boolean {
   } catch {
     return false;
   }
+}
+
+// Compute what install WOULD do without writing — backs `tk install --dry-run`.
+export function planCopilotHookConfig(loc: ConfigLocation): HookConfigPlan {
+  const path = copilotHookConfigPath(loc);
+  const contents = serialize(buildCopilotHookConfig());
+  if (!existsSync(path)) return { path, action: "create", contents };
+  const current = readFileSync(path, "utf8");
+  if (current === contents) return { path, action: "unchanged", contents };
+  // The bytes differ. A marker-bearing file is ours — overwrite it (the upgrade
+  // path: `resolveHookCommand()` embeds absolute node+cli paths, so contents
+  // legitimately change on every move/upgrade). A file without the marker (or an
+  // unparseable one) is the user's — never clobber it.
+  if (!isManaged(path)) return { path, action: "skipped-unmanaged", contents };
+  return { path, action: "overwrite", contents };
+}
+
+// Write the config (user-level by default). Idempotent. Returns the plan. Writes
+// only when we own the destination — `skipped-unmanaged` and `unchanged` are no-ops.
+export function installCopilotHookConfig(loc: ConfigLocation): HookConfigPlan {
+  const plan = planCopilotHookConfig(loc);
+  if (plan.action === "create" || plan.action === "overwrite") {
+    mkdirSync(dirname(plan.path), { recursive: true });
+    writeFileSync(plan.path, plan.contents);
+  }
+  return plan;
 }
 
 // Remove our config — only if the marker proves we wrote it (never clobber a

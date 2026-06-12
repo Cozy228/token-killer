@@ -100,3 +100,62 @@ describe("install / plan / uninstall", () => {
     expect(s.managed).toBe(true);
   });
 });
+
+// Install must apply the same marker discipline uninstall already does: never
+// clobber a file we don't own (Plan 008). Marker-bearing files keep the upgrade
+// overwrite (contents embed absolute node+cli paths and legitimately change).
+describe("install refuses to overwrite an unmanaged config (Plan 008)", () => {
+  function configDir(): string {
+    return join(home, ".copilot", "hooks");
+  }
+
+  test("unmanaged file with differing contents → skipped-unmanaged, bytes untouched", () => {
+    const path = copilotHookConfigPath({ project: false, home });
+    mkdirSync(configDir(), { recursive: true });
+    const userBytes = JSON.stringify({ hooks: { PreToolUse: [{ timeout: 99 }] } });
+    writeFileSync(path, userBytes);
+
+    const plan = installCopilotHookConfig({ project: false, home });
+    expect(plan.action).toBe("skipped-unmanaged");
+    expect(readFileSync(path, "utf8")).toBe(userBytes);
+  });
+
+  test("managed file with differing contents → overwrite (upgrade path)", () => {
+    const path = copilotHookConfigPath({ project: false, home });
+    mkdirSync(configDir(), { recursive: true });
+    // Ours (carries the marker) but a stale command — the upgrade case.
+    const stale = JSON.stringify({
+      managedBy: "token-killer",
+      hooks: { PreToolUse: [{ type: "command", command: "old", cwd: ".", timeout: 5 }] },
+    });
+    writeFileSync(path, stale);
+
+    const plan = installCopilotHookConfig({ project: false, home });
+    expect(plan.action).toBe("overwrite");
+    expect(readFileSync(path, "utf8")).toBe(plan.contents);
+    expect(readFileSync(path, "utf8")).not.toBe(stale);
+  });
+
+  test("unparseable existing file → skipped-unmanaged, untouched", () => {
+    const path = copilotHookConfigPath({ project: false, home });
+    mkdirSync(configDir(), { recursive: true });
+    const garbage = "{ not json";
+    writeFileSync(path, garbage);
+
+    const plan = installCopilotHookConfig({ project: false, home });
+    expect(plan.action).toBe("skipped-unmanaged");
+    expect(readFileSync(path, "utf8")).toBe(garbage);
+  });
+
+  test("no file → create (unchanged behavior)", () => {
+    const plan = installCopilotHookConfig({ project: false, home });
+    expect(plan.action).toBe("create");
+    expect(existsSync(plan.path)).toBe(true);
+  });
+
+  test("identical file → unchanged (unchanged behavior)", () => {
+    installCopilotHookConfig({ project: false, home });
+    const plan = installCopilotHookConfig({ project: false, home });
+    expect(plan.action).toBe("unchanged");
+  });
+});
