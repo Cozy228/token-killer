@@ -2,7 +2,7 @@ name: CI
 
 on:
   push:
-    branches: [main]
+    branches: [main, token-killer-node-cli]
   pull_request:
 
 jobs:
@@ -20,7 +20,15 @@ jobs:
           cache: pnpm
       - run: pnpm install --frozen-lockfile
       - run: pnpm typecheck
-      - run: pnpm test:ci
+      # The members of the `pnpm test:ci` chain are run as separate steps so the
+      # session-dedup disable below stays scoped to smoke only — product and
+      # install tests run with shipped defaults. `pnpm test:install` runs the
+      # build that the smoke suite needs, so order is preserved.
+      - run: pnpm test:product
+      - run: pnpm test:install
+      - run: bash scripts/check-test-presence.sh
+      - run: bash scripts/validate-docs.sh
+      - run: bash tests/smoke/smoke.sh
         # The smoke suite (tests/smoke/smoke.sh) re-invokes identical commands
         # (e.g. `tk ls .` three times). Cross-invocation session dedup ships
         # default-on and returns recovery markers instead of output on the 2nd/3rd
