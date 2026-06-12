@@ -32,9 +32,8 @@ import { runPipeline } from "./core/pipeline.js";
 import { recordHistory, recordRawLitePassthrough } from "./core/history.js";
 import { calculateSavings } from "./core/savings.js";
 import { maybeSaveRawOutput } from "./core/rawStore.js";
-import { limitOutput } from "./core/outputLimit.js";
 import { formatStats } from "./core/stats.js";
-import { failureHint } from "./core/failureHints.js";
+import { emitThenCommit } from "./core/emit.js";
 import { VERSION } from "./version.js";
 import type {
   CommandHandler,
@@ -420,31 +419,7 @@ async function runCompress(
       savedPct: filtered.savingsPct,
     });
 
-    // Apply the opt-in --max-lines/--max-chars caps to the FINAL output (H18). A no-op
-    // unless the user passed a finite limit; never touches the quality gate above.
-    const display = limitOutput(filtered.output, options);
-    process.stdout.write(display);
-    if (display.length > 0 && !display.endsWith("\n")) {
-      process.stdout.write("\n");
-    }
-
-    // Inline failure-fix hint (scheme 2): presentation-layer only — appended after
-    // the compressed output, never part of it, so it can't trip the quality gate.
-    if (raw.exitCode !== 0) {
-      const hint = failureHint(raw, command);
-      if (hint) process.stdout.write(`tk hint: ${hint}\n`);
-    }
-
-    if (options.stats) {
-      process.stdout.write(`\n${formatStats(filtered)}\n`);
-    }
-
-    // The compressed output is already on stdout; only NOW do the deferred accounting
-    // (dedup store/ledger writes + the history row). Kept inside this absorb-try so a
-    // commit failure can never reach the cli fail-open catch, which would re-spawn the
-    // ALREADY-EXECUTED command (C6). Awaited so exit-code timing stays deterministic.
-    await result.commit();
-    return raw.exitCode;
+    return await emitThenCommit(filtered, raw, command, options, result.commit);
   } catch {
     // Post-execution fallback: the command already ran; surface its captured output
     // verbatim and preserve the exit code. Never re-spawn (C6).

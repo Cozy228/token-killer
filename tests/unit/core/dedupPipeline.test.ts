@@ -1,9 +1,10 @@
 import { existsSync } from "node:fs";
-import { mkdtemp, rm, writeFile } from "node:fs/promises";
+import { mkdir, mkdtemp, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import { afterEach, beforeEach, describe, expect, test, vi } from "vitest";
 
+import { emitThenCommit } from "../../../src/core/emit.js";
 import { runPipeline } from "../../../src/core/pipeline.js";
 import { readHistory } from "../../../src/core/history.js";
 import { readDedupEvents } from "../../../src/core/dedupLedger.js";
@@ -161,22 +162,75 @@ describe("runPipeline — accounting deferred to commit() (ordering invariant)",
     expect((await readStore(store)).entries[key]).toBeDefined();
   });
 
-  test("a commit() write failure is absorbed — never throws, output stays intact", async () => {
+  test("a commit() dedup-upsert failure is absorbed — never throws, output stays intact", async () => {
     const handler = stubHandler();
+    // The MISS decision captures `dedupStoreFile(cwd)` (= projectDataDir/dedup.json)
+    // NOW, while TOKEN_KILLER_HOME is still valid — Codex's finding was that switching
+    // the home AFTER this point leaves the captured path writable, so the upsert
+    // SUCCEEDS and only recordHistory observes the break. To genuinely fail the dedup
+    // write we sabotage the captured path itself, after the decision.
     const result = await runPipeline(handler, command(), options());
+    const store = dedupStoreFile(cwd);
+    const key = entryKey(normalizeCommand(command()));
+    const dataDir = path.dirname(store); // upsertEntry's mkdir target
 
-    // Point the data home at a path UNDER a file: every fs write below it fails with
-    // ENOTDIR. commit() must swallow both the dedup upsert and recordHistory failures
-    // (the command already ran — a throw here would re-spawn it via cli fail-open, C6).
-    const blocker = path.join(home, "blocker");
-    await writeFile(blocker, "x");
-    const prevHome = process.env.TOKEN_KILLER_HOME;
-    process.env.TOKEN_KILLER_HOME = path.join(blocker, "home");
-    try {
-      await expect(result.commit()).resolves.toBeUndefined();
-      expect(result.filtered.output).toBe(OUT);
-    } finally {
-      process.env.TOKEN_KILLER_HOME = prevHome;
-    }
+    // Pre-state: the fresh MISS has not persisted yet, and the project data dir does
+    // not exist (so the decision phase's readStore saw an empty store, as intended).
+    expect(existsSync(store)).toBe(false);
+    expect(existsSync(dataDir)).toBe(false);
+
+    // Put a regular FILE exactly where the captured store's parent directory must be.
+    // Now every write under it is impossible: upsertEntry's `mkdir(dirname(file))`
+    // throws (EEXIST/ENOTDIR over a file), so the lock+rename write never runs.
+    await mkdir(path.dirname(dataDir), { recursive: true });
+    await writeFile(dataDir, "x");
+
+    // NEGATIVE-TEST the technique: prove a write to the captured store path genuinely
+    // fails before asserting the pipeline absorbs it (otherwise the test would be
+    // vacuous, exactly the overclaim Codex caught).
+    await expect(writeFile(store, "{}")).rejects.toMatchObject({ code: "ENOTDIR" });
+
+    // commit() must swallow the now-guaranteed upsert failure — the command already
+    // ran, so a throw here would re-spawn it via the cli fail-open (C6).
+    await expect(result.commit()).resolves.toBeUndefined();
+
+    // The dedup write really did NOT persist (the failure was absorbed, not silently
+    // succeeded-elsewhere): the store path is still blocked by the file, no entry.
+    expect(existsSync(store)).toBe(false);
+    await rm(dataDir, { force: true });
+    expect(existsSync(store) ? (await readStore(store)).entries[key] : undefined).toBeUndefined();
+
+    // Output is intact regardless of the accounting failure.
+    expect(result.filtered.output).toBe(OUT);
+  });
+});
+
+describe("emitThenCommit — stdout-before-commit ordering (issue #5 regression)", () => {
+  test("every stdout write happens BEFORE commit() runs", async () => {
+    const handler = stubHandler();
+    const filtered = await handler.filter(mkRaw(), command(), options());
+    const raw: RawResult = { ...mkRaw(), exitCode: 0 };
+
+    // Record the interleaving of stdout writes vs the deferred commit. If a future
+    // edit moves `await commit()` ahead of the stdout writes (the exact user-visible
+    // regression this issue prevents), `commit` lands first and the assertion fails.
+    const order: string[] = [];
+    vi.spyOn(process.stdout, "write").mockImplementation((chunk: unknown) => {
+      order.push(`write:${String(chunk).slice(0, 8)}`);
+      return true;
+    });
+    const commit = vi.fn<() => Promise<void>>(async () => {
+      order.push("commit");
+    });
+
+    const code = await emitThenCommit(filtered, raw, command(), options(), commit);
+
+    expect(code).toBe(0);
+    expect(commit).toHaveBeenCalledTimes(1);
+    // At least one stdout write occurred, and commit is strictly LAST.
+    const commitIndex = order.indexOf("commit");
+    expect(commitIndex).toBe(order.length - 1);
+    expect(order.slice(0, commitIndex).every((e) => e.startsWith("write:"))).toBe(true);
+    expect(commitIndex).toBeGreaterThan(0);
   });
 });
