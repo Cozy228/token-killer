@@ -173,15 +173,63 @@ describe("buildSpawnTarget (win32 .cmd/.bat %-expansion)", () => {
     });
   });
 
-  test("collision-safe: user TK_PCT set to something else → refuse rewrite, fall back to status-quo line", () => {
+  test("collision-safe: user TK_PCT bound to garbage → dynamic TK_PCT_1 indirection, child carries TK_PCT_1=%", () => {
     withPlatform("win32", () => {
       withEnv("TK_PCT", "not-a-percent", () => {
+        // TK_PCT_1..15 are unset, so the first free probe is TK_PCT_1. The line
+        // must use TK_PCT_1 (NOT the corruptible TK_PCT) and inject TK_PCT_1=%.
+        // Crucially it must NOT fall back to the old cmdQuote-only `%PATH%` line.
         const target = buildSpawnTarget(PNPM_CMD, ["echo", "%PATH%"], "");
-        // Fall back to the pre-existing (no-worse-than-native) behavior:
-        // cmdQuote only, no TK_PCT rewrite, no env injection.
-        expect(target.args[3]).toBe(`"${PNPM_CMD} echo "%PATH%""`);
-        expect(target.extraEnv).toBeUndefined();
+        expect(target.args[3]).toBe(`"${PNPM_CMD} echo "%TK_PCT_1%PATH%TK_PCT_1%""`);
+        expect(target.extraEnv).toEqual({ TK_PCT_1: "%" });
+        // Regression guard: never the old silently-corruptible line.
+        expect(target.args[3]).not.toBe(`"${PNPM_CMD} echo "%PATH%""`);
       });
+    });
+  });
+
+  test("collision-safe: probes past taken names (TK_PCT + TK_PCT_1 bound) → uses TK_PCT_2", () => {
+    withPlatform("win32", () => {
+      withEnv("TK_PCT", "x", () => {
+        withEnv("TK_PCT_1", "y", () => {
+          const target = buildSpawnTarget(PNPM_CMD, ["echo", "%PATH%"], "");
+          expect(target.args[3]).toBe(`"${PNPM_CMD} echo "%TK_PCT_2%PATH%TK_PCT_2%""`);
+          expect(target.extraEnv).toEqual({ TK_PCT_2: "%" });
+        });
+      });
+    });
+  });
+
+  test("collision-safe: a probed name already bound to % is reused (no needless probe past it)", () => {
+    withPlatform("win32", () => {
+      withEnv("TK_PCT", "x", () => {
+        // TK_PCT_1 is already exactly "%": usable as-is (extraEnv re-asserts it),
+        // so the rewrite picks TK_PCT_1, not TK_PCT_2.
+        withEnv("TK_PCT_1", "%", () => {
+          const target = buildSpawnTarget(PNPM_CMD, ["echo", "%PATH%"], "");
+          expect(target.args[3]).toBe(`"${PNPM_CMD} echo "%TK_PCT_1%PATH%TK_PCT_1%""`);
+          expect(target.extraEnv).toEqual({ TK_PCT_1: "%" });
+        });
+      });
+    });
+  });
+
+  test("fail closed: TK_PCT and TK_PCT_1..15 all bound → refuse, name the offending arg, spawn nothing", () => {
+    withPlatform("win32", () => {
+      // Bind every candidate name to a non-% value: no safe indirection exists.
+      const names = ["TK_PCT", ...Array.from({ length: 15 }, (_, i) => `TK_PCT_${i + 1}`)];
+      const saved = names.map((n) => [n, process.env[n]] as const);
+      for (const n of names) process.env[n] = "taken";
+      try {
+        expect(() => buildSpawnTarget(PNPM_CMD, ["echo", "%PATH%"], "")).toThrowError(
+          /refusing to run a batch command.*"%PATH%"/s,
+        );
+      } finally {
+        for (const [n, v] of saved) {
+          if (v === undefined) delete process.env[n];
+          else process.env[n] = v;
+        }
+      }
     });
   });
 

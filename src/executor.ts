@@ -247,17 +247,72 @@ function cmdQuote(token: string): string {
 // inside quotes (and `%` can't be caret-escaped on a `/c` line); `%%` is a
 // batch-file-only escape, not a `cmd /c` one.
 //
-// Fix: set TK_PCT=% in the spawned child's env and replace every literal `%`
-// in the line with `%TK_PCT%`. cmd expands `%TK_PCT%` → a single `%` in one
-// pass (the substituted `%` is not re-scanned), reconstructing the literal text
-// exactly once. Because every `%` becomes its own self-contained reference, no
-// two stray `%` can ever pair up — this is immune to the cross-arg-pair case
-// that defeats per-token quoting, and immune to quote state.
-const PCT_ENV_NAME = "TK_PCT";
+// Fix: bind an indirection variable to `%` in the spawned child's env and
+// replace every literal `%` in the line with `%NAME%`. cmd expands `%NAME%` →
+// a single `%` in one pass (the substituted `%` is not re-scanned),
+// reconstructing the literal text exactly once. Because every `%` becomes its
+// own self-contained reference, no two stray `%` can ever pair up — this is
+// immune to the cross-arg-pair case that defeats per-token quoting, and immune
+// to quote state.
+//
+// The variable defaults to TK_PCT. But the parent env may already bind TK_PCT
+// to something other than `%`; rewriting `%`→`%TK_PCT%` would then expand to
+// the user's value and CORRUPT the argument — the exact silent corruption this
+// plan removes. So when TK_PCT is taken we probe TK_PCT_1, TK_PCT_2, … for the
+// first name that is free (unset, or already exactly `%`) in the env the child
+// will actually receive, and use that. Only if every probed name is taken
+// (within PCT_NAME_PROBE_LIMIT — practically never) do we fail closed: the
+// caller surfaces a clear error naming the offending argument and spawns
+// nothing, rather than emitting a corruptible line.
+const PCT_ENV_BASE = "TK_PCT";
 const PCT_ENV_VALUE = "%";
+// 16 probes (TK_PCT plus TK_PCT_1..TK_PCT_15). Reaching this bound means the
+// parent env binds all 16 names to non-`%` values — effectively impossible in
+// practice; the fail-closed branch exists only so we never emit a corruptible
+// line if it somehow happens.
+const PCT_NAME_PROBE_LIMIT = 16;
 
-function neutralizePercent(token: string): string {
-  return token.replace(/%/g, `%${PCT_ENV_NAME}%`);
+// Raised by buildSpawnTarget when a `%`-bearing win32 batch line cannot be
+// safely neutralized because no collision-free indirection variable is
+// available. tk fails closed: it must never spawn a command line cmd.exe would
+// expand. Callers surface the message and exit non-zero (consistent with the
+// ShimRecursionError fail path); nothing is spawned.
+export class PercentNeutralizeError extends Error {
+  constructor(offendingArg: string) {
+    super(
+      `tk: refusing to run a batch command — cannot safely neutralize cmd.exe ` +
+        `%-expansion in argument ${JSON.stringify(offendingArg)} ` +
+        `(no collision-free indirection variable available; ` +
+        `unset TK_PCT or TK_PCT_1..TK_PCT_${PCT_NAME_PROBE_LIMIT - 1})`,
+    );
+    this.name = "PercentNeutralizeError";
+  }
+}
+
+// A name is usable for the rewrite iff the parent env leaves it unset or already
+// binds it to exactly `%` — either way the child ends up with NAME=% (extraEnv
+// wins in mergeSpawnEnv, so even an already-`%` binding is re-asserted and can't
+// be clobbered by merge order). Reads process.env, the same source the spawn
+// inherits from (buildSpawnTarget only sees a PATH string, not the full env).
+function isPctNameFree(name: string): boolean {
+  const existing = process.env[name];
+  return existing === undefined || existing === PCT_ENV_VALUE;
+}
+
+// Pick the first collision-free indirection name: TK_PCT, then TK_PCT_1,
+// TK_PCT_2, … up to the probe limit. Returns undefined when all are taken, which
+// drives the fail-closed branch.
+function pickPctName(): string | undefined {
+  if (isPctNameFree(PCT_ENV_BASE)) return PCT_ENV_BASE;
+  for (let i = 1; i < PCT_NAME_PROBE_LIMIT; i++) {
+    const name = `${PCT_ENV_BASE}_${i}`;
+    if (isPctNameFree(name)) return name;
+  }
+  return undefined;
+}
+
+function neutralizePercent(token: string, pctName: string): string {
+  return token.replace(/%/g, `%${pctName}%`);
 }
 
 // Merge a spawn target's `extraEnv` (currently only TK_PCT=%) over the child
@@ -300,27 +355,30 @@ export function buildSpawnTarget(
     const tokens = [resolved, ...args];
     const hasPercent = tokens.some((t) => t.includes("%"));
 
-    // Collision guard: the indirection is only sound when TK_PCT either is
-    // unset or already equals exactly "%". If the user's env binds TK_PCT to
-    // anything else, rewriting `%`→`%TK_PCT%` would expand to their value and
-    // corrupt the argument — worse than the status quo. In that case refuse the
-    // rewrite and fall back to the pre-existing cmdQuote-only line (no env
-    // injection), which is no worse than the native no-tk path.
-    const existing = process.env[PCT_ENV_NAME];
-    const canIndirect = existing === undefined || existing === PCT_ENV_VALUE;
-
-    if (hasPercent && canIndirect) {
-      const line = tokens.map((t) => cmdQuote(neutralizePercent(t))).join(" ");
+    if (hasPercent) {
+      // Pick a collision-free indirection name. TK_PCT is preferred but the
+      // parent env may already bind it to a non-`%` value; we then fall through
+      // to TK_PCT_1, TK_PCT_2, … The chosen name's binding can't be clobbered by
+      // merge order: extraEnv wins in mergeSpawnEnv.
+      const pctName = pickPctName();
+      if (pctName === undefined) {
+        // Fail closed: no safe name within the probe bound. Never emit the
+        // corruptible cmdQuote-only line cmd.exe would expand — surface a clear
+        // error naming the offending argument and spawn nothing. (The caller
+        // catches this on the same path as ShimRecursionError.)
+        const offending = tokens.find((t) => t.includes("%")) ?? "";
+        throw new PercentNeutralizeError(offending);
+      }
+      const line = tokens.map((t) => cmdQuote(neutralizePercent(t, pctName))).join(" ");
       return {
         file: comspec,
         args: ["/d", "/s", "/c", `"${line}"`],
         windowsVerbatimArguments: true,
-        extraEnv: { [PCT_ENV_NAME]: PCT_ENV_VALUE },
+        extraEnv: { [pctName]: PCT_ENV_VALUE },
       };
     }
 
-    // %-free fast path (and the refused-collision fallback): byte-identical to
-    // the pre-fix line, no env injection.
+    // %-free fast path: byte-identical to the pre-fix line, no env injection.
     const line = tokens.map(cmdQuote).join(" ");
     return {
       file: comspec,
