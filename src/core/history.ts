@@ -60,12 +60,12 @@ function historyDisabled(): boolean {
 // can write the per-project meta exactly then (and never on the hot path again).
 async function appendJsonLine(file: string, line: string): Promise<{ createdDir: boolean }> {
   try {
-    await writeFile(file, line, { encoding: "utf8", flag: "a" });
+    await writeFile(file, line, { encoding: "utf8", flag: "a", mode: 0o600 });
     return { createdDir: false };
   } catch (error) {
     if ((error as NodeJS.ErrnoException).code !== "ENOENT") throw error;
-    await mkdir(path.dirname(file), { recursive: true });
-    await writeFile(file, line, { encoding: "utf8", flag: "a" });
+    await mkdir(path.dirname(file), { recursive: true, mode: 0o700 });
+    await writeFile(file, line, { encoding: "utf8", flag: "a", mode: 0o600 });
     return { createdDir: true };
   }
 }
@@ -164,6 +164,7 @@ async function writeProjectMeta(cwd: string): Promise<void> {
     await writeFile(projectMetaFile(cwd), `${JSON.stringify(meta)}\n`, {
       encoding: "utf8",
       flag: "wx",
+      mode: 0o600,
     });
   } catch {
     // already written or unwritable — display-only, safe to skip

@@ -112,7 +112,7 @@ export async function upsertEntry(
   now: number,
 ): Promise<void> {
   try {
-    await mkdir(dirname(file), { recursive: true });
+    await mkdir(dirname(file), { recursive: true, mode: 0o700 });
   } catch {
     return; // can't even create the dir — fail open
   }
@@ -123,7 +123,7 @@ export async function upsertEntry(
     store.entries[key] = entry;
     prune(store, now);
     const tmp = `${file}.${process.pid}.${(tmpCounter += 1)}.tmp`;
-    await writeFile(tmp, JSON.stringify(store), "utf8");
+    await writeFile(tmp, JSON.stringify(store), { encoding: "utf8", mode: 0o600 });
     await rename(tmp, file);
   } catch {
     // fail-open: leave the store as-is
@@ -150,7 +150,7 @@ function prune(store: Store, now: number): void {
 async function acquireLock(lockPath: string): Promise<(() => Promise<void>) | null> {
   for (let attempt = 0; attempt <= LOCK_RETRIES; attempt += 1) {
     try {
-      const handle = await open(lockPath, "wx");
+      const handle = await open(lockPath, "wx", 0o600);
       return async () => {
         try {
           await handle.close();

@@ -46,10 +46,10 @@ function readCache(): CacheShape {
 function writeCache(cache: CacheShape): void {
   try {
     const file = cacheFile();
-    mkdirSync(tokenKillerHome(), { recursive: true });
+    mkdirSync(tokenKillerHome(), { recursive: true, mode: 0o700 });
     // Write-then-rename so a concurrent reader (or a crash) never sees a torn file.
     const tmp = `${file}.${process.pid}.tmp`;
-    writeFileSync(tmp, JSON.stringify(cache));
+    writeFileSync(tmp, JSON.stringify(cache), { mode: 0o600 });
     renameSync(tmp, file);
   } catch {
     // Best-effort cache: a write failure just means the next call walks again.
