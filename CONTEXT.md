@@ -189,6 +189,15 @@ Full commands, arguments, result text, paths, session ids, and repository names.
 from default output and from telemetry; available only via explicit per-run opt-in.
 _Avoid_: raw data, logs.
 
+**Support bundle**:
+The diagnostic artifact `tk support` assembles to share with whoever a deployment routes
+support to — the machine-state diagnostic (environment, delivery health, the proxied
+command history with its captured output, recent crashes), home directory scrubbed. It carries full
+technical evidence but **never any chat-prompt text**; tk only opens a pre-filled mail
+draft or Teams chat referencing it and never transmits — the user sends by hand, and
+that act is the explicit per-run opt-in [Raw evidence](#evidence-and-recovery) requires.
+_Avoid_: support report (collides with [Report](#reporting-and-telemetry)), crash report.
+
 **Local recovery store**:
 The user-level store of raw evidence and metrics used for recovery and measurement. Never
 counted as provider token savings; never a model-input cache.
