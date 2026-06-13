@@ -136,10 +136,19 @@ export function installCopilotHookConfig(
     writeFileSync(tmpPath, plan.contents);
     try {
       // TOCTOU guard: ownership was checked during planning, but the destination may
-      // have changed since (a concurrent user edit). Before replacing an EXISTING
-      // file, re-confirm it is still ours; if it became unmanaged, abort rather than
-      // clobber it — convert to `skipped-unmanaged` and drop the temp.
-      if (plan.action === "overwrite" && !isManaged(plan.path)) {
+      // have changed since. This one unified check covers BOTH plan actions:
+      //   - `overwrite` planned against our managed file that flipped unmanaged
+      //     (a concurrent user edit) → skip rather than clobber.
+      //   - `create` planned against an absent path, but an unmanaged file appeared
+      //     in the plan→rename window (a concurrent user write) → skip rather than
+      //     clobber. (issue #11 follow-up: the create branch was previously
+      //     unguarded and renamed unconditionally.)
+      // A destination that now exists AND lacks our marker is the user's — never
+      // replace it. The complementary races are intentionally allowed: a managed
+      // file appearing (a racing tk install) proceeds with the rename, consistent
+      // with accepted last-writer-wins semantics between managed owners; and an
+      // `overwrite` target deleted in the window simply renames as a plain create.
+      if (existsSync(plan.path) && !isManaged(plan.path)) {
         rmSync(tmpPath, { force: true });
         return { ...plan, action: "skipped-unmanaged" };
       }

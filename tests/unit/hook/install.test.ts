@@ -237,4 +237,53 @@ describe("atomic write + pre-replace revalidation (issue #11)", () => {
     const leftover = readdirSync(configDir()).filter((f) => f.includes(".tmp"));
     expect(leftover).toEqual([]);
   });
+
+  // Issue #11 follow-up: a stale `create` plan (path absent at planning time) must
+  // also revalidate before renaming. If an UNMANAGED file appeared in the
+  // plan→rename window, the create path previously renamed unconditionally and
+  // clobbered it. It must now abort to `skipped-unmanaged` too.
+  test("a stale create plan does not clobber an unmanaged file that appeared", () => {
+    mkdirSync(configDir(), { recursive: true });
+    const path = copilotHookConfigPath({ project: false, home });
+
+    // Plan made while the path was absent → `create`.
+    const createPlan = planCopilotHookConfig({ project: false, home });
+    expect(createPlan.action).toBe("create");
+
+    // Before the write lands, a user writes their own unmanaged config there.
+    const userBytes = JSON.stringify({ hooks: { PreToolUse: [{ timeout: 99 }] } });
+    writeFileSync(path, userBytes);
+
+    const plan = installCopilotHookConfig({ project: false, home }, createPlan);
+    expect(plan.action).toBe("skipped-unmanaged");
+    // The user's bytes are untouched, and no temp file leaked.
+    expect(readFileSync(path, "utf8")).toBe(userBytes);
+    const leftover = readdirSync(configDir()).filter((f) => f.includes(".tmp"));
+    expect(leftover).toEqual([]);
+  });
+
+  // The complementary create-window race: a MANAGED file appearing (a racing tk
+  // install) is an accepted last-writer-wins case — the rename proceeds.
+  test("a stale create plan proceeds when a managed file appeared (last-writer-wins)", () => {
+    mkdirSync(configDir(), { recursive: true });
+    const path = copilotHookConfigPath({ project: false, home });
+
+    const createPlan = planCopilotHookConfig({ project: false, home });
+    expect(createPlan.action).toBe("create");
+
+    // A racing tk install wrote its own marker-bearing config first.
+    const otherManaged = JSON.stringify({
+      managedBy: "token-killer",
+      hooks: { PreToolUse: [{ type: "command", command: "other", cwd: ".", timeout: 5 }] },
+    });
+    writeFileSync(path, otherManaged);
+
+    const plan = installCopilotHookConfig({ project: false, home }, createPlan);
+    // The rename proceeds (action stays `create`), replacing the other managed file.
+    expect(plan.action).toBe("create");
+    expect(readFileSync(path, "utf8")).toBe(createPlan.contents);
+    expect(readFileSync(path, "utf8")).not.toBe(otherManaged);
+    const leftover = readdirSync(configDir()).filter((f) => f.includes(".tmp"));
+    expect(leftover).toEqual([]);
+  });
 });
