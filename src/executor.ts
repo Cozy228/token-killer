@@ -289,6 +289,34 @@ export class PercentNeutralizeError extends Error {
   }
 }
 
+// cmd.exe's documented hard limit on the command line it parses is 8191
+// characters (Microsoft: "Command prompt (Cmd. exe) command-line string
+// limitation").
+// https://learn.microsoft.com/en-us/troubleshoot/windows-client/shell-experience/command-line-string-limitation
+const CMD_LINE_LIMIT = 8191;
+
+// Raised by buildSpawnTarget when the %-neutralization transform would inflate a
+// batch line past cmd.exe's command-line limit. Each literal `%` expands to
+// `%NAME%` (+ several chars), so a command that fits comfortably under the limit
+// before neutralization can cross it after — cmd would then truncate or reject
+// the line, i.e. tk-induced breakage of a command that runs natively. We fail
+// closed: same pre-spawn synchronous throw as ShimRecursionError /
+// PercentNeutralizeError; nothing is spawned. The guard is scoped to the
+// neutralized path ONLY — a line that is already over-long without tk's rewrite
+// keeps native behavior (cmd's own concern, out of scope).
+export class PercentLineLengthError extends Error {
+  constructor(neutralizedLength: number, originalLength: number) {
+    super(
+      `tk: refusing to run a batch command — neutralizing cmd.exe %-expansion ` +
+        `would inflate the command line to ${neutralizedLength} chars, past ` +
+        `cmd.exe's ${CMD_LINE_LIMIT}-char limit (original ${originalLength} chars; ` +
+        `each literal % expands to %TK_PCT%). Running this %-bearing command ` +
+        `through tk is unsafe; run it directly instead.`,
+    );
+    this.name = "PercentLineLengthError";
+  }
+}
+
 // A name is usable for the rewrite iff the parent env leaves it unset or already
 // binds it to exactly `%` — either way the child ends up with NAME=% (extraEnv
 // wins in mergeSpawnEnv, so even an already-`%` binding is re-asserted and can't
@@ -370,9 +398,33 @@ export function buildSpawnTarget(
         throw new PercentNeutralizeError(offending);
       }
       const line = tokens.map((t) => cmdQuote(neutralizePercent(t, pctName))).join(" ");
+      const cmdArg = `"${line}"`;
+
+      // Length guard (neutralized path only). The %→%NAME% rewrite adds chars per
+      // literal `%`, so a command that fits under cmd.exe's limit before
+      // neutralization can exceed it after — cmd would then truncate/reject the
+      // line, breaking a natively-runnable command. We fail closed before spawn.
+      //
+      // What counts toward cmd.exe's ~8191-char limit: cmd parses the command
+      // line CreateProcess hands it, i.e. the whole `<comspec> /d /s /c "<line>"`
+      // string — the comspec path and the `/d /s /c` switches are part of that
+      // line, not free. We bound the full CreateProcess command line
+      // conservatively (joining argv with single spaces, as Node's
+      // windowsVerbatimArguments spawn does): comspec + " /d /s /c " + cmdArg.
+      // This slightly over-counts versus what cmd strictly re-scans after `/c`
+      // (the safe direction — an optimistic bound that lets a too-long line
+      // through would be the bug). We compare the NEUTRALIZED length; the
+      // pre-neutralization line is computed only for the error message so the
+      // diagnostic shows the inflation.
+      const fullCmdLine = `${comspec} /d /s /c ${cmdArg}`;
+      if (fullCmdLine.length > CMD_LINE_LIMIT) {
+        const preLine = tokens.map(cmdQuote).join(" ");
+        const preFull = `${comspec} /d /s /c "${preLine}"`;
+        throw new PercentLineLengthError(fullCmdLine.length, preFull.length);
+      }
       return {
         file: comspec,
-        args: ["/d", "/s", "/c", `"${line}"`],
+        args: ["/d", "/s", "/c", cmdArg],
         windowsVerbatimArguments: true,
         extraEnv: { [pctName]: PCT_ENV_VALUE },
       };

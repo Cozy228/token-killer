@@ -233,6 +233,82 @@ describe("buildSpawnTarget (win32 .cmd/.bat %-expansion)", () => {
     });
   });
 
+  // ─── Length guard: % neutralization must not inflate the line past cmd.exe's
+  // 8191-char command-line limit (Codex 5.5 / Fable 5 follow-up BLOCK) ───
+  //
+  // cmd.exe's limit applies to the full `<comspec> /d /s /c "<line>"` command
+  // line. With a short comspec ("cmd.exe") the wrapper overhead is
+  // `cmd.exe /d /s /c "…"` = 16 chars around the line. Each literal `%` becomes
+  // `%TK_PCT%` (8 chars), i.e. +7 per `%`. The tests below force ComSpec to a
+  // fixed value so the arithmetic is deterministic regardless of the host.
+
+  test("fail closed: a %-dense line that FITS before neutralization but EXCEEDS after → refused", () => {
+    withPlatform("win32", () => {
+      withEnv("ComSpec", "cmd.exe", () => {
+        withEnv("TK_PCT", undefined, () => {
+          // 1100 literal % → neutralized adds 1100*7 = 7700 chars. The pre-
+          // neutralization full line (cmd.exe /d /s /c "<path> <1100 %>", with the
+          // %-token cmd-quoted) is ~1160 chars — comfortably under 8191 — but the
+          // neutralized full line is ~8860, over the limit. tk must refuse, not
+          // spawn a line cmd.exe would truncate.
+          const arg = "%".repeat(1100);
+          expect(() => buildSpawnTarget(PNPM_CMD, [arg], "")).toThrowError(
+            /refusing to run a batch command.*8191-char limit/s,
+          );
+          // Regression guard: the pre-neutralization line really is under the
+          // limit, so the refusal is caused by tk's transform, not by an
+          // already-over-long input.
+          const preLine = `cmd.exe /d /s /c "${PNPM_CMD} "${arg}""`;
+          expect(preLine.length).toBeLessThanOrEqual(8191);
+        });
+      });
+    });
+  });
+
+  test("out of scope: a same-length %-FREE line is NOT guarded — spawn target built unchanged (native behavior)", () => {
+    withPlatform("win32", () => {
+      withEnv("ComSpec", "cmd.exe", () => {
+        withEnv("TK_PCT", undefined, () => {
+          // A %-free arg of the SAME length as the refused %-dense one. There is
+          // no neutralization (hasPercent is false), so the guard never applies:
+          // an over-long line without tk's rewrite is cmd's own concern, not a
+          // tk-induced breakage. The line is built and returned as today.
+          const arg = "a".repeat(1100);
+          const target = buildSpawnTarget(PNPM_CMD, [arg], "");
+          expect(target.file).toBe("cmd.exe");
+          expect(target.args).toEqual(["/d", "/s", "/c", `"${PNPM_CMD} ${arg}"`]);
+          expect(target.extraEnv).toBeUndefined();
+        });
+      });
+    });
+  });
+
+  test("boundary: a %-dense line just UNDER the limit after neutralization is allowed", () => {
+    withPlatform("win32", () => {
+      withEnv("ComSpec", "cmd.exe", () => {
+        withEnv("TK_PCT", undefined, () => {
+          // Construct the single token so the neutralized full command line lands
+          // exactly at the 8191 limit (<= is allowed). The token is a quoted
+          // %-only arg: cmdQuote wraps it because of the % metacharacters.
+          //   fullLine = `cmd.exe /d /s /c "<PNPM_CMD> "<n*%TK_PCT%>""`
+          // Solve for n: fixed overhead = prefix + PNPM_CMD + quoting, each %
+          // contributes 8 chars (%TK_PCT%).
+          const PREFIX = `cmd.exe /d /s /c "${PNPM_CMD} "`; // up to the opening quote of the arg token
+          const SUFFIX = `""`; // closing quote of the arg token + closing wrapper quote
+          const fixed = PREFIX.length + SUFFIX.length;
+          const n = Math.floor((8191 - fixed) / 8); // each % → %TK_PCT% (8 chars)
+          const arg = "%".repeat(n);
+          const target = buildSpawnTarget(PNPM_CMD, [arg], "");
+          // Built (not thrown) and exactly at-or-under the limit.
+          const fullLine = `cmd.exe /d /s /c ${target.args[3]}`;
+          expect(fullLine.length).toBeLessThanOrEqual(8191);
+          expect(8191 - fullLine.length).toBeLessThan(8); // genuinely a boundary, < one more %
+          expect(target.extraEnv).toEqual({ TK_PCT: "%" });
+        });
+      });
+    });
+  });
+
   test("non-batch win32 target (.exe) is unaffected — spawns directly, no cmd, no rewrite", () => {
     withPlatform("win32", () => {
       withEnv("TK_PCT", undefined, () => {
