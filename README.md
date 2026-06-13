@@ -61,7 +61,7 @@ cd token-killer
 pnpm install && pnpm build
 pnpm setup            # one-time: configures pnpm's global bin dir on PATH
 # reload your shell first run only: `source ~/.zshrc` (or ~/.bashrc), or open a new terminal
-pnpm link --global    # puts `tk` on your PATH
+pnpm add -g .         # puts `tk` on your PATH
 ```
 
 Then `tk install` auto-detects your agent and picks the highest delivery tier it
