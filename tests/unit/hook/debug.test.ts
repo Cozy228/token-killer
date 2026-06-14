@@ -5,9 +5,11 @@ import { join } from "node:path";
 
 import {
   debugLogPath,
+  emitSupportHintOnce,
   errorLogPath,
   logFatalError,
   recordHookError,
+  resetSupportHintForTest,
   tkDebug,
   tkDebugEnabled,
 } from "../../../src/hook/debug.js";
@@ -19,6 +21,7 @@ const originalHome = process.env.TOKEN_KILLER_HOME;
 
 beforeEach(() => {
   writes = [];
+  resetSupportHintForTest();
   dataHome = mkdtempSync(join(tmpdir(), "tk-debug-home-"));
   process.env.TOKEN_KILLER_HOME = dataHome;
   vi.spyOn(process.stderr, "write").mockImplementation((chunk: string | Uint8Array) => {
@@ -135,5 +138,33 @@ describe("recordHookError — UNGATED fail-open breadcrumb", () => {
     expect(writes.join("")).toContain("boom");
     // and still persisted regardless of the stderr copy
     expect(readFileSync(errorLogPath(), "utf8")).toContain("tk hook-error: copilot: stdin parse");
+  });
+});
+
+describe("emitSupportHintOnce — nudge toward `tk support` on tk's OWN errors", () => {
+  const HINT = "Run `tk support`";
+
+  test("writes the hint to stderr exactly once per process (collapses a burst)", () => {
+    emitSupportHintOnce();
+    emitSupportHintOnce();
+    emitSupportHintOnce();
+    expect(writes.filter((w) => w.includes(HINT))).toHaveLength(1);
+  });
+
+  test("fires from logFatalError (a fatal crash is always tk's own error)", () => {
+    logFatalError("tk hook copilot", new Error("boom"));
+    expect(writes.join("")).toContain(HINT);
+    // The hint goes to stderr only — never into the clean machine log.
+    expect(readFileSync(errorLogPath(), "utf8")).not.toContain(HINT);
+  });
+
+  test("fires from recordHookError when surfaceStderr is set (copilot)", () => {
+    recordHookError("copilot: stdin parse", new Error("boom"), { surfaceStderr: true });
+    expect(writes.join("")).toContain(HINT);
+  });
+
+  test("does NOT fire from a plain recordHookError (claude stays silent by design)", () => {
+    recordHookError("claude: stdin parse", new Error("boom"));
+    expect(writes.join("")).not.toContain(HINT);
   });
 });

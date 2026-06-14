@@ -1,6 +1,7 @@
 import { existsSync } from "node:fs";
 import { delimiter } from "node:path";
 
+import { emitSupportHintOnce } from "../hook/debug.js";
 import { VERSION } from "../version.js";
 import {
   defaultRcPath,
@@ -89,6 +90,7 @@ export function installShim(opts: InstallShimOptions = {}): ProbeResult {
       log(`  shell RC patched: ${rcPath}`);
     } catch (error) {
       err(`  shell RC patch failed (${rcPath}): ${(error as Error).message}`);
+      emitSupportHintOnce();
     }
   }
 
@@ -105,6 +107,7 @@ export function installShim(opts: InstallShimOptions = {}): ProbeResult {
       err(
         `    "terminal.integrated.env.*": { "TK_SHIM_DIR": "${dir}", "TK_COMPRESS_TTY": "1", "PATH": "${dir}${delimiter}\${env:PATH}" }`,
       );
+      emitSupportHintOnce();
     }
   }
 

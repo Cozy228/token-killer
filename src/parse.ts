@@ -79,6 +79,7 @@ const RESERVED_SUBCOMMANDS = new Set<ParsedArgv["mode"]>([
   "gain",
   "config",
   "telemetry",
+  "support",
 ]);
 
 export function parseArgv(argv: string[]): ParsedArgv {

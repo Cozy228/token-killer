@@ -89,7 +89,8 @@ export type ParseMode =
   | "optimize"
   | "gain"
   | "config"
-  | "telemetry";
+  | "telemetry"
+  | "support";
 
 export type ParsedArgv = {
   mode: ParseMode;

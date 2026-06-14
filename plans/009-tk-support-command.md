@@ -225,7 +225,13 @@ error write), and in `src/shim/cli.ts` after each `installShim` `err(...)` failu
 once-guard collapses multiple failures to a single hint). Stderr only — never stdout,
 never `errors.log` (keep it a clean machine log).
 
-**Verify**: `echo 'not json' | pnpm dev hook copilot` → exit 0, hint on stderr.
+**Verify**: the hint fires from a GENUINE tk error — e.g. a fatal crash routed through
+`logFatalError`, a surfaced hook error (`recordHookError(..., {surfaceStderr:true})`),
+or a shim install failure — and is verified by unit tests at those sinks (Step 6).
+**NOT** from a malformed hook payload: `normalizeStdin` is fail-open and NEVER throws
+(invalid/empty JSON → `unknown` event → allow), so `echo 'not json' | pnpm dev hook
+copilot` exits 0 **silently with no hint** by the fail-open contract (CONTEXT.md /
+DESIGN §3.6). See "Deviation B" below.
 
 ### Step 6 — Tests (`tests/unit/support/`)
 - `send.test.ts` — destination precedence (override > env; **`undefined` when unset**, no
@@ -261,8 +267,11 @@ Machine-checkable. ALL must hold:
       the env address; `TK_SUPPORT_TEAMS=… … support teams -y` prints the `msteams:` deep
       link + saved bundle path + clipboard note. With NO env, `… support email -y` saves the
       bundle + copies the clipboard + prints the "set `TK_SUPPORT_*`" hint and sends nothing.
-- [ ] A surfaced hook error (`echo 'not json' | pnpm dev hook copilot`) prints the
-      `↳ Run \`tk support\`…` hint on stderr and still exits 0.
+- [ ] The `↳ Run \`tk support\`…` hint fires once from each GENUINE tk-error sink
+      (`logFatalError`; `recordHookError(..., {surfaceStderr:true})`; shim install
+      failure) and is deduped within a process — verified by unit tests + injection-site
+      inspection. (Superseded — see Deviation B: a malformed hook payload is fail-open
+      SILENT, not an error, so it intentionally emits no hint.)
 - [ ] The hint never appears on a wrapped tool's own failure (e.g. a shimmed `git`
       command exiting non-zero) — verified by inspection of the injection sites.
 - [ ] `pnpm build && bash tests/smoke/smoke.sh` passes; support is lazily imported (not
@@ -280,6 +289,21 @@ Stop and report (do not improvise) if:
   pure local I/O + best-effort spawns) — report rather than work around.
 - A baked-in default address reappears anywhere — there must be NONE (ADR 0011); routing is
   env-only. If a default seems necessary, stop and report rather than inventing one.
+
+## Deviations from plan (recorded at review, 2026-06-14)
+
+- **A (accepted)** — `vitest.config.ts` registers `tests/unit/support/**/*.test.ts` in
+  the product `include` allowlist. Not listed in Scope, but a mechanically necessary
+  one-line change: the new test dir is invisible to the product suite otherwise.
+- **B (resolved by correcting this plan, not the code)** — the original Step 5 Verify
+  and Done criterion required `echo 'not json' | tk hook copilot` to print the hint on
+  stderr. That criterion is **unreachable by design**: `normalizeStdin` is fail-open and
+  never throws (CONTEXT.md / DESIGN §3.6) — invalid/empty JSON yields an `unknown` event
+  that routes to `allow`, so the command exits 0 **silently with no hint**. Forcing a
+  hint there would require breaking the never-throw/silent-on-malformed-payload contract
+  on the per-tool-call hot path. The hint's real triggers are genuine tk errors
+  (`logFatalError`, `recordHookError({surfaceStderr:true})`, shim install failure),
+  covered by unit tests at those sinks. The criterion above was rewritten to match.
 
 ## Maintenance notes
 

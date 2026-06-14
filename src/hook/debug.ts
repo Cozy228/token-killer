@@ -114,6 +114,28 @@ export function logFatalError(context: string, error: unknown): void {
   } catch {
     // a logging failure must never replace the original error
   }
+  // A fatal crash is always tk's OWN error — nudge the user toward `tk support`.
+  emitSupportHintOnce();
+}
+
+// One-shot stderr nudge toward `tk support`, emitted only from tk's OWN error sinks
+// (fatal crash, surfaced hook error, shim install failure) — never on a wrapped
+// tool's own failure (the fail-open contract). The once-guard collapses a burst of
+// errors in a single process to a single hint. Stderr ONLY: never stdout (the host's
+// protocol channel) and never errors.log (which stays a clean machine log).
+let supportHinted = false;
+const SUPPORT_HINT = "↳ Run `tk support` to send this error + recent logs to the maintainer.";
+export function emitSupportHintOnce(): void {
+  if (supportHinted) return;
+  supportHinted = true;
+  try {
+    process.stderr.write(`${SUPPORT_HINT}\n`);
+  } catch {
+    /* never break a fail-open path on a diagnostic write */
+  }
+}
+export function resetSupportHintForTest(): void {
+  supportHinted = false;
 }
 
 // Record a hook ANOMALY that was handled FAIL-OPEN (the tool still ran) —
@@ -136,6 +158,9 @@ export function recordHookError(
     const line = `${timestamp()} tk hook-error: ${context}: ${detail}\n`;
     if (opts.surfaceStderr) process.stderr.write(line);
     appendErrorLog(line);
+    // Only nudge toward `tk support` when this error is being surfaced to the user
+    // (copilot's stderr channel). A silently-handled hook error (claude) stays quiet.
+    if (opts.surfaceStderr) emitSupportHintOnce();
   } catch {
     /* a fail-open hook must never break on its own diagnostics */
   }

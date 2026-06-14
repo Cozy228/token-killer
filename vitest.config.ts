@@ -43,6 +43,7 @@ export default defineConfig({
       "tests/unit/executor.test.ts",
       "tests/unit/shim/**/*.test.ts",
       "tests/unit/hook/**/*.test.ts",
+      "tests/unit/support/**/*.test.ts",
       "tests/unit/inspect/**/*.test.ts",
       "tests/unit/debug/**/*.test.ts",
       "tests/unit/context/**/*.test.ts",

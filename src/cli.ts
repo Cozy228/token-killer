@@ -27,7 +27,7 @@ import { executePassthrough } from "./executor.js";
 import { gateDecision } from "./shim/gate.js";
 import { isInteractive } from "./shim/interactive.js";
 import { isShimmableProgram } from "./shim/programs.js";
-import { tkDebug, logFatalError } from "./hook/debug.js";
+import { tkDebug, logFatalError, emitSupportHintOnce } from "./hook/debug.js";
 import { runPipeline } from "./core/pipeline.js";
 import { recordHistory, recordRawLitePassthrough } from "./core/history.js";
 import { calculateSavings } from "./core/savings.js";
@@ -64,6 +64,7 @@ function help(): string {
     "  gain        Show measured token savings (opens an HTML report)",
     "  config      Manage the tk config file",
     "  telemetry   Opt-in, anonymous network telemetry controls",
+    "  support     Send a diagnostic report (recent error + logs) to the maintainer",
     "",
     "Run `tk <command> --help`-style usage is summarized below.",
     "",
@@ -166,6 +167,14 @@ function help(): string {
     "  status     Show consent state and anonymous device id (no network check)",
     "  preview    Print the exact payload that would be sent (sends nothing)",
     "",
+    "tk support [email|teams] [--email <addr>] [--teams <upn>] [--no-attach] [--redact] [-y]",
+    "  Gather the recent error + logs into one shareable report and open your mail",
+    "  client (mailto:) or Microsoft Teams (msteams: scheme) to send it. Nothing is",
+    "  sent automatically — you review and send by hand; the report is saved under",
+    "  ~/.token-killer/reports/. Routing is env-only: set TK_SUPPORT_EMAIL or",
+    "  TK_SUPPORT_TEAMS (an in-tenant UPN). With neither set, tk saves the bundle and",
+    "  copies it to your clipboard, then prints a hint — it sends nowhere.",
+    "",
     "Flags for `tk <command...>` (the compression proxy):",
     "  --raw                 Print raw stdout/stderr (no compression)",
     "  --stats               Append a token-savings summary (and the saved raw-output path)",
@@ -248,6 +257,9 @@ async function main(): Promise<number> {
   }
   if (parsed.mode === "telemetry") {
     return (await import("./telemetry/cli.js")).runTelemetry(parsed.subArgs ?? []);
+  }
+  if (parsed.mode === "support") {
+    return (await import("./support/cli.js")).runSupport(parsed.subArgs ?? []);
   }
   if (!parsed.command) {
     // Bare `tk` (or flags with no command to run) has nothing to execute — print
@@ -453,8 +465,10 @@ async function failOpenPassthrough(command: ParsedCommand, error: unknown): Prom
   } catch {
     // Passthrough is also impossible (e.g. the real tool only exists inside the
     // shim dir — true recursion). Surface the original error and exit non-zero
-    // with a deterministic code, never an unhandled rejection.
+    // with a deterministic code, never an unhandled rejection. This is tk's OWN
+    // failure (the wrapped tool never ran), so nudge toward `tk support`.
     process.stderr.write(`${error instanceof Error ? error.message : String(error)}\n`);
+    emitSupportHintOnce();
     return 1;
   }
 }

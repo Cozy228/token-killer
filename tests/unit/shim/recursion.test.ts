@@ -98,5 +98,8 @@ describe("recursion guard e2e", () => {
     expect(result.signal).toBeNull();
     expect(result.status).toBe(1);
     expect(result.stderr).toContain("shim dir");
+    // failOpenPassthrough is one of tk's OWN error sinks → it nudges toward `tk support`
+    // (constraint 4). This is the only reachable runtime trigger for that call site.
+    expect(result.stderr).toContain("Run `tk support`");
   });
 });
