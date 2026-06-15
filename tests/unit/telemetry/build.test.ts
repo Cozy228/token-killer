@@ -138,6 +138,9 @@ describe("buildTelemetry — allow-list is physically enforced (§8)", () => {
     expect(json).not.toContain("/Users/alice");
     expect(json).not.toContain("secret-project");
     expect(json).not.toContain("beadfacefeed");
-    expect(build(sensitive).top_commands).toEqual(["deploy"]);
+    // `deploy` is not a member of the closed program vocabulary (issue #10), so the
+    // program slot degrades it to "other" — the safe direction; no user content reaches
+    // the wire either way.
+    expect(build(sensitive).top_commands).toEqual(["other"]);
   });
 });
