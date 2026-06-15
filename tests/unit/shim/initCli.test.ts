@@ -148,11 +148,23 @@ const uninstall = (argv: string[], env?: NodeJS.ProcessEnv, cwd?: string) =>
   callDirect(runUninstall, argv, env, cwd);
 const status = (env?: NodeJS.ProcessEnv) => callDirect(runStatus, [], env);
 
+const savedInitEnv: Record<string, string | undefined> = {};
 beforeEach(() => {
   home = mkdtempSync(join(tmpdir(), "tk-init-"));
+  // Some test bodies call vscodeUserDir()/vscodeSettingsPath() directly (to read back
+  // what `tk install` wrote). On Windows those resolve via APPDATA (and homedir() via
+  // USERPROFILE), so sandbox both in the test process too — otherwise the test reads
+  // the real profile while the in-process install wrote the sandbox.
+  for (const k of ["USERPROFILE", "APPDATA"]) savedInitEnv[k] = process.env[k];
+  process.env.USERPROFILE = home;
+  process.env.APPDATA = join(home, "AppData", "Roaming");
 });
 afterEach(() => {
   rmSync(home, { recursive: true, force: true });
+  for (const [k, v] of Object.entries(savedInitEnv)) {
+    if (v === undefined) delete process.env[k];
+    else process.env[k] = v;
+  }
 });
 
 describe("tk install", () => {
