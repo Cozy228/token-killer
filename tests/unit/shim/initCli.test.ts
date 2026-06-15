@@ -499,11 +499,11 @@ describe("tk uninstall", () => {
 
 describe("tk status", () => {
   // BOUNDARY: proves the real `tk status` binary dispatches to runStatus, exits 0,
-  // and writes no install artifact.
+  // and writes no install artifact while refreshing delivery-state bookkeeping.
   // ADR 0012 #7: status renders a per-host capability MATRIX (replacing the old
   // ad-hoc per-tier lines). Assert on the matrix's stable labels plus the shim
   // detail panel, tolerant of the new layout.
-  test("reports the detected host and the capability matrix; writes nothing (CLI boundary)", () => {
+  test("reports the detected host and matrix without changing installation (CLI boundary)", () => {
     const result = runTg(["status"], { PATH: "/usr/bin:/bin", TERM_PROGRAM: "" });
     expect(result.status).toBe(0);
     expect(result.stdout).toContain("Detected host:");
@@ -525,7 +525,7 @@ describe("tk status", () => {
 
   // The persisted delivery state lets status report what `tk install` chose even
   // for tiers a live probe can't fully confirm. Install records it; status reads it
-  // back and refreshes lastVerified (best-effort, never breaking read-only status).
+  // back and refreshes lastVerified (best-effort, never breaking status).
   test("status reflects the persisted delivery state written by install", () => {
     install(["--host", "copilot-cli"]);
     expect(existsSync(join(home, ".token-killer", "delivery-state.json"))).toBe(true);

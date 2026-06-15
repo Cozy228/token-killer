@@ -63,8 +63,8 @@ function injectionTarget(host: Host): string {
 }
 
 // ---------------------------------------------------------------------------
-// tk status — read-only. Reports host / tier signals; mutates nothing (the shim
-// status probe only resolves a binary on PATH, it writes no files).
+// tk status — installation-safe. Reports host / tier signals without installing
+// or repairing hooks/shims, then refreshes the delivery verification timestamp.
 // ---------------------------------------------------------------------------
 
 export function runStatus(_argv: string[] = []): number {
@@ -80,7 +80,7 @@ export function runStatus(_argv: string[] = []): number {
   // state file, so the rendered "last verified" reflects THIS run, not the previous
   // run's stale value (the old order rendered first, wrote after, and only the next
   // status run saw the prior timestamp). Best-effort: a write failure never breaks
-  // read-only status, and the matrix then simply shows the last successfully-written
+  // status, and the matrix then simply shows the last successfully-written
   // value.
   updateDeliveryState({ lastVerified: new Date().toISOString() });
 

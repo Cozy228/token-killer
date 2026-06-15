@@ -1,5 +1,13 @@
 import { afterEach, beforeEach, describe, expect, test, vi } from "vitest";
-import { existsSync, mkdtempSync, readFileSync, rmSync } from "node:fs";
+import {
+  chmodSync,
+  existsSync,
+  mkdtempSync,
+  readFileSync,
+  rmSync,
+  statSync,
+  writeFileSync,
+} from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
@@ -89,6 +97,27 @@ describe("tkDebug — gated by TK_DEBUG", () => {
     expect(lines[0]).toMatch(/^\d{4}-\d{2}-\d{2}T.*Z tk debug: claude:stdin bytes=90$/);
     expect(lines[1]).toContain("tk debug: claude:emit rewrote=true");
   });
+
+  test.runIf(process.platform !== "win32")(
+    "creates and repairs diagnostic logs with owner-only permissions",
+    () => {
+      const debugPath = debugLogPath();
+      const errorPath = errorLogPath();
+      chmodSync(dataHome, 0o755);
+      writeFileSync(debugPath, "old debug\n", { mode: 0o644 });
+      writeFileSync(errorPath, "old error\n", { mode: 0o644 });
+      chmodSync(debugPath, 0o644);
+      chmodSync(errorPath, 0o644);
+
+      process.env.TK_DEBUG = "1";
+      tkDebug("permissions");
+      recordHookError("permissions", new Error("test"));
+
+      expect(statSync(dataHome).mode & 0o777).toBe(0o700);
+      expect(statSync(debugPath).mode & 0o777).toBe(0o600);
+      expect(statSync(errorPath).mode & 0o777).toBe(0o600);
+    },
+  );
 });
 
 describe("logFatalError — UNGATED crash breadcrumb", () => {

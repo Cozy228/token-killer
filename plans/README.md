@@ -30,14 +30,14 @@ row when done.
 
 | Plan | Title | Priority | Effort | Depends on | Issue | Status |
 |------|-------|----------|--------|------------|-------|--------|
-| 001  | Add GitHub Actions CI running the existing gates | P1 | S | — | [#4](https://github.com/Cozy228/token-killer/issues/4) | TODO |
-| 002  | Emit compressed output before accounting writes | P1 | M | 001 (soft) | [#5](https://github.com/Cozy228/token-killer/issues/5) | TODO |
-| 003  | Restrict metrics-store permissions to 0700/0600 | P1 | S | — | [#6](https://github.com/Cozy228/token-killer/issues/6) | TODO |
-| 004  | Docs truth sweep (README/Codex, DESIGN.md, dead `--no-dedup`, TELEMETRY price table) | P2 | S | — | [#7](https://github.com/Cozy228/token-killer/issues/7) | TODO |
-| 005  | Neutralize cmd.exe `%`-expansion for `.cmd`/`.bat` spawns | P2 | M | 001 (soft) | [#8](https://github.com/Cozy228/token-killer/issues/8) | TODO |
-| 006  | Truncation-safe multibyte decode at the 64MB capture cap | P3 | S | — | [#9](https://github.com/Cozy228/token-killer/issues/9) | TODO |
-| 007  | Telemetry stems: closed subcommand vocabulary (stop user-content transmission) | P1 | S | — | [#10](https://github.com/Cozy228/token-killer/issues/10) | TODO |
-| 008  | Refuse to overwrite an unmanaged copilot hook config on install | P2 | S | — | [#11](https://github.com/Cozy228/token-killer/issues/11) | TODO |
+| 001  | Add GitHub Actions CI running the existing gates | P1 | S | — | [#4](https://github.com/Cozy228/token-killer/issues/4) | DONE |
+| 002  | Emit compressed output before accounting writes | P1 | M | 001 (soft) | [#5](https://github.com/Cozy228/token-killer/issues/5) | DONE |
+| 003  | Restrict metrics-store permissions to 0700/0600 | P1 | S | — | [#6](https://github.com/Cozy228/token-killer/issues/6) | DONE |
+| 004  | Docs truth sweep (README/Codex, DESIGN.md, dead `--no-dedup`, TELEMETRY price table) | P2 | S | — | [#7](https://github.com/Cozy228/token-killer/issues/7) | DONE |
+| 005  | Neutralize cmd.exe `%`-expansion for `.cmd`/`.bat` spawns | P2 | M | 001 (soft) | [#8](https://github.com/Cozy228/token-killer/issues/8) | BLOCKED (real `.cmd` E2E awaits Windows CI) |
+| 006  | Truncation-safe multibyte decode at the 64MB capture cap | P3 | S | — | [#9](https://github.com/Cozy228/token-killer/issues/9) | DONE |
+| 007  | Telemetry stems: closed subcommand vocabulary (stop user-content transmission) | P1 | S | — | [#10](https://github.com/Cozy228/token-killer/issues/10) | DONE |
+| 008  | Refuse to overwrite an unmanaged copilot hook config on install | P2 | S | — | [#11](https://github.com/Cozy228/token-killer/issues/11) | DONE |
 | 009  | Add `tk support` — email/Teams report with auto-attached error + logs | P2 | M | — | [#12](https://github.com/Cozy228/token-killer/issues/12) | DONE (see Deviations A/B in plan) |
 | 010  | Spike — package tk as a GitHub Agent Plugin (Copilot CLI + VS Code distribution) | P3 | M | — | — | TODO |
 | 011  | Create reports/ dir + HTML reports owner-only (0700/0600) | P2 | S | — | [#13](https://github.com/Cozy228/token-killer/issues/13) | DONE |

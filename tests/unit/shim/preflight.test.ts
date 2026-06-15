@@ -8,6 +8,7 @@ import {
   parsePwshVersion,
   probeHostVersion,
   renderPreflight,
+  runPreflightCommand,
   type PreflightCheck,
   type PreflightDeps,
   type ProtocolProbeResult,
@@ -57,6 +58,26 @@ function find(checks: PreflightCheck[], name: string): PreflightCheck {
   if (!c) throw new Error(`no check named ${name}: ${checks.map((x) => x.name).join(", ")}`);
   return c;
 }
+
+describe("runPreflightCommand", () => {
+  test("treats a non-zero exit as failed even when it prints version-like output", () => {
+    const result = runPreflightCommand(process.execPath, [
+      "-e",
+      "process.stdout.write('Fake CLI 9.9.9'); process.exit(7)",
+    ]);
+
+    expect(result).toEqual({ ok: false, stdout: "Fake CLI 9.9.9" });
+  });
+
+  test("treats a zero exit as successful", () => {
+    const result = runPreflightCommand(process.execPath, [
+      "-e",
+      "process.stderr.write('Fake CLI 1.2.3')",
+    ]);
+
+    expect(result).toEqual({ ok: true, stdout: "Fake CLI 1.2.3" });
+  });
+});
 
 describe("parsePwshVersion", () => {
   test("7.4.1 → atLeast7 ok, major 7", () => {

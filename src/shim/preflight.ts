@@ -59,7 +59,7 @@ export type PreflightDeps = {
 
 // Wrap spawnSync so a missing binary / ENOENT / signal NEVER throws — the whole
 // point of preflight is to report absence, not crash status.
-function defaultRun(cmd: string, args: string[]): RunResult {
+export function runPreflightCommand(cmd: string, args: string[]): RunResult {
   try {
     const r = spawnSync(cmd, args, { encoding: "utf8", timeout: 5000 });
     if (r.error || r.status === null) {
@@ -69,7 +69,7 @@ function defaultRun(cmd: string, args: string[]): RunResult {
     }
     // Some tools print version info to stderr; fold both, prefer stdout.
     const out = ((r.stdout ?? "").trim() || (r.stderr ?? "").trim()).trim();
-    return { ok: true, stdout: out };
+    return { ok: r.status === 0, stdout: out };
   } catch {
     return { ok: false, stdout: "" };
   }
@@ -138,7 +138,7 @@ export function defaultProtocolProbe(): ProtocolProbeResult {
 
 export function defaultPreflightDeps(): PreflightDeps {
   return {
-    run: defaultRun,
+    run: runPreflightCommand,
     which: (program) => defaultWhich(program),
     existsSync: fsExistsSync,
     env: process.env,
@@ -187,7 +187,10 @@ export function parsePwshVersion(raw: string): PwshVersion {
 // no CLI version probe (unknown) all degrade to `undefined` (honest "not recorded"),
 // never the wrong tool's version. Install-time only (one shot), so the spawn cost is off
 // the hot path. Total; never throws.
-export function probeHostVersion(host: Host, run: Runner = defaultRun): string | undefined {
+export function probeHostVersion(
+  host: Host,
+  run: Runner = runPreflightCommand,
+): string | undefined {
   const spec: Partial<Record<Host, { cmd: string; args: string[] }>> = {
     "copilot-cli": { cmd: "copilot", args: ["--version"] },
     "claude-code": { cmd: "claude", args: ["--version"] },

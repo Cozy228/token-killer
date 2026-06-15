@@ -767,6 +767,8 @@ describe("Error Handling", () => {
     expect(result.status).toBe(0);
     expect(result.stdout).toContain("tk — Token Killer");
     expect(result.stdout).toContain("Commands:");
+    expect(result.stdout).toContain("refresh the delivery verification timestamp");
+    expect(result.stdout).not.toContain("Read-only — writes nothing");
   });
 
   test("preserves original command exit code", () => {

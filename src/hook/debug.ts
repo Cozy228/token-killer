@@ -17,7 +17,7 @@
 // — debug noise must never pollute the accounting. Total: neither the format nor
 // the file append ever throws, so debug output can never break a fail-open hook.
 
-import { appendFileSync, mkdirSync } from "node:fs";
+import { appendFileSync, chmodSync, mkdirSync } from "node:fs";
 import { dirname, join } from "node:path";
 
 import { tokenKillerHome } from "../core/dataDir.js";
@@ -44,14 +44,20 @@ function formatValue(v: unknown): string {
 
 // Best-effort append to the debug log; swallow every error (a missing dir, a
 // read-only FS — none of it may break the hook).
-function appendToLog(line: string): void {
+function appendPrivateLog(path: string, line: string): void {
   try {
-    const path = debugLogPath();
-    mkdirSync(dirname(path), { recursive: true });
-    appendFileSync(path, line);
+    const dir = dirname(path);
+    mkdirSync(dir, { recursive: true, mode: 0o700 });
+    chmodSync(dir, 0o700);
+    appendFileSync(path, line, { mode: 0o600 });
+    chmodSync(path, 0o600);
   } catch {
-    /* the stderr copy already carried the diagnostic */
+    /* best-effort */
   }
+}
+
+function appendToLog(line: string): void {
+  appendPrivateLog(debugLogPath(), line);
 }
 
 // Emit one diagnostic line when TK_DEBUG is set; no-op otherwise. `undefined`
@@ -89,13 +95,7 @@ export function errorLogPath(): string {
 // Best-effort append to errors.log; swallow every error (a logging failure must
 // never replace or compound the real error).
 function appendErrorLog(line: string): void {
-  try {
-    const path = errorLogPath();
-    mkdirSync(dirname(path), { recursive: true });
-    appendFileSync(path, line);
-  } catch {
-    /* best-effort */
-  }
+  appendPrivateLog(errorLogPath(), line);
 }
 
 // Record a FATAL tk error UNCONDITIONALLY — unlike tkDebug, this is NOT gated on

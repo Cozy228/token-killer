@@ -69,6 +69,32 @@ describe("executeCommand", () => {
     expect(result.stderr).toContain("command not found");
   });
 
+  test.runIf(process.platform === "win32")(
+    "round-trips literal percent arguments through a real .cmd target",
+    async () => {
+      const dir = mkdtempSync(join(tmpdir(), "tk-percent-e2e-"));
+      const script = join(dir, "print-args.mjs");
+      const batch = join(dir, "print-args.cmd");
+      const args = ["%PATH%", "100%", "a%b", "c%d"];
+      try {
+        writeFileSync(script, "process.stdout.write(JSON.stringify(process.argv.slice(2)));\n");
+        writeFileSync(batch, `@echo off\r\n"${process.execPath}" "${script}" %*\r\n`);
+
+        const result = await executeCommand({
+          program: batch,
+          args,
+          original: [batch, ...args],
+          displayCommand: `${batch} ${args.join(" ")}`,
+        });
+
+        expect(result.exitCode).toBe(0);
+        expect(JSON.parse(result.stdout)).toEqual(args);
+      } finally {
+        rmSync(dir, { recursive: true, force: true });
+      }
+    },
+  );
+
   // POSIX-only: signal numbering (128 + signo) is a Unix concept. On Windows there
   // are no real signals — `process.kill(pid, 'SIGTERM')` maps to TerminateProcess,
   // so the child exits with a plain code, not a 143 signal death. Guarded like the

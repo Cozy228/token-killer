@@ -72,9 +72,9 @@ surface even when rows contain it.
 **Estimated savings**
 - `estimated_savings_usd_30d` — `tokens_saved_30d / 1e6 × price`. Price from the shared
   `src/core/pricing.ts`: default **$3 / Mtok** (Claude Sonnet 4.6 input), with a `model →
-  input $/Mtok` table (`opus` $5, `sonnet` $3, `haiku` $1, `gpt-5.5` $5, plus full model
-  ids). This is a labeled **estimate** (`estimate_kind: "heuristic"` in `tk gain --quota`),
-  never a measured token count.
+  input $/Mtok` table (`opus` $5, `sonnet` $3, `haiku` $1, `claude-fable-5` $10,
+  `gpt-5.5` $5, `gpt-5.5-pro` $30, plus full model ids). This is a labeled **estimate**
+  (`estimate_kind: "heuristic"` in `tk gain --quota`), never a measured token count.
 - `estimated_savings_ai_credits_30d` — the same figure expressed in **GitHub AI Credits**
   (1 credit = $0.01, the 2026-06 VS Code / Copilot usage-based unit), i.e. `usd × 100`. AI
   Credits is the headline value unit; USD is retained alongside.
@@ -102,8 +102,8 @@ The allow-list is exhaustive; everything else is structurally impossible:
   best-effort `model`, including every shell command-proxy row. This is also the headline
   reference model; **GPT-5.5** ($5 / Mtok) rides alongside as a well-known cross-reference.
 - Model table: `opus` → $5, `sonnet` → $3, `haiku` → $1, `claude-fable-5` → $10,
-  `gpt-5.5` → $5 (and the corresponding full model ids). Unknown/typo names fall back to
-  the default — never an error.
+  `gpt-5.5` → $5, `gpt-5.5-pro` → $30 (and the corresponding full model ids).
+  Unknown/typo names fall back to the default — never an error.
 - **AI Credits**: tk saves INPUT/context tokens, priced at the input rate, then converted
   to GitHub AI Credits (`1 credit = $0.01`). AI Credits is the headline value unit; USD is
   retained. Token estimation itself is a calibrated, segmented heuristic (`src/core/tokens.ts`,
