@@ -8,6 +8,10 @@ on:
 jobs:
   test:
     runs-on: ubuntu-latest
+    # Hard ceiling so a wedged test step can never pin a runner for the 6h default.
+    # The guarded failure mode: a CLI-spawning test whose synchronous spawnSync
+    # wedges a vitest worker, so `vitest run` never exits and the step hangs forever.
+    timeout-minutes: 25
     strategy:
       matrix:
         node-version: [20, 22]
@@ -25,8 +29,14 @@ jobs:
       # smoke suite needs, so order is preserved. The smoke suite self-disables
       # session dedup (it re-exercises some commands across sections); product and
       # install tests run with shipped defaults.
-      - run: pnpm test:product
-      - run: pnpm test:install
+      # `timeout` (GNU coreutils, always present on ubuntu runners) bounds each
+      # test step so a wedged process exits non-zero WITH its log flushed, rather
+      # than hanging until the job-level ceiling cancels it (a cancel drops the
+      # in-flight step's log — exactly why a hung run is undiagnosable). `-k 30`
+      # escalates SIGTERM -> SIGKILL after a 30s grace so a child stuck waiting on
+      # an inherited pipe is force-reaped instead of lingering.
+      - run: timeout -k 30 360 pnpm test:product
+      - run: timeout -k 30 360 pnpm test:install
       - run: bash scripts/check-test-presence.sh
       - run: bash scripts/validate-docs.sh
-      - run: bash tests/smoke/smoke.sh
+      - run: timeout -k 30 180 bash tests/smoke/smoke.sh

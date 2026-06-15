@@ -96,6 +96,7 @@ describe("dataDir", () => {
       {
         encoding: "utf8",
         env: { ...process.env, TOKEN_KILLER_HOME: "/tmp/tk-probe-home" },
+        timeout: 15000,
       },
     );
     expect(probe.stdout.trim()).toBe("/tmp/tk-probe-home");
@@ -112,6 +113,7 @@ describe("dataDir", () => {
       cwd: dir,
       encoding: "utf8",
       env: { ...process.env, TOKEN_KILLER_HOME: tkHome },
+      timeout: 20000,
     });
 
     expect(result.status, result.stderr || result.stdout).toBe(0);

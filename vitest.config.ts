@@ -23,6 +23,17 @@ export default defineConfig({
     // can't leak into the next.
     restoreMocks: true,
     clearMocks: true,
+    // Several integration/boundary tests spawn the real CLI via `node --import tsx
+    // src/cli.ts`, which pays a multi-second esbuild cold-start tax PER spawn. On a
+    // 2-core CI runner under full-suite concurrency a single spawn easily exceeds
+    // the 5s vitest default and gets mis-reported as "Test timed out in 5000ms" —
+    // even though the in-test spawnSync (a 15-20s internal budget) is still making
+    // progress. Lift the per-test budget above the largest spawnSync timeout so a
+    // slow-but-returning spawn passes instead of flaking. A genuinely stuck spawn
+    // is bounded by its own spawnSync `timeout`, and the catastrophic case (a child
+    // that never returns) is caught by the CI step-level `timeout` wrapper.
+    testTimeout: 30000,
+    hookTimeout: 30000,
     include: [
       "tests/unit/handlers/fixtureContent.test.ts",
       "tests/unit/handlers/curlProductBehavior.test.ts",

@@ -23,14 +23,18 @@ export function runInterceptionProbe(
 
   let resolved: string | null = null;
   if (platform === "win32") {
-    const r = spawnSync("where", [program], { encoding: "utf8", env });
+    const r = spawnSync("where", [program], { encoding: "utf8", env, timeout: 5000 });
     resolved =
       (r.stdout ?? "")
         .split(/\r?\n/)
         .find((l) => l.trim() !== "")
         ?.trim() ?? null;
   } else {
-    const r = spawnSync("sh", ["-c", `command -v ${program}`], { encoding: "utf8", env });
+    const r = spawnSync("sh", ["-c", `command -v ${program}`], {
+      encoding: "utf8",
+      env,
+      timeout: 5000,
+    });
     resolved = (r.stdout ?? "").trim() || null;
   }
 
