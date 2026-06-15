@@ -1,15 +1,26 @@
 import { afterEach, beforeEach, describe, expect, test } from "vitest";
 import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
-import { dirname, join } from "node:path";
+import { delimiter, dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { spawnSync } from "node:child_process";
 
 import { vscodeSettingsPath, vscodeUserDir } from "../../../src/shim/hostConfig.js";
+import { runInstall, runStatus, runUninstall } from "../../../src/shim/init.js";
 
-// Sandboxed end-to-end for `tk install` / `tk uninstall` / `tk status` (the CLI
+// Sandboxed coverage for `tk install` / `tk uninstall` / `tk status` (the CLI
 // surface that replaced `tk init`, U1+U2). HOME points at a temp dir so every
 // write (shim dir, RC, VS Code settings, injection file) lands inside the sandbox.
+//
+// Two altitudes, by design:
+//   • A handful of BOUNDARY tests (`runTg`) spawn the real `tk` binary to prove
+//     the cli.ts dispatch — verb → runInstall/runUninstall/runStatus, exit-code
+//     propagation, and the removed-`init` stderr path — actually wires up.
+//   • Every BEHAVIOR test calls runInstall/runUninstall/runStatus IN-PROCESS
+//     (`callDirect`). The functions read HOME / TOKEN_KILLER_HOME / detect-env /
+//     cwd at call time and write via process.stdout.write, so an in-process call
+//     with a sandboxed env + captured streams exercises the identical code path
+//     ~50× faster than a fresh `node --import tsx` per assertion.
 
 const repoRoot = join(dirname(fileURLToPath(import.meta.url)), "../../..");
 const cli = join(repoRoot, "src/cli.ts");
@@ -17,6 +28,17 @@ const tsxLoader = join(repoRoot, "node_modules/tsx/dist/loader.mjs");
 
 let home: string;
 
+// Restricted PATH for in-process calls: keep node (for execPath-based shim work)
+// and the system bin (git, etc.), but DROP Homebrew so the preflight's bare-name
+// probes (`copilot --version`, `pwsh --version`) hit a fast ENOENT instead of
+// actually executing those CLIs (~0.45s each, several times over). Host detection
+// keys off env markers / dotdirs — never PATH — so this changes nothing the tests
+// assert. The real preflight path still runs end-to-end under the boundary spawn
+// tests (full inherited PATH).
+const SANDBOX_PATH = [dirname(process.execPath), "/usr/bin", "/bin"].join(delimiter);
+
+// Boundary harness: spawn the real CLI through tsx. Reserved for the few tests
+// that must prove cli.ts dispatch / process exit codes, not handler behavior.
 function runTg(args: string[], env: NodeJS.ProcessEnv = {}, cwd = repoRoot) {
   return spawnSync(process.execPath, ["--import", tsxLoader, cli, ...args], {
     cwd,
@@ -36,6 +58,79 @@ function runTg(args: string[], env: NodeJS.ProcessEnv = {}, cwd = repoRoot) {
   });
 }
 
+type DirectResult = { status: number; stdout: string; stderr: string };
+
+// Direct harness: run an install/uninstall/status entrypoint IN-PROCESS with the
+// same sandboxed environment runTg would hand a child, capturing stdout/stderr.
+//
+// Env MUST be mutated key-by-key (not via `process.env = {...}`): os.homedir() is
+// resolved by libuv from the real OS environment, which only `process.env.HOME = x`
+// (setenv) updates — replacing the whole object would leave homedir() reading the
+// outer HOME. Tests run sequentially within a file, so the global env/cwd swap is
+// race-free, and `finally` restores both even when an assertion throws.
+//
+// `argv` is the post-verb sub-argument list (what cli.ts passes as parsed.subArgs):
+// `tk install --host vscode` → callDirect(runInstall, ["--host", "vscode"]).
+function callDirect(
+  fn: (argv: string[]) => number,
+  argv: string[],
+  env: NodeJS.ProcessEnv = {},
+  cwd?: string,
+): DirectResult {
+  const overrides: NodeJS.ProcessEnv = {
+    HOME: home,
+    TOKEN_KILLER_HOME: join(home, ".token-killer"),
+    PATH: SANDBOX_PATH,
+    CLAUDECODE: "",
+    CLAUDE_CODE_ENTRYPOINT: "",
+    ...env,
+  };
+  const keys = Object.keys(overrides);
+  const savedEnv: Record<string, string | undefined> = {};
+  for (const key of keys) savedEnv[key] = process.env[key];
+  for (const [key, value] of Object.entries(overrides)) {
+    if (value === undefined) delete process.env[key];
+    else process.env[key] = value;
+  }
+
+  const outChunks: string[] = [];
+  const errChunks: string[] = [];
+  const origOut = process.stdout.write.bind(process.stdout);
+  const origErr = process.stderr.write.bind(process.stderr);
+  process.stdout.write = ((chunk: unknown) => {
+    outChunks.push(String(chunk));
+    return true;
+  }) as typeof process.stdout.write;
+  process.stderr.write = ((chunk: unknown) => {
+    errChunks.push(String(chunk));
+    return true;
+  }) as typeof process.stderr.write;
+
+  const savedCwd = process.cwd();
+  if (cwd) process.chdir(cwd);
+
+  let status: number;
+  try {
+    status = fn(argv);
+  } finally {
+    if (cwd) process.chdir(savedCwd);
+    process.stdout.write = origOut;
+    process.stderr.write = origErr;
+    for (const key of keys) {
+      if (savedEnv[key] === undefined) delete process.env[key];
+      else process.env[key] = savedEnv[key];
+    }
+  }
+
+  return { status, stdout: outChunks.join(""), stderr: errChunks.join("") };
+}
+
+const install = (argv: string[], env?: NodeJS.ProcessEnv, cwd?: string) =>
+  callDirect(runInstall, argv, env, cwd);
+const uninstall = (argv: string[], env?: NodeJS.ProcessEnv, cwd?: string) =>
+  callDirect(runUninstall, argv, env, cwd);
+const status = (env?: NodeJS.ProcessEnv) => callDirect(runStatus, [], env);
+
 beforeEach(() => {
   home = mkdtempSync(join(tmpdir(), "tk-init-"));
 });
@@ -44,7 +139,10 @@ afterEach(() => {
 });
 
 describe("tk install", () => {
-  test("unknown host → instruction injection at user level", () => {
+  // BOUNDARY: proves the real `tk install` binary dispatches to runInstall, exits
+  // 0, and writes a real artifact end-to-end. The remaining install behaviors are
+  // unit-tested in-process below.
+  test("unknown host → instruction injection at user level (CLI boundary)", () => {
     const result = runTg(["install"], {
       PATH: "/usr/bin:/bin",
       TERM_PROGRAM: "",
@@ -65,7 +163,7 @@ describe("tk install", () => {
     mkdirSync(join(home, "Library", "Application Support", "Code", "User"), { recursive: true });
     mkdirSync(join(home, ".config", "Code", "User"), { recursive: true });
 
-    const result = runTg(["install", "--host", "vscode"]);
+    const result = install(["--host", "vscode"]);
     expect(result.status).toBe(0);
     expect(result.stdout).toContain("Active tier: shim (primary) + hook (additive)");
     // Primary shim.
@@ -79,7 +177,7 @@ describe("tk install", () => {
   // effects, byte-stable output) — it must preview both and write nothing.
   test("--host vscode --dry-run reports BOTH the hook config and the shim", () => {
     mkdirSync(vscodeUserDir(process.platform, home), { recursive: true });
-    const result = runTg(["install", "--host", "vscode", "--dry-run"]);
+    const result = install(["--host", "vscode", "--dry-run"]);
     expect(result.status).toBe(0);
     // Additive hook wiring (shared ~/.copilot/hooks/tk-rewrite.json) is reported.
     expect(result.stdout).toContain("Additive hook");
@@ -101,13 +199,13 @@ describe("tk install", () => {
     const envKey =
       process.platform === "darwin" ? "osx" : process.platform === "win32" ? "windows" : "linux";
 
-    runTg(["install", "--host", "vscode"]);
+    install(["--host", "vscode"]);
     const settings = JSON.parse(readFileSync(settingsPath, "utf8"));
     const envBlock = settings[`terminal.integrated.env.${envKey}`];
     expect(envBlock.TK_COMPRESS_TTY).toBe("1");
     expect(envBlock.TK_SHIM_DIR).toBeTruthy();
 
-    runTg(["uninstall"]);
+    uninstall([]);
     const after = JSON.parse(readFileSync(settingsPath, "utf8"));
     const afterBlock = after[`terminal.integrated.env.${envKey}`];
     expect(afterBlock?.TK_COMPRESS_TTY).toBeUndefined();
@@ -116,7 +214,7 @@ describe("tk install", () => {
   test("--project writes the repo instruction file (the only repo write)", () => {
     const project = mkdtempSync(join(tmpdir(), "tk-init-project-"));
     try {
-      const result = runTg(["install", "--project", "--host", "vscode"], {}, project);
+      const result = install(["--project", "--host", "vscode"], {}, project);
       expect(result.status).toBe(0);
       const projectFile = join(project, ".github", "copilot-instructions.md");
       expect(existsSync(projectFile)).toBe(true);
@@ -127,7 +225,7 @@ describe("tk install", () => {
   });
 
   test("--host copilot-cli → hook tier, writes user-level hook config", () => {
-    const result = runTg(["install", "--host", "copilot-cli"]);
+    const result = install(["--host", "copilot-cli"]);
     expect(result.status).toBe(0);
     expect(result.stdout).toContain("Active tier: hook");
     const cfg = join(home, ".copilot", "hooks", "tk-rewrite.json");
@@ -140,7 +238,7 @@ describe("tk install", () => {
   // I4: copilot reads only copilot-instructions.md (no import syntax), so the
   // standalone ~/.copilot/TK.md must NOT be written.
   test("--host copilot-cli inlines guidance, writes no standalone TK.md", () => {
-    runTg(["install", "--host", "copilot-cli"]);
+    install(["--host", "copilot-cli"]);
     expect(existsSync(join(home, ".copilot", "TK.md"))).toBe(false);
     const instr = readFileSync(join(home, ".copilot", "copilot-instructions.md"), "utf8");
     expect(instr).toContain("git status --short");
@@ -148,7 +246,7 @@ describe("tk install", () => {
 
   test("copilot-cli auto-detected (~/.copilot exists) → hook tier", () => {
     mkdirSync(join(home, ".copilot"), { recursive: true });
-    const result = runTg(["install"]);
+    const result = install([]);
     expect(result.status).toBe(0);
     expect(result.stdout).toContain("Detected host: copilot-cli");
     expect(result.stdout).toContain("Active tier: hook");
@@ -159,7 +257,7 @@ describe("tk install", () => {
     // also installed (~/.copilot). install must wire BOTH, not just the primary.
     mkdirSync(vscodeUserDir(process.platform, home), { recursive: true });
     mkdirSync(join(home, ".copilot"), { recursive: true });
-    const result = runTg(["install"], { TERM_PROGRAM: "vscode" });
+    const result = install([], { TERM_PROGRAM: "vscode" });
     expect(result.status).toBe(0);
     expect(result.stdout).toContain("Detected host: vscode");
     expect(result.stdout).toContain("Also wiring copilot-cli");
@@ -170,7 +268,7 @@ describe("tk install", () => {
   test("a forced --host stays single-host (no secondary wiring)", () => {
     mkdirSync(join(home, ".copilot"), { recursive: true });
     mkdirSync(vscodeUserDir(process.platform, home), { recursive: true });
-    const result = runTg(["install", "--host", "vscode"]);
+    const result = install(["--host", "vscode"]);
     expect(result.status).toBe(0);
     // No SECONDARY-host wiring under a forced --host. ADR 0012: vscode now writes the
     // shared ~/.copilot/hooks/tk-rewrite.json as its OWN additive hook, so the file
@@ -180,14 +278,14 @@ describe("tk install", () => {
   });
 
   test("--host copilot-cli --dry-run writes nothing", () => {
-    const result = runTg(["install", "--host", "copilot-cli", "--dry-run"]);
+    const result = install(["--host", "copilot-cli", "--dry-run"]);
     expect(result.status).toBe(0);
     expect(result.stdout).toContain("[dry-run]");
     expect(existsSync(join(home, ".copilot", "hooks", "tk-rewrite.json"))).toBe(false);
   });
 
   test("--host claude-code → hook tier, patches ~/.claude/settings.json", () => {
-    const result = runTg(["install", "--host", "claude-code"]);
+    const result = install(["--host", "claude-code"]);
     expect(result.status).toBe(0);
     expect(result.stdout).toContain("Active tier: hook");
     const cfg = join(home, ".claude", "settings.json");
@@ -216,7 +314,7 @@ describe("tk install", () => {
         2,
       ),
     );
-    const result = runTg(["install", "--host", "claude-code"]);
+    const result = install(["--host", "claude-code"]);
     expect(result.status).toBe(0);
     const parsed = JSON.parse(readFileSync(join(home, ".claude", "settings.json"), "utf8"));
     expect(parsed.hooks.PreToolUse).toHaveLength(1);
@@ -228,14 +326,14 @@ describe("tk install", () => {
   });
 
   test("claude-code auto-detected from a live env marker", () => {
-    const result = runTg(["install"], { CLAUDECODE: "1" });
+    const result = install([], { CLAUDECODE: "1" });
     expect(result.status).toBe(0);
     expect(result.stdout).toContain("Detected host: claude-code");
     expect(result.stdout).toContain("Active tier: hook");
   });
 
   test("claude-code writes the usage guide (TK.md) + wires @TK.md into CLAUDE.md; -g is a no-op", () => {
-    const result = runTg(["install", "--host", "claude-code", "-g"]);
+    const result = install(["--host", "claude-code", "-g"]);
     expect(result.status).toBe(0);
     expect(result.stdout).toContain("Active tier: hook");
     // tk drops a usage guide and references it from the auto-loaded CLAUDE.md so
@@ -245,7 +343,7 @@ describe("tk install", () => {
   });
 
   test("claude-code --dry-run writes nothing", () => {
-    const result = runTg(["install", "--host", "claude-code", "--dry-run"]);
+    const result = install(["--host", "claude-code", "--dry-run"]);
     expect(result.status).toBe(0);
     expect(result.stdout).toContain("[dry-run]");
     expect(existsSync(join(home, ".claude", "settings.json"))).toBe(false);
@@ -256,7 +354,7 @@ describe("tk install", () => {
   // --host claude-code once stamped hostVersion="GitHub Copilot CLI 1.x" because the
   // recorder ran the copilot `--version` preflight unconditionally for every host.
   test("--host claude-code records NO Copilot CLI version in delivery-state", () => {
-    const result = runTg(["install", "--host", "claude-code"]);
+    const result = install(["--host", "claude-code"]);
     expect(result.status).toBe(0);
     const state = JSON.parse(
       readFileSync(join(home, ".token-killer", "delivery-state.json"), "utf8"),
@@ -270,7 +368,9 @@ describe("tk install", () => {
 });
 
 describe("tk uninstall", () => {
-  test("removes the hook config", () => {
+  // BOUNDARY: proves the real `tk uninstall` binary dispatches to runUninstall and
+  // tears down a prior real install end-to-end.
+  test("removes the hook config (CLI boundary)", () => {
     runTg(["install", "--host", "copilot-cli"]);
     const cfg = join(home, ".copilot", "hooks", "tk-rewrite.json");
     expect(existsSync(cfg)).toBe(true);
@@ -280,10 +380,10 @@ describe("tk uninstall", () => {
   });
 
   test("claude-code: removes the tk hook entry and the usage guide", () => {
-    runTg(["install", "--host", "claude-code"]);
+    install(["--host", "claude-code"]);
     expect(existsSync(join(home, ".claude", "settings.json"))).toBe(true);
     expect(existsSync(join(home, ".claude", "TK.md"))).toBe(true);
-    const result = runTg(["uninstall"]);
+    const result = uninstall([]);
     expect(result.status).toBe(0);
     const parsed = JSON.parse(readFileSync(join(home, ".claude", "settings.json"), "utf8"));
     expect(parsed.hooks.PreToolUse).toEqual([]);
@@ -297,16 +397,16 @@ describe("tk uninstall", () => {
     const project = mkdtempSync(join(tmpdir(), "tk-init-project-"));
     try {
       // User-level claude-code install.
-      runTg(["install", "--host", "claude-code"]);
+      install(["--host", "claude-code"]);
       const userHook = join(home, ".claude", "settings.json");
       expect(existsSync(userHook)).toBe(true);
       // Project-level copilot install in the repo.
-      runTg(["install", "--project", "--host", "copilot-cli"], {}, project);
+      install(["--project", "--host", "copilot-cli"], {}, project);
       const projectCfg = join(project, ".github", "hooks", "tk-rewrite.json");
       const projectInjection = join(project, ".github", "copilot-instructions.md");
       expect(existsSync(projectCfg)).toBe(true);
 
-      const result = runTg(["uninstall", "--project"], {}, project);
+      const result = uninstall(["--project"], {}, project);
       expect(result.status).toBe(0);
       // Project artifacts gone — including the now-empty hooks/ dir and the
       // injection-only instructions file (no 0-byte leftover).
@@ -324,11 +424,11 @@ describe("tk uninstall", () => {
   // Regression: `--dry-run` once IGNORED dry-run and actually deleted everything
   // while printing "removed". It must preview only — touch nothing.
   test("--dry-run previews without deleting anything", () => {
-    runTg(["install", "--host", "copilot-cli"]);
+    install(["--host", "copilot-cli"]);
     const cfg = join(home, ".copilot", "hooks", "tk-rewrite.json");
     expect(existsSync(cfg)).toBe(true);
 
-    const result = runTg(["uninstall", "--dry-run"]);
+    const result = uninstall(["--dry-run"]);
     expect(result.status).toBe(0);
     expect(result.stdout).toContain("[dry-run]");
     expect(result.stdout).toContain("would remove");
@@ -342,14 +442,14 @@ describe("tk uninstall", () => {
     const projects = join(home, ".token-killer", "projects", "repo-deadbeef");
     mkdirSync(projects, { recursive: true });
     writeFileSync(join(projects, "history.jsonl"), '{"x":1}\n');
-    runTg(["install", "--host", "copilot-cli"]);
+    install(["--host", "copilot-cli"]);
 
     // Plain uninstall keeps the data.
-    runTg(["uninstall"]);
+    uninstall([]);
     expect(existsSync(projects)).toBe(true);
 
     // --purge-data removes the whole projects tree.
-    const result = runTg(["uninstall", "--purge-data"]);
+    const result = uninstall(["--purge-data"]);
     expect(result.status).toBe(0);
     expect(result.stdout).toContain("metrics data");
     expect(existsSync(join(home, ".token-killer", "projects"))).toBe(false);
@@ -360,7 +460,7 @@ describe("tk uninstall", () => {
     mkdirSync(projects, { recursive: true });
     writeFileSync(join(projects, "history.jsonl"), '{"x":1}\n');
 
-    const result = runTg(["uninstall", "--purge-data", "--dry-run"]);
+    const result = uninstall(["--purge-data", "--dry-run"]);
     expect(result.status).toBe(0);
     expect(result.stdout).toContain("[dry-run]");
     expect(result.stdout).toMatch(/would remove .*projects/);
@@ -369,10 +469,12 @@ describe("tk uninstall", () => {
 });
 
 describe("tk status", () => {
+  // BOUNDARY: proves the real `tk status` binary dispatches to runStatus, exits 0,
+  // and writes no install artifact.
   // ADR 0012 #7: status renders a per-host capability MATRIX (replacing the old
   // ad-hoc per-tier lines). Assert on the matrix's stable labels plus the shim
   // detail panel, tolerant of the new layout.
-  test("reports the detected host and the capability matrix; writes nothing", () => {
+  test("reports the detected host and the capability matrix; writes nothing (CLI boundary)", () => {
     const result = runTg(["status"], { PATH: "/usr/bin:/bin", TERM_PROGRAM: "" });
     expect(result.status).toBe(0);
     expect(result.stdout).toContain("Detected host:");
@@ -394,9 +496,9 @@ describe("tk status", () => {
   // for tiers a live probe can't fully confirm. Install records it; status reads it
   // back and refreshes lastVerified (best-effort, never breaking read-only status).
   test("status reflects the persisted delivery state written by install", () => {
-    runTg(["install", "--host", "copilot-cli"]);
+    install(["--host", "copilot-cli"]);
     expect(existsSync(join(home, ".token-killer", "delivery-state.json"))).toBe(true);
-    const result = runTg(["status"]);
+    const result = status();
     expect(result.status).toBe(0);
     expect(result.stdout).toContain("installed host:");
     expect(result.stdout).toMatch(/installed host:\s+copilot-cli/);
@@ -405,6 +507,9 @@ describe("tk status", () => {
 });
 
 describe("tk init (removed)", () => {
+  // BOUNDARY: the rename hint lives in cli.ts (not runInstall), so this must stay a
+  // real spawn — it verifies the dispatcher errors with exit 1 + a stderr hint and
+  // installs nothing as a side effect.
   test("`tk init` errors with a rename hint and spawns nothing", () => {
     const result = runTg(["init"], { PATH: "/usr/bin:/bin", TERM_PROGRAM: "" });
     expect(result.status).toBe(1);
