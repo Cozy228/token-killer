@@ -35,7 +35,17 @@ let home: string;
 // keys off env markers / dotdirs — never PATH — so this changes nothing the tests
 // assert. The real preflight path still runs end-to-end under the boundary spawn
 // tests (full inherited PATH).
-const SANDBOX_PATH = [dirname(process.execPath), "/usr/bin", "/bin"].join(delimiter);
+// On Windows the POSIX dirs below don't exist and node's dir has no git, so the shim
+// install would find NO shimmable tool and write nothing — breaking the shim-tier
+// tests. Use the real PATH there (git/system tools resolve); keep the trimmed set on
+// POSIX (drops Homebrew so the preflight's copilot/pwsh probes ENOENT fast).
+const SANDBOX_PATH =
+  process.platform === "win32"
+    ? (process.env.PATH ?? "")
+    : [dirname(process.execPath), "/usr/bin", "/bin"].join(delimiter);
+
+// The shim writes `<program>.cmd` wrappers on Windows (PATHEXT), bare names on POSIX.
+const SHIM_GIT = process.platform === "win32" ? "git.cmd" : "git";
 
 // Boundary harness: spawn the real CLI through tsx. Reserved for the few tests
 // that must prove cli.ts dispatch / process exit codes, not handler behavior.
@@ -174,7 +184,7 @@ describe("tk install", () => {
     expect(result.status).toBe(0);
     expect(result.stdout).toContain("Active tier: shim (primary) + hook (additive)");
     // Primary shim.
-    expect(existsSync(join(home, ".token-killer", "shim", "git"))).toBe(true);
+    expect(existsSync(join(home, ".token-killer", "shim", SHIM_GIT))).toBe(true);
     // Additive hook — the SAME shared file the Copilot CLI writer targets.
     expect(existsSync(join(home, ".copilot", "hooks", "tk-rewrite.json"))).toBe(true);
   });
@@ -268,7 +278,7 @@ describe("tk install", () => {
     expect(result.status).toBe(0);
     expect(result.stdout).toContain("Detected host: vscode");
     expect(result.stdout).toContain("Also wiring copilot-cli");
-    expect(existsSync(join(home, ".token-killer", "shim", "git"))).toBe(true);
+    expect(existsSync(join(home, ".token-killer", "shim", SHIM_GIT))).toBe(true);
     expect(existsSync(join(home, ".copilot", "hooks", "tk-rewrite.json"))).toBe(true);
   });
 

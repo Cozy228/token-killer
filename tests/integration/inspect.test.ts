@@ -12,12 +12,25 @@ const cli = path.join(repoRoot, "src/cli.ts");
 const tsxLoader = pathToFileURL(path.join(repoRoot, "node_modules/tsx/dist/loader.mjs")).href;
 
 let home: string;
+const savedEnv: Record<string, string | undefined> = {};
 
 beforeEach(() => {
   home = mkdtempSync(path.join(tmpdir(), "tk-inspect-cli-"));
+  // seedTranscript() runs IN this test process and resolves the VS Code dir via
+  // vscodeUserDir(), which reads APPDATA on Windows (homedir() reads USERPROFILE).
+  // Sandbox both here so the seed lands exactly where the spawned `tk inspect` (which
+  // inherits this env) reads — otherwise the seed goes to the real profile and inspect
+  // reads the empty sandbox (exit 2 instead of 0).
+  for (const k of ["USERPROFILE", "APPDATA"]) savedEnv[k] = process.env[k];
+  process.env.USERPROFILE = home;
+  process.env.APPDATA = path.join(home, "AppData", "Roaming");
 });
 afterEach(() => {
   rmSync(home, { recursive: true, force: true });
+  for (const [k, v] of Object.entries(savedEnv)) {
+    if (v === undefined) delete process.env[k];
+    else process.env[k] = v;
+  }
 });
 
 function runTk(args: string[]) {

@@ -87,19 +87,26 @@ describe("recursion guard e2e", () => {
     expect(`${result.stdout}${result.stderr}`).not.toContain("export TK_SHIM_DIR");
   });
 
-  test("fail-open: real git unreachable → clear error, non-128 exit, never crashes", () => {
-    // PATH contains ONLY the shim dir: stripping it leaves the real git
-    // unreachable, so the sentinel fires and both compress and passthrough must
-    // fail toward a clear one-line error rather than recursing forever.
-    const result = runTg(["git", "status"], {
-      TK_SHIM_DIR: shimDir,
-      PATH: shimDir,
-    });
-    expect(result.signal).toBeNull();
-    expect(result.status).toBe(1);
-    expect(result.stderr).toContain("shim dir");
-    // failOpenPassthrough is one of tk's OWN error sinks → it nudges toward `tk support`
-    // (constraint 4). This is the only reachable runtime trigger for that call site.
-    expect(result.stderr).toContain("Run `tk support`");
-  });
+  // POSIX-only: plants a `#!/usr/bin/env sh` wrapper to drive the fail-open path with
+  // ONLY the shim copy reachable. The Windows shim uses .cmd wrappers resolved via
+  // PATHEXT (a different mechanism), so this sh-shebang scenario doesn't apply there;
+  // the recursion sentinel itself is unit-tested cross-platform in path.test.ts.
+  test.skipIf(process.platform === "win32")(
+    "fail-open: real git unreachable → clear error, non-128 exit, never crashes",
+    () => {
+      // PATH contains ONLY the shim dir: stripping it leaves the real git
+      // unreachable, so the sentinel fires and both compress and passthrough must
+      // fail toward a clear one-line error rather than recursing forever.
+      const result = runTg(["git", "status"], {
+        TK_SHIM_DIR: shimDir,
+        PATH: shimDir,
+      });
+      expect(result.signal).toBeNull();
+      expect(result.status).toBe(1);
+      expect(result.stderr).toContain("shim dir");
+      // failOpenPassthrough is one of tk's OWN error sinks → it nudges toward `tk support`
+      // (constraint 4). This is the only reachable runtime trigger for that call site.
+      expect(result.stderr).toContain("Run `tk support`");
+    },
+  );
 });

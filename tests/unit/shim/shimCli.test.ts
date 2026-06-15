@@ -41,7 +41,12 @@ afterEach(() => {
 
 describe("tk shim install/status/uninstall", () => {
   test("install writes wrappers + manifest and patches the RC, then uninstall reverts", () => {
-    const shimGit = join(home, ".token-killer", "shim", "git");
+    const shimGit = join(
+      home,
+      ".token-killer",
+      "shim",
+      process.platform === "win32" ? "git.cmd" : "git",
+    );
     const rc = join(home, ".zshrc");
 
     const install = runTg(["shim", "install"]);
