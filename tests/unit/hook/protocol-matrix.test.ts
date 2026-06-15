@@ -430,9 +430,15 @@ describe("Row 6 — malformed / empty / truncated stdin: fail-open (exit 0, emit
 // dual-schema config fires the hook TWICE per tool call with two shapes. These
 // are the verbatim bytes the host wrote to stdin. The decisive find: the native
 // camelCase entry's payload carries NO event-name field — earlier it normalized
-// to `unknown` and the rewrite silently never happened on that path. Locks the
-// fix (normalize infers preToolUse from shape) and the idempotency that keeps the
-// double-fire from double-wrapping.
+// to `unknown` and the rewrite silently never happened on that path.
+//
+// DOUBLE-FIRE ARBITRATION (issue #21 / #20): the capture shows BOTH callbacks receive
+// the SAME ORIGINAL `git status` (NOT the second seeing an already-rewritten command).
+// The acceptance property is therefore that the two responses CONVERGE: each rewrites
+// the original to the IDENTICAL `tk …` command, so however the host arbitrates two
+// responses (applies one / last-writer-wins), the executed command is the same single
+// rewrite — never a duplicate-applied or conflicting one. This in-process harness is the
+// faithful host contract; the live-host rerun is the final release gate for #20.
 // ---------------------------------------------------------------------------
 
 describe("Row 7 — real Copilot CLI 1.0.62 dual-fire captures", () => {
@@ -480,9 +486,38 @@ describe("Row 7 — real Copilot CLI 1.0.62 dual-fire captures", () => {
     });
   });
 
-  test("idempotent: a payload whose command is ALREADY `tk …` is not re-wrapped", () => {
-    // If the host chains both dual-schema entries, the second sees an already-`tk`
-    // command. eligibility() must pass it → no `tk tk …` double-wrap, emit nothing.
+  // The acceptance test the issue actually asks for (#21): observe BOTH responses of the
+  // real double-fire and prove they resolve to EXACTLY ONE rewritten execution. This
+  // faithfully models the captured sequence — both callbacks get the ORIGINAL `git
+  // status` — unlike a chained sequence where the second sees an already-`tk` command.
+  test("double-fire: both callbacks rewrite the SAME original to the SAME tk command (exactly one execution)", () => {
+    // Both real payloads carry the same session id and the same original command, so
+    // both responses must rewrite to the byte-identical `tk --session … git status`.
+    const expected = "tk --session a938a6db-5e2f-4e0e-8a65-7cd6bf7b6e13 git status";
+
+    const native = pipe(REAL_CLI_NATIVE) as { modifiedArgs?: { command?: string } } | null;
+    const pascal = pipe(REAL_PASCAL) as {
+      hookSpecificOutput?: { updatedInput?: { command?: string } };
+    } | null;
+
+    const nativeCmd = native?.modifiedArgs?.command;
+    const pascalCmd = pascal?.hookSpecificOutput?.updatedInput?.command;
+
+    // Each callback, fed the ORIGINAL command, rewrites to the SAME target…
+    expect(nativeCmd).toBe(expected);
+    expect(pascalCmd).toBe(expected);
+    // …so the set of distinct executed commands across the whole double-fire is exactly
+    // one — the host cannot apply two different or conflicting rewrites.
+    expect(new Set([nativeCmd, pascalCmd]).size).toBe(1);
+    // …and that single command is not a double-wrap.
+    expect(nativeCmd).not.toContain("tk tk");
+  });
+
+  test("defense-in-depth: even IF a host chained the entries, an already-`tk` command is not re-wrapped", () => {
+    // NOT the observed double-fire shape (both callbacks get the ORIGINAL — see the test
+    // above). This is a belt-and-suspenders guard: should any future host ever feed the
+    // second callback the FIRST's rewritten output, eligibility() must pass the already-
+    // `tk` command through → no `tk tk …` double-wrap, emit nothing.
     const alreadyTk = cliWire("powershell", { command: "tk git status" });
     const ev = normalizeStdin(alreadyTk);
     expect(ev.event).toBe("preToolUse");

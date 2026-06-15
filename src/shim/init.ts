@@ -11,10 +11,9 @@ import { installShim, runShim } from "./cli.js";
 import { copilotHookConfigStatus, uninstallCopilotHookConfig } from "../hook/install.js";
 import { claudeHookStatus, uninstallClaudeHook } from "../hook/claudeInstall.js";
 import { guidanceFilePath, guidanceLoader, unwriteGuidance, writeGuidance } from "./guidance.js";
-import { gatherPreflight, renderPreflight } from "./preflight.js";
+import { gatherPreflight, probeHostVersion, renderPreflight } from "./preflight.js";
 import {
   gatherDeliveryMatrix,
-  hostVersionFromPreflight,
   installedTierIds,
   recordInstall,
   renderDeliveryMatrix,
@@ -76,6 +75,15 @@ export function runStatus(_argv: string[] = []): number {
   // host-version line, so `copilot --version` is not spawned twice (ADR 0012 #7).
   const preflight = gatherPreflight();
 
+  // Timestamp truth (issue #26): `tk status` IS the verification, so persist
+  // lastVerified to NOW *before* gathering the matrix — gatherDeliveryMatrix reads the
+  // state file, so the rendered "last verified" reflects THIS run, not the previous
+  // run's stale value (the old order rendered first, wrote after, and only the next
+  // status run saw the prior timestamp). Best-effort: a write failure never breaks
+  // read-only status, and the matrix then simply shows the last successfully-written
+  // value.
+  updateDeliveryState({ lastVerified: new Date().toISOString() });
+
   // ADR 0012 #7: render the per-host capability MATRIX (a host can hold several
   // live tiers at once, so a single "active tier" is no longer faithful). Everything
   // here is LIVE-DERIVED by the existing status helpers (copilot/claude hook status,
@@ -96,11 +104,8 @@ export function runStatus(_argv: string[] = []): number {
   out(`  Windows preflight:`);
   renderPreflight(preflight).forEach(out);
 
-  // Status just VERIFIED the live matrix — refresh ONLY the persisted lastVerified
-  // (the spec for #7: "lastVerified refreshed when tk status runs"). We do not touch
-  // the install-time facts (host/version/installedAt) here, so a merge with `undefined`
-  // can never clobber them. Best-effort: a write failure never breaks read-only status.
-  updateDeliveryState({ lastVerified: new Date().toISOString() });
+  // lastVerified was already persisted above (before the matrix was gathered) so the
+  // rendered value reflects THIS run — no second write here (issue #26 timestamp truth).
   return 0;
 }
 
@@ -278,16 +283,14 @@ function parseInstallArgs(argv: string[]): InstallArgs {
 // just before a successful (non-dry-run) install returns; the dry-run path records
 // nothing (it wrote nothing).
 //
-// The preflight `copilot --version` line is the COPILOT CLI version — it is the host
-// version ONLY for the copilot-cli host. Recording it for claude-code/vscode/unknown
-// mislabels an unrelated tool's version as this install's host version (issue #26:
-// `install --host claude-code` was persisting `GitHub Copilot CLI 1.0.62`). Those
-// hosts record NO version (honest "not recorded") until tk gains a host-specific
-// probe for them — and we skip the `copilot --version` spawn entirely off copilot-cli.
+// Record the SELECTED host's OWN version (issue #26), via a per-host `--version` probe
+// (`copilot`/`claude`/`code`). Earlier this recorded `copilot --version` for copilot-cli
+// only and `undefined` for every other host — and an even earlier bug mislabeled
+// `GitHub Copilot CLI 1.0.62` as a `claude-code` install's version. `probeHostVersion`
+// is host-specific and best-effort: a host with no version CLI on PATH (or `unknown`)
+// degrades to honest "not recorded", never another tool's version.
 function recordInstallState(host: Host): void {
-  const hostVersion =
-    host === "copilot-cli" ? hostVersionFromPreflight(gatherPreflight()) : undefined;
-  recordInstall({ host, tiers: installedTierIds(host), hostVersion });
+  recordInstall({ host, tiers: installedTierIds(host), hostVersion: probeHostVersion(host) });
 }
 
 export function runInstall(argv: string[]): number {

@@ -42,20 +42,23 @@ export type TierState = {
   installed: boolean;
   // One-line human detail (path, probe verdict, TTY opt-in, honest "not tracked").
   detail: string;
+  // PER-HOST hook-runtime "fired" signal — set ONLY on the hook tiers (issue #26: the
+  // matrix must report e.g. "VS Code hook fired" SEPARATELY from "Copilot CLI hook
+  // fired", not as one global line). See firedDetail() for the honesty caveat (success
+  // path writes no marker; the failure ledger is not host-attributed). undefined on
+  // non-hook tiers.
+  fired?: string;
+  // PER-HOST policy-revocation signal — set ONLY on the VS Code hook tier, the one tier
+  // an org policy can revoke (a Preview capability), and that is NOT introspectable from
+  // the CLI — honest "unknown". undefined elsewhere.
+  blockedByPolicy?: string;
 };
 
 export type DeliveryMatrix = {
   tiers: TierState[];
-  // Best-effort "fired" signal — see firedDetail(). HONEST: the hook success path
-  // writes no marker (a successful rewrite later runs as `tk <cmd>`, recorded as a
-  // `shell` row), so the ONLY on-disk hook-runtime signal is the FAILURE ledger
-  // (recordHookFailure → source_adapter terminal_tool/direct_tool). We surface its
-  // last timestamp as "last activity (failures only)" or, with none, "not tracked".
-  fired: string;
-  // VS Code org policy can revoke a Preview hook, but that is NOT introspectable
-  // from the CLI — honest "unknown".
-  blockedByPolicy: string;
   // Persisted facts (install-time + last status verify), or undefined if never run.
+  // The fired / blocked-by-policy signals are now PER-HOST on the hook tiers above
+  // (issue #26), not single global fields.
   lastVerified?: string;
   installedAt?: string;
   installedHost?: Host;
@@ -181,6 +184,12 @@ function ttyOptIn(env: NodeJS.ProcessEnv): boolean {
 // FAILURES (recordHookFailure, source_adapter terminal_tool/direct_tool). So the
 // most we can honestly report is the last such failure's timestamp; with none, the
 // correct outcome is literally "not tracked".
+// NOTE host-attribution caveat: the failure ledger's `source_adapter`
+// (terminal_tool/direct_tool) records the GOVERNANCE path, NOT which host fired the
+// hook, so this number cannot be split between e.g. VS Code and Copilot CLI. The matrix
+// surfaces it PER-HOST structurally (one `fired` line under each installed hook tier),
+// and the wording flags it as a shared, non-host-attributed signal so a box running two
+// hooks does not read it as two independent counts.
 function firedDetail(
   records: ReadonlyArray<{ timestamp?: string; source_adapter?: string }>,
 ): string {
@@ -196,7 +205,7 @@ function firedDetail(
     .sort()
     .at(-1);
   return last
-    ? `last activity ${last} (failures only; ${hookRows.length} hook-runtime failure row(s))`
+    ? `last activity ${last} (failures only; ${hookRows.length} hook-runtime failure row(s), shared ledger not host-attributed)`
     : `${hookRows.length} hook-runtime failure row(s) (no timestamp)`;
 }
 
@@ -259,6 +268,11 @@ export function buildDeliveryMatrix(deps: MatrixDeps): DeliveryMatrix {
   const probe = manifest ? deps.shimProbe() : null;
   const shimInstalled = manifest !== null;
   const tty = ttyOptIn(deps.env);
+  // PER-HOST hook-runtime signal (issue #26): the same honest failure-ledger detail is
+  // attached to EACH hook tier so status reports "Copilot CLI hook fired" / "VS Code
+  // hook fired" as separate rows rather than one global line. firedDetail discloses that
+  // the underlying ledger is shared and not host-attributed.
+  const fired = firedDetail(deps.historyRecords);
 
   // "Installed" means tk's hook is actually WIRED TO TK, not merely that some hook
   // file/entry exists at the path (issue #26). A present-but-unmanaged Copilot config,
@@ -280,18 +294,27 @@ export function buildDeliveryMatrix(deps: MatrixDeps): DeliveryMatrix {
       label: "Copilot CLI hook",
       installed: copilotInstalled,
       detail: copilotDetail(copilot),
+      fired,
     },
     {
       tier: "claude-hook",
       label: "Claude Code hook",
       installed: claudeInstalled,
       detail: claudeDetail(claude),
+      fired,
     },
     {
       tier: "vscode-hook",
       label: "VS Code hook",
       installed: vscodeHookInstalled,
       detail: vscodeHookDetail(copilot),
+      fired,
+      // Only the VS Code hook can be revoked by org policy (a Preview capability), and
+      // that is not introspectable from the CLI — honest per-host "unknown" when the hook
+      // is tk-managed, "n/a" otherwise.
+      blockedByPolicy: vscodeHookInstalled
+        ? "unknown (VS Code policy not introspectable from CLI)"
+        : "n/a (no tk-managed VS Code hook)",
     },
     {
       tier: "shim",
@@ -321,10 +344,6 @@ export function buildDeliveryMatrix(deps: MatrixDeps): DeliveryMatrix {
 
   return {
     tiers,
-    fired: firedDetail(deps.historyRecords),
-    blockedByPolicy: vscodeHookInstalled
-      ? "unknown (VS Code policy not introspectable from CLI)"
-      : "n/a (no VS Code hook)",
     lastVerified: deps.state.lastVerified,
     installedAt: deps.state.installedAt,
     installedHost: deps.state.installedHost,
@@ -394,9 +413,16 @@ export function renderDeliveryMatrix(matrix: DeliveryMatrix): string[] {
   const lines: string[] = ["  Delivery matrix:"];
   for (const t of matrix.tiers) {
     lines.push(`    [${t.installed ? "installed" : "absent  "}] ${t.label}: ${t.detail}`);
+    // PER-HOST signals as indented sub-lines under their hook tier (issue #26). `fired`
+    // only when that hook is actually installed (an absent hook has nothing to fire);
+    // `blocked-by-policy` whenever the field is set (VS Code hook tier only).
+    if (t.fired !== undefined && t.installed) {
+      lines.push(`        fired:             ${t.fired}`);
+    }
+    if (t.blockedByPolicy !== undefined) {
+      lines.push(`        blocked-by-policy: ${t.blockedByPolicy}`);
+    }
   }
-  lines.push(`    fired:             ${matrix.fired}`);
-  lines.push(`    blocked-by-policy: ${matrix.blockedByPolicy}`);
   lines.push(`    host version:      ${matrix.hostVersion ?? "unknown"}`);
   lines.push(`    installed host:    ${matrix.installedHost ?? "(not recorded)"}`);
   lines.push(`    installed at:      ${matrix.installedAt ?? "(not recorded)"}`);

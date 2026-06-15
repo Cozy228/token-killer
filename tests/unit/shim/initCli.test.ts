@@ -482,9 +482,11 @@ describe("tk status", () => {
     expect(result.stdout).toContain("Delivery matrix:");
     expect(result.stdout).toContain("Instruction injection:");
     expect(result.stdout).toContain("Usage guidance:");
-    // Honest best-effort fired / policy lines.
-    expect(result.stdout).toContain("fired:");
+    // Per-host signals (issue #26): the VS Code hook tier always shows its policy line;
+    // the per-host `fired` sub-line renders only under an INSTALLED hook tier, and this
+    // fresh status has no hook installed — so it is correctly absent here.
     expect(result.stdout).toContain("blocked-by-policy:");
+    expect(result.stdout).not.toContain("fired:");
     // The detailed shim panel still prints below the matrix.
     expect(result.stdout).toContain("token-killer shim status");
     // No install artifact is written by status — but the delivery-state bookkeeping

@@ -106,8 +106,8 @@ describe("buildDeliveryMatrix (live-derived)", () => {
     // The VS Code row shares that file, so it is NOT installed either.
     expect(tier(m, "vscode-hook").installed).toBe(false);
     expect(tier(m, "vscode-hook").detail).toContain("NOT tk-managed");
-    // And with no tk-managed VS Code hook, the policy line is n/a (not "unknown").
-    expect(m.blockedByPolicy).toContain("n/a");
+    // And with no tk-managed VS Code hook, the per-host policy line is n/a (not "unknown").
+    expect(tier(m, "vscode-hook").blockedByPolicy).toContain("n/a");
   });
 
   test("a claude hook that does NOT point at tk is present-but-foreign: NOT installed", () => {
@@ -184,10 +184,18 @@ describe("buildDeliveryMatrix (live-derived)", () => {
   });
 });
 
-describe("fired / blocked-by-policy (honest best-effort)", () => {
-  test('no hook-runtime rows → fired is "not tracked"', () => {
+// Issue #26: fired / blocked-by-policy are PER-HOST signals on the hook tiers, not
+// single global matrix fields, so status can report each host's hook state separately.
+describe("fired / blocked-by-policy (per-host, honest best-effort)", () => {
+  test('fired is attached to EACH hook tier (and "not tracked" with no rows)', () => {
     const m = buildDeliveryMatrix(baseDeps({ historyRecords: [] }));
-    expect(m.fired).toContain("not tracked");
+    for (const id of ["copilot-hook", "claude-hook", "vscode-hook"]) {
+      expect(tier(m, id).fired, id).toContain("not tracked");
+    }
+    // Non-hook tiers carry NO fired signal.
+    expect(tier(m, "shim").fired).toBeUndefined();
+    expect(tier(m, "injection").fired).toBeUndefined();
+    expect(tier(m, "guidance").fired).toBeUndefined();
   });
 
   test("shell-only history rows do NOT count as hook activity", () => {
@@ -196,10 +204,10 @@ describe("fired / blocked-by-policy (honest best-effort)", () => {
         historyRecords: [{ timestamp: "2026-01-01T00:00:00Z", source_adapter: "shell" }],
       }),
     );
-    expect(m.fired).toContain("not tracked");
+    expect(tier(m, "copilot-hook").fired).toContain("not tracked");
   });
 
-  test("hook-runtime FAILURE rows surface the last activity timestamp", () => {
+  test("hook-runtime FAILURE rows surface the last activity timestamp per host", () => {
     const m = buildDeliveryMatrix(
       baseDeps({
         historyRecords: [
@@ -209,20 +217,27 @@ describe("fired / blocked-by-policy (honest best-effort)", () => {
         ],
       }),
     );
-    expect(m.fired).toContain("last activity 2026-02-02T00:00:00Z");
-    expect(m.fired).toContain("failures only");
+    const fired = tier(m, "copilot-hook").fired ?? "";
+    expect(fired).toContain("last activity 2026-02-02T00:00:00Z");
+    expect(fired).toContain("failures only");
+    // The shared ledger cannot be split per host — the wording says so.
+    expect(fired).toContain("not host-attributed");
   });
 
-  test("blocked-by-policy is honest unknown when a VS Code hook exists, n/a otherwise", () => {
+  test("blocked-by-policy lives ONLY on the VS Code hook tier (unknown when wired, n/a otherwise)", () => {
     const without = buildDeliveryMatrix(baseDeps());
-    expect(without.blockedByPolicy).toContain("n/a");
+    expect(tier(without, "vscode-hook").blockedByPolicy).toContain("n/a");
+    // No other tier carries a policy signal.
+    expect(tier(without, "copilot-hook").blockedByPolicy).toBeUndefined();
+    expect(tier(without, "claude-hook").blockedByPolicy).toBeUndefined();
+
     const withHook = buildDeliveryMatrix(
       baseDeps({
         copilotHookStatus: () => ({ present: true, path: "/x", managed: true }),
       }),
     );
-    expect(withHook.blockedByPolicy).toContain("unknown");
-    expect(withHook.blockedByPolicy).toContain("not introspectable");
+    expect(tier(withHook, "vscode-hook").blockedByPolicy).toContain("unknown");
+    expect(tier(withHook, "vscode-hook").blockedByPolicy).toContain("not introspectable");
   });
 });
 
@@ -348,6 +363,13 @@ describe("renderDeliveryMatrix + installedTierIds", () => {
   test("render produces one line per tier plus the persisted summary", () => {
     const m = buildDeliveryMatrix(
       baseDeps({
+        // A tk-managed copilot hook makes the copilot + VS Code hook tiers "installed",
+        // so their per-host `fired` sub-line renders (issue #26).
+        copilotHookStatus: () => ({
+          present: true,
+          path: "/h/.copilot/hooks/tk-rewrite.json",
+          managed: true,
+        }),
         state: {
           version: 1,
           installedHost: "vscode",
@@ -366,7 +388,9 @@ describe("renderDeliveryMatrix + installedTierIds", () => {
     expect(text).toContain("Shim (PATH):");
     expect(text).toContain("Instruction injection:");
     expect(text).toContain("Usage guidance:");
+    // Per-host fired sub-line renders under the installed hook tier(s).
     expect(text).toContain("fired:");
+    // VS Code hook tier carries the policy sub-line.
     expect(text).toContain("blocked-by-policy:");
     expect(text).toContain("host version:      v9");
     expect(text).toContain("installed host:    vscode");

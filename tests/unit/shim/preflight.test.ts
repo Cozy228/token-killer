@@ -6,6 +6,7 @@ import {
   gatherPreflight,
   parseHookCommandPaths,
   parsePwshVersion,
+  probeHostVersion,
   renderPreflight,
   type PreflightCheck,
   type PreflightDeps,
@@ -24,9 +25,12 @@ function makeDeps(opts: {
   files?: Set<string>;
   env?: NodeJS.ProcessEnv;
   platform?: NodeJS.Platform;
-  // The command baked into the installed tk-managed hook config; null (default) models
-  // "no tk-managed hook installed" (issue #23).
+  // The command(s) baked into the installed tk-managed hook config. `installedCommand`
+  // (a single string, or null = none) is the common case; `installedCommands` (an array)
+  // exercises the multi-path validation that checks the native powershell/bash entries
+  // too (issue #23 §1). null/undefined/[] all model "no tk-managed hook installed".
   installedCommand?: string | null;
+  installedCommands?: string[];
   // Result of the in-process protocol self-probe; defaults to "did not rewrite" so the
   // all-absent matrix has no `ok` check (issue #23 §2).
   protocolProbe?: ProtocolProbeResult;
@@ -41,7 +45,8 @@ function makeDeps(opts: {
     existsSync: (p) => files.has(p),
     env: opts.env ?? {},
     platform: opts.platform ?? "win32",
-    installedHookCommand: () => opts.installedCommand ?? null,
+    installedHookCommands: () =>
+      opts.installedCommands ?? (opts.installedCommand == null ? [] : [opts.installedCommand]),
     protocolProbe: () => opts.protocolProbe ?? { rewrote: false, got: null },
     homedir: () => opts.home ?? "/home/u",
   };
@@ -200,6 +205,36 @@ describe("gatherPreflight — hook command path (validates the INSTALLED baked c
     expect(c.ok).toBe(false); // …but the BAKED paths are stale.
     expect(c.detail).toContain("stale");
   });
+
+  test("validates EVERY installed command — a stale native path FAILs even if the VS Code one is fine (#23 §1)", () => {
+    // The dual-schema config bakes the command into PreToolUse.command AND the native
+    // powershell/bash entries; a stale native node path is a real inert-hook failure the
+    // old single-path read missed. Two distinct commands, only the first resolvable.
+    const deps = makeDeps({
+      installedCommands: [
+        '"/usr/bin/node" "/opt/tk/cli.js" hook copilot', // PreToolUse.command — fine
+        '"/old/node" "/old/cli.js" hook copilot', // native powershell entry — stale
+      ],
+      files: new Set(["/usr/bin/node", "/opt/tk/cli.js"]),
+    });
+    const c = find(gatherPreflight(deps), "Hook command path");
+    expect(c.ok).toBe(false);
+    expect(c.detail).toContain("/old/node");
+    expect(c.detail).toContain("stale");
+  });
+
+  test("all installed command paths executable → ok, names how many it validated", () => {
+    const deps = makeDeps({
+      installedCommands: [
+        '"/usr/bin/node" "/opt/tk/cli.js" hook copilot',
+        '"/usr/bin/node" "/opt/tk/cli.js" hook copilot bash',
+      ],
+      files: new Set(["/usr/bin/node", "/opt/tk/cli.js"]),
+    });
+    const c = find(gatherPreflight(deps), "Hook command path");
+    expect(c.ok).toBe(true);
+    expect(c.detail).toContain("2 installed command paths executable");
+  });
 });
 
 describe("parseHookCommandPaths", () => {
@@ -221,14 +256,28 @@ describe("parseHookCommandPaths", () => {
   test("empty command → both undefined (never throws)", () => {
     expect(parseHookCommandPaths("")).toEqual({ node: undefined, cli: undefined });
   });
+
+  // Issue #20: the powershell field bakes `& '<node>' '<cli>' hook <sub>` — call operator
+  // + single-quoted paths. The path validator must skip the `&` and honor single quotes.
+  test("PowerShell call-operator + single-quoted paths → node + cli (drops `&`)", () => {
+    const cmd = "& 'C:\\Program Files\\nodejs\\node.exe' 'C:\\Users\\me\\app\\cli.js' hook copilot";
+    expect(parseHookCommandPaths(cmd)).toEqual({
+      node: "C:\\Program Files\\nodejs\\node.exe",
+      cli: "C:\\Users\\me\\app\\cli.js",
+    });
+  });
 });
 
 describe("gatherPreflight — hooks dir", () => {
-  test("present (~/.copilot/hooks) → ok", () => {
+  test("present (~/.copilot/hooks) → ok, reports PRESENT not LOADED (#23 §3)", () => {
     const deps = makeDeps({ home: "/home/u", files: new Set(["/home/u/.copilot/hooks"]) });
     const c = find(gatherPreflight(deps), "Copilot hooks dir");
     expect(c.ok).toBe(true);
     expect(c.detail).toContain("/home/u/.copilot/hooks");
+    // existsSync cannot prove the host LOADED the config — the wording must not claim it.
+    expect(c.detail).toContain("present:");
+    expect(c.detail).not.toContain("loaded:");
+    expect(c.detail).toContain("not confirmable");
   });
 
   test("absent → warn", () => {
@@ -343,12 +392,60 @@ describe("gatherPreflight — hook protocol self-probe (#23 §2)", () => {
   });
 });
 
+describe("probeHostVersion (per-host version, #26)", () => {
+  // Inject a runner so the per-host --version command is asserted without spawning.
+  const runner =
+    (table: Record<string, RunResult>): ((cmd: string, args: string[]) => RunResult) =>
+    (cmd) =>
+      table[cmd] ?? { ok: false, stdout: "" };
+
+  test("copilot-cli probes `copilot --version`", () => {
+    const r = probeHostVersion(
+      "copilot-cli",
+      runner({ copilot: { ok: true, stdout: "GitHub Copilot CLI 1.0.62" } }),
+    );
+    expect(r).toBe("GitHub Copilot CLI 1.0.62");
+  });
+
+  test("claude-code probes `claude --version` (NOT copilot's)", () => {
+    const r = probeHostVersion(
+      "claude-code",
+      runner({
+        claude: { ok: true, stdout: "1.2.3 (Claude Code)" },
+        copilot: { ok: true, stdout: "GitHub Copilot CLI 1.0.62" },
+      }),
+    );
+    // The decisive #26 fix: a claude install records CLAUDE's version, never Copilot's.
+    expect(r).toBe("1.2.3 (Claude Code)");
+  });
+
+  test("vscode probes `code --version`, keeping the first line", () => {
+    const r = probeHostVersion(
+      "vscode",
+      runner({ code: { ok: true, stdout: "1.99.0\nabc123\nx64" } }),
+    );
+    expect(r).toBe("1.99.0");
+  });
+
+  test("unknown host records no version (no spawn, honest undefined)", () => {
+    expect(probeHostVersion("unknown", runner({}))).toBeUndefined();
+  });
+
+  test("absent binary / failed spawn → undefined (never the wrong tool's version)", () => {
+    expect(probeHostVersion("claude-code", runner({}))).toBeUndefined();
+    expect(probeHostVersion("vscode", runner({ code: { ok: false, stdout: "" } }))).toBeUndefined();
+  });
+});
+
 describe("defaultProtocolProbe (REAL in-process pipeline)", () => {
-  // No injection: this drives tk's actual normalizeStdin → decide → toHostOutput on a
-  // synthetic powershell event. `git` is present on the dev box / CI (off Windows the
-  // presence gate is always open), so the rewrite fires deterministically. This is the
-  // test that would actually CATCH a normalize/rewrite/host-output regression (#23 §2).
-  test("a synthetic powershell `git status` event rewrites to `tk git status`", () => {
+  // No injection: this drives tk's actual normalizeStdin → decide → toHostOutput on the
+  // REAL native Copilot CLI wire shape — camelCase, string toolArgs, and crucially NO
+  // event-name field (issue #23 §2). That eventless shape is what the native preToolUse
+  // entry sends and what the bcc9181 fix made rewrite via shape inference; the probe must
+  // exercise it, not a synthesized `eventName`. `git` is present on the dev box / CI (off
+  // Windows the presence gate is always open), so the rewrite fires deterministically.
+  // This is the test that would actually CATCH a normalize/rewrite/host-output regression.
+  test("the eventless native powershell `git status` payload rewrites to `tk git status`", () => {
     const result = defaultProtocolProbe();
     expect(result.rewrote).toBe(true);
     expect(result.got).toBe("tk git status");

@@ -4,8 +4,9 @@ import { homedir as osHomedir } from "node:os";
 import { delimiter, join } from "node:path";
 
 import { decide, toHostOutput } from "../hook/copilot.js";
-import { readInstalledCopilotHookCommand } from "../hook/install.js";
+import { readInstalledCopilotHookCommands } from "../hook/install.js";
 import { normalizeStdin } from "../hook/normalize.js";
+import type { Host } from "./detect.js";
 
 // Windows preflight for `tk status` (issue #23, report §8 / §10 P0-5). On a
 // stock Windows box the documented Copilot-CLI hook requirements are easy to get
@@ -40,10 +41,11 @@ export type PreflightDeps = {
   existsSync: (path: string) => boolean;
   env: NodeJS.ProcessEnv;
   platform: NodeJS.Platform;
-  // The command baked into the INSTALLED tk-managed Copilot hook config (or null when
-  // none is installed). hookCommandPathCheck validates the paths THIS embeds — the ones
-  // the host actually executes — not the current process (issue #23).
-  installedHookCommand: () => string | null;
+  // EVERY command baked into the INSTALLED tk-managed Copilot hook config (empty when
+  // none is installed). hookCommandPathCheck validates the paths each embeds — the ones
+  // the host actually executes, including the native powershell/bash entries — not the
+  // current process (issue #23 §1).
+  installedHookCommands: () => string[];
   // Runs tk's real hook pipeline on a synthetic powershell event and reports whether it
   // rewrote (issue #23 §2). Injected so the matrix tests are deterministic; production
   // wires `defaultProtocolProbe` (the real in-process pipeline).
@@ -110,15 +112,20 @@ export type ProtocolProbeResult = { rewrote: boolean; got: string | null };
 // pipeline (normalizeStdin → decide → toHostOutput) and report whether it still emits
 // a rewrite. This proves the WIRE PATH works — dialect detection, the rewrite decision,
 // and the host-output shaping — not merely that a hooks dir exists or a shell resolves.
-// `git status` is the probe command: off Windows the presence gate is always open, on
-// Windows `git` is present on any dev box (the same basis the protocol-matrix suite
-// relies on). Total; any internal error degrades to `rewrote: false`.
+//
+// The wire shape is the REAL native Copilot CLI 1.0.62 payload (issue #23 §2): camelCase
+// `toolName`/`toolArgs` (a JSON STRING) and NO event-name field. That eventless shape is
+// exactly what the native `preToolUse` entry sends — earlier it normalized to `unknown`
+// and silently never rewrote (the bcc9181 bug). Synthesizing `eventName:"preToolUse"`
+// here would bypass the shape-inference path the host actually exercises, so the probe
+// must NOT add it. `git status` is the probe command: off Windows the presence gate is
+// always open, on Windows `git` is present on any dev box (the same basis the
+// protocol-matrix suite relies on). Total; any internal error degrades to `rewrote: false`.
 export function defaultProtocolProbe(): ProtocolProbeResult {
   try {
     const wire = JSON.stringify({
-      eventName: "preToolUse",
       toolName: "powershell",
-      toolArgs: JSON.stringify({ command: "git status" }),
+      toolArgs: JSON.stringify({ command: "git status", description: "Run git status" }),
     });
     const ev = normalizeStdin(wire);
     const out = toHostOutput(ev, decide(ev)) as { modifiedArgs?: { command?: string } } | null;
@@ -136,7 +143,7 @@ export function defaultPreflightDeps(): PreflightDeps {
     existsSync: fsExistsSync,
     env: process.env,
     platform: process.platform,
-    installedHookCommand: () => readInstalledCopilotHookCommand({ project: false }),
+    installedHookCommands: () => readInstalledCopilotHookCommands({ project: false }),
     protocolProbe: defaultProtocolProbe,
     homedir: osHomedir,
   };
@@ -174,6 +181,26 @@ export function parsePwshVersion(raw: string): PwshVersion {
 
 // --- the checks ------------------------------------------------------------
 
+// Best-effort version string for the SELECTED host's own CLI (issue #26). `tk install`
+// records the host version it chose — NOT always Copilot's. Each host reports its
+// version through a different command; an absent binary, a spawn failure, or a host with
+// no CLI version probe (unknown) all degrade to `undefined` (honest "not recorded"),
+// never the wrong tool's version. Install-time only (one shot), so the spawn cost is off
+// the hot path. Total; never throws.
+export function probeHostVersion(host: Host, run: Runner = defaultRun): string | undefined {
+  const spec: Partial<Record<Host, { cmd: string; args: string[] }>> = {
+    "copilot-cli": { cmd: "copilot", args: ["--version"] },
+    "claude-code": { cmd: "claude", args: ["--version"] },
+    vscode: { cmd: "code", args: ["--version"] },
+  };
+  const s = spec[host];
+  if (!s) return undefined;
+  const r = run(s.cmd, s.args);
+  if (!r.ok || r.stdout === "") return undefined;
+  const line = r.stdout.split(/\r?\n/).find((l) => l.trim() !== "");
+  return line?.trim() || undefined;
+}
+
 function copilotVersionCheck(deps: PreflightDeps): PreflightCheck {
   const r = deps.run("copilot", ["--version"]);
   if (!r.ok || r.stdout === "") {
@@ -207,23 +234,34 @@ function pwshCheck(deps: PreflightDeps): PreflightCheck {
   };
 }
 
-// Split a baked hook command (`"<node>" "<cli>" hook <sub>`) into its two leading
-// path tokens, honoring the double-quote wrapping `resolveHookCommand`/`quoteArg`
-// apply to paths containing spaces (e.g. `"C:\Program Files\nodejs\node.exe"`). Only
-// double quotes are recognized — that is the only quoting quoteArg emits. Total; never
-// throws. A missing token comes back undefined (an empty/garbled command).
+// Split a baked hook command into its two leading path tokens (node + cli). Handles
+// BOTH baked forms (issue #20):
+//   - bash / cmd / VS Code: `"<node>" "<cli>" hook <sub>` (double-quoted paths)
+//   - PowerShell:           `& '<node>' '<cli>' hook <sub>` (call operator + single quotes)
+// So it recognizes single AND double quotes, and drops a leading `&` call-operator token.
+// Total; never throws. A missing token comes back undefined (an empty/garbled command).
 export function parseHookCommandPaths(command: string): { node?: string; cli?: string } {
   const tokens: string[] = [];
   let buf = "";
-  let inQuote = false;
+  let quote: '"' | "'" | null = null;
   let started = false;
   for (const c of command) {
-    if (c === '"') {
-      inQuote = !inQuote;
+    if (quote) {
+      // Inside a quote: only the matching quote char closes it.
+      if (c === quote) {
+        quote = null;
+      } else {
+        buf += c;
+      }
       started = true;
       continue;
     }
-    if (!inQuote && (c === " " || c === "\t")) {
+    if (c === '"' || c === "'") {
+      quote = c;
+      started = true;
+      continue;
+    }
+    if (c === " " || c === "\t") {
       if (started) {
         tokens.push(buf);
         buf = "";
@@ -235,17 +273,21 @@ export function parseHookCommandPaths(command: string): { node?: string; cli?: s
     started = true;
   }
   if (started) tokens.push(buf);
+  // Drop a leading PowerShell call operator so node/cli are the first real tokens.
+  if (tokens[0] === "&") tokens.shift();
   return { node: tokens[0], cli: tokens[1] };
 }
 
 function hookCommandPathCheck(deps: PreflightDeps): PreflightCheck {
-  // Validate the command BAKED INTO THE INSTALLED tk-managed hook config — the node +
-  // cli paths the host will actually execute — NOT the current `tk status` process's
-  // own paths (which trivially exist and prove nothing). A stale baked path makes the
-  // hook inert with a Windows CommandNotFoundException, and is exactly the failure this
-  // check must surface (issue #23 / ADR 0005 §5 / audit #13).
-  const command = deps.installedHookCommand();
-  if (command === null) {
+  // Validate EVERY command BAKED INTO THE INSTALLED tk-managed hook config — the node +
+  // cli paths the host will actually execute — NOT the current `tk status` process's own
+  // paths (which trivially exist and prove nothing). The dual-schema config bakes the
+  // command in three host-executed places (PreToolUse.command + the native
+  // powershell/bash entries); validating only one missed a stale native path (issue #23
+  // §1). A stale baked path makes the hook inert with a Windows CommandNotFoundException,
+  // and is exactly the failure this check must surface (ADR 0005 §5 / audit #13).
+  const commands = deps.installedHookCommands();
+  if (commands.length === 0) {
     // No tk-managed hook installed — there is no baked command to validate. Honest
     // "not applicable" rather than a false-green from the running process's paths.
     return {
@@ -254,19 +296,30 @@ function hookCommandPathCheck(deps: PreflightDeps): PreflightCheck {
       detail: "no tk-managed hook config installed (run `tk install`)",
     };
   }
-  const { node, cli } = parseHookCommandPaths(command);
-  const nodeOk = Boolean(node) && deps.existsSync(node as string);
-  const cliOk = Boolean(cli) && deps.existsSync(cli as string);
-  if (nodeOk && cliOk) {
-    return { name: "Hook command path", ok: true, detail: `executable: ${command}` };
+  // Validate each distinct installed command; a single stale path anywhere makes that
+  // wire inert, so any failure fails the whole check (it names which command is stale).
+  const problems: string[] = [];
+  for (const command of commands) {
+    const { node, cli } = parseHookCommandPaths(command);
+    const nodeOk = Boolean(node) && deps.existsSync(node as string);
+    const cliOk = Boolean(cli) && deps.existsSync(cli as string);
+    if (nodeOk && cliOk) continue;
+    const missing: string[] = [];
+    if (!nodeOk) missing.push(`node (${node || "unparsed"})`);
+    if (!cliOk) missing.push(`cli (${cli ?? "unparsed"})`);
+    problems.push(`${missing.join(", ")} in \`${command}\``);
   }
-  const missing: string[] = [];
-  if (!nodeOk) missing.push(`node (${node || "unparsed"})`);
-  if (!cliOk) missing.push(`cli (${cli ?? "unparsed"})`);
+  if (problems.length === 0) {
+    const detail =
+      commands.length === 1
+        ? `executable: ${commands[0]}`
+        : `all ${commands.length} installed command paths executable (${commands.join(" | ")})`;
+    return { name: "Hook command path", ok: true, detail };
+  }
   return {
     name: "Hook command path",
     ok: false,
-    detail: `missing ${missing.join(", ")} — baked hook path is stale, hook would be inert; re-run \`tk install\``,
+    detail: `missing ${problems.join("; ")} — baked hook path is stale, hook would be inert; re-run \`tk install\``,
   };
 }
 
@@ -280,12 +333,18 @@ export function copilotHooksDir(deps: PreflightDeps): string {
 }
 
 function hooksDirCheck(deps: PreflightDeps): PreflightCheck {
+  // existsSync proves the dir is PRESENT — it does NOT prove the host LOADED the config
+  // from it (the host only reads the dir on startup, and that is not introspectable from
+  // the CLI). Claiming "loaded" here overstated the signal (issue #23 §3); report the
+  // honest "present" instead, and point at the protocol self-probe as the rewrite proof.
   const dir = copilotHooksDir(deps);
   const present = deps.existsSync(dir);
   return {
     name: "Copilot hooks dir",
     ok: present ? true : "warn",
-    detail: present ? `loaded: ${dir}` : `absent: ${dir} (run \`tk install\`)`,
+    detail: present
+      ? `present: ${dir} (host load not confirmable from CLI — see Hook protocol self-probe)`
+      : `absent: ${dir} (run \`tk install\`)`,
   };
 }
 

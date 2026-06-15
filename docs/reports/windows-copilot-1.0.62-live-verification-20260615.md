@@ -125,9 +125,107 @@ preserved); payload 2 unchanged. Regression-locked in `tests/unit/hook/protocol-
 Row 7 (both real payloads + an idempotency case). Captures retained under
 `reports/windows-live-captures/`.
 
+## Double-fire convergence re-verification (#20 / #21 follow-up)
+
+The earlier live run captured the payloads BEFORE the `bcc9181` event-less fix, when only
+the PascalCase entry emitted a rewrite — so it could not show what the host does once BOTH
+entries rewrite. Re-running `scripts/windows-feed-captures.ps1` on the box (real Windows
+1.0.62, node v22.22.3, dist built at `bcc9181`) replays the two retained real payloads
+through the real `node dist/cli.js hook copilot` and now shows BOTH rewriting:
+
+- `payload-…164613-798` (native event-less camelCase) → `modifiedArgs.command =
+  "tk --session a938a6db… git status"`.
+- `payload-…164615-175` (PascalCase) → `hookSpecificOutput.updatedInput.command =
+  "tk --session a938a6db… git status"`.
+
+Both callbacks received the SAME original `git status` and converged on the **byte-identical**
+rewritten command. This rules out the conflicting-application failure mode: whichever response
+the host applies (or last-writer-wins), the executed command is the same single `tk …` — never
+`tk tk`, never two different commands. Locked in-process as the faithful host contract in
+`tests/unit/hook/protocol-matrix.test.ts` Row 7 (double-fire convergence + defense-in-depth
+idempotency).
+
+## Live run DENIED the tool call — hook command unparseable under Copilot's `pwsh -c` (#20 defect + fix)
+
+The desktop-session live run (authenticated copilot + Clash up) did NOT silently rewrite — it
+**denied the tool call**:
+
+```
+✗ Run git status (shell)
+  └ Denied by preToolUse hook from "...\.copilot\hooks\tk-rewrite.json" (hook errored)
+Error: could not run git status due to a local pre-tool hook failing.
+```
+
+Copilot CLI's native `preToolUse` is **fail-CLOSED**: a hook that errors DENIES the command
+(worse than a silent inert hook — it blocks the user). This is exactly the residual #20 was
+guarding, surfaced live.
+
+**Root cause.** The dual-schema config put the SAME command string in `bash` and `powershell`:
+`"C:\Program Files\nodejs\node.exe" <cli> hook copilot`. Copilot CLI runs the `powershell` field
+through **PowerShell**, where that cmd/bash-syntax string does NOT parse — a leading double-quoted
+path is a string VALUE PowerShell echoes/rejects (not a command), and the double quotes are
+stripped crossing the `-Command` argument boundary, splitting `C:\Program Files\…` on its space
+(`C:\Program` "is not recognized"). It worked in `bash` (bash executes a leading quoted path) and
+in the 6/15 capture only because the tee-wrapper was a `.cmd` file, which masked the real node
+command. Auth-free reproduction (`scripts/diag-hook-invocation.ps1`, since removed): the baked
+command **failed** under `powershell -Command` and `-File`, **passed** under `cmd /c` and direct
+node spawn — confirming the failure is the PowerShell invocation, not the rewrite logic.
+
+**Ground truth — how Copilot actually launches the hook.** A first fix changed ONLY the
+`powershell` field, and the live re-run STILL denied (every tool call, even non-shell
+`report_intent` / `skill(...)`). Instrumenting each hook field to a no-space `.cmd` shim that
+runs `scripts/hooklog.cjs` (logs the parent-process chain + the real tk hook's exit/stderr,
+always exits 0) and reading Copilot's own `~/.copilot/logs/process-*.log` (`--log-level debug`)
+gave the decisive facts:
+
+- The pre-fix `process-*.log` shows `HookExitCodeError: Hook command failed with code 1` /
+  `Stderr: ParserError: 1 | …node.exe" …\dist\cli.js hook copilot` — a PowerShell **parse**
+  error on the command string (the hook process never started; tk's own fail-open never ran).
+- The parent-process chain shows Copilot launches EVERY hook field via
+  `pwsh.exe -nop -nol -c <field-value>` — `command` (PascalCase) AND `powershell` (camelCase)
+  BOTH go through `pwsh -c`. So a powershell-only fix is incomplete: the PascalCase `command`
+  field (still the bash/cmd form) ParserErrors too, and preToolUse being fail-closed, that one
+  failing field is enough to DENY. That is exactly why the first re-run was "worse".
+- With the shims (bare `.cmd`, parseable) the real `node dist/cli.js hook copilot` ran with
+  `status=0` and emitted the correct rewrite — confirming the hook BINARY is fine; only the
+  baked command STRING was unparseable under `pwsh -c`.
+
+**Fix.** `resolveHookCommandPowershell` bakes `& '<node>' '<cli>' hook copilot` — call operator
+`&` (executes the quoted path) + SINGLE quotes (survive the `-c` arg-boundary that strips double
+quotes). `buildCopilotHookConfig` is now PLATFORM-AWARE: `preToolUse.powershell` = pwsh form,
+`preToolUse.bash` = bash form, and `PreToolUse.command` = pwsh form on `win32` / bash form on
+macOS/Linux (Copilot CLI Windows runs `command` via `pwsh -c`; macOS/Linux VS Code runs it via
+sh). The config is written at install time on a known OS, so the form is chosen by
+`process.platform`. `parseHookCommandPaths` drops a leading `&` and honors single quotes so the
+#23 path validation still works. Regression-locked in `tests/unit/hook/install.test.ts`.
+
+**Auth-free verification on the box** (`scripts/verify-hook-fix.ps1`, after `pnpm build` +
+`node dist/cli.js install --host copilot-cli`) reproduces Copilot's EXACT invocation
+`pwsh -nop -nol -c <field>` with a native payload on stdin, for BOTH fields:
+
+```
+PreToolUse.command (PascalCase):    exit=0  rewrote=True
+preToolUse.powershell (camelCase):  exit=0  rewrote=True
+```
+
+The box's installed config is now the fixed form. (NOTE: VS Code reads the same PascalCase
+`command`; on Windows it likely uses pwsh too, but its execution shell is UNVERIFIED — re-check
+VS Code Windows after this change.)
+
+**Residual (one live re-run, desktop session):** confirm Copilot CLI 1.0.62 now REWRITES (not
+denies), and that the double-fire yields exactly ONE execution / history row:
+
+```pwsh
+cd C:\Users\cozy2\workspace\token-killer
+copilot -p "Run this exact shell command and show its output, nothing else: git status"
+# expect: NOT denied; output tk-compressed; tk history has exactly ONE shell row for git status.
+```
+
 ## Artifacts
 
 - `scripts/windows-accept.ps1` — auth-free synthetic acceptance (re-runnable, 5/5).
 - `scripts/windows-capture-live.ps1` — drives a real copilot session, byte-exact payload capture, auto-restores config. Prereq: authenticated copilot + Clash up.
 - `scripts/windows-feed-captures.ps1` — replays captured payloads through the handler.
+- `scripts/verify-hook-fix.ps1` — auth-free check that the installed `powershell` hook field
+  actually runs under PowerShell (`powershell`/`pwsh`, `-Command`/`-File`) and rewrites (#20 fix).
 - `reports/windows-live-captures/payload-*.json` — the two real 1.0.62 payloads.

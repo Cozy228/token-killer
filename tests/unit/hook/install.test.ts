@@ -44,18 +44,21 @@ describe("config artifact (DESIGN §3.1)", () => {
 
   // Issue #20: the file must be conformant to BOTH host protocols. Top-level
   // `version: 1`, plus a camelCase `preToolUse` entry (Copilot CLI native) carrying
-  // separate `bash`/`powershell` keys (same resolved command) and `timeoutSec` — so
-  // Windows PowerShell tool calls are actually rewritten, not silently skipped.
+  // separate `bash`/`powershell` keys and `timeoutSec` — so Windows PowerShell tool
+  // calls are actually rewritten, not silently skipped.
   test("declares schema version 1", () => {
     expect(buildCopilotHookConfig("CMD").version).toBe(1);
   });
 
-  test("emits a camelCase preToolUse entry with bash + powershell keys", () => {
-    const config = buildCopilotHookConfig("CMD");
+  test("emits a camelCase preToolUse entry with SHELL-SPECIFIC bash + powershell keys", () => {
+    // The bash and powershell keys carry DIFFERENT command strings (issue #20 live
+    // finding: the bash/cmd form errors under PowerShell → Copilot CLI denies the tool
+    // call). Pass both explicitly here to assert they are kept separate.
+    const config = buildCopilotHookConfig("BASH_CMD", "& 'pwsh' 'cli' hook copilot");
     expect(config.hooks.preToolUse[0]).toEqual({
       type: "command",
-      bash: "CMD",
-      powershell: "CMD",
+      bash: "BASH_CMD",
+      powershell: "& 'pwsh' 'cli' hook copilot",
       cwd: ".",
       timeoutSec: 5,
     });
@@ -68,6 +71,44 @@ describe("config artifact (DESIGN §3.1)", () => {
     expect(command.endsWith("hook copilot")).toBe(true);
     expect(command.startsWith("tk ")).toBe(false);
     expect(command).toContain(process.execPath);
+  });
+
+  // Issue #20 (live fix): the default `powershell` field uses the call-operator +
+  // single-quoted form so it actually runs under PowerShell (the bash/cmd form does not).
+  test("default powershell field is the call-operator + single-quoted form", () => {
+    const config = buildCopilotHookConfig();
+    const pwsh = config.hooks.preToolUse[0]!.powershell;
+    const bash = config.hooks.preToolUse[0]!.bash;
+    // Call operator + single-quoted absolute node path, ending in `hook copilot`.
+    expect(pwsh.startsWith("& '")).toBe(true);
+    expect(pwsh).toContain(`'${process.execPath}'`);
+    expect(pwsh.endsWith("hook copilot")).toBe(true);
+    // bash keeps the double-quoted form and is DISTINCT from powershell.
+    expect(bash).not.toContain("& '");
+    expect(pwsh).not.toBe(bash);
+  });
+
+  // Issue #20 (live parent-chain finding): Copilot CLI runs EVERY hook field — including
+  // the PascalCase `PreToolUse.command` — via `pwsh -nop -nol -c <field>`, so on Windows
+  // that field must ALSO be the PowerShell form (else it ParserErrors → fail-closed DENY).
+  // On macOS/Linux VS Code runs it via sh, so it stays the bash/cmd form. The config is
+  // written at install time on a known OS, so the form is chosen by `platform`.
+  test("PascalCase command is the PowerShell form on win32, the bash form elsewhere", () => {
+    const bashCmd = "B";
+    const pwshCmd = "& 'P' 'cli' hook copilot";
+    expect(buildCopilotHookConfig(bashCmd, pwshCmd, "win32").hooks.PreToolUse[0]!.command).toBe(
+      pwshCmd,
+    );
+    expect(buildCopilotHookConfig(bashCmd, pwshCmd, "darwin").hooks.PreToolUse[0]!.command).toBe(
+      bashCmd,
+    );
+    expect(buildCopilotHookConfig(bashCmd, pwshCmd, "linux").hooks.PreToolUse[0]!.command).toBe(
+      bashCmd,
+    );
+    // The camelCase shell-specific fields are platform-independent (host picks the key).
+    const win = buildCopilotHookConfig(bashCmd, pwshCmd, "win32");
+    expect(win.hooks.preToolUse[0]!.bash).toBe(bashCmd);
+    expect(win.hooks.preToolUse[0]!.powershell).toBe(pwshCmd);
   });
 });
 
