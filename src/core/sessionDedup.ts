@@ -133,25 +133,35 @@ export type DedupInput = {
   env?: NodeJS.ProcessEnv;
 };
 
-// Returns a marker-substituted FilteredResult on a dedup HIT (the caller emits it
-// in place of the repeat and records ONLY a dedup event), else null (the caller
-// emits the full output and records the normal ledger-① row). All store / snapshot
-// / ledger side effects are fail-open.
-export async function applySessionDedup(input: DedupInput): Promise<FilteredResult | null> {
+// The decision the caller acts on: `filtered` is a marker-substituted FilteredResult
+// on a dedup HIT (emitted in place of the repeat) or null (emit the full output);
+// `persist` defers every store / snapshot / ledger write until AFTER the caller has
+// emitted stdout. The decision phase (eligibility gates, `readStore`, HIT marker build)
+// runs synchronously-before-output because it determines WHICH bytes are emitted; the
+// persistence phase carries no influence on the emitted bytes, so it is moved off the
+// user-visible latency path. `persist` is fail-open internally — it never throws.
+export type DedupDecision = {
+  filtered: FilteredResult | null;
+  persist: () => Promise<void>;
+};
+
+const NO_DEDUP: DedupDecision = { filtered: null, persist: async () => {} };
+
+export async function applySessionDedup(input: DedupInput): Promise<DedupDecision> {
   const { handler, command, options, raw, filtered } = input;
   const env = input.env ?? process.env;
   const now = input.now ?? Date.now();
 
   // Eligibility gates (any "no" → emit the full output, no dedup).
-  if (options.dedup === false) return null; // `--no-dedup` per-command opt-out
-  if (!sessionDedupEnabled(env)) return null;
-  if (options.raw) return null; // --raw never compresses (belt-and-braces; cli bypasses too)
-  if (options.saveRaw === false) return null; // no recovery channel possible → never dedup
-  if (raw.exitCode !== 0) return null; // exit identity / errors always pass through
-  if (!handler.traits?.cacheable) return null; // opt-in only
-  if (handler.traits?.masksSecrets) return null; // never snapshot a masking handler's raw (H21)
-  if (!isReadOnlyForHandler(handler.name, command)) return null; // mandatory read-only gate
-  if (filtered.output.length < MIN_DEDUP_BYTES) return null; // tiny / structured → skip
+  if (options.dedup === false) return NO_DEDUP; // `--no-dedup` per-command opt-out
+  if (!sessionDedupEnabled(env)) return NO_DEDUP;
+  if (options.raw) return NO_DEDUP; // --raw never compresses (belt-and-braces; cli bypasses too)
+  if (options.saveRaw === false) return NO_DEDUP; // no recovery channel possible → never dedup
+  if (raw.exitCode !== 0) return NO_DEDUP; // exit identity / errors always pass through
+  if (!handler.traits?.cacheable) return NO_DEDUP; // opt-in only
+  if (handler.traits?.masksSecrets) return NO_DEDUP; // never snapshot a masking handler's raw (H21)
+  if (!isReadOnlyForHandler(handler.name, command)) return NO_DEDUP; // mandatory read-only gate
+  if (filtered.output.length < MIN_DEDUP_BYTES) return NO_DEDUP; // tiny / structured → skip
 
   const ttlClass = ttlClassOf(handler);
   const sessionId = options.sessionId; // already validated by parse.ts; may be absent
@@ -167,7 +177,7 @@ export async function applySessionDedup(input: DedupInput): Promise<FilteredResu
   try {
     prev = (await readStore(file)).entries[key];
   } catch {
-    return null; // can't read the store — fail open
+    return NO_DEDUP; // can't read the store — fail open
   }
 
   // HIT — a fresh entry with the same compressed output. (Exit identity holds by
@@ -185,7 +195,7 @@ export async function applySessionDedup(input: DedupInput): Promise<FilteredResu
         ? prev.rawPointer
         : undefined;
     if (!rawPointer) rawPointer = await snapshot(raw, options);
-    if (!rawPointer) return null; // no recovery channel → emit full (lossless-or-nothing)
+    if (!rawPointer) return NO_DEDUP; // no recovery channel → emit full (lossless-or-nothing)
 
     const sameSession = !!prev.session_id && !!sessionId && prev.session_id === sessionId;
     const marker = buildMarker({
@@ -194,26 +204,38 @@ export async function applySessionDedup(input: DedupInput): Promise<FilteredResu
       rawPointer,
       sameSession,
     });
-    if (marker.length >= filtered.output.length) return null; // defensive never-make-worse
+    if (marker.length >= filtered.output.length) return NO_DEDUP; // defensive never-make-worse
 
     const markerTokens = estimateTokens(marker);
-    await appendDedupEvent(options.cwd, {
-      ts: new Date(now).toISOString(),
-      session_id: sessionId,
-      norm_cmd: normCmd,
-      handler: filtered.handler,
-      ttl_class: ttlClass,
-      output_tokens: filtered.outputTokens,
-      marker_tokens: markerTokens,
-      saved_tokens: Math.max(0, filtered.outputTokens - markerTokens),
-      raw_pointer: rawPointer,
-    });
-    // Persist a freshly-created pointer so later hits reuse it — NOT lastEmittedAt (a
-    // hit is not a full emit) and NOT session_id (the entry keeps its original owner).
-    if (rawPointer !== prev.rawPointer) {
-      await upsertEntry(file, key, { ...prev, rawPointer }, now);
-    }
-    return markerResult(filtered, marker, rawPointer);
+    // Bind the values the deferred writes need NOW (the decision phase already
+    // computed them); the closure recomputes nothing. The local pins `rawPointer`
+    // to a string for the closure's capture.
+    const hitRawPointer = rawPointer;
+    const refreshPointer = hitRawPointer !== prev.rawPointer;
+    const prevEntry = prev;
+    const persist = async () => {
+      try {
+        await appendDedupEvent(options.cwd, {
+          ts: new Date(now).toISOString(),
+          session_id: sessionId,
+          norm_cmd: normCmd,
+          handler: filtered.handler,
+          ttl_class: ttlClass,
+          output_tokens: filtered.outputTokens,
+          marker_tokens: markerTokens,
+          saved_tokens: Math.max(0, filtered.outputTokens - markerTokens),
+          raw_pointer: hitRawPointer,
+        });
+        // Persist a freshly-created pointer so later hits reuse it — NOT lastEmittedAt
+        // (a hit is not a full emit) and NOT session_id (the entry keeps its owner).
+        if (refreshPointer) {
+          await upsertEntry(file, key, { ...prevEntry, rawPointer: hitRawPointer }, now);
+        }
+      } catch {
+        // The output is already emitted; a failed ledger/store write drops the row.
+      }
+    };
+    return { filtered: markerResult(filtered, marker, hitRawPointer), persist };
   }
 
   // MISS (new / changed / expired) — establish or refresh the entry. The recovery
@@ -230,6 +252,14 @@ export async function applySessionDedup(input: DedupInput): Promise<FilteredResu
     rawPointer: filtered.rawOutputPath ?? "",
     ...(sessionId ? { session_id: sessionId } : {}),
   };
-  await upsertEntry(file, key, entry, now);
-  return null;
+  // The entry is fully built from already-known values; only the store write is
+  // deferred (the common-case hot-path write: lock + reread + prune + rename).
+  const persist = async () => {
+    try {
+      await upsertEntry(file, key, entry, now);
+    } catch {
+      // The full output is already emitted; a failed store write drops the entry.
+    }
+  };
+  return { filtered: null, persist };
 }

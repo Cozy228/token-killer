@@ -32,9 +32,8 @@ import { runPipeline } from "./core/pipeline.js";
 import { recordHistory, recordRawLitePassthrough } from "./core/history.js";
 import { calculateSavings } from "./core/savings.js";
 import { maybeSaveRawOutput } from "./core/rawStore.js";
-import { limitOutput } from "./core/outputLimit.js";
 import { formatStats } from "./core/stats.js";
-import { failureHint } from "./core/failureHints.js";
+import { emitThenCommit } from "./core/emit.js";
 import { VERSION } from "./version.js";
 import type {
   CommandHandler,
@@ -411,7 +410,7 @@ async function runCompress(
   // the child runs — ENOENT, ShimRecursionError) still reach the fail-open, where a
   // re-spawn is correct because nothing ran.
   try {
-    const filtered = await runPipeline(
+    const result = await runPipeline(
       {
         ...handler,
         async execute() {
@@ -420,7 +419,8 @@ async function runCompress(
       },
       command,
       options,
-    ).then((result) => result.filtered);
+    );
+    const filtered = result.filtered;
 
     // Compress succeeded — trace the savings to the same dual sink as the gate
     // decision (D1), so a live `TK_DEBUG` session shows route → outcome in one log.
@@ -431,25 +431,7 @@ async function runCompress(
       savedPct: filtered.savingsPct,
     });
 
-    // Apply the opt-in --max-lines/--max-chars caps to the FINAL output (H18). A no-op
-    // unless the user passed a finite limit; never touches the quality gate above.
-    const display = limitOutput(filtered.output, options);
-    process.stdout.write(display);
-    if (display.length > 0 && !display.endsWith("\n")) {
-      process.stdout.write("\n");
-    }
-
-    // Inline failure-fix hint (scheme 2): presentation-layer only — appended after
-    // the compressed output, never part of it, so it can't trip the quality gate.
-    if (raw.exitCode !== 0) {
-      const hint = failureHint(raw, command);
-      if (hint) process.stdout.write(`tk hint: ${hint}\n`);
-    }
-
-    if (options.stats) {
-      process.stdout.write(`\n${formatStats(filtered)}\n`);
-    }
-    return raw.exitCode;
+    return await emitThenCommit(filtered, raw, command, options, result.commit);
   } catch {
     // Post-execution fallback: the command already ran; surface its captured output
     // verbatim and preserve the exit code. Never re-spawn (C6).

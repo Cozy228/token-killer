@@ -101,6 +101,10 @@ describe("pipeline fallback", () => {
 
     try {
       const result = await runPipeline(handler, command, options(dir));
+      // Accounting is now deferred to commit() — the same fail-open invariant must hold
+      // there: the unwritable home makes recordHistory throw, and commit must swallow it
+      // so nothing escapes into cli.ts's fail-open catch (which would re-spawn — C6).
+      await expect(result.commit()).resolves.toBeUndefined();
       expect(executions).toBe(1); // never re-executed despite the accounting failure
       expect(result.filtered.output).toContain("match line");
       expect(result.filtered.exitCode).toBe(0);
