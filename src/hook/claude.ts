@@ -28,7 +28,11 @@ export const CLAUDE_REWRITE_REASON = "tk auto-rewrite";
 type ClaudePreToolUse = {
   hook_event_name?: string;
   tool_name?: string;
-  tool_input?: { command?: string };
+  // The full Bash tool input. Every field is carried through to `updatedInput`
+  // (overwriting only `command`): Claude Code's Bash input can also include
+  // `description` / `timeout` / `run_in_background`, and silently dropping them
+  // changes how the command runs (a backgrounded call would run in the foreground).
+  tool_input?: { command?: string; [key: string]: unknown };
   // Claude Code stamps the conversation id at the top level of every hook payload.
   // Carried into the rewrite as `--session <id>` so tk's history stamps it (ADR 0009).
   session_id?: string;
@@ -41,7 +45,8 @@ export type ClaudeHookOutput = {
   hookSpecificOutput: {
     hookEventName: "PreToolUse";
     permissionDecisionReason: string;
-    updatedInput: { command: string };
+    // The full original tool_input with only `command` overwritten (see decide).
+    updatedInput: Record<string, unknown>;
   };
 };
 
@@ -77,7 +82,13 @@ export function decide(input: unknown): ClaudeHookOutput | null {
     hookSpecificOutput: {
       hookEventName: "PreToolUse",
       permissionDecisionReason: CLAUDE_REWRITE_REASON,
-      updatedInput: { command: r.rewritten },
+      // Preserve the full original tool_input, overwriting only `command` —
+      // symmetric with copilot.ts's VS Code / Copilot CLI branches (#19).
+      // `payload.tool_input` is guaranteed defined here (the empty-command guard
+      // above returns null otherwise). Emitting `{ command }` alone would drop
+      // fields the agent set (run_in_background, timeout, description), silently
+      // changing how the rewritten command runs.
+      updatedInput: { ...payload.tool_input, command: r.rewritten },
     },
   };
 }

@@ -38,6 +38,32 @@ describe("tk hook copilot — protocol over stdin/stdout", () => {
     expect(parsed.hookSpecificOutput.permissionDecision).toBe("allow");
   });
 
+  // #19 end-to-end: VS Code validates updatedInput against run_in_terminal's full
+  // schema, so the rewrite must preserve every original field (explanation/goal/
+  // mode) and overwrite only `command`. An incomplete updatedInput is silently
+  // ignored by VS Code — the exact bug this locks.
+  test("VS Code dialect: updatedInput preserves the full run_in_terminal input", () => {
+    const payload = JSON.stringify({
+      event: "preToolUse",
+      tool_name: "run_in_terminal",
+      tool_input: {
+        command: "git status",
+        explanation: "Check repository status",
+        goal: "Inspect working tree",
+        mode: "sync",
+      },
+    });
+    const r = runTk(["hook", "copilot"], payload);
+    expect(r.status).toBe(0);
+    const parsed = JSON.parse(r.stdout);
+    expect(parsed.hookSpecificOutput.updatedInput).toEqual({
+      command: "tk git status",
+      explanation: "Check repository status",
+      goal: "Inspect working tree",
+      mode: "sync",
+    });
+  });
+
   test("Copilot CLI dialect: rewrites via flat modifiedArgs", () => {
     const payload = JSON.stringify({
       event: "preToolUse",

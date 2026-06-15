@@ -43,6 +43,29 @@ describe("decide — Claude PreToolUse Bash rewrite", () => {
     );
   });
 
+  // #19 (extended to the Claude path): updatedInput must preserve the FULL
+  // original tool_input and overwrite only `command`. Claude Code's Bash input can
+  // carry description/timeout/run_in_background; dropping them silently changes how
+  // the command runs (e.g. a backgrounded call would run in the foreground).
+  test("rewrite preserves extra tool_input fields (run_in_background, timeout, description)", () => {
+    const out = decide({
+      hook_event_name: "PreToolUse",
+      tool_name: "Bash",
+      tool_input: {
+        command: "git status",
+        description: "check the working tree",
+        timeout: 5000,
+        run_in_background: true,
+      },
+    });
+    expect(out?.hookSpecificOutput.updatedInput).toEqual({
+      command: "tk git status",
+      description: "check the working tree",
+      timeout: 5000,
+      run_in_background: true,
+    });
+  });
+
   test("non-rewritable command (echo hi) → null (emit nothing)", () => {
     expect(decide(pre("echo hi"))).toBeNull();
   });
