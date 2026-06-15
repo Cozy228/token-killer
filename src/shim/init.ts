@@ -11,6 +11,7 @@ import { installShim, runShim } from "./cli.js";
 import { copilotHookConfigStatus, uninstallCopilotHookConfig } from "../hook/install.js";
 import { claudeHookStatus, uninstallClaudeHook } from "../hook/claudeInstall.js";
 import { guidanceFilePath, guidanceLoader, unwriteGuidance, writeGuidance } from "./guidance.js";
+import { gatherPreflight, renderPreflight } from "./preflight.js";
 
 // The install / uninstall / status surface (U1+U2, ADR 0002 §5). `tk install`
 // auto-detects the host and wires the highest available delivery tier (Copilot
@@ -77,6 +78,12 @@ export function runStatus(_argv: string[] = []): number {
   out(`  injection file: ${existsSync(target) ? target : "absent"}`);
   const guidance = guidanceFilePath(host);
   out(`  usage guidance: ${guidance && existsSync(guidance) ? guidance : "absent"}`);
+  // Windows preflight (issue #23): the documented Copilot-CLI hook requirements
+  // (PowerShell 7+, an absolute hook command, a loaded hooks dir, the
+  // `powershell` shell-tool name). Runs on all platforms — each probe degrades
+  // to a "not found / unavailable" line and never throws, so status stays total.
+  out(`  Windows preflight:`);
+  renderPreflight(gatherPreflight()).forEach(out);
   return 0;
 }
 
