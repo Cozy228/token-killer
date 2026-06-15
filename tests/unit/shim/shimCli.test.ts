@@ -24,6 +24,9 @@ function runTg(args: string[]) {
     env: {
       ...process.env,
       HOME: home,
+      // Windows: defaultRcPath()/homedir() read USERPROFILE (not HOME), so without
+      // this the RC patch + shim land in the REAL profile, not the sandbox.
+      USERPROFILE: home,
       SHELL: "/bin/zsh",
       TOKEN_KILLER_HOME: join(home, ".token-killer"),
     },
