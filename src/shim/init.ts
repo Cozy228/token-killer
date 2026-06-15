@@ -12,6 +12,14 @@ import { copilotHookConfigStatus, uninstallCopilotHookConfig } from "../hook/ins
 import { claudeHookStatus, uninstallClaudeHook } from "../hook/claudeInstall.js";
 import { guidanceFilePath, guidanceLoader, unwriteGuidance, writeGuidance } from "./guidance.js";
 import { gatherPreflight, renderPreflight } from "./preflight.js";
+import {
+  gatherDeliveryMatrix,
+  hostVersionFromPreflight,
+  installedTierIds,
+  recordInstall,
+  renderDeliveryMatrix,
+  updateDeliveryState,
+} from "./capability.js";
 
 // The install / uninstall / status surface (U1+U2, ADR 0002 §5). `tk install`
 // auto-detects the host and wires the highest available delivery tier (Copilot
@@ -63,27 +71,36 @@ function injectionTarget(host: Host): string {
 export function runStatus(_argv: string[] = []): number {
   const host = detectHost(gatherDetectEnv());
   out(`Detected host: ${host}`);
-  const claude = claudeHookStatus({});
-  out(
-    `  claude-code settings hook: ${
-      claude.present
-        ? `${claude.path} (${claude.pointsAtTk ? "points at tk" : "present, NOT tk"})`
-        : "absent"
-    }`,
-  );
-  const hookStatus = copilotHookConfigStatus({ project: false });
-  out(`  copilot hook config: ${hookStatus.present ? hookStatus.path : "absent"}`);
+
+  // Gather preflight ONCE (issue #23 Windows section) and REUSE it for the matrix's
+  // host-version line, so `copilot --version` is not spawned twice (ADR 0012 #7).
+  const preflight = gatherPreflight();
+
+  // ADR 0012 #7: render the per-host capability MATRIX (a host can hold several
+  // live tiers at once, so a single "active tier" is no longer faithful). Everything
+  // here is LIVE-DERIVED by the existing status helpers (copilot/claude hook status,
+  // shim manifest + probe, injection/guidance file presence, TTY opt-in) plus the
+  // persisted install-time facts. `runShim(["status"])` still prints its detailed
+  // shim panel below the matrix for the baked-path / PATH-position diagnostics the
+  // matrix summarizes in one line.
+  const matrix = gatherDeliveryMatrix({ host, preflight });
+  renderDeliveryMatrix(matrix).forEach(out);
+
+  out(`  Shim detail:`);
   runShim(["status"]);
-  const target = injectionTarget(host);
-  out(`  injection file: ${existsSync(target) ? target : "absent"}`);
-  const guidance = guidanceFilePath(host);
-  out(`  usage guidance: ${guidance && existsSync(guidance) ? guidance : "absent"}`);
+
   // Windows preflight (issue #23): the documented Copilot-CLI hook requirements
   // (PowerShell 7+, an absolute hook command, a loaded hooks dir, the
   // `powershell` shell-tool name). Runs on all platforms — each probe degrades
   // to a "not found / unavailable" line and never throws, so status stays total.
   out(`  Windows preflight:`);
-  renderPreflight(gatherPreflight()).forEach(out);
+  renderPreflight(preflight).forEach(out);
+
+  // Status just VERIFIED the live matrix — refresh ONLY the persisted lastVerified
+  // (the spec for #7: "lastVerified refreshed when tk status runs"). We do not touch
+  // the install-time facts (host/version/installedAt) here, so a merge with `undefined`
+  // can never clobber them. Best-effort: a write failure never breaks read-only status.
+  updateDeliveryState({ lastVerified: new Date().toISOString() });
   return 0;
 }
 
@@ -256,6 +273,16 @@ function parseInstallArgs(argv: string[]): InstallArgs {
   return args;
 }
 
+// Persist what this install wired (ADR 0012 #7). Best-effort and NEVER changes
+// install behavior — it only records state for `tk status` to display. The host
+// version REUSES the issue-#23 preflight (the `copilot --version` line) rather than
+// spawning it again. Called once, just before a successful (non-dry-run) install
+// returns; the dry-run path records nothing (it wrote nothing).
+function recordInstallState(host: Host): void {
+  const hostVersion = hostVersionFromPreflight(gatherPreflight());
+  recordInstall({ host, tiers: installedTierIds(host), hostVersion });
+}
+
 export function runInstall(argv: string[]): number {
   const opts = parseInstallArgs(argv);
   const env = gatherDetectEnv();
@@ -328,6 +355,7 @@ export function runInstall(argv: string[]): number {
     writeGuidanceStep(host, opts.dryRun);
     out(`Active tier: hook`);
     step.trailerLines.forEach(out);
+    if (!opts.dryRun) recordInstallState(host);
     return 0;
   }
 
@@ -366,6 +394,7 @@ export function runInstall(argv: string[]): number {
       writeGuidanceStep(host, false);
       out(hookIsAdditive ? `Active tier: shim (primary) + hook (additive)` : `Active tier: shim`);
       out(`Restart your terminal (or VS Code) for PATH changes to take effect.`);
+      recordInstallState(host);
       return 0;
     }
     // Graceful degradation (ADR 0012 §3): the primary shim probe FAILED, so the
@@ -389,5 +418,6 @@ export function runInstall(argv: string[]): number {
     out(`(No host auto-detected. Point your agent at this file, or re-run with --project.)`);
   }
   out(`Restart your agent for the instructions to take effect.`);
+  recordInstallState(host);
   return 0;
 }

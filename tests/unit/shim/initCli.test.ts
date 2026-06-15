@@ -353,14 +353,38 @@ describe("tk uninstall", () => {
 });
 
 describe("tk status", () => {
-  test("reports the detected host and shim status; writes nothing", () => {
+  // ADR 0012 #7: status renders a per-host capability MATRIX (replacing the old
+  // ad-hoc per-tier lines). Assert on the matrix's stable labels plus the shim
+  // detail panel, tolerant of the new layout.
+  test("reports the detected host and the capability matrix; writes nothing", () => {
     const result = runTg(["status"], { PATH: "/usr/bin:/bin", TERM_PROGRAM: "" });
     expect(result.status).toBe(0);
     expect(result.stdout).toContain("Detected host:");
+    // The matrix and its per-tier rows.
+    expect(result.stdout).toContain("Delivery matrix:");
+    expect(result.stdout).toContain("Instruction injection:");
+    expect(result.stdout).toContain("Usage guidance:");
+    // Honest best-effort fired / policy lines.
+    expect(result.stdout).toContain("fired:");
+    expect(result.stdout).toContain("blocked-by-policy:");
+    // The detailed shim panel still prints below the matrix.
     expect(result.stdout).toContain("token-killer shim status");
-    expect(result.stdout).toContain("injection file:");
-    // No writes: status must not create the shim dir or any install artifact.
+    // No install artifact is written by status — but the delivery-state bookkeeping
+    // file (lastVerified refresh) is allowed and expected. The shim dir must NOT exist.
     expect(existsSync(join(home, ".token-killer", "shim"))).toBe(false);
+  });
+
+  // The persisted delivery state lets status report what `tk install` chose even
+  // for tiers a live probe can't fully confirm. Install records it; status reads it
+  // back and refreshes lastVerified (best-effort, never breaking read-only status).
+  test("status reflects the persisted delivery state written by install", () => {
+    runTg(["install", "--host", "copilot-cli"]);
+    expect(existsSync(join(home, ".token-killer", "delivery-state.json"))).toBe(true);
+    const result = runTg(["status"]);
+    expect(result.status).toBe(0);
+    expect(result.stdout).toContain("installed host:");
+    expect(result.stdout).toMatch(/installed host:\s+copilot-cli/);
+    expect(result.stdout).toContain("last verified:");
   });
 });
 
