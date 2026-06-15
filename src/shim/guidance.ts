@@ -76,11 +76,8 @@ export function guidanceDoc(): string {
 // (copilot-instructions.md, see guidanceLoader) and a separate ~/.copilot/TK.md was
 // dead weight the host never loaded. Other hosts have no stable home for it.
 export function guidanceFilePath(host: Host, home = homedir()): string | undefined {
-  // Posixify (see injection.ts): display/config path, forward slashes are portable
-  // and match RTK; a Windows `path.join` would otherwise leak `\` into output.
-  if (host === "claude-code") return join(home, ".claude", GUIDANCE_FILENAME).replace(/\\/g, "/");
-  if (host === "vscode")
-    return join(home, ".copilot", "instructions", VSCODE_GUIDANCE_FILENAME).replace(/\\/g, "/");
+  if (host === "claude-code") return join(home, ".claude", GUIDANCE_FILENAME);
+  if (host === "vscode") return join(home, ".copilot", "instructions", VSCODE_GUIDANCE_FILENAME);
   return undefined;
 }
 
@@ -108,15 +105,13 @@ export function guidanceLoader(
 ): { path: string; body: string } | undefined {
   if (host === "claude-code") {
     return {
-      // Posixify the loader path (see guidanceFilePath): printed by init and used as
-      // a forward-slash `@import` reference; Node fs accepts `/` on Windows.
-      path: join(home, ".claude", "CLAUDE.md").replace(/\\/g, "/"),
+      path: join(home, ".claude", "CLAUDE.md"),
       body: ["## Token Killer", "", `@${GUIDANCE_FILENAME}`].join("\n"),
     };
   }
   if (host === "copilot-cli") {
     return {
-      path: join(home, ".copilot", "copilot-instructions.md").replace(/\\/g, "/"),
+      path: join(home, ".copilot", "copilot-instructions.md"),
       body: guidanceDoc().trimEnd(),
     };
   }

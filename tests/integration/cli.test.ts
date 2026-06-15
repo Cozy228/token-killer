@@ -644,7 +644,9 @@ describe("Global Flags", () => {
 
       const history = await readFile(historyFile(dir), "utf8");
       const record = JSON.parse(history.trim()) as { raw_output_path: string };
-      expect(record.raw_output_path).toMatch(/^projects\/repo:[a-f0-9]{12}\/raw\//);
+      // Platform-tolerant: Windows uses `\` separators and sanitizes the ':' in the
+      // fingerprint to '-' (fingerprintSegment), so accept either separator and ':'/'-'.
+      expect(record.raw_output_path).toMatch(/^projects[/\\]repo[:-][a-f0-9]{12}[/\\]raw[/\\]/);
 
       const rawLog = await readFile(resolveStoredPath(record.raw_output_path), "utf8");
       expect(rawLog).toContain("Command: cat sample.txt");
