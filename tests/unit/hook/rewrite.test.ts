@@ -20,7 +20,11 @@ describe("rewriteCommand — rewrite table (DESIGN §3.8)", () => {
   ];
   for (const [input, expected] of rewrites) {
     test(`${input} → ${expected}`, () => {
-      const r = rewriteCommand(input);
+      // Inject isAvailable=() => true: this table tests the rewrite MAPPING, not tool
+      // presence. The real isProgramAvailable returns false for tools absent on the CI
+      // box (e.g. eslint on Windows), which would gate out the rewrite (D2) and fail the
+      // mapping assertion. Presence-gating has its own dedicated tests.
+      const r = rewriteCommand(input, undefined, () => true);
       expect(r.decision).toBe("rewrite");
       expect(r.rewritten).toBe(expected);
     });

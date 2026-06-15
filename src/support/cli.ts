@@ -9,7 +9,12 @@
 
 import { createInterface } from "node:readline/promises";
 
-import { buildSupportReport, scrubHome, writeSupportBundle, type SupportReport } from "./report.js";
+import {
+  buildSupportReport,
+  scrubHomePath,
+  writeSupportBundle,
+  type SupportReport,
+} from "./report.js";
 import {
   buildMailto,
   buildTeamsDeepLink,
@@ -135,7 +140,7 @@ function emailBody(report: SupportReport | undefined, bundlePath: string | undef
   // the user to attach the file.
   if (bundlePath)
     lines.push(
-      `Full report saved at: ${scrubHome(bundlePath)}`,
+      `Full report saved at: ${scrubHomePath(bundlePath)}`,
       "(attach this file before sending)",
     );
   return lines.join("\n");

@@ -132,21 +132,24 @@ export function buildCopilotHookConfig(
 }
 
 export function copilotHookConfigPath(loc: ConfigLocation): string {
+  // Posixify (see injection.ts): this path is printed by init and stored in the
+  // debug bundle; forward slashes are portable (Node fs accepts them on Windows)
+  // and match RTK. The config CONTENT's `cwd` field is unaffected (it stays ".").
   if (loc.project) {
-    return join(loc.cwd ?? process.cwd(), ".github", "hooks", CONFIG_FILENAME);
+    return join(loc.cwd ?? process.cwd(), ".github", "hooks", CONFIG_FILENAME).replace(/\\/g, "/");
   }
   // User scope. When the caller supplies a HOME (tests), keep `<home>/.copilot/...`
   // exactly. Otherwise honor $COPILOT_HOME — rtk treats it as the `.copilot` ROOT
   // itself (so `$COPILOT_HOME/hooks/<file>`, NOT `$COPILOT_HOME/.copilot/...`),
   // falling back to `~/.copilot/...`.
   if (loc.home !== undefined) {
-    return join(loc.home, ".copilot", "hooks", CONFIG_FILENAME);
+    return join(loc.home, ".copilot", "hooks", CONFIG_FILENAME).replace(/\\/g, "/");
   }
   const copilotHome = process.env.COPILOT_HOME;
   if (copilotHome) {
-    return join(copilotHome, "hooks", CONFIG_FILENAME);
+    return join(copilotHome, "hooks", CONFIG_FILENAME).replace(/\\/g, "/");
   }
-  return join(homedir(), ".copilot", "hooks", CONFIG_FILENAME);
+  return join(homedir(), ".copilot", "hooks", CONFIG_FILENAME).replace(/\\/g, "/");
 }
 
 function serialize(config: CopilotHookConfig): string {

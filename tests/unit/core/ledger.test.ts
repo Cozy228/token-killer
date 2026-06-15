@@ -3,7 +3,7 @@ import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 
-import { historyFile, projectFingerprint } from "../../../src/core/dataDir.js";
+import { fingerprintSegment, historyFile, projectFingerprint } from "../../../src/core/dataDir.js";
 import type { HistoryRecord } from "../../../src/core/history.js";
 import { recordGovernance } from "../../../src/core/governance.js";
 import { recordOptimizeAction } from "../../../src/inspect/optimizeActions.js";
@@ -76,11 +76,21 @@ describe("loadLedgers — four independent ledgers, joined read-side", () => {
     const l = await loadLedgers({ scope: "project", cwd });
 
     // ① measured
-    expect(l.measured_command_savings).toMatchObject({ estimate_kind: "measured", commands: 3, saved_tokens: 75 });
+    expect(l.measured_command_savings).toMatchObject({
+      estimate_kind: "measured",
+      commands: 3,
+      saved_tokens: 75,
+    });
     // ② measured delta
-    expect(l.optimizer_deltas.surfaces[0]).toMatchObject({ delta_tokens: 40, exposure_class: "on-invocation" });
+    expect(l.optimizer_deltas.surfaces[0]).toMatchObject({
+      delta_tokens: 40,
+      exposure_class: "on-invocation",
+    });
     // ③ opportunity
-    expect(l.governance_opportunities).toMatchObject({ denied_large_reads: 1, estimate_kind: "opportunity" });
+    expect(l.governance_opportunities).toMatchObject({
+      denied_large_reads: 1,
+      estimate_kind: "opportunity",
+    });
     // ④ guardrails: fallback 1/3, failure 1/3, raw_reopen n/a
     expect(l.quality_guardrails).toMatchObject({
       commands: 3,
@@ -111,7 +121,13 @@ describe("loadLedgers — four independent ledgers, joined read-side", () => {
   });
 
   test("corrupt governance.jsonl → empty ③ section, never a throw", async () => {
-    const file = join(root, ".token-killer", "projects", projectFingerprint(cwd), "governance.jsonl");
+    const file = join(
+      root,
+      ".token-killer",
+      "projects",
+      fingerprintSegment(projectFingerprint(cwd)),
+      "governance.jsonl",
+    );
     mkdirSync(dirname(file), { recursive: true });
     writeFileSync(file, "not-json\n{broken\n");
     const l = await loadLedgers({ scope: "project", cwd });
@@ -136,7 +152,14 @@ describe("rendering — no grand total, four top-level JSON keys", () => {
     const l = await loadLedgers({ scope: "project", cwd });
     const obj = JSON.parse(renderJson(l));
     expect(Object.keys(obj).sort()).toEqual(
-      ["governance_opportunities", "measured_command_savings", "optimizer_deltas", "quality_guardrails", "scope", "since"].sort(),
+      [
+        "governance_opportunities",
+        "measured_command_savings",
+        "optimizer_deltas",
+        "quality_guardrails",
+        "scope",
+        "since",
+      ].sort(),
     );
     // no key suggests a cross-ledger sum
     for (const key of Object.keys(obj)) {

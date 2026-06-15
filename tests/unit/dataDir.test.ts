@@ -6,6 +6,7 @@ import { fileURLToPath, pathToFileURL } from "node:url";
 import { afterEach, describe, expect, test, vi } from "vitest";
 
 import {
+  fingerprintSegment,
   historyFile,
   normalizeDriveCase,
   projectFingerprint,
@@ -32,9 +33,12 @@ describe("dataDir", () => {
 
     expect(tokenKillerHome()).toBe(home);
     expect(fingerprint).toMatch(/^repo:[a-f0-9]{12}$/);
-    expect(historyFile(cwd)).toBe(path.join(home, "projects", fingerprint, "history.jsonl"));
+    // The on-disk segment sanitizes ':' to '-' on Windows (':' is illegal in paths);
+    // fingerprintSegment is a no-op on POSIX, so this matches the product on both.
+    const seg = fingerprintSegment(fingerprint);
+    expect(historyFile(cwd)).toBe(path.join(home, "projects", seg, "history.jsonl"));
     expect(rawOutputPathRelative(cwd, "sample.log")).toBe(
-      path.join("projects", fingerprint, "raw", "sample.log"),
+      path.join("projects", seg, "raw", "sample.log"),
     );
 
     await rm(home, { recursive: true, force: true });

@@ -28,7 +28,9 @@ import { resolveHookCommand } from "./install.js";
 export type ClaudeLocation = { home?: string };
 
 export function claudeSettingsPath(loc: ClaudeLocation = {}): string {
-  return join(loc.home ?? homedir(), ".claude", "settings.json");
+  // Posixify (see injection.ts): printed by init + stored in the debug bundle;
+  // forward slashes are portable on Windows and match RTK.
+  return join(loc.home ?? homedir(), ".claude", "settings.json").replace(/\\/g, "/");
 }
 
 // Our PreToolUse Bash hook command: `"<node>" "<cli>" hook claude`. The absolute

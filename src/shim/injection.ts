@@ -88,18 +88,26 @@ export function userInjectionPath(
   home = homedir(),
   _vscodeUserDirPath?: string,
 ): string {
-  if (host === "copilot-cli") return join(home, ".copilot", "copilot-instructions.md");
+  // Posixify: these paths are printed by init and stored as `finding.file` in
+  // inspect buckets / written into config + instruction files. Forward slashes are
+  // portable (Node fs accepts them on Windows) and match RTK's form; without this a
+  // Windows `path.join` leaks `\` into display/config output.
+  if (host === "copilot-cli")
+    return join(home, ".copilot", "copilot-instructions.md").replace(/\\/g, "/");
   // VS Code does NOT auto-load a user-level copilot-instructions.md (only workspace
   // `.github/…`); its user-level channel is `~/.copilot/instructions/*.instructions.md`.
   // The old `<vscodeUserDir>/copilot-instructions.md` target was therefore inert.
   // The leading `_` keeps `vscodeUserDirPath` a documented-but-unused param.
   if (host === "vscode")
-    return join(home, ".copilot", "instructions", "token-killer-prefix.instructions.md");
-  return join(tokenKillerHome(), "copilot-instructions.md");
+    return join(home, ".copilot", "instructions", "token-killer-prefix.instructions.md").replace(
+      /\\/g,
+      "/",
+    );
+  return join(tokenKillerHome(), "copilot-instructions.md").replace(/\\/g, "/");
 }
 
 // Project-level target — the ONLY project-repo write, gated behind `tk install
 // --project`.
 export function projectInjectionPath(cwd: string): string {
-  return join(cwd, ".github", "copilot-instructions.md");
+  return join(cwd, ".github", "copilot-instructions.md").replace(/\\/g, "/");
 }

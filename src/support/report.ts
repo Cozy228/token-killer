@@ -41,6 +41,15 @@ export function scrubHome(text: string): string {
   return text.replace(new RegExp(pattern, "gi"), "~");
 }
 
+// Like scrubHome but for a SINGLE path string (not a document): additionally
+// normalizes Windows `\` to `/` so the path shown in the mailto body / "saved at"
+// line is portable and matches RTK's forward-slash form. Deliberately NOT applied
+// to the full bundle — blanket-posixifying a document would corrupt command text
+// and anomaly payloads (regex / `\n` literals), so this is scoped to lone paths.
+export function scrubHomePath(p: string): string {
+  return scrubHome(p).replace(/\\/g, "/");
+}
+
 // Best-effort read-last-N-lines. Missing/unreadable ⇒ "(none)". Never throws.
 export function tailFile(path: string, maxLines: number): string {
   try {
