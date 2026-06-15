@@ -1,0 +1,38 @@
+name: CI
+
+on:
+  push:
+    branches: [main, token-killer-node-cli]
+  pull_request:
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        node-version: [20, 22]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4   # reads packageManager from package.json
+      - uses: actions/setup-node@v4
+        with:
+          node-version: ${{ matrix.node-version }}
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm typecheck
+      # The members of the `pnpm test:ci` chain are run as separate steps so the
+      # session-dedup disable below stays scoped to smoke only — product and
+      # install tests run with shipped defaults. `pnpm test:install` runs the
+      # build that the smoke suite needs, so order is preserved.
+      - run: pnpm test:product
+      - run: pnpm test:install
+      - run: bash scripts/check-test-presence.sh
+      - run: bash scripts/validate-docs.sh
+      - run: bash tests/smoke/smoke.sh
+        # The smoke suite (tests/smoke/smoke.sh) re-invokes identical commands
+        # (e.g. `tk ls .` three times). Cross-invocation session dedup ships
+        # default-on and returns recovery markers instead of output on the 2nd/3rd
+        # call, which breaks the smoke assertions. Disable dedup so CI exercises
+        # real output. Making smoke.sh own this is a recorded follow-up.
+        env:
+          TK_SESSION_DEDUP: "0"
