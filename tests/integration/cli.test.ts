@@ -52,6 +52,16 @@ function runTk(
 // from PATH and the real tools resolve elsewhere.
 const SHIM_INVOKED: NodeJS.ProcessEnv = { TK_SHIM_DIR: path.join(tmpdir(), "tk-fake-shim") };
 
+// Initialize a fresh git repo with a deterministic identity in `dir`. The Git
+// tests below each need a DIFFERENT working-tree state (dirty + untracked, a
+// specific diff, a clean branch), so they can't share one repo — but this
+// init + identity boilerplate (three spawns) had been copied verbatim into each.
+function gitInit(dir: string): void {
+  spawnSync("git", ["init"], { cwd: dir });
+  spawnSync("git", ["config", "user.email", "test@test.com"], { cwd: dir });
+  spawnSync("git", ["config", "user.name", "Test"], { cwd: dir });
+}
+
 // ============================================================================
 // 1. Version & Help
 // ============================================================================
@@ -408,9 +418,7 @@ describe("Git", () => {
   test("tk git status works in git repo", async () => {
     const dir = await mkdtemp(path.join(tmpdir(), "tk-git-status-"));
     try {
-      spawnSync("git", ["init"], { cwd: dir });
-      spawnSync("git", ["config", "user.email", "test@test.com"], { cwd: dir });
-      spawnSync("git", ["config", "user.name", "Test"], { cwd: dir });
+      gitInit(dir);
       await writeFile(path.join(dir, "file.txt"), "content");
       spawnSync("git", ["add", "file.txt"], { cwd: dir });
       spawnSync("git", ["commit", "-m", "init"], { cwd: dir });
@@ -430,9 +438,7 @@ describe("Git", () => {
   test("tk git log works", async () => {
     const dir = await mkdtemp(path.join(tmpdir(), "tk-git-log-"));
     try {
-      spawnSync("git", ["init"], { cwd: dir });
-      spawnSync("git", ["config", "user.email", "test@test.com"], { cwd: dir });
-      spawnSync("git", ["config", "user.name", "Test"], { cwd: dir });
+      gitInit(dir);
       await writeFile(path.join(dir, "f.txt"), "v1");
       spawnSync("git", ["add", "f.txt"], { cwd: dir });
       spawnSync("git", ["commit", "-m", "first"], { cwd: dir });
@@ -448,9 +454,7 @@ describe("Git", () => {
   test("tk git diff works", async () => {
     const dir = await mkdtemp(path.join(tmpdir(), "tk-git-diff-"));
     try {
-      spawnSync("git", ["init"], { cwd: dir });
-      spawnSync("git", ["config", "user.email", "test@test.com"], { cwd: dir });
-      spawnSync("git", ["config", "user.name", "Test"], { cwd: dir });
+      gitInit(dir);
       const before = Array.from({ length: 80 }, (_, index) => `line-${index}`).join("\n");
       const after = Array.from({ length: 80 }, (_, index) =>
         index % 4 === 0 ? `changed-${index}` : `line-${index}`,
@@ -509,9 +513,7 @@ describe("Git", () => {
   test("tk git branch works", async () => {
     const dir = await mkdtemp(path.join(tmpdir(), "tk-git-branch-"));
     try {
-      spawnSync("git", ["init"], { cwd: dir });
-      spawnSync("git", ["config", "user.email", "test@test.com"], { cwd: dir });
-      spawnSync("git", ["config", "user.name", "Test"], { cwd: dir });
+      gitInit(dir);
       await writeFile(path.join(dir, "f.txt"), "v1");
       spawnSync("git", ["add", "f.txt"], { cwd: dir });
       spawnSync("git", ["commit", "-m", "init"], { cwd: dir });
