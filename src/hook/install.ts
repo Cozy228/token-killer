@@ -15,6 +15,7 @@ import {
   mkdirSync,
   readdirSync,
   readFileSync,
+  renameSync,
   rmdirSync,
   rmSync,
   writeFileSync,
@@ -112,28 +113,12 @@ function serialize(config: CopilotHookConfig): string {
 
 export type HookConfigPlan = {
   path: string;
-  action: "create" | "overwrite" | "unchanged";
+  // `skipped-unmanaged`: a file exists at the path, differs from ours, and lacks
+  // our marker (or is unparseable) — install must NOT clobber it. Mirrors the
+  // marker discipline uninstall already applies; see `installCopilotHookConfig`.
+  action: "create" | "overwrite" | "unchanged" | "skipped-unmanaged";
   contents: string;
 };
-
-// Compute what install WOULD do without writing — backs `tk install --dry-run`.
-export function planCopilotHookConfig(loc: ConfigLocation): HookConfigPlan {
-  const path = copilotHookConfigPath(loc);
-  const contents = serialize(buildCopilotHookConfig());
-  if (!existsSync(path)) return { path, action: "create", contents };
-  const current = readFileSync(path, "utf8");
-  return { path, action: current === contents ? "unchanged" : "overwrite", contents };
-}
-
-// Write the config (user-level by default). Idempotent. Returns the plan.
-export function installCopilotHookConfig(loc: ConfigLocation): HookConfigPlan {
-  const plan = planCopilotHookConfig(loc);
-  if (plan.action !== "unchanged") {
-    mkdirSync(dirname(plan.path), { recursive: true });
-    writeFileSync(plan.path, plan.contents);
-  }
-  return plan;
-}
 
 function isManaged(path: string): boolean {
   if (!existsSync(path)) return false;
@@ -144,6 +129,76 @@ function isManaged(path: string): boolean {
     return false;
   }
 }
+
+// Compute what install WOULD do without writing — backs `tk install --dry-run`.
+export function planCopilotHookConfig(loc: ConfigLocation): HookConfigPlan {
+  const path = copilotHookConfigPath(loc);
+  const contents = serialize(buildCopilotHookConfig());
+  if (!existsSync(path)) return { path, action: "create", contents };
+  const current = readFileSync(path, "utf8");
+  if (current === contents) return { path, action: "unchanged", contents };
+  // The bytes differ. A marker-bearing file is ours — overwrite it (the upgrade
+  // path: `resolveHookCommand()` embeds absolute node+cli paths, so contents
+  // legitimately change on every move/upgrade). A file without the marker (or an
+  // unparseable one) is the user's — never clobber it.
+  if (!isManaged(path)) return { path, action: "skipped-unmanaged", contents };
+  return { path, action: "overwrite", contents };
+}
+
+// Write the config (user-level by default). Idempotent. Returns the plan. Writes
+// only when we own the destination — `skipped-unmanaged` and `unchanged` are no-ops.
+//
+// The write is atomic: contents go to a same-directory temp file, then `renameSync`
+// swaps it into place (the rawStore pattern, sync). A crash/disk failure mid-write
+// can only leave a stray `.tmp` — never a torn or zero-byte destination. This matters
+// directly to the unmanaged-guard: an in-place truncating `writeFileSync` that died
+// after `O_TRUNC` would leave an unparseable file that the guard then permanently
+// refuses to repair (issue #11). Atomicity removes that self-inflicted lockout.
+export function installCopilotHookConfig(
+  loc: ConfigLocation,
+  // Test seam: inject a pre-computed plan to model the TOCTOU window — a plan made
+  // when the file was managed, replayed after it flipped unmanaged. Production never
+  // passes this; the revalidation below is what protects the live race.
+  precomputedPlan?: HookConfigPlan,
+): HookConfigPlan {
+  const plan = precomputedPlan ?? planCopilotHookConfig(loc);
+  if (plan.action === "create" || plan.action === "overwrite") {
+    const dir = dirname(plan.path);
+    mkdirSync(dir, { recursive: true });
+    // Unique same-directory temp so `renameSync` is atomic (same filesystem).
+    const tmpPath = join(dir, `.${CONFIG_FILENAME}.${process.pid}.${(writeCounter += 1)}.tmp`);
+    writeFileSync(tmpPath, plan.contents);
+    try {
+      // TOCTOU guard: ownership was checked during planning, but the destination may
+      // have changed since. This one unified check covers BOTH plan actions:
+      //   - `overwrite` planned against our managed file that flipped unmanaged
+      //     (a concurrent user edit) → skip rather than clobber.
+      //   - `create` planned against an absent path, but an unmanaged file appeared
+      //     in the plan→rename window (a concurrent user write) → skip rather than
+      //     clobber. (issue #11 follow-up: the create branch was previously
+      //     unguarded and renamed unconditionally.)
+      // A destination that now exists AND lacks our marker is the user's — never
+      // replace it. The complementary races are intentionally allowed: a managed
+      // file appearing (a racing tk install) proceeds with the rename, consistent
+      // with accepted last-writer-wins semantics between managed owners; and an
+      // `overwrite` target deleted in the window simply renames as a plain create.
+      if (existsSync(plan.path) && !isManaged(plan.path)) {
+        rmSync(tmpPath, { force: true });
+        return { ...plan, action: "skipped-unmanaged" };
+      }
+      renameSync(tmpPath, plan.path);
+    } catch (err) {
+      // Rename failed (e.g. read-only parent) — leave the destination as-is and clean
+      // up the temp so a failed attempt never strands a file or torn target.
+      rmSync(tmpPath, { force: true });
+      throw err;
+    }
+  }
+  return plan;
+}
+
+// Per-process counter making the temp filename unique within a directory.
+let writeCounter = 0;
 
 // Remove our config — only if the marker proves we wrote it (never clobber a
 // user's own hooks file).

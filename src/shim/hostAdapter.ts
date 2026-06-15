@@ -119,6 +119,15 @@ const copilotAdapter: HostAdapter = {
   injectionPath: (home, vscodeUserDir) => userInjectionPath("copilot-cli", home, vscodeUserDir),
   installHook: (loc) => {
     const plan = installCopilotHookConfig({ project: loc.project, cwd: loc.cwd });
+    if (plan.action === "skipped-unmanaged") {
+      return {
+        headerLines: [
+          `copilot hook config exists but is not managed by tk — left untouched: ${plan.path}`,
+          "  (remove it and re-run tk install to adopt)",
+        ],
+        trailerLines: [],
+      };
+    }
     return {
       headerLines: [
         `${plan.action === "unchanged" ? "Up to date" : "Wrote"} copilot hook config: ${plan.path}`,
@@ -128,6 +137,14 @@ const copilotAdapter: HostAdapter = {
   },
   planHook: (loc) => {
     const plan = planCopilotHookConfig({ project: loc.project, cwd: loc.cwd });
+    if (plan.action === "skipped-unmanaged") {
+      return {
+        headerLines: [
+          `[dry-run] copilot hook config exists but is not managed by tk — would leave untouched: ${plan.path}`,
+        ],
+        trailerLines: [],
+      };
+    }
     return {
       headerLines: [
         `[dry-run] would ${actionWould(plan.action)} copilot hook config: ${plan.path}`,
