@@ -6,6 +6,22 @@ light pass over `server/`; `rtk/`, `ztk/`, `headroom/` are vendored reference
 repos and were not audited). Run non-interactively — per the skill default, the
 top findings by leverage were planned without a user selection round.
 
+**Updated 2026-06-15 — incremental delta audit + reconcile, against commit
+`22579d2`.** Audited only `0fcd6f6..HEAD` (the 5 commits since the last audit:
+calibrated token estimator, pricing/AI-Credits, the `tk support` subsystem, and
+cross-cutting `telemetry`/`html`/`cli` touches — ~1900 lines; 3 parallel sweeps,
+every finding re-read against source). The delta is clean — no high-severity new
+bug; the `tk support` code applied the issue-#12 lesson (whole-bundle home-scrub +
+`0600`/`0700`, RFC-6068 mailto encoding, `rundll32` not `cmd /c start`). Outcomes:
+**plan 011** (reports/ permissions, issue #13) and **plan 012** (estimator
+hot-path allocation, issue #14) added; **DOCS-01** folded into plan 004 (Step 5,
+noted on issue #7); plans **002/007 refreshed** for line drift; **001/003/005/006/
+008 confirmed un-drifted**; **009 confirmed clean**. Plan **010** (Agent Plugin
+spike) was authored separately by direct user request the same day — its number
+predates these, so the delta-audit plans took 011/012. Minor delta findings are
+under "Delta audit 2026-06-15" below. Not audited: pre-existing code outside the
+delta (covered 2026-06-12), `server/`, vendored repos.
+
 Execute in the order below unless dependencies say otherwise. Each executor:
 read the plan fully before starting, honor its STOP conditions, and update your
 row when done.
@@ -17,13 +33,15 @@ row when done.
 | 001  | Add GitHub Actions CI running the existing gates | P1 | S | — | [#4](https://github.com/Cozy228/token-killer/issues/4) | TODO |
 | 002  | Emit compressed output before accounting writes | P1 | M | 001 (soft) | [#5](https://github.com/Cozy228/token-killer/issues/5) | TODO |
 | 003  | Restrict metrics-store permissions to 0700/0600 | P1 | S | — | [#6](https://github.com/Cozy228/token-killer/issues/6) | TODO |
-| 004  | Docs truth sweep (README acquisition/Codex, DESIGN.md, dead `--no-dedup`) | P2 | S | — | [#7](https://github.com/Cozy228/token-killer/issues/7) | TODO |
+| 004  | Docs truth sweep (README/Codex, DESIGN.md, dead `--no-dedup`, TELEMETRY price table) | P2 | S | — | [#7](https://github.com/Cozy228/token-killer/issues/7) | TODO |
 | 005  | Neutralize cmd.exe `%`-expansion for `.cmd`/`.bat` spawns | P2 | M | 001 (soft) | [#8](https://github.com/Cozy228/token-killer/issues/8) | TODO |
 | 006  | Truncation-safe multibyte decode at the 64MB capture cap | P3 | S | — | [#9](https://github.com/Cozy228/token-killer/issues/9) | TODO |
 | 007  | Telemetry stems: closed subcommand vocabulary (stop user-content transmission) | P1 | S | — | [#10](https://github.com/Cozy228/token-killer/issues/10) | TODO |
 | 008  | Refuse to overwrite an unmanaged copilot hook config on install | P2 | S | — | [#11](https://github.com/Cozy228/token-killer/issues/11) | TODO |
 | 009  | Add `tk support` — email/Teams report with auto-attached error + logs | P2 | M | — | [#12](https://github.com/Cozy228/token-killer/issues/12) | DONE (see Deviations A/B in plan) |
 | 010  | Spike — package tk as a GitHub Agent Plugin (Copilot CLI + VS Code distribution) | P3 | M | — | — | TODO |
+| 011  | Create reports/ dir + HTML reports owner-only (0700/0600) | P2 | S | — | [#13](https://github.com/Cozy228/token-killer/issues/13) | DONE |
+| 012  | Estimate tokens via an index loop (drop per-codepoint allocation) | P3 | S | — | [#14](https://github.com/Cozy228/token-killer/issues/14) | DONE |
 
 Status values: TODO | IN PROGRESS | DONE | BLOCKED (with one-line reason) | REJECTED (with one-line rationale)
 
@@ -36,6 +54,43 @@ Status values: TODO | IN PROGRESS | DONE | BLOCKED (with one-line reason) | REJE
   or coordinate; each plan's STOP conditions cover the conflict.
 - 002 changes test files that 003's new test sits next to — no real conflict,
   but rebase order matters if run concurrently.
+- **011 is independent** and a sibling to 003 with **disjoint files** — 003 covers
+  the six core stores, 011 covers `src/report/open.ts`. Run in any order. (003's
+  reports/ exclusion now defers to 011; see 003's Out-of-scope note.)
+- **012 is independent.** It preserves the estimator's bucketing exactly, keeping
+  `scripts/calibrate-tokens.ts`'s fitter consistent (see the "calibrate the ratios"
+  direction finding).
+- **004 scope grew 2026-06-15**: it now also fixes the `docs/TELEMETRY.md`
+  model-price table (DOCS-01) as Step 5 — no new dependency.
+
+## Delta audit 2026-06-15 — minor findings (recorded, not planned)
+
+LOW-severity items in `0fcd6f6..HEAD` deliberately not turned into plans (so they
+are not re-audited; each is a one-line fold-in if a future PR touches the file):
+
+- **`tk support` prints the unscrubbed absolute `bundlePath` to stdout**
+  (`src/support/cli.ts:189,213,226`). The *transmitted* channels are scrubbed (the
+  mailto body path via `cli.ts:138`; the whole bundle + summary via
+  `report.ts:88,97`) and the saved file is `0600`; the stdout lines are *local*
+  status, matching `report/open.ts:53` printing HTML-report paths raw. By-design
+  unless agent-visible stdout paths are later deemed in-scope for scrubbing.
+- **`gain.ts:243` emits flat `price_per_mtok: 3` while `value_usd` is priced
+  per-row** — `value_usd` is correct (never inflated) and `model: "per_row"` already
+  signals it; only the explanatory field can mislead a manual cross-check, and only
+  with multi-model history.
+- **GPT-5.5 cross-ref rate is a hardcoded `$5`** (`pricing.ts:34`) with no staleness
+  signal — future-drift only (rates were corrected 2026-06-12).
+- **`report/html.ts:245,249` interpolate price numbers without `n()`/`esc()`** — not
+  currently reachable (always numeric constants); defense-in-depth only.
+- **`debug/render.ts:30` home-scrubber is case-sensitive/separator-exact**, weaker
+  than `support/report.ts`'s `/gi` regex — but the `tk support` path is covered by
+  the report.ts boundary scrub; the gap is `tk debug`-local-file only.
+- **`support/send.ts` does no email-format validation** — confirmed NOT injectable
+  (RFC-6068 encoding; `?`/`&`/CRLF stay encoded); only a malformed address yields a
+  malformed mailto.
+- **`support/report.ts:111-119` `writeSupportBundle` has no write-failure rollback**
+  — a mid-write failure can leave a truncated file; other support helpers are
+  best-effort. LOW.
 
 ## Audited but deferred (worth doing later; no plan written)
 
@@ -54,10 +109,11 @@ Status values: TODO | IN PROGRESS | DONE | BLOCKED (with one-line reason) | REJE
 - **`parsePositiveInt` accepts trailing garbage** (`src/parse.ts:28-34`,
   `"50abc"`→50, `"1e9"`→1) — trivial; bundle into the next change touching
   `parse.ts`.
-- **Token estimate walks every codepoint of raw output, multi-pass**
-  (`src/core/tokens.ts:31-39` via `savings.ts`, plus a SHA-256 + ANSI-strip
-  pass for dedup) — profile before optimizing; only matters for multi-MB
-  outputs.
+- **Token estimate walks every codepoint → now PLAN 012.** (Deferred 2026-06-12
+  as "profile before optimizing"; the estimator has since been rewritten into the
+  segmented bucketer at `src/core/tokens.ts:72-96`, re-measured at ~4.5× an index
+  loop on 10MB output, and promoted to a planned S/P3 perf fix. The separate
+  SHA-256 + ANSI-strip dedup pass remains deferred.)
 - **`tk gain --user` full-rebuilds a project rollup on any history growth**
   (`src/core/rollup.ts:551-629`) — history.jsonl is append-only, so an
   incremental read from `source_bytes` is safe and cheap. Cold path; do when
@@ -114,6 +170,18 @@ Status values: TODO | IN PROGRESS | DONE | BLOCKED (with one-line reason) | REJE
   runtime deps, README quick-start assumes an installed `tk`. After plan 001
   (CI) and 004 (README), `pnpm publish` is mostly a decision, not work — and it
   collapses the acquisition-path problem.
+- **Calibrate the estimator ratios** (new, 2026-06-15): `scripts/calibrate-tokens.ts`
+  (an NNLS fitter over a tool-output corpus) ships, but `src/core/tokens.ts:31-40`'s
+  chars-per-token ratios are still the "literature-grounded" *defaults*, not a real
+  fit — a stated-but-undelivered capability. Running `pnpm calibrate-tokens` on a
+  representative corpus and baking the fitted constants is a low-cost credibility
+  upgrade for the headline savings/AI-Credits figures. Pairs with plan 012 (which
+  preserves the bucketing the fitter measures).
+- **Slack as a third support channel** (new, 2026-06-15): `src/support/send.ts`'s
+  `SupportChannel = "email" | "teams"` plus its per-channel builder/opener make a
+  `slack://` deep link roughly one builder away — adjacent-possible if support
+  routing wants a third surface. Spike the scheme's reliability in the target
+  environment first (same caution as the `msteams:` choice).
 
 ## Findings considered and rejected
 
@@ -148,3 +216,11 @@ Status values: TODO | IN PROGRESS | DONE | BLOCKED (with one-line reason) | REJE
   local working copies.
 - **`src/cli.ts` as god object**: highest churn but structurally a thin lazy
   dispatch table; churn reflects surface cleanups, not rot.
+- **`tk support` subsystem (2026-06-15 delta)**: audited for leakage / URL
+  injection / cmd-expansion / write-safety; sound. Whole-bundle home-scrub at the
+  send boundary (`report.ts:88,97`), `0600`/`0700` saved file, RFC-6068 mailto
+  recipient encoding (no header injection), and — notably — the opener uses
+  `rundll32 url.dll,FileProtocolHandler` precisely to AVOID the `cmd /c start`
+  `&`-truncation/`%`-expansion family (the issue-#8 / win32 `report/open.ts:37`
+  hazard). Residual LOW items are under "Delta audit 2026-06-15" above. Recorded so
+  nobody re-audits the subsystem wholesale.

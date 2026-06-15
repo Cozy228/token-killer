@@ -7,7 +7,7 @@
 > in `plans/README.md` — unless a reviewer dispatched you and told you they
 > maintain the index.
 >
-> **Drift check (run first)**: `git diff --stat 0fcd6f6..HEAD -- src/cli.ts src/core/pipeline.ts src/core/sessionDedup.ts tests/unit/core/dedupPipeline.test.ts tests/unit/core/sessionDedup.test.ts`
+> **Drift check (run first)**: `git diff --stat 22579d2..HEAD -- src/cli.ts src/core/pipeline.ts src/core/sessionDedup.ts tests/unit/core/dedupPipeline.test.ts tests/unit/core/sessionDedup.test.ts`
 > If any in-scope file changed since this plan was written, compare the
 > "Current state" excerpts against the live code before proceeding; on a
 > mismatch, treat it as a STOP condition.
@@ -19,7 +19,7 @@
 - **Risk**: MED
 - **Depends on**: plans/001-add-ci-workflow.md (recommended — gives this change an automatic gate)
 - **Category**: perf
-- **Planned at**: commit `0fcd6f6`, 2026-06-12
+- **Planned at**: commit `22579d2`, 2026-06-15 (refreshed from `0fcd6f6`; `cli.ts` line numbers shifted by the `tk support` dispatch — `runCompress` body and the finding are unchanged)
 - **Issue**: https://github.com/Cozy228/token-killer/issues/5
 
 ## Why this matters
@@ -38,10 +38,10 @@ accounting after) — this plan brings the compress path to the same discipline.
 
 ## Current state
 
-- `src/cli.ts:387-439` — `runCompress` awaits the whole pipeline, then writes:
+- `src/cli.ts:399-440` — `runCompress` awaits the whole pipeline, then writes:
 
   ```ts
-  // cli.ts:401-425 (abridged)
+  // cli.ts:414-437 (abridged)
   try {
     const filtered = await runPipeline(
       { ...handler, async execute() { return raw; } },

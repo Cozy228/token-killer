@@ -7,7 +7,7 @@
 > in `plans/README.md` — unless a reviewer dispatched you and told you they
 > maintain the index.
 >
-> **Drift check (run first)**: `git diff --stat 0fcd6f6..HEAD -- README.md docs/DESIGN.md docs/cli-surface-cleanup-goal.md src/types.ts src/core/sessionDedup.ts`
+> **Drift check (run first)**: `git diff --stat 22579d2..HEAD -- README.md docs/DESIGN.md docs/TELEMETRY.md docs/cli-surface-cleanup-goal.md src/types.ts src/core/sessionDedup.ts`
 > If any in-scope file changed since this plan was written, compare the
 > "Current state" excerpts against the live code before proceeding; on a
 > mismatch, treat it as a STOP condition.
@@ -19,7 +19,7 @@
 - **Risk**: LOW
 - **Depends on**: none
 - **Category**: docs
-- **Planned at**: commit `0fcd6f6`, 2026-06-12
+- **Planned at**: commit `22579d2`, 2026-06-15 (refreshed from `0fcd6f6`; README/DESIGN/types excerpts unchanged, added the `docs/TELEMETRY.md` price-table item surfaced by the 2026-06-15 delta audit)
 - **Issue**: https://github.com/Cozy228/token-killer/issues/7
 
 ## Why this matters
@@ -80,6 +80,17 @@ for a flag that doesn't exist.
     `options.dedup`. Tests may still construct `TkOptions` with `dedup: false` —
     those test cases must be removed with the field.
 
+- **`docs/TELEMETRY.md` model-price table is incomplete** — the table appears
+  twice and both copies omit `gpt-5.5-pro` ($30/Mtok); the line-75 copy also omits
+  `claude-fable-5` ($10). The authoritative source is `src/core/pricing.ts:35-48`
+  (`opus` 5, `sonnet` 3, `haiku` 1, `claude-fable-5` 10, `gpt-5.5` 5,
+  `gpt-5.5-pro` 30, plus full Claude ids):
+  - `docs/TELEMETRY.md:75` — "(`opus` $5, `sonnet` $3, `haiku` $1, `gpt-5.5` $5,
+    plus full model ids)" — missing `claude-fable-5` and `gpt-5.5-pro`.
+  - `docs/TELEMETRY.md:104` — "`opus` → $5, `sonnet` → $3, `haiku` → $1,
+    `claude-fable-5` → $10, `gpt-5.5` → $5 (and the corresponding full model ids)"
+    — missing `gpt-5.5-pro`.
+
 ## Commands you will need
 
 | Purpose   | Command                  | Expected on success |
@@ -95,6 +106,7 @@ for a flag that doesn't exist.
 **In scope** (the only files you should modify):
 - `README.md`
 - `docs/DESIGN.md`
+- `docs/TELEMETRY.md` (the model-price table only)
 - `docs/cli-surface-cleanup-goal.md` (move to `docs/archive/`)
 - `src/types.ts` (only the `dedup` field + its comment)
 - `src/core/sessionDedup.ts` (only the `options.dedup === false` gate)
@@ -200,6 +212,19 @@ default-off (it is default-ON — `src/core/sessionDedup.ts:53`), and
 **Verify**: `grep -rn "no-dedup" src/ README.md docs/DESIGN.md` → no hits.
 **Verify**: `pnpm test:product` → all pass.
 
+### Step 5: Fix the TELEMETRY.md model-price table
+
+Bring both copies of the table into line with `src/core/pricing.ts:35-48`:
+- Line ~75: add `claude-fable-5` ($10) and `gpt-5.5-pro` ($30) to the
+  parenthetical list.
+- Line ~104: add `gpt-5.5-pro` → $30 to the table line.
+Matching the existing "plus full model ids" shorthand for the full Claude ids is
+fine — do not restate every id. Confirm each rate against `pricing.ts` before
+writing; never invent a rate.
+
+**Verify**: `grep -n "gpt-5.5-pro" docs/TELEMETRY.md` → at least one hit.
+**Verify**: `bash scripts/validate-docs.sh` → exit 0.
+
 ## Test plan
 
 No new tests. Step 4 removes obsolete cases; the full suite plus
@@ -213,6 +238,7 @@ Machine-checkable. ALL must hold:
 - [ ] `bash scripts/validate-docs.sh` exits 0
 - [ ] README contains a working acquisition block (clone→build→link) and no unscoped Codex support claim
 - [ ] `grep -rn "no-dedup" src/` returns nothing
+- [ ] `docs/TELEMETRY.md` lists `gpt-5.5-pro` in the model-price table (`grep -n "gpt-5.5-pro" docs/TELEMETRY.md` → ≥1 hit)
 - [ ] `docs/cli-surface-cleanup-goal.md` lives under `docs/archive/`
 - [ ] No files outside the in-scope list are modified (`git status --short`)
 - [ ] `plans/README.md` status row updated

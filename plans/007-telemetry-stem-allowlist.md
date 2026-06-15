@@ -7,14 +7,14 @@
 > in `plans/README.md` — unless a reviewer dispatched you and told you they
 > maintain the index.
 >
-> **Drift check (run first)**: `git diff --stat 0fcd6f6..HEAD -- src/telemetry/commandStem.ts tests/unit/telemetry/commandStem.test.ts src/telemetry/topCommands.ts`
+> **Drift check (run first)**: `git diff --stat 22579d2..HEAD -- src/telemetry/commandStem.ts tests/unit/telemetry/commandStem.test.ts src/telemetry/topCommands.ts`
 > If any in-scope file changed since this plan was written, compare the
 > "Current state" excerpts against the live code before proceeding; on a
-> mismatch, treat it as a STOP condition. NOTE: at planning time the working
-> tree already carried uncommitted changes to `src/telemetry/build.ts` and
-> `tests/unit/telemetry/build.test.ts` (unrelated in-flight work) —
-> `commandStem.ts` itself was clean. Coordinate before touching anything that
-> overlaps that in-flight diff.
+> mismatch, treat it as a STOP condition. NOTE: the in-flight changes to
+> `src/telemetry/build.ts` referenced at planning time have since COMMITTED (the
+> AI-credits field, commits e744211/4073499) and do NOT touch `commandStem.ts`;
+> the `build.ts` line pointers in this plan (`:47`/`:115`/`:183`) remain accurate
+> at `22579d2`. The in-scope `commandStem.ts` is unchanged — proceed.
 
 ## Status
 
@@ -23,7 +23,7 @@
 - **Risk**: LOW
 - **Depends on**: none
 - **Category**: security
-- **Planned at**: commit `0fcd6f6`, 2026-06-12 (added after counter-review upgraded this from "rejected" — the original audit's "telemetry redaction holds" verdict was wrong)
+- **Planned at**: commit `0fcd6f6`, 2026-06-12 (added after counter-review upgraded this from "rejected" — the original audit's "telemetry redaction holds" verdict was wrong). Re-verified at `22579d2`, 2026-06-15: the in-flight `build.ts` work landed as the AI-credits field only; `commandStem.ts` and the `build.ts:47/115/183` pointers are unchanged.
 - **Issue**: https://github.com/Cozy228/token-killer/issues/10
 
 ## Why this matters

@@ -109,7 +109,10 @@ Facts the executor needs:
   through it; if they do, add the mode there ONLY for call sites in scope, and
   if that would change out-of-scope callers (e.g. report/HTML writers), STOP.
 - HTML report output under `~/.token-killer/reports/` — user-facing artifacts,
-  intentionally not secret-bearing in the same way; leave as-is.
+  intentionally not secret-bearing in the same way; leave as-is. (The `reports/`
+  directory + HTML file permissions are now handled separately by **plan 011** —
+  the directory became sensitive once `tk support` started writing diagnostic
+  bundles into it.)
 - `src/telemetry/state.ts` or other telemetry files — separate surface; leave
   as-is unless tests reveal they share the exact helpers being edited.
 
