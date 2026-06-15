@@ -9,13 +9,13 @@ import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { mkdtemp, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
-import { fileURLToPath } from "node:url";
+import { fileURLToPath, pathToFileURL } from "node:url";
 import { spawnSync } from "node:child_process";
 import { afterEach, beforeEach, describe, expect, test } from "vitest";
 
 const repoRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "../..");
 const cli = path.join(repoRoot, "src/cli.ts");
-const tsxLoader = path.join(repoRoot, "node_modules/tsx/dist/loader.mjs");
+const tsxLoader = pathToFileURL(path.join(repoRoot, "node_modules/tsx/dist/loader.mjs")).href;
 const DEAD_ENDPOINT = "https://127.0.0.1:1/telemetry"; // refuses fast
 
 let home: string;

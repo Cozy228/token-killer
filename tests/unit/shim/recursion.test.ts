@@ -2,7 +2,7 @@ import { afterAll, beforeAll, describe, expect, test } from "vitest";
 import { chmodSync, mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { delimiter, dirname, join } from "node:path";
-import { fileURLToPath } from "node:url";
+import { fileURLToPath, pathToFileURL } from "node:url";
 import { spawnSync } from "node:child_process";
 
 import { posixWrapper } from "../../../src/shim/install.js";
@@ -16,7 +16,7 @@ import { posixWrapper } from "../../../src/shim/install.js";
 
 const repoRoot = join(dirname(fileURLToPath(import.meta.url)), "../../..");
 const cli = join(repoRoot, "src/cli.ts");
-const tsxLoader = join(repoRoot, "node_modules/tsx/dist/loader.mjs");
+const tsxLoader = pathToFileURL(join(repoRoot, "node_modules/tsx/dist/loader.mjs")).href;
 
 let tmp: string;
 let shimDir: string;

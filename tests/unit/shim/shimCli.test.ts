@@ -2,7 +2,7 @@ import { afterEach, beforeEach, describe, expect, test } from "vitest";
 import { existsSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
-import { fileURLToPath } from "node:url";
+import { fileURLToPath, pathToFileURL } from "node:url";
 import { spawnSync } from "node:child_process";
 
 // Sandboxed end-to-end for `tk shim install|status|uninstall` (the top-level shim
@@ -12,7 +12,7 @@ import { spawnSync } from "node:child_process";
 
 const repoRoot = join(dirname(fileURLToPath(import.meta.url)), "../../..");
 const cli = join(repoRoot, "src/cli.ts");
-const tsxLoader = join(repoRoot, "node_modules/tsx/dist/loader.mjs");
+const tsxLoader = pathToFileURL(join(repoRoot, "node_modules/tsx/dist/loader.mjs")).href;
 
 let home: string;
 
