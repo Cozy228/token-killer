@@ -9,8 +9,8 @@ runs locally, and lossless recovery is one flag away.
 **At scale:** One install distributes the best practices to every engineer — each
 agent reads less, spends less, and works the same proven way, by default.
 
-Works with Claude Code, GitHub Copilot (CLI + VS Code), and Codex. Deterministic,
-local, test-first. Nothing leaves your machine.
+Works with Claude Code and GitHub Copilot (CLI + VS Code); Codex support is
+planned. Deterministic, local, test-first. Nothing leaves your machine.
 
 ```bash
 tk install        # wire it into your agent — then commands compress automatically
@@ -59,8 +59,19 @@ never an estimate.
 
 ## Install
 
-`tk install` auto-detects your agent and picks the highest delivery tier it supports
-(a hook where possible, a PATH shim otherwise). Restart your agent afterward.
+Not yet on npm (publication is planned) — get `tk` on your PATH from source:
+
+```bash
+git clone https://github.com/Cozy228/token-killer.git
+cd token-killer
+pnpm install && pnpm build
+pnpm setup            # one-time: configures pnpm's global bin dir on PATH
+# reload your shell first run only: `source ~/.zshrc` (or ~/.bashrc), or open a new terminal
+pnpm add -g .         # puts `tk` on your PATH
+```
+
+Then `tk install` auto-detects your agent and picks the highest delivery tier it
+supports (a hook where possible, a PATH shim otherwise). Restart your agent afterward.
 
 ```bash
 tk install            # auto-detect host, wire everything in

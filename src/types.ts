@@ -70,9 +70,6 @@ export type TkOptions = {
   // via `--session <id>` (portable across sh/pwsh) or the `TK_SESSION` env. Stamped
   // onto history rows (`session_id`) and dedup entries; never part of the dedup key.
   sessionId?: string;
-  // ADR 0009: per-command opt-out (`--no-dedup`). undefined ⇒ follow the
-  // TK_SESSION_DEDUP / config gate; false ⇒ force the dedup stage off for this run.
-  dedup?: boolean;
 };
 
 export type ParseMode =
