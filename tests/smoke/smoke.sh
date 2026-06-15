@@ -118,6 +118,70 @@ assert_exit() {
     fi
 }
 
+# Run a command ONCE and assert several conditions on its exit code + combined
+# stdout/stderr. Replaces the old pattern of invoking the same command via
+# assert_ok plus one-or-more assert_contains, which spawned the tool 2–4× per
+# logical check. Conditions precede `--`; the command follows.
+#
+#   assert_run "tk git status" ok has:"* " has:"package.json" -- $TK git status
+#
+# Specs (any order, before `--`):
+#   ok        exit code must be 0
+#   exit:N    exit code must equal N
+#   (none)    exit code not checked (any) — for tools that legitimately exit non-zero
+#   has:STR   combined output must contain STR (grep regex, same as assert_contains)
+#   no:STR    combined output must NOT contain STR
+# All conditions must hold for a single PASS; a failure lists each unmet condition.
+assert_run() {
+    local name="$1"
+    shift
+    local want_exit="any"
+    local -a has=()
+    local -a no=()
+    while [ "$#" -gt 0 ] && [ "$1" != "--" ]; do
+        case "$1" in
+            ok) want_exit=0 ;;
+            exit:*) want_exit="${1#exit:}" ;;
+            has:*) has+=("${1#has:}") ;;
+            no:*) no+=("${1#no:}") ;;
+            *)
+                printf "assert_run: unknown spec '%s'\n" "$1" >&2
+                exit 2
+                ;;
+        esac
+        shift
+    done
+    [ "${1:-}" = "--" ] && shift
+
+    local output actual=0
+    output=$("$@" 2>&1) || actual=$?
+
+    local -a fails=()
+    if [ "$want_exit" != "any" ] && [ "$actual" -ne "$want_exit" ]; then
+        fails+=("exit $actual (wanted $want_exit)")
+    fi
+    local needle
+    for needle in ${has[@]+"${has[@]}"}; do
+        echo "$output" | grep -q -- "$needle" || fails+=("missing: '$needle'")
+    done
+    for needle in ${no[@]+"${no[@]}"}; do
+        echo "$output" | grep -q -- "$needle" && fails+=("unexpected: '$needle'")
+    done
+
+    if [ "${#fails[@]}" -eq 0 ]; then
+        PASS=$((PASS + 1))
+        printf "  ${GREEN}PASS${NC}  %s\n" "$name"
+    else
+        FAIL=$((FAIL + 1))
+        FAILURES+=("$name")
+        printf "  ${RED}FAIL${NC}  %s\n" "$name"
+        printf "        cmd: %s\n" "$*"
+        local f
+        for f in "${fails[@]}"; do printf "        %s\n" "$f"; done
+        printf "        out: %s\n" "$(echo "$output" | head -3)"
+    fi
+}
+
 skip_test() {
     local name="$1"
     local reason="$2"
@@ -130,6 +194,14 @@ section() {
 }
 
 # ── Preamble ─────────────────────────────────────────
+
+# Cross-invocation session dedup ships default-on and, on the 2nd+ run of an
+# identical normalized command, returns a recovery marker instead of the real
+# output. The smoke suite deliberately re-exercises some commands across sections
+# (e.g. `ls .` under Ls, Global flags, and Gain), so dedup would mask their output
+# and break the assertions. Own the opt-out here rather than relying on the CI job
+# to set it, so `bash tests/smoke/smoke.sh` is self-contained everywhere.
+export TK_SESSION_DEDUP=0
 
 TK=""
 
@@ -167,37 +239,28 @@ assert_contains "tk --help" "Usage:" $TK --help
 
 section "Ls"
 
-assert_ok      "tk ls ."                        $TK ls .
-assert_contains "tk ls shows files"             "package.json" $TK ls .
-assert_contains "tk ls lists files"             "package.json" $TK ls .
 # H17: node_modules is not listed as a normal entry but DISCLOSED in a counted
 # "hidden" line (never silently dropped), so it appears under that disclosure.
-assert_contains "tk ls discloses hidden dirs"   "hidden" $TK ls .
-assert_ok      "tk ls src/"                     $TK ls src/
+assert_run "tk ls ." ok has:"package.json" has:"hidden" -- $TK ls .
+assert_run "tk ls src/" ok -- $TK ls src/
 
 # ── 3. Read / Cat ────────────────────────────────────
 
 section "Read / Cat"
 
-assert_ok      "tk cat package.json"            $TK cat package.json
-assert_contains "tk cat shows name"             "token-killer" $TK cat package.json
-assert_ok      "tk cat README.md"               $TK cat README.md
-assert_contains "tk cat README content"         "tk" $TK cat README.md
-assert_ok      "tk read aggressive"             $TK read --level aggressive tests/integration/cli.test.ts
-assert_contains "tk read shows symbols"         "Symbols:" $TK read --level aggressive tests/integration/cli.test.ts
+assert_run "tk cat package.json" ok has:"token-killer" -- $TK cat package.json
+assert_run "tk cat README.md" ok has:"tk" -- $TK cat README.md
+assert_run "tk read aggressive" ok has:"Symbols:" -- $TK read --level aggressive tests/integration/cli.test.ts
 
 # ── 4. Git ───────────────────────────────────────────
 
 section "Git"
 
-assert_ok      "tk git status"                  $TK git status
-assert_contains "tk git status branch"          "* " $TK git status
+assert_run "tk git status" ok has:"* " -- $TK git status
 assert_ok      "tk git log"                     $TK git log
 assert_ok      "tk git log -5"                  $TK git log -- -5
 assert_ok      "tk git diff"                    $TK git diff
-assert_ok      "tk git diff"                    $TK git diff
-assert_ok      "tk git branch"                  $TK git branch
-assert_contains "tk git branch current"         "*" $TK git branch
+assert_run "tk git branch" ok has:"*" -- $TK git branch
 
 # ── 5. Diff ──────────────────────────────────────────
 
@@ -226,12 +289,11 @@ assert_ok      "tk rg with path"                $TK rg "handler" src/handlers/
 
 section "Find"
 
-assert_ok      "tk find src -name '*.ts'"       $TK find src -name "*.ts"
 # listLike compacts a larger listing into the "NF MD:" header + per-directory
 # grouping ("core/ …", "handlers/ …"). Assert that directory-grouping header
 # (the "shows directories" signal) rather than a literal "src/" prefix, which only
 # survives in the small-input raw-passthrough mode.
-assert_contains "tk find shows directories"     "D:" $TK find src -name "*.ts"
+assert_run "tk find src -name '*.ts'" ok has:"D:" -- $TK find src -name "*.ts"
 
 # ── 8. Generic passthrough ──────────────────────────
 
@@ -241,10 +303,8 @@ section "Generic passthrough (shim-invoked)"
 # passthrough runs only when the shell resolved a real tool through the shim
 # (TK_SHIM_DIR set), so these exercise it as shim-invoked.
 export TK_SHIM_DIR="${TMPDIR:-/tmp}/tk-smoke-fake-shim"
-assert_ok      "tk echo hello"                  $TK echo hello
-assert_contains "tk echo output"                "hello" $TK echo hello
-assert_ok      "tk node -e console.log"         $TK node -e "console.log('rtk-style')"
-assert_contains "tk node output"                "rtk-style" $TK node -e "console.log('rtk-style')"
+assert_run "tk echo hello" ok has:"hello" -- $TK echo hello
+assert_run "tk node -e console.log" ok has:"rtk-style" -- $TK node -e "console.log('rtk-style')"
 unset TK_SHIM_DIR
 
 # Direct (no shim): an unknown command must error, never auto-spawn a PATH binary.
@@ -255,8 +315,7 @@ assert_fails   "tk <unknown> errors (U2)"       $TK definitely-not-a-real-tool-x
 section "Global flags"
 
 assert_contains "tk --stats shows savings"      "## Token Savings" $TK --stats ls .
-assert_ok      "tk --raw ls"                    $TK --raw ls .
-assert_contains "tk --raw raw output"           "package.json" $TK --raw ls .
+assert_run "tk --raw ls" ok has:"package.json" -- $TK --raw ls .
 assert_ok      "tk --max-lines 5 ls"            $TK --max-lines 5 ls .
 assert_ok      "tk --max-chars 500 ls"          $TK --max-chars 500 ls .
 assert_ok      "tk --save-raw ls"               $TK --save-raw ls .
@@ -266,12 +325,9 @@ assert_ok      "tk --no-save-raw ls"            $TK --no-save-raw ls .
 
 section "Gain"
 
-assert_ok      "tk gain --text"                 $TK gain --text
-assert_contains "tk gain --text title"          "Token savings" $TK gain --text
-assert_ok      "tk gain --json"                 $TK gain --json
-assert_contains "tk gain --json valid"          '"commands"' $TK gain --json
-assert_ok      "tk gain --csv"                  $TK gain --csv
-assert_contains "tk gain --csv header"          "commands,raw_tokens" $TK gain --csv
+assert_run "tk gain --text" ok has:"Token savings" -- $TK gain --text
+assert_run "tk gain --json" ok has:'"commands"' -- $TK gain --json
+assert_run "tk gain --csv" ok has:"commands,raw_tokens" -- $TK gain --csv
 assert_contains "tk gain default → HTML"        "Generated HTML report" env TK_NO_OPEN=1 $TK gain
 
 # ── 11. Error handling ──────────────────────────────
