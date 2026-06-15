@@ -35,6 +35,10 @@ One of the three ordered ways the proxy reaches the agent, used in strict prefer
 order: **Hook** (the [Hook runtime](#surfaces), when the host's hooks are enabled and
 fire), then **Shim**, then **Instruction injection**. A host uses the highest tier it
 can actually support; lower tiers are fallbacks, not parallel paths.
+_Exception ([ADR 0012](docs/adr/0012-vscode-hook-shim-additive-delivery.md)):_ a host that
+supports several **complementary** tiers may install them together — VS Code runs **hook + shim**
+additively (shim primary/authoritative, hook an additive enhancement). `selectTier` then expresses
+preference order, not exclusivity.
 _Avoid_: mode, channel, layer (overloaded with "Layer 2").
 
 **Shim**:
