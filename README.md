@@ -1,7 +1,13 @@
 # Token Killer (`tk`)
 
-**A local command proxy that compresses noisy CLI output _before_ it reaches your
-AI coding agent — cutting the tokens you pay for, without losing evidence.**
+**Save:** Cut your AI agent's token bill by 60–90% — tk wraps the real tools and
+compresses their output before it ever reaches the model.
+
+**Safely:** Zero runtime dependencies, zero fabrication, zero lock-in — everything
+runs locally, and lossless recovery is one flag away.
+
+**At scale:** One install distributes the best practices to every engineer — each
+agent reads less, spends less, and works the same proven way, by default.
 
 Works with Claude Code, GitHub Copilot (CLI + VS Code), and Codex. Deterministic,
 local, test-first. Nothing leaves your machine.
