@@ -1,22 +1,37 @@
 name: CI
 
 on:
+  # Only `main` on push. Listing the working branch here too made every push to
+  # it raise TWO runs — a `push` run AND the open PR's `pull_request` run — both
+  # executing the identical matrix. Feature branches are covered by their PR run.
   push:
-    branches: [main, token-killer-node-cli]
+    branches: [main]
   pull_request:
 
 jobs:
   test:
-    runs-on: ubuntu-latest
+    runs-on: ${{ matrix.os }}
     # Hard ceiling so a wedged test step can never pin a runner for the 6h default.
     # The guarded failure mode: a CLI-spawning test whose synchronous spawnSync
     # wedges a vitest worker, so `vitest run` never exits and the step hangs forever.
     timeout-minutes: 25
     strategy:
+      # Don't cancel the other OS/node jobs when one fails — we want every
+      # platform's result in a single run, not just the first failure.
+      fail-fast: false
       matrix:
+        os: [ubuntu-latest, windows-latest]
         node-version: [20, 22]
     steps:
       - uses: actions/checkout@v4
+      # ripgrep is a real tool tk wraps: the `tk rg` integration tests invoke the
+      # actual rg binary (tk never fabricates output for an absent program — it
+      # honestly reports command-not-found), so each runner must provide it. The
+      # runner images do not ship rg by default.
+      - if: runner.os == 'Linux'
+        run: sudo apt-get update && sudo apt-get install -y ripgrep
+      - if: runner.os == 'Windows'
+        run: choco install ripgrep -y
       - uses: pnpm/action-setup@v4   # reads packageManager from package.json
       - uses: actions/setup-node@v4
         with:
@@ -24,19 +39,20 @@ jobs:
           cache: pnpm
       - run: pnpm install --frozen-lockfile
       - run: pnpm typecheck
-      # The members of the `pnpm test:ci` chain are run as separate steps for
-      # readable per-stage status. `pnpm test:install` runs the build that the
-      # smoke suite needs, so order is preserved. The smoke suite self-disables
-      # session dedup (it re-exercises some commands across sections); product and
-      # install tests run with shipped defaults.
-      # `timeout` (GNU coreutils, always present on ubuntu runners) bounds each
-      # test step so a wedged process exits non-zero WITH its log flushed, rather
-      # than hanging until the job-level ceiling cancels it (a cancel drops the
-      # in-flight step's log — exactly why a hung run is undiagnosable). `-k 30`
-      # escalates SIGTERM -> SIGKILL after a 30s grace so a child stuck waiting on
-      # an inherited pipe is force-reaped instead of lingering.
+      # Test steps run under bash on EVERY OS (Windows uses the bundled git-bash)
+      # so the GNU `timeout` wrapper is available everywhere. `timeout` bounds a
+      # wedged process so the step fails non-zero WITH its log flushed instead of
+      # hanging to the job ceiling (a cancel drops the in-flight step's log — why a
+      # hung run is undiagnosable). `-k 30` escalates SIGTERM -> SIGKILL after a 30s
+      # grace so a child stuck on an inherited pipe is force-reaped. (Windows pwsh's
+      # timeout.exe is an unrelated sleep command — exactly why bash is pinned.)
       - run: timeout -k 30 360 pnpm test:product
+        shell: bash
       - run: timeout -k 30 360 pnpm test:install
+        shell: bash
       - run: bash scripts/check-test-presence.sh
+        shell: bash
       - run: bash scripts/validate-docs.sh
+        shell: bash
       - run: timeout -k 30 180 bash tests/smoke/smoke.sh
+        shell: bash
