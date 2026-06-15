@@ -802,50 +802,15 @@ describe("Error Handling", () => {
   });
 });
 
-// ============================================================================
-// 10. Acceptance: Route common commands through proper handlers
-// ============================================================================
-
-describe("Acceptance: Handler Routing", () => {
-  test("routes common acceptance commands through compact handlers", async () => {
-    const dir = await mkdtemp(path.join(tmpdir(), "tk-acceptance-"));
-    try {
-      spawnSync("git", ["init"], { cwd: dir, encoding: "utf8" });
-      spawnSync("git", ["config", "user.email", "test@example.com"], {
-        cwd: dir,
-        encoding: "utf8",
-      });
-      spawnSync("git", ["config", "user.name", "Test User"], {
-        cwd: dir,
-        encoding: "utf8",
-      });
-      await writeFile(path.join(dir, "pkg.json"), '{"name":"sample"}\n');
-      await writeFile(path.join(dir, "sample.txt"), "TODO retained\n");
-      spawnSync("git", ["add", "."], { cwd: dir, encoding: "utf8" });
-      spawnSync("git", ["commit", "-m", "initial retained"], {
-        cwd: dir,
-        encoding: "utf8",
-      });
-      await writeFile(path.join(dir, "sample.txt"), "TODO retained\nchanged\n");
-
-      // Each should route to its specific handler (not generic)
-      expect(runTk(["git", "status"], dir).stdout).toContain("* main");
-      expect(runTk(["git", "diff"], dir).stdout).toContain("+changed");
-      expect(runTk(["git", "log", "-1"], dir).stdout).toContain("initial retained");
-      expect(runTk(["git", "show", "--stat", "HEAD"], dir).stdout).toContain("initial retained");
-      expect(runTk(["git", "branch"], dir).stdout).toContain("main");
-      expect(runTk(["cat", "pkg.json"], dir).stdout).toContain("sample");
-      expect(runTk(["ls", "."], dir).stdout).toContain("pkg.json");
-      expect(runTk(["rg", "TODO", "."], dir).stdout).toContain("TODO retained");
-    } finally {
-      await rm(dir, { recursive: true, force: true });
-    }
-    // Spawns many real subprocesses; the 5s default flakes on slow machines.
-  }, 30_000);
-});
+// Removed the "Acceptance: Handler Routing" block: it spawned 8 real commands and
+// only string-matched their output, which never proved a SPECIFIC handler was used
+// (generic passthrough would pass the same assertions). Routing is verified
+// explicitly in tests/unit/router.test.ts (command → handler name for all of git
+// status/diff/log/show/branch, cat, ls, rg), and the end-to-end output is covered
+// by the Git/Grep sections above, the smoke suite, and the handler fixture tests.
 
 // ============================================================================
-// 11. Python / JS / Java handlers (stderr-based output)
+// 10. Python / JS / Java handlers (stderr-based output)
 // ============================================================================
 
 describe("Language-specific handlers", () => {
