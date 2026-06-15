@@ -17,7 +17,7 @@
 // — debug noise must never pollute the accounting. Total: neither the format nor
 // the file append ever throws, so debug output can never break a fail-open hook.
 
-import { appendFileSync, mkdirSync } from "node:fs";
+import { appendFileSync, chmodSync, mkdirSync } from "node:fs";
 import { dirname, join } from "node:path";
 
 import { tokenKillerHome } from "../core/dataDir.js";
@@ -42,13 +42,23 @@ function formatValue(v: unknown): string {
   }
 }
 
+// Append to an owner-only log under the data dir: dir 0700 / file 0600, matching
+// the rawStore/history precedent. These logs carry command strings (debug.log) and
+// error stacks (errors.log) and are tailed into the `tk support` bundle — the same
+// data class #6 restricted. `mode:` applies only on creation, so chmod retroactively
+// tightens a file left 0644 by a pre-fix tk after an upgrade. Caller wraps in
+// try/catch; a perms failure must never block the line (or break a fail-open hook).
+function appendOwnerOnly(path: string, line: string): void {
+  mkdirSync(dirname(path), { recursive: true, mode: 0o700 });
+  appendFileSync(path, line, { mode: 0o600 });
+  chmodSync(path, 0o600);
+}
+
 // Best-effort append to the debug log; swallow every error (a missing dir, a
 // read-only FS — none of it may break the hook).
 function appendToLog(line: string): void {
   try {
-    const path = debugLogPath();
-    mkdirSync(dirname(path), { recursive: true });
-    appendFileSync(path, line);
+    appendOwnerOnly(debugLogPath(), line);
   } catch {
     /* the stderr copy already carried the diagnostic */
   }
@@ -90,9 +100,7 @@ export function errorLogPath(): string {
 // never replace or compound the real error).
 function appendErrorLog(line: string): void {
   try {
-    const path = errorLogPath();
-    mkdirSync(dirname(path), { recursive: true });
-    appendFileSync(path, line);
+    appendOwnerOnly(errorLogPath(), line);
   } catch {
     /* best-effort */
   }
