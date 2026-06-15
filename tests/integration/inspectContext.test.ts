@@ -48,6 +48,8 @@ function runTk(args: string[], cwd = project) {
       ...process.env,
       HOME: home,
       USERPROFILE: home,
+      // Windows VS Code source discovery resolves via APPDATA — sandbox it too.
+      APPDATA: path.join(home, "AppData", "Roaming"),
       TOKEN_KILLER_HOME: path.join(home, ".token-killer"),
     },
   });

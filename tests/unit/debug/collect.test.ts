@@ -45,12 +45,18 @@ function writeProject(fp: string, lines: string[]): string {
 beforeEach(() => {
   saved.TOKEN_KILLER_HOME = process.env.TOKEN_KILLER_HOME;
   saved.HOME = process.env.HOME;
+  saved.USERPROFILE = process.env.USERPROFILE;
+  saved.APPDATA = process.env.APPDATA;
   saved.CLAUDECODE = process.env.CLAUDECODE;
   saved.CLAUDE_CODE_ENTRYPOINT = process.env.CLAUDE_CODE_ENTRYPOINT;
   tkHome = mkdtempSync(path.join(tmpdir(), "tk-debug-home-"));
   fakeHome = mkdtempSync(path.join(tmpdir(), "tk-debug-fakehome-"));
   process.env.TOKEN_KILLER_HOME = tkHome;
   process.env.HOME = fakeHome;
+  // Windows: homedir() reads USERPROFILE and vscodeUserDir reads APPDATA — sandbox
+  // both so wired-detection never sees the runner's real install.
+  process.env.USERPROFILE = fakeHome;
+  process.env.APPDATA = path.join(fakeHome, "AppData", "Roaming");
   // Isolate host detection from the live Claude Code session running the tests.
   delete process.env.CLAUDECODE;
   delete process.env.CLAUDE_CODE_ENTRYPOINT;

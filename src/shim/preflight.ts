@@ -327,9 +327,12 @@ function hookCommandPathCheck(deps: PreflightDeps): PreflightCheck {
 // when COPILOT_HOME is set (rtk treats it as the `.copilot` ROOT), else
 // `~/.copilot/hooks`.
 export function copilotHooksDir(deps: PreflightDeps): string {
+  // Posixify: this path is only shown in preflight detail and checked via existsSync
+  // (both accept '/' on Windows), and the preflight tests mock fs/home with POSIX
+  // paths. A native '\' from path.join would diverge from those and from RTK's form.
   const copilotHome = deps.env.COPILOT_HOME;
-  if (copilotHome) return join(copilotHome, "hooks");
-  return join(deps.homedir(), ".copilot", "hooks");
+  if (copilotHome) return join(copilotHome, "hooks").replace(/\\/g, "/");
+  return join(deps.homedir(), ".copilot", "hooks").replace(/\\/g, "/");
 }
 
 function hooksDirCheck(deps: PreflightDeps): PreflightCheck {

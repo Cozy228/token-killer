@@ -47,6 +47,10 @@ function runTg(args: string[], env: NodeJS.ProcessEnv = {}, cwd = repoRoot) {
     env: {
       ...process.env,
       HOME: home,
+      // Windows: os.homedir() reads USERPROFILE (not HOME), and vscodeUserDir reads
+      // APPDATA — sandbox both so installs/detection never touch the real profile.
+      USERPROFILE: home,
+      APPDATA: join(home, "AppData", "Roaming"),
       TOKEN_KILLER_HOME: join(home, ".token-killer"),
       // The suite itself runs inside Claude Code, which sets these markers; clear
       // them by default so host auto-detection reflects each test's intent. The
@@ -79,6 +83,9 @@ function callDirect(
 ): DirectResult {
   const overrides: NodeJS.ProcessEnv = {
     HOME: home,
+    // Windows: homedir() reads USERPROFILE, vscodeUserDir reads APPDATA — sandbox both.
+    USERPROFILE: home,
+    APPDATA: join(home, "AppData", "Roaming"),
     TOKEN_KILLER_HOME: join(home, ".token-killer"),
     PATH: SANDBOX_PATH,
     CLAUDECODE: "",

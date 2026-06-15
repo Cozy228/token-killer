@@ -29,6 +29,9 @@ function runTk(args: string[]) {
       ...process.env,
       HOME: home,
       USERPROFILE: home,
+      // Windows VS Code source discovery resolves via APPDATA — sandbox it so the
+      // probe never reads the runner's real VS Code transcripts.
+      APPDATA: path.join(home, "AppData", "Roaming"),
       TOKEN_KILLER_HOME: path.join(home, ".token-killer"),
     },
   });

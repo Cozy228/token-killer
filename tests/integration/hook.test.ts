@@ -5,7 +5,7 @@ import { fileURLToPath, pathToFileURL } from "node:url";
 import { spawnSync } from "node:child_process";
 import { describe, expect, test } from "vitest";
 
-import { projectFingerprint } from "../../src/core/dataDir.js";
+import { fingerprintSegment, projectFingerprint } from "../../src/core/dataDir.js";
 
 const repoRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "../..");
 const cli = path.join(repoRoot, "src/cli.ts");
@@ -135,7 +135,12 @@ describe("tk hook copilot — prompt + error events (Slice 2)", () => {
 
       // The child runs with cwd=repoRoot and TOKEN_KILLER_HOME=home; build the
       // history path the same way (fingerprint is TOKEN_KILLER_HOME-independent).
-      const file = path.join(home, "projects", projectFingerprint(repoRoot), "history.jsonl");
+      const file = path.join(
+        home,
+        "projects",
+        fingerprintSegment(projectFingerprint(repoRoot)),
+        "history.jsonl",
+      );
       const history = await readFile(file, "utf8");
       const row = JSON.parse(history.trim().split(/\r?\n/).pop() as string);
       expect(row.source_adapter).toBe("terminal_tool");
