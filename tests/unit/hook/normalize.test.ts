@@ -120,11 +120,15 @@ describe("normalize — both dialects, each category", () => {
   });
 
   test("direct list (file_search) classifies as list, not search", () => {
-    expect(normalize(vscode({ toolName: "file_search", input: { query: "**/*.ts" } })).category).toBe("list");
+    expect(
+      normalize(vscode({ toolName: "file_search", input: { query: "**/*.ts" } })).category,
+    ).toBe("list");
   });
 
   test("direct web fetch", () => {
-    expect(normalize(cli({ toolName: "fetch_webpage", args: { urls: ["https://x"] } })).category).toBe("web");
+    expect(
+      normalize(cli({ toolName: "fetch_webpage", args: { urls: ["https://x"] } })).category,
+    ).toBe("web");
   });
 
   test("edit/mutation never carries a command", () => {
@@ -138,7 +142,9 @@ describe("normalize — both dialects, each category", () => {
     expect(cliEv.event).toBe("postToolUse");
     expect(cliEv.toolResult).toBe("OUT");
 
-    const vsEv = normalize(vscode({ event: "PostToolUse", toolName: "read_file", result: { content: "x" } }));
+    const vsEv = normalize(
+      vscode({ event: "PostToolUse", toolName: "read_file", result: { content: "x" } }),
+    );
     expect(vsEv.event).toBe("postToolUse");
     expect(vsEv.toolResult).toEqual({ content: "x" });
   });
@@ -157,7 +163,9 @@ describe("normalize — both dialects, each category", () => {
   });
 
   test("model probed from nested context; absent → undefined (no guess)", () => {
-    const withCtx = normalize(cli({ toolName: "bash", args: {}, extra: { context: { model: "m" } } }));
+    const withCtx = normalize(
+      cli({ toolName: "bash", args: {}, extra: { context: { model: "m" } } }),
+    );
     expect(withCtx.model).toBe("m");
     const without = normalize(cli({ toolName: "bash", args: {} }));
     expect(without.model).toBeUndefined();
@@ -207,6 +215,23 @@ describe("fail-open (DESIGN §3.6)", () => {
     const ev = normalizeStdin(raw);
     expect(ev.category).toBe("execute_adjacent");
     expect(ev.command).toBe("git diff");
+  });
+
+  // Windows hosts prepend 1–2 UTF-8 BOMs to hook stdin (confirmed for Cursor;
+  // same risk for VS Code / Copilot CLI on Windows). Without stripping them,
+  // JSON.parse throws → fail-open → the rewrite silently never happens. The
+  // payload must still parse and the command must still be extracted.
+  test("normalizeStdin: strips a leading UTF-8 BOM before parse", () => {
+    const raw = JSON.stringify(cli({ toolName: "bash", args: { command: "git status" } }));
+    const ev = normalizeStdin(`\uFEFF${raw}`);
+    expect(ev.event).toBe("preToolUse");
+    expect(ev.command).toBe("git status");
+  });
+
+  test("normalizeStdin: strips a double UTF-8 BOM (Windows Cursor 3.2.x shape)", () => {
+    const raw = JSON.stringify(cli({ toolName: "bash", args: { command: "git status" } }));
+    const ev = normalizeStdin(`\uFEFF\uFEFF${raw}`);
+    expect(ev.command).toBe("git status");
   });
 
   test("missing tool name → other category, empty toolName", () => {

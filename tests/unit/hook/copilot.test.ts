@@ -107,6 +107,28 @@ describe("toHostOutput — emits the shape the real host reads (ADR 0005)", () =
     expect("hookSpecificOutput" in out).toBe(false);
   });
 
+  // Copilot CLI's `modifiedArgs` REPLACES the tool args wholesale, so the rewrite
+  // must carry the host-supplied metadata forward (`description`, `mode`,
+  // `initial_wait`, …) and only overwrite `command`. Dropping them would degrade
+  // or break the rewritten call. Mirrors RTK (preserves extra args fields).
+  test("Copilot CLI rewrite → modifiedArgs preserves host metadata fields", () => {
+    const out = wire({
+      toolName: "bash",
+      toolArgs: JSON.stringify({
+        command: "git status",
+        description: "check repo status",
+        initial_wait: 30,
+        mode: "sync",
+      }),
+    }) as Record<string, unknown>;
+    expect(out.modifiedArgs).toEqual({
+      command: "tk git status",
+      description: "check repo status",
+      initial_wait: 30,
+      mode: "sync",
+    });
+  });
+
   test("deny → permissionDecision deny + reason, no ledger fields", () => {
     const out = wire({
       tool_name: "read_file",

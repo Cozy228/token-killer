@@ -91,13 +91,18 @@ export function toHostOutput(ev: ToolEvent, d: Decision): Record<string, unknown
   if (f === null) return null;
 
   if (ev.dialect === "cli") {
-    // Copilot CLI: flat shape. `modifiedArgs` replaces the tool args (applied when
-    // permissionDecision is allow/absent).
+    // Copilot CLI: flat shape. `modifiedArgs` REPLACES the tool args wholesale
+    // (not a merge — confirmed via RTK's modifiedArgs handling). So we must rebuild
+    // the full args object from what the host sent (`ev.toolInput`, the parsed
+    // `toolArgs`) and overwrite only `command`. Emitting `{ command }` alone would
+    // DROP host-supplied fields the tool needs (`description`, `initial_wait`,
+    // `mode`, …), degrading or breaking the rewritten call. Mirrors RTK
+    // (test_copilot_cli_preserves_extra_args_fields).
     const out: Record<string, unknown> = {};
     if (f.permissionDecision !== undefined) out.permissionDecision = f.permissionDecision;
     if (f.permissionDecisionReason !== undefined)
       out.permissionDecisionReason = f.permissionDecisionReason;
-    if (f.command !== undefined) out.modifiedArgs = { command: f.command };
+    if (f.command !== undefined) out.modifiedArgs = { ...ev.toolInput, command: f.command };
     if (f.additionalContext !== undefined) out.additionalContext = f.additionalContext;
     return out;
   }

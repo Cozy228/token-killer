@@ -31,10 +31,11 @@ describe("rewriteCommand — rewrite table (DESIGN §3.8)", () => {
     expect(r.rewritten).toBe('tk cat "my file.txt"');
   });
 
-  test("L15: rewrite is a byte-faithful prepend even with \\ / $() the tokenizer does not parse", () => {
-    // The tokenizer ignores backslash escapes and $(); the rewrite must stay exactly
+  test("L15: rewrite is a byte-faithful prepend even with \\ / escaped quotes the tokenizer does not parse", () => {
+    // The tokenizer ignores backslash escapes; the rewrite must stay exactly
     // `tk ` + the original segment (prepend-only), never a re-quoted/normalized form.
-    for (const c of ['grep "a\\b" src', "rg $(date) src", "grep 'it'\\''s' ."]) {
+    // (Command substitution `$(…)` is now gated upstream by P3 — see its own block.)
+    for (const c of ['grep "a\\b" src', "grep 'it'\\''s' ."]) {
       expect(rewriteCommand(c).rewritten).toBe(`tk ${c}`);
     }
   });
@@ -108,6 +109,48 @@ describe("rewriteCommand — pass carries a reason (TK_DEBUG: why not rewritten)
 
   test("a rewrite carries no pass reason", () => {
     expect(rewriteCommand("git status").reason).toBeUndefined();
+  });
+});
+
+describe("rewriteCommand — command substitution / expansion → pass (P3)", () => {
+  test("command substitution $(…) → pass", () => {
+    const r = rewriteCommand("git log $(git rev-parse HEAD)");
+    expect(r.decision).toBe("pass");
+    expect(r.reason).toBe("command substitution or arithmetic expansion");
+  });
+
+  test("backtick substitution → pass", () => {
+    expect(rewriteCommand("git log `git rev-parse HEAD`").decision).toBe("pass");
+  });
+
+  test("arithmetic expansion $((…)) → pass", () => {
+    expect(rewriteCommand("git log -n $((1 + 2))").decision).toBe("pass");
+  });
+
+  test("process substitution <(…) → pass", () => {
+    expect(rewriteCommand("git diff <(git show A) <(git show B)").decision).toBe("pass");
+  });
+
+  test("single-quoted $(…) is literal → still rewrites (quote-aware)", () => {
+    // The `$(…)` is inside single quotes, so the shell never expands it — the
+    // gate must NOT trip, and `git log` still rewrites.
+    const r = rewriteCommand("git log --grep '$(foo)'");
+    expect(r.decision).toBe("rewrite");
+    expect(r.rewritten).toBe("tk git log --grep '$(foo)'");
+  });
+});
+
+describe("rewriteCommand — line continuations (P4)", () => {
+  test("backslash-newline collapses, then the command rewrites", () => {
+    const r = rewriteCommand("git \\\n  log --oneline");
+    expect(r.decision).toBe("rewrite");
+    expect(r.rewritten).toBe("tk git log --oneline");
+  });
+
+  test("CRLF continuation also collapses", () => {
+    const r = rewriteCommand("git \\\r\n log");
+    expect(r.decision).toBe("rewrite");
+    expect(r.rewritten).toBe("tk git log");
   });
 });
 
