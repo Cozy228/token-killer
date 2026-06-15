@@ -423,3 +423,69 @@ describe("Row 6 — malformed / empty / truncated stdin: fail-open (exit 0, emit
     }
   });
 });
+
+// ---------------------------------------------------------------------------
+// Row 7 — REAL Copilot CLI 1.0.62 captures (verified live on cozyultra,
+// docs/reports/windows-copilot-1.0.62-live-verification-20260615.md). The
+// dual-schema config fires the hook TWICE per tool call with two shapes. These
+// are the verbatim bytes the host wrote to stdin. The decisive find: the native
+// camelCase entry's payload carries NO event-name field — earlier it normalized
+// to `unknown` and the rewrite silently never happened on that path. Locks the
+// fix (normalize infers preToolUse from shape) and the idempotency that keeps the
+// double-fire from double-wrapping.
+// ---------------------------------------------------------------------------
+
+describe("Row 7 — real Copilot CLI 1.0.62 dual-fire captures", () => {
+  // payload 1 — native camelCase preToolUse entry: NO event field, string toolArgs.
+  const REAL_CLI_NATIVE =
+    '{"sessionId":"a938a6db-5e2f-4e0e-8a65-7cd6bf7b6e13","timestamp":1781513173266,' +
+    '"cwd":"C:\\\\Users\\\\cozy2\\\\workspace\\\\token-killer","toolName":"powershell",' +
+    '"toolArgs":"{\\"command\\":\\"git status\\",\\"description\\":\\"Run git status\\"}"}';
+
+  // payload 2 — PascalCase PreToolUse entry: hook_event_name, tool_name "Bash", object input.
+  const REAL_PASCAL =
+    '{"hook_event_name":"PreToolUse","session_id":"a938a6db-5e2f-4e0e-8a65-7cd6bf7b6e13",' +
+    '"timestamp":"2026-06-15T08:46:14.917Z","cwd":"C:\\\\Users\\\\cozy2\\\\workspace\\\\token-killer",' +
+    '"tool_name":"Bash","tool_input":{"command":"git status","description":"Run git status"}}';
+
+  test("event-less native payload now infers preToolUse and rewrites (the fix)", () => {
+    const ev = normalizeStdin(REAL_CLI_NATIVE);
+    expect(ev.dialect).toBe("cli");
+    // No event-name field on the wire — inferred from the pre-call shape.
+    expect(ev.event).toBe("preToolUse");
+    expect(ev.command).toBe("git status");
+    expect(ev.session).toBe("a938a6db-5e2f-4e0e-8a65-7cd6bf7b6e13");
+
+    expect(pipe(REAL_CLI_NATIVE)).toEqual({
+      permissionDecision: "allow",
+      permissionDecisionReason: COPILOT_REWRITE_REASON,
+      modifiedArgs: {
+        command: "tk --session a938a6db-5e2f-4e0e-8a65-7cd6bf7b6e13 git status",
+        description: "Run git status",
+      },
+    });
+  });
+
+  test("PascalCase payload rewrites via updatedInput with session carried", () => {
+    expect(pipe(REAL_PASCAL)).toEqual({
+      hookSpecificOutput: {
+        hookEventName: "PreToolUse",
+        permissionDecision: "allow",
+        permissionDecisionReason: COPILOT_REWRITE_REASON,
+        updatedInput: {
+          command: "tk --session a938a6db-5e2f-4e0e-8a65-7cd6bf7b6e13 git status",
+          description: "Run git status",
+        },
+      },
+    });
+  });
+
+  test("idempotent: a payload whose command is ALREADY `tk …` is not re-wrapped", () => {
+    // If the host chains both dual-schema entries, the second sees an already-`tk`
+    // command. eligibility() must pass it → no `tk tk …` double-wrap, emit nothing.
+    const alreadyTk = cliWire("powershell", { command: "tk git status" });
+    const ev = normalizeStdin(alreadyTk);
+    expect(ev.event).toBe("preToolUse");
+    expect(pipe(alreadyTk)).toBeNull();
+  });
+});

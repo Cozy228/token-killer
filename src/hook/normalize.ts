@@ -288,14 +288,35 @@ export function normalize(payload: unknown): ToolEvent {
 
   const dialect = detectDialect(payload);
 
-  const event = normalizeEventName(
-    payload.event ?? payload.eventName ?? payload.hookEventName ?? payload.hook_event_name,
-  );
-
   const toolName = firstString(payload, ["toolName", "tool_name", "tool", "name"]) ?? "";
   const toolInput = parseToolInput(
     payload.toolArgs ?? payload.tool_input ?? payload.toolInput ?? payload.input,
   );
+  const rawResult = payload.toolResult ?? payload.tool_response ?? payload.tool_result;
+
+  const rawEvent =
+    payload.event ?? payload.eventName ?? payload.hookEventName ?? payload.hook_event_name;
+  let event = normalizeEventName(rawEvent);
+  // Copilot CLI's NATIVE preToolUse entry sends NO event-name field — it scopes the
+  // event by the hook-config key it fired under (verified live against 1.0.62, see
+  // docs/reports/windows-copilot-1.0.62-live-verification-20260615.md §5). Without
+  // this, that payload normalizes to `unknown` → `decide()` allows it → the rewrite
+  // silently never happens on the camelCase path. Infer preToolUse from the shape: a
+  // recognized-dialect tool call carrying a name + input but NO result is a pre-call.
+  // Guarded to a genuinely ABSENT event field — an event name that is present but
+  // unrecognized stays `unknown` (it may be a future event we must not mislabel).
+  // Safe even when the dual-schema PascalCase entry ALSO rewrites the same call —
+  // rewriteCommand is idempotent on an already-`tk` command (eligibility guards it).
+  if (
+    event === "unknown" &&
+    rawEvent === undefined &&
+    dialect !== "unknown" &&
+    toolName.length > 0 &&
+    rawResult === undefined
+  ) {
+    event = "preToolUse";
+  }
+
   const category = classifyTool(toolName);
 
   const ev: ToolEvent = {
@@ -307,8 +328,7 @@ export function normalize(payload: unknown): ToolEvent {
   };
 
   // Result is only meaningful on posttool; carry it through untouched when present.
-  const result = payload.toolResult ?? payload.tool_response ?? payload.tool_result;
-  if (result !== undefined) ev.toolResult = result;
+  if (rawResult !== undefined) ev.toolResult = rawResult;
 
   // Command string only for shell executions.
   if (category === "execute_adjacent") {

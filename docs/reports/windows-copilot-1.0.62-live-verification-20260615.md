@@ -96,27 +96,33 @@ Confirmed against assumptions:
 - That session id appears only in **payload 2's** `updatedInput.command` → **Copilot CLI 1.0.62
   honored the PascalCase `PreToolUse` / `hookSpecificOutput.updatedInput` path.**
 
-## 5. Finding: the camelCase `preToolUse` payload is currently inert (masked)
+## 5. Finding + fix: the camelCase `preToolUse` payload was inert (now fixed)
 
-Feeding the two captured payloads back through `hook copilot`:
+Feeding the two captured payloads back through `hook copilot` (before the fix):
 - payload 2 (PascalCase) → rewrites correctly (`tk --session a938a6db… git status`).
 - **payload 1 (camelCase native) → empty output, NO rewrite.**
 
 Root cause: payload 1 carries **no event-name field** (`event` / `eventName` / `hookEventName`
 / `hook_event_name` all absent — the host scopes the event by the config key it fired under).
-`normalize.ts` derives `event` from those keys, so it resolves to `"unknown"` → `decide()` falls
-to the default → `allow`, no rewrite.
+`normalize.ts` derived `event` from those keys, so it resolved to `"unknown"` → `decide()` fell
+to the default → `allow`, no rewrite. Masked today only because the PascalCase entry carries the
+rewrite — but if a future Copilot CLI version stopped honoring PascalCase (or firing both), the
+camelCase path would silently fail.
 
-Why it doesn't break anything today:
-- The PascalCase entry's payload *does* carry `hook_event_name` and supplies the rewrite, so the
-  call is still compressed E2E.
-- The asymmetry is also **accidentally protective**: if payload 1 also rewrote, both entries would
-  emit a rewrite for the same call and the host could double-apply (`tk tk git status`). Today only
-  one path rewrites → single clean execution (the history shows exactly one row).
+**Fix (committed):** `normalize.ts` now infers `preToolUse` when the event field is genuinely
+ABSENT *and* the payload is a recognized-dialect tool call with a name + input but no result. An
+event name that is present-but-unrecognized still stays `unknown` (it may be a future event).
 
-Risk: if a future Copilot CLI version stops honoring the PascalCase entry (or stops firing both),
-the camelCase path would silently fail. Recorded for the team — no fix applied here (a fix must
-also address the double-rewrite interaction above). Captures retained under
+**Double-wrap is NOT a concern** (corrected from the initial draft): `rewriteCommand`'s
+`eligibility()` already returns `pass` for a command whose first token is `tk` ("already a tk
+command", `rewrite.ts:223`). So even if the host fires both entries and applies / chains both, a
+second pass over `tk git status` is a no-op — never `tk tk git status`. The inert path was *not*
+what protected against double-wrap; idempotency is.
+
+**Live-confirmed on the box** (after `pnpm build`): re-feeding the captured payloads, **payload 1
+now rewrites** to `modifiedArgs.command = "tk --session a938a6db… git status"` (description
+preserved); payload 2 unchanged. Regression-locked in `tests/unit/hook/protocol-matrix.test.ts`
+Row 7 (both real payloads + an idempotency case). Captures retained under
 `reports/windows-live-captures/`.
 
 ## Artifacts
