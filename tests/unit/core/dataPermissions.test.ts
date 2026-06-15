@@ -3,7 +3,7 @@
 // tk persists routinely carries secrets). `mode` is honored only at CREATE time
 // and ignored by Node on Windows, so each case skips on win32.
 
-import { mkdtempSync, statSync } from "node:fs";
+import { chmodSync, mkdtempSync, statSync, writeFileSync } from "node:fs";
 import { mkdtemp, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
@@ -15,6 +15,8 @@ import { governanceFile, recordGovernance } from "../../../src/core/governance.j
 import { entryKey, normalizeCommand, upsertEntry } from "../../../src/core/dedupStore.js";
 import { resolveCachedBinary } from "../../../src/core/pathCache.js";
 import { ensureProjectRollup, rollupFile } from "../../../src/core/rollup.js";
+import { debugLogPath, errorLogPath, logFatalError, tkDebug } from "../../../src/hook/debug.js";
+import { writeInspectBucket } from "../../../src/inspect/persist.js";
 import type { DedupEntry } from "../../../src/core/dedupStore.js";
 import type { FilteredResult, RawResult, TkOptions } from "../../../src/types.js";
 
@@ -142,6 +144,63 @@ describe("Plan 003 — owner-only metrics-store permissions", () => {
       const file = historyFile(cwd);
       // first-create mode persists; the append leaves it untouched
       expect(mode777(file)).toBe(0o600);
+    },
+  );
+
+  // debug.log / errors.log live under ~/.token-killer/ too, carry command strings
+  // and fatal stacks, and are tailed into the `tk support` bundle — same data class
+  // as the stores above, so they must be owner-only (was a bare-write gap).
+  it.skipIf(SKIP_WIN)("debug.log is created 0o600 under a 0o700 home", () => {
+    process.env.TK_DEBUG = "1";
+    try {
+      tkDebug("gate", { command: "curl -H 'Authorization: Bearer secret'" });
+    } finally {
+      delete process.env.TK_DEBUG;
+    }
+    expect(mode777(debugLogPath())).toBe(0o600);
+    expect(mode777(home)).toBe(0o700);
+  });
+
+  it.skipIf(SKIP_WIN)("errors.log is created 0o600 (carries fatal stacks read by `tk support`)", () => {
+    logFatalError("spawn", new Error("boom"));
+    expect(mode777(errorLogPath())).toBe(0o600);
+    expect(mode777(home)).toBe(0o700);
+  });
+
+  it.skipIf(SKIP_WIN)(
+    "errors.log left 0o644 by a pre-fix tk is retroactively tightened to 0o600 on next write",
+    () => {
+      // `mode` applies only at create; an upgrade must chmod an existing world-readable
+      // log, not leave it. This case fails on a mode-only fix and on the bare-write code.
+      const file = errorLogPath();
+      writeFileSync(file, "legacy line\n");
+      chmodSync(file, 0o644);
+      expect(mode777(file)).toBe(0o644);
+      logFatalError("spawn", new Error("boom"));
+      expect(mode777(file)).toBe(0o600);
+    },
+  );
+
+  it.skipIf(SKIP_WIN)(
+    "a fresh inspect write creates a non-existent data-dir root 0o700, not 0o755",
+    () => {
+      // inspect/advice/optimize do recursive mkdirs into the data-dir tree and are
+      // often the FIRST writer on a clean install; a bare recursive mkdir would create
+      // ~/.token-killer/ at 0o755 (under this suite's umask) and defeat the metrics
+      // stores' dir-gate. Point HOME at a not-yet-existing dir so the mkdir mode — not
+      // mkdtemp's default 0o700 — is what's under test.
+      const dataRoot = path.join(home, "freshtk");
+      process.env.TOKEN_KILLER_HOME = dataRoot;
+      try {
+        const file = writeInspectBucket(
+          { scope: "user" },
+          { schemaVersion: "1", generatedAt: "t", scope: "user", files_scanned: 0, findings: [] },
+        );
+        expect(mode777(dataRoot)).toBe(0o700);
+        expect(mode777(file)).toBe(0o600);
+      } finally {
+        process.env.TOKEN_KILLER_HOME = home;
+      }
     },
   );
 });

@@ -42,22 +42,28 @@ function formatValue(v: unknown): string {
   }
 }
 
-// Best-effort append to the debug log; swallow every error (a missing dir, a
-// read-only FS — none of it may break the hook).
-function appendPrivateLog(path: string, line: string): void {
-  try {
-    const dir = dirname(path);
-    mkdirSync(dir, { recursive: true, mode: 0o700 });
-    chmodSync(dir, 0o700);
-    appendFileSync(path, line, { mode: 0o600 });
-    chmodSync(path, 0o600);
-  } catch {
-    /* best-effort */
-  }
+// Append to an owner-only log under the data dir: dir 0700 / file 0600, matching
+// the rawStore/history precedent. These logs carry command strings (debug.log) and
+// error stacks (errors.log) and are tailed into the `tk support` bundle — the same
+// data class #6 restricted. `mode:` applies only on creation, so chmod retroactively
+// tightens a file left 0644 by a pre-fix tk after an upgrade. Caller wraps in
+// try/catch; a perms failure must never block the line (or break a fail-open hook).
+function appendOwnerOnly(path: string, line: string): void {
+  const dir = dirname(path);
+  mkdirSync(dir, { recursive: true, mode: 0o700 });
+  chmodSync(dir, 0o700);
+  appendFileSync(path, line, { mode: 0o600 });
+  chmodSync(path, 0o600);
 }
 
+// Best-effort append to the debug log; swallow every error (a missing dir, a
+// read-only FS — none of it may break the hook).
 function appendToLog(line: string): void {
-  appendPrivateLog(debugLogPath(), line);
+  try {
+    appendOwnerOnly(debugLogPath(), line);
+  } catch {
+    /* the stderr copy already carried the diagnostic */
+  }
 }
 
 // Emit one diagnostic line when TK_DEBUG is set; no-op otherwise. `undefined`
@@ -95,7 +101,11 @@ export function errorLogPath(): string {
 // Best-effort append to errors.log; swallow every error (a logging failure must
 // never replace or compound the real error).
 function appendErrorLog(line: string): void {
-  appendPrivateLog(errorLogPath(), line);
+  try {
+    appendOwnerOnly(errorLogPath(), line);
+  } catch {
+    /* best-effort */
+  }
 }
 
 // Record a FATAL tk error UNCONDITIONALLY — unlike tkDebug, this is NOT gated on
