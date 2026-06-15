@@ -45,6 +45,15 @@ export interface HostAdapter {
   // `hookAvailable`.
   installHook?(loc: HookLoc): HookStep;
   planHook?(loc: HookLoc): HookStep;
+  // The host's hook is an ADDITIVE enhancement on top of a PRIMARY shim, not the
+  // sole/highest tier (ADR 0012 §2/§3). When true, `runInstall` installs the shim
+  // (primary, with its probe + injection fallback) AND the hook (additive),
+  // reporting both — instead of returning after the hook tier wins. Set only for
+  // VS Code: its shim is the policy/Preview-independent floor while the hook is a
+  // Preview, per-org-policy-revocable layer. This is a CAPABILITY on the adapter so
+  // init carries no `if (host === "vscode")` ladder (Goal B). Hosts where the hook
+  // is the sole primary (copilot-cli, claude-code) leave it unset → unchanged.
+  additiveHook?: boolean;
 }
 
 // A hook-config patch reports its action as a verb stem (create/replace/append/
@@ -131,10 +140,38 @@ const copilotAdapter: HostAdapter = {
 const vscodeAdapter: HostAdapter = {
   host: "vscode",
   dialect: "vscode", // VS Code emits snake_case tool_name/tool_input payloads.
-  supportedTiers: ["shim", "injection"],
+  // ADR 0012 §2: VS Code is hook-capable (hooks fire in Preview, ADR 0005 §5). The
+  // shim stays PRIMARY (§3); the hook is additive — hence `additiveHook: true` and
+  // "shim" still ahead of "hook" in install ordering for this host.
+  supportedTiers: ["hook", "shim", "injection"],
   guidancePath: (home) => guidanceFilePath("vscode", home),
   injectionPath: (home, vscodeUserDir) => userInjectionPath("vscode", home, vscodeUserDir),
-  // No installHook — VS Code's highest tier is the shim.
+  // The VS Code hook is additive on top of the primary shim (ADR 0012 §3), not the
+  // sole tier — `runInstall` installs both for this host (see init.ts).
+  additiveHook: true,
+  // VS Code reads the SAME hook locations the Copilot CLI writer already targets —
+  // user `~/.copilot/hooks/tk-rewrite.json`, project `.github/hooks/tk-rewrite.json`
+  // (ADR 0005 §5 corollary). So this REUSES installCopilotHookConfig: there is no
+  // separate VS Code writer/file — both adapters share the one marker-guarded
+  // `~/.copilot/hooks/tk-rewrite.json`, which uninstall removes exactly once.
+  installHook: (loc) => {
+    const plan = installCopilotHookConfig({ project: loc.project, cwd: loc.cwd });
+    return {
+      headerLines: [
+        `${plan.action === "unchanged" ? "Up to date" : "Wrote"} VS Code hook config (shared ~/.copilot/hooks): ${plan.path}`,
+      ],
+      trailerLines: [],
+    };
+  },
+  planHook: (loc) => {
+    const plan = planCopilotHookConfig({ project: loc.project, cwd: loc.cwd });
+    return {
+      headerLines: [
+        `[dry-run] would ${actionWould(plan.action)} VS Code hook config (shared ~/.copilot/hooks): ${plan.path}`,
+      ],
+      trailerLines: [],
+    };
+  },
 };
 
 const unknownAdapter: HostAdapter = {

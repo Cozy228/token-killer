@@ -17,8 +17,17 @@ describe("adapters table", () => {
     expect(adapters["copilot-cli"].dialect).toBe("cli");
     expect(Boolean(adapters["copilot-cli"].installHook)).toBe(true);
 
-    expect(adapters.vscode.supportedTiers).toEqual(["shim", "injection"]);
-    expect(adapters.vscode.installHook).toBeUndefined();
+    // ADR 0012: VS Code is now hook-capable (additive hook + primary shim). It
+    // carries installHook/planHook (reusing the Copilot writer) and "hook" in its
+    // supportedTiers, with `additiveHook` flagging that the shim stays primary.
+    expect(adapters.vscode.supportedTiers).toEqual(["hook", "shim", "injection"]);
+    expect(Boolean(adapters.vscode.installHook)).toBe(true);
+    expect(Boolean(adapters.vscode.planHook)).toBe(true);
+    expect(adapters.vscode.additiveHook).toBe(true);
+    // The hook is additive only for VS Code — for hosts where the hook is the sole
+    // primary tier (copilot-cli, claude-code) the flag stays unset.
+    expect(adapters["copilot-cli"].additiveHook).toBeUndefined();
+    expect(adapters["claude-code"].additiveHook).toBeUndefined();
 
     expect(adapters.unknown.supportedTiers).toEqual(["injection"]);
     expect(adapters.unknown.installHook).toBeUndefined();
@@ -97,7 +106,13 @@ describe("selectTier is the single source of truth — reads supportedTiers", ()
     expect(selectTier(adapters["claude-code"].supportedTiers, false, true)).toBe("injection");
     expect(selectTier(adapters["copilot-cli"].supportedTiers, true, true)).toBe("hook");
     expect(selectTier(adapters["copilot-cli"].supportedTiers, false, true)).toBe("shim");
-    expect(selectTier(adapters.vscode.supportedTiers, true, true)).toBe("shim");
+    // ADR 0012: vscode now lists "hook" first, so selectTier (ordering only) returns
+    // "hook" when a hook is available. The shim-stays-PRIMARY rule for vscode lives in
+    // init's `additiveHook` handling, NOT in selectTier — so selectTier is asked the
+    // shim question with `hookAvailable=false` there. With no hook it still resolves
+    // to shim on a passing probe.
+    expect(selectTier(adapters.vscode.supportedTiers, true, true)).toBe("hook");
+    expect(selectTier(adapters.vscode.supportedTiers, false, true)).toBe("shim");
     expect(selectTier(adapters.unknown.supportedTiers, true, true)).toBe("injection");
   });
 });

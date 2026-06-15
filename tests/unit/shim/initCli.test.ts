@@ -57,15 +57,40 @@ describe("tk install", () => {
     expect(readFileSync(injected, "utf8")).toContain("Token Killer");
   });
 
-  test("--host vscode → shim tier (wrappers installed, probe passes)", () => {
+  // ADR 0012: VS Code is additive — the shim stays PRIMARY and the hook is layered
+  // on top. So the install reports BOTH, and the shim wrappers + the shared hook
+  // config (~/.copilot/hooks/tk-rewrite.json) are both written.
+  test("--host vscode → shim (primary) + additive hook", () => {
     // VS Code user dir present so settings.json gets patched.
     mkdirSync(join(home, "Library", "Application Support", "Code", "User"), { recursive: true });
     mkdirSync(join(home, ".config", "Code", "User"), { recursive: true });
 
     const result = runTg(["install", "--host", "vscode"]);
     expect(result.status).toBe(0);
-    expect(result.stdout).toContain("Active tier: shim");
+    expect(result.stdout).toContain("Active tier: shim (primary) + hook (additive)");
+    // Primary shim.
     expect(existsSync(join(home, ".token-killer", "shim", "git"))).toBe(true);
+    // Additive hook — the SAME shared file the Copilot CLI writer targets.
+    expect(existsSync(join(home, ".copilot", "hooks", "tk-rewrite.json"))).toBe(true);
+  });
+
+  // ADR 0012 / issue #22 acceptance: `tk install --host vscode` reports BOTH the
+  // hook config wiring AND the shim probe. --dry-run for determinism (no probe side
+  // effects, byte-stable output) — it must preview both and write nothing.
+  test("--host vscode --dry-run reports BOTH the hook config and the shim", () => {
+    mkdirSync(vscodeUserDir(process.platform, home), { recursive: true });
+    const result = runTg(["install", "--host", "vscode", "--dry-run"]);
+    expect(result.status).toBe(0);
+    // Additive hook wiring (shared ~/.copilot/hooks/tk-rewrite.json) is reported.
+    expect(result.stdout).toContain("Additive hook");
+    expect(result.stdout).toContain("VS Code hook config");
+    expect(result.stdout).toMatch(/tk-rewrite\.json/);
+    // The primary shim is reported alongside it.
+    expect(result.stdout).toContain("would install shim");
+    expect(result.stdout).toContain("Active tier: shim (primary) + hook (additive)");
+    // --dry-run writes nothing.
+    expect(existsSync(join(home, ".copilot", "hooks", "tk-rewrite.json"))).toBe(false);
+    expect(existsSync(join(home, ".token-killer", "shim", "git"))).toBe(false);
   });
 
   // R1: the VS Code install must write TK_COMPRESS_TTY=1 into the integrated
@@ -147,8 +172,11 @@ describe("tk install", () => {
     mkdirSync(vscodeUserDir(process.platform, home), { recursive: true });
     const result = runTg(["install", "--host", "vscode"]);
     expect(result.status).toBe(0);
+    // No SECONDARY-host wiring under a forced --host. ADR 0012: vscode now writes the
+    // shared ~/.copilot/hooks/tk-rewrite.json as its OWN additive hook, so the file
+    // exists — but the distinguishing signal of single-host is that there is no
+    // "Also wiring <other-host>" line (the additive hook is vscode's, not copilot's).
     expect(result.stdout).not.toContain("Also wiring");
-    expect(existsSync(join(home, ".copilot", "hooks", "tk-rewrite.json"))).toBe(false);
   });
 
   test("--host copilot-cli --dry-run writes nothing", () => {

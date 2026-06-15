@@ -298,17 +298,31 @@ export function runInstall(argv: string[]): number {
     }
   }
 
-  // Tier ladder (ADR 0002): Hook > Shim > Injection. The adapter carries the
-  // per-host facts; selectTier is the single tier exit. No hardcoded host `if`s.
+  // Tier ladder (ADR 0002 + 0012): Hook > Shim > Injection, but tiers are NOT
+  // mutually exclusive — a host may run complementary tiers in parallel (ADR 0012
+  // §1). The adapter carries the per-host facts; selectTier is the single tier exit.
+  // No hardcoded host `if`s.
   const adapter = adapters[host];
   const hookAvailable = Boolean(adapter.installHook);
+  const loc = { project: opts.project, cwd: process.cwd() };
 
-  // Hook tier. When a host has a hook installer it always wins over shim/injection
-  // (the shim probe — the only side-effecting signal — is irrelevant here, so pass
-  // false rather than install wrappers). Each adapter renders its own host-specific
-  // lines; install prints them around the shared guidance + tier line.
-  if (selectTier(adapter.supportedTiers, hookAvailable, false) === "hook") {
-    const loc = { project: opts.project, cwd: process.cwd() };
+  // ADR 0012 §2/§3: a host whose hook is ADDITIVE (vscode) keeps the SHIM as its
+  // primary/authoritative tier and layers the hook on top — so it does NOT take the
+  // hook-wins exit below. Encoded as an adapter capability (`additiveHook`), not an
+  // `if (host === "vscode")` check (Goal B). For the additive-hook decision we treat
+  // the primary ladder as if no hook existed (pass `false`), so it flows to shim /
+  // injection; the hook is installed separately as an enhancement. Hosts where the
+  // hook is the sole primary (copilot-cli, claude-code) leave `additiveHook` unset →
+  // the original hook-wins behavior is byte-identical.
+  const hookIsAdditive = Boolean(adapter.additiveHook) && hookAvailable;
+  const hookForLadder = hookAvailable && !hookIsAdditive;
+
+  // Hook tier (sole primary). When a host has a hook installer AND that hook is its
+  // primary tier, it wins over shim/injection (the shim probe — the only
+  // side-effecting signal — is irrelevant here, so pass false rather than install
+  // wrappers). Each adapter renders its own host-specific lines; install prints them
+  // around the shared guidance + tier line.
+  if (selectTier(adapter.supportedTiers, hookForLadder, false) === "hook") {
     const step = opts.dryRun ? adapter.planHook!(loc) : adapter.installHook!(loc);
     step.headerLines.forEach(out);
     writeGuidanceStep(host, opts.dryRun);
@@ -317,36 +331,59 @@ export function runInstall(argv: string[]): number {
     return 0;
   }
 
+  // ADR 0012 §2/§3: install the additive hook for this host BEFORE the primary shim.
+  // It is an enhancement that catches the agent's terminal tool at the protocol layer
+  // even when PATH injection hasn't taken effect, and runs even if the shim probe
+  // later FAILS (graceful degradation — the primary then falls back to injection but
+  // the hook still installs). The shim below remains the policy/Preview-independent
+  // floor and is reported as the primary tier.
+  if (hookIsAdditive) {
+    const step = opts.dryRun ? adapter.planHook!(loc) : adapter.installHook!(loc);
+    out(`Additive hook (Preview, policy-revocable):`);
+    step.headerLines.forEach(out);
+    step.trailerLines.forEach(out);
+  }
+
   // Below the hook tier, --dry-run only previews — it never runs the probe or
   // installs the shim.
   if (opts.dryRun) {
     out(`[dry-run] would install shim / injection for host: ${host}`);
     writeGuidanceStep(host, true);
+    if (hookIsAdditive) out(`Active tier: shim (primary) + hook (additive)`);
     return 0;
   }
 
   // Shim tier. Only hosts whose supportedTiers include "shim" run the interception
   // probe (VS Code — command-compression's primary delivery there); selectTier
-  // turns the probe result into the final tier.
+  // turns the probe result into the final tier. For an additive-hook host the hook
+  // is already installed above; the shim is reported as PRIMARY alongside it.
   if (adapter.supportedTiers.includes("shim")) {
     const probe = installShim({ rc: false, vscode: true });
-    if (selectTier(adapter.supportedTiers, hookAvailable, probe.pass) === "shim") {
+    if (selectTier(adapter.supportedTiers, hookForLadder, probe.pass) === "shim") {
       // The usage guide is delivery-tier-independent — it teaches how to use tk
       // well, not how commands are routed. VS Code's tier is the shim, so without
       // this its users (who have a user-level guidance home) got no guide at all.
       writeGuidanceStep(host, false);
-      out(`Active tier: shim`);
+      out(hookIsAdditive ? `Active tier: shim (primary) + hook (additive)` : `Active tier: shim`);
       out(`Restart your terminal (or VS Code) for PATH changes to take effect.`);
       return 0;
     }
+    // Graceful degradation (ADR 0012 §3): the primary shim probe FAILED, so the
+    // primary falls back to injection — but the additive hook installed above stays.
     out("shim interception probe FAILED — falling back to instruction injection");
   }
 
-  // Injection tier (unknown host, or shim probe failed). User-level by default.
+  // Injection tier (unknown host, or shim probe failed). User-level by default. For
+  // an additive-hook host that reached here the primary shim probe FAILED, so
+  // injection is the primary floor — but the additive hook installed above remains.
   const target = injectionTarget(host);
   writeInjection(target);
   writeGuidanceStep(host, false);
-  out(`Active tier: injection`);
+  out(
+    hookIsAdditive
+      ? `Active tier: injection (primary, shim probe failed) + hook (additive)`
+      : `Active tier: injection`,
+  );
   out(`Wrote user instructions: ${target}`);
   if (host === "unknown") {
     out(`(No host auto-detected. Point your agent at this file, or re-run with --project.)`);
