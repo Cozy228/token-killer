@@ -23,3 +23,23 @@ describe("core/tokens estimateTokens", () => {
     expect(fromMetrics).toBe(estimateTokens);
   });
 });
+
+// Reference-equivalence corpus (plan 012). Expected values are the EXACT output of
+// the estimator at commit 22579d2, pinned so the index-loop rewrite is provably
+// output-preserving. If a value changes, the rewrite is wrong (most likely the
+// surrogate-pair `units` accounting) — fix the loop, never these numbers.
+describe("core/tokens estimateTokens — reference equivalence (plan 012)", () => {
+  it.each([
+    ["empty string", "", 0],
+    ["all whitespace", "   \t\n  ", 2],
+    ["ASCII prose", "the quick brown fox jumps", 7],
+    ["ASCII code with symbols", "const x = foo.bar(1, 2);", 8],
+    ["pure digits", "1234567890", 4],
+    ["CJK", "你好世界", 4],
+    // Astral skin-tone emoji exercise the ch.length === 2 (2 UTF-16 units) accounting.
+    ["astral / surrogate emoji", "👍🏽 code 😀", 5],
+    ["mixed blob", "const 名前 = 'héllo'; // 42 👍\n\tok", 12],
+  ])("counts %s as a fixed token total", (_label, input, expected) => {
+    expect(estimateTokens(input as string)).toBe(expected as number);
+  });
+});

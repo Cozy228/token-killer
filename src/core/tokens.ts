@@ -76,13 +76,20 @@ export function estimateTokens(text: string): number {
   let symbols = 0;
   let whitespaceChars = 0;
 
-  for (const ch of text) {
-    const cp = ch.codePointAt(0) ?? 0;
+  // Index loop over UTF-16 units instead of `for..of` (which allocates a fresh
+  // single-codepoint string per char on this per-command hot path). `units` is the
+  // UTF-16 width — 2 for an astral codepoint (surrogate pair) — and reproduces the
+  // old `ch.length` exactly for the letter/symbol buckets. Keep this in lockstep
+  // with scripts/calibrate-tokens.ts:featurize.
+  for (let i = 0; i < text.length; i += 1) {
+    const cp = text.codePointAt(i) ?? 0;
+    const units = cp > 0xffff ? 2 : 1;
+    if (units === 2) i += 1; // skip the trailing low surrogate
     if (isWhitespace(cp)) whitespaceChars += 1;
     else if (isCjk(cp)) cjk += 1;
     else if (isDigit(cp)) digits += 1;
-    else if (isLetter(cp)) letters += ch.length;
-    else symbols += ch.length;
+    else if (isLetter(cp)) letters += units;
+    else symbols += units;
   }
 
   const tokens =

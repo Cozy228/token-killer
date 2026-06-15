@@ -59,13 +59,18 @@ type Features = { letters: number; digits: number; symbols: number; cjk: number;
 
 function featurize(text: string): Features {
   const f: Features = { letters: 0, digits: 0, symbols: 0, cjk: 0, wsChars: 0 };
-  for (const ch of text) {
-    const cp = ch.codePointAt(0) ?? 0;
+  // Keep this bucketing byte-for-byte identical to src/core/tokens.ts:estimateTokens
+  // (index loop over UTF-16 units; `units` reproduces the old `ch.length`) so a refit
+  // computes ratios on the same bucketing the runtime estimator uses.
+  for (let i = 0; i < text.length; i += 1) {
+    const cp = text.codePointAt(i) ?? 0;
+    const units = cp > 0xffff ? 2 : 1;
+    if (units === 2) i += 1;
     if (isWs(cp)) f.wsChars += 1;
     else if (isCjk(cp)) f.cjk += 1;
     else if (isDigit(cp)) f.digits += 1;
-    else if (isLetter(cp)) f.letters += ch.length;
-    else f.symbols += ch.length;
+    else if (isLetter(cp)) f.letters += units;
+    else f.symbols += units;
   }
   return f;
 }
