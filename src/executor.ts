@@ -238,19 +238,200 @@ function cmdQuote(token: string): string {
   return `"${token.replace(/"/g, '""')}"`;
 }
 
+// Env-var indirection to neutralize cmd.exe's `%VAR%` expansion (Plan 005).
+//
+// cmd.exe expands `%name%` in its earliest parsing phase, scanning the WHOLE
+// command line and IGNORING quote state — so quoting a `.cmd`/`.bat` argument
+// cannot stop `%PATH%`, `%CD%`, or a `%…%` pair that forms across two args from
+// being rewritten before the real tool sees it. Caret-escaping doesn't work
+// inside quotes (and `%` can't be caret-escaped on a `/c` line); `%%` is a
+// batch-file-only escape, not a `cmd /c` one.
+//
+// Fix: bind an indirection variable to `%` in the spawned child's env and
+// replace every literal `%` in the line with `%NAME%`. cmd expands `%NAME%` →
+// a single `%` in one pass (the substituted `%` is not re-scanned),
+// reconstructing the literal text exactly once. Because every `%` becomes its
+// own self-contained reference, no two stray `%` can ever pair up — this is
+// immune to the cross-arg-pair case that defeats per-token quoting, and immune
+// to quote state.
+//
+// The variable defaults to TK_PCT. But the parent env may already bind TK_PCT
+// to something other than `%`; rewriting `%`→`%TK_PCT%` would then expand to
+// the user's value and CORRUPT the argument — the exact silent corruption this
+// plan removes. So when TK_PCT is taken we probe TK_PCT_1, TK_PCT_2, … for the
+// first name that is free (unset, or already exactly `%`) in the env the child
+// will actually receive, and use that. Only if every probed name is taken
+// (within PCT_NAME_PROBE_LIMIT — practically never) do we fail closed: the
+// caller surfaces a clear error naming the offending argument and spawns
+// nothing, rather than emitting a corruptible line.
+const PCT_ENV_BASE = "TK_PCT";
+const PCT_ENV_VALUE = "%";
+// 16 probes (TK_PCT plus TK_PCT_1..TK_PCT_15). Reaching this bound means the
+// parent env binds all 16 names to non-`%` values — effectively impossible in
+// practice; the fail-closed branch exists only so we never emit a corruptible
+// line if it somehow happens.
+const PCT_NAME_PROBE_LIMIT = 16;
+
+// Raised by buildSpawnTarget when a `%`-bearing win32 batch line cannot be
+// safely neutralized because no collision-free indirection variable is
+// available. tk fails closed: it must never spawn a command line cmd.exe would
+// expand. Callers surface the message and exit non-zero (consistent with the
+// ShimRecursionError fail path); nothing is spawned.
+export class PercentNeutralizeError extends Error {
+  constructor(offendingArg: string) {
+    super(
+      `tk: refusing to run a batch command — cannot safely neutralize cmd.exe ` +
+        `%-expansion in argument ${JSON.stringify(offendingArg)} ` +
+        `(no collision-free indirection variable available; ` +
+        `unset TK_PCT or TK_PCT_1..TK_PCT_${PCT_NAME_PROBE_LIMIT - 1})`,
+    );
+    this.name = "PercentNeutralizeError";
+  }
+}
+
+// cmd.exe's documented hard limit on the command line it parses is 8191
+// characters (Microsoft: "Command prompt (Cmd. exe) command-line string
+// limitation").
+// https://learn.microsoft.com/en-us/troubleshoot/windows-client/shell-experience/command-line-string-limitation
+const CMD_LINE_LIMIT = 8191;
+
+// Raised by buildSpawnTarget when the %-neutralization transform would inflate a
+// batch line past cmd.exe's command-line limit. Each literal `%` expands to
+// `%NAME%` (+ several chars), so a command that fits comfortably under the limit
+// before neutralization can cross it after — cmd would then truncate or reject
+// the line, i.e. tk-induced breakage of a command that runs natively. We fail
+// closed: same pre-spawn synchronous throw as ShimRecursionError /
+// PercentNeutralizeError; nothing is spawned. The guard is scoped to the
+// neutralized path ONLY — a line that is already over-long without tk's rewrite
+// keeps native behavior (cmd's own concern, out of scope).
+export class PercentLineLengthError extends Error {
+  constructor(neutralizedLength: number, originalLength: number) {
+    super(
+      `tk: refusing to run a batch command — neutralizing cmd.exe %-expansion ` +
+        `would inflate the command line to ${neutralizedLength} chars, past ` +
+        `cmd.exe's ${CMD_LINE_LIMIT}-char limit (original ${originalLength} chars; ` +
+        `each literal % expands to %TK_PCT%). Running this %-bearing command ` +
+        `through tk is unsafe; run it directly instead.`,
+    );
+    this.name = "PercentLineLengthError";
+  }
+}
+
+// A name is usable for the rewrite iff the parent env leaves it unset or already
+// binds it to exactly `%` — either way the child ends up with NAME=% (extraEnv
+// wins in mergeSpawnEnv, so even an already-`%` binding is re-asserted and can't
+// be clobbered by merge order). Reads process.env, the same source the spawn
+// inherits from (buildSpawnTarget only sees a PATH string, not the full env).
+function isPctNameFree(name: string): boolean {
+  const existing = process.env[name];
+  return existing === undefined || existing === PCT_ENV_VALUE;
+}
+
+// Pick the first collision-free indirection name: TK_PCT, then TK_PCT_1,
+// TK_PCT_2, … up to the probe limit. Returns undefined when all are taken, which
+// drives the fail-closed branch.
+function pickPctName(): string | undefined {
+  if (isPctNameFree(PCT_ENV_BASE)) return PCT_ENV_BASE;
+  for (let i = 1; i < PCT_NAME_PROBE_LIMIT; i++) {
+    const name = `${PCT_ENV_BASE}_${i}`;
+    if (isPctNameFree(name)) return name;
+  }
+  return undefined;
+}
+
+function neutralizePercent(token: string, pctName: string): string {
+  return token.replace(/%/g, `%${pctName}%`);
+}
+
+// Merge a spawn target's `extraEnv` (currently only TK_PCT=%) over the child
+// env a caller already computed. When neither is set we return `env` unchanged
+// so the %-free / non-Windows / non-shim path stays byte-identical (the child
+// keeps inheriting process.env implicitly via spawn). When extraEnv is present
+// but `env` was undefined we must materialize an explicit env from process.env
+// so the indirection variable actually reaches the child.
+export function mergeSpawnEnv(
+  env: Record<string, string | undefined> | undefined,
+  extraEnv: Record<string, string> | undefined,
+): Record<string, string | undefined> | undefined {
+  if (!extraEnv) return env;
+  const base = env ?? (process.env as Record<string, string | undefined>);
+  return { ...base, ...extraEnv };
+}
+
 // Resolve the actual spawn target. On Windows a resolved .cmd/.bat must go
 // through ComSpec: CreateProcess can't execute a batch script and Node refuses
 // .bat/.cmd without a shell (CVE-2024-27980). Everything else — plain .exe and
 // all non-Windows — spawns directly with the resolved path.
+//
+// `extraEnv`, when present, MUST be merged over the child env by the caller
+// (see executeCommand / executePassthrough). It carries TK_PCT=% for the
+// %-neutralization above; it is only set on the win32 batch path and only when
+// the line actually contains `%`.
 export function buildSpawnTarget(
   program: string,
   args: string[],
   pathValue: string | undefined,
-): { file: string; args: string[]; windowsVerbatimArguments: boolean } {
+): {
+  file: string;
+  args: string[];
+  windowsVerbatimArguments: boolean;
+  extraEnv?: Record<string, string>;
+} {
   const resolved = bakedRealBin(program, pathValue) ?? resolveProgram(program, pathValue);
   if (process.platform === "win32" && isBatchScript(resolved)) {
     const comspec = process.env.ComSpec || "cmd.exe";
-    const line = [resolved, ...args].map(cmdQuote).join(" ");
+    const tokens = [resolved, ...args];
+    const hasPercent = tokens.some((t) => t.includes("%"));
+
+    if (hasPercent) {
+      // Pick a collision-free indirection name. TK_PCT is preferred but the
+      // parent env may already bind it to a non-`%` value; we then fall through
+      // to TK_PCT_1, TK_PCT_2, … The chosen name's binding can't be clobbered by
+      // merge order: extraEnv wins in mergeSpawnEnv.
+      const pctName = pickPctName();
+      if (pctName === undefined) {
+        // Fail closed: no safe name within the probe bound. Never emit the
+        // corruptible cmdQuote-only line cmd.exe would expand — surface a clear
+        // error naming the offending argument and spawn nothing. (The caller
+        // catches this on the same path as ShimRecursionError.)
+        const offending = tokens.find((t) => t.includes("%")) ?? "";
+        throw new PercentNeutralizeError(offending);
+      }
+      const line = tokens.map((t) => cmdQuote(neutralizePercent(t, pctName))).join(" ");
+      const cmdArg = `"${line}"`;
+
+      // Length guard (neutralized path only). The %→%NAME% rewrite adds chars per
+      // literal `%`, so a command that fits under cmd.exe's limit before
+      // neutralization can exceed it after — cmd would then truncate/reject the
+      // line, breaking a natively-runnable command. We fail closed before spawn.
+      //
+      // What counts toward cmd.exe's ~8191-char limit: cmd parses the command
+      // line CreateProcess hands it, i.e. the whole `<comspec> /d /s /c "<line>"`
+      // string — the comspec path and the `/d /s /c` switches are part of that
+      // line, not free. We bound the full CreateProcess command line
+      // conservatively (joining argv with single spaces, as Node's
+      // windowsVerbatimArguments spawn does): comspec + " /d /s /c " + cmdArg.
+      // This slightly over-counts versus what cmd strictly re-scans after `/c`
+      // (the safe direction — an optimistic bound that lets a too-long line
+      // through would be the bug). We compare the NEUTRALIZED length; the
+      // pre-neutralization line is computed only for the error message so the
+      // diagnostic shows the inflation.
+      const fullCmdLine = `${comspec} /d /s /c ${cmdArg}`;
+      if (fullCmdLine.length > CMD_LINE_LIMIT) {
+        const preLine = tokens.map(cmdQuote).join(" ");
+        const preFull = `${comspec} /d /s /c "${preLine}"`;
+        throw new PercentLineLengthError(fullCmdLine.length, preFull.length);
+      }
+      return {
+        file: comspec,
+        args: ["/d", "/s", "/c", cmdArg],
+        windowsVerbatimArguments: true,
+        extraEnv: { [pctName]: PCT_ENV_VALUE },
+      };
+    }
+
+    // %-free fast path: byte-identical to the pre-fix line, no env injection.
+    const line = tokens.map(cmdQuote).join(" ");
     return {
       file: comspec,
       args: ["/d", "/s", "/c", `"${line}"`],
@@ -275,6 +456,7 @@ export function executeCommand(
   const started = Date.now();
   const env = buildChildEnv(command.program, extraEnv);
   const target = buildSpawnTarget(command.program, command.args, env?.PATH ?? process.env.PATH);
+  const spawnEnv = mergeSpawnEnv(env, target.extraEnv);
 
   return new Promise((resolve) => {
     const child = spawn(target.file, target.args, {
@@ -282,7 +464,7 @@ export function executeCommand(
       shell: false,
       windowsHide: true,
       windowsVerbatimArguments: target.windowsVerbatimArguments,
-      ...(env ? { env } : {}),
+      ...(spawnEnv ? { env: spawnEnv } : {}),
     });
 
     // Cap captured output to bound memory: a handler-matched command on a huge repo
@@ -368,6 +550,7 @@ export function executePassthrough(
 ): Promise<number> {
   const env = buildChildEnv(command.program, opts.extraEnv);
   const target = buildSpawnTarget(command.program, command.args, env?.PATH ?? process.env.PATH);
+  const spawnEnv = mergeSpawnEnv(env, target.extraEnv);
 
   return new Promise((resolve) => {
     const child = spawn(target.file, target.args, {
@@ -376,7 +559,7 @@ export function executePassthrough(
       stdio: "inherit",
       windowsHide: true,
       windowsVerbatimArguments: target.windowsVerbatimArguments,
-      ...(env ? { env } : {}),
+      ...(spawnEnv ? { env: spawnEnv } : {}),
     });
 
     child.on("error", (error: NodeJS.ErrnoException) => {
