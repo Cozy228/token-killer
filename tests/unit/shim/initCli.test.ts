@@ -251,6 +251,22 @@ describe("tk install", () => {
     expect(existsSync(join(home, ".claude", "settings.json"))).toBe(false);
     expect(existsSync(join(home, ".claude", "TK.md"))).toBe(false);
   });
+
+  // Issue #26: a NON-copilot host must not persist the Copilot CLI version. install
+  // --host claude-code once stamped hostVersion="GitHub Copilot CLI 1.x" because the
+  // recorder ran the copilot `--version` preflight unconditionally for every host.
+  test("--host claude-code records NO Copilot CLI version in delivery-state", () => {
+    const result = runTg(["install", "--host", "claude-code"]);
+    expect(result.status).toBe(0);
+    const state = JSON.parse(
+      readFileSync(join(home, ".token-killer", "delivery-state.json"), "utf8"),
+    );
+    expect(state.installedHost).toBe("claude-code");
+    // No copilot version leaks in, and no host version is claimed at all (claude-code
+    // has no host-specific version probe yet — honest "not recorded").
+    expect(state.hostVersion ?? "").not.toMatch(/copilot/i);
+    expect(state.hostVersion).toBeUndefined();
+  });
 });
 
 describe("tk uninstall", () => {

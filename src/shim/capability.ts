@@ -11,7 +11,7 @@ import type { Host } from "./detect.js";
 import { guidanceFilePath, guidanceLoader } from "./guidance.js";
 import { readManifest, shimDir } from "./install.js";
 import { userInjectionPath } from "./injection.js";
-import { gatherPreflight, type PreflightCheck } from "./preflight.js";
+import type { PreflightCheck } from "./preflight.js";
 import { runInterceptionProbe } from "./probe.js";
 
 // ADR 0012 #7 — delivery state as a CAPABILITY MATRIX, not a single "active tier".
@@ -227,8 +227,27 @@ export type MatrixDeps = {
   state: DeliveryState;
 };
 
-function instOrNot(installed: boolean): string {
-  return installed ? "installed" : "absent";
+// Per-tier detail strings. "installed" is reserved for the WIRED-TO-TK case; a file
+// that is present but foreign (unmanaged Copilot config, a Claude hook that does not
+// point at tk) is shown as "present, NOT …" so it is diagnosable without being
+// misreported as an active tk tier (issue #26).
+function copilotDetail(copilot: { present: boolean; path: string; managed: boolean }): string {
+  if (!copilot.present) return `absent: ${copilot.path}`;
+  if (copilot.managed) return `installed: ${copilot.path}`;
+  return `present, NOT tk-managed (not wired to tk): ${copilot.path}`;
+}
+
+function claudeDetail(claude: { present: boolean; path: string; pointsAtTk: boolean }): string {
+  if (!claude.present) return `absent: ${claude.path}`;
+  if (claude.pointsAtTk) return `installed (points at tk): ${claude.path}`;
+  return `present, NOT tk (does not point at tk): ${claude.path}`;
+}
+
+function vscodeHookDetail(copilot: { present: boolean; path: string; managed: boolean }): string {
+  const policy = "blocked-by-policy: unknown (VS Code policy not introspectable from CLI)";
+  if (!copilot.present) return `absent: ${copilot.path}`;
+  if (copilot.managed) return `installed (shared ~/.copilot/hooks): ${copilot.path}; ${policy}`;
+  return `present, NOT tk-managed (shared ~/.copilot/hooks): ${copilot.path}`;
 }
 
 // Pure: build the matrix from injected signals. Never throws (each field is a
@@ -241,38 +260,38 @@ export function buildDeliveryMatrix(deps: MatrixDeps): DeliveryMatrix {
   const shimInstalled = manifest !== null;
   const tty = ttyOptIn(deps.env);
 
-  // VS Code's hook IS the shared ~/.copilot/hooks/tk-rewrite.json (the copilot
-  // writer's file — ADR 0012 §3 corollary). It is meaningfully "VS Code's" only
-  // when the host actually is vscode (its TERM_PROGRAM) — a pure Copilot-CLI box
-  // also has the file but it is the copilot tier, not a VS Code one. We report the
-  // row whenever the file is present so a coexisting VS Code + Copilot box sees
-  // both, and annotate that the file is shared.
-  const vscodeHookInstalled = copilot.present;
+  // "Installed" means tk's hook is actually WIRED TO TK, not merely that some hook
+  // file/entry exists at the path (issue #26). A present-but-unmanaged Copilot config,
+  // or a Claude hook that does not point at tk, is a FOREIGN hook: it does not deliver
+  // tk, so marking it installed would mask that tk is not wired. The detail still
+  // surfaces the foreign file (see *Detail helpers) so it stays diagnosable.
+  const copilotInstalled = copilot.present && copilot.managed;
+  const claudeInstalled = claude.present && claude.pointsAtTk;
+  // VS Code's hook IS the shared ~/.copilot/hooks/tk-rewrite.json (the copilot writer's
+  // file — ADR 0012 §3 corollary). A pure Copilot-CLI box also has the file but it is
+  // the copilot tier, not a VS Code one. It is "installed" only when that shared file
+  // is tk-managed; the row is shown whenever the file is present (managed or not) so a
+  // coexisting VS Code + Copilot box can still see and diagnose it.
+  const vscodeHookInstalled = copilotInstalled;
 
   const tiers: TierState[] = [
     {
       tier: "copilot-hook",
       label: "Copilot CLI hook",
-      installed: copilot.present,
-      detail: copilot.present
-        ? `${instOrNot(true)}${copilot.managed ? "" : " (present, NOT tk-managed)"}: ${copilot.path}`
-        : `absent: ${copilot.path}`,
+      installed: copilotInstalled,
+      detail: copilotDetail(copilot),
     },
     {
       tier: "claude-hook",
       label: "Claude Code hook",
-      installed: claude.present,
-      detail: claude.present
-        ? `installed (${claude.pointsAtTk ? "points at tk" : "present, NOT tk"}): ${claude.path}`
-        : `absent: ${claude.path}`,
+      installed: claudeInstalled,
+      detail: claudeDetail(claude),
     },
     {
       tier: "vscode-hook",
       label: "VS Code hook",
       installed: vscodeHookInstalled,
-      detail: vscodeHookInstalled
-        ? `installed (shared ~/.copilot/hooks): ${copilot.path}; blocked-by-policy: unknown (VS Code policy not introspectable from CLI)`
-        : `absent: ${copilot.path}`,
+      detail: vscodeHookDetail(copilot),
     },
     {
       tier: "shim",

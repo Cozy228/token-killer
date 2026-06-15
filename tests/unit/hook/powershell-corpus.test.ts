@@ -169,6 +169,38 @@ describe("PowerShell corpus — $(...), ${...}, script block { ... }", () => {
     expect(r.rewritten).toBe("tk git log { foo }");
   });
 
+  test("a `;` INSIDE a brace block is NOT a top-level separator — tk is never injected into the block (#25)", () => {
+    // The regression issue #25 names: `splitTopLevel` used to track only quotes, so the
+    // `;` inside the block was treated as a top-level statement separator and the engine
+    // emitted `tk git log { git status; tk git log }` — injecting `tk` mid-block and
+    // mutating script-block content. With brace-depth tracking the block is ONE unit:
+    // `tk` is prepended exactly once at the front and the block's bytes (inner `;`
+    // included) are byte-faithful.
+    const r = rewriteCommand("git log { git status; git log }", undefined, present);
+    expect(r.decision).toBe("rewrite");
+    expect(r.rewritten).toBe("tk git log { git status; git log }");
+  });
+
+  test("a `|` INSIDE a brace block is not a split point either", () => {
+    // Without brace tracking the inner `|` split the command and the producer-passes
+    // rule made the whole thing PASS. The block is a literal arg; prepend once.
+    const r = rewriteCommand("git log { a | b }", undefined, present);
+    expect(r.decision).toBe("rewrite");
+    expect(r.rewritten).toBe("tk git log { a | b }");
+  });
+
+  test("a real evaluated script block over a pipe: the inner `;` never wraps a mid-block command (#25)", () => {
+    // `... | ForEach-Object { Write-Host $_; git status }`: the producer feeds a pipe
+    // (passes) and ForEach-Object has no handler. The inner `;` must NOT split the
+    // block and rewrite `git status` mid-block — that was the unsafe pre-fix outcome.
+    const r = rewriteCommand(
+      "git log --oneline | ForEach-Object { Write-Host $_; git status }",
+      undefined,
+      present,
+    );
+    expect(r.decision).toBe("pass");
+  });
+
   test("a pwsh cmdlet that evaluates a script block has NO tk handler → pass", () => {
     // The realistic script-block-as-evaluated-block case: `Get-ChildItem | ForEach-Object {…}`.
     // ForEach-Object isn't a tk handler target, and it's the `|` RHS regardless, so

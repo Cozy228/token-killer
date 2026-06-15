@@ -90,13 +90,39 @@ describe("buildDeliveryMatrix (live-derived)", () => {
     expect(tier(m, "vscode-hook").detail).toContain("shared ~/.copilot/hooks");
   });
 
-  test("an unmanaged copilot hook is flagged NOT tk-managed", () => {
+  // Issue #26: a hook that is PRESENT but not tk's (unmanaged copilot config, or a
+  // claude hook that does not point at tk) must NOT read as installed — installed
+  // means "wired to tk", not "some hook file exists". The foreign file is still shown
+  // in the detail so it stays diagnosable.
+  test("an unmanaged copilot hook is present-but-foreign: NOT installed, but disclosed", () => {
     const m = buildDeliveryMatrix(
       baseDeps({
         copilotHookStatus: () => ({ present: true, path: "/x/tk-rewrite.json", managed: false }),
       }),
     );
+    expect(tier(m, "copilot-hook").installed).toBe(false);
     expect(tier(m, "copilot-hook").detail).toContain("NOT tk-managed");
+    expect(tier(m, "copilot-hook").detail).toContain("/x/tk-rewrite.json");
+    // The VS Code row shares that file, so it is NOT installed either.
+    expect(tier(m, "vscode-hook").installed).toBe(false);
+    expect(tier(m, "vscode-hook").detail).toContain("NOT tk-managed");
+    // And with no tk-managed VS Code hook, the policy line is n/a (not "unknown").
+    expect(m.blockedByPolicy).toContain("n/a");
+  });
+
+  test("a claude hook that does NOT point at tk is present-but-foreign: NOT installed", () => {
+    const m = buildDeliveryMatrix(
+      baseDeps({
+        claudeStatus: () => ({
+          present: true,
+          path: "/h/.claude/settings.json",
+          pointsAtTk: false,
+        }),
+      }),
+    );
+    expect(tier(m, "claude-hook").installed).toBe(false);
+    expect(tier(m, "claude-hook").detail).toContain("does not point at tk");
+    expect(tier(m, "claude-hook").detail).toContain("/h/.claude/settings.json");
   });
 
   test("claude hook present + pointsAtTk derived from claudeStatus", () => {

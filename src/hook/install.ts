@@ -232,3 +232,21 @@ export function copilotHookConfigStatus(loc: ConfigLocation): {
   const path = copilotHookConfigPath(loc);
   return { path, present: existsSync(path), managed: isManaged(path) };
 }
+
+// Read the hook COMMAND actually baked into the installed (tk-managed) Copilot config.
+// Preflight validates the on-disk paths the host will REALLY execute, not the current
+// process's paths (issue #23: a stale baked node/cli path — after a node upgrade, an
+// nvm switch, or a moved install — is the failure the check must catch; the running
+// `tk status` process's own paths trivially exist and prove nothing). Returns null when
+// the config is absent, not tk-managed, unreadable, or carries no command string.
+export function readInstalledCopilotHookCommand(loc: ConfigLocation): string | null {
+  const path = copilotHookConfigPath(loc);
+  if (!isManaged(path)) return null;
+  try {
+    const parsed = JSON.parse(readFileSync(path, "utf8")) as Partial<CopilotHookConfig>;
+    const cmd = parsed?.hooks?.PreToolUse?.[0]?.command;
+    return typeof cmd === "string" && cmd.length > 0 ? cmd : null;
+  } catch {
+    return null;
+  }
+}

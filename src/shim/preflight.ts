@@ -3,7 +3,9 @@ import { existsSync as fsExistsSync } from "node:fs";
 import { homedir as osHomedir } from "node:os";
 import { delimiter, join } from "node:path";
 
-import { resolveHookCommand } from "../hook/install.js";
+import { decide, toHostOutput } from "../hook/copilot.js";
+import { readInstalledCopilotHookCommand } from "../hook/install.js";
+import { normalizeStdin } from "../hook/normalize.js";
 
 // Windows preflight for `tk status` (issue #23, report §8 / §10 P0-5). On a
 // stock Windows box the documented Copilot-CLI hook requirements are easy to get
@@ -38,8 +40,14 @@ export type PreflightDeps = {
   existsSync: (path: string) => boolean;
   env: NodeJS.ProcessEnv;
   platform: NodeJS.Platform;
-  execPath: string;
-  cliPath: string | undefined;
+  // The command baked into the INSTALLED tk-managed Copilot hook config (or null when
+  // none is installed). hookCommandPathCheck validates the paths THIS embeds — the ones
+  // the host actually executes — not the current process (issue #23).
+  installedHookCommand: () => string | null;
+  // Runs tk's real hook pipeline on a synthetic powershell event and reports whether it
+  // rewrote (issue #23 §2). Injected so the matrix tests are deterministic; production
+  // wires `defaultProtocolProbe` (the real in-process pipeline).
+  protocolProbe: () => ProtocolProbeResult;
   homedir: () => string;
 };
 
@@ -95,6 +103,32 @@ function defaultWhich(
   }
 }
 
+// The result of running tk's REAL hook pipeline on a synthetic event (issue #23 §2).
+export type ProtocolProbeResult = { rewrote: boolean; got: string | null };
+
+// Drive a synthetic Copilot-CLI `powershell` host event through tk's actual protocol
+// pipeline (normalizeStdin → decide → toHostOutput) and report whether it still emits
+// a rewrite. This proves the WIRE PATH works — dialect detection, the rewrite decision,
+// and the host-output shaping — not merely that a hooks dir exists or a shell resolves.
+// `git status` is the probe command: off Windows the presence gate is always open, on
+// Windows `git` is present on any dev box (the same basis the protocol-matrix suite
+// relies on). Total; any internal error degrades to `rewrote: false`.
+export function defaultProtocolProbe(): ProtocolProbeResult {
+  try {
+    const wire = JSON.stringify({
+      eventName: "preToolUse",
+      toolName: "powershell",
+      toolArgs: JSON.stringify({ command: "git status" }),
+    });
+    const ev = normalizeStdin(wire);
+    const out = toHostOutput(ev, decide(ev)) as { modifiedArgs?: { command?: string } } | null;
+    const got = out?.modifiedArgs?.command ?? null;
+    return { rewrote: got === "tk git status", got };
+  } catch {
+    return { rewrote: false, got: null };
+  }
+}
+
 export function defaultPreflightDeps(): PreflightDeps {
   return {
     run: defaultRun,
@@ -102,8 +136,8 @@ export function defaultPreflightDeps(): PreflightDeps {
     existsSync: fsExistsSync,
     env: process.env,
     platform: process.platform,
-    execPath: process.execPath,
-    cliPath: process.argv[1],
+    installedHookCommand: () => readInstalledCopilotHookCommand({ project: false }),
+    protocolProbe: defaultProtocolProbe,
     homedir: osHomedir,
   };
 }
@@ -173,26 +207,66 @@ function pwshCheck(deps: PreflightDeps): PreflightCheck {
   };
 }
 
+// Split a baked hook command (`"<node>" "<cli>" hook <sub>`) into its two leading
+// path tokens, honoring the double-quote wrapping `resolveHookCommand`/`quoteArg`
+// apply to paths containing spaces (e.g. `"C:\Program Files\nodejs\node.exe"`). Only
+// double quotes are recognized — that is the only quoting quoteArg emits. Total; never
+// throws. A missing token comes back undefined (an empty/garbled command).
+export function parseHookCommandPaths(command: string): { node?: string; cli?: string } {
+  const tokens: string[] = [];
+  let buf = "";
+  let inQuote = false;
+  let started = false;
+  for (const c of command) {
+    if (c === '"') {
+      inQuote = !inQuote;
+      started = true;
+      continue;
+    }
+    if (!inQuote && (c === " " || c === "\t")) {
+      if (started) {
+        tokens.push(buf);
+        buf = "";
+        started = false;
+      }
+      continue;
+    }
+    buf += c;
+    started = true;
+  }
+  if (started) tokens.push(buf);
+  return { node: tokens[0], cli: tokens[1] };
+}
+
 function hookCommandPathCheck(deps: PreflightDeps): PreflightCheck {
-  // The hook command is resolveHookCommand() → `"<node> <cli> hook copilot"`.
-  // Both the node executable and the resolved cli.js must exist on disk, or the
-  // hook PreToolUse entry is inert (the Windows CommandNotFoundException case the
-  // absolute-path resolution was built to avoid — ADR 0005 §5 / audit #13).
-  const node = deps.execPath;
-  const cli = deps.cliPath;
-  const nodeOk = Boolean(node) && deps.existsSync(node);
+  // Validate the command BAKED INTO THE INSTALLED tk-managed hook config — the node +
+  // cli paths the host will actually execute — NOT the current `tk status` process's
+  // own paths (which trivially exist and prove nothing). A stale baked path makes the
+  // hook inert with a Windows CommandNotFoundException, and is exactly the failure this
+  // check must surface (issue #23 / ADR 0005 §5 / audit #13).
+  const command = deps.installedHookCommand();
+  if (command === null) {
+    // No tk-managed hook installed — there is no baked command to validate. Honest
+    // "not applicable" rather than a false-green from the running process's paths.
+    return {
+      name: "Hook command path",
+      ok: "warn",
+      detail: "no tk-managed hook config installed (run `tk install`)",
+    };
+  }
+  const { node, cli } = parseHookCommandPaths(command);
+  const nodeOk = Boolean(node) && deps.existsSync(node as string);
   const cliOk = Boolean(cli) && deps.existsSync(cli as string);
-  const command = resolveHookCommand();
   if (nodeOk && cliOk) {
     return { name: "Hook command path", ok: true, detail: `executable: ${command}` };
   }
   const missing: string[] = [];
-  if (!nodeOk) missing.push(`node (${node || "unknown"})`);
-  if (!cliOk) missing.push(`cli (${cli ?? "unknown"})`);
+  if (!nodeOk) missing.push(`node (${node || "unparsed"})`);
+  if (!cliOk) missing.push(`cli (${cli ?? "unparsed"})`);
   return {
     name: "Hook command path",
     ok: false,
-    detail: `missing ${missing.join(", ")} — hook would be inert`,
+    detail: `missing ${missing.join(", ")} — baked hook path is stale, hook would be inert; re-run \`tk install\``,
   };
 }
 
@@ -238,6 +312,29 @@ function shellToolNameCheck(deps: PreflightDeps): PreflightCheck {
   };
 }
 
+// Protocol self-probe (issue #23 §2). The dir/shell checks above prove the hook is
+// WIRED and a shell exists; this proves the wire PATH still PRODUCES a rewrite by
+// driving a synthetic powershell event through tk's real normalize→decide→toHostOutput
+// pipeline. It catches a "looks installed but silently stopped rewriting" regression
+// that existence checks structurally cannot. A non-rewrite is a `warn` (the env may
+// just lack git), never a hard FAIL — the hook itself is still fail-open.
+function hookProtocolSelfProbe(deps: PreflightDeps): PreflightCheck {
+  const name = "Hook protocol self-probe";
+  const { rewrote, got } = deps.protocolProbe();
+  if (rewrote) {
+    return {
+      name,
+      ok: true,
+      detail: "powershell event rewrites end-to-end: `git status` -> `tk git status`",
+    };
+  }
+  return {
+    name,
+    ok: "warn",
+    detail: `powershell event did not rewrite (got: ${got ?? "nothing"}) — check the rewrite pipeline / that git is on PATH`,
+  };
+}
+
 // Gather all preflight checks. Pure given its deps — production calls it with no
 // args (real probes); tests inject a deterministic matrix. Never throws: any
 // single probe that misbehaves is caught upstream and reported as not-found.
@@ -248,6 +345,7 @@ export function gatherPreflight(deps: PreflightDeps = defaultPreflightDeps()): P
     hookCommandPathCheck(deps),
     hooksDirCheck(deps),
     shellToolNameCheck(deps),
+    hookProtocolSelfProbe(deps),
   ];
 }
 

@@ -2,11 +2,14 @@ import { describe, expect, test } from "vitest";
 
 import {
   copilotHooksDir,
+  defaultProtocolProbe,
   gatherPreflight,
+  parseHookCommandPaths,
   parsePwshVersion,
   renderPreflight,
   type PreflightCheck,
   type PreflightDeps,
+  type ProtocolProbeResult,
   type RunResult,
 } from "../../../src/shim/preflight.js";
 
@@ -21,8 +24,12 @@ function makeDeps(opts: {
   files?: Set<string>;
   env?: NodeJS.ProcessEnv;
   platform?: NodeJS.Platform;
-  execPath?: string;
-  cliPath?: string;
+  // The command baked into the installed tk-managed hook config; null (default) models
+  // "no tk-managed hook installed" (issue #23).
+  installedCommand?: string | null;
+  // Result of the in-process protocol self-probe; defaults to "did not rewrite" so the
+  // all-absent matrix has no `ok` check (issue #23 §2).
+  protocolProbe?: ProtocolProbeResult;
   home?: string;
 }): PreflightDeps {
   const runs = opts.runs ?? {};
@@ -34,8 +41,8 @@ function makeDeps(opts: {
     existsSync: (p) => files.has(p),
     env: opts.env ?? {},
     platform: opts.platform ?? "win32",
-    execPath: opts.execPath ?? "/usr/bin/node",
-    cliPath: opts.cliPath ?? "/opt/tk/cli.js",
+    installedHookCommand: () => opts.installedCommand ?? null,
+    protocolProbe: () => opts.protocolProbe ?? { rewrote: false, got: null },
     homedir: () => opts.home ?? "/home/u",
   };
 }
@@ -140,11 +147,12 @@ describe("gatherPreflight — PowerShell 7+", () => {
   });
 });
 
-describe("gatherPreflight — hook command path", () => {
-  test("node + cli both exist → ok, shows command", () => {
+describe("gatherPreflight — hook command path (validates the INSTALLED baked command, #23)", () => {
+  const baked = '"/usr/bin/node" "/opt/tk/cli.js" hook copilot';
+
+  test("baked node + cli both exist → ok, shows the installed command", () => {
     const deps = makeDeps({
-      execPath: "/usr/bin/node",
-      cliPath: "/opt/tk/cli.js",
+      installedCommand: baked,
       files: new Set(["/usr/bin/node", "/opt/tk/cli.js"]),
     });
     const c = find(gatherPreflight(deps), "Hook command path");
@@ -152,10 +160,9 @@ describe("gatherPreflight — hook command path", () => {
     expect(c.detail).toContain("hook copilot");
   });
 
-  test("cli missing → FAIL, names the missing piece", () => {
+  test("baked cli path is stale (missing) → FAIL, names the missing piece", () => {
     const deps = makeDeps({
-      execPath: "/usr/bin/node",
-      cliPath: "/opt/tk/cli.js",
+      installedCommand: baked,
       files: new Set(["/usr/bin/node"]), // cli absent
     });
     const c = find(gatherPreflight(deps), "Hook command path");
@@ -164,15 +171,55 @@ describe("gatherPreflight — hook command path", () => {
     expect(c.detail).toContain("inert");
   });
 
-  test("node missing → FAIL", () => {
+  test("baked node path is stale (missing) → FAIL", () => {
     const deps = makeDeps({
-      execPath: "/usr/bin/node",
-      cliPath: "/opt/tk/cli.js",
+      installedCommand: baked,
       files: new Set(["/opt/tk/cli.js"]), // node absent
     });
     const c = find(gatherPreflight(deps), "Hook command path");
     expect(c.ok).toBe(false);
     expect(c.detail).toContain("node");
+  });
+
+  test("no tk-managed hook installed → warn (NOT a false-green from the running process)", () => {
+    const deps = makeDeps({ installedCommand: null });
+    const c = find(gatherPreflight(deps), "Hook command path");
+    expect(c.ok).toBe("warn");
+    expect(c.detail).toContain("no tk-managed hook");
+  });
+
+  test("STALE baked path is caught even while the running process is healthy (#23 core)", () => {
+    // The exact regression: the installed config points at a node/cli that no longer
+    // exist, while the current tk process's own paths ARE present. The check must FAIL
+    // on the baked paths — the old check passed because it validated the live process.
+    const deps = makeDeps({
+      installedCommand: '"/old/removed/node" "/old/removed/cli.js" hook copilot',
+      files: new Set(["/usr/bin/node", "/opt/tk/cli.js"]), // live process is fine…
+    });
+    const c = find(gatherPreflight(deps), "Hook command path");
+    expect(c.ok).toBe(false); // …but the BAKED paths are stale.
+    expect(c.detail).toContain("stale");
+  });
+});
+
+describe("parseHookCommandPaths", () => {
+  test("plain unquoted paths → node + cli", () => {
+    expect(parseHookCommandPaths("/usr/bin/node /opt/tk/cli.js hook copilot")).toEqual({
+      node: "/usr/bin/node",
+      cli: "/opt/tk/cli.js",
+    });
+  });
+
+  test("double-quoted Windows paths with spaces are kept whole", () => {
+    const cmd = '"C:\\Program Files\\nodejs\\node.exe" "C:\\Users\\me\\app\\cli.js" hook copilot';
+    expect(parseHookCommandPaths(cmd)).toEqual({
+      node: "C:\\Program Files\\nodejs\\node.exe",
+      cli: "C:\\Users\\me\\app\\cli.js",
+    });
+  });
+
+  test("empty command → both undefined (never throws)", () => {
+    expect(parseHookCommandPaths("")).toEqual({ node: undefined, cli: undefined });
   });
 });
 
@@ -241,21 +288,22 @@ describe("gatherPreflight — full healthy Windows matrix", () => {
         pwsh: { ok: true, stdout: "PowerShell 7.4.1" },
       },
       resolvable: { powershell: "C:/ps.exe" },
-      execPath: "/n/node",
-      cliPath: "/c/cli.js",
+      installedCommand: '"/n/node" "/c/cli.js" hook copilot',
+      protocolProbe: { rewrote: true, got: "tk git status" },
       files: new Set(["/n/node", "/c/cli.js", "/home/u/.copilot/hooks"]),
       home: "/home/u",
     });
     const checks = gatherPreflight(deps);
-    expect(checks).toHaveLength(5);
+    expect(checks).toHaveLength(6);
     expect(checks.every((c) => c.ok === true)).toBe(true);
   });
 
   test("nothing present → no throw, every check degrades", () => {
     const deps = makeDeps({});
     const checks = gatherPreflight(deps);
-    expect(checks).toHaveLength(5);
-    // None throw; verdicts are warn/FAIL, never true.
+    expect(checks).toHaveLength(6);
+    // None throw; verdicts are warn/FAIL, never true (the self-probe defaults to
+    // "did not rewrite" → warn).
     expect(checks.some((c) => c.ok === true)).toBe(false);
   });
 });
@@ -273,7 +321,36 @@ describe("renderPreflight", () => {
 
   test("never throws on real gathered checks (injected absent matrix)", () => {
     const lines = renderPreflight(gatherPreflight(makeDeps({})));
-    expect(lines).toHaveLength(5);
+    expect(lines).toHaveLength(6);
     for (const line of lines) expect(line.startsWith("  [")).toBe(true);
+  });
+});
+
+describe("gatherPreflight — hook protocol self-probe (#23 §2)", () => {
+  test("the in-process pipeline rewrites → ok", () => {
+    const deps = makeDeps({ protocolProbe: { rewrote: true, got: "tk git status" } });
+    const c = find(gatherPreflight(deps), "Hook protocol self-probe");
+    expect(c.ok).toBe(true);
+    expect(c.detail).toContain("rewrites end-to-end");
+  });
+
+  test("the pipeline did NOT rewrite → warn, shows what it got", () => {
+    const deps = makeDeps({ protocolProbe: { rewrote: false, got: "git status" } });
+    const c = find(gatherPreflight(deps), "Hook protocol self-probe");
+    expect(c.ok).toBe("warn");
+    expect(c.detail).toContain("did not rewrite");
+    expect(c.detail).toContain("git status");
+  });
+});
+
+describe("defaultProtocolProbe (REAL in-process pipeline)", () => {
+  // No injection: this drives tk's actual normalizeStdin → decide → toHostOutput on a
+  // synthetic powershell event. `git` is present on the dev box / CI (off Windows the
+  // presence gate is always open), so the rewrite fires deterministically. This is the
+  // test that would actually CATCH a normalize/rewrite/host-output regression (#23 §2).
+  test("a synthetic powershell `git status` event rewrites to `tk git status`", () => {
+    const result = defaultProtocolProbe();
+    expect(result.rewrote).toBe(true);
+    expect(result.got).toBe("tk git status");
   });
 });

@@ -18,15 +18,22 @@
 //
 // THE "DID IT ACTUALLY EXECUTE?" PROXY — the issue asks that we assert the
 // rewritten command actually executes, not merely that the hook succeeded. True
-// end-to-end execution is a live-host concern (the host applies the JSON and runs
-// the tool) and is OUT OF UNIT SCOPE. The faithful unit-layer proxy is: the
-// emitted JSON must place the rewritten command in the exact field the host
-// APPLIES (`hookSpecificOutput.updatedInput.command` for VS Code,
-// `modifiedArgs.command` for Copilot CLI) AND preserve every other field the host
-// sent, because both `updatedInput` and `modifiedArgs` REPLACE the tool input
-// wholesale and VS Code validates it against run_in_terminal's schema — an
-// incomplete `updatedInput` is silently DROPPED (issue #19, the bug this suite
-// locks). So full-field preservation == the rewrite is actually applied.
+// end-to-end execution against a live host (VS Code applies the JSON and runs the
+// tool) cannot run in a unit suite. This file's proxy is structural: the emitted
+// JSON must place the rewritten command in the exact field the host APPLIES
+// (`hookSpecificOutput.updatedInput.command` for VS Code, `modifiedArgs.command`
+// for Copilot CLI) AND preserve every other field the host sent, because both
+// `updatedInput` and `modifiedArgs` REPLACE the tool input wholesale and VS Code
+// validates it against run_in_terminal's schema — an incomplete `updatedInput` is
+// silently DROPPED (issue #19, the bug this suite locks). So full-field
+// preservation == the rewrite is applied.
+//
+// LIMITATION + its complement (issue #21): this suite calls normalizeStdin/decide/
+// toHostOutput IN-PROCESS — it never spawns the actual `tk hook copilot` process the
+// host invokes, so it cannot catch a regression in stdin reading, stdout bytes, or the
+// exit code. That gap is covered by the opt-in real-process smoke in
+// `live-host-smoke.test.ts` (TK_LIVE_HOST_SMOKE=1), which spawns the real binary and
+// asserts the emitted JSON + exit 0 — the closest faithful step toward live execution.
 //
 // Determinism note: rows 1–5 use `git status` (or a `git` subcommand). The rewrite
 // engine's presence-gate defaults to the real PATH; `git` is universally present

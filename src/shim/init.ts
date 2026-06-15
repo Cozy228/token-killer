@@ -274,12 +274,19 @@ function parseInstallArgs(argv: string[]): InstallArgs {
 }
 
 // Persist what this install wired (ADR 0012 #7). Best-effort and NEVER changes
-// install behavior — it only records state for `tk status` to display. The host
-// version REUSES the issue-#23 preflight (the `copilot --version` line) rather than
-// spawning it again. Called once, just before a successful (non-dry-run) install
-// returns; the dry-run path records nothing (it wrote nothing).
+// install behavior — it only records state for `tk status` to display. Called once,
+// just before a successful (non-dry-run) install returns; the dry-run path records
+// nothing (it wrote nothing).
+//
+// The preflight `copilot --version` line is the COPILOT CLI version — it is the host
+// version ONLY for the copilot-cli host. Recording it for claude-code/vscode/unknown
+// mislabels an unrelated tool's version as this install's host version (issue #26:
+// `install --host claude-code` was persisting `GitHub Copilot CLI 1.0.62`). Those
+// hosts record NO version (honest "not recorded") until tk gains a host-specific
+// probe for them — and we skip the `copilot --version` spawn entirely off copilot-cli.
 function recordInstallState(host: Host): void {
-  const hostVersion = hostVersionFromPreflight(gatherPreflight());
+  const hostVersion =
+    host === "copilot-cli" ? hostVersionFromPreflight(gatherPreflight()) : undefined;
   recordInstall({ host, tiers: installedTierIds(host), hostVersion });
 }
 

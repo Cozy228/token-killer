@@ -38,12 +38,20 @@ type Segment = {
 };
 
 // Split a command string into chain segments at top-level `&&`, `||`, `;`, `|`,
-// respecting single/double quotes so operators inside quoted args are ignored.
+// respecting single/double quotes so operators inside quoted args are ignored, and
+// tracking `{ ... }` brace depth so a separator INSIDE a script block / command
+// group is not a top-level split point (issue #25).
 function splitTopLevel(command: string): Segment[] {
   const segments: Segment[] = [];
   let buf = "";
   let prevOp: ChainOp | null = null;
   let quote: '"' | "'" | null = null;
+  // Depth of unquoted `{ ... }` nesting. A `;`/`|`/`&&`/`||` at depth > 0 belongs to
+  // the block (a pwsh script block, e.g. `ForEach-Object { a; b }`, or a bash command
+  // group), NOT the outer chain — splitting there would inject `tk` mid-block and
+  // change semantics (issue #25). At depth 0 the original top-level behavior is
+  // byte-identical, so brace-free commands are unaffected.
+  let braceDepth = 0;
 
   const flush = (nextOp: ChainOp): void => {
     segments.push({ text: buf, precededBy: prevOp });
@@ -63,23 +71,38 @@ function splitTopLevel(command: string): Segment[] {
       buf += c;
       continue;
     }
-    if (c === "&" && command[i + 1] === "&") {
-      flush("&&");
-      i += 1;
+    if (c === "{") {
+      braceDepth += 1;
+      buf += c;
       continue;
     }
-    if (c === "|" && command[i + 1] === "|") {
-      flush("||");
-      i += 1;
+    if (c === "}") {
+      // Floor at 0 so a stray close-brace (no matching open) can't desync the depth
+      // of an otherwise normal command and silently disable top-level splitting.
+      if (braceDepth > 0) braceDepth -= 1;
+      buf += c;
       continue;
     }
-    if (c === "|") {
-      flush("|");
-      continue;
-    }
-    if (c === ";") {
-      flush(";");
-      continue;
+    // Separators are only chain operators at the top level (outside any brace block).
+    if (braceDepth === 0) {
+      if (c === "&" && command[i + 1] === "&") {
+        flush("&&");
+        i += 1;
+        continue;
+      }
+      if (c === "|" && command[i + 1] === "|") {
+        flush("||");
+        i += 1;
+        continue;
+      }
+      if (c === "|") {
+        flush("|");
+        continue;
+      }
+      if (c === ";") {
+        flush(";");
+        continue;
+      }
     }
     buf += c;
   }
