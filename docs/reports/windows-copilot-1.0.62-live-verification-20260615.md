@@ -1,0 +1,127 @@
+# Windows + Copilot CLI 1.0.62 live verification (DESIGN §12 step 4)
+
+- **Date:** 2026-06-15
+- **Box:** cozyultra (`cozy2@192.168.31.129`), Windows 11, console codepage GBK
+- **Branch/commit:** `token-killer-node-cli` @ `f9caf6f` (synced via LAN git bundle — see §0)
+- **Versions:** Copilot CLI **1.0.62**, node v22.22.3, pwsh 7.6.2, Windows PowerShell 5.1
+- **Scope:** live acceptance of hook fixes #19 / #20 / #21 / #23 / #26 that unit tests cannot prove.
+- **Result:** **6/6 goals verified.** One latent (currently-masked) finding recorded in §5.
+
+## 0. Getting the box current (the handoff's blocker, resolved)
+
+From a non-interactive `ssh cozyultra` session the box **cannot reach GitHub or the Copilot
+model API**: git is configured with `http.proxy=127.0.0.1:7890` (Clash, only up in the desktop
+session), the gh token is invalid, and copilot OAuth creds (stored in the interactive session's
+DPAPI credential store) are **not readable from an SSH network-logon session**. Same root cause
+the handoff hit as a "silent fetch no-op".
+
+Resolution — **bypass GitHub with a LAN git bundle**:
+`git bundle create /tmp/tk.bundle token-killer-node-cli` (full self-contained ref; a range
+bundle wanted a prerequisite the box lacked) → `scp` → on box `git fetch <bundle> <branch>` +
+`git merge --ff-only FETCH_HEAD` → `pnpm build`. Box advanced `6c0fd8d → f9caf6f`.
+
+Copilot CLI was already at 1.0.62 (no `copilot update` needed).
+
+## 1. Hook config dual-schema (#20) — PASS
+
+`node dist/cli.js install` → detected `copilot-cli`, also wired `claude-code`, wrote
+`C:\Users\cozy2\.copilot\hooks\tk-rewrite.json`, referenced it from `copilot-instructions.md`,
+`Active tier: hook`. The file carries the #20 dual schema **verbatim**:
+
+- `version:1`, `managedBy:"token-killer"`
+- `hooks.PreToolUse[0]`: single `command`, `timeout:5` (VS Code-compatible path)
+- `hooks.preToolUse[0]`: separate `bash` + `powershell` keys (same command), `timeoutSec:5` (Copilot CLI native)
+- command = **absolute quoted node + absolute cli.js + `hook copilot`**
+  (`"C:\Program Files\nodejs\node.exe" C:\Users\cozy2\workspace\token-killer\dist\cli.js hook copilot`),
+  NOT a bare `tk` (avoids the Windows `CommandNotFoundException` of ADR 0005 §5).
+
+## 2. status preflight (#23) + capability matrix (#26) — PASS
+
+`node dist/cli.js status` (UTF-8 console):
+
+- **Windows preflight — 5/5 `[ok]`:** Copilot CLI 1.0.62 · PowerShell 7.6.2 (≥7) · hook command
+  path executable (absolute node+cli) · Copilot hooks dir loaded · Windows shell tool `powershell`
+  resolved (`C:\Windows\System32\WindowsPowerShell\v1.0\powershell.EXE`).
+- **Capability matrix — 6/6 `[installed]`:** copilot-hook · claude-hook (points at tk) ·
+  vscode-hook (shared `~/.copilot/hooks`; `blocked-by-policy: unknown` — honest) · shim (13
+  wrappers, probe PASS, `on PATH: no`, TTY opt-in off) · instruction injection · usage guidance.
+  Summary: host version 1.0.62, installed/verified timestamps present.
+
+## 3. Synthetic payload acceptance (`scripts/windows-accept.ps1`) — 5/5 PASS
+
+Auth-free; feeds host-shaped payloads to `hook copilot` via byte-exact stdin (`cmd /c <`):
+
+| # | payload | result |
+|---|---|---|
+| T1 | CLI `powershell`, `toolArgs` as JSON **string** + extras | `modifiedArgs.command='tk --session … git status'`; `description`/`mode` preserved |
+| T2 | CLI `powershell`, `toolArgs` as **object** | rewritten; `description` preserved |
+| T3 | VS Code `run_in_terminal`, full `tool_input` | `updatedInput.command='tk git status'`; `explanation`+`isBackground` preserved (#19: not schema-rejected) |
+| T4 | CLI payload with **leading UTF-8 BOM** | BOM stripped, still rewrites |
+| T5 | non-shell `read_file` | empty output (fail-open, no rewrite) |
+
+## 4. LIVE end-to-end against real Copilot CLI 1.0.62 (`scripts/windows-capture-live.ps1`) — PASS
+
+Drove a real `copilot -p "…git status" --allow-all-tools` session (run by the authenticated
+user; a tee-wrapper hook captured the exact host stdin to disk; config restored afterward).
+
+**Real host facts captured** — ONE tool call fired the hook **twice** (the dual-schema config's
+two entries both fire), with two different shapes:
+
+```jsonc
+// payload 1 — Copilot CLI NATIVE (camelCase preToolUse entry), bytes=229, leadingBOM=false
+{"sessionId":"a938a6db-…","timestamp":1781513173266,"cwd":"C:\\…",
+ "toolName":"powershell","toolArgs":"{\"command\":\"git status\",\"description\":\"Run git status\"}"}
+
+// payload 2 — Claude-style (PascalCase PreToolUse entry), bytes=261, leadingBOM=false
+{"hook_event_name":"PreToolUse","session_id":"a938a6db-…","timestamp":"2026-06-15T08:46:14.917Z",
+ "cwd":"C:\\…","tool_name":"Bash","tool_input":{"command":"git status","description":"Run git status"}}
+```
+
+Confirmed against assumptions:
+- **`toolArgs` IS a JSON string** on real 1.0.62 (#21 assumption correct).
+- **No leading BOM** in 1.0.62 (our BOM stripping is defensive, not currently exercised).
+- Session id is `sessionId` (camel) in payload 1, `session_id` (snake) in payload 2 — normalize.ts probes both.
+
+**E2E outcome (the decisive evidence)** — `tk` actually ran and compressed the call. From
+`~/.token-killer/projects/repo-e82ec09d82f1/history.jsonl`:
+
+```json
+{"timestamp":"2026-06-15T08:46:16.824Z","command":"git status --porcelain -b","handler":"git-status",
+ "raw_tokens":96,"output_tokens":36,"saved_tokens":60,"savings_pct":62.5,"exit_code":0,
+ "session_id":"a938a6db-5e2f-4e0e-8a65-7cd6bf7b6e13"}
+```
+
+- The tool call was rewritten to `tk git status` and executed → **62.5% saved**.
+- `session_id a938a6db` carried through → **ADR 0009 session carrier works E2E**.
+- That session id appears only in **payload 2's** `updatedInput.command` → **Copilot CLI 1.0.62
+  honored the PascalCase `PreToolUse` / `hookSpecificOutput.updatedInput` path.**
+
+## 5. Finding: the camelCase `preToolUse` payload is currently inert (masked)
+
+Feeding the two captured payloads back through `hook copilot`:
+- payload 2 (PascalCase) → rewrites correctly (`tk --session a938a6db… git status`).
+- **payload 1 (camelCase native) → empty output, NO rewrite.**
+
+Root cause: payload 1 carries **no event-name field** (`event` / `eventName` / `hookEventName`
+/ `hook_event_name` all absent — the host scopes the event by the config key it fired under).
+`normalize.ts` derives `event` from those keys, so it resolves to `"unknown"` → `decide()` falls
+to the default → `allow`, no rewrite.
+
+Why it doesn't break anything today:
+- The PascalCase entry's payload *does* carry `hook_event_name` and supplies the rewrite, so the
+  call is still compressed E2E.
+- The asymmetry is also **accidentally protective**: if payload 1 also rewrote, both entries would
+  emit a rewrite for the same call and the host could double-apply (`tk tk git status`). Today only
+  one path rewrites → single clean execution (the history shows exactly one row).
+
+Risk: if a future Copilot CLI version stops honoring the PascalCase entry (or stops firing both),
+the camelCase path would silently fail. Recorded for the team — no fix applied here (a fix must
+also address the double-rewrite interaction above). Captures retained under
+`reports/windows-live-captures/`.
+
+## Artifacts
+
+- `scripts/windows-accept.ps1` — auth-free synthetic acceptance (re-runnable, 5/5).
+- `scripts/windows-capture-live.ps1` — drives a real copilot session, byte-exact payload capture, auto-restores config. Prereq: authenticated copilot + Clash up.
+- `scripts/windows-feed-captures.ps1` — replays captured payloads through the handler.
+- `reports/windows-live-captures/payload-*.json` — the two real 1.0.62 payloads.
