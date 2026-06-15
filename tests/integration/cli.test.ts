@@ -2,7 +2,7 @@ import { mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import path from "node:path";
-import { fileURLToPath } from "node:url";
+import { fileURLToPath, pathToFileURL } from "node:url";
 import { spawnSync } from "node:child_process";
 import { describe, expect, test } from "vitest";
 
@@ -10,7 +10,7 @@ import { historyFile, resolveStoredPath } from "../../src/core/dataDir.js";
 
 const repoRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "../..");
 const cli = path.join(repoRoot, "src/cli.ts");
-const tsxLoader = path.join(repoRoot, "node_modules/tsx/dist/loader.mjs");
+const tsxLoader = pathToFileURL(path.join(repoRoot, "node_modules/tsx/dist/loader.mjs")).href;
 
 // Default isolated TOKEN_KILLER_HOME for callers that don't pass an explicit one.
 // Without this, the spawned CLI would inherit the real environment and write its
@@ -644,7 +644,9 @@ describe("Global Flags", () => {
 
       const history = await readFile(historyFile(dir), "utf8");
       const record = JSON.parse(history.trim()) as { raw_output_path: string };
-      expect(record.raw_output_path).toMatch(/^projects\/repo:[a-f0-9]{12}\/raw\//);
+      // Platform-tolerant: Windows uses `\` separators and sanitizes the ':' in the
+      // fingerprint to '-' (fingerprintSegment), so accept either separator and ':'/'-'.
+      expect(record.raw_output_path).toMatch(/^projects[/\\]repo[:-][a-f0-9]{12}[/\\]raw[/\\]/);
 
       const rawLog = await readFile(resolveStoredPath(record.raw_output_path), "utf8");
       expect(rawLog).toContain("Command: cat sample.txt");

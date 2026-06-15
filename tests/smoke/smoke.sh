@@ -293,7 +293,18 @@ section "Find"
 # grouping ("core/ …", "handlers/ …"). Assert that directory-grouping header
 # (the "shows directories" signal) rather than a literal "src/" prefix, which only
 # survives in the small-input raw-passthrough mode.
-assert_run "tk find src -name '*.ts'" ok has:"D:" -- $TK find src -name "*.ts"
+#
+# `find` on Windows is System32 find.exe (a text-search tool), not GNU find — `-name`
+# isn't valid there and tk's GNU-find compression isn't exercisable, so skip rather
+# than assert POSIX output. (smoke runs under git-bash, so uname reports MINGW/MSYS.)
+case "$(uname -s)" in
+  MINGW* | MSYS* | CYGWIN*)
+    skip_test "tk find src -name '*.ts'" "find is find.exe on Windows"
+    ;;
+  *)
+    assert_run "tk find src -name '*.ts'" ok has:"D:" -- $TK find src -name "*.ts"
+    ;;
+esac
 
 # ── 8. Generic passthrough ──────────────────────────
 

@@ -3,7 +3,7 @@ import { tmpdir } from "node:os";
 import path from "node:path";
 import { afterEach, describe, expect, test } from "vitest";
 
-import { tokenKillerHome } from "../../../src/core/dataDir.js";
+import { fingerprintSegment, tokenKillerHome } from "../../../src/core/dataDir.js";
 import { listProjectHistories, type HistoryRecord } from "../../../src/core/history.js";
 
 const previousHome = process.env.TOKEN_KILLER_HOME;
@@ -35,7 +35,9 @@ function row(fingerprint: string): HistoryRecord {
 }
 
 async function writeProjectHistory(home: string, fingerprint: string, rows: HistoryRecord[]) {
-  const dir = path.join(home, "projects", fingerprint);
+  // Sanitize ':' → '-' for the on-disk dir on Windows (mkdir rejects ':'); no-op on
+  // POSIX. The row CONTENT keeps the raw fingerprint, which is what the test asserts.
+  const dir = path.join(home, "projects", fingerprintSegment(fingerprint));
   await mkdir(dir, { recursive: true });
   await writeFile(
     path.join(dir, "history.jsonl"),
@@ -80,7 +82,7 @@ describe("listProjectHistories", () => {
     process.env.TOKEN_KILLER_HOME = home;
     try {
       await writeProjectHistory(home, "repo:aaaaaaaaaaaa", [row("repo:aaaaaaaaaaaa")]);
-      const badDir = path.join(home, "projects", "repo:cccccccccccc");
+      const badDir = path.join(home, "projects", fingerprintSegment("repo:cccccccccccc"));
       await mkdir(badDir, { recursive: true });
       await writeFile(path.join(badDir, "history.jsonl"), "{ not valid json\n");
 

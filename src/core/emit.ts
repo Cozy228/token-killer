@@ -25,7 +25,13 @@ export async function emitThenCommit(
   // unless the user passed a finite limit; never touches the quality gate above.
   const display = limitOutput(filtered.output, options);
   process.stdout.write(display);
-  if (display.length > 0 && !display.endsWith("\n")) {
+  // Normalize a trailing newline so the next shell prompt isn't glued to the
+  // output — EXCEPT for NUL-framed output (`grep -Z`/`-z`, `find -print0`), where
+  // entries are delimited by \0 and the stream legitimately ends at the final \0.
+  // Appending \n there breaks byte-exact parity with the native tool (GNU grep
+  // `-lZ` emits `file\0`, not `file\0\n`) — the search-like handler already ships
+  // the \0 verbatim (searchLike.ts), so this emit layer must not re-add the \n.
+  if (display.length > 0 && !display.endsWith("\n") && !display.endsWith("\0")) {
     process.stdout.write("\n");
   }
 

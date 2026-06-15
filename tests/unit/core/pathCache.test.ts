@@ -1,7 +1,7 @@
 import { afterEach, beforeEach, describe, expect, test } from "vitest";
 import { existsSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
-import { dirname, join } from "node:path";
+import { delimiter, dirname, join } from "node:path";
 
 import { resolveCachedBinary } from "../../../src/core/pathCache.js";
 
@@ -58,7 +58,7 @@ describe("resolveCachedBinary (2.1 item 4)", () => {
 
   test("a different PATH opens a separate cache namespace", () => {
     resolveCachedBinary("node", nodeDir);
-    resolveCachedBinary("node", `${nodeDir}:/some/other/dir`);
+    resolveCachedBinary("node", `${nodeDir}${delimiter}/some/other/dir`);
     const cache = JSON.parse(readFileSync(cacheFile(), "utf8")) as Record<string, unknown>;
     // Two distinct (PATH,PATHEXT) hashes → two namespaces.
     expect(Object.keys(cache).length).toBe(2);

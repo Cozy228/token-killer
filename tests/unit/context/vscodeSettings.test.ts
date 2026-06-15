@@ -20,9 +20,14 @@ beforeEach(() => {
   root = mkdtempSync(join(tmpdir(), "tk-vscode-"));
   settingsPath = join(root, "settings.json");
   process.env.TOKEN_KILLER_HOME = join(root, ".token-killer");
+  // Isolate the VS Code user dir on Windows: vscodeUserDir() reads %APPDATA% on win32,
+  // which would otherwise point at the runner's REAL VS Code settings and break test
+  // isolation (e.g. "none when settings.json is missing"). POSIX ignores APPDATA.
+  process.env.APPDATA = join(root, "AppData", "Roaming");
 });
 afterEach(() => {
   delete process.env.TOKEN_KILLER_HOME;
+  delete process.env.APPDATA;
   rmSync(root, { recursive: true, force: true });
   vi.restoreAllMocks();
 });

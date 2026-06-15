@@ -7,6 +7,7 @@ import { errorLogPath } from "../../../src/hook/debug.js";
 import {
   buildSupportReport,
   scrubHome,
+  scrubHomePath,
   tailFile,
   writeSupportBundle,
 } from "../../../src/support/report.js";
@@ -27,7 +28,7 @@ afterEach(() => {
 
 describe("scrubHome (support-boundary scrubber)", () => {
   test("rewrites the home dir to ~ (covers the saved path the CLI puts into the mailto body)", () => {
-    expect(scrubHome(join(homedir(), ".token-killer/reports/support-x.md"))).toBe(
+    expect(scrubHomePath(join(homedir(), ".token-killer/reports/support-x.md"))).toBe(
       "~/.token-killer/reports/support-x.md",
     );
   });

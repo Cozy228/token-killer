@@ -2,7 +2,7 @@ import { afterEach, beforeEach, describe, expect, test } from "vitest";
 import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { delimiter, dirname, join } from "node:path";
-import { fileURLToPath } from "node:url";
+import { fileURLToPath, pathToFileURL } from "node:url";
 import { spawnSync } from "node:child_process";
 
 import { vscodeSettingsPath, vscodeUserDir } from "../../../src/shim/hostConfig.js";
@@ -24,7 +24,7 @@ import { runInstall, runStatus, runUninstall } from "../../../src/shim/init.js";
 
 const repoRoot = join(dirname(fileURLToPath(import.meta.url)), "../../..");
 const cli = join(repoRoot, "src/cli.ts");
-const tsxLoader = join(repoRoot, "node_modules/tsx/dist/loader.mjs");
+const tsxLoader = pathToFileURL(join(repoRoot, "node_modules/tsx/dist/loader.mjs")).href;
 
 let home: string;
 
@@ -35,7 +35,17 @@ let home: string;
 // keys off env markers / dotdirs — never PATH — so this changes nothing the tests
 // assert. The real preflight path still runs end-to-end under the boundary spawn
 // tests (full inherited PATH).
-const SANDBOX_PATH = [dirname(process.execPath), "/usr/bin", "/bin"].join(delimiter);
+// On Windows the POSIX dirs below don't exist and node's dir has no git, so the shim
+// install would find NO shimmable tool and write nothing — breaking the shim-tier
+// tests. Use the real PATH there (git/system tools resolve); keep the trimmed set on
+// POSIX (drops Homebrew so the preflight's copilot/pwsh probes ENOENT fast).
+const SANDBOX_PATH =
+  process.platform === "win32"
+    ? (process.env.PATH ?? "")
+    : [dirname(process.execPath), "/usr/bin", "/bin"].join(delimiter);
+
+// The shim writes `<program>.cmd` wrappers on Windows (PATHEXT), bare names on POSIX.
+const SHIM_GIT = process.platform === "win32" ? "git.cmd" : "git";
 
 // Boundary harness: spawn the real CLI through tsx. Reserved for the few tests
 // that must prove cli.ts dispatch / process exit codes, not handler behavior.
@@ -47,6 +57,10 @@ function runTg(args: string[], env: NodeJS.ProcessEnv = {}, cwd = repoRoot) {
     env: {
       ...process.env,
       HOME: home,
+      // Windows: os.homedir() reads USERPROFILE (not HOME), and vscodeUserDir reads
+      // APPDATA — sandbox both so installs/detection never touch the real profile.
+      USERPROFILE: home,
+      APPDATA: join(home, "AppData", "Roaming"),
       TOKEN_KILLER_HOME: join(home, ".token-killer"),
       // The suite itself runs inside Claude Code, which sets these markers; clear
       // them by default so host auto-detection reflects each test's intent. The
@@ -79,6 +93,9 @@ function callDirect(
 ): DirectResult {
   const overrides: NodeJS.ProcessEnv = {
     HOME: home,
+    // Windows: homedir() reads USERPROFILE, vscodeUserDir reads APPDATA — sandbox both.
+    USERPROFILE: home,
+    APPDATA: join(home, "AppData", "Roaming"),
     TOKEN_KILLER_HOME: join(home, ".token-killer"),
     PATH: SANDBOX_PATH,
     CLAUDECODE: "",
@@ -131,11 +148,23 @@ const uninstall = (argv: string[], env?: NodeJS.ProcessEnv, cwd?: string) =>
   callDirect(runUninstall, argv, env, cwd);
 const status = (env?: NodeJS.ProcessEnv) => callDirect(runStatus, [], env);
 
+const savedInitEnv: Record<string, string | undefined> = {};
 beforeEach(() => {
   home = mkdtempSync(join(tmpdir(), "tk-init-"));
+  // Some test bodies call vscodeUserDir()/vscodeSettingsPath() directly (to read back
+  // what `tk install` wrote). On Windows those resolve via APPDATA (and homedir() via
+  // USERPROFILE), so sandbox both in the test process too — otherwise the test reads
+  // the real profile while the in-process install wrote the sandbox.
+  for (const k of ["USERPROFILE", "APPDATA"]) savedInitEnv[k] = process.env[k];
+  process.env.USERPROFILE = home;
+  process.env.APPDATA = join(home, "AppData", "Roaming");
 });
 afterEach(() => {
   rmSync(home, { recursive: true, force: true });
+  for (const [k, v] of Object.entries(savedInitEnv)) {
+    if (v === undefined) delete process.env[k];
+    else process.env[k] = v;
+  }
 });
 
 describe("tk install", () => {
@@ -167,7 +196,7 @@ describe("tk install", () => {
     expect(result.status).toBe(0);
     expect(result.stdout).toContain("Active tier: shim (primary) + hook (additive)");
     // Primary shim.
-    expect(existsSync(join(home, ".token-killer", "shim", "git"))).toBe(true);
+    expect(existsSync(join(home, ".token-killer", "shim", SHIM_GIT))).toBe(true);
     // Additive hook — the SAME shared file the Copilot CLI writer targets.
     expect(existsSync(join(home, ".copilot", "hooks", "tk-rewrite.json"))).toBe(true);
   });
@@ -261,7 +290,7 @@ describe("tk install", () => {
     expect(result.status).toBe(0);
     expect(result.stdout).toContain("Detected host: vscode");
     expect(result.stdout).toContain("Also wiring copilot-cli");
-    expect(existsSync(join(home, ".token-killer", "shim", "git"))).toBe(true);
+    expect(existsSync(join(home, ".token-killer", "shim", SHIM_GIT))).toBe(true);
     expect(existsSync(join(home, ".copilot", "hooks", "tk-rewrite.json"))).toBe(true);
   });
 

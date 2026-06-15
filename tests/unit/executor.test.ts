@@ -69,17 +69,24 @@ describe("executeCommand", () => {
     expect(result.stderr).toContain("command not found");
   });
 
-  test("maps a signal death to 128 + signo (SIGTERM → 143)", async () => {
-    const script = "process.kill(process.pid, 'SIGTERM')";
-    const result = await executeCommand({
-      program: process.execPath,
-      args: ["-e", script],
-      original: [process.execPath, "-e", script],
-      displayCommand: "node -e kill-self",
-    });
+  // POSIX-only: signal numbering (128 + signo) is a Unix concept. On Windows there
+  // are no real signals — `process.kill(pid, 'SIGTERM')` maps to TerminateProcess,
+  // so the child exits with a plain code, not a 143 signal death. Guarded like the
+  // PATHEXT-sensitive resolver test below.
+  test.runIf(process.platform !== "win32")(
+    "maps a signal death to 128 + signo (SIGTERM → 143)",
+    async () => {
+      const script = "process.kill(process.pid, 'SIGTERM')";
+      const result = await executeCommand({
+        program: process.execPath,
+        args: ["-e", script],
+        original: [process.execPath, "-e", script],
+        displayCommand: "node -e kill-self",
+      });
 
-    expect(result.exitCode).toBe(143);
-  });
+      expect(result.exitCode).toBe(143);
+    },
+  );
 });
 
 describe("buildSpawnTarget (win32 .cmd/.bat %-expansion)", () => {

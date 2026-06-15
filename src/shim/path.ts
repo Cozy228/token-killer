@@ -1,5 +1,5 @@
 import { createHash } from "node:crypto";
-import { accessSync, constants, existsSync, realpathSync, statSync } from "node:fs";
+import { accessSync, constants, existsSync, readdirSync, realpathSync, statSync } from "node:fs";
 import { delimiter, join, normalize, sep } from "node:path";
 
 // The shim places wrapper executables (a file named `git` that runs `tk git`)
@@ -137,7 +137,25 @@ export function resolveReal(program: string, strippedPath: string): string | nul
   for (const dir of entries) {
     for (const ext of extensions) {
       const candidate = join(dir, program + ext);
-      if (isExecutableFile(candidate)) return candidate;
+      if (isExecutableFile(candidate)) {
+        // Windows PATHEXT entries are upper-case (`.EXE`), so `program + ext` builds
+        // `node.EXE` while the real on-disk name (what process.execPath reports) is
+        // `node.exe`. Recover the actual filename casing via a case-insensitive dir
+        // match so a baked path compares equal to execPath and cache keys stay stable.
+        // We fix only the BASENAME and keep `dir` exactly as the caller passed it —
+        // realpathSync would also expand 8.3 short names / symlinks, breaking callers
+        // that compare against an un-canonicalized dir.
+        if (process.platform === "win32") {
+          try {
+            const want = (program + ext).toLowerCase();
+            const real = readdirSync(dir).find((f) => f.toLowerCase() === want);
+            if (real) return join(dir, real);
+          } catch {
+            /* unreadable dir — fall through to the constructed candidate */
+          }
+        }
+        return candidate;
+      }
     }
   }
   return null;

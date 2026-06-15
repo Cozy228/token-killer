@@ -73,7 +73,11 @@ function walk(
 }
 
 function userDisplay(home: string, path: string): string {
-  return path.startsWith(home) ? `~${path.slice(home.length)}` : path;
+  // Posixify the home-relative tail: this `display` becomes `finding.file`, which
+  // runApply feeds to resolveLivePath — whose `startsWith("~/")` check (and the
+  // printed form) require forward slashes. A Windows `\` tail broke both.
+  if (!path.startsWith(home)) return path;
+  return `~${path.slice(home.length).replace(/\\/g, "/")}`;
 }
 
 // ── User-level scope ──────────────────────────────────────────────────────────

@@ -35,7 +35,9 @@ afterEach(() => {
 
 describe("config artifact (DESIGN §3.1)", () => {
   test("matches the rtk-verified shape with a fixed command", () => {
-    const config = buildCopilotHookConfig("tk hook copilot");
+    // Pass both command forms so the PascalCase pick is deterministic across platforms
+    // (on win32 it would otherwise default to the powershell form, not "tk hook copilot").
+    const config = buildCopilotHookConfig("tk hook copilot", "tk hook copilot");
     expect(config.hooks.PreToolUse).toEqual([
       { type: "command", command: "tk hook copilot", cwd: ".", timeout: 5 },
     ]);
@@ -255,40 +257,46 @@ describe("atomic write + pre-replace revalidation (issue #11)", () => {
     return join(home, ".copilot", "hooks");
   }
 
-  test("a failed install attempt never leaves the managed file torn/zero-byte", () => {
-    // Seed a valid managed file (the upgrade target).
-    installCopilotHookConfig({ project: false, home });
-    const path = copilotHookConfigPath({ project: false, home });
-    // Make it stale so the next install plans an overwrite (would O_TRUNC in place
-    // under the old code).
-    const stale = JSON.stringify({
-      managedBy: "token-killer",
-      hooks: { PreToolUse: [{ type: "command", command: "old", cwd: ".", timeout: 5 }] },
-    });
-    writeFileSync(path, stale);
-
-    // Force the rename to fail by making the parent directory read-only, modelling a
-    // crash/permission failure during the swap.
-    const dir = configDir();
-    chmodSync(dir, 0o500);
-    let threw = false;
-    try {
+  // POSIX-only: simulates a swap failure via chmod 0o500 on the parent dir. Windows
+  // ignores POSIX mode bits on directories (the dir stays writable), so the rename
+  // succeeds and nothing throws — the atomicity property is still covered on POSIX.
+  test.skipIf(process.platform === "win32")(
+    "a failed install attempt never leaves the managed file torn/zero-byte",
+    () => {
+      // Seed a valid managed file (the upgrade target).
       installCopilotHookConfig({ project: false, home });
-    } catch {
-      threw = true;
-    } finally {
-      chmodSync(dir, 0o700);
-    }
-    expect(threw).toBe(true);
+      const path = copilotHookConfigPath({ project: false, home });
+      // Make it stale so the next install plans an overwrite (would O_TRUNC in place
+      // under the old code).
+      const stale = JSON.stringify({
+        managedBy: "token-killer",
+        hooks: { PreToolUse: [{ type: "command", command: "old", cwd: ".", timeout: 5 }] },
+      });
+      writeFileSync(path, stale);
 
-    // The pre-existing managed file is intact (not zero-byte, still parseable, still
-    // exactly the stale bytes) — atomicity guarantees the destination is untouched on
-    // a failed swap. And no temp file is left stranded.
-    expect(readFileSync(path, "utf8")).toBe(stale);
-    expect(JSON.parse(readFileSync(path, "utf8")).managedBy).toBe("token-killer");
-    const leftover = readdirSync(dir).filter((f) => f.includes(".tmp"));
-    expect(leftover).toEqual([]);
-  });
+      // Force the rename to fail by making the parent directory read-only, modelling a
+      // crash/permission failure during the swap.
+      const dir = configDir();
+      chmodSync(dir, 0o500);
+      let threw = false;
+      try {
+        installCopilotHookConfig({ project: false, home });
+      } catch {
+        threw = true;
+      } finally {
+        chmodSync(dir, 0o700);
+      }
+      expect(threw).toBe(true);
+
+      // The pre-existing managed file is intact (not zero-byte, still parseable, still
+      // exactly the stale bytes) — atomicity guarantees the destination is untouched on
+      // a failed swap. And no temp file is left stranded.
+      expect(readFileSync(path, "utf8")).toBe(stale);
+      expect(JSON.parse(readFileSync(path, "utf8")).managedBy).toBe("token-killer");
+      const leftover = readdirSync(dir).filter((f) => f.includes(".tmp"));
+      expect(leftover).toEqual([]);
+    },
+  );
 
   test("a file that becomes unmanaged between plan and write is not clobbered", () => {
     mkdirSync(configDir(), { recursive: true });

@@ -1,4 +1,5 @@
 import { spawnSync } from "node:child_process";
+import { realpathSync } from "node:fs";
 import { delimiter } from "node:path";
 
 // Interception probe (goal Phase 2 step 5, "most fragile assumption"). Spawn a
@@ -38,6 +39,19 @@ export function runInterceptionProbe(
     resolved = (r.stdout ?? "").trim() || null;
   }
 
-  const pass = resolved !== null && resolved.startsWith(shimDir);
+  let pass = resolved !== null && resolved.startsWith(shimDir);
+  // Windows `where` returns the canonical LONG path, but shimDir can be an 8.3 short
+  // form (e.g. `RUNNER~1` under %TEMP%) or differ in case — a literal startsWith then
+  // wrongly reports a working shim as dead. Re-compare both paths canonicalized.
+  if (!pass && resolved !== null && platform === "win32") {
+    try {
+      pass = realpathSync
+        .native(resolved)
+        .toLowerCase()
+        .startsWith(realpathSync.native(shimDir).toLowerCase());
+    } catch {
+      /* leave pass=false — a path that can't be realpath'd isn't a valid hit */
+    }
+  }
   return { pass, resolved, program };
 }

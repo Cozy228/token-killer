@@ -1,5 +1,9 @@
 import { defineConfig } from "tsdown";
 
+// Plain .mjs (not .ts): tsdown loads a .ts config via native TS type-stripping on
+// Node 22+, but on Node 20 it falls back to `unrun` (not installed) and the build
+// errors with "Failed to import module 'unrun'". A .mjs config is loaded by native
+// `import` on every supported Node, so the build works on the whole `engines` range.
 export default defineConfig({
   entry: ["src/cli.ts"],
   format: ["esm"],

@@ -188,7 +188,11 @@ describe("runPipeline — accounting deferred to commit() (ordering invariant)",
     // NEGATIVE-TEST the technique: prove a write to the captured store path genuinely
     // fails before asserting the pipeline absorbs it (otherwise the test would be
     // vacuous, exactly the overclaim Codex caught).
-    await expect(writeFile(store, "{}")).rejects.toMatchObject({ code: "ENOTDIR" });
+    // The failure code differs by platform — POSIX reports ENOTDIR (writing "through"
+    // a file), Windows reports ENOENT. Either proves the write genuinely fails, which
+    // is all this negative-test needs.
+    const writeErr = await writeFile(store, "{}").catch((e: unknown) => e as NodeJS.ErrnoException);
+    expect(["ENOTDIR", "ENOENT"]).toContain(writeErr?.code);
 
     // commit() must swallow the now-guaranteed upsert failure — the command already
     // ran, so a throw here would re-spawn it via the cli fail-open (C6).

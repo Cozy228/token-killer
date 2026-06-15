@@ -14,12 +14,12 @@ import {
 } from "node:fs";
 import { tmpdir } from "node:os";
 import path from "node:path";
-import { fileURLToPath } from "node:url";
+import { fileURLToPath, pathToFileURL } from "node:url";
 import { spawnSync } from "node:child_process";
 
 const repoRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "../..");
 const cli = path.join(repoRoot, "src/cli.ts");
-const tsxLoader = path.join(repoRoot, "node_modules/tsx/dist/loader.mjs");
+const tsxLoader = pathToFileURL(path.join(repoRoot, "node_modules/tsx/dist/loader.mjs")).href;
 
 let home: string;
 let project: string;
@@ -48,6 +48,8 @@ function runTk(args: string[], cwd = project) {
       ...process.env,
       HOME: home,
       USERPROFILE: home,
+      // Windows VS Code source discovery resolves via APPDATA — sandbox it too.
+      APPDATA: path.join(home, "AppData", "Roaming"),
       TOKEN_KILLER_HOME: path.join(home, ".token-killer"),
     },
   });

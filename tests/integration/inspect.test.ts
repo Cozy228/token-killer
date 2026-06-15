@@ -2,22 +2,35 @@ import { afterEach, beforeEach, describe, expect, test } from "vitest";
 import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import path from "node:path";
-import { fileURLToPath } from "node:url";
+import { fileURLToPath, pathToFileURL } from "node:url";
 import { spawnSync } from "node:child_process";
 
 import { vscodeUserDir } from "../../src/shim/hostConfig.js";
 
 const repoRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "../..");
 const cli = path.join(repoRoot, "src/cli.ts");
-const tsxLoader = path.join(repoRoot, "node_modules/tsx/dist/loader.mjs");
+const tsxLoader = pathToFileURL(path.join(repoRoot, "node_modules/tsx/dist/loader.mjs")).href;
 
 let home: string;
+const savedEnv: Record<string, string | undefined> = {};
 
 beforeEach(() => {
   home = mkdtempSync(path.join(tmpdir(), "tk-inspect-cli-"));
+  // seedTranscript() runs IN this test process and resolves the VS Code dir via
+  // vscodeUserDir(), which reads APPDATA on Windows (homedir() reads USERPROFILE).
+  // Sandbox both here so the seed lands exactly where the spawned `tk inspect` (which
+  // inherits this env) reads — otherwise the seed goes to the real profile and inspect
+  // reads the empty sandbox (exit 2 instead of 0).
+  for (const k of ["USERPROFILE", "APPDATA"]) savedEnv[k] = process.env[k];
+  process.env.USERPROFILE = home;
+  process.env.APPDATA = path.join(home, "AppData", "Roaming");
 });
 afterEach(() => {
   rmSync(home, { recursive: true, force: true });
+  for (const [k, v] of Object.entries(savedEnv)) {
+    if (v === undefined) delete process.env[k];
+    else process.env[k] = v;
+  }
 });
 
 function runTk(args: string[]) {
@@ -29,6 +42,9 @@ function runTk(args: string[]) {
       ...process.env,
       HOME: home,
       USERPROFILE: home,
+      // Windows VS Code source discovery resolves via APPDATA — sandbox it so the
+      // probe never reads the runner's real VS Code transcripts.
+      APPDATA: path.join(home, "AppData", "Roaming"),
       TOKEN_KILLER_HOME: path.join(home, ".token-killer"),
     },
   });

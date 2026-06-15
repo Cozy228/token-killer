@@ -21,7 +21,7 @@
 
 import { spawnSync } from "node:child_process";
 import { dirname, join } from "node:path";
-import { fileURLToPath } from "node:url";
+import { fileURLToPath, pathToFileURL } from "node:url";
 
 import { describe, expect, test } from "vitest";
 
@@ -29,7 +29,7 @@ const ENABLED = process.env.TK_LIVE_HOST_SMOKE === "1";
 
 const repoRoot = join(dirname(fileURLToPath(import.meta.url)), "../../..");
 const cli = join(repoRoot, "src/cli.ts");
-const tsxLoader = join(repoRoot, "node_modules/tsx/dist/loader.mjs");
+const tsxLoader = pathToFileURL(join(repoRoot, "node_modules/tsx/dist/loader.mjs")).href;
 
 // Spawn the REAL `tk hook copilot` process and pipe `wire` to its stdin, exactly as a
 // host does. Returns the spawn result (status + stdout).
