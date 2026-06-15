@@ -1,4 +1,5 @@
 import { readFile } from "node:fs/promises";
+import { homedir } from "node:os";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 
@@ -37,7 +38,12 @@ function raw(command: string[], stdout: string, exitCode = 0, stderr = ""): RawR
 }
 
 export async function filterRtkFixture(commandArgs: string[], fixturePath: string, exitCode = 0) {
-  const stdout = await readFile(path.join(repoRoot, fixturePath), "utf8");
+  // `__HOME__` placeholder → the running machine's home, so home-compacting
+  // handlers (git worktree) match on any box, not just the author's /Users/... .
+  const stdout = (await readFile(path.join(repoRoot, fixturePath), "utf8")).replaceAll(
+    "__HOME__",
+    homedir(),
+  );
   return filterRtkOutput(commandArgs, stdout, exitCode);
 }
 
@@ -129,7 +135,9 @@ export type RtkParityResult = FilteredResult & {
 
 export type RtkParityExpectation = {
   critical: string[];
-  forbidden?: RegExp[];
+  // string → substring match, RegExp → pattern match (both via not.toMatch). A
+  // machine-specific literal (e.g. homedir()) is cleanest expressed as a string.
+  forbidden?: (string | RegExp)[];
   maxOutputChars?: number;
   minSavingsRatio?: number;
   // RTK measures savings in whitespace-delimited tokens (count_tokens =

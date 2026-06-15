@@ -1,4 +1,5 @@
 import { readFile } from "node:fs/promises";
+import { homedir } from "node:os";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 
@@ -48,7 +49,13 @@ function raw(command: string[], stdout: string, exitCode = 0): RawResult {
 async function filterFixture(testCase: (typeof fixtureCases)[number]) {
   const command = toParsedCommand(testCase.command);
   const handler = routeCommand(command);
-  const fixture = await readFile(path.join(repoRoot, testCase.fixture), "utf8");
+  // Fixtures use the `__HOME__` placeholder for home-anchored paths so a handler
+  // that compacts $HOME to ~ (e.g. git worktree) yields identical output on any
+  // machine — CI's home is /home/runner, not the author's /Users/... .
+  const fixture = (await readFile(path.join(repoRoot, testCase.fixture), "utf8")).replaceAll(
+    "__HOME__",
+    homedir(),
+  );
 
   return handler.filter(raw(testCase.command, fixture, testCase.exitCode ?? 0), command, options);
 }

@@ -518,21 +518,36 @@ export function executeCommand(
     let stdoutTruncated = false;
     let stderrTruncated = false;
 
+    // Mark truncation the moment a chunk crosses the cap — keeping only the bytes
+    // that fit — NOT when the NEXT chunk arrives. The old "flag on the next chunk"
+    // form missed the case where the CROSSING chunk is the LAST one: oversized
+    // output then went out silently unmarked. It passed locally only because the
+    // pipe happened to deliver another chunk after the cap was crossed; under a
+    // distribution where the final chunk straddles the cap (observed on CI) the
+    // `truncated` marker was dropped (issue #9 regression).
     child.stdout?.on("data", (chunk: Buffer) => {
-      if (stdoutBytes >= MAX_CAPTURE_BYTES) {
+      if (stdoutTruncated) return;
+      const room = MAX_CAPTURE_BYTES - stdoutBytes;
+      if (chunk.length > room) {
+        if (room > 0) stdout.push(chunk.subarray(0, room));
+        stdoutBytes = MAX_CAPTURE_BYTES;
         stdoutTruncated = true;
-        return;
+      } else {
+        stdout.push(chunk);
+        stdoutBytes += chunk.length;
       }
-      stdoutBytes += chunk.length;
-      stdout.push(chunk);
     });
     child.stderr?.on("data", (chunk: Buffer) => {
-      if (stderrBytes >= MAX_CAPTURE_BYTES) {
+      if (stderrTruncated) return;
+      const room = MAX_CAPTURE_BYTES - stderrBytes;
+      if (chunk.length > room) {
+        if (room > 0) stderr.push(chunk.subarray(0, room));
+        stderrBytes = MAX_CAPTURE_BYTES;
         stderrTruncated = true;
-        return;
+      } else {
+        stderr.push(chunk);
+        stderrBytes += chunk.length;
       }
-      stderrBytes += chunk.length;
-      stderr.push(chunk);
     });
     if (child.stdin) {
       // Swallow EPIPE: a child that closes stdin early (e.g. `head`) would otherwise

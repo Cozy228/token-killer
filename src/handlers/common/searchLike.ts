@@ -240,15 +240,12 @@ export const searchLikeHandler: CommandHandler = {
     // must be checked BEFORE the empty-stdout guard.
     const level = parseLevel(command.args, { fallback: "balanced" });
     if (hasFormatFlag(cleanedArgs) || hasContextFlag(cleanedArgs) || level === "none") {
-      return makeFilteredResult(
-        this,
-        raw,
-        `${raw.stdout.trimEnd()}\n`,
-        options,
-        undefined,
-        undefined,
-        banner,
-      );
+      // Null-delimited output (`-Z`/`--null`/`-z`) frames entries with \0; appending
+      // the normalizing trailing \n corrupts that framing — native GNU grep `-lZ`
+      // ends exactly at the final \0, so the extra \n broke byte-exact parity (it
+      // happened to match BSD grep locally, hiding the bug). Pass \0 output verbatim.
+      const out = raw.stdout.includes("\0") ? raw.stdout : `${raw.stdout.trimEnd()}\n`;
+      return makeFilteredResult(this, raw, out, options, undefined, undefined, banner);
     }
 
     if (!raw.stdout.trim()) {

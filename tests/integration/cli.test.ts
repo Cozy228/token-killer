@@ -57,7 +57,10 @@ const SHIM_INVOKED: NodeJS.ProcessEnv = { TK_SHIM_DIR: path.join(tmpdir(), "tk-f
 // specific diff, a clean branch), so they can't share one repo — but this
 // init + identity boilerplate (three spawns) had been copied verbatim into each.
 function gitInit(dir: string): void {
-  spawnSync("git", ["init"], { cwd: dir });
+  // `-b main` pins the initial branch: CI runners (and any box without a global
+  // init.defaultBranch) still default to `master`, which broke the status/branch
+  // assertions below. Pinning makes the branch name environment-independent.
+  spawnSync("git", ["init", "-b", "main"], { cwd: dir });
   spawnSync("git", ["config", "user.email", "test@test.com"], { cwd: dir });
   spawnSync("git", ["config", "user.name", "Test"], { cwd: dir });
 }
