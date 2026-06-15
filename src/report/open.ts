@@ -3,7 +3,7 @@
 // a headless/agent/CI environment simply gets the path printed instead.
 
 import { spawn } from "node:child_process";
-import { mkdirSync, writeFileSync } from "node:fs";
+import { chmodSync, mkdirSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 
 import { tokenKillerHome } from "../core/dataDir.js";
@@ -19,9 +19,15 @@ function stamp(nowMs: number): string {
 
 export function writeReport(doc: ReportDoc, nowMs: number): string {
   const dir = reportsDir();
-  mkdirSync(dir, { recursive: true });
+  // Owner-only (0700 dir / 0600 file): this directory is shared with the
+  // `tk support` diagnostic bundle (src/support/report.ts), which carries command
+  // lines, command output, and host config. The mkdir mode only applies on
+  // creation, so chmod the dir explicitly to retroactively tighten one a prior tk
+  // version created 0755 (world-listable). POSIX modes are no-ops on Windows.
+  mkdirSync(dir, { recursive: true, mode: 0o700 });
+  chmodSync(dir, 0o700);
   const path = join(dir, `${doc.kind}-${stamp(nowMs)}.html`);
-  writeFileSync(path, renderReportHtml(doc));
+  writeFileSync(path, renderReportHtml(doc), { mode: 0o600 });
   return path;
 }
 
