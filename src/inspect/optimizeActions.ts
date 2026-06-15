@@ -60,8 +60,9 @@ export function optimizeActionsPath(bucket: ScopeBucket): string {
 
 export function recordOptimizeAction(bucket: ScopeBucket, action: OptimizeAction): void {
   const dir = inspectBucketDir(bucket);
-  mkdirSync(dir, { recursive: true });
-  appendFileSync(optimizeActionsPath(bucket), `${JSON.stringify(action)}\n`);
+  // Owner-only like the other ledgers under ~/.token-killer/ (0700 dir / 0600 file).
+  mkdirSync(dir, { recursive: true, mode: 0o700 });
+  appendFileSync(optimizeActionsPath(bucket), `${JSON.stringify(action)}\n`, { mode: 0o600 });
 }
 
 export function readOptimizeActions(bucket: ScopeBucket): OptimizeAction[] {

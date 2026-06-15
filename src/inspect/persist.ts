@@ -52,9 +52,12 @@ export function inspectBucketPath(bucket: ScopeBucket): string {
 
 export function writeInspectBucket(bucket: ScopeBucket, report: InspectBucketReport): string {
   const dir = inspectBucketDir(bucket);
-  mkdirSync(dir, { recursive: true });
+  // Owner-only like every store under ~/.token-killer/ (0700 dir / 0600 file). A
+  // recursive mkdir here is a common first-writer of the data-dir root, so the mode
+  // keeps the root from being created world-readable and weakening the metrics stores.
+  mkdirSync(dir, { recursive: true, mode: 0o700 });
   const path = join(dir, "latest.json");
-  writeFileSync(path, `${JSON.stringify(report, null, 2)}\n`);
+  writeFileSync(path, `${JSON.stringify(report, null, 2)}\n`, { mode: 0o600 });
   return path;
 }
 
@@ -77,7 +80,7 @@ export type AdviceArtifacts = {
 // Returns the paths written, in stable order.
 export function writeAdviceArtifacts(artifacts: AdviceArtifacts): string[] {
   const dir = adviceDir();
-  mkdirSync(dir, { recursive: true });
+  mkdirSync(dir, { recursive: true, mode: 0o700 });
   const written: string[] = [];
   const files: Array<[string, string]> = [
     ["inspect-report.md", artifacts.reportMarkdown],
@@ -86,7 +89,7 @@ export function writeAdviceArtifacts(artifacts: AdviceArtifacts): string[] {
   ];
   for (const [name, contents] of files) {
     const path = join(dir, name);
-    writeFileSync(path, contents);
+    writeFileSync(path, contents, { mode: 0o600 });
     written.push(path);
   }
   return written;
@@ -94,8 +97,8 @@ export function writeAdviceArtifacts(artifacts: AdviceArtifacts): string[] {
 
 export function writeTelemetryExport(contents: string): string {
   const dir = adviceDir();
-  mkdirSync(dir, { recursive: true });
+  mkdirSync(dir, { recursive: true, mode: 0o700 });
   const path = join(dir, "telemetry-export.json");
-  writeFileSync(path, contents);
+  writeFileSync(path, contents, { mode: 0o600 });
   return path;
 }

@@ -66,8 +66,9 @@ export function writeContextAdvice(
   content: string,
 ): string {
   const dir = contextAdviceDir();
-  mkdirSync(dir, { recursive: true });
+  // Owner-only like every store under ~/.token-killer/ (0700 dir / 0600 file).
+  mkdirSync(dir, { recursive: true, mode: 0o700 });
   const path = adviceFilePath(scope, fingerprint);
-  writeFileSync(path, content.endsWith("\n") ? content : `${content}\n`);
+  writeFileSync(path, content.endsWith("\n") ? content : `${content}\n`, { mode: 0o600 });
   return path;
 }
