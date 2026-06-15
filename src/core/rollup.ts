@@ -435,7 +435,10 @@ export function savedTokens30dFromRollup(rollup: MergedRollup, now = new Date())
 }
 
 export async function saveRollup(cwd: string, rollup: ProjectRollup): Promise<void> {
-  await writeFile(rollupFile(cwd), `${JSON.stringify(rollup)}\n`, "utf8");
+  await writeFile(rollupFile(cwd), `${JSON.stringify(rollup)}\n`, {
+    encoding: "utf8",
+    mode: 0o600,
+  });
 }
 
 export async function loadRollupFile(file: string): Promise<ProjectRollup | null> {
@@ -589,7 +592,10 @@ export async function listProjectRollups(): Promise<ProjectRollup[]> {
         rollup.source_lines = lineCount;
         rollup.source_bytes = st.size;
         rollup.source_mtime_ms = st.mtimeMs;
-        await writeFile(rollupPath, `${JSON.stringify(rollup)}\n`, "utf8");
+        await writeFile(rollupPath, `${JSON.stringify(rollup)}\n`, {
+          encoding: "utf8",
+          mode: 0o600,
+        });
       } catch {
         continue;
       }
@@ -599,7 +605,10 @@ export async function listProjectRollups(): Promise<ProjectRollup[]> {
       rollup.source_bytes = st.size;
       rollup.source_mtime_ms = st.mtimeMs;
       try {
-        await writeFile(rollupPath, `${JSON.stringify(rollup)}\n`, "utf8");
+        await writeFile(rollupPath, `${JSON.stringify(rollup)}\n`, {
+          encoding: "utf8",
+          mode: 0o600,
+        });
       } catch {
         // best-effort stamp refresh
       }

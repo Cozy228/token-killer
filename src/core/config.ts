@@ -135,10 +135,11 @@ export function writeConfigTemplate(
   opts: { telemetry?: boolean; telemetryExport?: boolean } = {},
 ): string {
   const path = configPath();
-  mkdirSync(dirname(path), { recursive: true });
+  mkdirSync(dirname(path), { recursive: true, mode: 0o700 });
   writeFileSync(
     path,
     configTemplate(opts.telemetry ?? TELEMETRY_DEFAULT_ENABLED, opts.telemetryExport ?? false),
+    { mode: 0o600 },
   );
   return path;
 }

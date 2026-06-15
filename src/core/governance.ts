@@ -44,12 +44,12 @@ export async function recordGovernance(
   record: Omit<GovernanceRecord, "project_fingerprint">,
 ): Promise<void> {
   const file = governanceFile(cwd);
-  await mkdir(path.dirname(file), { recursive: true });
+  await mkdir(path.dirname(file), { recursive: true, mode: 0o700 });
   const full: GovernanceRecord = {
     ...record,
     project_fingerprint: projectFingerprint(cwd),
   };
-  await writeFile(file, `${JSON.stringify(full)}\n`, { encoding: "utf8", flag: "a" });
+  await writeFile(file, `${JSON.stringify(full)}\n`, { encoding: "utf8", flag: "a", mode: 0o600 });
 }
 
 function parseLines(text: string): GovernanceRecord[] {
