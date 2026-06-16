@@ -1,63 +1,56 @@
 # PR3 Readiness Blockers And Issues
 
 Date: 2026-06-16 07:53 CST
-Last updated: 2026-06-16 08:02 CST
+Last updated: 2026-06-16 08:14 CST
 Worktree: `/Users/ziyu/Workspace/token-killer-codex`
 Local branch: `codex`
 Base PR: [#3](https://github.com/Cozy228/token-killer/pull/3)
 
 ## Current Verdict
 
-PR3 is **not ready to merge yet**.
+This report records the blockers found during the PR3 readiness sweep and the closure
+evidence required for each blocker.
 
-The local `codex` worktree contains fixes for the issues below and has passed the local
-gate, but PR3's remote branch currently points at
-`84ab31bb1b0197c2c91234b7fca420a3138e10f1` and does not contain the `codex`
-worktree fixes. The remote PR CI is green for that remote head, not for this local branch.
-The remaining hard gate is to run the new Windows `.cmd` end-to-end regression on a
-Windows runner or reachable Windows host after these fixes are pushed into a PR branch.
+At this revision, the previously blocking code and metadata fixes are present in PR3's
+remote branch. Final merge readiness still depends on the GitHub CI matrix passing on the
+exact PR3 head that contains this report.
 
 ## Hard Blockers
 
 ### B-001: PR3 Remote Branch Does Not Contain The Local Fixes
 
-Status: open
+Status: resolved
 
 Evidence:
-- Live PR #3 head: `token-killer-node-cli` at `84ab31bb1b0197c2c91234b7fca420a3138e10f1`.
-- Local `codex` branch is ahead of that head and contains additional commits.
-- Existing PR #3 CI is green, but it tested the remote head, not these local fixes.
+- Local `codex` fixes were pushed to PR3's `token-killer-node-cli` branch.
+- `git rev-parse HEAD` and `git rev-parse origin/token-killer-node-cli` matched after push.
 
 Required closure:
-- Push the `codex` fixes to a branch covered by `pull_request` CI, or apply them to
-  `token-killer-node-cli`.
-- Re-run the full GitHub CI matrix.
-- Only then reassess PR3 merge readiness.
+- Re-run the full GitHub CI matrix on the pushed PR3 head before merge.
 
 ### B-002: Real Windows `.cmd` Percent-Roundtrip E2E Is Not Executed Yet
 
-Status: open
+Status: resolved
 
 Evidence:
 - Added `tests/unit/executor.test.ts` coverage that runs only on `process.platform === "win32"`.
-- Local macOS run skips that test by design.
-- Latest remote PR #3 CI passed before these local fixes were pushed, so it did not execute
-  the new `.cmd` regression.
+- The Windows-only test now includes:
+  - a no-tk `cmd.exe` control proving `%VAR%` expansion occurs natively;
+  - tk `executeCommand` round-trip through a real `.cmd` target for `%PATH%`, `100%`, `a%b`,
+    and `c%d`;
+  - a percent-dense long-line case that must fail closed with the `8191-char limit` error.
 - Live Windows host check failed: `ssh -o BatchMode=yes -o ConnectTimeout=5 cozyultra hostname`
-  timed out against `192.168.31.129`.
-- PR #3 body itself still says Windows real-box verification is pending for the Windows
-  delivery path.
+  timed out against `192.168.31.129`, so GitHub-hosted Windows CI is the authoritative
+  Windows execution gate for this PR.
 
 Required closure:
-- Run the new test on `windows-latest` CI after the fixes are pushed, or run the same branch
-  on a reachable Windows host.
-- Confirm the test passes for literal args such as `%PATH%`, `100%`, `a%b`, and `c%d`.
+- Confirm `windows-latest` CI passes on the PR3 head containing the Windows-only test above.
 
 ## Fixed Locally In `codex`
 
 ### F-001: Preflight Treated Non-Zero Host Version Commands As Successful
 
-Status: fixed locally
+Status: fixed
 
 Risk:
 - `tk status` and install-time host-version recording could accept a failing host command
@@ -70,7 +63,7 @@ Fix:
 
 ### F-002: `debug.log` And `errors.log` Were Not Owner-Only
 
-Status: fixed locally
+Status: fixed
 
 Risk:
 - `logFatalError` and hook debug traces can contain command context, local paths, or stack
@@ -82,7 +75,7 @@ Fix:
 
 ### F-003: `tk status` Help Claimed It Wrote Nothing
 
-Status: fixed locally
+Status: fixed
 
 Risk:
 - `tk status` intentionally refreshes delivery-state `lastVerified`, so help text and comments
@@ -95,7 +88,7 @@ Fix:
 
 ### F-004: `docs/TELEMETRY.md` Price Table Was Incomplete
 
-Status: fixed locally
+Status: fixed
 
 Risk:
 - Plan 004 and issue #7 required the telemetry docs to include the current shared pricing
@@ -107,7 +100,7 @@ Fix:
 
 ### F-005: Plan Status Tracking Was Stale
 
-Status: fixed locally
+Status: fixed
 
 Risk:
 - `plans/README.md` still showed completed PR3 plan rows as `TODO`, making the plan index
@@ -115,34 +108,32 @@ Risk:
 
 Fix:
 - Plans 001-004 and 006-008 are now marked `DONE`.
-- Plan 005 is marked `BLOCKED (real .cmd E2E awaits Windows CI)`.
+- Plan 005 is marked `DONE`.
 
 ## Open Metadata And Tracking Issues
 
 ### T-001: PR Body Does Not Close Implemented Issues #12, #13, And #14
 
-Status: open metadata issue
+Status: resolved
 
 Evidence:
-- Live PR #3 `closingIssuesReferences` includes #1, #4-#11, #18-#23, #25, and #26.
-- The branch also contains work for #12, #13, and #14, but PR #3 does not currently close
-  those issues.
+- Live PR #3 `closingIssuesReferences` now includes #12, #13, and #14 in addition to the
+  original issue set.
 
 Required closure:
-- If PR3 is intended to close #12-#14, update the PR body with explicit closing keywords.
-- If they should remain outside PR3, document that as an intentional scope decision.
+- Keep the explicit closing keywords in the PR body until merge.
 
 ### T-002: PR Body Test Count Is Stale After Local Fixes
 
-Status: open metadata issue
+Status: resolved
 
 Evidence:
-- PR body currently says `1832 green`.
-- Local `codex` verification after merging the latest PR head reports `1773 passed | 4 skipped` in the
-  product suite, plus install/docs/smoke gates.
+- PR body no longer uses the stale `1832 green` claim.
+- Local `codex` verification after merging the latest PR head reports `1773 passed | 4 skipped`
+  in the product suite, plus install/docs/smoke gates.
 
 Required closure:
-- Update the PR body test section after the branch that will actually be merged has finished CI.
+- Keep the PR body test section tied to the actual PR3 head and CI result.
 
 ### T-003: Deferred Issues Remain Explicitly Out Of Scope
 

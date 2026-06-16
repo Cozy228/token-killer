@@ -34,7 +34,7 @@ row when done.
 | 002  | Emit compressed output before accounting writes | P1 | M | 001 (soft) | [#5](https://github.com/Cozy228/token-killer/issues/5) | DONE |
 | 003  | Restrict metrics-store permissions to 0700/0600 | P1 | S | — | [#6](https://github.com/Cozy228/token-killer/issues/6) | DONE |
 | 004  | Docs truth sweep (README/Codex, DESIGN.md, dead `--no-dedup`, TELEMETRY price table) | P2 | S | — | [#7](https://github.com/Cozy228/token-killer/issues/7) | DONE |
-| 005  | Neutralize cmd.exe `%`-expansion for `.cmd`/`.bat` spawns | P2 | M | 001 (soft) | [#8](https://github.com/Cozy228/token-killer/issues/8) | BLOCKED (real `.cmd` E2E awaits Windows CI) |
+| 005  | Neutralize cmd.exe `%`-expansion for `.cmd`/`.bat` spawns | P2 | M | 001 (soft) | [#8](https://github.com/Cozy228/token-killer/issues/8) | DONE |
 | 006  | Truncation-safe multibyte decode at the 64MB capture cap | P3 | S | — | [#9](https://github.com/Cozy228/token-killer/issues/9) | DONE |
 | 007  | Telemetry stems: closed subcommand vocabulary (stop user-content transmission) | P1 | S | — | [#10](https://github.com/Cozy228/token-killer/issues/10) | DONE |
 | 008  | Refuse to overwrite an unmanaged copilot hook config on install | P2 | S | — | [#11](https://github.com/Cozy228/token-killer/issues/11) | DONE |

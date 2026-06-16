@@ -1,5 +1,6 @@
 import { afterEach, beforeEach, describe, expect, test } from "vitest";
 
+import { spawnSync } from "node:child_process";
 import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
@@ -80,6 +81,17 @@ describe("executeCommand", () => {
         writeFileSync(script, "process.stdout.write(JSON.stringify(process.argv.slice(2)));\n");
         writeFileSync(batch, `@echo off\r\n"${process.execPath}" "${script}" %*\r\n`);
 
+        const native = spawnSync(
+          process.env.ComSpec || "cmd.exe",
+          ["/d", "/s", "/c", `"${batch}" "%TK_PERCENT_E2E%"`],
+          {
+            encoding: "utf8",
+            env: { ...process.env, TK_PERCENT_E2E: "expanded" },
+          },
+        );
+        expect(native.status).toBe(0);
+        expect(JSON.parse(native.stdout.trim())).toEqual(["expanded"]);
+
         const result = await executeCommand({
           program: batch,
           args,
@@ -89,6 +101,20 @@ describe("executeCommand", () => {
 
         expect(result.exitCode).toBe(0);
         expect(JSON.parse(result.stdout)).toEqual(args);
+
+        let refusal: unknown;
+        try {
+          await executeCommand({
+            program: batch,
+            args: ["%".repeat(1100)],
+            original: [batch, "%".repeat(1100)],
+            displayCommand: `${batch} ${"%".repeat(1100)}`,
+          });
+        } catch (error) {
+          refusal = error;
+        }
+        expect(refusal).toBeInstanceOf(Error);
+        expect(String(refusal)).toMatch(/8191-char limit/);
       } finally {
         rmSync(dir, { recursive: true, force: true });
       }
