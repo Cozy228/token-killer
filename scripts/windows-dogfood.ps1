@@ -131,7 +131,16 @@ function Start-Proc {
   # (e.g. TK_SUPPORT_EMAIL would route `tk support` to a mail GUI instead of a file).
   if ($UnsetEnv) { foreach ($k in $UnsetEnv) { if ($psi.Environment.ContainsKey($k)) { [void]$psi.Environment.Remove($k) } } }
   $sw = [System.Diagnostics.Stopwatch]::StartNew()
-  $p = [System.Diagnostics.Process]::Start($psi)
+  # A spawn failure (bad tk resolution, ENOENT, .ps1/.cmd that can't be exec'd with
+  # UseShellExecute=$false) must become a normal FAIL dossier — NOT an uncaught throw
+  # that aborts the suite before the report is written. Return exit 127 with the reason.
+  try { $p = [System.Diagnostics.Process]::Start($psi) }
+  catch {
+    $sw.Stop()
+    $res = [PSCustomObject]@{ ExitCode = 127; Stdout = ""; Stderr = "spawn failed: $($_.Exception.Message)"; AllText = "spawn failed: $($_.Exception.Message)"; Ms = $sw.Elapsed.TotalMilliseconds; TimedOut = $false; File = $File; Argv = $PArgs }
+    $script:LastResult = $res
+    return $res
+  }
   if ($HasStdin) { $p.StandardInput.Write($Stdin); $p.StandardInput.Close() }
   $op = $p.StandardOutput.ReadToEndAsync()
   $ep = $p.StandardError.ReadToEndAsync()
@@ -723,6 +732,13 @@ try {
   }
   Info "tier0" "VS Code + Copilot agent (MANUAL)" "baseline gain rows=$beforeLines — see report for steps"
 
+} catch {
+  # Last-resort net: a line we could not exercise on a non-Windows dev box threw. Record
+  # it (message + the offending file:line + a PS stack trace in the dossier) so the report
+  # STILL gets written — the report is the whole point. Phases after this point are
+  # skipped, but you get a self-diagnosing report instead of a bare console stack.
+  $exR = [PSCustomObject]@{ File = '(powershell)'; Argv = @('harness'); ExitCode = 1; Ms = -1; TimedOut = $false; Stdout = [string]$_.ScriptStackTrace; Stderr = [string]$_.Exception.Message }
+  Fail "harness" "uncaught exception — suite stopped early here" ("{0} @ {1}" -f $_.Exception.Message, (($_.InvocationInfo.PositionMessage -split "`n") -join ' ')) -1 $exR
 } finally {
   Pop-Location
   Remove-Item -LiteralPath $TmpRoot -Recurse -Force -ErrorAction SilentlyContinue
