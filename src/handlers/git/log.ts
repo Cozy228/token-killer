@@ -1,6 +1,7 @@
 import type { OmissionDeclaration, ParsedCommand } from "../../types.js";
 import { defineHandler } from "../define.js";
 import { overBudgetLadder } from "../common/budget.js";
+import { compactUnifiedDiff } from "./compactDiff.js";
 
 type Commit = {
   hash: string;
@@ -15,11 +16,11 @@ function shortHash(hash: string): string {
 
 const ONELINE_HEADER = /^[0-9a-f]{7,40}\s+\S/;
 
-// H6: flags whose presence means the output contains rich content that our
-// reformatter cannot losslessly handle — pass through raw in that case.
+// H6: flags whose presence means the output contains rich content our reformatter
+// cannot losslessly handle — pass through raw. `-p`/`--patch` are the EXCEPTION:
+// their per-commit diffs are compacted (formatLogPatch), the same way `git show`
+// and `git diff` already compact diffs — diffs are the biggest token sink here.
 const RICH_OUTPUT_FLAGS = new Set([
-  "-p",
-  "--patch",
   "--stat",
   "--name-status",
   "--name-only",
@@ -32,6 +33,53 @@ function hasRichOutputFlag(command: ParsedCommand): boolean {
   return command.args.some(
     (a) => RICH_OUTPUT_FLAGS.has(a) || a.startsWith("--format=") || a.startsWith("--pretty="),
   );
+}
+
+function hasPatchFlag(command: ParsedCommand): boolean {
+  return command.args.some((a) => a === "-p" || a === "--patch");
+}
+
+// A user-supplied --format/--pretty owns the header layout, so don't touch it —
+// pass through raw even when -p is present.
+function hasCustomFormat(command: ParsedCommand): boolean {
+  return command.args.some(
+    (a) =>
+      a === "--format" ||
+      a.startsWith("--format=") ||
+      a === "--pretty" ||
+      a.startsWith("--pretty="),
+  );
+}
+
+const COMMIT_HEADER = /^commit [0-9a-f]{7,40}/;
+
+// `git log -p`: keep each commit's header/message verbatim and run each commit's
+// diff through compactUnifiedDiff (every changed +/- line kept; `diff --git`/index/
+// `---`/`+++` boilerplate collapsed to a file label + counts). Reduction happens
+// ONLY via the declared over-budget ladder — diffs are never silently stripped (the
+// H6 regression that collapsed `git log -p` to "Git Log: N commits").
+function formatLogPatch(text: string): { output: string; omission?: OmissionDeclaration } {
+  const lines = text.split(/\r?\n/);
+  const out: string[] = [];
+  let omission: OmissionDeclaration | undefined;
+  let i = 0;
+  while (i < lines.length) {
+    const line = lines[i] ?? "";
+    if (line.startsWith("diff --git")) {
+      // One commit's full patch spans from `diff --git` to the next commit header
+      // (or EOF) and may contain several files — compactUnifiedDiff handles both.
+      let j = i + 1;
+      while (j < lines.length && !COMMIT_HEADER.test(lines[j] ?? "")) j += 1;
+      const compacted = compactUnifiedDiff(lines.slice(i, j).join("\n"));
+      out.push(compacted.text);
+      if (compacted.omission && !omission) omission = compacted.omission;
+      i = j;
+    } else {
+      out.push(line);
+      i += 1;
+    }
+  }
+  return { output: `${out.join("\n").trimEnd()}\n`, omission };
 }
 
 // RTK: git.rs::filter_log_output — for the oneline/pretty log, each hash-prefixed line
@@ -150,7 +198,10 @@ function formatLog(text: string): { output: string; omission?: OmissionDeclarati
 
 export const gitLogHandler = defineHandler({
   name: "git-log",
-  traits: { cacheable: true, ttlClass: "slow" },
+  // structural: -p compaction is a deliberate reformat that can exceed a tiny raw
+  // diff, so the size-inflation guard must not bounce it back to raw. ladder: every
+  // reduction (formatLog + compactUnifiedDiff) is a declared over-budget step.
+  traits: { structural: true, ladder: true, cacheable: true, ttlClass: "slow" },
   programs: ["git"],
 
   match(command) {
@@ -158,14 +209,18 @@ export const gitLogHandler = defineHandler({
   },
 
   format(raw, command, _options) {
-    // H6: rich output flags mean the log contains diffs, stat, signatures, or
-    // user-defined format — our reformatter cannot losslessly handle them.
-    // Pass through raw to preserve the content faithfully.
+    const text = raw.stdout || raw.stderr;
+    // -p/--patch: compact each commit's diff (like git show), UNLESS the user gave a
+    // custom --format/--pretty — then the layout is theirs, so pass through raw.
+    if (hasPatchFlag(command) && !hasCustomFormat(command)) {
+      return formatLogPatch(text);
+    }
+    // H6: other rich flags (--stat/--name-status/--name-only/--show-signature/
+    // --format) carry content our reformatter cannot losslessly handle — pass raw.
     if (hasRichOutputFlag(command)) {
-      const text = raw.stdout || raw.stderr;
       return { output: text.endsWith("\n") ? text : `${text}\n` };
     }
-    const { output, omission } = formatLog(raw.stdout || raw.stderr);
+    const { output, omission } = formatLog(text);
     return { output, omission };
   },
 });
