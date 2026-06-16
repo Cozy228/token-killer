@@ -361,7 +361,7 @@ export function renderDebug(b: DebugBundle): string {
     "",
   ].join("\n");
 
-  return [
+  const doc = [
     header,
     renderEnv(b),
     "",
@@ -376,4 +376,12 @@ export function renderDebug(b: DebugBundle): string {
     renderArtifacts(b),
     "",
   ].join("\n");
+
+  // Final privacy net. Per-field scrubHome covers §1/§2/§6 (env, delivery, configs),
+  // but the home dir also surfaces in command text and payload snapshots in §3–§5,
+  // which those calls never reach. The bundle is meant to be SHARED with a maintainer
+  // (see the header acceptance note), so no section may leak the literal home path —
+  // `~\…` stays fully diagnostic. Idempotent: re-scrubbing the already-scrubbed
+  // sections is a no-op.
+  return scrubHome(doc);
 }

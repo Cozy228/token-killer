@@ -97,6 +97,14 @@ function Start-Proc {
   $psi.RedirectStandardOutput = $true
   $psi.RedirectStandardError = $true
   $psi.RedirectStandardInput = $HasStdin
+  # tk emits UTF-8 (as do all UTF-8-aware agents that consume it). Without an explicit
+  # encoding, .NET decodes the child's stdout/stdin using the console code page — cp936
+  # on this GBK box — which mojibakes Chinese/emoji output (false "needle not found"
+  # warns). Pin UTF-8 so the harness reads what a real agent reads.
+  $utf8 = [System.Text.UTF8Encoding]::new($false)
+  $psi.StandardOutputEncoding = $utf8
+  $psi.StandardErrorEncoding = $utf8
+  if ($HasStdin) { $psi.StandardInputEncoding = $utf8 }
   $psi.UseShellExecute = $false
   $psi.CreateNoWindow = $true
   if ($Env) { foreach ($k in $Env.Keys) { $psi.Environment[$k] = [string]$Env[$k] } }
@@ -432,12 +440,19 @@ try {
     } finally { Pop-Location }
   }
 
-  # B9 KNOWN FINDING (not executed — it is destructive): `tk uninstall --help`
-  # ignores the unrecognised flag and RUNS a real uninstall. Probe the safe cousin
-  # (`install --dry-run` + bogus flag) to capture the unknown-flag policy without risk.
-  $r = Invoke-Tk @("install", "--host", "vscode", "--dry-run", "--tk-bogus-flag-xyz")
-  Info "boundary" "unknown-flag policy (install --dry-run)" "exit=$($r.ExitCode) — NOTE: 'tk uninstall --help' ignores flags and uninstalls for real" $r.Ms
-  $script:Findings.Add("WARN [boundary] destructive 'tk uninstall' / 'uninstall --help' ignores unknown flags and runs a real uninstall — guard with arg validation.")
+  # B9 destructive-guard: `tk uninstall` must fail closed on unrecognised input.
+  # `--help` prints usage and tears nothing down; an unknown flag is REFUSED (exit!=0)
+  # rather than falling through into a real uninstall. Safe to exercise for real now.
+  # Teardown prints per-tier lines ("instruction injection: removed"); usage never
+  # mentions "instruction injection", so its absence proves nothing was torn down.
+  $r = Invoke-Tk @("uninstall", "--help")
+  if ($r.ExitCode -eq 0 -and $r.AllText -match 'tk uninstall' -and $r.AllText -notmatch 'instruction injection') {
+    Pass "boundary" "uninstall --help prints usage (no teardown)" "" $r.Ms
+  } else { Warn "boundary" "uninstall --help" "exit=$($r.ExitCode) — expected usage, no teardown" $r.Ms }
+  $r = Invoke-Tk @("uninstall", "--tk-bogus-flag-xyz")
+  if ($r.ExitCode -ne 0 -and $r.AllText -match 'unknown flag|Refusing') {
+    Pass "boundary" "uninstall refuses unknown flag (fail closed)" "exit=$($r.ExitCode)" $r.Ms
+  } else { Warn "boundary" "uninstall unknown flag" "exit=$($r.ExitCode) — expected refusal, got teardown?" $r.Ms }
 
   # ╔══ PHASE 5: Fail-safe / resilience ══╗
   Section "Fail-safe"

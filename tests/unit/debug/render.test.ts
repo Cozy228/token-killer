@@ -336,4 +336,35 @@ describe("renderDebug — host config home scrub", () => {
     expect(out).not.toContain(`${home}/cli.js`);
     expect(out).toContain("~/cli.js");
   });
+
+  // The bundle is meant to be SHARED with a maintainer, so the home dir must not
+  // survive ANYWHERE — including §3 command text and §4 payload snapshots, which the
+  // per-field scrub never reached (a real leak caught on a Windows acceptance run).
+  test("scrubs the home dir from command text and anomaly payloads, not just configs", () => {
+    const home = homedir();
+    const out = renderDebug(
+      bundle({
+        commands: [record({ command: `cat ${home}/secret/notes.txt` })],
+        anomalies: [
+          {
+            record: record({ command: `grep token ${home}/secret/notes.txt`, exit_code: 1 }),
+            snapshot: {
+              available: true,
+              path: "notes.log",
+              bytes: 20,
+              content: `match in ${home}/secret`,
+            },
+          },
+        ],
+        aggregates: {
+          ...bundle().aggregates,
+          byCommand: [
+            { key: `cat ${home}/secret/notes.txt`, count: 1, raw: 100, saved: 50, pct: 50 },
+          ],
+        },
+      }),
+    );
+    expect(out).not.toContain(home);
+    expect(out).toContain("~/secret");
+  });
 });
