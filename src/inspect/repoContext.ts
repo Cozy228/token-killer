@@ -1,7 +1,6 @@
 // Slice 4 — optional repository context (inspect-v1-design.md "Repository
-// Context"). Opt-in (`--repo-context`), lightweight metadata + durable-guidance
-// PRESENCE only. It must NOT become source-code analysis: presence booleans, no
-// file contents.
+// Context"). Internal metadata + durable-guidance PRESENCE only. It must NOT
+// become source-code analysis: presence booleans, no file contents.
 
 import { existsSync } from "node:fs";
 import { join } from "node:path";
@@ -14,7 +13,14 @@ export type RepoContext = {
   has_skill_or_rules: boolean;
 };
 
-const MANIFESTS = ["package.json", "pyproject.toml", "Cargo.toml", "go.mod", "pom.xml", "build.gradle"];
+const MANIFESTS = [
+  "package.json",
+  "pyproject.toml",
+  "Cargo.toml",
+  "go.mod",
+  "pom.xml",
+  "build.gradle",
+];
 const CONTEXT_DOCS = ["CONTEXT.md", "CONTEXT-MAP.md"];
 const SKILL_RULES = [".github/copilot-instructions.md", "CLAUDE.md", "AGENTS.md", ".cursorrules"];
 

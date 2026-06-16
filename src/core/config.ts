@@ -6,10 +6,9 @@
 // here.
 
 import { readFileSync, writeFileSync } from "node:fs";
-import { mkdirSync } from "node:fs";
-import { dirname, join } from "node:path";
+import { join } from "node:path";
 
-import { tokenKillerHome } from "./dataDir.js";
+import { ensureTokenKillerHome, tokenKillerHome } from "./dataDir.js";
 import { parseJsonc } from "./jsonc.js";
 import { TELEMETRY_DEFAULT_ENABLED } from "../telemetry/defaults.js";
 
@@ -135,7 +134,7 @@ export function writeConfigTemplate(
   opts: { telemetry?: boolean; telemetryExport?: boolean } = {},
 ): string {
   const path = configPath();
-  mkdirSync(dirname(path), { recursive: true, mode: 0o700 });
+  ensureTokenKillerHome();
   writeFileSync(
     path,
     configTemplate(opts.telemetry ?? TELEMETRY_DEFAULT_ENABLED, opts.telemetryExport ?? false),

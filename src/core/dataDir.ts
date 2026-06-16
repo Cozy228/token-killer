@@ -1,5 +1,5 @@
 import { createHash } from "node:crypto";
-import { readFileSync, realpathSync, statSync } from "node:fs";
+import { chmodSync, mkdirSync, readFileSync, realpathSync, statSync } from "node:fs";
 import os from "node:os";
 import path from "node:path";
 
@@ -78,6 +78,12 @@ export function tokenKillerHome(): string {
     return path.resolve(process.env.TOKEN_KILLER_HOME);
   }
   return path.join(os.homedir(), ".token-killer");
+}
+
+export function ensureTokenKillerHome(home: string = tokenKillerHome()): string {
+  mkdirSync(home, { recursive: true, mode: 0o700 });
+  chmodSync(home, 0o700);
+  return home;
 }
 
 // Memoize per cwd (2.4a). The git layout that pins a project's fingerprint does not

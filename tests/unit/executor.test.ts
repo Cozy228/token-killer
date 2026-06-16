@@ -71,19 +71,22 @@ describe("executeCommand", () => {
   });
 
   test.runIf(process.platform === "win32")(
-    "round-trips literal percent arguments through a real .cmd target",
+    "round-trips literal percent arguments through real batch targets",
     async () => {
       const dir = mkdtempSync(join(tmpdir(), "tk-percent-e2e-"));
       const script = join(dir, "print-args.mjs");
-      const batch = join(dir, "print-args.cmd");
+      const cmdBatch = join(dir, "print-args.cmd");
+      const batBatch = join(dir, "print-args.bat");
       const args = ["%PATH%", "100%", "a%b", "c%d"];
       try {
         writeFileSync(script, "process.stdout.write(JSON.stringify(process.argv.slice(2)));\n");
-        writeFileSync(batch, `@echo off\r\n"${process.execPath}" "${script}" %*\r\n`);
+        for (const batch of [cmdBatch, batBatch]) {
+          writeFileSync(batch, `@echo off\r\n"${process.execPath}" "${script}" %*\r\n`);
+        }
 
         const native = spawnSync(
           process.env.ComSpec || "cmd.exe",
-          ["/d", "/s", "/c", `"${batch}" "%TK_PERCENT_E2E%"`],
+          ["/d", "/c", `call "${cmdBatch}" "%TK_PERCENT_E2E%"`],
           {
             encoding: "utf8",
             env: { ...process.env, TK_PERCENT_E2E: "expanded" },
@@ -92,23 +95,25 @@ describe("executeCommand", () => {
         expect(native.status).toBe(0);
         expect(JSON.parse(native.stdout.trim())).toEqual(["expanded"]);
 
-        const result = await executeCommand({
-          program: batch,
-          args,
-          original: [batch, ...args],
-          displayCommand: `${batch} ${args.join(" ")}`,
-        });
+        for (const batch of [cmdBatch, batBatch]) {
+          const result = await executeCommand({
+            program: batch,
+            args,
+            original: [batch, ...args],
+            displayCommand: `${batch} ${args.join(" ")}`,
+          });
 
-        expect(result.exitCode).toBe(0);
-        expect(JSON.parse(result.stdout)).toEqual(args);
+          expect(result.exitCode).toBe(0);
+          expect(JSON.parse(result.stdout)).toEqual(args);
+        }
 
         let refusal: unknown;
         try {
           await executeCommand({
-            program: batch,
+            program: cmdBatch,
             args: ["%".repeat(1100)],
-            original: [batch, "%".repeat(1100)],
-            displayCommand: `${batch} ${"%".repeat(1100)}`,
+            original: [cmdBatch, "%".repeat(1100)],
+            displayCommand: `${cmdBatch} ${"%".repeat(1100)}`,
           });
         } catch (error) {
           refusal = error;

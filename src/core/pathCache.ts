@@ -1,9 +1,9 @@
 import { createHash } from "node:crypto";
-import { existsSync, mkdirSync, readFileSync, renameSync, writeFileSync } from "node:fs";
+import { existsSync, readFileSync, renameSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 
 import { resolveBinaryPath } from "../executor.js";
-import { tokenKillerHome } from "./dataDir.js";
+import { ensureTokenKillerHome, tokenKillerHome } from "./dataDir.js";
 
 // Persistent memo of the Windows PATH×PATHEXT walk for the HOOK path (2.1 item 4).
 // The shim wrapper bakes TK_REAL_BIN so the command-proxy path skips the walk, but a
@@ -45,8 +45,7 @@ function readCache(): CacheShape {
 
 function writeCache(cache: CacheShape): void {
   try {
-    const file = cacheFile();
-    mkdirSync(tokenKillerHome(), { recursive: true, mode: 0o700 });
+    const file = join(ensureTokenKillerHome(), "path-cache.json");
     // Write-then-rename so a concurrent reader (or a crash) never sees a torn file.
     const tmp = `${file}.${process.pid}.tmp`;
     writeFileSync(tmp, JSON.stringify(cache), { mode: 0o600 });

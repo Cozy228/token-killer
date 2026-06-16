@@ -48,13 +48,13 @@ GitHub Copilot cloud agent
 | Report & history | **shipped** | `src/core/history.ts`, `src/core/report.ts`, `src/core/dataDir.ts` |
 | `tk config init` | **shipped** | `src/core/config.ts`, `src/core/configCli.ts`（closed-set JSONC 模板，仅用户级，`tk config <init\|show\|path>`） |
 | Delivery tiers (shim / `tk install`) | **shipped** | **命令压缩主交付层**；PATH shim 覆盖 VS Code 等全宿主；统一 `tk install` 安装（`tk init` 已重命名）；`src/shim/*`（`gate`/`init`/`install`/`hostConfig`/`path` 三层 hook>shim>inject）；见 [ADR 0002](adr/0002-shim-delivery-tier-and-passthrough.md)、`docs/shim-delivery-goal.md` |
-| Hook system | shipped (Copilot-CLI-only, command-rewrite, no `modifiedResult`) | §3；**仅 Copilot CLI**，RTK 式命令改写（无 `modifiedResult`）；rewrite 规则见 §3.8；落地计划见 `docs/layer2-hooks-inspect-goal.md`。Slice 0 normalizer：`src/hook/normalize.ts`（双 dialect、canonical `category`、fail-open）。Slice 1 `tk hook copilot` 处理器：`src/hook/copilot.ts` 分流、`src/hook/rewrite.ts` 命令改写注册表（只加 `tk` 前缀）、`src/hook/govern.ts` direct-tool 治理（deny 依赖目录/lockfile、warn 全仓搜索）、`tk hook check` dry-run（`src/hook/cli.ts`）。Slice 2 prompt/error 事件：`src/hook/prompt.ts`、`src/hook/error.ts`、`history.recordHookFailure` + `source_adapter` 字段。Slice 3 安装：`tk init --host copilot-cli` 调用 `src/hook/install.ts` 写用户级 `~/.copilot/hooks/tk-rewrite.json`（指向 `tk hook copilot`，marker 可恢复，repo 仅 `--project`），并支持 `--dry-run`/`--uninstall`/`--show`；测试 `tests/unit/hook/*`、`tests/unit/shim/initCli.test.ts`、`tests/integration/hook.test.ts` |
+| Hook system | shipped (Copilot-CLI-only, command-rewrite, no `modifiedResult`) | §3；**仅 Copilot CLI**，RTK 式命令改写（无 `modifiedResult`）；rewrite 规则见 §3.8；落地计划见 `docs/layer2-hooks-inspect-goal.md`。Slice 0 normalizer：`src/hook/normalize.ts`（双 dialect、canonical `category`、fail-open）。Slice 1 `tk hook copilot` 处理器：`src/hook/copilot.ts` 分流、`src/hook/rewrite.ts` 命令改写注册表（只加 `tk` 前缀）、`src/hook/govern.ts` direct-tool 治理（deny 依赖目录/lockfile、warn 全仓搜索）、`tk hook check` dry-run（`src/hook/cli.ts`）。Slice 2 prompt/error 事件：`src/hook/prompt.ts`、`src/hook/error.ts`、`history.recordHookFailure` + `source_adapter` 字段。Slice 3 安装：`tk install --host copilot-cli` 调用 `src/hook/install.ts` 写用户级 `~/.copilot/hooks/tk-rewrite.json`（指向 `tk hook copilot`，marker 可恢复，repo 仅 `--project`），并支持 `--dry-run`/`--uninstall`/`--show`；测试 `tests/unit/hook/*`、`tests/unit/shim/initCli.test.ts`、`tests/integration/hook.test.ts` |
 | Copilot context optimizer | shipped | §4；静态 context 作为 `source = static_context` 分析器并入唯一的 `tk inspect`（§9，默认全跑），`tk optimize` 为下游消费者（读 `inspect/latest.json`，无则触发 inspect）；scope-aware（[ADR 0003](adr/0003-inspect-default-full-static-context.md)：user 默认、`--project` opt-in）；非独立 `--copilot-context` 扫描命令。代码：`src/context/`（`analyzer.ts`、`discover.ts`、`parseMarkdown.ts`、`metrics.ts`、`report.ts`、`patchPlan.ts`、`advice.ts`、`optimizeCli.ts`、`rules/*` 全 §4.3 taxonomy）、`src/inspect/{staticContext,unified}.ts`；测试 `tests/unit/context/*`、`tests/integration/{inspectContext,optimize}.test.ts`；`docs/context-optimizer-implementation-goal.md` |
 | Managed token budget block | shipped | §5；marker block 幂等 insert/remove + 每文件 backup（含 manifest）+ git 感知 apply（仓库内连 project 文件一起写，披露后写、`--restore` 可回滚）：`src/context/applySafe.ts`（`tk optimize --apply` 安装、`tk optimize --restore` 移除）；测试 `tests/unit/context/applySafe.test.ts`、`tests/integration/optimize.test.ts` |
 | VS Code token-lean settings | shipped | §4.5；host-native 交付通道：VS Code `chat.tools.compressOutput.enabled: true` 现已并入 `tk optimize --apply`（全文件 backup + state sidecar 可恢复）/`--restore`（不再有独立的 `--vscode-settings` flag）；§14/§15 context-surface 与 agent-budget 设置只 advisory、绝不自动改。`src/context/vscodeSettings.ts`，复用 `src/shim/hostConfig.ts` 的 settings I/O；测试 `tests/unit/context/vscodeSettings.test.ts` |
 | Inline failure-fix hints | shipped | §1.8；命令失败（exit≠0）时按确定性模式匹配追加一行修复建议，减少诊断 round-trip；presentation 层（cli.ts `runCompress`），不进 savings/质量门，绝不猜。`src/core/failureHints.ts`；测试 `tests/unit/core/failureHints.test.ts` |
-| Inspect | shipped | §9；`docs/inspect-v1-design.md`、`docs/layer2-hooks-inspect-goal.md`。Slice 4 只读扫描器：`src/inspect/sources.ts`（VS Code workspaceStorage / copilot-cli 发现，缺失=not-found）、`src/inspect/scan.ts`（复用 hook normalizer，按 output volume 排名 opportunity，sanitized label 不存原文，session inventory≠transcript coverage，--since/--session 过滤）、`src/inspect/report.ts`（Markdown 默认 + `--json`，列 count/share/total+max output+tokens/input/success/failure）、`src/inspect/repoContext.ts`（`--repo-context` 仅 presence）、`src/inspect/cli.ts`（exit 0/1/2/3/4）；测试 `tests/unit/inspect/*`、`tests/integration/inspect.test.ts`。runtime + `source = static_context` 静态 context 分析器经 `src/inspect/{staticContext,unified}.ts` 合入统一 `Finding` 报告（§9.0），scope-aware（ADR 0003） |
-| Advice generation | shipped | §10；Slice 5：`src/inspect/advice.ts`（delivery 建议领先：vscode→shim/`tk init`、copilot-cli→`tk init --host copilot-cli`；shell-noise rewrite、tool-noise 治理、long-output hotspot；min-confidence/min-occurrences 阈值）、`src/inspect/telemetry.ts`（仅 allow-list 聚合字段）、`src/inspect/persist.ts`（`~/.token-killer/advice/` 稳定文件名）；flags `--advice`/`--write-advice`（telemetry 现由 `tk telemetry` 同意管理，inspect 不再有 `--telemetry-export` flag） |
+| Inspect | shipped | §9；`docs/inspect-v1-design.md`、`docs/layer2-hooks-inspect-goal.md`。Slice 4 只读扫描器：`src/inspect/sources.ts`（VS Code workspaceStorage / copilot-cli 发现，缺失=not-found）、`src/inspect/scan.ts`（复用 hook normalizer，按 output volume 排名 opportunity，sanitized label 不存原文，session inventory≠transcript coverage，--since/--session 过滤）、`src/inspect/report.ts`（Markdown 默认 + `--json`，列 count/share/total+max output+tokens/input/success/failure）、`src/inspect/cli.ts`（exit 0/1/2/3/4；已移除 `--repo-context` / `--telemetry-export` flags）；测试 `tests/unit/inspect/*`、`tests/integration/inspect.test.ts`。runtime + `source = static_context` 静态 context 分析器经 `src/inspect/{staticContext,unified}.ts` 合入统一 `Finding` 报告（§9.0），scope-aware（ADR 0003） |
+| Advice generation | shipped | §10；Slice 5：`src/inspect/advice.ts`（delivery 建议领先：vscode→shim/`tk install`、copilot-cli→`tk install --host copilot-cli`；shell-noise rewrite、tool-noise 治理、long-output hotspot；min-confidence/min-occurrences 阈值）、`src/inspect/telemetry.ts`（仅 allow-list 聚合字段）、`src/inspect/persist.ts`（`~/.token-killer/advice/` 稳定文件名）；flags `--advice`/`--write-advice`（telemetry 现由 `tk telemetry` 同意管理，inspect 不再有 `--telemetry-export` flag） |
 
 > Command proxy 仍有 RTK parity 缺口（.NET、通用 wrapper、npx 路由等），收尾计划见 `docs/parity-completion-goal.md`。Go / Rust / Ruby 生态已判定 out-of-scope。
 
@@ -360,9 +360,9 @@ tk config init
 
 ## 3. Hook System
 
-> **Status: shipped（Copilot-CLI-only，命令改写，无 `modifiedResult`）** — pretool 改写 + direct-tool 治理 + prompt/error 事件 + `tk init --host copilot-cli` 安装均已落地（`src/hook/*`）。posttool 成功路径结果压缩（`modifiedResult`）仍 deferred。
+> **Status: shipped（Copilot-CLI-only，命令改写，无 `modifiedResult`）** — pretool 改写 + direct-tool 治理 + prompt/error 事件 + `tk install --host copilot-cli` 安装均已落地（`src/hook/*`）。posttool 成功路径结果压缩（`modifiedResult`）仍 deferred。
 
-> **交付模型（已锁定，见 [ADR 0002](adr/0002-shim-delivery-tier-and-passthrough.md)、CONTEXT.md《Delivery》、`docs/layer2-hook-protocol-spike.md`）：** 命令压缩的**主交付层是 PATH shim**（host-agnostic，覆盖 VS Code 等所有宿主），不是 hook。GitHub Copilot hook 在用户的 VS Code 企业环境里不触发，因此**本节的 hook 只面向 Copilot CLI**，并走 **RTK 式**：pretool 把终端命令改写成 `tk <command>` 前缀，压缩由 `tk` proxy 完成，**hook 不做 posttool `modifiedResult` 结果替换**。direct tool 的结果压缩（需 `modifiedResult`）目前 **deferred**；hook 对 direct tool 只做治理（deny 依赖目录/lockfile 读取），不压缩。安装统一走 `tk init`（默认 `vscode`→shim，`tk init --host copilot-cli` 装 Copilot CLI hook），**不再有独立的 `tk hook install`/`tk hook init` 子命令**。
+> **交付模型（已锁定，见 [ADR 0002](adr/0002-shim-delivery-tier-and-passthrough.md)、CONTEXT.md《Delivery》、`docs/layer2-hook-protocol-spike.md`）：** 命令压缩的**主交付层是 PATH shim**（host-agnostic，覆盖 VS Code 等所有宿主），不是 hook。GitHub Copilot hook 在用户的 VS Code 企业环境里不触发，因此**本节的 hook 只面向 Copilot CLI**，并走 **RTK 式**：pretool 把终端命令改写成 `tk <command>` 前缀，压缩由 `tk` proxy 完成，**hook 不做 posttool `modifiedResult` 结果替换**。direct tool 的结果压缩（需 `modifiedResult`）目前 **deferred**；hook 对 direct tool 只做治理（deny 依赖目录/lockfile 读取），不压缩。安装统一走 `tk install`（默认 `vscode`→shim，`tk install --host copilot-cli` 装 Copilot CLI hook），**不再有独立的 `tk hook install`/`tk hook init` 子命令**。
 >
 > **[ADR 0012 · 2026-06-15 更新]** 上文"GitHub Copilot hook 在 VS Code 不触发 / hook 只面向 Copilot CLI / VS Code 用 shim"的前提已更新：VS Code hook 经 [ADR 0005](adr/0005-vscode-hooks-fire-capability-and-protocol-gap.md) 证明会触发，[ADR 0012](adr/0012-vscode-hook-shim-additive-delivery.md) 起 VS Code 以 **hook + shim additive** 交付（shim 仍为主、hook 为附加增强），落地见 #22。`modifiedResult` 结果压缩仍不做（VS Code 不支持；Copilot-CLI-only 的重新评估见 #24，未决）。
 
@@ -434,7 +434,7 @@ tk uninstall                    # 移除 tk 安装的一切（可选 --purge-dat
 写入位置（**tk 与 RTK 的分歧**：RTK 默认写进项目仓库 `.github/`，tk 默认用户级）：
 
 - **Copilot CLI（默认）→ 用户级 `~/.copilot/hooks/tk-rewrite.json`**，符合「默认不写项目仓库」（§15）。
-- 仓库级 `.github/hooks/tk-rewrite.json` 仅 `tk init --project` 显式 opt-in。
+- 仓库级 `.github/hooks/tk-rewrite.json` 仅 `tk install --project` 显式 opt-in。
 - 兜底注入 `.github/copilot-instructions.md`（仿 RTK，告诉模型给命令加 `tk` 前缀）：默认用户级，`--project` 才写仓库。
 
 `timeout` 配合 Copilot CLI preToolUse 的 **fail-closed** 语义，要求处理器必须快且内部 fail-open（异常一律输出 `allow`），否则超时/崩溃会阻断工具调用（§3.6）。
@@ -636,7 +636,7 @@ Direct modify 不是“语义重写”。它只允许可逆的、低风险的、
 
 #### VS Code settings catalog（权威清单）
 
-> **Status: shipped** — 实现 `src/context/vscodeSettings.ts`，入口 `tk optimize --vscode-settings`（report / `--apply` / `--restore`）。本表是 finding 13/14/15 的精确 key 列表，是 source of truth；代码与此一致。
+> **Status: shipped** — 实现 `src/context/vscodeSettings.ts`，入口已并入常规 `tk optimize` / `tk optimize --apply` / `tk optimize --restore` 流程（`--vscode-settings` 已移除）。本表是 finding 13/14/15 的精确 key 列表，是 source of truth；代码与此一致。
 
 | Key | 类别 | token-lean 目标 / 触发 |
 |-----|------|------------------------|
@@ -949,7 +949,7 @@ runtime 与 static context 分析归一到一套 finding。每条 finding 带 `s
 ```typescript
 type FindingSource = "runtime" | "static_context";
 type FixClass = "direct_restorable" | "suggested_diff" | "advisory" | "delivery" | "non_goal";
-// "delivery" = runtime finding，动作是"装 shim/hook（tk init）"，不改任何文件
+// "delivery" = runtime finding，动作是"装 shim/hook（tk install）"，不改任何文件
 
 interface Finding {
   id: string;
@@ -1083,7 +1083,7 @@ Rule: Prefer tk read --level aggressive for large files
 
 1. optimize 先查持久化报告（项目级 `~/.token-killer/projects/<fingerprint>/inspect/latest.json`，用户级 `~/.token-killer/user-context/inspect/latest.json`）；有则读，没有则触发一次对应作用域的全量 inspect（`tk inspect --project` 或 `--user`）现算。
 2. 它只取 `source = static_context` 的 finding：`fix_class = direct_restorable` 的允许 `--apply` 自动写入并可 restore；`suggested_diff` 默认输出 diff；`advisory` 输出 advice。
-3. `source = runtime` 的 finding 由 inspect 自身转成投递建议（`fix_class = delivery`：装 shim/hook，即 `tk init`），不进 optimize 的写盘路径。
+3. `source = runtime` 的 finding 由 inspect 自身转成投递建议（`fix_class = delivery`：装 shim/hook，即 `tk install`），不进 optimize 的写盘路径。
 
 运行时 finding 解释实际浪费模式，静态 context finding 判断这些模式是否应沉淀为 durable guidance、prompt file、custom agent 或 skill policy——两者在同一份 inspect 报告里联合呈现。
 

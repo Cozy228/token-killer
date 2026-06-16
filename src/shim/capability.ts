@@ -3,7 +3,7 @@ import { homedir } from "node:os";
 import { join } from "node:path";
 
 import { writeFileAtomicSync } from "../core/atomicWrite.js";
-import { tokenKillerHome } from "../core/dataDir.js";
+import { ensureTokenKillerHome, tokenKillerHome } from "../core/dataDir.js";
 import { listProjectHistoriesSync } from "../core/history.js";
 import { claudeHookStatus } from "../hook/claudeInstall.js";
 import { copilotHookConfigStatus } from "../hook/install.js";
@@ -117,6 +117,7 @@ export function readDeliveryState(home: string = tokenKillerHome()): DeliverySta
 // tier names + a version string; still owner-only by default like other tk state).
 export function writeDeliveryState(state: DeliveryState, home: string = tokenKillerHome()): void {
   try {
+    ensureTokenKillerHome(home);
     writeFileAtomicSync(deliveryStatePath(home), `${JSON.stringify(state, null, 2)}\n`, 0o600);
   } catch {
     // best-effort — never break install/status because of bookkeeping

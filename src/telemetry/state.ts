@@ -4,10 +4,10 @@
 // `tk telemetry purge` deletes this file (resetting the device_hash).
 
 import { createHash, randomBytes } from "node:crypto";
-import { existsSync, mkdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
-import { dirname, join } from "node:path";
+import { chmodSync, existsSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { join } from "node:path";
 
-import { tokenKillerHome } from "../core/dataDir.js";
+import { ensureTokenKillerHome, tokenKillerHome } from "../core/dataDir.js";
 
 export type TelemetryState = {
   deviceSalt: string; // 64 hex, generated once
@@ -25,8 +25,9 @@ function generateSalt(): string {
 
 function writeState(state: TelemetryState): void {
   const file = stateFile();
-  mkdirSync(dirname(file), { recursive: true });
-  writeFileSync(file, `${JSON.stringify(state, null, 2)}\n`);
+  ensureTokenKillerHome();
+  writeFileSync(file, `${JSON.stringify(state, null, 2)}\n`, { mode: 0o600 });
+  chmodSync(file, 0o600);
 }
 
 // Load existing state, or lazily create it (salt generated once). `now` is injected

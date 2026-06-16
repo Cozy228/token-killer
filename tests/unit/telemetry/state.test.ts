@@ -1,4 +1,4 @@
-import { existsSync } from "node:fs";
+import { existsSync, statSync } from "node:fs";
 import { mkdtemp, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
@@ -30,6 +30,25 @@ async function withHome<T>(fn: () => Promise<T> | T): Promise<T> {
 }
 
 describe("telemetry state", () => {
+  test("first writer creates the data-dir root and state file owner-only", async () => {
+    if (process.platform === "win32") return;
+    const previousUmask = process.umask(0o022);
+    try {
+      const parent = await mkdtemp(path.join(tmpdir(), "tk-state-parent-"));
+      const home = path.join(parent, "fresh");
+      process.env.TOKEN_KILLER_HOME = home;
+      try {
+        loadOrCreateState(new Date("2026-06-01T00:00:00.000Z"));
+        expect(statSync(home).mode & 0o777).toBe(0o700);
+        expect(statSync(stateFile()).mode & 0o777).toBe(0o600);
+      } finally {
+        await rm(parent, { recursive: true, force: true });
+      }
+    } finally {
+      process.umask(previousUmask);
+    }
+  });
+
   test("lazily creates a 64-hex salt + stable device_hash", async () => {
     await withHome(() => {
       const now = new Date("2026-06-01T00:00:00.000Z");

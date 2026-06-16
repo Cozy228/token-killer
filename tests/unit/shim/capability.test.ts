@@ -1,5 +1,13 @@
 import { afterEach, beforeEach, describe, expect, test } from "vitest";
-import { chmodSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import {
+  chmodSync,
+  mkdirSync,
+  mkdtempSync,
+  readFileSync,
+  rmSync,
+  statSync,
+  writeFileSync,
+} from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
@@ -347,15 +355,23 @@ describe("persisted delivery state (read/write)", () => {
 
   test("the state file is written owner-only (0600)", () => {
     if (process.platform === "win32") return; // POSIX mode bits only
-    writeDeliveryState({ version: 1, installedHost: "vscode" }, home);
-    // chmod a known value first would be circular; assert the file is readable back
-    // and that writeDeliveryState did not throw — the 0600 mode is exercised by the
-    // initCli smoke. Re-write to confirm idempotent overwrite.
-    writeDeliveryState({ version: 1, installedHost: "copilot-cli" }, home);
-    expect(readDeliveryState(home).installedHost).toBe("copilot-cli");
-    // Tighten then read to prove the path is a normal file we control.
-    chmodSync(deliveryStatePath(home), 0o600);
-    expect(readFileSync(deliveryStatePath(home), "utf8")).toContain("copilot-cli");
+    const previousUmask = process.umask(0o022);
+    try {
+      rmSync(home, { recursive: true, force: true });
+      writeDeliveryState({ version: 1, installedHost: "vscode" }, home);
+      expect(statSync(home).mode & 0o777).toBe(0o700);
+      expect(statSync(deliveryStatePath(home)).mode & 0o777).toBe(0o600);
+      // chmod a known value first would be circular; assert the file is readable back
+      // and that writeDeliveryState did not throw — the 0600 mode is exercised by the
+      // initCli smoke. Re-write to confirm idempotent overwrite.
+      writeDeliveryState({ version: 1, installedHost: "copilot-cli" }, home);
+      expect(readDeliveryState(home).installedHost).toBe("copilot-cli");
+      // Tighten then read to prove the path is a normal file we control.
+      chmodSync(deliveryStatePath(home), 0o600);
+      expect(readFileSync(deliveryStatePath(home), "utf8")).toContain("copilot-cli");
+    } finally {
+      process.umask(previousUmask);
+    }
   });
 });
 

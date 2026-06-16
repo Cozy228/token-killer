@@ -338,7 +338,7 @@ export function runInspect(
     }
 
     // Cold-path NETWORK telemetry (ADR 0004 §5), gated on `telemetry` consent +
-    // a build-time endpoint. Separate from --telemetry-export (local consent)
+    // a build-time endpoint. Separate from telemetryExport local-export consent
     // above. Always user-level; the scan contributes the optional inspect
     // aggregates. Best-effort — never changes the exit code.
     runColdPathTelemetry({
