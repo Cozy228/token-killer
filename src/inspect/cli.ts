@@ -80,7 +80,7 @@ export function parseInspectArgs(argv: string[]): InspectArgs {
     scopeUser: false,
     scopeProject: false,
   };
-  const SURFACES = new Set(["instructions", "prompts", "agents", "skills"]);
+  const SURFACES = new Set(["instructions", "prompts", "agents", "modes", "skills"]);
   for (let i = 0; i < argv.length; i += 1) {
     const token = argv[i];
     if (token === "--json") {

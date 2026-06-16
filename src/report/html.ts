@@ -200,6 +200,7 @@ const SURFACE_NAMES = {
   path_instructions: "Path-scoped instructions",
   prompt_file: "Prompt files",
   custom_agent: "Custom agents",
+  chat_mode: "Chat modes",
   skill: "Skills",
 };
 const EXPOSURE_PLAIN = { "always-on": "loads into every session", "on-invocation": "loads only when used" };
@@ -210,6 +211,7 @@ const PROBLEM = {
   prompt_metadata_gap: "A prompt is missing its description",
   skill_entrypoint_bloat: "A skill's main file is too long",
   skill_description_bloat: "A skill's description is too long",
+  chat_mode_bloat: "A chat mode's instructions are too long",
   skill_count_bloat: "Your skills load a lot of metadata every session",
   output_verbosity_unset: "No output-brevity instruction is set",
   vscode_compress_disabled: "VS Code isn't compressing terminal output",

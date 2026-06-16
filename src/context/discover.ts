@@ -8,6 +8,7 @@ import { existsSync, readdirSync, readFileSync, statSync } from "node:fs";
 import { homedir } from "node:os";
 import { join, relative, resolve, sep } from "node:path";
 
+import { vscodeUserDir } from "../shim/hostConfig.js";
 import type { ContextAdapter, ContextScope, ContextSurface } from "./types.js";
 
 export type DiscoveredFile = {
@@ -165,6 +166,25 @@ export function discoverUserFiles(home: string, budget: { remaining: number }): 
     }
   }
 
+  // User-level VS Code custom chat modes (<vscodeUserDir>/prompts/*.chatmode.md). A
+  // chat mode is SELECTABLE (only the active one loads), so it is scanned for bloat
+  // like a prompt file — never summed into the always-on footprint.
+  const modesDir = join(vscodeUserDir(process.platform, home), "prompts");
+  if (existsSync(modesDir)) {
+    const found: string[] = [];
+    walk(modesDir, (_p, name) => name.endsWith(".chatmode.md"), found, budget);
+    for (const p of found) {
+      files.push({
+        path: p,
+        display: userDisplay(home, p),
+        surface: "chat_mode",
+        adapter: "vscode",
+        scope: "user",
+        always_on: false,
+      });
+    }
+  }
+
   return files;
 }
 
@@ -246,6 +266,11 @@ export function discoverProjectFiles(cwd: string, budget: { remaining: number })
       join(cwd, ".github", "agents"),
       (n) => n.endsWith(".agent.md"),
       { surface: "custom_agent", adapter: "vscode", always_on: false },
+    ],
+    [
+      join(cwd, ".github", "chatmodes"),
+      (n) => n.endsWith(".chatmode.md"),
+      { surface: "chat_mode", adapter: "vscode", always_on: false },
     ],
   ];
   for (const [dir, pred, cand] of globs) {

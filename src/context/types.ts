@@ -9,6 +9,7 @@ export type ContextSurface =
   | "agent_instructions"
   | "prompt_file"
   | "custom_agent"
+  | "chat_mode"
   | "skill"
   | "stable_prefix"
   // VS Code settings.json (host-native terminal-output compression toggle). Not a
@@ -23,6 +24,7 @@ export const SURFACE_SELECTORS: Record<string, ContextSurface[]> = {
   instructions: ["copilot_instructions", "path_instructions", "agent_instructions"],
   prompts: ["prompt_file"],
   agents: ["custom_agent"],
+  modes: ["chat_mode"],
   skills: ["skill"],
 };
 
@@ -43,6 +45,7 @@ export type ContextFindingType =
   | "task_prompt_in_instruction"
   | "prompt_metadata_gap"
   | "agent_overbreadth"
+  | "chat_mode_bloat"
   | "skill_invocation_policy"
   | "skill_entrypoint_bloat"
   | "skill_description_bloat"

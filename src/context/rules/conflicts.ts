@@ -51,6 +51,7 @@ const SURFACE_PRIORITY: Record<ContextSurface, number> = {
   path_instructions: 5,
   prompt_file: 4,
   custom_agent: 4,
+  chat_mode: 4,
   skill: 3,
   copilot_instructions: 2,
   agent_instructions: 2,
