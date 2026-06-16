@@ -300,6 +300,26 @@ try {
     $ok = $r.ExitCode -eq 0 -and ($c.Must -eq "" -or $r.AllText.Contains($c.Must))
     if ($ok) { Pass "func" $c.N "" $r.Ms } else { Fail "func" $c.N "exit=$($r.ExitCode)" $r.Ms }
   }
+  # Default `tk gain` opens an HTML report whose scope line must NAME the project
+  # ("Covers token-killer"), not the ambiguous "this project". The terminal views above
+  # never exercise that line — this is the regression guard for it. HTML is client-
+  # rendered, so assert the embedded data carries the project name; TK_NO_OPEN keeps the
+  # browser shut. Same check for inspect --project (skips cleanly when it has no sources).
+  function Test-HtmlScope {
+    param([string]$N, [string[]]$Cmd, [string]$ProjName)
+    $r = Invoke-Tk $Cmd -Env @{ TK_NO_OPEN = "1" }
+    $htmlPath = (($r.AllText -split "`n" | Where-Object { $_ -match 'HTML report:' } | Select-Object -First 1) -replace '.*report:\s*', '').Trim()
+    if ($htmlPath -and (Test-Path -LiteralPath $htmlPath)) {
+      $body = Get-Content -LiteralPath $htmlPath -Raw
+      if ($body -match ('"project"\s*:\s*"' + [regex]::Escape($ProjName) + '"')) { Pass "func" $N "Covers $ProjName" $r.Ms }
+      elseif ($body -match '"project"\s*:\s*(null|"")' -or $body -notmatch '"project"') { Warn "func" $N "scope falls back to 'this project' — project name not set in report data" $r.Ms }
+      else { Warn "func" $N "project name present but not '$ProjName'" $r.Ms }
+      Remove-Item -LiteralPath $htmlPath -Force -ErrorAction SilentlyContinue
+    } else { Warn "func" $N "no HTML report path emitted (exit=$($r.ExitCode))" $r.Ms }
+  }
+  $projName = Split-Path -Leaf $TargetRepo
+  Test-HtmlScope "gain HTML names the project (not 'this project')" @("gain") $projName
+  Test-HtmlScope "inspect --project HTML names the project" @("inspect", "--project") $projName
 
   Section "Functional — inspect (all option combos)"
   $inspectCases = @(
