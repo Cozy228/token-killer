@@ -93,6 +93,37 @@ tk <the command you would normally run> [...args]
 `tk` executes the real command, captures stdout/stderr/exit code, compresses
 locally, records the savings, and exits with the **original exit code**.
 
+## Build & distribute
+
+`tk`'s `bin` runs the compiled `dist/cli.js`, so every distribution builds first. The
+package ships only `dist/` + `README.md` (beyond `package.json`) and has **zero runtime
+dependencies** — the tarball is fully self-contained.
+
+**Local dev — link to your working copy:**
+
+```bash
+pnpm install && pnpm build
+pnpm link --global     # `tk` -> this repo's dist/  (rebuild after src edits, or use `pnpm dev`)
+```
+
+**Hand someone a self-contained tarball:**
+
+```bash
+pnpm pack              # -> token-killer-0.1.0.tgz   (the prepack hook rebuilds dist/ first)
+```
+
+They install it with no git, build, or deps — then wire it into their agent:
+
+```bash
+npm i -g ./token-killer-0.1.0.tgz
+tk install
+```
+
+On Windows the same tarball works (`npm i -g .\token-killer-0.1.0.tgz`); see
+[docs/WINDOWS-TESTER-GUIDE.md](./docs/WINDOWS-TESTER-GUIDE.md) for the end-to-end VS Code +
+Copilot test. To publish to a private/internal npm registry for a team (scoped package, auth,
+telemetry build args), see [docs/INSTALL.md](./docs/INSTALL.md).
+
 ## How it works
 
 ```
