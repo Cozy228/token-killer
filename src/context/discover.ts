@@ -136,6 +136,35 @@ export function discoverUserFiles(home: string, budget: { remaining: number }): 
     add(join(entry, "SKILL.md"), "skill", "claude", false);
   }
 
+  // User-level Copilot skills (~/.copilot/skills/<name>/SKILL.md). Previously never
+  // scanned, so a VS Code / Copilot user saw zero skill findings and no honest
+  // estimate of their always-on skill metadata cost. Adapter "copilot" so the
+  // Claude-specific per-file frontmatter rules don't apply, but the count/footprint
+  // rule still includes them.
+  const copilotSkillsDir = join(home, ".copilot", "skills");
+  for (const entry of listSubdirs(copilotSkillsDir)) {
+    add(join(entry, "SKILL.md"), "skill", "copilot", false);
+  }
+
+  // User-level Claude custom agents (~/.claude/agents/<name>.md). Each agent's
+  // name+description is standing routing metadata (like a skill), so it belongs in
+  // the session footprint; the agent_overbreadth rule also gets to vet them.
+  const agentsDir = join(home, ".claude", "agents");
+  if (existsSync(agentsDir)) {
+    const found: string[] = [];
+    walk(agentsDir, (_p, name) => name.endsWith(".md"), found, budget);
+    for (const p of found) {
+      files.push({
+        path: p,
+        display: userDisplay(home, p),
+        surface: "custom_agent",
+        adapter: "claude",
+        scope: "user",
+        always_on: false,
+      });
+    }
+  }
+
   return files;
 }
 

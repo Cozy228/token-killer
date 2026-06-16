@@ -221,6 +221,35 @@ describe("scan — time window & session filters", () => {
   void base;
 });
 
+describe("scan — onProgress", () => {
+  test("reports a running 1-based count across transcripts then sessions", () => {
+    const t1 = writeTranscript("t1.jsonl", [
+      { toolName: "bash", toolArgs: JSON.stringify({ command: "git status" }), toolResult: "x" },
+    ]);
+    const t2 = writeTranscript("t2.jsonl", [
+      { toolName: "bash", toolArgs: JSON.stringify({ command: "ls" }), toolResult: "y" },
+    ]);
+    const s1 = writeTranscript("s1.json", [
+      { toolName: "read_file", tool_input: {}, toolResult: "z" },
+    ]);
+    const calls: Array<[number, number]> = [];
+    scan(discovery([t1, t2], [s1]), { onProgress: (c, t) => calls.push([c, t]) });
+    expect(calls).toEqual([
+      [1, 3],
+      [2, 3],
+      [3, 3],
+    ]);
+  });
+
+  test("still advances the counter for an unreadable session file", () => {
+    const calls: Array<[number, number]> = [];
+    scan(discovery([], [join(dir, "does-not-exist.json")]), {
+      onProgress: (c, t) => calls.push([c, t]),
+    });
+    expect(calls).toEqual([[1, 1]]);
+  });
+});
+
 describe("parseSince", () => {
   test("valid durations", () => {
     expect(parseSince("7d")).toBe(7 * 86_400_000);

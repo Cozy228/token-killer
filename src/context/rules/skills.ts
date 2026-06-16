@@ -47,9 +47,15 @@ const ENTRYPOINT_FENCE_LIMIT = 60; // a single inline fence this long is "long e
 // Calibrated above the common 200–450 char range so only genuine outliers fire.
 const DESCRIPTION_CHAR_LIMIT = 600;
 // Each user-level skill contributes its name+description to the always-on invocation
-// surface. Past this many, the cumulative metadata is a standing token tax worth a
-// prune; the finding reports the estimated always-on cost so the number is concrete.
+// surface. Past this many (or this many estimated always-on tokens), the cumulative
+// metadata is a standing token tax worth a prune → the footprint finding escalates
+// to `warn`. Below it, the finding still SHOWS (info) so the user always sees the
+// honest per-session estimate — a Copilot user asking "what do my skills cost?"
+// should get a number, not silence.
 const USER_SKILL_COUNT_LIMIT = 20;
+const SKILL_FOOTPRINT_WARN_TOKENS = 2_000;
+// Floor below which the footprint is negligible and not worth a line.
+const SKILL_FOOTPRINT_MIN_COUNT = 5;
 
 function isClaudeSkill(file: DiscoveredFile): boolean {
   return file.surface === "skill" && file.adapter === "claude";
@@ -217,8 +223,13 @@ export const skillEntrypointBloatRule: PerFileRule = {
 export const skillCountRule: CrossFileRule = {
   type: "skill_count_bloat",
   run(files: AnalyzedFile[]): ContextFinding[] {
-    const userSkills = files.filter((af) => isClaudeSkill(af.file) && af.file.scope === "user");
-    if (userSkills.length <= USER_SKILL_COUNT_LIMIT) return [];
+    // ALL user-level skills regardless of adapter (Claude + Copilot) — every one's
+    // name+description loads each session for invocation routing. Project-scoped
+    // skills are excluded (they only load inside their repo, a deliberate cost).
+    const userSkills = files.filter(
+      (af) => af.file.surface === "skill" && af.file.scope === "user",
+    );
+    if (userSkills.length < SKILL_FOOTPRINT_MIN_COUNT) return [];
 
     // Estimate the always-on metadata cost = sum of each skill's name + description.
     let metadataChars = 0;
@@ -227,18 +238,24 @@ export const skillCountRule: CrossFileRule = {
         (frontmatterString(af, "name") ?? af.file.display).length +
         (frontmatterString(af, "description") ?? "").length;
     }
+    const metaTokens = estimateTokens("x".repeat(metadataChars));
+    // Escalate to `warn` (worth pruning) past the count or token budget; otherwise
+    // show the honest footprint at `info`.
+    const heavy =
+      userSkills.length > USER_SKILL_COUNT_LIMIT || metaTokens > SKILL_FOOTPRINT_WARN_TOKENS;
     const anchor = userSkills[0]!;
     return [
       {
         id: makeFindingId("skill_count_bloat", undefined, undefined, "user"),
         source: "static_context",
         type: "skill_count_bloat",
-        severity: "warn",
+        severity: heavy ? "warn" : "info",
         confidence: 0.7,
         surface: "skill",
-        evidence: `${userSkills.length} user-level skills installed (> ${USER_SKILL_COUNT_LIMIT}); their name+description metadata (~${estimateTokens("x".repeat(metadataChars))} tokens) loads into every session for invocation routing.`,
-        recommendation:
-          "Prune or disable rarely-used skills, and move project-specific ones into their repo (project scope) so they only load where relevant.",
+        evidence: `${userSkills.length} user-level skills installed; their name+description metadata (~${metaTokens} tokens) loads into every session for invocation routing.`,
+        recommendation: heavy
+          ? "Prune or disable rarely-used skills, and move project-specific ones into their repo (project scope) so they only load where relevant."
+          : "This is your always-on skill footprint. If it grows, prune or disable rarely-used skills and move project-specific ones into their repo so they only load where relevant.",
         fix_class: "advisory",
         scope: "user",
         adapter: anchor.file.adapter,

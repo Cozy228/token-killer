@@ -33,6 +33,11 @@ function writeProjectSkill(name: string, content: string): void {
   mkdirSync(dirname(abs), { recursive: true });
   writeFileSync(abs, content);
 }
+function writeCopilotUserSkill(name: string, content: string): void {
+  const abs = join(home, ".copilot", "skills", name, "SKILL.md");
+  mkdirSync(dirname(abs), { recursive: true });
+  writeFileSync(abs, content);
+}
 
 function userFindings(): ContextFinding[] {
   return analyzeContext({ scopes: ["user"], home, cwd }).findings;
@@ -278,9 +283,32 @@ describe("skill_count_bloat", () => {
     expect(f!.recommendation).toContain("Prune");
   });
 
-  test("does not fire at or below the threshold", () => {
-    writeManyUserSkills(20);
+  test("shows the footprint at info between the floor and the warn threshold", () => {
+    // 10 small skills: above the min-count floor, below the >20 / token budget — so
+    // the honest per-session footprint is always surfaced, just at info severity.
+    writeManyUserSkills(10);
+    const f = userFindings().find((x) => x.type === "skill_count_bloat");
+    expect(f).toBeDefined();
+    expect(f!.severity).toBe("info");
+    expect(f!.evidence).toContain("10 user-level skills");
+    expect(f!.recommendation).toContain("footprint");
+  });
+
+  test("does not fire below the minimum floor", () => {
+    writeManyUserSkills(4);
     expect(userFindings().some((x) => x.type === "skill_count_bloat")).toBe(false);
+  });
+
+  test("counts user-level Copilot skills (~/.copilot/skills) toward the footprint", () => {
+    for (let i = 0; i < 6; i += 1) {
+      writeCopilotUserSkill(
+        `c${i}`,
+        ["---", `name: c${i}`, `description: copilot skill ${i}`, "---", "# C"].join("\n"),
+      );
+    }
+    const f = userFindings().find((x) => x.type === "skill_count_bloat");
+    expect(f).toBeDefined();
+    expect(f!.evidence).toContain("6 user-level skills");
   });
 
   test("project-scoped skills do not count toward the user-level total", () => {

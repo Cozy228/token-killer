@@ -165,6 +165,13 @@ tr:last-child td { border-bottom: none; }
 .empty { background: var(--surface); border: 1px solid var(--border); border-radius: 14px; text-align: center; padding: 60px; color: var(--slate500); margin-top: 24px; }
 .empty b { color: var(--ink); }
 
+/* Session footprint (standing per-session cost, à la /context) */
+.fphead { display: flex; align-items: baseline; gap: 10px; margin: 4px 0 16px; }
+.fpnum { font-family: var(--mono); font-size: 1.9rem; font-weight: 700; color: var(--ink); letter-spacing: -0.02em; }
+.fpunit { color: var(--slate500); font-size: 0.9rem; }
+.fpdetail { color: var(--faint); font-size: 0.78rem; margin-top: 3px; max-width: 52ch; }
+.estbadge { font-size: 0.58rem; letter-spacing: 0.08em; text-transform: uppercase; font-weight: 600; color: var(--amber-ink); background: var(--amber-soft); border: 1px solid var(--amber-line); border-radius: 5px; padding: 1px 6px; vertical-align: middle; }
+
 .foot { margin-top: 60px; color: var(--faint); font-size: 0.78rem; }
 
 @media (prefers-reduced-motion: no-preference) {
@@ -202,10 +209,22 @@ const PROBLEM = {
   skill_invocation_policy: "A skill can be auto-run by the model",
   prompt_metadata_gap: "A prompt is missing its description",
   skill_entrypoint_bloat: "A skill's main file is too long",
+  skill_description_bloat: "A skill's description is too long",
+  skill_count_bloat: "Your skills load a lot of metadata every session",
+  output_verbosity_unset: "No output-brevity instruction is set",
+  vscode_compress_disabled: "VS Code isn't compressing terminal output",
   duplicate_instructions: "The same instruction is repeated in several places",
   conditional_rule_missing: "A broad rule should be scoped to specific paths",
   review_truncation_risk: "Long content risks being cut off mid-review",
   cacheability_churn: "Volatile content breaks prompt caching",
+  // Aggregated runtime findings (one per kind, never per-tool).
+  uncompressed_commands: "Terminal commands run raw instead of through tk",
+  orientation_cost: "The agent spends tokens finding its way around the code",
+  repeated_failures: "The same command keeps failing and retrying",
+  dependency_reads: "Reading dependency / build files wastes tokens",
+  long_agent_loops: "Sessions run long, re-sending the transcript each turn",
+  oversized_prompts: "Prompts are larger than they need to be",
+  mcp_bloat: "Too many MCP servers load their tools every session",
 };
 const FIXCLASS_PLAIN = {
   safe_mechanical: { t: "tk can apply this for you", auto: true },
@@ -321,6 +340,23 @@ function cardHtml(extra, title, exp, body) {
   return '<div class="card ' + extra + '"><h3>' + esc(title) + '</h3><p class="exp">' + esc(exp) + '</p>' + body + '</div>';
 }
 
+// Standing per-session token cost panel (instructions / skills / agents / MCP).
+function renderFootprint(fp) {
+  if (!fp || !Array.isArray(fp.items) || !fp.items.length) return "";
+  const max = Math.max.apply(null, fp.items.map((i) => i.tokens).concat([1]));
+  const rows = fp.items.map((i) =>
+    '<tr><td>' + esc(i.label) + (i.estimated ? ' <span class="estbadge">est.</span>' : '') +
+      '<div class="fpdetail">' + esc(i.detail) + '</div></td>' +
+      '<td class="r num">' + n(i.count) + '</td>' +
+      '<td style="width:34%"><div class="hbar"><i style="width:' + Math.max(3, Math.round((i.tokens / max) * 100)) + '%"></i></div></td>' +
+      '<td class="r num">' + n(i.tokens) + '</td></tr>').join("");
+  return '<div class="section"><h2>Session footprint</h2>' +
+    '<p class="exp">What loads into <b>every</b> session before you type a word — your always-on token cost. The host system prompt and built-in tools are excluded (you cannot change those).</p>' +
+    '<div class="fphead"><span class="fpnum">≈ ' + n(fp.total_tokens) + '</span><span class="fpunit">tokens / session' + (fp.has_estimate ? ' · includes an estimate' : '') + '</span></div>' +
+    '<div class="panel"><table><thead><tr><th>Source</th><th class="r">Count</th><th>Share</th><th class="r">Tokens</th></tr></thead><tbody>' +
+    rows + '</tbody></table></div></div>';
+}
+
 function renderInspect(D) {
   const findings = Array.isArray(D.findings) ? D.findings : [];
   const counts = { error: 0, warn: 0, info: 0 };
@@ -333,6 +369,9 @@ function renderInspect(D) {
     (sess != null ? n(sess) + ' session' + (sess === 1 ? "" : "s") + ' and ' : '') + n(D.files_scanned) + ' context file' + (D.files_scanned === 1 ? "" : "s") + '</div></span>' +
     '<span class="pri">' + pleg("error", counts.error, "fix now") + pleg("warn", counts.warn, "worth fixing") + pleg("info", counts.info, "minor") + '</span></div>';
   out.push(s);
+
+  // Standing per-session cost, always shown (independent of findings).
+  out.push(renderFootprint(D.footprint));
 
   if (!findings.length) {
     out.push('<div class="empty"><b>Nothing to fix.</b><br>Your AI setup is already lean — no token-wasting issues found.</div>');
@@ -351,11 +390,65 @@ function renderInspect(D) {
   for (const grp of groups) {
     const list = findings.filter((f) => f.severity === grp.sev);
     if (!list.length) continue;
+    // Collapse findings of the SAME type into ONE card (e.g. "9 skills can be
+    // auto-run" instead of 9 identical cards). Single-type groups render as before.
+    const byType = groupByType(list);
     out.push('<div class="prigrp"><h2 style="color:var(--' + (grp.sev === "error" ? "hi" : grp.sev === "warn" ? "mid" : "lo") + ')">' +
       esc(grp.title) + ' <span class="ct">' + list.length + '</span></h2><p class="exp">' + esc(grp.exp) + '</p>' +
-      list.map((f) => itemHtml(f, grp)).join("") + '</div>');
+      byType.map((g) => (g.items.length === 1 ? itemHtml(g.items[0], grp) : groupItemHtml(g.type, g.items, grp))).join("") + '</div>');
   }
   root.innerHTML = out.join("");
+}
+
+// Group a finding list by type, preserving first-seen order.
+function groupByType(list) {
+  const order = [];
+  const map = {};
+  for (const f of list) {
+    const t = f.type || "other";
+    if (!map[t]) { map[t] = []; order.push(t); }
+    map[t].push(f);
+  }
+  return order.map((t) => ({ type: t, items: map[t] }));
+}
+
+// The actionable location: a real file (+ line) for static findings, else the
+// runtime finding's where (a setup step / config target), else a dash.
+function whereOf(f) {
+  if (f.file) return f.file + (f.start_line ? ", line " + f.start_line : "");
+  return f.where || "—";
+}
+
+// De-duplicated, capped list of locations for a grouped card.
+function whereList(items) {
+  const seen = [];
+  for (const f of items) {
+    const w = f.file || f.where;
+    if (w && seen.indexOf(w) === -1) seen.push(w);
+  }
+  return seen.slice(0, 8).map(esc).join(", ") + (seen.length > 8 ? " +" + (seen.length - 8) + " more" : "");
+}
+
+function groupItemHtml(type, items, grp) {
+  const color = grp.sev === "error" ? "var(--hi)" : grp.sev === "warn" ? "var(--mid)" : "var(--lo)";
+  const problem = PROBLEM[type] || humanize(type);
+  const first = items[0];
+  const fc = FIXCLASS_PLAIN[first.fix_class];
+  const tag = fc ? '<span class="tag' + (fc.auto ? " auto" : "") + '">' + esc(fc.t) + '</span>' : '';
+  const auto = fc && fc.auto;
+  const actions =
+    '<div class="actions">' +
+    '<button class="copybtn" type="button" data-prompt="' + esc(buildAllPrompt(items)) + '">Copy all ' + items.length + ' as a prompt</button>' +
+    '<span class="ahint">paste into your coding agent to apply all ' + items.length + '</span>' +
+    (auto ? '<span class="cmd">or run <code>tk optimize --apply</code></span>' : '') +
+    '</div>';
+  return '<div class="item"><div class="ititle"><span class="glyph" style="color:' + color + '">●</span>' +
+    '<span class="pt">' + esc(problem) + '</span><span class="tag">×' + items.length + '</span>' + tag + '</div>' +
+    '<div class="field"><span class="lab">Where</span><span class="val where">' + whereList(items) + '</span></div>' +
+    (first.evidence ? '<div class="field"><span class="lab">Why</span><span class="val">' + esc(first.evidence) + (items.length > 1 ? ' (+ ' + (items.length - 1) + ' more like it)' : '') + '</span></div>' : '') +
+    (first.recommendation ? '<div class="field"><span class="lab">Fix</span><span class="val fix">' + esc(first.recommendation) + '</span></div>' : '') +
+    actions +
+    '</div>';
 }
 
 function itemHtml(f, grp) {
@@ -363,7 +456,7 @@ function itemHtml(f, grp) {
   const problem = PROBLEM[f.type] || humanize(f.type);
   const fc = FIXCLASS_PLAIN[f.fix_class];
   const tag = fc ? '<span class="tag' + (fc.auto ? " auto" : "") + '">' + esc(fc.t) + '</span>' : '';
-  const where = f.file ? esc(f.file) + (f.start_line ? ", line " + f.start_line : "") : "—";
+  const where = esc(whereOf(f));
   const auto = fc && fc.auto;
   const actions =
     '<div class="actions">' +
@@ -384,8 +477,21 @@ function itemHtml(f, grp) {
 // It always tells the agent to SNAPSHOT first (tk optimize --backup) so the human
 // can revert the agent's edits later with tk optimize --restore.
 function buildPrompt(f) {
-  const where = f.file ? f.file + (f.start_line ? " (line " + f.start_line + ")" : "") : "the relevant config file";
-  const backupCmd = f.file ? "tk optimize --backup " + f.file : "tk optimize --backup";
+  // Runtime / setup findings have no source file — they are an action to take (install
+  // a shim, add durable context), not a file edit. Emit a plain instruction with no
+  // backup/restore dance.
+  if (!f.file) {
+    return [
+      "Reduce my AI/agent token usage — apply this one improvement:",
+      "",
+      "  Where: " + (f.where || "your agent setup"),
+      "  Problem: " + (PROBLEM[f.type] || humanize(f.type)),
+      f.evidence ? "  Why it matters: " + f.evidence : "",
+      "  Do this: " + (f.recommendation || ""),
+    ].filter(Boolean).join("\n");
+  }
+  const where = f.file + (f.start_line ? " (line " + f.start_line + ")" : "");
+  const backupCmd = "tk optimize --backup " + f.file;
   return [
     "Fix a token-wasting issue in my AI/agent configuration.",
     "",
@@ -405,23 +511,23 @@ function buildPrompt(f) {
 function buildAllPrompt(findings) {
   const files = [];
   for (const f of findings) if (f.file && files.indexOf(f.file) === -1) files.push(f.file);
-  const backupCmd = files.length ? "tk optimize --backup " + files.join(" ") : "tk optimize --backup";
   const list = findings
-    .map((f, i) => {
-      const where = f.file ? f.file + (f.start_line ? " (line " + f.start_line + ")" : "") : "the relevant file";
-      return "  " + (i + 1) + ". " + where + " — " + (PROBLEM[f.type] || humanize(f.type)) + "\n     " + (f.recommendation || "");
-    })
+    .map((f, i) => "  " + (i + 1) + ". " + whereOf(f) + " — " + (PROBLEM[f.type] || humanize(f.type)) + "\n     " + (f.recommendation || ""))
     .join("\n");
-  return [
-    "Reduce my AI/agent token usage by fixing the issues below.",
-    "",
-    "Step 1 — before editing, snapshot the files so your changes are reversible:",
-    "  " + backupCmd,
-    "Step 2 — apply each fix directly, leaving the rest of each file unchanged:",
-    list,
-    "",
-    "When done, verify nothing broke. Do not run tk optimize --restore yourself — that is the human's manual undo; it reverts to the step-1 snapshot.",
-  ].join("\n");
+  const head = ["Reduce my AI/agent token usage by addressing the items below.", ""];
+  // Only frame the backup/restore dance when there are actual files to edit; a list
+  // of pure setup actions (install shim, add context) has nothing to snapshot.
+  if (files.length) {
+    return head.concat([
+      "Step 1 — before editing any file, snapshot it so your changes are reversible:",
+      "  tk optimize --backup " + files.join(" "),
+      "Step 2 — apply each fix directly, leaving the rest of each file unchanged:",
+      list,
+      "",
+      "When done, verify nothing broke. Do not run tk optimize --restore yourself — that is the human's manual undo; it reverts to the step-1 snapshot.",
+    ]).join("\n");
+  }
+  return head.concat(["Apply each item below (setup/config actions, not file edits):", list]).join("\n");
 }
 
 function copyText(text, btn) {

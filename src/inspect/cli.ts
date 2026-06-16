@@ -28,6 +28,8 @@ import { writeAdviceArtifacts, writeTelemetryExport } from "./persist.js";
 import { emitHtmlReport } from "../report/open.js";
 import { analyzeHabits, type HabitStats } from "./habits.js";
 import { buildReport, renderJson, renderMarkdown } from "./report.js";
+import { computeFootprint } from "./footprint.js";
+import { makeProgressReporter } from "./progress.js";
 import { parseSince, scan, type ScanResult } from "./scan.js";
 import { discoverSources, type InputType } from "./sources.js";
 import { persistScopeBuckets, runStaticContext } from "./staticContext.js";
@@ -187,22 +189,37 @@ export function runInspect(
   if (opts.scopeProject) scopes.push("project");
   if (scopes.length === 0) scopes.push("user");
 
+  // Progress is a no-op unless STDERR is an interactive TTY (and TK_NO_PROGRESS is
+  // unset). It writes only to STDERR, so the report / JSON on STDOUT stays clean.
+  const progress = makeProgressReporter();
+
   try {
     // Runtime analysis (orthogonal to scope).
     let result: ScanResult | undefined;
     let habits: HabitStats | undefined;
+    progress.phase(`Discovering ${opts.inputType} sources…`);
     const discovery = discoverSources(opts.inputType, home);
     if (discovery.found) {
-      result = scan(discovery, { sinceMs, session: opts.session });
+      progress.phase(
+        `Scanning ${discovery.transcriptFiles.length} transcript(s) + ${discovery.sessionFiles.length} session(s)…`,
+      );
+      result = scan(discovery, {
+        sinceMs,
+        session: opts.session,
+        onProgress: (done, total) => progress.step(done, total),
+      });
       // Per-session habit metrics feed the cost-tips advice (chronicle parity).
-      habits = analyzeHabits(discovery);
+      progress.phase("Analyzing usage habits…");
+      habits = analyzeHabits(discovery, (done, total) => progress.step(done, total));
     } else {
+      progress.done();
       process.stderr.write(
         `tk inspect: no ${opts.inputType} session sources found (this is normal if the host stores transcripts elsewhere).\n`,
       );
     }
 
     // Static-context analysis (always runs, scope-aware).
+    progress.phase("Analyzing context files…");
     const sc = runStaticContext({ scopes, surface: opts.surface, home, cwd });
     const staticFindings: ContextFinding[] = sc.result.findings;
 
@@ -212,13 +229,27 @@ export function runInspect(
     const runtimeEmpty = !result || result.tool_event_count === 0;
     const staticEmpty = sc.result.files_scanned === 0 && sc.result.findings.length === 0;
     if (runtimeEmpty && staticEmpty) {
+      progress.done();
       process.stderr.write(
         "tk inspect: no major source analyzable (no runtime session events and no static-context files found).\n",
       );
       return 2;
     }
 
-    const rtFindings = runtimeFindings(result);
+    progress.phase("Building report…");
+
+    // MCP server-count analysis is config-derived (applies even with no runtime
+    // data). Computed here so the aggregated runtime findings can fold it in with a
+    // real `where` (the config file), and the advice appendix can reuse it.
+    const mcp = analyzeMcpServers(home, cwd);
+
+    // Session footprint — the standing per-session token cost (instructions, skills,
+    // custom agents, MCP estimate). Mirrors Claude Code's /context standing breakdown.
+    const footprint = computeFootprint({ scopes, home, cwd, mcp });
+
+    // Aggregated, actionable runtime findings (NOT one-per-tool): delivery,
+    // orientation cost, repeated failures, dependency reads, habit tips, MCP bloat.
+    const rtFindings = runtimeFindings(result, habits, mcp);
     const unifiedFindings: Finding[] = [...rtFindings, ...staticFindings];
 
     // Persist the per-scope unified Finding[] buckets that `tk optimize context`
@@ -246,9 +277,9 @@ export function runInspect(
         habits,
       );
     }
-    // MCP server-count advice is config-derived (not from the session scan), so it
-    // applies even with no runtime data. Surfaced in the same action stream.
-    const mcp = analyzeMcpServers(home, cwd);
+    // MCP server-count advice for the --advice/--write-advice appendix (the HTML
+    // report shows the unified `mcp_bloat` runtime finding instead). Reuses the `mcp`
+    // analysis computed above.
     const mcpFinding = mcpBloatFinding(mcp.servers.length, mcp.servers);
     if (mcpFinding) findings = [...findings, mcpFinding];
 
@@ -260,6 +291,7 @@ export function runInspect(
     );
     report.static_context = { files_scanned: sc.result.files_scanned, findings: staticFindings };
     report.findings = unifiedFindings;
+    report.footprint = footprint;
 
     const reportJson = renderJson(report);
     const staticSection = renderStaticContextSection({
@@ -321,11 +353,14 @@ export function runInspect(
               scope: scopes.includes("project") ? "project" : "user",
               files_scanned: sc.result.files_scanned,
               sessions_analyzed: result?.session_inventory ?? 0,
+              footprint,
               findings: unifiedFindings.map((f) => ({
                 severity: f.severity,
                 type: f.type,
                 file: (f as { file?: string }).file,
                 start_line: (f as { start_line?: number }).start_line,
+                // Runtime findings carry an actionable `where` instead of a file.
+                where: (f as { where?: string }).where,
                 evidence: f.evidence,
                 recommendation: f.recommendation,
                 fix_class: f.fix_class,
@@ -359,6 +394,7 @@ export function runInspect(
 
     return 0;
   } catch (error) {
+    progress.done();
     process.stderr.write(
       `tk inspect: internal error: ${error instanceof Error ? error.message : String(error)}\n`,
     );
