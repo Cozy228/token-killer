@@ -11,6 +11,14 @@ import { installShim, runShim } from "./cli.js";
 import { copilotHookConfigStatus, uninstallCopilotHookConfig } from "../hook/install.js";
 import { claudeHookStatus, uninstallClaudeHook } from "../hook/claudeInstall.js";
 import { guidanceFilePath, guidanceLoader, unwriteGuidance, writeGuidance } from "./guidance.js";
+import { gatherPreflight, probeHostVersion, renderPreflight } from "./preflight.js";
+import {
+  gatherDeliveryMatrix,
+  installedTierIds,
+  recordInstall,
+  renderDeliveryMatrix,
+  updateDeliveryState,
+} from "./capability.js";
 
 // The install / uninstall / status surface (U1+U2, ADR 0002 §5). `tk install`
 // auto-detects the host and wires the highest available delivery tier (Copilot
@@ -55,28 +63,49 @@ function injectionTarget(host: Host): string {
 }
 
 // ---------------------------------------------------------------------------
-// tk status — read-only. Reports host / tier signals; mutates nothing (the shim
-// status probe only resolves a binary on PATH, it writes no files).
+// tk status — installation-safe. Reports host / tier signals without installing
+// or repairing hooks/shims, then refreshes the delivery verification timestamp.
 // ---------------------------------------------------------------------------
 
 export function runStatus(_argv: string[] = []): number {
   const host = detectHost(gatherDetectEnv());
   out(`Detected host: ${host}`);
-  const claude = claudeHookStatus({});
-  out(
-    `  claude-code settings hook: ${
-      claude.present
-        ? `${claude.path} (${claude.pointsAtTk ? "points at tk" : "present, NOT tk"})`
-        : "absent"
-    }`,
-  );
-  const hookStatus = copilotHookConfigStatus({ project: false });
-  out(`  copilot hook config: ${hookStatus.present ? hookStatus.path : "absent"}`);
+
+  // Gather preflight ONCE (issue #23 Windows section) and REUSE it for the matrix's
+  // host-version line, so `copilot --version` is not spawned twice (ADR 0012 #7).
+  const preflight = gatherPreflight();
+
+  // Timestamp truth (issue #26): `tk status` IS the verification, so persist
+  // lastVerified to NOW *before* gathering the matrix — gatherDeliveryMatrix reads the
+  // state file, so the rendered "last verified" reflects THIS run, not the previous
+  // run's stale value (the old order rendered first, wrote after, and only the next
+  // status run saw the prior timestamp). Best-effort: a write failure never breaks
+  // status, and the matrix then simply shows the last successfully-written
+  // value.
+  updateDeliveryState({ lastVerified: new Date().toISOString() });
+
+  // ADR 0012 #7: render the per-host capability MATRIX (a host can hold several
+  // live tiers at once, so a single "active tier" is no longer faithful). Everything
+  // here is LIVE-DERIVED by the existing status helpers (copilot/claude hook status,
+  // shim manifest + probe, injection/guidance file presence, TTY opt-in) plus the
+  // persisted install-time facts. `runShim(["status"])` still prints its detailed
+  // shim panel below the matrix for the baked-path / PATH-position diagnostics the
+  // matrix summarizes in one line.
+  const matrix = gatherDeliveryMatrix({ host, preflight });
+  renderDeliveryMatrix(matrix).forEach(out);
+
+  out(`  Shim detail:`);
   runShim(["status"]);
-  const target = injectionTarget(host);
-  out(`  injection file: ${existsSync(target) ? target : "absent"}`);
-  const guidance = guidanceFilePath(host);
-  out(`  usage guidance: ${guidance && existsSync(guidance) ? guidance : "absent"}`);
+
+  // Windows preflight (issue #23): the documented Copilot-CLI hook requirements
+  // (PowerShell 7+, an absolute hook command, a loaded hooks dir, the
+  // `powershell` shell-tool name). Runs on all platforms — each probe degrades
+  // to a "not found / unavailable" line and never throws, so status stays total.
+  out(`  Windows preflight:`);
+  renderPreflight(preflight).forEach(out);
+
+  // lastVerified was already persisted above (before the matrix was gathered) so the
+  // rendered value reflects THIS run — no second write here (issue #26 timestamp truth).
   return 0;
 }
 
@@ -249,9 +278,25 @@ function parseInstallArgs(argv: string[]): InstallArgs {
   return args;
 }
 
+// Persist what this install wired (ADR 0012 #7). Best-effort and NEVER changes
+// install behavior — it only records state for `tk status` to display. Called once,
+// just before a successful (non-dry-run) install returns; the dry-run path records
+// nothing (it wrote nothing).
+//
+// Record the SELECTED host's OWN version (issue #26), via a per-host `--version` probe
+// (`copilot`/`claude`/`code`). Earlier this recorded `copilot --version` for copilot-cli
+// only and `undefined` for every other host — and an even earlier bug mislabeled
+// `GitHub Copilot CLI 1.0.62` as a `claude-code` install's version. `probeHostVersion`
+// is host-specific and best-effort: a host with no version CLI on PATH (or `unknown`)
+// degrades to honest "not recorded", never another tool's version.
+function recordInstallState(host: Host): void {
+  recordInstall({ host, tiers: installedTierIds(host), hostVersion: probeHostVersion(host) });
+}
+
 export function runInstall(argv: string[]): number {
   const opts = parseInstallArgs(argv);
-  const host = opts.host === "auto" ? detectHost(gatherDetectEnv()) : opts.host;
+  const env = gatherDetectEnv();
+  const host = opts.host === "auto" ? detectHost(env) : opts.host;
   out(`Detected host: ${host}`);
 
   // Project-level injection is an explicit, additive opt-in — the only write
@@ -265,23 +310,76 @@ export function runInstall(argv: string[]): number {
     }
   }
 
-  // Tier ladder (ADR 0002): Hook > Shim > Injection. The adapter carries the
-  // per-host facts; selectTier is the single tier exit. No hardcoded host `if`s.
+  // Auto-detect resolves ONE primary host, but a machine commonly has more than one
+  // — e.g. Copilot CLI runs INSIDE the VS Code integrated terminal, so it inherits
+  // TERM_PROGRAM=vscode and the primary resolves to `vscode`, which used to leave the
+  // Copilot-CLI user with no hook at all. So in auto mode we don't STOP at the primary:
+  // we additively wire every OTHER present host that has an independent hook
+  // (claude-code → ~/.claude/settings.json, copilot-cli → ~/.copilot/hooks/). These
+  // are separate config files that don't conflict with the primary tier, and are
+  // fully reversible (uninstall removes them) if a host dir was merely lingering. A
+  // forced `--host X` stays single-host.
+  if (opts.host === "auto") {
+    const present: Host[] = [];
+    if (env.copilotDirExists) present.push("copilot-cli");
+    if (env.claudeSettingsExists || env.claudeEnv) present.push("claude-code");
+    for (const other of present) {
+      if (other === host) continue;
+      const adapter = adapters[other];
+      if (!adapter.installHook) continue;
+      const loc = { project: opts.project, cwd: process.cwd() };
+      out(`Also wiring ${other} (detected alongside ${host}):`);
+      const step = opts.dryRun ? adapter.planHook!(loc) : adapter.installHook(loc);
+      step.headerLines.forEach(out);
+      step.trailerLines.forEach(out);
+    }
+  }
+
+  // Tier ladder (ADR 0002 + 0012): Hook > Shim > Injection, but tiers are NOT
+  // mutually exclusive — a host may run complementary tiers in parallel (ADR 0012
+  // §1). The adapter carries the per-host facts; selectTier is the single tier exit.
+  // No hardcoded host `if`s.
   const adapter = adapters[host];
   const hookAvailable = Boolean(adapter.installHook);
+  const loc = { project: opts.project, cwd: process.cwd() };
 
-  // Hook tier. When a host has a hook installer it always wins over shim/injection
-  // (the shim probe — the only side-effecting signal — is irrelevant here, so pass
-  // false rather than install wrappers). Each adapter renders its own host-specific
-  // lines; install prints them around the shared guidance + tier line.
-  if (selectTier(adapter.supportedTiers, hookAvailable, false) === "hook") {
-    const loc = { project: opts.project, cwd: process.cwd() };
+  // ADR 0012 §2/§3: a host whose hook is ADDITIVE (vscode) keeps the SHIM as its
+  // primary/authoritative tier and layers the hook on top — so it does NOT take the
+  // hook-wins exit below. Encoded as an adapter capability (`additiveHook`), not an
+  // `if (host === "vscode")` check (Goal B). For the additive-hook decision we treat
+  // the primary ladder as if no hook existed (pass `false`), so it flows to shim /
+  // injection; the hook is installed separately as an enhancement. Hosts where the
+  // hook is the sole primary (copilot-cli, claude-code) leave `additiveHook` unset →
+  // the original hook-wins behavior is byte-identical.
+  const hookIsAdditive = Boolean(adapter.additiveHook) && hookAvailable;
+  const hookForLadder = hookAvailable && !hookIsAdditive;
+
+  // Hook tier (sole primary). When a host has a hook installer AND that hook is its
+  // primary tier, it wins over shim/injection (the shim probe — the only
+  // side-effecting signal — is irrelevant here, so pass false rather than install
+  // wrappers). Each adapter renders its own host-specific lines; install prints them
+  // around the shared guidance + tier line.
+  if (selectTier(adapter.supportedTiers, hookForLadder, false) === "hook") {
     const step = opts.dryRun ? adapter.planHook!(loc) : adapter.installHook!(loc);
     step.headerLines.forEach(out);
     writeGuidanceStep(host, opts.dryRun);
     out(`Active tier: hook`);
     step.trailerLines.forEach(out);
+    if (!opts.dryRun) recordInstallState(host);
     return 0;
+  }
+
+  // ADR 0012 §2/§3: install the additive hook for this host BEFORE the primary shim.
+  // It is an enhancement that catches the agent's terminal tool at the protocol layer
+  // even when PATH injection hasn't taken effect, and runs even if the shim probe
+  // later FAILS (graceful degradation — the primary then falls back to injection but
+  // the hook still installs). The shim below remains the policy/Preview-independent
+  // floor and is reported as the primary tier.
+  if (hookIsAdditive) {
+    const step = opts.dryRun ? adapter.planHook!(loc) : adapter.installHook!(loc);
+    out(`Additive hook (Preview, policy-revocable):`);
+    step.headerLines.forEach(out);
+    step.trailerLines.forEach(out);
   }
 
   // Below the hook tier, --dry-run only previews — it never runs the probe or
@@ -289,35 +387,47 @@ export function runInstall(argv: string[]): number {
   if (opts.dryRun) {
     out(`[dry-run] would install shim / injection for host: ${host}`);
     writeGuidanceStep(host, true);
+    if (hookIsAdditive) out(`Active tier: shim (primary) + hook (additive)`);
     return 0;
   }
 
   // Shim tier. Only hosts whose supportedTiers include "shim" run the interception
   // probe (VS Code — command-compression's primary delivery there); selectTier
-  // turns the probe result into the final tier.
+  // turns the probe result into the final tier. For an additive-hook host the hook
+  // is already installed above; the shim is reported as PRIMARY alongside it.
   if (adapter.supportedTiers.includes("shim")) {
     const probe = installShim({ rc: false, vscode: true });
-    if (selectTier(adapter.supportedTiers, hookAvailable, probe.pass) === "shim") {
+    if (selectTier(adapter.supportedTiers, hookForLadder, probe.pass) === "shim") {
       // The usage guide is delivery-tier-independent — it teaches how to use tk
       // well, not how commands are routed. VS Code's tier is the shim, so without
       // this its users (who have a user-level guidance home) got no guide at all.
       writeGuidanceStep(host, false);
-      out(`Active tier: shim`);
+      out(hookIsAdditive ? `Active tier: shim (primary) + hook (additive)` : `Active tier: shim`);
       out(`Restart your terminal (or VS Code) for PATH changes to take effect.`);
+      recordInstallState(host);
       return 0;
     }
+    // Graceful degradation (ADR 0012 §3): the primary shim probe FAILED, so the
+    // primary falls back to injection — but the additive hook installed above stays.
     out("shim interception probe FAILED — falling back to instruction injection");
   }
 
-  // Injection tier (unknown host, or shim probe failed). User-level by default.
+  // Injection tier (unknown host, or shim probe failed). User-level by default. For
+  // an additive-hook host that reached here the primary shim probe FAILED, so
+  // injection is the primary floor — but the additive hook installed above remains.
   const target = injectionTarget(host);
   writeInjection(target);
   writeGuidanceStep(host, false);
-  out(`Active tier: injection`);
+  out(
+    hookIsAdditive
+      ? `Active tier: injection (primary, shim probe failed) + hook (additive)`
+      : `Active tier: injection`,
+  );
   out(`Wrote user instructions: ${target}`);
   if (host === "unknown") {
     out(`(No host auto-detected. Point your agent at this file, or re-run with --project.)`);
   }
   out(`Restart your agent for the instructions to take effect.`);
+  recordInstallState(host);
   return 0;
 }

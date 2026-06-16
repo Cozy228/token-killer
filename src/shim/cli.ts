@@ -1,6 +1,7 @@
 import { existsSync } from "node:fs";
 import { delimiter } from "node:path";
 
+import { emitSupportHintOnce } from "../hook/debug.js";
 import { VERSION } from "../version.js";
 import {
   defaultRcPath,
@@ -16,6 +17,7 @@ import {
   readManifest,
   realBinaryPresent,
   removeShimDir,
+  resolveRealBinaryPath,
   shimDir,
 } from "./install.js";
 import { runInterceptionProbe, type ProbeResult } from "./probe.js";
@@ -88,19 +90,24 @@ export function installShim(opts: InstallShimOptions = {}): ProbeResult {
       log(`  shell RC patched: ${rcPath}`);
     } catch (error) {
       err(`  shell RC patch failed (${rcPath}): ${(error as Error).message}`);
+      emitSupportHintOnce();
     }
   }
 
   if (vscode && existsSync(vscodeUserDir())) {
     const settings = vscodeSettingsPath();
     try {
-      patchVscodeSettings(settings, dir);
+      const res = patchVscodeSettings(settings, dir);
       log(`  VS Code settings patched: ${settings}`);
+      if (res.reformatted && res.backupPath) {
+        log(`    (had comments — reformatted to strict JSON; original saved to ${res.backupPath})`);
+      }
     } catch {
-      err(`  VS Code settings.json could not be parsed (comments?); patch it manually:`);
+      err(`  VS Code settings.json is not valid JSON; patch it manually:`);
       err(
-        `    "terminal.integrated.env.*": { "TK_SHIM_DIR": "${dir}", "PATH": "${dir}${delimiter}\${env:PATH}" }`,
+        `    "terminal.integrated.env.*": { "TK_SHIM_DIR": "${dir}", "TK_COMPRESS_TTY": "1", "PATH": "${dir}${delimiter}\${env:PATH}" }`,
       );
+      emitSupportHintOnce();
     }
   }
 
@@ -131,7 +138,12 @@ function uninstall(dryRun: boolean): number {
   const settings = vscodeSettingsPath();
   if (existsSync(settings)) {
     try {
-      unpatchVscodeSettings(settings, dir);
+      const res = unpatchVscodeSettings(settings, dir);
+      if (res.reformatted && res.backupPath) {
+        out(
+          `  VS Code settings had comments — reformatted to strict JSON; original saved to ${res.backupPath}`,
+        );
+      }
     } catch {
       err(
         `  VS Code settings.json could not be parsed; remove the TK_SHIM_DIR/PATH keys manually.`,
@@ -155,6 +167,31 @@ function status(): number {
   );
   out(`  on PATH:        ${index >= 0 ? `yes (position ${index})` : "no"}`);
   out(`  first on PATH:  ${index === 0 ? "yes" : "no"}`);
+
+  // Baked real-binary paths (2.1). Each was resolved once at install so the runtime
+  // skips the per-command PATH walk. Re-validate here (status is not a hot path):
+  //  - stale    = the baked binary moved/was uninstalled → runtime falls back to a walk
+  //  - shadowed = PATH was reordered so a DIFFERENT binary now wins; tk still runs the
+  //               baked one, so re-run `tk install` to re-bake against the new PATH.
+  const baked = Object.entries(manifest?.resolvedPaths ?? {});
+  if (baked.length > 0) {
+    let stale = 0;
+    let shadowed = 0;
+    for (const [program, bakedPath] of baked) {
+      if (!existsSync(bakedPath)) {
+        stale += 1;
+        continue;
+      }
+      const current = resolveRealBinaryPath(program, dir);
+      if (current && current !== bakedPath) shadowed += 1;
+    }
+    const flags: string[] = [];
+    if (stale > 0) flags.push(`${stale} stale (binary moved)`);
+    if (shadowed > 0) flags.push(`${shadowed} shadowed by PATH reorder — re-run \`tk install\``);
+    out(
+      `  baked paths:    ${baked.length}${flags.length > 0 ? ` (${flags.join("; ")})` : " all valid"}`,
+    );
+  }
 
   const probe = runInterceptionProbe(dir);
   out(

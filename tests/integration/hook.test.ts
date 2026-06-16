@@ -1,15 +1,15 @@
 import { mkdtemp, readFile, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
-import { fileURLToPath } from "node:url";
+import { fileURLToPath, pathToFileURL } from "node:url";
 import { spawnSync } from "node:child_process";
 import { describe, expect, test } from "vitest";
 
-import { projectFingerprint } from "../../src/core/dataDir.js";
+import { fingerprintSegment, projectFingerprint } from "../../src/core/dataDir.js";
 
 const repoRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "../..");
 const cli = path.join(repoRoot, "src/cli.ts");
-const tsxLoader = path.join(repoRoot, "node_modules/tsx/dist/loader.mjs");
+const tsxLoader = pathToFileURL(path.join(repoRoot, "node_modules/tsx/dist/loader.mjs")).href;
 
 function runTk(args: string[], input?: string, tokenKillerHome?: string) {
   const env: NodeJS.ProcessEnv = { ...process.env };
@@ -36,6 +36,32 @@ describe("tk hook copilot — protocol over stdin/stdout", () => {
     const parsed = JSON.parse(r.stdout);
     expect(parsed.hookSpecificOutput.updatedInput).toEqual({ command: "tk git status" });
     expect(parsed.hookSpecificOutput.permissionDecision).toBe("allow");
+  });
+
+  // #19 end-to-end: VS Code validates updatedInput against run_in_terminal's full
+  // schema, so the rewrite must preserve every original field (explanation/goal/
+  // mode) and overwrite only `command`. An incomplete updatedInput is silently
+  // ignored by VS Code — the exact bug this locks.
+  test("VS Code dialect: updatedInput preserves the full run_in_terminal input", () => {
+    const payload = JSON.stringify({
+      event: "preToolUse",
+      tool_name: "run_in_terminal",
+      tool_input: {
+        command: "git status",
+        explanation: "Check repository status",
+        goal: "Inspect working tree",
+        mode: "sync",
+      },
+    });
+    const r = runTk(["hook", "copilot"], payload);
+    expect(r.status).toBe(0);
+    const parsed = JSON.parse(r.stdout);
+    expect(parsed.hookSpecificOutput.updatedInput).toEqual({
+      command: "tk git status",
+      explanation: "Check repository status",
+      goal: "Inspect working tree",
+      mode: "sync",
+    });
   });
 
   test("Copilot CLI dialect: rewrites via flat modifiedArgs", () => {
@@ -109,7 +135,12 @@ describe("tk hook copilot — prompt + error events (Slice 2)", () => {
 
       // The child runs with cwd=repoRoot and TOKEN_KILLER_HOME=home; build the
       // history path the same way (fingerprint is TOKEN_KILLER_HOME-independent).
-      const file = path.join(home, "projects", projectFingerprint(repoRoot), "history.jsonl");
+      const file = path.join(
+        home,
+        "projects",
+        fingerprintSegment(projectFingerprint(repoRoot)),
+        "history.jsonl",
+      );
       const history = await readFile(file, "utf8");
       const row = JSON.parse(history.trim().split(/\r?\n/).pop() as string);
       expect(row.source_adapter).toBe("terminal_tool");

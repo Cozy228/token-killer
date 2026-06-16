@@ -55,6 +55,8 @@ const SURFACE_PRIORITY: Record<ContextSurface, number> = {
   copilot_instructions: 2,
   agent_instructions: 2,
   stable_prefix: 1,
+  // Not a markdown instruction surface — never participates in instruction conflicts.
+  vscode_settings: 0,
 };
 
 type Match = { af: AnalyzedFile; line: number };

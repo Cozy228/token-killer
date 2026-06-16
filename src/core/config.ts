@@ -6,10 +6,10 @@
 // here.
 
 import { readFileSync, writeFileSync } from "node:fs";
-import { mkdirSync } from "node:fs";
-import { dirname, join } from "node:path";
+import { join } from "node:path";
 
-import { tokenKillerHome } from "./dataDir.js";
+import { ensureTokenKillerHome, tokenKillerHome } from "./dataDir.js";
+import { parseJsonc } from "./jsonc.js";
 import { TELEMETRY_DEFAULT_ENABLED } from "../telemetry/defaults.js";
 
 export type TgConfig = {
@@ -68,49 +68,6 @@ const ALLOWED_KEYS = new Set([
   "sessionDedup",
 ]);
 
-// Strip `//` line and `/* */` block comments outside of string literals so a plain
-// JSON.parse can read the JSONC body. No new dependency.
-function stripJsonComments(text: string): string {
-  let out = "";
-  let inString = false;
-  let i = 0;
-  while (i < text.length) {
-    const c = text[i];
-    const n = text[i + 1];
-    if (inString) {
-      out += c;
-      if (c === "\\") {
-        out += n ?? "";
-        i += 2;
-        continue;
-      }
-      if (c === '"') inString = false;
-      i += 1;
-      continue;
-    }
-    if (c === '"') {
-      inString = true;
-      out += c;
-      i += 1;
-      continue;
-    }
-    if (c === "/" && n === "/") {
-      i += 2;
-      while (i < text.length && text[i] !== "\n") i += 1;
-      continue;
-    }
-    if (c === "/" && n === "*") {
-      i += 2;
-      while (i < text.length && !(text[i] === "*" && text[i + 1] === "/")) i += 1;
-      i += 2;
-      continue;
-    }
-    out += c;
-    i += 1;
-  }
-  return out;
-}
-
 function validate(raw: unknown): TgConfig {
   if (typeof raw !== "object" || raw === null || Array.isArray(raw)) {
     throw new ConfigError("config must be a JSON object");
@@ -162,7 +119,7 @@ export function readConfig(): TgConfig {
   }
   let parsed: unknown;
   try {
-    parsed = JSON.parse(stripJsonComments(text));
+    parsed = parseJsonc(text);
   } catch (error) {
     throw new ConfigError(
       `config parse error: ${error instanceof Error ? error.message : String(error)}`,
@@ -177,10 +134,11 @@ export function writeConfigTemplate(
   opts: { telemetry?: boolean; telemetryExport?: boolean } = {},
 ): string {
   const path = configPath();
-  mkdirSync(dirname(path), { recursive: true });
+  ensureTokenKillerHome();
   writeFileSync(
     path,
     configTemplate(opts.telemetry ?? TELEMETRY_DEFAULT_ENABLED, opts.telemetryExport ?? false),
+    { mode: 0o600 },
   );
   return path;
 }

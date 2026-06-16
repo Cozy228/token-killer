@@ -1,10 +1,22 @@
 import { afterEach, beforeEach, describe, expect, test } from "vitest";
-import { accessSync, constants, existsSync, mkdtempSync, readFileSync, rmSync } from "node:fs";
+import {
+  accessSync,
+  constants,
+  existsSync,
+  mkdirSync,
+  mkdtempSync,
+  readFileSync,
+  rmSync,
+  writeFileSync,
+} from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
 import {
+  SHIM_MANIFEST_SCHEMA,
+  compileCacheDir,
   installWrappers,
+  manifestPath,
   posixWrapper,
   readManifest,
   removeShimDir,
@@ -22,9 +34,58 @@ describe("wrapper content", () => {
     );
   });
 
+  test("POSIX wrapper bakes TK_REAL_BIN when the real path is known (2.1)", () => {
+    expect(posixWrapper("git", tk, "/abs/shim", "/usr/bin/git")).toBe(
+      "#!/usr/bin/env sh\nexport TK_SHIM_DIR='/abs/shim'\nexport TK_REAL_BIN='/usr/bin/git'\n" +
+        "exec '/usr/local/bin/node' '/abs/dist/cli.js' 'git' \"$@\"\n",
+    );
+  });
+
   test("Windows wrapper self-sets the baked shim dir under setlocal, forwards args via %*", () => {
     expect(windowsWrapper("git", tk, "C:\\abs\\shim")).toBe(
       '@echo off\r\nsetlocal\r\nset "TK_SHIM_DIR=C:\\abs\\shim"\r\n"/usr/local/bin/node" "/abs/dist/cli.js" "git" %*\r\n',
+    );
+  });
+
+  test("Windows wrapper bakes TK_REAL_BIN when the real path is known (2.1)", () => {
+    expect(windowsWrapper("git", tk, "C:\\abs\\shim", "C:\\Program Files\\Git\\bin\\git.exe")).toBe(
+      '@echo off\r\nsetlocal\r\nset "TK_SHIM_DIR=C:\\abs\\shim"\r\n' +
+        'set "TK_REAL_BIN=C:\\Program Files\\Git\\bin\\git.exe"\r\n' +
+        '"/usr/local/bin/node" "/abs/dist/cli.js" "git" %*\r\n',
+    );
+  });
+
+  test("POSIX wrapper bakes TK_REAL_PATH_HASH alongside TK_REAL_BIN (2.1 PATH gate)", () => {
+    expect(posixWrapper("git", tk, "/abs/shim", "/usr/bin/git", undefined, "abc123")).toBe(
+      "#!/usr/bin/env sh\nexport TK_SHIM_DIR='/abs/shim'\nexport TK_REAL_BIN='/usr/bin/git'\n" +
+        "export TK_REAL_PATH_HASH='abc123'\n" +
+        "exec '/usr/local/bin/node' '/abs/dist/cli.js' 'git' \"$@\"\n",
+    );
+  });
+
+  test("a path hash without a real bin bakes neither (the gate guards TK_REAL_BIN)", () => {
+    // No realBin → no TK_REAL_BIN and no TK_REAL_PATH_HASH (nothing to gate).
+    expect(posixWrapper("git", tk, "/abs/shim", undefined, undefined, "abc123")).toBe(
+      "#!/usr/bin/env sh\nexport TK_SHIM_DIR='/abs/shim'\nexec '/usr/local/bin/node' '/abs/dist/cli.js' 'git' \"$@\"\n",
+    );
+  });
+
+  test("POSIX wrapper bakes NODE_COMPILE_CACHE + saves the caller's prior value (2.3)", () => {
+    expect(posixWrapper("git", tk, "/abs/shim", "/usr/bin/git", "/abs/home/v8-cache")).toBe(
+      "#!/usr/bin/env sh\nexport TK_SHIM_DIR='/abs/shim'\nexport TK_REAL_BIN='/usr/bin/git'\n" +
+        'export TK_NODE_COMPILE_CACHE_PREV="${NODE_COMPILE_CACHE-}"\n' +
+        "export NODE_COMPILE_CACHE='/abs/home/v8-cache'\n" +
+        "exec '/usr/local/bin/node' '/abs/dist/cli.js' 'git' \"$@\"\n",
+    );
+  });
+
+  test("Windows wrapper bakes NODE_COMPILE_CACHE + saves the caller's prior value (2.3)", () => {
+    expect(windowsWrapper("git", tk, "C:\\abs\\shim", undefined, "C:\\abs\\home\\v8-cache")).toBe(
+      '@echo off\r\nsetlocal\r\nset "TK_SHIM_DIR=C:\\abs\\shim"\r\n' +
+        'set "TK_NODE_COMPILE_CACHE_PREV="\r\n' +
+        'if defined NODE_COMPILE_CACHE set "TK_NODE_COMPILE_CACHE_PREV=%NODE_COMPILE_CACHE%"\r\n' +
+        'set "NODE_COMPILE_CACHE=C:\\abs\\home\\v8-cache"\r\n' +
+        '"/usr/local/bin/node" "/abs/dist/cli.js" "git" %*\r\n',
     );
   });
 });
@@ -107,6 +168,90 @@ describe("installWrappers", () => {
     });
     expect(existsSync(join(shimDir(home), "git"))).toBe(true);
     expect(existsSync(join(shimDir(home), "tsc"))).toBe(false);
+  });
+
+  test("bakes resolved paths into the manifest and wrappers (schema 2)", () => {
+    const manifest = installWrappers({
+      home,
+      programs: ["git", "tsc"],
+      tkExec: tk,
+      installedAt: 1,
+      version: "1",
+      platform: "linux",
+      // Inject deterministic resolution so the test never depends on the host PATH.
+      resolveRealBin: (program) => (program === "git" ? "/usr/bin/git" : undefined),
+    });
+    expect(manifest.schema).toBe(SHIM_MANIFEST_SCHEMA);
+    expect(manifest.resolvedPaths).toEqual({ git: "/usr/bin/git" });
+    // 2.1 PATH gate: a stable per-install hash is recorded and baked beside TK_REAL_BIN.
+    expect(typeof manifest.pathHash).toBe("string");
+    const gitWrapper = readFileSync(join(shimDir(home), "git"), "utf8");
+    expect(gitWrapper).toContain("export TK_REAL_BIN='/usr/bin/git'");
+    expect(gitWrapper).toContain(`export TK_REAL_PATH_HASH='${manifest.pathHash}'`);
+    // tsc (unresolved) bakes neither TK_REAL_BIN nor the gate.
+    const tscWrapper = readFileSync(join(shimDir(home), "tsc"), "utf8");
+    expect(tscWrapper).not.toContain("TK_REAL_BIN");
+    expect(tscWrapper).not.toContain("TK_REAL_PATH_HASH");
+  });
+
+  test("bakes NODE_COMPILE_CACHE into every wrapper, pointed under the home (2.3)", () => {
+    installWrappers({
+      home,
+      programs: ["git"],
+      tkExec: tk,
+      installedAt: 1,
+      version: "1",
+      platform: "linux",
+      resolveRealBin: () => undefined,
+    });
+    const wrapper = readFileSync(join(shimDir(home), "git"), "utf8");
+    expect(wrapper).toContain(`export NODE_COMPILE_CACHE='${compileCacheDir(home)}'`);
+    expect(compileCacheDir(home)).toBe(join(home, "v8-cache"));
+  });
+
+  test("removeShimDir also drops the V8 compile cache (2.3), never projects/", () => {
+    installWrappers({
+      home,
+      programs: ["git"],
+      tkExec: tk,
+      installedAt: 1,
+      version: "1",
+      platform: "linux",
+      resolveRealBin: () => undefined,
+    });
+    // Simulate node having populated the cache, plus a measured-data dir.
+    mkdirSync(compileCacheDir(home), { recursive: true });
+    mkdirSync(join(home, "projects"), { recursive: true });
+    removeShimDir(home);
+    expect(existsSync(compileCacheDir(home))).toBe(false);
+    expect(existsSync(join(home, "projects"))).toBe(true); // measured data preserved
+  });
+
+  test("a schema-1 manifest (no resolvedPaths) still reads back (migration)", () => {
+    installWrappers({
+      home,
+      programs: ["git"],
+      tkExec: tk,
+      installedAt: 1,
+      version: "1",
+      platform: "linux",
+      resolveRealBin: () => undefined,
+    });
+    // Simulate an older on-disk manifest written before 2.1.
+    writeFileSync(
+      manifestPath(home),
+      JSON.stringify({
+        schema: 1,
+        version: "1",
+        dir: shimDir(home),
+        programs: ["git"],
+        installedAt: 1,
+        tk,
+      }),
+    );
+    const read = readManifest(home);
+    expect(read?.schema).toBe(1);
+    expect(read?.resolvedPaths).toBeUndefined();
   });
 
   test("removeShimDir deletes the dir", () => {

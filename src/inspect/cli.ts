@@ -10,10 +10,12 @@ import { homedir } from "node:os";
 import {
   buildAdvice,
   DEFAULT_ADVICE_OPTIONS,
+  mcpBloatFinding,
   renderAdviceFile,
   renderAdviceMarkdown,
   type AdviceFinding,
 } from "./advice.js";
+import { analyzeMcpServers } from "./mcp.js";
 import { readConfig } from "../core/config.js";
 import { listProjectHistoriesSync } from "../core/history.js";
 import { buildTelemetry } from "../telemetry/build.js";
@@ -24,7 +26,7 @@ import { renderStaticContextSection } from "../context/report.js";
 import type { ContextFinding, ContextScope, FindingSeverity } from "../context/types.js";
 import { writeAdviceArtifacts, writeTelemetryExport } from "./persist.js";
 import { emitHtmlReport } from "../report/open.js";
-import { gatherRepoContext } from "./repoContext.js";
+import { analyzeHabits, type HabitStats } from "./habits.js";
 import { buildReport, renderJson, renderMarkdown } from "./report.js";
 import { parseSince, scan, type ScanResult } from "./scan.js";
 import { discoverSources, type InputType } from "./sources.js";
@@ -36,22 +38,18 @@ type FailOnSeverity = "info" | "warn" | "error";
 
 type InspectArgs = {
   json: boolean;
-  html: boolean;
+  text: boolean; // opt out of the default HTML report → terminal markdown
   inputType: InputType;
   inputTypeExplicit: boolean;
   since?: string;
   session?: string;
-  repoContext: boolean;
   advice: boolean;
   writeAdvice: boolean;
-  telemetryExport: boolean; // default from config.jsonc; CLI flag overrides
-  telemetryExportExplicit: boolean; // true once --telemetry-export/--no- seen
   minConfidence: number;
   minOccurrences: number;
   // Static-context scope/analyzer axes (ADR 0003).
   scopeUser: boolean;
   scopeProject: boolean;
-  copilotContext: boolean; // static-context analyzers only (runtime off)
   surface?: string;
   failOn?: FailOnSeverity;
   error?: string; // set on a parse error → exit 1
@@ -70,39 +68,27 @@ function parseNumberFlag(
 export function parseInspectArgs(argv: string[]): InspectArgs {
   const args: InspectArgs = {
     json: false,
-    html: false,
+    text: false,
     inputType: "vscode",
     inputTypeExplicit: false,
-    repoContext: false,
     advice: false,
     writeAdvice: false,
-    telemetryExport: false,
-    telemetryExportExplicit: false,
     minConfidence: DEFAULT_ADVICE_OPTIONS.minConfidence,
     minOccurrences: DEFAULT_ADVICE_OPTIONS.minOccurrences,
     scopeUser: false,
     scopeProject: false,
-    copilotContext: false,
   };
   const SURFACES = new Set(["instructions", "prompts", "agents", "skills"]);
   for (let i = 0; i < argv.length; i += 1) {
     const token = argv[i];
     if (token === "--json") {
       args.json = true;
-    } else if (token === "--html") {
-      args.html = true;
-    } else if (token === "--repo-context") {
-      args.repoContext = true;
+    } else if (token === "--text") {
+      args.text = true;
     } else if (token === "--advice") {
       args.advice = true;
     } else if (token === "--write-advice") {
       args.writeAdvice = true;
-    } else if (token === "--telemetry-export") {
-      args.telemetryExport = true;
-      args.telemetryExportExplicit = true;
-    } else if (token === "--no-telemetry-export") {
-      args.telemetryExport = false;
-      args.telemetryExportExplicit = true;
     } else if (token === "--input-type") {
       const value = argv[i + 1];
       i += 1;
@@ -113,8 +99,6 @@ export function parseInspectArgs(argv: string[]): InspectArgs {
       args.scopeProject = true;
     } else if (token === "--user") {
       args.scopeUser = true;
-    } else if (token === "--copilot-context") {
-      args.copilotContext = true;
     } else if (token === "--surface") {
       const value = argv[i + 1];
       i += 1;
@@ -175,24 +159,13 @@ export function runInspect(
     return 1;
   }
 
-  // Config provides the telemetryExport default; a CLI flag still overrides it.
+  // Config drives whether the local telemetry aggregate is written (no CLI flag).
   // A parse / out-of-shape config is a user-config error → exit 1 (inspect-v1).
+  let telemetryExport = false;
   try {
-    const config = readConfig();
-    if (!opts.telemetryExportExplicit) opts.telemetryExport = config.telemetryExport;
+    telemetryExport = readConfig().telemetryExport;
   } catch (error) {
     process.stderr.write(`tk inspect: ${error instanceof Error ? error.message : String(error)}\n`);
-    return 1;
-  }
-
-  // --copilot-context (static-only) is mutually exclusive with runtime-only flags.
-  if (
-    opts.copilotContext &&
-    (opts.since !== undefined || opts.session !== undefined || opts.inputTypeExplicit)
-  ) {
-    process.stderr.write(
-      "tk inspect: --copilot-context (static-context only) cannot be combined with runtime-only flags (--since/--session/--input-type)\n",
-    );
     return 1;
   }
 
@@ -215,17 +188,18 @@ export function runInspect(
   if (scopes.length === 0) scopes.push("user");
 
   try {
-    // Runtime analysis (orthogonal to scope; off under --copilot-context).
+    // Runtime analysis (orthogonal to scope).
     let result: ScanResult | undefined;
-    if (!opts.copilotContext) {
-      const discovery = discoverSources(opts.inputType, home);
-      if (discovery.found) {
-        result = scan(discovery, { sinceMs, session: opts.session });
-      } else {
-        process.stderr.write(
-          `tk inspect: no ${opts.inputType} session sources found (this is normal if the host stores transcripts elsewhere).\n`,
-        );
-      }
+    let habits: HabitStats | undefined;
+    const discovery = discoverSources(opts.inputType, home);
+    if (discovery.found) {
+      result = scan(discovery, { sinceMs, session: opts.session });
+      // Per-session habit metrics feed the cost-tips advice (chronicle parity).
+      habits = analyzeHabits(discovery);
+    } else {
+      process.stderr.write(
+        `tk inspect: no ${opts.inputType} session sources found (this is normal if the host stores transcripts elsewhere).\n`,
+      );
     }
 
     // Static-context analysis (always runs, scope-aware).
@@ -233,8 +207,10 @@ export function runInspect(
     const staticFindings: ContextFinding[] = sc.result.findings;
 
     // Exit 2 only when BOTH runtime and static context are empty (goal exit table).
+    // "static empty" means no files scanned AND no synthesized findings (e.g. the
+    // VS Code settings finding, which has no scanned markdown file behind it).
     const runtimeEmpty = !result || result.tool_event_count === 0;
-    const staticEmpty = sc.result.files_scanned === 0;
+    const staticEmpty = sc.result.files_scanned === 0 && sc.result.findings.length === 0;
     if (runtimeEmpty && staticEmpty) {
       process.stderr.write(
         "tk inspect: no major source analyzable (no runtime session events and no static-context files found).\n",
@@ -256,62 +232,45 @@ export function runInspect(
       cwd,
     });
 
-    const repoContext = opts.repoContext ? gatherRepoContext(cwd) : undefined;
-
-    const adviceRequested = opts.advice || opts.writeAdvice;
+    // Advice is computed ALWAYS (not just under --advice) so the default report can
+    // LEAD with action items — what the user should do — instead of a raw data table.
+    // --advice/--write-advice still control the verbose appendix and on-disk artifacts.
     let findings: AdviceFinding[] = [];
-    if (adviceRequested && result) {
-      findings = buildAdvice(result, {
-        minConfidence: opts.minConfidence,
-        minOccurrences: opts.minOccurrences,
-      });
+    if (result) {
+      findings = buildAdvice(
+        result,
+        {
+          minConfidence: opts.minConfidence,
+          minOccurrences: opts.minOccurrences,
+        },
+        habits,
+      );
     }
+    // MCP server-count advice is config-derived (not from the session scan), so it
+    // applies even with no runtime data. Surfaced in the same action stream.
+    const mcp = analyzeMcpServers(home, cwd);
+    const mcpFinding = mcpBloatFinding(mcp.servers.length, mcp.servers);
+    if (mcpFinding) findings = [...findings, mcpFinding];
 
     const report = buildReport(
       result ?? emptyScanResult(opts.inputType),
       new Date(nowMs).toISOString(),
-      repoContext,
-      adviceRequested ? findings : undefined,
+      undefined,
+      findings,
     );
     report.static_context = { files_scanned: sc.result.files_scanned, findings: staticFindings };
     report.findings = unifiedFindings;
-
-    // `--html`: write a single-file, user-facing HTML report and open it. Short-
-    // circuits the text/JSON stream (still after persistence above).
-    if (opts.html) {
-      emitHtmlReport({
-        kind: "inspect",
-        title: "Ways to optimize your token usage",
-        subtitle: "Where your AI setup wastes tokens, and how to fix it.",
-        generatedAt: new Date(nowMs).toISOString(),
-        data: {
-          scope: scopes.includes("project") ? "project" : "user",
-          files_scanned: sc.result.files_scanned,
-          sessions_analyzed: result?.session_inventory ?? 0,
-          findings: unifiedFindings.map((f) => ({
-            severity: f.severity,
-            type: f.type,
-            file: (f as { file?: string }).file,
-            start_line: (f as { start_line?: number }).start_line,
-            evidence: f.evidence,
-            recommendation: f.recommendation,
-            fix_class: f.fix_class,
-          })),
-        },
-      });
-      return 0;
-    }
 
     const reportJson = renderJson(report);
     const staticSection = renderStaticContextSection({
       files_scanned: sc.result.files_scanned,
       findings: staticFindings,
     });
-    const reportMarkdown = opts.copilotContext
-      ? `# Token Killer Inspect\n\n${staticSection}`
-      : `${renderMarkdown(report)}\n${staticSection}`;
+    const reportMarkdown = `${renderMarkdown(report)}\n${staticSection}`;
 
-    // Persist (stable names) before printing the confirmation.
+    // --write-advice: persist the advice artifacts to disk (stable names) and print
+    // a confirmation. Independent of the display mode — it does not open/print the
+    // report itself.
     if (opts.writeAdvice) {
       const written = writeAdviceArtifacts({
         reportMarkdown,
@@ -321,10 +280,9 @@ export function runInspect(
       process.stdout.write(`Wrote advice artifacts:\n${written.map((p) => `  ${p}`).join("\n")}\n`);
     }
 
-    // Telemetry export: allow-listed aggregates only. No endpoint in the generic
-    // package → write locally + warn; never fail the run (spec). Runtime-derived,
-    // so skipped under --copilot-context where no runtime scan ran.
-    if (opts.telemetryExport && result) {
+    // Telemetry export: allow-listed aggregates only (config-gated, no CLI flag). No
+    // endpoint in the generic package → write locally + warn; never fail the run.
+    if (telemetryExport && result) {
       // Payload v2 is ALWAYS user-level (ADR 0004 §5); the inspect scan only
       // contributes the optional inspect aggregates.
       const state = loadOrCreateState(new Date(nowMs));
@@ -343,19 +301,44 @@ export function runInspect(
       );
     }
 
-    // stdout report (skipped when --write-advice already printed a confirmation,
-    // unless --json/--advice was explicitly asked for the stream too).
+    // Display. Default is the single-file HTML report (built + opened); --text prints
+    // terminal markdown, --json prints JSON. --write-advice already emitted its own
+    // confirmation, so it suppresses the report stream.
     if (!opts.writeAdvice) {
       if (opts.json) {
         process.stdout.write(reportJson);
-      } else {
+      } else if (opts.text) {
         process.stdout.write(reportMarkdown);
         if (opts.advice) process.stdout.write(`\n${renderAdviceMarkdown(findings)}\n`);
+      } else {
+        emitHtmlReport(
+          {
+            kind: "inspect",
+            title: "Ways to optimize your token usage",
+            subtitle: "Where your AI setup wastes tokens, and how to fix it.",
+            generatedAt: new Date(nowMs).toISOString(),
+            data: {
+              scope: scopes.includes("project") ? "project" : "user",
+              files_scanned: sc.result.files_scanned,
+              sessions_analyzed: result?.session_inventory ?? 0,
+              findings: unifiedFindings.map((f) => ({
+                severity: f.severity,
+                type: f.type,
+                file: (f as { file?: string }).file,
+                start_line: (f as { start_line?: number }).start_line,
+                evidence: f.evidence,
+                recommendation: f.recommendation,
+                fix_class: f.fix_class,
+              })),
+            },
+          },
+          nowMs,
+        );
       }
     }
 
     // Cold-path NETWORK telemetry (ADR 0004 §5), gated on `telemetry` consent +
-    // a build-time endpoint. Separate from --telemetry-export (local consent)
+    // a build-time endpoint. Separate from telemetryExport local-export consent
     // above. Always user-level; the scan contributes the optional inspect
     // aggregates. Best-effort — never changes the exit code.
     runColdPathTelemetry({
@@ -383,8 +366,8 @@ export function runInspect(
   }
 }
 
-// A zero-event ScanResult so the runtime report renders cleanly under
-// --copilot-context (no runtime scan) without special-casing every field.
+// A zero-event ScanResult so the runtime report renders cleanly when no runtime
+// session sources are found, without special-casing every field.
 function emptyScanResult(inputType: InputType): ScanResult {
   return {
     inputType,

@@ -1,13 +1,10 @@
-// Token-lean VS Code settings (scheme 1 / goal rules `vscode_terminal_compression_disabled`,
-// `vscode_context_surface_risk`, `vscode_agent_budget_risk`).
+// Token-lean VS Code settings — the host-native terminal-output compression toggle.
 //
-// Delivery channel #2 (VS Code-native, not hooks). Copilot ships its OWN terminal
-// output compression toggle; the highest-leverage, host-native token control is
-// simply turning it on. Per DESIGN §4.5 / the optimizer goal, ONLY
-// `chat.tools.compressOutput.enabled: true` is eligible for a direct, restorable
-// apply — every other context/agent-budget setting is advisory (it encodes a
-// workflow preference or can reduce complex-task success), so we report but never
-// auto-change them.
+// Copilot ships its OWN terminal-output compression toggle; the highest-leverage,
+// host-native token control is simply turning it on. `vscodeCompressFinding` reports
+// it to the inspect static-context pipeline (a `vscode_compress_disabled` finding)
+// and `tk optimize --apply` enables it via `applyCompress`. Only
+// `chat.tools.compressOutput.enabled: true` is auto-applied; nothing else here is.
 //
 // Reversibility contract: apply writes a full-file backup AND a managed-state
 // sidecar recording the key's prior presence/value, so `--restore` reverts to the
@@ -18,53 +15,14 @@ import { homedir } from "node:os";
 import { dirname, join } from "node:path";
 
 import { tokenKillerHome } from "../core/dataDir.js";
+import { parseJsonc } from "../core/jsonc.js";
 import { vscodeSettingsPath, writeSettings } from "../shim/hostConfig.js";
 import { writeBackup } from "./applySafe.js";
-import type { OptimizeArgs } from "./optimizeCli.js";
+import type { ContextFinding } from "./types.js";
 
 // VS Code settings.json uses flat, dotted top-level keys (e.g.
 // "chat.tools.compressOutput.enabled": true), not nested objects.
 export const COMPRESS_KEY = "chat.tools.compressOutput.enabled";
-
-// §14 vscode_context_surface_risk — advisory only, never auto-changed.
-const CONTEXT_SURFACE_RULES: { key: string; risky: (v: unknown) => boolean; note: string }[] = [
-  { key: "chat.includeReferencedInstructions", risky: (v) => v === true, note: "auto-includes referenced instruction files in every request" },
-  { key: "chat.useNestedAgentsMdFiles", risky: (v) => v === true, note: "loads nested AGENTS.md files down the tree" },
-  { key: "chat.useCustomizationsInParentRepositories", risky: (v) => v === true, note: "pulls customizations from parent repositories" },
-  { key: "github.copilot.chat.additionalReadAccessFolders", risky: (v) => Array.isArray(v) && v.length > 0, note: "grants extra read-access folders" },
-  { key: "chat.mcp.discovery.enabled", risky: (v) => v === true, note: "auto-discovers MCP servers (extra tool surface)" },
-  { key: "github.copilot.chat.codesearch.enabled", risky: (v) => v === true, note: "enables repo-wide code-search context" },
-  { key: "github.copilot.chat.edits.suggestRelatedFilesFromGitHistory", risky: (v) => v === true, note: "pulls related files from git history" },
-];
-
-// §15 vscode_agent_budget_risk — advisory only.
-function budgetRisks(settings: Record<string, unknown>): string[] {
-  const out: string[] = [];
-  const maxReq = settings["chat.agent.maxRequests"];
-  if (typeof maxReq === "number" && maxReq > 15) {
-    out.push(`chat.agent.maxRequests = ${maxReq} (>15; token-control profiles use 8–12)`);
-  }
-  if (settings["github.copilot.chat.agent.autoFix"] === true) {
-    out.push("github.copilot.chat.agent.autoFix = true (extra autonomous tool turns)");
-  }
-  return out;
-}
-
-export type VscodeSettingsAnalysis = {
-  compress: "on" | "off";
-  contextRisks: string[];
-  budgetRisks: string[];
-};
-
-export function analyzeVscodeSettings(settings: Record<string, unknown>): VscodeSettingsAnalysis {
-  return {
-    compress: settings[COMPRESS_KEY] === true ? "on" : "off",
-    contextRisks: CONTEXT_SURFACE_RULES.filter((r) => r.risky(settings[r.key])).map(
-      (r) => `${r.key}: ${r.note}`,
-    ),
-    budgetRisks: budgetRisks(settings),
-  };
-}
 
 // ── settings.json read (parse-safe) ──────────────────────────────────────────
 
@@ -78,9 +36,10 @@ export function readVscodeSettingsFile(settingsPath: string): ReadResult {
   const text = readFileSync(settingsPath, "utf8");
   if (text.trim() === "") return { status: "missing" };
   try {
-    return { status: "ok", settings: JSON.parse(text) as Record<string, unknown>, text };
+    // JSONC-tolerant: VS Code settings.json legally has comments / trailing commas.
+    return { status: "ok", settings: parseJsonc(text) as Record<string, unknown>, text };
   } catch {
-    // JSONC / malformed — never risk corrupting it; tell the user to edit manually.
+    // Genuinely malformed — never risk corrupting it; tell the user to edit manually.
     return { status: "parse_error" };
   }
 }
@@ -109,6 +68,56 @@ function readState(): CompressState | undefined {
   }
 }
 
+// True when a managed compress change is on disk (so `tk optimize --restore` knows
+// it has a VS Code settings edit to revert, on top of any markdown backups).
+export function hasManagedCompressState(): boolean {
+  return existsSync(statePath());
+}
+
+// ── inspect finding (the VS Code settings issue inspect reports) ──────────────
+
+// A single user-scope static-context finding when VS Code's host-native terminal-
+// output compression is off (or its settings.json is unreadable). Returned to the
+// inspect static-context pipeline so `tk optimize --apply` can enable it. Absent
+// when settings.json is missing (not a VS Code user) or compression is already on.
+export function vscodeCompressFinding(
+  platform: NodeJS.Platform = process.platform,
+  home: string = homedir(),
+): ContextFinding | undefined {
+  const settingsPath = vscodeSettingsPath(platform, home);
+  const read = readVscodeSettingsFile(settingsPath);
+  if (read.status === "missing") return undefined;
+  if (read.status === "parse_error") {
+    return {
+      id: "sc_vscode_compress",
+      source: "static_context",
+      type: "vscode_compress_disabled",
+      severity: "warn",
+      confidence: 0.9,
+      surface: "vscode_settings",
+      scope: "user",
+      file: settingsPath,
+      evidence: `${settingsPath} is not strict JSON, so ${COMPRESS_KEY} could not be checked.`,
+      recommendation: `Fix the JSON, then set "${COMPRESS_KEY}": true to compress terminal output before it reaches the model.`,
+      fix_class: "advisory",
+    };
+  }
+  if (read.settings[COMPRESS_KEY] === true) return undefined; // already enabled
+  return {
+    id: "sc_vscode_compress",
+    source: "static_context",
+    type: "vscode_compress_disabled",
+    severity: "warn",
+    confidence: 0.95,
+    surface: "vscode_settings",
+    scope: "user",
+    file: settingsPath,
+    evidence: `VS Code's built-in terminal-output compression (${COMPRESS_KEY}) is off, so full command output reaches the model.`,
+    recommendation: `Enable ${COMPRESS_KEY} to compress terminal output (host-native, reversible with tk optimize --restore).`,
+    fix_class: "safe_mechanical",
+  };
+}
+
 // ── apply / restore / report (write to stdout, return exit code) ──────────────
 
 const PARSE_HINT = (settingsPath: string) =>
@@ -122,7 +131,9 @@ export function applyCompress(settingsPath: string, nowMs: number): number {
   }
   const settings = read.status === "ok" ? read.settings : {};
   if (settings[COMPRESS_KEY] === true) {
-    process.stdout.write(`tk optimize: ${COMPRESS_KEY} already enabled in ${settingsPath} (no change).\n`);
+    process.stdout.write(
+      `tk optimize: ${COMPRESS_KEY} already enabled in ${settingsPath} (no change).\n`,
+    );
     return 0;
   }
 
@@ -167,51 +178,5 @@ export function restoreCompress(settingsPath: string, nowMs: number): number {
       ? `Restored ${COMPRESS_KEY} = ${JSON.stringify(state.prior)} in ${settingsPath}\n`
       : `Removed ${COMPRESS_KEY} from ${settingsPath} (was absent before apply)\n`,
   );
-  return 0;
-}
-
-export function renderVscodeReport(settingsPath: string, a: VscodeSettingsAnalysis): string {
-  const out: string[] = ["# tk optimize --vscode-settings", `Settings file: ${settingsPath}`, ""];
-  if (a.compress === "on") {
-    out.push(`[ok] ${COMPRESS_KEY} is enabled — terminal output is compressed before reaching the model.`);
-  } else {
-    out.push(`[off] ${COMPRESS_KEY} is not enabled.`);
-    out.push("  Apply with: tk optimize --vscode-settings --apply");
-    out.push("  (host-native terminal output compression; restorable, user-level only.)");
-  }
-  out.push("");
-  out.push(
-    a.contextRisks.length === 0
-      ? "Context-surface settings: none flagged."
-      : "Context-surface settings (advisory — review, not auto-changed):",
-  );
-  for (const r of a.contextRisks) out.push(`  - ${r}`);
-  out.push("");
-  out.push(
-    a.budgetRisks.length === 0
-      ? "Agent-budget settings: none flagged."
-      : "Agent-budget settings (advisory — review, not auto-changed):",
-  );
-  for (const r of a.budgetRisks) out.push(`  - ${r}`);
-  return `${out.join("\n")}\n`;
-}
-
-export function runVscodeSettings(
-  args: OptimizeArgs,
-  nowMs: number = Date.now(),
-  home: string = homedir(),
-): number {
-  const settingsPath = vscodeSettingsPath(process.platform, home);
-  if (args.restore) return restoreCompress(settingsPath, nowMs);
-  if (args.apply) return applyCompress(settingsPath, nowMs);
-
-  // Default / --dry-run: report only.
-  const read = readVscodeSettingsFile(settingsPath);
-  if (read.status === "parse_error") {
-    process.stderr.write(PARSE_HINT(settingsPath));
-    return 1;
-  }
-  const settings = read.status === "ok" ? read.settings : {};
-  process.stdout.write(renderVscodeReport(settingsPath, analyzeVscodeSettings(settings)));
   return 0;
 }

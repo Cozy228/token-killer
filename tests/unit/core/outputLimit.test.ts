@@ -7,7 +7,6 @@ function opts(over: Partial<TkOptions> = {}): TkOptions {
   return {
     raw: false,
     stats: false,
-    verbose: false,
     maxLines: Number.POSITIVE_INFINITY,
     maxChars: Number.POSITIVE_INFINITY,
     saveRaw: "auto",

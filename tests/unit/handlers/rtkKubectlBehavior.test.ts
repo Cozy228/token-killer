@@ -270,7 +270,6 @@ async function rawPassthrough(command: string[], stdout: string): Promise<string
     {
       raw: false,
       stats: false,
-      verbose: false,
       maxLines: 120,
       maxChars: 12000,
       saveRaw: false,

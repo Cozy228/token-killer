@@ -14,7 +14,14 @@ const GAIN: ReportDoc = {
   data: {
     scope: "user",
     estimated_savings_usd: 17.83,
+    estimated_savings_ai_credits: 1783,
     price_per_mtok: 3,
+    cross_reference: {
+      model: "gpt-5.5",
+      estimated_savings_usd: 29.72,
+      estimated_savings_ai_credits: 2972,
+      price_per_mtok: 5,
+    },
     measured_command_savings: {
       estimate_kind: "measured",
       commands: 10,
@@ -76,10 +83,13 @@ describe("renderReportHtml", () => {
     expect(html).not.toMatch(/<(script|link)[^>]+(src|href)=["']https?:/i);
   });
 
-  test("embeds the gain numbers and the estimated dollar figure", () => {
+  test("embeds the gain numbers, AI Credits headline, and GPT-5.5 cross-ref", () => {
     const html = renderReportHtml(GAIN);
-    expect(html).toContain("700"); // saved tokens
-    expect(html).toContain("17.83"); // usd estimate
+    expect(html).toContain("700"); // saved tokens (measured)
+    expect(html).toContain("17.83"); // usd estimate (secondary)
+    expect(html).toContain("AI Credits"); // headline value unit (render JS)
+    expect(html).toContain("gpt-5.5"); // well-known cross-reference (embedded JSON)
+    expect(html).toContain("2972"); // gpt-5.5 credits (raw, formatted in-browser)
   });
 
   test("embeds inspect findings and the session count", () => {

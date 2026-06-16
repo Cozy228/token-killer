@@ -5,6 +5,12 @@ amends: 0002
 
 # VS Code agent hooks DO fire — capability ceiling, protocol gap, and delivery-tier update
 
+> **Operationalized by [ADR 0012](0012-vscode-hook-shim-additive-delivery.md) (2026-06-15):**
+> the complementary VS Code hook tier proven in decision #5 is now wired **additively** alongside
+> the shim (issue #22). The protocol-conformance prerequisite (decision #6) for the rewrite path
+> is issue #19; the `modifiedResult` boundary (decision #3) is reaffirmed — Copilot-CLI-only result
+> compression is tracked separately in #24.
+
 ## Context
 
 [ADR 0002](0002-shim-delivery-tier-and-passthrough.md) made the PATH shim the primary

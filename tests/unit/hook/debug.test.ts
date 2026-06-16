@@ -1,9 +1,26 @@
 import { afterEach, beforeEach, describe, expect, test, vi } from "vitest";
-import { existsSync, mkdtempSync, readFileSync, rmSync } from "node:fs";
+import {
+  chmodSync,
+  existsSync,
+  mkdtempSync,
+  readFileSync,
+  rmSync,
+  statSync,
+  writeFileSync,
+} from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
-import { debugLogPath, tkDebug, tkDebugEnabled } from "../../../src/hook/debug.js";
+import {
+  debugLogPath,
+  emitSupportHintOnce,
+  errorLogPath,
+  logFatalError,
+  recordHookError,
+  resetSupportHintForTest,
+  tkDebug,
+  tkDebugEnabled,
+} from "../../../src/hook/debug.js";
 
 let writes: string[];
 let dataHome: string;
@@ -12,6 +29,7 @@ const originalHome = process.env.TOKEN_KILLER_HOME;
 
 beforeEach(() => {
   writes = [];
+  resetSupportHintForTest();
   dataHome = mkdtempSync(join(tmpdir(), "tk-debug-home-"));
   process.env.TOKEN_KILLER_HOME = dataHome;
   vi.spyOn(process.stderr, "write").mockImplementation((chunk: string | Uint8Array) => {
@@ -78,5 +96,104 @@ describe("tkDebug — gated by TK_DEBUG", () => {
     // ISO timestamp prefix + the same body as stderr
     expect(lines[0]).toMatch(/^\d{4}-\d{2}-\d{2}T.*Z tk debug: claude:stdin bytes=90$/);
     expect(lines[1]).toContain("tk debug: claude:emit rewrote=true");
+  });
+
+  test.runIf(process.platform !== "win32")(
+    "creates and repairs diagnostic logs with owner-only permissions",
+    () => {
+      const debugPath = debugLogPath();
+      const errorPath = errorLogPath();
+      chmodSync(dataHome, 0o755);
+      writeFileSync(debugPath, "old debug\n", { mode: 0o644 });
+      writeFileSync(errorPath, "old error\n", { mode: 0o644 });
+      chmodSync(debugPath, 0o644);
+      chmodSync(errorPath, 0o644);
+
+      process.env.TK_DEBUG = "1";
+      tkDebug("permissions");
+      recordHookError("permissions", new Error("test"));
+
+      expect(statSync(dataHome).mode & 0o777).toBe(0o700);
+      expect(statSync(debugPath).mode & 0o777).toBe(0o600);
+      expect(statSync(errorPath).mode & 0o777).toBe(0o600);
+    },
+  );
+});
+
+describe("logFatalError — UNGATED crash breadcrumb", () => {
+  test("writes errors.log even when TK_DEBUG is unset", () => {
+    delete process.env.TK_DEBUG;
+    expect(tkDebugEnabled()).toBe(false);
+    logFatalError("tk hook copilot", new Error("Cannot find module './cli.js'"));
+    const path = errorLogPath();
+    expect(path).toBe(join(dataHome, "errors.log"));
+    const body = readFileSync(path, "utf8");
+    expect(body).toContain("tk fatal: tk hook copilot");
+    expect(body).toContain("Cannot find module './cli.js'");
+    // also mirrored to stderr (host swallows it, but local runs surface it)
+    expect(writes.join("")).toContain("tk fatal: tk hook copilot");
+  });
+
+  test("logs the stack for an Error and stringifies a non-Error", () => {
+    logFatalError("ctx-a", new Error("boom"));
+    logFatalError("ctx-b", "plain string failure");
+    const body = readFileSync(errorLogPath(), "utf8");
+    expect(body).toContain("tk fatal: ctx-a");
+    // Error path includes the stack (which contains the message)
+    expect(body).toMatch(/boom/);
+    expect(body).toContain("tk fatal: ctx-b");
+    expect(body).toContain("plain string failure");
+  });
+});
+
+describe("recordHookError — UNGATED fail-open breadcrumb", () => {
+  test("writes errors.log even when TK_DEBUG is unset (reconstructable after the fact)", () => {
+    delete process.env.TK_DEBUG;
+    expect(tkDebugEnabled()).toBe(false);
+    recordHookError("claude: stdin parse (fail-open)", new Error("Unterminated string in JSON"));
+    const body = readFileSync(errorLogPath(), "utf8");
+    expect(body).toContain("tk hook-error: claude: stdin parse (fail-open)");
+    expect(body).toContain("Unterminated string in JSON");
+  });
+
+  test("stays OFF stderr by default — a fail-open hook's stderr is a spurious host error", () => {
+    recordHookError("claude: stdin parse", new Error("boom"));
+    expect(writes.join("")).toBe("");
+  });
+
+  test("surfaceStderr ALSO writes stderr (safe on Copilot CLI's debug channel)", () => {
+    recordHookError("copilot: stdin parse", new Error("boom"), { surfaceStderr: true });
+    expect(writes.join("")).toContain("tk hook-error: copilot: stdin parse");
+    expect(writes.join("")).toContain("boom");
+    // and still persisted regardless of the stderr copy
+    expect(readFileSync(errorLogPath(), "utf8")).toContain("tk hook-error: copilot: stdin parse");
+  });
+});
+
+describe("emitSupportHintOnce — nudge toward `tk support` on tk's OWN errors", () => {
+  const HINT = "Run `tk support`";
+
+  test("writes the hint to stderr exactly once per process (collapses a burst)", () => {
+    emitSupportHintOnce();
+    emitSupportHintOnce();
+    emitSupportHintOnce();
+    expect(writes.filter((w) => w.includes(HINT))).toHaveLength(1);
+  });
+
+  test("fires from logFatalError (a fatal crash is always tk's own error)", () => {
+    logFatalError("tk hook copilot", new Error("boom"));
+    expect(writes.join("")).toContain(HINT);
+    // The hint goes to stderr only — never into the clean machine log.
+    expect(readFileSync(errorLogPath(), "utf8")).not.toContain(HINT);
+  });
+
+  test("fires from recordHookError when surfaceStderr is set (copilot)", () => {
+    recordHookError("copilot: stdin parse", new Error("boom"), { surfaceStderr: true });
+    expect(writes.join("")).toContain(HINT);
+  });
+
+  test("does NOT fire from a plain recordHookError (claude stays silent by design)", () => {
+    recordHookError("claude: stdin parse", new Error("boom"));
+    expect(writes.join("")).not.toContain(HINT);
   });
 });

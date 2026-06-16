@@ -111,6 +111,73 @@ describe("skill_invocation_policy", () => {
     expect(userFindings().some((x) => x.type === "skill_invocation_policy")).toBe(false);
   });
 
+  test("FP fix: side-effect-verb NOUN/adjective compounds in the description are NOT flagged", () => {
+    // Real false positives, each a verb used as a noun/adjective, not an action:
+    //  - learn: "publish-ready output"     (publish = adjective)
+    //  - write: "commit messages, release notes"  (commit/release = nouns)
+    //  - prototype: "before committing to it"      (commit to = decide, not git)
+    const cases: Array<[string, string]> = [
+      ["learn", "Research a topic and turn material into publish-ready output."],
+      ["write", "Rewrite prose; not for commit messages, release notes, or inline docs."],
+      ["prototype", "Build a throwaway prototype to flesh out a design before committing to it."],
+    ];
+    for (const [name, description] of cases) {
+      writeUserSkill(
+        name,
+        ["---", `name: ${name}`, `description: ${description}`, "---", "# X", "Body."].join("\n"),
+      );
+    }
+    const sideEffect = userFindings().filter(
+      (x) =>
+        x.type === "skill_invocation_policy" &&
+        x.recommendation.includes("disable-model-invocation"),
+    );
+    expect(sideEffect).toHaveLength(0);
+  });
+
+  test("a knowledge+read-only skill yields ONE combined hygiene finding, not two", () => {
+    // learn-like: both background-knowledge (→ user-invocable) and read-only
+    // (→ allowed-tools). Must collapse to a single finding so it isn't listed twice.
+    writeUserSkill(
+      "learn",
+      [
+        "---",
+        "name: learn",
+        "description: Background reference: research a topic and summarize it.",
+        "---",
+        "# Learn",
+        "Body.",
+      ].join("\n"),
+    );
+    const infos = userFindings().filter(
+      (x) => x.type === "skill_invocation_policy" && x.severity === "info",
+    );
+    expect(infos).toHaveLength(1);
+    expect(infos[0].recommendation).toContain("user-invocable");
+    expect(infos[0].recommendation).toContain("allowed-tools");
+  });
+
+  test("a genuine side-effect skill (verb in its description) is still flagged", () => {
+    writeUserSkill(
+      "shipit",
+      [
+        "---",
+        "name: shipit",
+        "description: Commit, push, and publish a release.",
+        "---",
+        "# Ship",
+        "Body.",
+      ].join("\n"),
+    );
+    expect(
+      userFindings().some(
+        (x) =>
+          x.type === "skill_invocation_policy" &&
+          x.recommendation.includes("disable-model-invocation"),
+      ),
+    ).toBe(true);
+  });
+
   test("M1: explicit disable-model-invocation:false gets NO finding (never flip explicit intent to true)", () => {
     writeUserSkill(
       "deploy",
@@ -160,6 +227,70 @@ describe("skill_entrypoint_bloat", () => {
       ].join("\n"),
     );
     expect(userFindings().some((x) => x.type === "skill_entrypoint_bloat")).toBe(false);
+  });
+});
+
+describe("skill_description_bloat", () => {
+  test("flags an over-long always-on description", () => {
+    writeUserSkill(
+      "verbose",
+      [
+        "---",
+        "name: verbose",
+        `description: ${"trigger words and explanation ".repeat(40)}`, // > 600 chars
+        "---",
+        "# Verbose",
+        "Body.",
+      ].join("\n"),
+    );
+    const f = userFindings().find((x) => x.type === "skill_description_bloat");
+    expect(f).toBeDefined();
+    expect(f!.recommendation).toContain("Tighten the description");
+  });
+
+  test("a concise description is not flagged", () => {
+    writeUserSkill(
+      "concise",
+      ["---", "name: concise", "description: Short and to the point.", "---", "# C", "Body."].join(
+        "\n",
+      ),
+    );
+    expect(userFindings().some((x) => x.type === "skill_description_bloat")).toBe(false);
+  });
+});
+
+describe("skill_count_bloat", () => {
+  function writeManyUserSkills(n: number): void {
+    for (let i = 0; i < n; i += 1) {
+      writeUserSkill(
+        `s${i}`,
+        ["---", `name: s${i}`, `description: skill ${i}`, "---", "# S"].join("\n"),
+      );
+    }
+  }
+
+  test("warns when more than 20 user-level skills are installed", () => {
+    writeManyUserSkills(21);
+    const f = userFindings().find((x) => x.type === "skill_count_bloat");
+    expect(f).toBeDefined();
+    expect(f!.severity).toBe("warn");
+    expect(f!.evidence).toContain("21 user-level skills");
+    expect(f!.recommendation).toContain("Prune");
+  });
+
+  test("does not fire at or below the threshold", () => {
+    writeManyUserSkills(20);
+    expect(userFindings().some((x) => x.type === "skill_count_bloat")).toBe(false);
+  });
+
+  test("project-scoped skills do not count toward the user-level total", () => {
+    for (let i = 0; i < 25; i += 1) {
+      writeProjectSkill(
+        `p${i}`,
+        ["---", `name: p${i}`, `description: p ${i}`, "---", "# P"].join("\n"),
+      );
+    }
+    expect(projectFindings().some((x) => x.type === "skill_count_bloat")).toBe(false);
   });
 });
 

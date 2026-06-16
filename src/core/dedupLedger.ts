@@ -31,8 +31,12 @@ export type DedupEvent = {
 export async function appendDedupEvent(cwd: string, event: DedupEvent): Promise<void> {
   try {
     const file = dedupEventsFile(cwd);
-    await mkdir(path.dirname(file), { recursive: true });
-    await writeFile(file, `${JSON.stringify(event)}\n`, { encoding: "utf8", flag: "a" });
+    await mkdir(path.dirname(file), { recursive: true, mode: 0o700 });
+    await writeFile(file, `${JSON.stringify(event)}\n`, {
+      encoding: "utf8",
+      flag: "a",
+      mode: 0o600,
+    });
   } catch {
     // accounting must never break the hot path
   }

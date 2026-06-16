@@ -51,7 +51,12 @@ describe("context/analyzer", () => {
     write("repo/AGENTS.md", "# Agents\n");
     write("repo/.github/prompts/p.prompt.md", "# Prompt\n");
 
-    const onlyPrompts = analyzeContext({ scopes: ["project"], cwd, home: root, surface: "prompts" });
+    const onlyPrompts = analyzeContext({
+      scopes: ["project"],
+      cwd,
+      home: root,
+      surface: "prompts",
+    });
     expect(onlyPrompts.files_scanned).toBe(1);
   });
 
@@ -94,5 +99,33 @@ describe("context/report — static section render", () => {
   test("renders empty state", () => {
     const out = renderStaticContextSection({ files_scanned: 0, findings: [] });
     expect(out).toContain("No static-context findings");
+  });
+
+  test("consolidates same (severity,type,recommendation) findings into ONE block listing files", () => {
+    const mk = (file: string) => ({
+      id: file,
+      source: "static_context" as const,
+      type: "skill_invocation_policy" as const,
+      severity: "info" as const,
+      confidence: 0.5,
+      surface: "skill" as const,
+      file,
+      start_line: 6,
+      evidence: "Read-only skill missing allowed-tools.",
+      recommendation: "Add an `allowed-tools` list.",
+      fix_class: "suggested_diff" as const,
+    });
+    const out = renderStaticContextSection({
+      files_scanned: 3,
+      findings: [mk("a/SKILL.md"), mk("b/SKILL.md"), mk("c/SKILL.md")],
+    });
+    // One grouped header with the count, the shared recommendation once, and a file list.
+    expect(out).toContain("[info] skill_invocation_policy (3 files)");
+    expect(out).toContain("    - a/SKILL.md:6");
+    expect(out).toContain("    - c/SKILL.md:6");
+    // The recommendation appears once, not three times.
+    expect(out.match(/Add an `allowed-tools` list\./g)?.length).toBe(1);
+    // No per-file Evidence repetition in a consolidated group.
+    expect(out).not.toContain("Evidence: Read-only skill missing allowed-tools.");
   });
 });

@@ -10,7 +10,7 @@
 
 import { byDay, fallbackCount, summarize } from "../core/aggregate.js";
 import type { HistoryRecord } from "../core/history.js";
-import { tokensToUsd } from "../core/pricing.js";
+import { tokensToCredits, tokensToUsd } from "../core/pricing.js";
 import {
   last24hFromRollup,
   rollupToGainSummary,
@@ -54,8 +54,10 @@ export type TelemetryPayload = {
   first_seen_days: number;
   active_days_30d: number;
   source_adapter_mix: Record<string, number>;
-  // pricing (shared module; default $3/Mtok)
+  // pricing (shared module; default $3/Mtok = Sonnet 4.6). AI Credits is the
+  // headline value unit (1 credit = $0.01); USD retained alongside.
   estimated_savings_usd_30d: number;
+  estimated_savings_ai_credits_30d: number;
   // optional inspect aggregates
   inspect?: InspectAggregates;
   // per-POST message id for endpoint-side dedup (NOT a stable correlator)
@@ -125,6 +127,7 @@ export function buildTelemetry(params: BuildTelemetryParams): TelemetryPayload {
     // ($0.0003) would round to $0.00 and the metric would read zero (audit #15 —
     // surfaced once the excluded telemetry tests were wired into the gate).
     estimated_savings_usd_30d: Math.round(tokensToUsd(tokensSaved30d) * 1e6) / 1e6,
+    estimated_savings_ai_credits_30d: Math.round(tokensToCredits(tokensSaved30d) * 1e4) / 1e4,
     runId: params.runId,
   };
   if (params.inspect) payload.inspect = params.inspect;
@@ -189,6 +192,7 @@ export function buildTelemetryFromRollup(params: BuildTelemetryRollupParams): Te
     active_days_30d,
     source_adapter_mix: { ...rollup.source_adapter_mix },
     estimated_savings_usd_30d: Math.round(tokensToUsd(tokensSaved30d) * 1e6) / 1e6,
+    estimated_savings_ai_credits_30d: Math.round(tokensToCredits(tokensSaved30d) * 1e4) / 1e4,
     runId: params.runId,
   };
   if (params.inspect) payload.inspect = params.inspect;

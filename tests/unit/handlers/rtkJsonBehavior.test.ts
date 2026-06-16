@@ -216,7 +216,6 @@ describe("json audit regressions", () => {
     const options = {
       raw: false,
       stats: false,
-      verbose: false,
       maxLines: 120,
       maxChars: 12000,
       saveRaw: false as const,

@@ -19,7 +19,7 @@ import { governPrompt } from "./prompt.js";
 import { failureSourceAdapter, handleError } from "./error.js";
 import { recordHookFailure } from "../core/history.js";
 import { recordGovernance } from "../core/governance.js";
-import { tkDebug } from "./debug.js";
+import { recordHookError, tkDebug } from "./debug.js";
 
 const ALLOW: Decision = { decision: "allow" };
 
@@ -56,10 +56,14 @@ function hostFields(d: Decision): HostFields | null {
   switch (d.decision) {
     case "rewrite":
       if (!d.rewritten_command) return null;
-      // "allow" (not RTK's "ask") so the rewrite applies TRANSPARENTLY — no
-      // confirmation prompt per command. Verified live in VS Code: "ask" surfaced a
-      // prompt for `tk git status --short`; "allow" + updatedInput runs the rewritten
-      // `tk <cmd>` silently, which is the point of transparent token savings.
+      // "allow" (not RTK's "ask") is what makes the rewrite TRANSPARENT — no
+      // confirmation prompt per command ("ask" surfaced a prompt for
+      // `tk git status --short`). Separately, the rewrite carrier (updatedInput /
+      // modifiedArgs) must preserve the FULL original tool input and overwrite only
+      // `command`: VS Code's run_in_terminal validates the input against its schema,
+      // so emitting `{ command }` alone drops required fields (`explanation`, `goal`,
+      // `mode`, …) and VS Code SILENTLY IGNORES the rewrite. Both pieces are applied
+      // in toHostOutput below; here we only carry the rewritten command forward.
       return {
         permissionDecision: "allow",
         permissionDecisionReason: COPILOT_REWRITE_REASON,
@@ -91,24 +95,34 @@ export function toHostOutput(ev: ToolEvent, d: Decision): Record<string, unknown
   if (f === null) return null;
 
   if (ev.dialect === "cli") {
-    // Copilot CLI: flat shape. `modifiedArgs` replaces the tool args (applied when
-    // permissionDecision is allow/absent).
+    // Copilot CLI: flat shape. `modifiedArgs` REPLACES the tool args wholesale
+    // (not a merge — confirmed via RTK's modifiedArgs handling). So we must rebuild
+    // the full args object from what the host sent (`ev.toolInput`, the parsed
+    // `toolArgs`) and overwrite only `command`. Emitting `{ command }` alone would
+    // DROP host-supplied fields the tool needs (`description`, `initial_wait`,
+    // `mode`, …), degrading or breaking the rewritten call. Mirrors RTK
+    // (test_copilot_cli_preserves_extra_args_fields).
     const out: Record<string, unknown> = {};
     if (f.permissionDecision !== undefined) out.permissionDecision = f.permissionDecision;
     if (f.permissionDecisionReason !== undefined)
       out.permissionDecisionReason = f.permissionDecisionReason;
-    if (f.command !== undefined) out.modifiedArgs = { command: f.command };
+    if (f.command !== undefined) out.modifiedArgs = { ...ev.toolInput, command: f.command };
     if (f.additionalContext !== undefined) out.additionalContext = f.additionalContext;
     return out;
   }
 
   // VS Code (and Claude-family / unknown dialects): the hookSpecificOutput wrapper
-  // with `updatedInput` for the transparent rewrite.
+  // with `updatedInput` for the transparent rewrite. Like Copilot CLI's modifiedArgs,
+  // `updatedInput` REPLACES the tool input wholesale, and VS Code validates it against
+  // run_in_terminal's schema — so we must rebuild the full input from what the host
+  // sent (`ev.toolInput`, the parsed `tool_input`) and overwrite only `command`.
+  // Emitting `{ command }` alone drops required fields (`explanation`, `goal`, `mode`,
+  // …) and VS Code silently IGNORES the rewrite on schema-validation failure.
   const hook: Record<string, unknown> = { hookEventName: hostEventName(ev.event) };
   if (f.permissionDecision !== undefined) hook.permissionDecision = f.permissionDecision;
   if (f.permissionDecisionReason !== undefined)
     hook.permissionDecisionReason = f.permissionDecisionReason;
-  if (f.command !== undefined) hook.updatedInput = { command: f.command };
+  if (f.command !== undefined) hook.updatedInput = { ...ev.toolInput, command: f.command };
   if (f.additionalContext !== undefined) hook.additionalContext = f.additionalContext;
   return { hookSpecificOutput: hook };
 }
@@ -156,9 +170,19 @@ export function decideFromStdin(raw: string): Decision {
   try {
     return decide(normalizeStdin(raw));
   } catch (error) {
-    process.stderr.write(
-      `tk hook copilot: ${error instanceof Error ? error.message : String(error)}\n`,
-    );
+    // Fail-open: a malformed/truncated payload is handled by allowing the tool.
+    // Persist the reason to errors.log UNCONDITIONALLY (reconstructable after the
+    // fact — TK_DEBUG can't be set retroactively, and Copilot CLI's preToolUse
+    // denial message carries no hook output). stderr IS surfaced here: Copilot CLI's
+    // docs designate stderr a results-neutral debug/log channel, so it's safe and
+    // gives the user the reason in the host's own logs without breaking fail-open.
+    recordHookError("copilot: stdin parse (fail-open, tool allowed)", error, {
+      surfaceStderr: true,
+    });
+    tkDebug("copilot:parse-error", {
+      message: error instanceof Error ? error.message : String(error),
+      bytes: (raw ?? "").length,
+    });
     return ALLOW;
   }
 }

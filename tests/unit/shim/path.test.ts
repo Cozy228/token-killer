@@ -41,6 +41,13 @@ describe("resolveReal + sentinel", () => {
   let realDir: string;
   let shimDir: string;
   const prevShim = process.env.TK_SHIM_DIR;
+  // On Windows a bare extensionless script is not resolvable (resolveReal walks
+  // PATHEXT), so the fixture carries a real PATHEXT extension. resolveReal is still
+  // called with the bare "faketool" — it appends the extension during the walk.
+  const isWin = process.platform === "win32";
+  const toolFile = isWin ? "faketool.cmd" : "faketool";
+  const realContent = isWin ? "@echo real\r\n" : "#!/bin/sh\necho real\n";
+  const shimContent = isWin ? "@tk faketool %*\r\n" : '#!/bin/sh\nexec tk faketool "$@"\n';
 
   beforeAll(() => {
     tmp = mkdtempSync(join(tmpdir(), "tk-shim-path-"));
@@ -49,10 +56,10 @@ describe("resolveReal + sentinel", () => {
     mkdirSync(realDir);
     mkdirSync(shimDir);
     // The real tool, and a shim-dir wrapper of the same name.
-    writeFileSync(join(realDir, "faketool"), "#!/bin/sh\necho real\n");
-    chmodSync(join(realDir, "faketool"), 0o755);
-    writeFileSync(join(shimDir, "faketool"), "#!/bin/sh\nexec tk faketool \"$@\"\n");
-    chmodSync(join(shimDir, "faketool"), 0o755);
+    writeFileSync(join(realDir, toolFile), realContent);
+    chmodSync(join(realDir, toolFile), 0o755);
+    writeFileSync(join(shimDir, toolFile), shimContent);
+    chmodSync(join(shimDir, toolFile), 0o755);
   });
 
   afterAll(() => {
@@ -62,7 +69,7 @@ describe("resolveReal + sentinel", () => {
   });
 
   test("resolveReal finds the real tool past the shim", () => {
-    expect(resolveReal("faketool", realDir)).toBe(join(realDir, "faketool"));
+    expect(resolveReal("faketool", realDir)).toBe(join(realDir, toolFile));
   });
 
   test("resolveReal returns null when the tool is nowhere on the path", () => {

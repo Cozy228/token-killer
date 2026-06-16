@@ -70,18 +70,6 @@ describe("parse — --session flag", () => {
   });
 });
 
-describe("parse — --no-dedup", () => {
-  test("sets options.dedup=false and drops the flag from the command", () => {
-    const parsed = parseArgv(["--no-dedup", "git", "status"]);
-    expect(parsed.options.dedup).toBe(false);
-    expect(parsed.command?.original).toEqual(["git", "status"]);
-  });
-
-  test("absent ⇒ dedup undefined (follow the gate)", () => {
-    expect(parseArgv(["git", "status"]).options.dedup).toBeUndefined();
-  });
-});
-
 describe("rewrite — --session injection", () => {
   test("injects the flag when a valid session is supplied", () => {
     const r = rewriteCommand("git status", "abc");
@@ -156,7 +144,6 @@ describe("recordHistory — session_id stamping", () => {
     return {
       raw: false,
       stats: false,
-      verbose: false,
       maxLines: 120,
       maxChars: 12000,
       saveRaw: false,

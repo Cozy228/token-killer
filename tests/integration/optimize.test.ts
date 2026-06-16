@@ -6,12 +6,14 @@ import { afterEach, beforeEach, describe, expect, test } from "vitest";
 import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import path from "node:path";
-import { fileURLToPath } from "node:url";
+import { fileURLToPath, pathToFileURL } from "node:url";
 import { spawnSync } from "node:child_process";
+
+import { vscodeSettingsPath } from "../../src/shim/hostConfig.js";
 
 const repoRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "../..");
 const cli = path.join(repoRoot, "src/cli.ts");
-const tsxLoader = path.join(repoRoot, "node_modules/tsx/dist/loader.mjs");
+const tsxLoader = pathToFileURL(path.join(repoRoot, "node_modules/tsx/dist/loader.mjs")).href;
 
 let home: string;
 let project: string;
@@ -50,16 +52,16 @@ function gitInit(): void {
 }
 
 describe("tk optimize", () => {
-  test("--dry-run triggers inspect when the bucket is absent and prints a plan, no writes", () => {
+  test("default preview triggers inspect when the bucket is absent and prints a plan, no writes", () => {
     write(
       "AGENTS.md",
       `# Rules\n${Array.from({ length: 300 }, (_, i) => `line ${i}`).join("\n")}\n`,
     );
-    const r = runTk(["optimize", "--project", "--dry-run"]);
+    const r = runTk(["optimize", "--project"]);
     expect(r.status).toBe(0);
     expect(r.stdout).toContain("scope = project");
     expect(r.stdout).toContain("always_on_bloat");
-    // No advice artifact in dry-run.
+    // No advice artifact in the default preview.
     expect(existsSync(path.join(home, ".token-killer", "advice", "context"))).toBe(false);
     // But the inspect bucket was created by the trigger.
     expect(existsSync(path.join(home, ".token-killer", "projects"))).toBe(true);
@@ -70,31 +72,51 @@ describe("tk optimize", () => {
       "AGENTS.md",
       `# Rules\n${Array.from({ length: 300 }, (_, i) => `line ${i}`).join("\n")}\n`,
     );
-    const r = runTk(["optimize", "context", "--project", "--dry-run"]);
+    const r = runTk(["optimize", "context", "--project"]);
     expect(r.status).toBe(0);
     expect(r.stdout).toContain("scope = project");
-  });
-
-  test("--write-advice writes a project advice file under ~/.token-killer/advice/context", () => {
-    write(
-      "AGENTS.md",
-      `# Rules\n${Array.from({ length: 300 }, (_, i) => `line ${i}`).join("\n")}\n`,
-    );
-    const r = runTk(["optimize", "--project", "--write-advice"]);
-    expect(r.status).toBe(0);
-    expect(r.stdout).toContain("Wrote context advice");
-    const dir = path.join(home, ".token-killer", "advice", "context");
-    expect(existsSync(dir)).toBe(true);
-    // The advice file name derives from the project fingerprint hash.
-    const advicePath = r.stdout.trim().split("Wrote context advice: ")[1];
-    expect(advicePath).toBeTruthy();
-    expect(readFileSync(advicePath, "utf8")).toContain("# Copilot Context Advice");
   });
 
   test("an unknown flag → exit 1", () => {
     const r = runTk(["optimize", "skills"]);
     expect(r.status).toBe(1);
     expect(r.stderr).toContain("unknown flag");
+  });
+
+  test("--vscode-settings is now an unknown flag (folded into the normal flow)", () => {
+    const r = runTk(["optimize", "--vscode-settings"]);
+    expect(r.status).toBe(1);
+    expect(r.stderr).toContain("unknown flag");
+  });
+
+  // #12: VS Code's compressOutput toggle is reported by inspect as a finding and
+  // applied by `optimize --apply` (no dedicated flag), reversible via --restore.
+  test("--apply enables VS Code compressOutput from an inspect finding; --restore reverts", () => {
+    const settings = vscodeSettingsPath(process.platform, home);
+    mkdirSync(path.dirname(settings), { recursive: true });
+    writeFileSync(settings, `${JSON.stringify({ "editor.fontSize": 13 }, null, 2)}\n`);
+
+    // Preview lists the finding (no write).
+    const preview = runTk(["optimize", "--user"]);
+    expect(preview.status).toBe(0);
+    expect(preview.stdout).toContain("vscode_compress_disabled");
+    expect(JSON.parse(readFileSync(settings, "utf8"))).not.toHaveProperty(
+      "chat.tools.compressOutput.enabled",
+    );
+
+    // Apply enables the key, preserving the rest.
+    const apply = runTk(["optimize", "--user", "--apply"]);
+    expect(apply.status).toBe(0);
+    const after = JSON.parse(readFileSync(settings, "utf8"));
+    expect(after["chat.tools.compressOutput.enabled"]).toBe(true);
+    expect(after["editor.fontSize"]).toBe(13);
+
+    // Restore reverts settings.json to its pre-apply state (key absent again).
+    const restore = runTk(["optimize", "--restore"]);
+    expect(restore.status).toBe(0);
+    expect(JSON.parse(readFileSync(settings, "utf8"))).not.toHaveProperty(
+      "chat.tools.compressOutput.enabled",
+    );
   });
 
   test("--apply discloses free-form suggestions but does not rewrite the file", () => {
@@ -108,20 +130,6 @@ describe("tk optimize", () => {
     expect(r.stdout).toContain("Suggestions for manual review");
     // Free-form suggestion (always_on_bloat) is printed, not written.
     expect(readFileSync(path.join(project, "AGENTS.md"), "utf8")).toBe(before);
-  });
-
-  test("--token-budget-block installs the managed block, --restore removes it", () => {
-    const install = runTk(["optimize", "--token-budget-block"]);
-    expect(install.status).toBe(0);
-    const target = path.join(home, ".copilot", "copilot-instructions.md");
-    expect(existsSync(target)).toBe(true);
-    expect(readFileSync(target, "utf8")).toContain("tk:token_budget:start");
-
-    const remove = runTk(["optimize", "--token-budget-block", "--restore"]);
-    expect(remove.status).toBe(0);
-    // O1: the block was the file's only content (install created it), so restore
-    // deletes the file rather than leaving a 0-byte leftover.
-    expect(existsSync(target)).toBe(false);
   });
 
   // End-to-end: inspect flags a project-tracked skill that the model can

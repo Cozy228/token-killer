@@ -174,7 +174,12 @@ function classifyByHeuristic(lower: string): ToolCategory {
   if (lower.includes("terminal") || lower.includes("shell") || lower.includes("bash")) {
     return "execute_adjacent";
   }
-  if (lower.includes("apply_patch") || lower.includes("edit") || lower.includes("replace") || lower.includes("create_file")) {
+  if (
+    lower.includes("apply_patch") ||
+    lower.includes("edit") ||
+    lower.includes("replace") ||
+    lower.includes("create_file")
+  ) {
     return "edit";
   }
   if (lower.includes("grep") || lower.includes("search")) {
@@ -257,7 +262,12 @@ function extractCommand(input: Record<string, unknown>): string | undefined {
 
 function detectDialect(payload: Record<string, unknown>): Dialect {
   if ("toolName" in payload || "toolArgs" in payload || "toolResult" in payload) return "cli";
-  if ("tool_name" in payload || "tool_input" in payload || "tool_response" in payload || "tool_result" in payload) {
+  if (
+    "tool_name" in payload ||
+    "tool_input" in payload ||
+    "tool_response" in payload ||
+    "tool_result" in payload
+  ) {
     return "vscode";
   }
   return "unknown";
@@ -278,12 +288,35 @@ export function normalize(payload: unknown): ToolEvent {
 
   const dialect = detectDialect(payload);
 
-  const event = normalizeEventName(
-    payload.event ?? payload.eventName ?? payload.hookEventName ?? payload.hook_event_name,
-  );
-
   const toolName = firstString(payload, ["toolName", "tool_name", "tool", "name"]) ?? "";
-  const toolInput = parseToolInput(payload.toolArgs ?? payload.tool_input ?? payload.toolInput ?? payload.input);
+  const toolInput = parseToolInput(
+    payload.toolArgs ?? payload.tool_input ?? payload.toolInput ?? payload.input,
+  );
+  const rawResult = payload.toolResult ?? payload.tool_response ?? payload.tool_result;
+
+  const rawEvent =
+    payload.event ?? payload.eventName ?? payload.hookEventName ?? payload.hook_event_name;
+  let event = normalizeEventName(rawEvent);
+  // Copilot CLI's NATIVE preToolUse entry sends NO event-name field — it scopes the
+  // event by the hook-config key it fired under (verified live against 1.0.62, see
+  // docs/reports/windows-copilot-1.0.62-live-verification-20260615.md §5). Without
+  // this, that payload normalizes to `unknown` → `decide()` allows it → the rewrite
+  // silently never happens on the camelCase path. Infer preToolUse from the shape: a
+  // recognized-dialect tool call carrying a name + input but NO result is a pre-call.
+  // Guarded to a genuinely ABSENT event field — an event name that is present but
+  // unrecognized stays `unknown` (it may be a future event we must not mislabel).
+  // Safe even when the dual-schema PascalCase entry ALSO rewrites the same call —
+  // rewriteCommand is idempotent on an already-`tk` command (eligibility guards it).
+  if (
+    event === "unknown" &&
+    rawEvent === undefined &&
+    dialect !== "unknown" &&
+    toolName.length > 0 &&
+    rawResult === undefined
+  ) {
+    event = "preToolUse";
+  }
+
   const category = classifyTool(toolName);
 
   const ev: ToolEvent = {
@@ -295,8 +328,7 @@ export function normalize(payload: unknown): ToolEvent {
   };
 
   // Result is only meaningful on posttool; carry it through untouched when present.
-  const result = payload.toolResult ?? payload.tool_response ?? payload.tool_result;
-  if (result !== undefined) ev.toolResult = result;
+  if (rawResult !== undefined) ev.toolResult = rawResult;
 
   // Command string only for shell executions.
   if (category === "execute_adjacent") {
@@ -307,7 +339,13 @@ export function normalize(payload: unknown): ToolEvent {
   const prompt = firstString(payload, ["prompt", "promptText", "userPrompt"]);
   if (prompt !== undefined) ev.prompt = prompt;
 
-  const cwd = firstString(payload, ["cwd", "workingDirectory", "workspaceRoot", "workspace_folder", "workspaceFolder"]);
+  const cwd = firstString(payload, [
+    "cwd",
+    "workingDirectory",
+    "workspaceRoot",
+    "workspace_folder",
+    "workspaceFolder",
+  ]);
   if (cwd !== undefined) ev.cwd = cwd;
 
   // Model: probe top-level then a `context`/`metadata` nesting. Never guess.
@@ -320,7 +358,13 @@ export function normalize(payload: unknown): ToolEvent {
   }
   if (model !== undefined) ev.model = model;
 
-  const session = firstString(payload, ["session", "sessionId", "session_id", "conversationId", "conversation_id"]);
+  const session = firstString(payload, [
+    "session",
+    "sessionId",
+    "session_id",
+    "conversationId",
+    "conversation_id",
+  ]);
   if (session !== undefined) ev.session = session;
 
   return ev;
@@ -329,10 +373,18 @@ export function normalize(payload: unknown): ToolEvent {
 // Parse a raw stdin string and normalize it. Fail-open: invalid JSON or empty
 // input yields an `unknown` event (downstream → allow / no rewrite). Never throws.
 export function normalizeStdin(raw: string): ToolEvent {
-  if (typeof raw !== "string" || raw.trim().length === 0) return { ...UNKNOWN_EVENT };
+  if (typeof raw !== "string") return { ...UNKNOWN_EVENT };
+  // Windows hosts prepend one or two UTF-8 BOMs (`EF BB BF`) to hook stdin —
+  // confirmed for Cursor (1–2 BOMs), and the same risk applies to VS Code /
+  // Copilot CLI on Windows. JSON.parse rejects a leading BOM, so without this
+  // strip the parse throws and the hook fails open → the rewrite silently never
+  // happens (the worst failure mode: token savings vanish with no error). Mirror
+  // RTK's strip_leading_bom, which exists for exactly this Windows behavior.
+  const cleaned = raw.replace(/^\uFEFF+/, "").trim();
+  if (cleaned.length === 0) return { ...UNKNOWN_EVENT };
   let parsed: unknown;
   try {
-    parsed = JSON.parse(raw);
+    parsed = JSON.parse(cleaned);
   } catch {
     return { ...UNKNOWN_EVENT };
   }

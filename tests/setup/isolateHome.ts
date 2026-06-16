@@ -15,6 +15,11 @@ import { beforeEach } from "vitest";
 const realHome = path.resolve(homedir(), ".token-killer");
 let workerFallback: string | undefined;
 
+// HTML reports (tk gain / tk inspect, now HTML-by-default) try to open a browser
+// via `open`/`xdg-open`. Suppress that in the whole test suite so no test ever
+// spawns a GUI process — the report file is still written, just never opened.
+process.env.TK_NO_OPEN = "1";
+
 beforeEach(() => {
   const current = process.env.TOKEN_KILLER_HOME;
   if (!current || path.resolve(current) === realHome) {

@@ -35,7 +35,7 @@ describe("injection block", () => {
 describe("injection targets", () => {
   test("Copilot CLI user-level path is under ~/.copilot", () => {
     expect(userInjectionPath("copilot-cli", "/home/u")).toBe(
-      "/home/u/.copilot/copilot-instructions.md",
+      join("/home/u", ".copilot", "copilot-instructions.md"),
     );
   });
 
@@ -43,12 +43,12 @@ describe("injection targets", () => {
     // VS Code does not auto-load <vscodeUserDir>/copilot-instructions.md; its
     // user-level channel is ~/.copilot/instructions/*.instructions.md (ADR 0008).
     expect(userInjectionPath("vscode", "/home/u", "/home/u/.config/Code/User")).toBe(
-      "/home/u/.copilot/instructions/token-killer-prefix.instructions.md",
+      join("/home/u", ".copilot", "instructions", "token-killer-prefix.instructions.md"),
     );
   });
 
   test("project path is .github/copilot-instructions.md in the repo", () => {
-    expect(projectInjectionPath("/repo")).toBe("/repo/.github/copilot-instructions.md");
+    expect(projectInjectionPath("/repo")).toBe(join("/repo", ".github", "copilot-instructions.md"));
   });
 });
 

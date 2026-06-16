@@ -13,7 +13,6 @@ import {
   type InspectBucketReport,
   type ScopeBucket,
 } from "../inspect/persist.js";
-import { renderContextAdvice, writeContextAdvice } from "./advice.js";
 import { contextProjectFingerprint, isGitProject, readContextFile } from "./discover.js";
 import {
   planForFinding,
@@ -25,11 +24,7 @@ import { SURFACE_SELECTORS } from "./types.js";
 import type { ContextFinding, ContextScope } from "./types.js";
 
 export type OptimizeArgs = {
-  dryRun: boolean;
-  writeAdvice: boolean;
   apply: boolean;
-  tokenBudgetBlock: boolean;
-  vscodeSettings: boolean;
   restore: boolean;
   backup: boolean;
   paths: string[]; // explicit files for --backup; empty → all in-scope context files
@@ -41,11 +36,7 @@ export type OptimizeArgs = {
 
 export function parseOptimizeArgs(argv: string[]): OptimizeArgs {
   const args: OptimizeArgs = {
-    dryRun: false,
-    writeAdvice: false,
     apply: false,
-    tokenBudgetBlock: false,
-    vscodeSettings: false,
     restore: false,
     backup: false,
     paths: [],
@@ -57,11 +48,7 @@ export function parseOptimizeArgs(argv: string[]): OptimizeArgs {
   const tokens = argv[0] === "context" ? argv.slice(1) : argv;
   for (let i = 0; i < tokens.length; i += 1) {
     const t = tokens[i];
-    if (t === "--dry-run") args.dryRun = true;
-    else if (t === "--write-advice") args.writeAdvice = true;
-    else if (t === "--apply") args.apply = true;
-    else if (t === "--token-budget-block") args.tokenBudgetBlock = true;
-    else if (t === "--vscode-settings") args.vscodeSettings = true;
+    if (t === "--apply") args.apply = true;
     else if (t === "--restore") args.restore = true;
     else if (t === "--backup") {
       args.backup = true;
@@ -121,9 +108,10 @@ async function defaultTriggerInspect(
 ): Promise<void> {
   // Dynamic import avoids a static inspect↔context cycle. A full inspect run
   // (runtime + static) keeps the persisted bucket complete (goal §"Optimize").
-  // We only want inspect's side effect (the persisted bucket), so its stdout
-  // report is suppressed — optimize owns the output stream.
-  const argv = scope === "user" ? ["--user"] : ["--project"];
+  // We only want inspect's side effect (the persisted bucket): force `--text` so it
+  // never writes/opens an HTML report, and its (text) stdout is suppressed below —
+  // optimize owns the output stream.
+  const argv = scope === "user" ? ["--user", "--text"] : ["--project", "--text"];
   const mod = await import("../inspect/cli.js");
   await withSuppressedStdout(() => {
     mod.runInspect(argv, nowMs, home, cwd);
@@ -154,21 +142,6 @@ export async function runOptimize(
     return 1;
   }
 
-  // Scheme 1: VS Code token-lean settings is a self-contained, host-native path
-  // (apply/restore/report compressOutput; advisory on the rest). It does not use
-  // the inspect bucket / finding pipeline, so dispatch before anything else.
-  if (args.vscodeSettings) {
-    const { runVscodeSettings } = await import("./vscodeSettings.js");
-    return runVscodeSettings(args, nowMs, home);
-  }
-
-  // Managed token-budget block (folds in the former `tk agentsmd`): a user-level
-  // marker-block write. `--restore` removes it; otherwise it is installed.
-  if (args.tokenBudgetBlock) {
-    const { applyMarkerBlock } = await import("./applySafe.js");
-    return applyMarkerBlock(home, args.restore ? "remove" : "insert", nowMs);
-  }
-
   // `--backup` snapshots files BEFORE they are edited (by an agent following a
   // copied prompt, or by hand), so `--restore` can later revert those edits.
   if (args.backup) {
@@ -177,8 +150,8 @@ export async function runOptimize(
   }
 
   // `--restore` reverts the most recent backup set — whether it was written by
-  // `--apply`, `--token-budget-block`, or a pre-edit `--backup` (so it can undo
-  // an agent's manual edits taken after that snapshot).
+  // `--apply` or a pre-edit `--backup` (so it can undo an agent's manual edits
+  // taken after that snapshot).
   if (args.restore) {
     const { runRestore } = await import("./applySafe.js");
     return runRestore(nowMs);
@@ -208,21 +181,7 @@ export async function runOptimize(
 
       const findings = selectStaticFindings(bucket, args.surface);
 
-      if (args.writeAdvice) {
-        const content = renderContextAdvice({
-          scope,
-          fingerprint,
-          generatedAt: new Date(nowMs).toISOString(),
-          filesScanned: bucket?.files_scanned ?? 0,
-          findings,
-          safeAppliesAvailable: scope === "user",
-        });
-        const path = writeContextAdvice(scope, fingerprint, content);
-        process.stdout.write(`Wrote context advice: ${path}\n`);
-        continue;
-      }
-
-      // Default + --dry-run: plan patches and print, never write.
+      // Default (no action flag): plan patches and print, never write.
       printDryRun(findings, home, cwd, scope, bucketRef);
     }
     return 0;
@@ -255,7 +214,7 @@ function printDryRun(
   bucketRef: ScopeBucket,
 ): void {
   const out: string[] = [];
-  out.push(`# tk optimize (--dry-run, scope = ${scope})`);
+  out.push(`# tk optimize (preview, scope = ${scope})`);
   out.push(`Reading findings from: ${inspectBucketPath(bucketRef)}`);
   out.push(`Static-context findings: ${findings.length}`);
   out.push("");
@@ -267,6 +226,15 @@ function printDryRun(
   }
 
   for (const finding of findings) {
+    // The VS Code settings finding is JSON, not a markdown context file — it has no
+    // frontmatter/diff plan. Describe the settings edit `--apply` would make.
+    if (finding.type === "vscode_compress_disabled") {
+      out.push(`[${finding.severity}] ${finding.type} ${finding.file ?? ""}`);
+      out.push(`  fix: ${finding.fix_class}`);
+      out.push(`  ${finding.recommendation}`);
+      out.push("");
+      continue;
+    }
     const livePath = finding.file ? resolveLivePath(finding.file, home, cwd) : undefined;
     const live = livePath ? readContextFile(livePath) : undefined;
     const outcome = planForFinding(finding, live);
@@ -309,10 +277,6 @@ export function renderPlan(plan: ContextPatchPlan, live: string | undefined): st
       );
     } else if (op.kind === "suggested_diff") {
       lines.push(...op.diff.split("\n").map((l) => `  ${l}`));
-    } else if (op.kind === "insert_marker_block") {
-      lines.push(`  + insert Token Killer ${op.marker} marker block in ${op.path}`);
-    } else if (op.kind === "remove_marker_block") {
-      lines.push(`  - remove Token Killer ${op.marker} marker block from ${op.path}`);
     } else if (op.kind === "frontmatter_set") {
       lines.push(`  + set ${op.key} = ${JSON.stringify(op.value)} in ${op.path}`);
     }

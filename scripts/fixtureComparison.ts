@@ -12,7 +12,16 @@ import { commandAvailable } from "./liveComparisonCases.js";
 
 const compareBinDir = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "compare-bin");
 
-const STUB_PATH_PROGRAMS = new Set(["aws", "docker", "kubectl", "curl", "wget", "psql", "glab", "pip"]);
+const STUB_PATH_PROGRAMS = new Set([
+  "aws",
+  "docker",
+  "kubectl",
+  "curl",
+  "wget",
+  "psql",
+  "glab",
+  "pip",
+]);
 
 export type RtkWrapperSpec = {
   mode: "exec-cat" | "file-arg" | "dir-package";
@@ -33,7 +42,6 @@ export type FixtureComparisonCase = {
 const defaultOptions: TkOptions = {
   raw: false,
   stats: false,
-  verbose: false,
   maxLines: 120,
   maxChars: 12000,
   saveRaw: false,
@@ -51,9 +59,18 @@ function toParsed(command: string[]): ParsedCommand {
 
 function hasExplicitGrepFormat(args: string[]): boolean {
   return args.some((arg) =>
-    ["-c", "--count", "-l", "--files-with-matches", "-L", "--files-without-match", "-o", "--only-matching", "-Z", "--null"].includes(
-      arg,
-    ),
+    [
+      "-c",
+      "--count",
+      "-l",
+      "--files-with-matches",
+      "-L",
+      "--files-without-match",
+      "-o",
+      "--only-matching",
+      "-Z",
+      "--null",
+    ].includes(arg),
   );
 }
 
@@ -276,7 +293,12 @@ export function runRtkWrapperFixture(
   const fixturePath = path.join(repoRoot, fixture);
   const env: NodeJS.ProcessEnv = { ...process.env, GIT_PAGER: "", PAGER: "", NO_COLOR: "1" };
   const run = (argv: string[], rtkCmd: string) => {
-    const result = spawnSync("rtk", argv, { cwd: repoRoot, encoding: "utf8", env, maxBuffer: MAX_BUFFER });
+    const result = spawnSync("rtk", argv, {
+      cwd: repoRoot,
+      encoding: "utf8",
+      env,
+      maxBuffer: MAX_BUFFER,
+    });
     return {
       stdout: result.stdout ?? "",
       stderr: result.stderr ?? "",
@@ -297,7 +319,10 @@ export function runRtkWrapperFixture(
   const dir = mkdtempSync(path.join(os.tmpdir(), "tk-deps-"));
   try {
     copyFileSync(fixturePath, path.join(dir, "package.json"));
-    return run([...spec.sub, dir], `rtk ${spec.sub.join(" ")} <tmpdir with ${path.basename(fixture)} as package.json>`);
+    return run(
+      [...spec.sub, dir],
+      `rtk ${spec.sub.join(" ")} <tmpdir with ${path.basename(fixture)} as package.json>`,
+    );
   } finally {
     rmSync(dir, { recursive: true, force: true });
   }

@@ -1,13 +1,27 @@
 import { createHash } from "node:crypto";
-import { readFileSync, realpathSync, statSync } from "node:fs";
+import { chmodSync, mkdirSync, readFileSync, realpathSync, statSync } from "node:fs";
 import os from "node:os";
 import path from "node:path";
 
+// Windows `realpathSync` does NOT normalize drive-letter case — it returns the
+// path with whatever case it was handed. VS Code's agent `run_in_terminal` reports
+// a lowercase drive (`c:\…`) while the user's interactive shell reports uppercase
+// (`C:\…`); since the resolved root is hashed as a raw string, the SAME repo would
+// split into two `repo:<hash>` buckets that `tk gain` (single-bucket) can never
+// reconcile (I6). Uppercasing the drive letter collapses both to one bucket. POSIX
+// paths have no drive letter, so this is a no-op there.
+export function normalizeDriveCase(
+  p: string,
+  platform: NodeJS.Platform = process.platform,
+): string {
+  return platform === "win32" ? p.replace(/^([a-z]):/, (_, d) => `${d.toUpperCase()}:`) : p;
+}
+
 function resolveProjectRoot(cwd: string): string {
   try {
-    return realpathSync(cwd);
+    return normalizeDriveCase(realpathSync(cwd));
   } catch {
-    return path.resolve(cwd);
+    return normalizeDriveCase(path.resolve(cwd));
   }
 }
 
@@ -66,11 +80,34 @@ export function tokenKillerHome(): string {
   return path.join(os.homedir(), ".token-killer");
 }
 
+export function ensureTokenKillerHome(home: string = tokenKillerHome()): string {
+  mkdirSync(home, { recursive: true, mode: 0o700 });
+  chmodSync(home, 0o700);
+  return home;
+}
+
+// Memoize per cwd (2.4a). The git layout that pins a project's fingerprint does not
+// change within a single process run, so the (realpathSync + up-tree statSync walk)
+// is computed ONCE per distinct cwd and reused. recordHistory alone asks for it 3×
+// per command (historyFile, the record field, project meta), and governance/ledger
+// add more — all collapse to one walk. Keyed by the RAW cwd string the caller passed
+// (each tk invocation is a fresh process, so the cache never outlives one run).
+const fingerprintCache = new Map<string, string>();
+
 export function projectFingerprint(cwd: string): string {
+  const cached = fingerprintCache.get(cwd);
+  if (cached !== undefined) return cached;
   const normalized = resolveProjectRoot(cwd);
   const anchor = gitRepoAnchor(normalized) ?? normalized;
-  const hash = createHash("sha256").update(anchor).digest("hex").slice(0, 12);
-  return `repo:${hash}`;
+  const fingerprint = `repo:${createHash("sha256").update(anchor).digest("hex").slice(0, 12)}`;
+  fingerprintCache.set(cwd, fingerprint);
+  return fingerprint;
+}
+
+// Test-only seam: drop the memoized fingerprints so a test can exercise a changed
+// git layout for a cwd it has already queried within the same process.
+export function resetFingerprintCacheForTests(): void {
+  fingerprintCache.clear();
 }
 
 // Render a fingerprint (logical id `repo:<hash>`) into a filesystem-safe path

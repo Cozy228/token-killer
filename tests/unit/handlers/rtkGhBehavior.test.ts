@@ -23,7 +23,6 @@ async function runGhHandler(stdout: string, args: string[] = ["gh", "pr", "check
   const options: TkOptions = {
     raw: false,
     stats: false,
-    verbose: false,
     maxLines: 120,
     maxChars: 12000,
     saveRaw: false,

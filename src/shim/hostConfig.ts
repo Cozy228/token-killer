@@ -1,5 +1,6 @@
 import { existsSync, mkdirSync, readFileSync } from "node:fs";
 import { writeFileAtomicSync } from "../core/atomicWrite.js";
+import { isStrictJson, parseJsonc } from "../core/jsonc.js";
 import { homedir } from "node:os";
 import { dirname, join } from "node:path";
 
@@ -146,15 +147,18 @@ export function removeVscodeEnv(
 // Shared settings.json I/O — the single read/write path for VS Code user
 // settings, used both by the shim (PATH injection) and the context optimizer
 // (token-lean settings). Centralizing it keeps the two writers from diverging on
-// formatting (2-space + trailing newline) and parse policy (strict JSON only).
+// formatting (2-space + trailing newline) and parse policy.
+//
+// VS Code's settings.json is JSONC — comments and trailing commas are legal and
+// common. `parseJsonc` tolerates them (a strict `JSON.parse` here was the root
+// cause of "settings.json could not be parsed", which silently aborted the shim
+// PATH + TK_COMPRESS_TTY injection). Genuinely malformed JSON still throws and the
+// caller surfaces a "patch manually" message rather than risk corrupting the file.
 export function readSettings(settingsPath: string): Record<string, unknown> {
   if (!existsSync(settingsPath)) return {};
   const text = readFileSync(settingsPath, "utf8").trim();
   if (text === "") return {};
-  // We only support strict JSON. If the user's settings.json has comments
-  // (JSONC), parsing throws and the caller surfaces a "patch manually" message
-  // rather than risk corrupting the file (fail toward not breaking the user).
-  return JSON.parse(text) as Record<string, unknown>;
+  return parseJsonc(text) as Record<string, unknown>;
 }
 
 export function writeSettings(settingsPath: string, settings: Record<string, unknown>): void {
@@ -162,21 +166,53 @@ export function writeSettings(settingsPath: string, settings: Record<string, unk
   writeFileAtomicSync(settingsPath, `${JSON.stringify(settings, null, 2)}\n`);
 }
 
+// Reformatting a JSONC settings.json into strict JSON drops the user's comments
+// and bespoke formatting. We rewrite anyway (it stays valid for VS Code) but only
+// after snapshotting the original next to it, so the change is recoverable.
+export function backupSettings(settingsPath: string): string {
+  const original = readFileSync(settingsPath, "utf8");
+  const backupPath = `${settingsPath}.tk-backup`;
+  writeFileAtomicSync(backupPath, original);
+  return backupPath;
+}
+
+export type SettingsPatchResult = {
+  // Whether the original file was JSONC (comments / trailing commas) and therefore
+  // reformatted into strict JSON on write.
+  reformatted: boolean;
+  // Where the pre-write original was snapshotted (only when reformatted).
+  backupPath?: string;
+};
+
+function writeSettingsPreservingBackup(
+  settingsPath: string,
+  next: Record<string, unknown>,
+): SettingsPatchResult {
+  const existed = existsSync(settingsPath);
+  const original = existed ? readFileSync(settingsPath, "utf8") : "";
+  const reformatted = original.trim() !== "" && !isStrictJson(original);
+  const backupPath = reformatted ? backupSettings(settingsPath) : undefined;
+  writeSettings(settingsPath, next);
+  return { reformatted, backupPath };
+}
+
 export function patchVscodeSettings(
   settingsPath: string,
   shimDir: string,
   platform: NodeJS.Platform = process.platform,
-): void {
-  writeSettings(settingsPath, applyVscodeEnv(readSettings(settingsPath), shimDir, platform));
+): SettingsPatchResult {
+  const next = applyVscodeEnv(readSettings(settingsPath), shimDir, platform);
+  return writeSettingsPreservingBackup(settingsPath, next);
 }
 
 export function unpatchVscodeSettings(
   settingsPath: string,
   shimDir: string,
   platform: NodeJS.Platform = process.platform,
-): void {
-  if (!existsSync(settingsPath)) return;
-  writeSettings(settingsPath, removeVscodeEnv(readSettings(settingsPath), shimDir, platform));
+): SettingsPatchResult {
+  if (!existsSync(settingsPath)) return { reformatted: false };
+  const next = removeVscodeEnv(readSettings(settingsPath), shimDir, platform);
+  return writeSettingsPreservingBackup(settingsPath, next);
 }
 
 // Default shell RC for the current platform/shell. zsh on macOS, else bashrc.

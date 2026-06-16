@@ -6,6 +6,7 @@
 // is `tk` even reaching this host?" the first question), then per-command and
 // governance findings.
 
+import { LONG_PROMPT_CHARS, type HabitStats } from "./habits.js";
 import type { Opportunity, ScanResult } from "./scan.js";
 
 export type AdviceType =
@@ -15,7 +16,12 @@ export type AdviceType =
   | "workflow-friction"
   | "skill-gap"
   | "context-gap"
-  | "storage-discovery";
+  | "storage-discovery"
+  // Habit-based cost tips (Copilot CLI `/chronicle cost tips` parity): how the user
+  // DRIVES the agent — turn depth, prompt length, repeated failures — costs tokens.
+  | "cost-tip"
+  // Too many MCP servers configured — their tool schemas load every session.
+  | "mcp-bloat";
 
 export type AdviceFinding = {
   type: AdviceType;
@@ -45,6 +51,72 @@ function compressibleRaw(scan: ScanResult): Opportunity[] {
   return scan.opportunities.filter((o) => o.kind === "shell" && o.compressible && o.key !== "tk");
 }
 
+// Total invocations across opportunities in the given tool categories.
+function countByCategory(scan: ScanResult, categories: string[]): number {
+  return scan.opportunities
+    .filter((o) => categories.includes(o.category))
+    .reduce((sum, o) => sum + o.count, 0);
+}
+
+// Workflow-signal analyzers (DESIGN §"Skill and context gap analyzer"). These were
+// declared AdviceTypes but never emitted (I3 root-cause c). They are diagnostic,
+// privacy-safe (derived from category COUNTS only), and identify gaps — they never
+// draft a SKILL.md or edit context files. Thresholds are deliberately above the
+// generic minOccurrences so a couple of incidental reads don't trip them.
+function workflowGapFindings(scan: ScanResult, opts: AdviceOptions): AdviceFinding[] {
+  const out: AdviceFinding[] = [];
+
+  // storage-discovery: sessions exist on disk but NOTHING analyzable came out of
+  // them — the transcripts are stored somewhere tk did not look, or in a format the
+  // reader could not descend. This is exactly the "inspect is empty" symptom; tell
+  // the user where coverage broke rather than silently reporting nothing.
+  if (scan.tool_event_count === 0 && scan.session_inventory >= opts.minOccurrences) {
+    out.push({
+      type: "storage-discovery",
+      title: "Sessions found but no analyzable tool activity",
+      detail: `${scan.session_inventory} session record(s) discovered but 0 tool events were read — transcripts may live elsewhere or in an unrecognized format.`,
+      occurrences: scan.session_inventory,
+      confidence: 0.7,
+      recommendation:
+        "Confirm the host stores Copilot transcripts under VS Code user storage; if it relocated them, re-run inspect once they are in the default location.",
+    });
+    // When we read nothing, the gap analyzers below have no signal — return early.
+    return out;
+  }
+
+  // skill-gap: heavy, repeated manual context-gathering (file reads) signals a
+  // recurring workflow a reusable prompt/skill would load in one step.
+  const reads = countByCategory(scan, ["read"]);
+  if (reads >= opts.minOccurrences * 2) {
+    out.push({
+      type: "skill-gap",
+      title: "Repeated manual file reads — candidate for a reusable skill",
+      detail: `${reads} file reads across the session(s) — recurring context-gathering done by hand.`,
+      occurrences: reads,
+      confidence: 0.65,
+      recommendation:
+        "Capture this recurring read pattern as a reusable prompt/skill so the agent loads the context in one step instead of re-reading each session.",
+    });
+  }
+
+  // context-gap: heavy, repeated repo searches signal the agent re-deriving project
+  // structure each session — durable context (CONTEXT.md / AGENTS.md) would prevent it.
+  const searches = countByCategory(scan, ["search", "list"]);
+  if (searches >= opts.minOccurrences * 2) {
+    out.push({
+      type: "context-gap",
+      title: "Repeated repo searches — missing durable context",
+      detail: `${searches} searches/listings across the session(s) — structure is being re-discovered each run.`,
+      occurrences: searches,
+      confidence: 0.65,
+      recommendation:
+        "Record the project's layout and key entry points in durable context (CONTEXT.md / AGENTS.md) so the agent stops re-searching for them.",
+    });
+  }
+
+  return out;
+}
+
 function deliveryFinding(scan: ScanResult, rawTotal: number): AdviceFinding {
   if (scan.inputType === "copilot-cli") {
     return {
@@ -69,9 +141,107 @@ function deliveryFinding(scan: ScanResult, rawTotal: number): AdviceFinding {
   };
 }
 
+// Habit-based cost tips — tk's `/chronicle cost tips`. Each tip is grounded in a
+// published token-cost best practice (cited in the recommendation), and fires only
+// from privacy-safe COUNTS/LENGTHS the habit analyzer collected. `occurrences` is
+// set to a naturally-large representative count so a real habit clears the generic
+// minOccurrences filter.
+function costTipFindings(
+  scan: ScanResult,
+  habits: HabitStats | undefined,
+  opts: AdviceOptions,
+): AdviceFinding[] {
+  const out: AdviceFinding[] = [];
+  if (habits && habits.sessions > 0) {
+    // Continuation depth — long agent loops re-send the whole transcript every turn.
+    // Practitioner guidance (see docs/reports/token-optimization-best-practices): refresh
+    // after ~15–20 turns; cost compounds because the transcript is re-sent each turn.
+    if (habits.avg_tool_calls_per_session >= 20) {
+      out.push({
+        type: "cost-tip",
+        title: "Long agent loops — break work into shorter sessions",
+        detail: `Sessions average ${habits.avg_tool_calls_per_session} tool calls (max ${habits.max_tool_calls_in_session}); every extra turn re-sends the growing transcript.`,
+        occurrences: habits.total_tool_calls,
+        confidence: 0.7,
+        recommendation:
+          "Scope each session to one task and start a fresh session for the next — the whole transcript is re-sent every turn, so cost compounds as a session grows.",
+      });
+    }
+    // Prompt length — over-long prompts are paid on every turn that re-sends them.
+    if (habits.long_prompt_count >= opts.minOccurrences) {
+      out.push({
+        type: "cost-tip",
+        title: "Trim oversized prompts",
+        detail: `${habits.long_prompt_count} prompt(s) exceeded ${LONG_PROMPT_CHARS} chars (avg ${habits.avg_prompt_chars}, max ${habits.max_prompt_chars}).`,
+        occurrences: habits.long_prompt_count,
+        confidence: 0.65,
+        recommendation:
+          "Point at files and name the exact decision instead of pasting context — write as little as required, as much as necessary.",
+      });
+    }
+  }
+  // Orientation cost — heavy reads+searches+lists mean the agent spends its budget
+  // LOCATING code, not solving the task — practitioners report orientation as a
+  // large share of agent token spend, with code-intelligence/scoped reads as the fix
+  // (see the research report). Higher bar than skill-gap/context-gap: the aggregate.
+  const orientation = countByCategory(scan, ["read", "search", "list"]);
+  if (orientation >= opts.minOccurrences * 4) {
+    out.push({
+      type: "cost-tip",
+      title: "High orientation cost — the agent spends tokens finding code",
+      detail: `${orientation} read/search/list actions locating code across the session(s).`,
+      occurrences: orientation,
+      confidence: 0.65,
+      recommendation:
+        "Install a code-intelligence/LSP plugin and read scoped ranges instead of whole files — precise symbol lookup is reported to sharply cut the read/search churn that dominates token spend.",
+    });
+  }
+
+  // Repeated failures → durable instructions (Copilot CLI `/chronicle improve`).
+  for (const o of scan.opportunities) {
+    if (o.failure_count >= opts.minOccurrences) {
+      out.push({
+        type: "cost-tip",
+        title: `Repeated failures of \`${o.key}\` — capture the fix once`,
+        detail: `\`${o.key}\` failed ${o.failure_count}× — each retry burns tokens re-discovering the same problem.`,
+        occurrences: o.failure_count,
+        confidence: 0.7,
+        recommendation:
+          "Record the working invocation / constraint in AGENTS.md so the agent stops re-discovering the same failure — a good instructions file is reported to meaningfully cut repeated work.",
+      });
+    }
+  }
+  return out;
+}
+
+// Default: 3+ MCP servers is where their always-on tool schemas start to take a
+// large share of the context window (per the research report).
+export const MCP_SERVER_LIMIT = 3;
+
+// Standalone (config-derived, not scan-derived) so cli.ts can compute the MCP
+// analysis once and fold the finding into the same advice stream.
+export function mcpBloatFinding(
+  serverCount: number,
+  serverNames: string[],
+  limit = MCP_SERVER_LIMIT,
+): AdviceFinding | undefined {
+  if (serverCount < limit) return undefined;
+  const shown = serverNames.slice(0, 6).join(", ");
+  return {
+    type: "mcp-bloat",
+    title: `${serverCount} MCP servers configured — their tool schemas load every session`,
+    detail: `${serverCount} server(s)${shown ? ` (${shown}${serverNames.length > 6 ? ", …" : ""})` : ""}; each injects its tool definitions into every session's context.`,
+    occurrences: serverCount,
+    confidence: 0.7,
+    recommendation:
+      "Disable servers you aren't using in this workspace — each one's tool schemas can take a large share of the context window — and prefer a CLI (gh/aws/gcloud) over its MCP where one exists, which is reported to use far fewer tokens per call.",
+  };
+}
+
 export function buildAdvice(
   scan: ScanResult,
   opts: AdviceOptions = DEFAULT_ADVICE_OPTIONS,
+  habits?: HabitStats,
 ): AdviceFinding[] {
   const findings: AdviceFinding[] = [];
   const raw = compressibleRaw(scan);
@@ -120,7 +290,13 @@ export function buildAdvice(
     }
   }
 
-  // 4) Long-output hotspots (workflow-friction).
+  // 4) Workflow-signal gaps (skill-gap / context-gap / storage-discovery).
+  findings.push(...workflowGapFindings(scan, opts));
+
+  // 4b) Habit-based cost tips (how the user drives the agent).
+  findings.push(...costTipFindings(scan, habits, opts));
+
+  // 5) Long-output hotspots (workflow-friction).
   for (const o of scan.opportunities) {
     if (o.large_output_count >= opts.minOccurrences) {
       findings.push({

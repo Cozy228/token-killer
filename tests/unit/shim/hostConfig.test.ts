@@ -131,4 +131,54 @@ describe("VS Code settings env", () => {
       rmSync(dir, { recursive: true, force: true });
     }
   });
+
+  test("patches a JSONC settings.json: writes env + TK_COMPRESS_TTY, snapshots a backup", () => {
+    const dir = mkdtempSync(join(tmpdir(), "tk-vscode-"));
+    try {
+      const settings = join(dir, "settings.json");
+      // Real-world commented settings.json — strict JSON.parse would have thrown,
+      // silently aborting the PATH/TK_COMPRESS_TTY injection (I1).
+      writeFileSync(settings, '{\n  // editor prefs\n  "editor.fontSize": 14, // keep small\n}\n');
+      const res = patchVscodeSettings(settings, SHIM, "linux");
+      const after = JSON.parse(readFileSync(settings, "utf8")) as Record<string, unknown>;
+      const env = after["terminal.integrated.env.linux"] as Record<string, string>;
+      expect(env.TK_SHIM_DIR).toBe(SHIM);
+      expect(env.TK_COMPRESS_TTY).toBe("1");
+      expect(env.PATH).toBe(`${SHIM}:\${env:PATH}`);
+      expect(after["editor.fontSize"]).toBe(14);
+      // The original JSONC was reformatted to strict JSON, so a recoverable backup exists.
+      expect(res.reformatted).toBe(true);
+      expect(res.backupPath).toBe(`${settings}.tk-backup`);
+      expect(readFileSync(res.backupPath!, "utf8")).toContain("// editor prefs");
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
+  });
+
+  test("patches a JSONC settings.json on Windows: windows env key, ; delimiter, backup", () => {
+    const dir = mkdtempSync(join(tmpdir(), "tk-vscode-"));
+    const WIN_SHIM = "C:\\Users\\u\\.token-killer\\shim";
+    try {
+      const settings = join(dir, "settings.json");
+      // Real-world commented settings.json on a Windows box (I1 was first hit there).
+      writeFileSync(settings, '{\n  // editor prefs\n  "editor.fontSize": 14, // keep\n}\n');
+      const res = patchVscodeSettings(settings, WIN_SHIM, "win32");
+      const after = JSON.parse(readFileSync(settings, "utf8")) as Record<string, unknown>;
+      const env = after["terminal.integrated.env.windows"] as Record<string, string>;
+      expect(env.TK_SHIM_DIR).toBe(WIN_SHIM);
+      expect(env.TK_COMPRESS_TTY).toBe("1");
+      // Windows uses `;` as the PATH delimiter.
+      expect(env.PATH).toBe(`${WIN_SHIM};\${env:PATH}`);
+      expect(after["editor.fontSize"]).toBe(14);
+      expect(res.reformatted).toBe(true);
+      expect(res.backupPath).toBe(`${settings}.tk-backup`);
+      // Unpatch removes our keys and drops the now-empty env block.
+      unpatchVscodeSettings(settings, WIN_SHIM, "win32");
+      const restored = JSON.parse(readFileSync(settings, "utf8")) as Record<string, unknown>;
+      expect(restored["terminal.integrated.env.windows"]).toBeUndefined();
+      expect(restored["editor.fontSize"]).toBe(14);
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
+  });
 });

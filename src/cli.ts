@@ -1,29 +1,39 @@
 #!/usr/bin/env node
+// I5 — shim startup cost. Every shimmed command re-invokes node and loads this
+// bundle, so the hot path (`tk git status`) must pull in ONLY the compression
+// machinery (router + executor + gate + pipeline). The management subcommands
+// (install/inspect/optimize/telemetry/report/…) are loaded with `await import()`
+// the moment they're actually requested, keeping them off the per-command path.
+// Compile-cache ladder (2.3) — persist V8's compiled bytecode across invocations:
+//  - Node ≥22.8: `module.enableCompileCache()` (this call). When the shim wrapper
+//    exported NODE_COMPILE_CACHE (2.3) it lands in ~/.token-killer/v8-cache; else
+//    Node's default temp dir.
+//  - Node 22.1–22.7: the shim wrapper sets NODE_COMPILE_CACHE, which Node honors
+//    WITHOUT this API — zero code here, it just works when shimmed.
+//  - Node 20–22.0: DEFERRED — needs a `v8-compile-cache` stub, which only hooks the
+//    CJS bundle (item 2.2, out of scope). Not silently dropped: that slice pays the
+//    uncached compile until 2.2 ships.
+import module from "node:module";
+try {
+  (module as { enableCompileCache?: () => void }).enableCompileCache?.();
+} catch {
+  // Older Node, or a read-only cache dir — startup cost is unchanged, never fatal.
+}
+
 import { parseArgv } from "./parse.js";
+import { replaceFootgunBanner } from "./handlers/common/searchLike.js";
 import { routeCommand, routeSpecific } from "./router.js";
 import { executePassthrough } from "./executor.js";
 import { gateDecision } from "./shim/gate.js";
 import { isInteractive } from "./shim/interactive.js";
-import { runInstall, runStatus, runUninstall } from "./shim/init.js";
-import { runShim } from "./shim/cli.js";
 import { isShimmableProgram } from "./shim/programs.js";
-import { tkDebug } from "./hook/debug.js";
-import { runHook } from "./hook/cli.js";
-import { runInspect } from "./inspect/cli.js";
-import { runDebug } from "./debug/cli.js";
-import { runOptimize } from "./context/optimizeCli.js";
-import { buildReport } from "./core/report.js";
-import { runReport } from "./core/ledger.js";
-import { runGain } from "./core/gain.js";
-import { runConfig } from "./core/configCli.js";
-import { runTelemetry } from "./telemetry/cli.js";
+import { tkDebug, logFatalError, emitSupportHintOnce } from "./hook/debug.js";
 import { runPipeline } from "./core/pipeline.js";
-import { recordHistory } from "./core/history.js";
+import { recordHistory, recordRawLitePassthrough } from "./core/history.js";
 import { calculateSavings } from "./core/savings.js";
 import { maybeSaveRawOutput } from "./core/rawStore.js";
-import { limitOutput } from "./core/outputLimit.js";
 import { formatStats } from "./core/stats.js";
-import { failureHint } from "./core/failureHints.js";
+import { emitThenCommit } from "./core/emit.js";
 import { VERSION } from "./version.js";
 import type {
   CommandHandler,
@@ -45,15 +55,15 @@ function help(): string {
     "Commands:",
     "  install     Install tk delivery into your agent host (hook / shim / injection)",
     "  uninstall   Remove everything tk installed (optionally purge measured data)",
-    "  status      Show current install status (host, hook, shim, injection) — no writes",
-    "  shim        Manually control the shim tier (shell PATH + VS Code)",
+    "  status      Show install status and refresh the delivery verification timestamp",
     "  hook        Agent-host hook runtime: decide command rewrites & governance",
-    "  inspect     Scan agent history for token-saving opportunities; print a ranked report",
+    "  inspect     Scan your AI setup for token-saving opportunities (opens an HTML report)",
     "  debug       Bundle tk's own diagnostics into one self-contained markdown report",
     "  optimize    Apply the context-file optimizations that inspect found",
-    "  gain        Show measured token savings (totals, trends, failures, quota)",
+    "  gain        Show measured token savings (opens an HTML report)",
     "  config      Manage the tk config file",
     "  telemetry   Opt-in, anonymous network telemetry controls",
+    "  support     Send a diagnostic report (recent error + logs) to the maintainer",
     "",
     "Run `tk <command> --help`-style usage is summarized below.",
     "",
@@ -76,11 +86,7 @@ function help(): string {
     "",
     "tk status",
     "  Show the current install: detected host, claude/copilot hook config, shim status,",
-    "  injection file, usage guidance. Read-only — writes nothing.",
-    "",
-    "tk shim <install|status|uninstall> [--dry-run]",
-    "  Manually control the shim tier (shell PATH + VS Code). `tk install` already wires",
-    "  the shim as part of its tier ladder; this is the advanced/debug path.",
+    "  injection file, usage guidance. Does not change hook or shim installation.",
     "",
     "tk hook <copilot|claude|check <command...>>",
     "  copilot                Hook runtime: read a tool event on stdin, emit a rewrite/governance decision",
@@ -89,25 +95,25 @@ function help(): string {
     "  TK_DEBUG=1             Trace the hook runtime (stdin size, decision + why, what was emitted)",
     "                         to stderr AND append it to $TOKEN_KILLER_HOME/debug.log for live",
     "                         `tail -f`. stdout stays clean. Same switch the compress path uses.",
+    '                         If the host reports "hook errored", check',
+    "                         $TOKEN_KILLER_HOME/errors.log — fatal crashes are logged there",
+    "                         unconditionally (no TK_DEBUG needed).",
     "",
-    "tk inspect [--json] [--html] [--since 7d] [--session <id>] [--input-type vscode|copilot-cli] [--repo-context]",
-    "           [--advice] [--write-advice] [--telemetry-export|--no-telemetry-export]",
-    "           [--min-confidence n] [--min-occurrences n] [--project|--user] [--copilot-context]",
-    "           [--surface instructions|prompts|agents|skills] [--fail-on info|warn|error]",
-    "  Read-only scan of agent history for missed token savings; emits a ranked opportunity report.",
-    "  --json                       Output JSON instead of text",
-    "  --html                       Write a single-file HTML report and open it in your browser",
+    "tk inspect [--text] [--json] [--since 7d] [--session <id>] [--input-type vscode|copilot-cli]",
+    "           [--advice] [--write-advice] [--min-confidence n] [--min-occurrences n]",
+    "           [--project|--user] [--surface instructions|prompts|agents|skills] [--fail-on info|warn|error]",
+    "  Read-only scan of your AI setup for missed token savings; ranks the opportunities.",
+    "  Opens a single-file HTML report in your browser by default.",
+    "  --text                       Print the report to the terminal instead of opening HTML",
+    "  --json                       Output JSON instead",
     "  --since <window>             Only sessions newer than e.g. 7d, 24h, 30m",
     "  --session <id>               Restrict to one session",
     "  --input-type <type>          Override source detection (vscode | copilot-cli)",
-    "  --repo-context               Include repo context in the report",
     "  --advice                     Produce actionable advice findings, not just opportunities",
     "  --write-advice               Write advice artifacts to disk",
-    "  --telemetry-export           Force-write the local telemetry aggregate (--no- to disable)",
     "  --min-confidence <n>         Drop advice below confidence n",
     "  --min-occurrences <n>        Drop advice seen fewer than n times",
     "  --project | --user           Static-context scope (default: user)",
-    "  --copilot-context            Static-context analysis only (skip the runtime scan)",
     "  --surface <s>                Restrict to one surface (instructions|prompts|agents|skills)",
     "  --fail-on <severity>         Exit non-zero when a finding reaches info|warn|error",
     "",
@@ -120,36 +126,34 @@ function help(): string {
     "  --full         Attach every row's payload, not just anomalies'",
     "  --redact       Length/label only — no command text, payload bytes, or config bodies",
     "",
-    "tk optimize [--dry-run] [--apply] [--backup [files...]] [--restore] [--write-advice]",
-    "            [--token-budget-block] [--surface <name>] [--project|--user] [--vscode-settings]",
-    "  Applies the context-file optimizations inspect found. Read-only unless --apply.",
-    "  Scope is git-aware: outside a git repo it works on your user-level files; inside",
-    "  a git repo it works on both the project and user files.",
-    "  (default)              Dry-run: print the full plan, write nothing",
+    "tk optimize [--apply] [--backup [files...]] [--restore]",
+    "            [--surface <name>] [--project|--user]",
+    "  Applies the context-file optimizations inspect found (including token-lean VS Code",
+    "  settings). Read-only unless --apply. Scope is git-aware: outside a git repo it works",
+    "  on your user-level files; inside a git repo it works on both the project and user files.",
+    "  (default)              Preview: print the full plan, write nothing",
     "  --apply                Apply every deterministic change. Discloses the full plan,",
     "                         backs up each file first; free-form suggestions are printed,",
     "                         not written. Revert with --restore.",
     "  --backup [files...]    Snapshot files before editing them by hand (or via an agent),",
     "                         so --restore can revert those edits. No files = all in-scope.",
     "  --restore              Revert the most recent backup (from --apply or --backup)",
-    "  --write-advice         Write the context advice file instead of planning inline",
-    "  --token-budget-block   Install the managed token-budget block into your user-level",
-    "                         instructions (--restore removes it). Replaces `tk agentsmd`.",
     "  --surface <name>       Restrict to one surface (instructions|prompts|agents|skills)",
     "  --project | --user     Force a single scope instead of the git-aware default",
-    "  --vscode-settings      Apply token-lean VS Code settings (--apply / --restore)",
     "",
-    "tk gain [--user] [--daily|--weekly|--monthly|--all] [--graph] [--history [n]]",
-    "        [--failures] [--quota [-t <model>]] [--json|--csv|--format json|csv|text]",
-    "tk gain report [--scope user|project|runtime] [--project|--user] [--since <date>] [--text|--json]",
-    "  gain          Measured token savings. Defaults to the current project; --user aggregates all.",
-    "    --daily|--weekly|--monthly|--all   Bucket savings by period",
-    "    --graph         Add a sparkline trend",
-    "    --history [n]   Show the last n records (default 10)",
-    "    --failures      Show the failure breakdown",
-    "    --quota [-t m]  Show quota usage; -t overrides the pricing model",
-    "  gain report   Detailed savings — four views side by side (measured / optimizer / governance / quality), never summed.",
-    "                Opens a single-file HTML report in your browser by default; use --text or --json for terminal output.",
+    "tk gain [--user] [--text] [--json] [--csv]",
+    "        [--daily|--weekly|--monthly|--all] [--graph] [--history [n]] [--failures] [--quota [-t <model>]]",
+    "  Measured token savings. Defaults to the current project; --user aggregates all.",
+    "  Opens a single-file HTML report in your browser by default — the four views side by side",
+    "  (measured / optimizer / governance / quality), never summed.",
+    "    --text          Print the savings summary to the terminal instead of opening HTML",
+    "    --json          Output JSON instead",
+    "    --csv           Output CSV (for scripts / spreadsheets)",
+    "    --daily|--weekly|--monthly|--all   Bucket savings by period (terminal output)",
+    "    --graph         Add a sparkline trend (terminal output)",
+    "    --history [n]   Show the last n records, default 10 (terminal output)",
+    "    --failures      Show the failure breakdown (terminal output)",
+    "    --quota [-t m]  Show quota usage; -t overrides the pricing model (terminal output)",
     "",
     "tk config <init|show|path>",
     "  init    Create the config file from the template",
@@ -162,23 +166,30 @@ function help(): string {
     "  status     Show consent state and anonymous device id (no network check)",
     "  preview    Print the exact payload that would be sent (sends nothing)",
     "",
+    "tk support [email|teams] [--email <addr>] [--teams <upn>] [--no-attach] [--redact] [-y]",
+    "  Gather the recent error + logs into one shareable report and open your mail",
+    "  client (mailto:) or Microsoft Teams (msteams: scheme) to send it. Nothing is",
+    "  sent automatically — you review and send by hand; the report is saved under",
+    "  ~/.token-killer/reports/. Routing is env-only: set TK_SUPPORT_EMAIL or",
+    "  TK_SUPPORT_TEAMS (an in-tenant UPN). With neither set, tk saves the bundle and",
+    "  copies it to your clipboard, then prints a hint — it sends nowhere.",
+    "",
     "Flags for `tk <command...>` (the compression proxy):",
     "  --raw                 Print raw stdout/stderr (no compression)",
-    "  --stats               Append a token-savings summary",
-    "  --verbose             Append token savings and the saved raw-output path",
+    "  --stats               Append a token-savings summary (and the saved raw-output path)",
     "  --max-lines <n>       Limit compressed output to n lines",
     "  --max-chars <n>       Limit compressed output to n chars",
     "  --save-raw            Always save the raw output",
     "  --no-save-raw         Never save the raw output",
-    "  --no-dedup            Disable session dedup for this command (ADR 0009)",
-    "  --report [--json|--csv]   Legacy aggregate report",
     "  --help                Show this help",
     "  --version             Show the tk version",
+    "  TK_NO_HISTORY=1       Skip writing the measured-savings history row (lowest",
+    "                        per-command latency; `tk gain` will not see those commands)",
     "",
   ].join("\n");
 }
 
-async function recordRawPassthrough(raw: RawResult, options: TkOptions): Promise<void> {
+async function recordRawPassthrough(raw: RawResult, options: TkOptions): Promise<FilteredResult> {
   const output = `${raw.stdout}${raw.stderr}`;
   const savings = calculateSavings(output, output);
   const rawOutputPath = await maybeSaveRawOutput(raw, options);
@@ -196,6 +207,7 @@ async function recordRawPassthrough(raw: RawResult, options: TkOptions): Promise
     qualityStatus: "passed",
   };
   await recordHistory(raw, filtered, options);
+  return filtered;
 }
 
 async function main(): Promise<number> {
@@ -210,48 +222,43 @@ async function main(): Promise<number> {
     process.stdout.write(`${VERSION}\n`);
     return 0;
   }
-  if (parsed.mode === "report") {
-    process.stdout.write(await buildReport(parsed.options));
-    return 0;
-  }
+  // Management subcommands — lazily imported so the compression hot path never pays
+  // to load them (I5). Each branch loads exactly the module it dispatches to.
   if (parsed.mode === "install") {
-    return runInstall(parsed.subArgs ?? []);
+    return (await import("./shim/init.js")).runInstall(parsed.subArgs ?? []);
   }
   if (parsed.mode === "uninstall") {
-    return runUninstall(parsed.subArgs ?? []);
+    return (await import("./shim/init.js")).runUninstall(parsed.subArgs ?? []);
   }
   if (parsed.mode === "status") {
-    return runStatus(parsed.subArgs ?? []);
+    return (await import("./shim/init.js")).runStatus(parsed.subArgs ?? []);
   }
   if (parsed.mode === "shim") {
-    return runShim(parsed.subArgs ?? []);
+    return (await import("./shim/cli.js")).runShim(parsed.subArgs ?? []);
   }
   if (parsed.mode === "hook") {
-    return runHook(parsed.subArgs ?? []);
+    return (await import("./hook/cli.js")).runHook(parsed.subArgs ?? []);
   }
   if (parsed.mode === "inspect") {
-    return runInspect(parsed.subArgs ?? []);
+    return (await import("./inspect/cli.js")).runInspect(parsed.subArgs ?? []);
   }
   if (parsed.mode === "debug") {
-    return runDebug(parsed.subArgs ?? []);
+    return (await import("./debug/cli.js")).runDebug(parsed.subArgs ?? []);
   }
   if (parsed.mode === "optimize") {
-    return runOptimize(parsed.subArgs ?? []);
+    return (await import("./context/optimizeCli.js")).runOptimize(parsed.subArgs ?? []);
   }
   if (parsed.mode === "gain") {
-    const sub = parsed.subArgs ?? [];
-    // `tk gain report` — the detailed multi-view savings report (second layer
-    // under `gain`). `tk report` stays as a back-compat alias (see parse.ts).
-    if (sub[0] === "report") {
-      return runReport(sub.slice(1));
-    }
-    return runGain(sub, parsed.options.cwd);
+    return (await import("./core/gain.js")).runGain(parsed.subArgs ?? [], parsed.options.cwd);
   }
   if (parsed.mode === "config") {
-    return runConfig(parsed.subArgs ?? []);
+    return (await import("./core/configCli.js")).runConfig(parsed.subArgs ?? []);
   }
   if (parsed.mode === "telemetry") {
-    return runTelemetry(parsed.subArgs ?? []);
+    return (await import("./telemetry/cli.js")).runTelemetry(parsed.subArgs ?? []);
+  }
+  if (parsed.mode === "support") {
+    return (await import("./support/cli.js")).runSupport(parsed.subArgs ?? []);
   }
   if (!parsed.command) {
     // Bare `tk` (or flags with no command to run) has nothing to execute — print
@@ -263,18 +270,58 @@ async function main(): Promise<number> {
 
   const command = parsed.command;
 
-  // --raw: capture-then-print, unchanged. Uses the full router so every command
-  // (including generic fall-throughs) is captured and reprinted. Distinct from
-  // passthrough, which inherits stdio and never captures.
+  // --raw: print the real tool's output with NO compression. By default this now
+  // STREAMS via inherited stdio (executePassthrough) — the lightest path: no pipe,
+  // no decode, no per-byte capture, and output appears live instead of all at once
+  // when the child exits. We only fall back to the heavier capture-then-print path
+  // when accounting genuinely needs the bytes: `--stats` (token summary) or an
+  // explicit `--save-raw` (persist the raw log). `--no-save-raw`/auto-save never
+  // forces capture — streaming is the point of plain `--raw`.
   if (parsed.options.raw) {
+    // Correctness advisory for a misused `rg -r` (silently --replace). Goes to STDERR
+    // so stdout stays byte-verbatim — the whole point of --raw — while still warning.
+    // Needs only program+args, so it works on the streaming path too.
+    const footgunBanner = replaceFootgunBanner(command.program, command.args);
+    const needsCapture = parsed.options.stats || parsed.options.saveRaw === true;
+
+    if (!needsCapture) {
+      // Streaming path: inherited stdio, restore live output, capture nothing.
+      const started = Date.now();
+      const exitCode = await executePassthrough(command);
+      if (footgunBanner !== null) process.stderr.write(`${footgunBanner}\n`);
+      // Best-effort accounting; a write failure must never override the real exit
+      // code (C6). The light row records only what we truly know — exit code +
+      // duration — and omits byte/token counts we never captured (no fake sizes).
+      try {
+        await recordRawLitePassthrough({
+          command: command.displayCommand,
+          exitCode,
+          durationMs: Date.now() - started,
+          cwd: parsed.options.cwd,
+          sessionId: parsed.options.sessionId,
+        });
+      } catch {
+        /* drop the accounting row; never alter the command's outcome */
+      }
+      return exitCode;
+    }
+
+    // Capture path: --stats / --save-raw need the actual bytes. Uses the full router
+    // so every command (including generic fall-throughs) is captured and reprinted.
     const handler = routeCommand(command);
     const raw = await handler.execute(command, parsed.options);
     process.stdout.write(raw.stdout);
     process.stderr.write(raw.stderr);
+    if (footgunBanner !== null) process.stderr.write(`${footgunBanner}\n`);
     // Best-effort accounting; a write failure must never override the real exit code
     // (C6) — the command already ran and its output is already on stdout/stderr.
     try {
-      await recordRawPassthrough(raw, parsed.options);
+      const filtered = await recordRawPassthrough(raw, parsed.options);
+      // --stats is what forced this capture path, so it must actually report (P2): the
+      // savings summary (and any saved raw-output path) goes to STDERR so stdout stays
+      // byte-verbatim — the whole contract of --raw. Savings are 0% (raw is uncompressed),
+      // which is the honest figure.
+      if (parsed.options.stats) process.stderr.write(`\n${formatStats(filtered)}\n`);
     } catch {
       /* drop the accounting row; never alter the command's outcome */
     }
@@ -363,7 +410,7 @@ async function runCompress(
   // the child runs — ENOENT, ShimRecursionError) still reach the fail-open, where a
   // re-spawn is correct because nothing ran.
   try {
-    const filtered = await runPipeline(
+    const result = await runPipeline(
       {
         ...handler,
         async execute() {
@@ -372,7 +419,8 @@ async function runCompress(
       },
       command,
       options,
-    ).then((result) => result.filtered);
+    );
+    const filtered = result.filtered;
 
     // Compress succeeded — trace the savings to the same dual sink as the gate
     // decision (D1), so a live `TK_DEBUG` session shows route → outcome in one log.
@@ -383,25 +431,7 @@ async function runCompress(
       savedPct: filtered.savingsPct,
     });
 
-    // Apply the opt-in --max-lines/--max-chars caps to the FINAL output (H18). A no-op
-    // unless the user passed a finite limit; never touches the quality gate above.
-    const display = limitOutput(filtered.output, options);
-    process.stdout.write(display);
-    if (display.length > 0 && !display.endsWith("\n")) {
-      process.stdout.write("\n");
-    }
-
-    // Inline failure-fix hint (scheme 2): presentation-layer only — appended after
-    // the compressed output, never part of it, so it can't trip the quality gate.
-    if (raw.exitCode !== 0) {
-      const hint = failureHint(raw, command);
-      if (hint) process.stdout.write(`tk hint: ${hint}\n`);
-    }
-
-    if (options.stats || options.verbose) {
-      process.stdout.write(`\n${formatStats(filtered)}\n`);
-    }
-    return raw.exitCode;
+    return await emitThenCommit(filtered, raw, command, options, result.commit);
   } catch {
     // Post-execution fallback: the command already ran; surface its captured output
     // verbatim and preserve the exit code. Never re-spawn (C6).
@@ -417,8 +447,10 @@ async function failOpenPassthrough(command: ParsedCommand, error: unknown): Prom
   } catch {
     // Passthrough is also impossible (e.g. the real tool only exists inside the
     // shim dir — true recursion). Surface the original error and exit non-zero
-    // with a deterministic code, never an unhandled rejection.
+    // with a deterministic code, never an unhandled rejection. This is tk's OWN
+    // failure (the wrapped tool never ran), so nudge toward `tk support`.
     process.stderr.write(`${error instanceof Error ? error.message : String(error)}\n`);
+    emitSupportHintOnce();
     return 1;
   }
 }
@@ -426,6 +458,11 @@ async function failOpenPassthrough(command: ParsedCommand, error: unknown): Prom
 try {
   process.exitCode = await main();
 } catch (error) {
-  process.stderr.write(`${error instanceof Error ? error.message : String(error)}\n`);
+  // A throw here means tk exited non-zero — for a hook invocation the host swallows
+  // stderr and surfaces only "PreToolUse hook errored". Persist the reason to
+  // errors.log (unconditionally, not gated on TK_DEBUG) so there is a breadcrumb to
+  // read after the fact. logFatalError also writes stderr, so this replaces the bare
+  // stderr write above.
+  logFatalError(`tk ${process.argv.slice(2).join(" ")}`, error);
   process.exitCode = 1;
 }

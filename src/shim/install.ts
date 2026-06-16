@@ -3,7 +3,8 @@ import { realpathSync } from "node:fs";
 import { delimiter, join } from "node:path";
 
 import { tokenKillerHome } from "../core/dataDir.js";
-import { resolveProgram } from "../executor.js";
+import { resolveBinaryPath, resolveProgram } from "../executor.js";
+import { hashResolutionEnv, stripShimDir } from "./path.js";
 import { shimmablePrograms } from "./programs.js";
 
 // How a generated wrapper re-invokes tk. The wrapper calls tk by ABSOLUTE path
@@ -13,7 +14,8 @@ import { shimmablePrograms } from "./programs.js";
 export type TkExec = { bin: string; args: string[] };
 
 // Bump when the manifest shape or wrapper format changes.
-export const SHIM_MANIFEST_SCHEMA = 1;
+// 2: each wrapper bakes TK_REAL_BIN and the manifest records `resolvedPaths` (2.1).
+export const SHIM_MANIFEST_SCHEMA = 2;
 
 export type ShimManifest = {
   schema: number;
@@ -22,10 +24,27 @@ export type ShimManifest = {
   programs: string[];
   installedAt: number;
   tk: TkExec;
+  // 2.1: the absolute real-binary path resolved once at install, per program, so the
+  // runtime can skip the PATH×PATHEXT walk. Best-effort — a program whose binary we
+  // could not resolve is simply absent here, and its wrapper bakes no TK_REAL_BIN
+  // (falling back to today's per-command walk). Schema-1 manifests omit it entirely.
+  resolvedPaths?: Record<string, string>;
+  // 2.1: hash of the resolution environment (shim-stripped PATH + PATHEXT) at install.
+  // Baked into wrappers as TK_REAL_PATH_HASH; the runtime trusts a baked path only
+  // while this still matches, so a PATH reorder forces a fresh walk instead of running
+  // a stale binary. Absent on schema-1 manifests.
+  pathHash?: string;
 };
 
 export function shimDir(home: string = tokenKillerHome()): string {
   return join(home, "shim");
+}
+
+// V8 compile-cache dir (2.3), under ~/.token-killer so a future AV folder exclusion
+// covers it. Baked into the wrapper env (NODE_COMPILE_CACHE) so node persists its
+// compiled bytecode across invocations; node auto-creates the dir on first use.
+export function compileCacheDir(home: string = tokenKillerHome()): string {
+  return join(home, "v8-cache");
 }
 
 export function manifestPath(home: string = tokenKillerHome()): string {
@@ -58,18 +77,61 @@ function shQuote(value: string): string {
 // rc-exported var is absent — a subshell, an env-stripping host, or a manually-
 // PATH'd shim dir (C7 fork-bomb). The path is baked rather than derived from `$0`
 // because `$0` is the bare program name under PATH lookup, not the wrapper's path.
-export function posixWrapper(program: string, tk: TkExec, shimDir: string): string {
+// When `realBin` is known it also exports TK_REAL_BIN so tk can skip the per-command
+// PATH walk (2.1); omitted ⇒ byte-identical to the pre-2.1 wrapper. When
+// `compileCacheDir` is given it exports NODE_COMPILE_CACHE (2.3) BEFORE exec — node
+// reads it at process start, so only the wrapper (not tk code) can cache tk's own
+// bundle. Version-agnostic: Node 22.1+ honors it, older Node treats it as inert. It
+// first saves the caller's original NODE_COMPILE_CACHE in TK_NODE_COMPILE_CACHE_PREV
+// so tk can RESTORE it for any spawned real tool (buildChildEnv) — the cache redirect
+// must apply to tk's own node process only, never leak into npm/tsc/etc.
+export function posixWrapper(
+  program: string,
+  tk: TkExec,
+  shimDir: string,
+  realBin?: string,
+  compileCacheDir?: string,
+  pathHash?: string,
+): string {
   const parts = [tk.bin, ...tk.args, program].map(shQuote).join(" ");
-  return `#!/usr/bin/env sh\nexport TK_SHIM_DIR=${shQuote(shimDir)}\nexec ${parts} "$@"\n`;
+  // TK_REAL_PATH_HASH (2.1) gates TK_REAL_BIN at runtime: tk uses the baked path only
+  // while the resolution PATH is byte-identical to install. Baked as a pair.
+  const realBinLine = realBin
+    ? `export TK_REAL_BIN=${shQuote(realBin)}\n${pathHash ? `export TK_REAL_PATH_HASH=${shQuote(pathHash)}\n` : ""}`
+    : "";
+  const cacheLine = compileCacheDir
+    ? `export TK_NODE_COMPILE_CACHE_PREV="\${NODE_COMPILE_CACHE-}"\nexport NODE_COMPILE_CACHE=${shQuote(compileCacheDir)}\n`
+    : "";
+  return `#!/usr/bin/env sh\nexport TK_SHIM_DIR=${shQuote(shimDir)}\n${realBinLine}${cacheLine}exec ${parts} "$@"\n`;
 }
 
 // Windows wrapper: a .cmd that forwards args via %*. cmd.exe and PowerShell both
 // resolve `git` → `git.cmd` through PATHEXT. `setlocal` self-sets TK_SHIM_DIR for
 // the recursion guard (C7; Windows dogfood observed 2,599+ spawns) without leaking
 // it to the caller; the implicit endlocal at script end preserves the exit code.
-export function windowsWrapper(program: string, tk: TkExec, shimDir: string): string {
+// When `realBin` is known it also sets TK_REAL_BIN so tk can skip the per-command
+// PATH×PATHEXT walk (2.1); omitted ⇒ byte-identical to the pre-2.1 wrapper. When
+// `compileCacheDir` is given it sets NODE_COMPILE_CACHE (2.3) before tk runs so
+// node can persist its compiled bytecode; version-agnostic (inert on Node <22.1).
+export function windowsWrapper(
+  program: string,
+  tk: TkExec,
+  shimDir: string,
+  realBin?: string,
+  compileCacheDir?: string,
+  pathHash?: string,
+): string {
   const parts = [tk.bin, ...tk.args, program].map((v) => `"${v}"`).join(" ");
-  return `@echo off\r\nsetlocal\r\nset "TK_SHIM_DIR=${shimDir}"\r\n${parts} %*\r\n`;
+  // TK_REAL_PATH_HASH (2.1) gates TK_REAL_BIN — baked as a pair (see posixWrapper).
+  const realBinLine = realBin
+    ? `set "TK_REAL_BIN=${realBin}"\r\n${pathHash ? `set "TK_REAL_PATH_HASH=${pathHash}"\r\n` : ""}`
+    : "";
+  // Save the caller's NODE_COMPILE_CACHE (empty if unset) so tk restores it for the
+  // spawned real tool; `if defined` avoids cmd's literal-`%VAR%` expansion when unset.
+  const cacheLine = compileCacheDir
+    ? `set "TK_NODE_COMPILE_CACHE_PREV="\r\nif defined NODE_COMPILE_CACHE set "TK_NODE_COMPILE_CACHE_PREV=%NODE_COMPILE_CACHE%"\r\nset "NODE_COMPILE_CACHE=${compileCacheDir}"\r\n`
+    : "";
+  return `@echo off\r\nsetlocal\r\nset "TK_SHIM_DIR=${shimDir}"\r\n${realBinLine}${cacheLine}${parts} %*\r\n`;
 }
 
 export type InstallOptions = {
@@ -83,6 +145,11 @@ export type InstallOptions = {
   // wrapper is only written for a program whose binary actually exists on the box
   // (D2 — never shim `cat`/`ls` on a Windows host that lacks them).
   isAvailable?: (program: string) => boolean;
+  // 2.1: resolve a program to its absolute real-binary path, baked into the wrapper
+  // (TK_REAL_BIN) and manifest so the runtime skips the per-command PATH walk.
+  // Injectable for tests; defaults to a real PATH lookup excluding the shim dir.
+  // Returning undefined ⇒ no path baked for that program (wrapper still written).
+  resolveRealBin?: (program: string) => string | undefined;
 };
 
 // Is a real `program` executable resolvable on PATH, excluding our own shim dir
@@ -99,6 +166,18 @@ export function realBinaryPresent(program: string, shimDirPath: string): boolean
   return resolveProgram(program, path) !== program;
 }
 
+// Resolve a program's absolute real-binary path for baking (2.1), excluding our own
+// shim dir so a re-install never bakes a previously-written wrapper as "the binary".
+// undefined ⇒ unresolved (the wrapper is still written; it just falls back to the
+// per-command walk at runtime). Resolved once at install — the whole point of 2.1.
+export function resolveRealBinaryPath(program: string, shimDirPath: string): string | undefined {
+  const childPath = (process.env.PATH ?? "")
+    .split(delimiter)
+    .filter((entry) => entry && entry !== shimDirPath)
+    .join(delimiter);
+  return resolveBinaryPath(program, childPath);
+}
+
 // Create the shim dir, write one executable wrapper per shimmable program, and a
 // manifest. Idempotent: re-running overwrites wrappers and prunes any wrapper no
 // longer in the program set.
@@ -108,21 +187,43 @@ export function installWrappers(opts: InstallOptions): ShimManifest {
   // Only shim programs whose binary is actually present — never fabricate a
   // wrapper for a tool the user hasn't installed (D2).
   const isAvailable = opts.isAvailable ?? ((program: string) => realBinaryPresent(program, dir));
+  const resolveRealBin =
+    opts.resolveRealBin ?? ((program: string) => resolveRealBinaryPath(program, dir));
   const programs = (opts.programs ?? shimmablePrograms()).slice().sort().filter(isAvailable);
   const tk = opts.tkExec ?? defaultTkExec();
   const platform = opts.platform ?? process.platform;
   const isWindows = platform === "win32";
 
+  // Resolve each real binary ONCE here (2.1). The path is baked into the wrapper env
+  // (TK_REAL_BIN) and recorded in the manifest; unresolved programs simply get no
+  // baked path and fall back to the per-command walk at runtime.
+  const resolvedPaths: Record<string, string> = {};
+  for (const program of programs) {
+    const real = resolveRealBin(program);
+    if (real) resolvedPaths[program] = real;
+  }
+
   // Prune stale wrappers from a previous install before writing the new set.
   pruneWrappers(dir, programs, isWindows);
 
+  // V8 compile-cache dir baked into every wrapper's env (2.3). Version-agnostic:
+  // honored by Node 22.1+, inert on older Node.
+  const cacheDir = compileCacheDir(home);
+  // Resolution-env hash (2.1) over the SAME shim-stripped PATH the runtime resolves
+  // against (buildChildPath → stripShimDir), so an unchanged PATH matches at runtime.
+  const pathHash = hashResolutionEnv(stripShimDir(process.env.PATH, dir));
+
   mkdirSync(dir, { recursive: true });
   for (const program of programs) {
+    const realBin = resolvedPaths[program];
     if (isWindows) {
-      writeFileSync(join(dir, `${program}.cmd`), windowsWrapper(program, tk, dir));
+      writeFileSync(
+        join(dir, `${program}.cmd`),
+        windowsWrapper(program, tk, dir, realBin, cacheDir, pathHash),
+      );
     } else {
       const file = join(dir, program);
-      writeFileSync(file, posixWrapper(program, tk, dir));
+      writeFileSync(file, posixWrapper(program, tk, dir, realBin, cacheDir, pathHash));
       chmodSync(file, 0o755);
     }
   }
@@ -134,6 +235,8 @@ export function installWrappers(opts: InstallOptions): ShimManifest {
     programs,
     installedAt: opts.installedAt,
     tk,
+    resolvedPaths,
+    pathHash,
   };
   writeFileSync(manifestPath(home), `${JSON.stringify(manifest, null, 2)}\n`);
   return manifest;
@@ -156,4 +259,8 @@ export function readManifest(home: string = tokenKillerHome()): ShimManifest | n
 
 export function removeShimDir(home: string = tokenKillerHome()): void {
   rmSync(shimDir(home), { recursive: true, force: true });
+  // The V8 compile cache (2.3) is a shim-tier artifact — node regenerates it on the
+  // next shimmed run, so it is safe to drop with the wrappers. Never touches the
+  // user's measured-savings data (projects/), which uninstall preserves by default.
+  rmSync(compileCacheDir(home), { recursive: true, force: true });
 }

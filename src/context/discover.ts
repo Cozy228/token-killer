@@ -73,15 +73,16 @@ function walk(
 }
 
 function userDisplay(home: string, path: string): string {
-  return path.startsWith(home) ? `~${path.slice(home.length)}` : path;
+  // Posixify the home-relative tail: this `display` becomes `finding.file`, which
+  // runApply feeds to resolveLivePath — whose `startsWith("~/")` check (and the
+  // printed form) require forward slashes. A Windows `\` tail broke both.
+  if (!path.startsWith(home)) return path;
+  return `~${path.slice(home.length).replace(/\\/g, "/")}`;
 }
 
 // ── User-level scope ──────────────────────────────────────────────────────────
 
-export function discoverUserFiles(
-  home: string,
-  budget: { remaining: number },
-): DiscoveredFile[] {
+export function discoverUserFiles(home: string, budget: { remaining: number }): DiscoveredFile[] {
   const files: DiscoveredFile[] = [];
   const add = (
     path: string,
@@ -142,7 +143,19 @@ function listSubdirs(dir: string): string[] {
   if (!existsSync(dir)) return [];
   try {
     return readdirSync(dir, { withFileTypes: true })
-      .filter((e) => e.isDirectory())
+      .filter((e) => {
+        // A real subdir, OR a SYMLINK that resolves to one. Plugin/shared skills are
+        // commonly symlinked into ~/.claude/skills (e.g. → ~/.agents/skills/<name>);
+        // `isDirectory()` is false for a symlink, so filtering on it alone silently
+        // dropped them — inspect then saw a fraction of the installed skills.
+        if (e.isDirectory()) return true;
+        if (!e.isSymbolicLink()) return false;
+        try {
+          return statSync(join(dir, e.name)).isDirectory();
+        } catch {
+          return false; // dangling symlink
+        }
+      })
       .map((e) => join(dir, e.name));
   } catch {
     return [];
@@ -158,10 +171,7 @@ type ProjectCandidate = {
   always_on: boolean;
 };
 
-export function discoverProjectFiles(
-  cwd: string,
-  budget: { remaining: number },
-): DiscoveredFile[] {
+export function discoverProjectFiles(cwd: string, budget: { remaining: number }): DiscoveredFile[] {
   const files: DiscoveredFile[] = [];
   const seen = new Set<string>();
   const add = (

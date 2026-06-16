@@ -33,7 +33,7 @@ import {
 import { fixtureCases } from "../tests/helpers/fixtureCases.js";
 
 const repoRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
-const outputPath = path.join(repoRoot, "docs/three-way-comparison.md");
+const outputPath = path.join(repoRoot, "docs/archive/three-way-comparison.md");
 const MAX_BUFFER = 20 * 1024 * 1024;
 
 /** Cases with raw token count above this appear in summary only, not in per-case dumps or aggregate. */
@@ -86,7 +86,10 @@ function toParsed(command: string[]): ParsedCommand {
   };
 }
 
-function runArgv(argv: string[], cwd = repoRoot): { stdout: string; stderr: string; exitCode: number } {
+function runArgv(
+  argv: string[],
+  cwd = repoRoot,
+): { stdout: string; stderr: string; exitCode: number } {
   const env = {
     ...process.env,
     GIT_PAGER: "",
@@ -112,7 +115,10 @@ function mergedOutput(result: { stdout: string; stderr: string }): string {
   return `${result.stdout}${result.stderr}`;
 }
 
-function statsFromBaseline(rawText: string, outputText: string): { raw: RowStats; filtered: RowStats } {
+function statsFromBaseline(
+  rawText: string,
+  outputText: string,
+): { raw: RowStats; filtered: RowStats } {
   const raw = calculateSavings(rawText, rawText);
   const filtered = calculateSavings(rawText, outputText);
   return {
@@ -309,7 +315,7 @@ export function renderReport(
     "- **tk (fixture)**: handler filter on fixture stdout (same pipeline as product tests)",
     "- **rtk (live)**: mapped native `rtk` subcommand",
     "- **rtk (fixture)**: `cat <fixture> | rtk …` when stdin filter exists (see per-case RTK cmd)",
-    "- **rtk (wrapper)**: err/summary/deps/smart read a command/file/dir, so the fixture is fed via `rtk <sub> \"cat <fixture>\"`, `rtk smart <fixture>`, or `rtk deps <tmpdir>` (see per-case RTK cmd)",
+    '- **rtk (wrapper)**: err/summary/deps/smart read a command/file/dir, so the fixture is fed via `rtk <sub> "cat <fixture>"`, `rtk smart <fixture>`, or `rtk deps <tmpdir>` (see per-case RTK cmd)',
     "- **rtk (unsupported)**: tk-only handlers rtk has no filter for (e.g. terraform) are shown as rtk raw passthrough (0% savings)",
     "- **savingsPct**: token estimate vs raw (`ceil(chars/4)`), same as tk core",
     "- **Sort**: cases ordered by |tk savingsPct − rtk savingsPct| (largest gap first)",
@@ -330,8 +336,10 @@ export function renderReport(
   const totalRaw = results.reduce((sum, row) => sum + row.raw.tokens, 0);
   const totalTk = results.reduce((sum, row) => sum + row.tk.tokens, 0);
   const totalRtk = results.reduce((sum, row) => sum + row.rtk.tokens, 0);
-  const tkAggregatePct = totalRaw === 0 ? 0 : Number((((totalRaw - totalTk) / totalRaw) * 100).toFixed(1));
-  const rtkAggregatePct = totalRaw === 0 ? 0 : Number((((totalRaw - totalRtk) / totalRaw) * 100).toFixed(1));
+  const tkAggregatePct =
+    totalRaw === 0 ? 0 : Number((((totalRaw - totalTk) / totalRaw) * 100).toFixed(1));
+  const rtkAggregatePct =
+    totalRaw === 0 ? 0 : Number((((totalRaw - totalRtk) / totalRaw) * 100).toFixed(1));
 
   lines.push(
     "",

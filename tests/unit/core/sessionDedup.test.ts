@@ -79,7 +79,6 @@ function mkOptions(over: Partial<TkOptions> = {}): TkOptions {
   return {
     raw: false,
     stats: false,
-    verbose: false,
     maxLines: 120,
     maxChars: 12000,
     saveRaw: "auto",
@@ -99,8 +98,12 @@ type Call = Partial<{
   env: NodeJS.ProcessEnv;
 }>;
 
-function run(over: Call = {}): Promise<FilteredResult | null> {
-  return applySessionDedup({
+// Drive the decision AND run its deferred persistence, mirroring runCompress's
+// "emit then commit" order: callers here assert the emitted FilteredResult, and the
+// next run depends on this run's store/snapshot writes having landed. Persistence is
+// fail-open inside the decision, so awaiting it never throws.
+async function run(over: Call = {}): Promise<FilteredResult | null> {
+  const decision = await applySessionDedup({
     handler: over.handler ?? handler(),
     command: over.command ?? command(),
     options: over.options ?? mkOptions(),
@@ -109,6 +112,8 @@ function run(over: Call = {}): Promise<FilteredResult | null> {
     now: over.now ?? T0,
     env: over.env ?? ENABLED,
   });
+  await decision.persist();
+  return decision.filtered;
 }
 
 describe("applySessionDedup — exact-compare hit (the core proof)", () => {
@@ -203,12 +208,6 @@ describe("applySessionDedup — gates", () => {
 
   test("--no-save-raw disables dedup (no recovery channel)", async () => {
     const opts = mkOptions({ saveRaw: false });
-    expect(await run({ options: opts, now: T0 })).toBeNull();
-    expect(await run({ options: opts, now: T0 + 1000 })).toBeNull();
-  });
-
-  test("--no-dedup forces the stage off even when enabled and eligible", async () => {
-    const opts = mkOptions({ dedup: false });
     expect(await run({ options: opts, now: T0 })).toBeNull();
     expect(await run({ options: opts, now: T0 + 1000 })).toBeNull();
   });

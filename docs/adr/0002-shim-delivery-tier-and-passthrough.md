@@ -9,6 +9,11 @@ status: accepted
 > live under `tk init shim <…>`; the tier ladder and passthrough design below are
 > unchanged.
 
+> **Further amended by [ADR 0012](0012-vscode-hook-shim-additive-delivery.md) (2026-06-15):**
+> delivery tiers are no longer mutually exclusive. VS Code installs **hook + shim** additively;
+> decision #1's "a host uses the highest tier it can support; lower tiers are fallbacks, not
+> parallel paths" is relaxed for hosts that support multiple complementary tiers.
+
 ## Context
 
 Command-compression needs a way to get the agent to invoke the [Command

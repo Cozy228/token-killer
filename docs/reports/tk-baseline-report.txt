@@ -1,0 +1,110 @@
+## tk baseline probe
+========================================================================
+generated (local time): 2026-06-11T19:49:44.3765488+08:00
+script version: 1
+
+## 1. Machine + OS (slow-box context)
+========================================================================
+OS              : Microsoft Windows 11 Enterprise build 26100
+Manufacturer    : Dell Inc. Latitude 5430
+CPU             : 12th Gen Intel(R) Core(TM) i7-1265U (10C/12T)
+RAM (GB)        : 31.7
+PowerShell      : 7.6.1 (Core)
+
+## 2. Node / tk install facts
+========================================================================
+node --version : v22.2.1
+enableCompileCache typeof : function ('function' => Node >= 22.8, compile cache active)
+manifest schema : 1  tk version: 0.1.0  installedAt: 1781169791623
+shim dir        : C:\Users\userid\.token-killer\shim
+shim programs   : aws, curl, dotnet, find, git, gradle, javac, mvn, npy, npm, npx, pip, playwright, pnpm, pytest, ruff, terraform, tree
+tk node bin     : C:\Users\userid\.token-killer\node-v22.22.1-win-x64\node.exe
+tk cli entry    : C:\Users\userid\OSS\token-killer\dist\cli.js
+dist dir        : C:\Users\userid\OSS\token-killer\dist
+dist .js chunks : 12 files, 556 KB total
+
+## 3. PATH / PATHEXT (resolveProgram fs.stat-storm magnitude)
+========================================================================
+PATH entries : 45
+PATHEXT entries : 14  (.COM;.EXE;.BAT;.CMD;.VBS;.VBE;.JS;.JSE;.WSF;.WSH;.MSC;.PY;.PYW;.CPL)
+worst-case stat per command (entries x ext) : 630
+
+PATH (one per line):
+ [ 1] C:\Program Files\PowerShell\7
+ [ 2] C:\Program Files (x86)\Common Files\Oracle\Java\javapath
+ [ 3] C:\Program Files\Common Files\Oracle\Java\javapath
+ [ 4] C:\Program Files\company\Python311\Scripts\
+ [ 5] C:\Program Files\company\Python311\
+ [ 6] C:\WINDOWS\CCM
+ [ 7] C:\Program Files\company\Python39\Scripts\
+ [ 8] C:\Program Files\company\Python39\
+ [ 9] C:\Program Files\Microsoft SDKs\Azure\CLI2\wbin
+ [10] C:\WINDOWS\system32
+ [11] C:\WINDOWS
+ [12] C:\WINDOWS\System32\Wbem
+ [13] C:\WINDOWS\System32\WindowsPowerShell\v1.0\
+ [14] C:\WINDOWS\System32\OpenSSH\
+ [15] C:\Program Files (x86)\Enterprise Vault\EVClient\
+ [16] C:\Program Files (x86)\Box\Box Edit\
+ [17] C:\Program Files\1E\Client\Extensibility\NomadBranch
+ [18] C:\Program Files\dotnet\
+ [19] C:\WINDOWS\system32\config\systemprofile\AppData\Local\Microsoft\WindowsApps
+ [20] C:\Program Files\Java\jre1.8.0_421\bin
+ [21] C:\Program Files\Amazon\AWSCLIV2\
+ [22] C:\WINDOWS\system32
+ [23] C:\WINDOWS
+ [24] C:\WINDOWS\System32\Wbem
+ [25] C:\WINDOWS\System32\WindowsPowerShell\v1.0\
+ [26] C:\WINDOWS\System32\OpenSSH\
+ [27] C:\Program Files\PowerShell\7\
+ [28] C:\Program Files (x86)\Java\jre1.8.0_491\bin
+ [29] C:\Users\userid\AppData\Local\pnpm\bin
+ [30] C:\Users\userid\.console-ninja\.bin
+ [31] C:\Users\userid\AppData\Local\Microsoft\WindowsApps
+ [32] C:\Users\userid\AppData\Local\Programs\Microsoft VS Code\bin
+ [33] C:\Users\userid\PortableGit\bin
+ [34] C:\Users\userid\Gradle\gradle-7.6\bin
+ [35] C:\Users\userid\OpenJDK11U-jdk_x64_windows_hotspot_11.0.23_9\jdk-11.0.23+9\bin
+ [36] C:\Users\userid\OpenJDK17U-jdk_x64_windows_hotspot_17.0.6_10\jdk-17.0.6+10\bin
+ [37] C:\Users\userid\apache-maven-3.9.0-bin\apache-maven-3.9.0\bin
+ [38] C:\Users\userid\AppData\Local\Programs\Gpg4win\..\GnuPG\bin
+ [39] C:\Users\userid\node-v22.22.1-win-x64
+ [40] C:\Users\userid\AppData\Local\GitHubDesktop\bin
+ [41] C:\Users\userid\go1.22.4.windows-amd64\go\bin
+ [42] C:\Users\userid\terraform_1.11.4_windows_amd64
+ [43] C:\Users\userid\AppData\Local\Microsoft\WindowsApps
+ [44] C:\Users\userid\AppData\Local\pnpm
+ [45] C:\Users\userid\AppData\Local\Programs\Git\cmd
+
+real git resolved to : C:\Users\userid\PortableGit\bin\git.exe
+
+## 4. Endpoint security / AV present (env that amplifies fixed cost)
+========================================================================
+Defender RealTimeProtectionEnabled : False
+Defender AntimalwareEnabled        : False
+EDR/AV processes : CSFalconContainer, CSFalconService, SecurityHealthService, SecurityHealthSystray, VSCBTSvc
+
+## 5. Segment baselines (medians replace the single-shot I5 numbers)
+========================================================================
+cwd: C:\Users\userid\tmpdir
+
+node -e 0 (cold floor)   median:    925 ms  (min   880 ms / max   971 ms, n=9)
+node cli --version       median:    982 ms  (min   873 ms / max 1,042 ms, n=9)
+tk git status            median:  2,660 ms  (min 2,472 ms / max 2,827 ms, n=9)
+tk --raw git status      median:  3,007 ms  (min 2,744 ms / max 4,287 ms, n=9)
+bare git status --short  median:    738 ms  (min   599 ms / max 1,049 ms, n=9)
+
+## 6. Compile-cache cold->warm (reference; effective only on Node >= 22.1)
+========================================================================
+fresh NODE_COMPILE_CACHE = C:\Users\userid\AppData\Local\Temp\tkcc-355ab89f042b4b4b8983b7b6cbc94e73ad
+5 sequential 'node cli --version' runs (run #1 builds cache, #2+ should drop if cache works):
+  run #1:  1,953 ms
+  run #2:  1,402 ms
+  run #3:  1,175 ms
+  run #4:    991 ms
+  run #5:  1,034 ms
+compile-cache files written: 7  (0 => Node < 22.1 ignored NODE_COMPILE_CACHE, no caching)
+
+========================================================================
+## Done
+========================================================================

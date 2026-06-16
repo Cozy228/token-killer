@@ -38,12 +38,20 @@ type Segment = {
 };
 
 // Split a command string into chain segments at top-level `&&`, `||`, `;`, `|`,
-// respecting single/double quotes so operators inside quoted args are ignored.
+// respecting single/double quotes so operators inside quoted args are ignored, and
+// tracking `{ ... }` brace depth so a separator INSIDE a script block / command
+// group is not a top-level split point (issue #25).
 function splitTopLevel(command: string): Segment[] {
   const segments: Segment[] = [];
   let buf = "";
   let prevOp: ChainOp | null = null;
   let quote: '"' | "'" | null = null;
+  // Depth of unquoted `{ ... }` nesting. A `;`/`|`/`&&`/`||` at depth > 0 belongs to
+  // the block (a pwsh script block, e.g. `ForEach-Object { a; b }`, or a bash command
+  // group), NOT the outer chain — splitting there would inject `tk` mid-block and
+  // change semantics (issue #25). At depth 0 the original top-level behavior is
+  // byte-identical, so brace-free commands are unaffected.
+  let braceDepth = 0;
 
   const flush = (nextOp: ChainOp): void => {
     segments.push({ text: buf, precededBy: prevOp });
@@ -63,23 +71,38 @@ function splitTopLevel(command: string): Segment[] {
       buf += c;
       continue;
     }
-    if (c === "&" && command[i + 1] === "&") {
-      flush("&&");
-      i += 1;
+    if (c === "{") {
+      braceDepth += 1;
+      buf += c;
       continue;
     }
-    if (c === "|" && command[i + 1] === "|") {
-      flush("||");
-      i += 1;
+    if (c === "}") {
+      // Floor at 0 so a stray close-brace (no matching open) can't desync the depth
+      // of an otherwise normal command and silently disable top-level splitting.
+      if (braceDepth > 0) braceDepth -= 1;
+      buf += c;
       continue;
     }
-    if (c === "|") {
-      flush("|");
-      continue;
-    }
-    if (c === ";") {
-      flush(";");
-      continue;
+    // Separators are only chain operators at the top level (outside any brace block).
+    if (braceDepth === 0) {
+      if (c === "&" && command[i + 1] === "&") {
+        flush("&&");
+        i += 1;
+        continue;
+      }
+      if (c === "|" && command[i + 1] === "|") {
+        flush("||");
+        i += 1;
+        continue;
+      }
+      if (c === "|") {
+        flush("|");
+        continue;
+      }
+      if (c === ";") {
+        flush(";");
+        continue;
+      }
     }
     buf += c;
   }
@@ -233,6 +256,51 @@ function rejoin(segments: Segment[]): string {
   return out;
 }
 
+// Bash collapses a backslash-line-continuation (`\<NL>`, `\<CRLF>`) plus the
+// surrounding horizontal whitespace into a single space before dispatching the
+// command. `String.trim()` does not unwrap them, so a command split across lines
+// (`git \<NL>  log`) would tokenize as `["git\\", "log"]` and miss every handler —
+// the rewrite silently never fires. Normalize first, mirroring RTK's
+// collapse_line_continuations (issue #1564). No continuation → returns the input
+// unchanged (the common fast path).
+function collapseLineContinuations(command: string): string {
+  return command.replace(/[ \t\v\f]*\\\r?\n[ \t\v\f]*/g, " ");
+}
+
+// Command substitution (`$(…)`, backticks) and arithmetic expansion (`$((…))`)
+// are evaluated by the shell BEFORE the command runs, so their result can't be
+// reasoned about statically — prepending `tk` may change semantics or wrap the
+// wrong program. Pass instead. Quote handling mirrors the shell (and RTK's
+// contains_substitution): single quotes suppress everything; a backslash escapes
+// the next char outside single quotes; `$(` and backticks stay ACTIVE inside
+// double quotes, so only single quotes protect them. `$(` covers both `$(…)` and
+// `$((…))`. Conservative: any active construct → true.
+function hasShellSubstitution(command: string): boolean {
+  let inSingle = false;
+  let inDouble = false;
+  for (let i = 0; i < command.length; i += 1) {
+    const c = command[i];
+    if (c === "\\" && !inSingle) {
+      i += 1; // skip the escaped char
+      continue;
+    }
+    if (c === "'" && !inDouble) {
+      inSingle = !inSingle;
+      continue;
+    }
+    if (c === '"' && !inSingle) {
+      inDouble = !inDouble;
+      continue;
+    }
+    if (inSingle) continue;
+    if (c === "`") return true; // backtick command substitution
+    if (c === "$" && command[i + 1] === "(") return true; // $( … )  and  $(( … ))
+    // Process substitution `<( … )` / `>( … )` — only when fully unquoted.
+    if (!inDouble && (c === "<" || c === ">") && command[i + 1] === "(") return true;
+  }
+  return false;
+}
+
 // A heredoc (`<<`/`<<-`) or output redirect (`>`/`>>`) makes the rewrite non-
 // equivalent: the `tk` wrapper would not see the same I/O context. Pass instead.
 // Conservative: any unquoted `<<`, `>`, or `>>` outside quotes → pass.
@@ -272,13 +340,21 @@ export function rewriteCommand(
   // hook never rewrites a command whose binary is absent (D2).
   isAvailable: (program: string) => boolean = isProgramAvailable,
 ): RewriteDecision {
-  const command = (raw ?? "").trim();
+  // Unwrap bash line continuations first (P4) so a multi-line command tokenizes
+  // the same as its single-line form; only then trim.
+  const command = collapseLineContinuations(raw ?? "").trim();
   if (command.length === 0) return { decision: "pass", reason: "empty command" };
   const prefix = tkPrefix(session);
 
   // Non-equivalent shells → pass.
   if (hasNonEquivalentRedirect(command)) {
     return { decision: "pass", reason: "output redirect or heredoc (not equivalent under tk)" };
+  }
+
+  // Command substitution / arithmetic expansion → pass (P3): the shell evaluates
+  // them at runtime, so the rewrite can't be proven equivalent.
+  if (hasShellSubstitution(command)) {
+    return { decision: "pass", reason: "command substitution or arithmetic expansion" };
   }
 
   const segments = splitTopLevel(command);

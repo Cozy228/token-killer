@@ -43,13 +43,40 @@ export type HistoryRecord = {
   session_id?: string;
 };
 
+// 2.4e — opt-out for latency-critical agents. Set TK_NO_HISTORY=1 to skip the history
+// row entirely (documented cost: `tk gain` will not see those commands). Any value
+// other than unset/""/"0"/"false" enables it.
+function historyDisabled(): boolean {
+  const v = process.env.TK_NO_HISTORY;
+  return v !== undefined && v !== "" && v !== "0" && v.toLowerCase() !== "false";
+}
+
+// Append one JSONL row with a single pre-serialized write (2.4d). APPEND-FIRST: each
+// tk command is a fresh process, so a process-scoped "already ensured" memo would
+// never hit — the mkdir would still fire every command. Instead we just append; only
+// when the dir does not yet exist (ENOENT — the project's first-ever row, or after a
+// deletion) do we pay one mkdir and retry. In steady state (dir present on disk) this
+// is ZERO mkdir per command. Returns whether the dir had to be created, so the caller
+// can write the per-project meta exactly then (and never on the hot path again).
+async function appendJsonLine(file: string, line: string): Promise<{ createdDir: boolean }> {
+  try {
+    await writeFile(file, line, { encoding: "utf8", flag: "a", mode: 0o600 });
+    return { createdDir: false };
+  } catch (error) {
+    if ((error as NodeJS.ErrnoException).code !== "ENOENT") throw error;
+    await mkdir(path.dirname(file), { recursive: true, mode: 0o700 });
+    await writeFile(file, line, { encoding: "utf8", flag: "a", mode: 0o600 });
+    return { createdDir: true };
+  }
+}
+
 export async function recordHistory(
   raw: RawResult,
   filtered: FilteredResult,
   options: TkOptions,
 ): Promise<void> {
+  if (historyDisabled()) return;
   const file = historyFile(options.cwd);
-  await mkdir(path.dirname(file), { recursive: true });
 
   const record: HistoryRecord = {
     timestamp: new Date().toISOString(),
@@ -70,20 +97,74 @@ export async function recordHistory(
   };
   if (options.sessionId) record.session_id = options.sessionId;
 
-  await writeFile(file, `${JSON.stringify(record)}\n`, { encoding: "utf8", flag: "a" });
-  await maybeWriteProjectMeta(options.cwd);
+  const { createdDir } = await appendJsonLine(file, `${JSON.stringify(record)}\n`);
+  if (createdDir) await writeProjectMeta(options.cwd);
 }
 
-// Lazily record the project's display label (directory basename only — never the
-// full path) for `tk gain --user` (ADR 0004 §3). Best-effort and idempotent: the
-// `wx` flag writes only when absent, and any error (already present, unwritable) is
-// swallowed so the hot-path command is never broken.
-async function maybeWriteProjectMeta(cwd: string): Promise<void> {
+// A `--raw` passthrough that STREAMS via stdio:"inherit" (the light path) captures
+// no bytes, so it has no honest size to record. We persist only what we genuinely
+// know — exit code and wall-clock duration — and OMIT every byte/token field rather
+// than fabricate zeros that would read as "tk measured 0 bytes" (it measured none).
+// The read boundary (`coerceHistorySizes`) fills the absent fields with 0 so every
+// numeric consumer still aggregates safely; the on-disk row stays honest.
+type RawLiteRecord = Omit<
+  HistoryRecord,
+  "raw_chars" | "output_chars" | "raw_tokens" | "output_tokens" | "saved_tokens" | "savings_pct"
+>;
+
+export async function recordRawLitePassthrough(params: {
+  command: string;
+  exitCode: number;
+  durationMs: number;
+  cwd: string;
+  sessionId?: string;
+}): Promise<void> {
+  if (historyDisabled()) return;
+  const file = historyFile(params.cwd);
+
+  const record: RawLiteRecord = {
+    timestamp: new Date().toISOString(),
+    command: params.command,
+    handler: "raw",
+    source_adapter: "shell",
+    project_fingerprint: projectFingerprint(params.cwd),
+    exit_code: params.exitCode,
+    duration_ms: params.durationMs,
+    quality_status: "passed",
+  };
+  if (params.sessionId) record.session_id = params.sessionId;
+
+  const { createdDir } = await appendJsonLine(file, `${JSON.stringify(record)}\n`);
+  if (createdDir) await writeProjectMeta(params.cwd);
+}
+
+// Fill the byte/token fields a light `--raw` row honestly OMITS (see
+// recordRawLitePassthrough) with 0 at the read boundary, so numeric consumers never
+// see `undefined` (which would poison every sum into NaN). Mutates and returns the
+// row; the on-disk JSON is unchanged. Exported so the streaming rollup, which parses
+// rows itself instead of through parseHistoryLines, can apply the same coercion.
+export function coerceHistorySizes(record: HistoryRecord): HistoryRecord {
+  record.raw_chars ??= 0;
+  record.output_chars ??= 0;
+  record.raw_tokens ??= 0;
+  record.output_tokens ??= 0;
+  record.saved_tokens ??= 0;
+  record.savings_pct ??= 0;
+  return record;
+}
+
+// Record the project's display label (directory basename only — never the full path)
+// for `tk gain --user` (ADR 0004 §3). Called ONLY when the project data dir was just
+// created (2.4c) — the moment a project is first seen — so the per-command hot path
+// never pays for it. Best-effort: the `wx` flag and the swallowed catch keep it a
+// no-op when the meta already exists or the disk rejects the write (display-only).
+async function writeProjectMeta(cwd: string): Promise<void> {
   try {
     const meta: ProjectMeta = { label: path.basename(cwd) };
     await writeFile(projectMetaFile(cwd), `${JSON.stringify(meta)}\n`, {
       encoding: "utf8",
       flag: "wx",
+      mode: 0o600,
     });
   } catch {
     // already written or unwritable — display-only, safe to skip
@@ -111,7 +192,6 @@ export async function recordHookFailure(params: {
   exitCode: number;
 }): Promise<void> {
   const file = historyFile(params.cwd);
-  await mkdir(path.dirname(file), { recursive: true });
 
   const record: HistoryRecord = {
     timestamp: new Date().toISOString(),
@@ -130,7 +210,8 @@ export async function recordHookFailure(params: {
     quality_status: "failure",
   };
 
-  await writeFile(file, `${JSON.stringify(record)}\n`, { encoding: "utf8", flag: "a" });
+  const { createdDir } = await appendJsonLine(file, `${JSON.stringify(record)}\n`);
+  if (createdDir) await writeProjectMeta(params.cwd);
 }
 
 export async function readHistory(cwd: string): Promise<HistoryRecord[]> {
@@ -144,7 +225,7 @@ export async function readHistory(cwd: string): Promise<HistoryRecord[]> {
 }
 
 function parseHistoryLines(text: string): HistoryRecord[] {
-  return parseJsonl<HistoryRecord>(text);
+  return parseJsonl<HistoryRecord>(text).map(coerceHistorySizes);
 }
 
 // User-level read (ADR 0004 §3): enumerate every project's history.jsonl under

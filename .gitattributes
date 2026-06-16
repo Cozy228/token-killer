@@ -1,0 +1,5 @@
+# Force LF on checkout for every text file so test fixtures (and the handler line
+# parsing that reads them) stay byte-identical across platforms. Without this, a
+# Windows runner with core.autocrlf=true checks fixtures out with CRLF, leaving a
+# trailing \r in parsed fields and breaking byte-exact fixture / RTK-parity tests.
+* text=auto eol=lf

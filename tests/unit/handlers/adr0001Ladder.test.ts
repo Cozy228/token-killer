@@ -34,7 +34,6 @@ function options(overrides: Partial<TkOptions> = {}): TkOptions {
   return {
     raw: false,
     stats: false,
-    verbose: false,
     maxLines: 100000,
     maxChars: 10000000,
     saveRaw: false,

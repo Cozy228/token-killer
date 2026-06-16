@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, test } from "vitest";
-import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { mkdirSync, mkdtempSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 
@@ -42,7 +42,9 @@ describe("context/discover — project scope", () => {
 
     expect(byDisplay.has(".github/copilot-instructions.md")).toBe(true);
     expect(byDisplay.get(".github/copilot-instructions.md")!.surface).toBe("copilot_instructions");
-    expect(byDisplay.get(".github/instructions/api.instructions.md")!.surface).toBe("path_instructions");
+    expect(byDisplay.get(".github/instructions/api.instructions.md")!.surface).toBe(
+      "path_instructions",
+    );
     expect(byDisplay.get(".github/prompts/review.prompt.md")!.surface).toBe("prompt_file");
     expect(byDisplay.get(".github/agents/dev.agent.md")!.surface).toBe("custom_agent");
     expect(byDisplay.get("CLAUDE.md")!.adapter).toBe("claude");
@@ -62,7 +64,11 @@ describe("context/discover — project scope", () => {
     const cwd = join(root, "repo");
     mkdirSync(cwd, { recursive: true });
     write(join("repo", "AGENTS.md"));
-    const { files } = discoverContextFiles({ scopes: ["user"], cwd, home: join(root, "emptyhome") });
+    const { files } = discoverContextFiles({
+      scopes: ["user"],
+      cwd,
+      home: join(root, "emptyhome"),
+    });
     expect(files.length).toBe(0);
   });
 });
@@ -83,5 +89,23 @@ describe("context/discover — user scope", () => {
     // The CLAUDE.md user file is always_on.
     const claude = files.find((f) => f.surface === "agent_instructions");
     expect(claude!.always_on).toBe(true);
+  });
+
+  test("discovers SYMLINKED skill directories (plugin/shared skills)", () => {
+    const home = join(root, "home");
+    // A real skill dir + a shared skill the user symlinks in (the common layout:
+    // ~/.claude/skills/<name> → ~/.agents/skills/<name>). isDirectory() is false for
+    // the symlink, so the old filter silently dropped it.
+    write(join("home", ".claude", "skills", "real", "SKILL.md"));
+    write(join("home", ".agents", "skills", "linked", "SKILL.md"));
+    symlinkSync(
+      join(root, "home", ".agents", "skills", "linked"),
+      join(root, "home", ".claude", "skills", "linked"),
+    );
+
+    const { files } = discoverContextFiles({ scopes: ["user"], cwd: root, home });
+    const skillFiles = files.filter((f) => f.surface === "skill").map((f) => f.display);
+    expect(skillFiles.some((d) => d.includes("real"))).toBe(true);
+    expect(skillFiles.some((d) => d.includes("linked"))).toBe(true);
   });
 });

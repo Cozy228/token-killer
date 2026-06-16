@@ -35,6 +35,10 @@ One of the three ordered ways the proxy reaches the agent, used in strict prefer
 order: **Hook** (the [Hook runtime](#surfaces), when the host's hooks are enabled and
 fire), then **Shim**, then **Instruction injection**. A host uses the highest tier it
 can actually support; lower tiers are fallbacks, not parallel paths.
+_Exception ([ADR 0012](docs/adr/0012-vscode-hook-shim-additive-delivery.md)):_ a host that
+supports several **complementary** tiers may install them together — VS Code runs **hook + shim**
+additively (shim primary/authoritative, hook an additive enhancement). `selectTier` then expresses
+preference order, not exclusivity.
 _Avoid_: mode, channel, layer (overloaded with "Layer 2").
 
 **Shim**:
@@ -188,6 +192,15 @@ _Avoid_: reusing for estimates, optimizer deltas, or governance figures.
 Full commands, arguments, result text, paths, session ids, and repository names. Excluded
 from default output and from telemetry; available only via explicit per-run opt-in.
 _Avoid_: raw data, logs.
+
+**Support bundle**:
+The diagnostic artifact `tk support` assembles to share with whoever a deployment routes
+support to — the machine-state diagnostic (environment, delivery health, the proxied
+command history with its captured output, recent crashes), home directory scrubbed. It carries full
+technical evidence but **never any chat-prompt text**; tk only opens a pre-filled mail
+draft or Teams chat referencing it and never transmits — the user sends by hand, and
+that act is the explicit per-run opt-in [Raw evidence](#evidence-and-recovery) requires.
+_Avoid_: support report (collides with [Report](#reporting-and-telemetry)), crash report.
 
 **Local recovery store**:
 The user-level store of raw evidence and metrics used for recovery and measurement. Never

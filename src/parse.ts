@@ -10,7 +10,6 @@ function defaultOptions(): TkOptions {
   return {
     raw: false,
     stats: false,
-    verbose: false,
     maxLines: DEFAULT_MAX_LINES,
     maxChars: DEFAULT_MAX_CHARS,
     saveRaw: "auto",
@@ -63,6 +62,12 @@ function toCommand(tokens: string[]): ParsedCommand | undefined {
 // install / uninstall / status are first-class top-level verbs (U1+U2); `tk init`
 // is gone (renamed to `tk install`) and is handled with a hint in cli.ts.
 const RESERVED_SUBCOMMANDS = new Set<ParsedArgv["mode"]>([
+  // Bare-word `help`/`version` are verbs too — without these, `tk help` fell through
+  // to the command router and tried to passthrough a `help` program (only `tk --help`
+  // worked). `tk -- help` still reaches a literal `help` program (the `--` escape hatch
+  // is handled in the loop below, after this early return).
+  "help",
+  "version",
   "install",
   "uninstall",
   "status",
@@ -74,6 +79,7 @@ const RESERVED_SUBCOMMANDS = new Set<ParsedArgv["mode"]>([
   "gain",
   "config",
   "telemetry",
+  "support",
 ]);
 
 export function parseArgv(argv: string[]): ParsedArgv {
@@ -82,8 +88,8 @@ export function parseArgv(argv: string[]): ParsedArgv {
   let index = 0;
 
   const first = argv[0];
-  // The detailed savings report lives at `tk gain report` (handled inside the
-  // gain dispatcher). The legacy `--report` flag (mode "report") is unrelated.
+  // Measured savings live at `tk gain` (its own dispatcher). There is no proxy
+  // report flag anymore — `tk gain` is the one report surface.
   if (first !== undefined && RESERVED_SUBCOMMANDS.has(first as ParsedArgv["mode"])) {
     return { mode: first as ParsedArgv["mode"], options, subArgs: argv.slice(1) };
   }
@@ -103,11 +109,6 @@ export function parseArgv(argv: string[]): ParsedArgv {
     }
     if (token === "--stats") {
       options.stats = true;
-      index += 1;
-      continue;
-    }
-    if (token === "--verbose") {
-      options.verbose = true;
       index += 1;
       continue;
     }
@@ -140,28 +141,6 @@ export function parseArgv(argv: string[]): ParsedArgv {
       index += 1;
       continue;
     }
-    if (token === "--no-dedup") {
-      // ADR 0009 per-command opt-out: force the session-dedup stage off for this
-      // run regardless of the TK_SESSION_DEDUP / config gate.
-      options.dedup = false;
-      index += 1;
-      continue;
-    }
-    if (token === "--report") {
-      mode = "report";
-      index += 1;
-      continue;
-    }
-    if (token === "--json") {
-      options.reportFormat = "json";
-      index += 1;
-      continue;
-    }
-    if (token === "--csv") {
-      options.reportFormat = "csv";
-      index += 1;
-      continue;
-    }
     if (token === "--help") {
       mode = "help";
       index += 1;
@@ -176,7 +155,6 @@ export function parseArgv(argv: string[]): ParsedArgv {
     break;
   }
 
-  options.reportFormat ??= "text";
   // Precedence: `--session` flag (set above) > `TK_SESSION` env > absent.
   options.sessionId ??= sanitizeSessionId(process.env.TK_SESSION);
   return {

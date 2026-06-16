@@ -79,17 +79,31 @@ describe("decide — non-preToolUse events allow (Slice 2 adds prompt/error)", (
 
 describe("toHostOutput — emits the shape the real host reads (ADR 0005)", () => {
   // VS Code dialect (snake_case tool_name/tool_input): hookSpecificOutput wrapper
-  // with updatedInput — byte-for-byte the shape verified live against rtk hook copilot.
-  test("VS Code rewrite → hookSpecificOutput.updatedInput.command", () => {
+  // with updatedInput. Like Copilot CLI's modifiedArgs, `updatedInput` REPLACES the
+  // tool input wholesale and VS Code validates it against run_in_terminal's schema —
+  // so the rewrite must preserve the full original input (`explanation`, `goal`,
+  // `mode`, …) and overwrite only `command`. Dropping the required fields makes VS
+  // Code silently IGNORE the rewrite (issue #19). Mirrors the Copilot CLI test below.
+  test("VS Code rewrite → updatedInput preserves run_in_terminal input fields", () => {
     const out = wire({
       tool_name: "run_in_terminal",
-      tool_input: { command: "git status" },
+      tool_input: {
+        command: "git status",
+        explanation: "Check repo",
+        goal: "Inspect tree",
+        mode: "sync",
+      },
     }) as Record<string, Record<string, unknown>>;
     expect(out.hookSpecificOutput).toEqual({
       hookEventName: "PreToolUse",
       permissionDecision: "allow",
       permissionDecisionReason: COPILOT_REWRITE_REASON,
-      updatedInput: { command: "tk git status" },
+      updatedInput: {
+        command: "tk git status",
+        explanation: "Check repo",
+        goal: "Inspect tree",
+        mode: "sync",
+      },
     });
   });
 
@@ -105,6 +119,28 @@ describe("toHostOutput — emits the shape the real host reads (ADR 0005)", () =
       modifiedArgs: { command: "tk git status" },
     });
     expect("hookSpecificOutput" in out).toBe(false);
+  });
+
+  // Copilot CLI's `modifiedArgs` REPLACES the tool args wholesale, so the rewrite
+  // must carry the host-supplied metadata forward (`description`, `mode`,
+  // `initial_wait`, …) and only overwrite `command`. Dropping them would degrade
+  // or break the rewritten call. Mirrors RTK (preserves extra args fields).
+  test("Copilot CLI rewrite → modifiedArgs preserves host metadata fields", () => {
+    const out = wire({
+      toolName: "bash",
+      toolArgs: JSON.stringify({
+        command: "git status",
+        description: "check repo status",
+        initial_wait: 30,
+        mode: "sync",
+      }),
+    }) as Record<string, unknown>;
+    expect(out.modifiedArgs).toEqual({
+      command: "tk git status",
+      description: "check repo status",
+      initial_wait: 30,
+      mode: "sync",
+    });
   });
 
   test("deny → permissionDecision deny + reason, no ledger fields", () => {

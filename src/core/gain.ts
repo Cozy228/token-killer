@@ -9,9 +9,11 @@ import { projectFingerprint } from "./dataDir.js";
 import { gcRawStore } from "./gc.js";
 import { readProjectMeta } from "./history.js";
 import {
+  CROSS_REFERENCE_MODEL,
   DEFAULT_INPUT_PRICE_PER_MTOK,
   estimateSavingsUsdFromRollup,
   priceForModel,
+  usdToCredits,
 } from "./pricing.js";
 import {
   allDaysFromRollup,
@@ -39,7 +41,9 @@ import {
 import { runColdPathTelemetry, type DispatchParams } from "../telemetry/dispatch.js";
 
 type Bucketing = "none" | "daily" | "weekly" | "monthly" | "all";
-type Format = "text" | "json" | "csv";
+// Default output is the HTML report (opened in the browser, four ledger views).
+// --text/--json/--csv switch to the terminal forms.
+type Output = "html" | "text" | "json" | "csv";
 
 type GainArgs = {
   user: boolean;
@@ -49,7 +53,7 @@ type GainArgs = {
   failures: boolean;
   quota: boolean;
   quotaModel?: string;
-  format: Format;
+  output: Output;
   error?: string;
 };
 
@@ -74,7 +78,7 @@ export function parseGainArgs(argv: string[]): GainArgs {
     graph: false,
     failures: false,
     quota: false,
-    format: "text",
+    output: "html",
   };
   for (let i = 0; i < argv.length; i += 1) {
     const token = argv[i];
@@ -103,14 +107,10 @@ export function parseGainArgs(argv: string[]): GainArgs {
       } else {
         args.history = 10;
       }
-    } else if (token === "--json") args.format = "json";
-    else if (token === "--csv") args.format = "csv";
-    else if (token === "--format") {
-      const value = argv[i + 1];
-      i += 1;
-      if (value === "json" || value === "csv" || value === "text") args.format = value;
-      else args.error = `invalid --format '${value ?? ""}' (expected json | csv | text)`;
-    } else {
+    } else if (token === "--text") args.output = "text";
+    else if (token === "--json") args.output = "json";
+    else if (token === "--csv") args.output = "csv";
+    else {
       args.error = `unknown flag '${token}'`;
     }
   }
@@ -157,14 +157,19 @@ export async function runGain(
 
   const ctx = await loadGainContext(cwd, args.user);
 
-  if (args.format === "json") {
+  if (args.output === "json") {
     process.stdout.write(
       `${JSON.stringify(buildGainJson(ctx.rollup, args, now, ctx.dedup), null, 2)}\n`,
     );
-  } else if (args.format === "csv") {
+  } else if (args.output === "csv") {
     process.stdout.write(renderCsv(ctx.rollup, args, now));
-  } else {
+  } else if (args.output === "text") {
     process.stdout.write(await renderText(ctx, args, now));
+  } else {
+    // Default: the four-view HTML report (measured / optimizer / governance /
+    // quality), opened in the browser — same data the old `gain report` rendered.
+    const { emitGainHtml } = await import("./ledger.js");
+    await emitGainHtml({ scope: args.user ? "user" : "project", cwd }, now);
   }
 
   try {
@@ -206,7 +211,9 @@ function buildGainJson(
       exit_code: r.exit_code,
     }));
   }
-  if (args.quota) json.estimated_savings_usd = quotaObject(rollup, args.quotaModel);
+  // Estimated value (heuristic): carries AI Credits + USD + a GPT-5.5 cross-ref,
+  // strictly apart from the measured token totals above — never summed in.
+  if (args.quota) json.estimated_savings = quotaObject(rollup, args.quotaModel);
   // ADR 0009: a SEPARATE key, only when there are hits — never summed into the
   // filter totals above (mirrors VS Code PR #315905's `cacheHit`). Absent when zero
   // so existing JSON consumers are unaffected until the feature is actually used.
@@ -215,12 +222,36 @@ function buildGainJson(
 }
 
 function quotaObject(rollup: MergedRollup, override?: string) {
+  const usd = estimateSavingsUsdFromRollup(rollup.saved_tokens_by_model, override);
+  // Cross-reference figure: re-price every saved token at the well-known model's
+  // rate so the OpenAI/Copilot world gets a number it recognizes alongside the
+  // Claude default. Always a single-rate override (not per-row).
+  const crossUsd = estimateSavingsUsdFromRollup(
+    rollup.saved_tokens_by_model,
+    CROSS_REFERENCE_MODEL,
+  );
   return {
+    // The money figure is ESTIMATED (heuristic), kept strictly apart from the
+    // measured `saved_tokens` shown in the summary — never conflated.
     estimate_kind: "heuristic" as const,
-    value_usd: round2(estimateSavingsUsdFromRollup(rollup.saved_tokens_by_model, override)),
+    // AI Credits is the headline value unit (1 credit = $0.01); USD is retained.
+    // Round USD to micro-dollars and derive credits from the rounded USD so the
+    // exact 100× relationship holds and sub-cent savings don't round to $0.00
+    // (same reason as telemetry's micro-dollar rounding).
+    ...valueFields(usd),
     model: override ?? "per_row",
     price_per_mtok: override ? priceForModel(override) : DEFAULT_INPUT_PRICE_PER_MTOK,
+    cross_reference: {
+      model: CROSS_REFERENCE_MODEL,
+      ...valueFields(crossUsd),
+      price_per_mtok: priceForModel(CROSS_REFERENCE_MODEL),
+    },
   };
+}
+
+function valueFields(usd: number): { value_ai_credits: number; value_usd: number } {
+  const usdR = Math.round(usd * 1e6) / 1e6;
+  return { value_ai_credits: Math.round(usdToCredits(usdR) * 1e4) / 1e4, value_usd: usdR };
 }
 
 function renderCsv(rollup: MergedRollup, args: GainArgs, now: Date): string {
@@ -369,10 +400,13 @@ function renderQuota(rollup: MergedRollup, override?: string): string {
   const q = quotaObject(rollup, override);
   const assumption = override
     ? `model ${override} @ $${q.price_per_mtok}/Mtok`
-    : `per-row pricing, default $${DEFAULT_INPUT_PRICE_PER_MTOK}/Mtok where model unknown`;
+    : `per-row pricing, default $${DEFAULT_INPUT_PRICE_PER_MTOK}/Mtok (Sonnet 4.6) where model unknown`;
+  const x = q.cross_reference;
   return [
-    "Estimated savings (heuristic — NOT a measured token count):",
-    `  ~$${q.value_usd.toFixed(2)} (${assumption})`,
+    "Estimated value (heuristic — derived from saved tokens, NOT a measured count):",
+    `  ~${q.value_ai_credits.toFixed(0)} AI Credits  (~$${q.value_usd.toFixed(2)}, ${assumption})`,
+    `  cross-ref ${x.model}: ~${x.value_ai_credits.toFixed(0)} AI Credits (~$${x.value_usd.toFixed(2)} @ $${x.price_per_mtok}/Mtok)`,
+    "  1 AI Credit = $0.01 (GitHub/VS Code usage-based billing)",
   ].join("\n");
 }
 
@@ -413,8 +447,4 @@ function shortFingerprint(fingerprint: string): string {
 
 function capitalize(s: string): string {
   return s.charAt(0).toUpperCase() + s.slice(1);
-}
-
-function round2(n: number): number {
-  return Math.round(n * 100) / 100;
 }

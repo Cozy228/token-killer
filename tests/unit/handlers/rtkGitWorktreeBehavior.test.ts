@@ -1,3 +1,5 @@
+import { homedir } from "node:os";
+
 import { describe, expect, test } from "vitest";
 
 import {
@@ -12,10 +14,9 @@ describe("RTK git worktree behavior", () => {
   test("normalizes worktree listing whitespace while keeping sha and branch", async () => {
     const result = await filterRtkOutput(
       ["git", "worktree", "list"],
-      [
-        "/home/user/project  abc1234 [main]",
-        "/home/user/worktrees/feat  def5678 [feature]",
-      ].join("\n"),
+      ["/home/user/project  abc1234 [main]", "/home/user/worktrees/feat  def5678 [feature]"].join(
+        "\n",
+      ),
     );
 
     expect(result.output).toContain("abc1234");
@@ -41,7 +42,9 @@ describe("RTK git worktree behavior", () => {
 
     expectRtkParity(result, {
       critical: ["~/Workspace/token-killer", "62d59ca", "[token-killer-node-cli]"],
-      forbidden: [/\/Users\/ziyu\/Workspace/],
+      // The real home must be compacted to ~ — assert the machine's actual home
+      // never survives, rather than a hardcoded /Users/... that only fails locally.
+      forbidden: [homedir()],
     });
   });
 });

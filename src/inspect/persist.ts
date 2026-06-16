@@ -5,7 +5,7 @@
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 
-import { tokenKillerHome } from "../core/dataDir.js";
+import { fingerprintSegment, tokenKillerHome } from "../core/dataDir.js";
 import type { Finding } from "./unified.js";
 
 export function adviceDir(): string {
@@ -17,9 +17,7 @@ export function adviceDir(): string {
 // never duplicated across projects or left stale. `tk optimize context` reads
 // the matching bucket.
 
-export type ScopeBucket =
-  | { scope: "user" }
-  | { scope: "project"; fingerprint: string };
+export type ScopeBucket = { scope: "user" } | { scope: "project"; fingerprint: string };
 
 export type InspectBucketReport = {
   schemaVersion: "1";
@@ -35,15 +33,17 @@ export function userContextInspectDir(): string {
 }
 
 export function projectInspectDir(fingerprint: string): string {
-  // fingerprint is "repo:<hash>"; strip the prefix for a clean path segment.
-  const hash = fingerprint.replace(/^repo:/, "");
-  return join(tokenKillerHome(), "projects", hash, "inspect");
+  // Use the SAME canonical bucket segment as history/raw/dedup (I7): `repo:<hash>`
+  // on POSIX, `repo-<hash>` on Windows. The old behaviour stripped the `repo:`
+  // prefix entirely, landing inspect data in `projects/<hash>/` while the history
+  // it analyzes lived in `projects/repo:<hash>/` — two desynced buckets for one
+  // project. `latest.json` is a derived artifact regenerated every `tk inspect`, so
+  // any pre-existing stripped-prefix dir is simply stale and harmless (no migration).
+  return join(tokenKillerHome(), "projects", fingerprintSegment(fingerprint), "inspect");
 }
 
 export function inspectBucketDir(bucket: ScopeBucket): string {
-  return bucket.scope === "user"
-    ? userContextInspectDir()
-    : projectInspectDir(bucket.fingerprint);
+  return bucket.scope === "user" ? userContextInspectDir() : projectInspectDir(bucket.fingerprint);
 }
 
 export function inspectBucketPath(bucket: ScopeBucket): string {
@@ -52,9 +52,12 @@ export function inspectBucketPath(bucket: ScopeBucket): string {
 
 export function writeInspectBucket(bucket: ScopeBucket, report: InspectBucketReport): string {
   const dir = inspectBucketDir(bucket);
-  mkdirSync(dir, { recursive: true });
+  // Owner-only like every store under ~/.token-killer/ (0700 dir / 0600 file). A
+  // recursive mkdir here is a common first-writer of the data-dir root, so the mode
+  // keeps the root from being created world-readable and weakening the metrics stores.
+  mkdirSync(dir, { recursive: true, mode: 0o700 });
   const path = join(dir, "latest.json");
-  writeFileSync(path, `${JSON.stringify(report, null, 2)}\n`);
+  writeFileSync(path, `${JSON.stringify(report, null, 2)}\n`, { mode: 0o600 });
   return path;
 }
 
@@ -77,7 +80,7 @@ export type AdviceArtifacts = {
 // Returns the paths written, in stable order.
 export function writeAdviceArtifacts(artifacts: AdviceArtifacts): string[] {
   const dir = adviceDir();
-  mkdirSync(dir, { recursive: true });
+  mkdirSync(dir, { recursive: true, mode: 0o700 });
   const written: string[] = [];
   const files: Array<[string, string]> = [
     ["inspect-report.md", artifacts.reportMarkdown],
@@ -86,7 +89,7 @@ export function writeAdviceArtifacts(artifacts: AdviceArtifacts): string[] {
   ];
   for (const [name, contents] of files) {
     const path = join(dir, name);
-    writeFileSync(path, contents);
+    writeFileSync(path, contents, { mode: 0o600 });
     written.push(path);
   }
   return written;
@@ -94,8 +97,8 @@ export function writeAdviceArtifacts(artifacts: AdviceArtifacts): string[] {
 
 export function writeTelemetryExport(contents: string): string {
   const dir = adviceDir();
-  mkdirSync(dir, { recursive: true });
+  mkdirSync(dir, { recursive: true, mode: 0o700 });
   const path = join(dir, "telemetry-export.json");
-  writeFileSync(path, contents);
+  writeFileSync(path, contents, { mode: 0o600 });
   return path;
 }

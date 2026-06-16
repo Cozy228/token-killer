@@ -19,7 +19,7 @@
 
 import { rewriteCommand } from "./rewrite.js";
 import { readStreamWithTimeout } from "./copilot.js";
-import { tkDebug } from "./debug.js";
+import { recordHookError, tkDebug } from "./debug.js";
 
 // Ground-truth reason string Claude Code shows for the auto-rewrite (the tk
 // analogue of RTK's "RTK auto-rewrite").
@@ -28,7 +28,11 @@ export const CLAUDE_REWRITE_REASON = "tk auto-rewrite";
 type ClaudePreToolUse = {
   hook_event_name?: string;
   tool_name?: string;
-  tool_input?: { command?: string };
+  // The full Bash tool input. Every field is carried through to `updatedInput`
+  // (overwriting only `command`): Claude Code's Bash input can also include
+  // `description` / `timeout` / `run_in_background`, and silently dropping them
+  // changes how the command runs (a backgrounded call would run in the foreground).
+  tool_input?: { command?: string; [key: string]: unknown };
   // Claude Code stamps the conversation id at the top level of every hook payload.
   // Carried into the rewrite as `--session <id>` so tk's history stamps it (ADR 0009).
   session_id?: string;
@@ -41,7 +45,8 @@ export type ClaudeHookOutput = {
   hookSpecificOutput: {
     hookEventName: "PreToolUse";
     permissionDecisionReason: string;
-    updatedInput: { command: string };
+    // The full original tool_input with only `command` overwritten (see decide).
+    updatedInput: Record<string, unknown>;
   };
 };
 
@@ -77,7 +82,13 @@ export function decide(input: unknown): ClaudeHookOutput | null {
     hookSpecificOutput: {
       hookEventName: "PreToolUse",
       permissionDecisionReason: CLAUDE_REWRITE_REASON,
-      updatedInput: { command: r.rewritten },
+      // Preserve the full original tool_input, overwriting only `command` —
+      // symmetric with copilot.ts's VS Code / Copilot CLI branches (#19).
+      // `payload.tool_input` is guaranteed defined here (the empty-command guard
+      // above returns null otherwise). Emitting `{ command }` alone would drop
+      // fields the agent set (run_in_background, timeout, description), silently
+      // changing how the rewritten command runs.
+      updatedInput: { ...payload.tool_input, command: r.rewritten },
     },
   };
 }
@@ -91,9 +102,18 @@ export function decideFromStdin(raw: string): ClaudeHookOutput | null {
     if (trimmed.length === 0) return null;
     return decide(JSON.parse(trimmed));
   } catch (error) {
-    process.stderr.write(
-      `tk hook claude: ${error instanceof Error ? error.message : String(error)}\n`,
-    );
+    // Fail-open: a malformed or TRUNCATED payload (e.g. a long command whose JSON
+    // the host streamed in slower than the stdin-read budget, so it arrived cut off
+    // mid-string) is handled by running the command unchanged. Persist the reason to
+    // errors.log UNCONDITIONALLY so the scene is reconstructable after the fact —
+    // the host shows only a bare "hook error" (or nothing) and TK_DEBUG cannot be
+    // set retroactively. Kept OFF stderr: Claude Code surfaces a fail-open hook's
+    // stderr as a spurious error for a command that actually ran fine.
+    recordHookError("claude: stdin parse (fail-open, command ran unchanged)", error);
+    tkDebug("claude:parse-error", {
+      message: error instanceof Error ? error.message : String(error),
+      bytes: (raw ?? "").length,
+    });
     return null;
   }
 }

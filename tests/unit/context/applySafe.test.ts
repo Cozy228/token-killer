@@ -13,13 +13,7 @@ import { dirname, join } from "node:path";
 
 import { runInspect } from "../../../src/inspect/cli.js";
 import { registerAllRules } from "../../../src/context/rules/index.js";
-import {
-  hasMarkerBlock,
-  insertMarkerBlock,
-  removeMarkerBlock,
-  setFrontmatterKey,
-  userTargetPath,
-} from "../../../src/context/applySafe.js";
+import { setFrontmatterKey } from "../../../src/context/applySafe.js";
 import { runOptimize } from "../../../src/context/optimizeCli.js";
 
 let root: string;
@@ -46,36 +40,7 @@ function silenceStdout() {
   return vi.spyOn(process.stdout, "write").mockImplementation(() => true);
 }
 
-describe("marker block helpers", () => {
-  test("insertion is idempotent", () => {
-    const once = insertMarkerBlock("# Title\n\nbody\n");
-    const twice = insertMarkerBlock(once);
-    expect(once).toBe(twice);
-    expect(hasMarkerBlock(once)).toBe(true);
-  });
-
-  test("restore removes only the managed block", () => {
-    const original = "# Title\n\nkeep me\n";
-    const withBlock = insertMarkerBlock(original);
-    const restored = removeMarkerBlock(withBlock);
-    expect(restored).toContain("keep me");
-    expect(hasMarkerBlock(restored)).toBe(false);
-  });
-
-  // Phase 3: the managed block names concrete, already-shipped read/rg/tree flags.
-  test("managed block points at concrete read/rg/tree flags", () => {
-    const block = insertMarkerBlock("");
-    expect(block).toContain("tk read --max-lines 200");
-    expect(block).toContain("--level aggressive");
-    expect(block).toContain("tk rg <pattern> <path>");
-    expect(block).toContain("--level minimal");
-    expect(block).toContain("tk tree <path>");
-    expect(block).toContain("-L <n>");
-    // Cacheable / marker-block constraints: ≤ 15 lines, no volatile content.
-    expect(block.split("\n").length).toBeLessThanOrEqual(15);
-    expect(block).not.toMatch(/\d{4}-\d{2}-\d{2}|\d{2}:\d{2}:\d{2}/);
-  });
-
+describe("frontmatter helpers", () => {
   test("setFrontmatterKey preserves body and comments", () => {
     const content = [
       "---",
@@ -102,55 +67,6 @@ describe("marker block helpers", () => {
   });
 });
 
-describe("tk optimize --token-budget-block (folds in the former agentsmd)", () => {
-  test("installs, backs up, and --restore removes the managed block", async () => {
-    const target = join(home, ".copilot", "copilot-instructions.md");
-    mkdirSync(dirname(target), { recursive: true });
-    writeFileSync(target, "# My rules\nBe concise.\n");
-
-    const s = silenceStdout();
-    expect(await runOptimize(["--token-budget-block"], 1000, home, cwd, {})).toBe(0);
-    s.mockRestore();
-
-    expect(hasMarkerBlock(readFileSync(target, "utf8"))).toBe(true);
-    // Backup of the pre-patch content exists.
-    const backupRoot = join(home, ".token-killer", "backups", "context");
-    expect(existsSync(backupRoot)).toBe(true);
-    expect(readdirSync(backupRoot).length).toBeGreaterThan(0);
-
-    const s2 = silenceStdout();
-    expect(await runOptimize(["--token-budget-block", "--restore"], 2000, home, cwd, {})).toBe(0);
-    s2.mockRestore();
-    const after = readFileSync(target, "utf8");
-    expect(hasMarkerBlock(after)).toBe(false);
-    expect(after).toContain("Be concise.");
-  });
-
-  test("installs the managed block at the user target", async () => {
-    const s = silenceStdout();
-    const code = await runOptimize(["--token-budget-block"], 1000, home, cwd, {});
-    s.mockRestore();
-    expect(code).toBe(0);
-    expect(hasMarkerBlock(readFileSync(userTargetPath(home), "utf8"))).toBe(true);
-  });
-
-  test("O1: --restore deletes a file the block-install created (no 0-byte leftover)", async () => {
-    const target = userTargetPath(home);
-    expect(existsSync(target)).toBe(false);
-
-    const s = silenceStdout();
-    expect(await runOptimize(["--token-budget-block"], 1000, home, cwd, {})).toBe(0);
-    s.mockRestore();
-    expect(existsSync(target)).toBe(true); // created fresh, block is the only content
-
-    const s2 = silenceStdout();
-    expect(await runOptimize(["--token-budget-block", "--restore"], 2000, home, cwd, {})).toBe(0);
-    s2.mockRestore();
-    // The block was the sole content → file is deleted, NOT left as a 0-byte file.
-    expect(existsSync(target)).toBe(false);
-  });
-});
-
 describe("runOptimize --apply", () => {
   test("applies a user-level skill frontmatter change with a backup", async () => {
     const skill = join(home, ".claude", "skills", "deploy", "SKILL.md");
@@ -168,7 +84,7 @@ describe("runOptimize --apply", () => {
     );
 
     const trigger = vi.fn((_s: "user" | "project", h: string, c: string, n: number) => {
-      runInspect(["--user"], n, h, c);
+      runInspect(["--user", "--text"], n, h, c);
     });
 
     const s = silenceStdout();
@@ -200,7 +116,7 @@ describe("runOptimize --apply", () => {
     writeFileSync(skill, ["---", "name: deploy", "description: Deploy", "---", ...body].join("\n"));
 
     const trigger = vi.fn((_s: "user" | "project", h: string, c: string, n: number) => {
-      runInspect(["--user"], n, h, c);
+      runInspect(["--user", "--text"], n, h, c);
       // The user edits the FRONTMATTER after inspect captured the finding (body is
       // unchanged, so body_hash still matches — only the full-file content_hash moves).
       writeFileSync(

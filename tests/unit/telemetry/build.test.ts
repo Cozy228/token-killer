@@ -58,6 +58,7 @@ const ALLOWED_KEYS = new Set([
   "active_days_30d",
   "source_adapter_mix",
   "estimated_savings_usd_30d",
+  "estimated_savings_ai_credits_30d",
   "inspect",
   "runId",
 ]);
@@ -78,6 +79,7 @@ describe("buildTelemetry — schema v1 shape", () => {
     expect(t.active_days_30d).toBe(1);
     expect(t.source_adapter_mix).toEqual({ shell: 2 });
     expect(t.estimated_savings_usd_30d).toBeCloseTo((100 / 1e6) * 3, 6);
+    expect(t.estimated_savings_ai_credits_30d).toBeCloseTo((100 / 1e6) * 3 * 100, 6);
   });
 
   test("quality signals: counts, fallback_count, parse_failure_24h", () => {
@@ -136,6 +138,9 @@ describe("buildTelemetry — allow-list is physically enforced (§8)", () => {
     expect(json).not.toContain("/Users/alice");
     expect(json).not.toContain("secret-project");
     expect(json).not.toContain("beadfacefeed");
-    expect(build(sensitive).top_commands).toEqual(["deploy"]);
+    // `deploy` is not a member of the closed program vocabulary (issue #10), so the
+    // program slot degrades it to "other" — the safe direction; no user content reaches
+    // the wire either way.
+    expect(build(sensitive).top_commands).toEqual(["other"]);
   });
 });

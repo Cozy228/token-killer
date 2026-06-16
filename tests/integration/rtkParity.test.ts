@@ -3,19 +3,24 @@ import { mkdtempSync } from "node:fs";
 import { mkdtemp, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
-import { fileURLToPath } from "node:url";
+import { fileURLToPath, pathToFileURL } from "node:url";
 
 import { describe, expect, test } from "vitest";
 
 const repoRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "../..");
 const cli = path.join(repoRoot, "src/cli.ts");
+// Spawn the CLI like the other integration suites: `node --import <file:// loader>`.
+// A bare `npx` fails on Windows (not resolved without PATHEXT), and a raw drive-letter
+// loader path is rejected by Node's --import (ERR_UNSUPPORTED_ESM_URL_SCHEME) — so use
+// process.execPath + a pathToFileURL() loader, exactly as cli.test.ts does.
+const tsxLoader = pathToFileURL(path.join(repoRoot, "node_modules/tsx/dist/loader.mjs")).href;
 
 // Isolate the data dir so the spawned CLI never writes history into the real
 // ~/.token-killer/.
 const tokenKillerHome = mkdtempSync(path.join(tmpdir(), "tk-rtk-home-"));
 
 function runTk(args: string[], cwd: string, input?: string, timeout = 15000) {
-  return spawnSync("npx", ["tsx", cli, ...args], {
+  return spawnSync(process.execPath, ["--import", tsxLoader, cli, ...args], {
     cwd,
     input,
     encoding: "utf8",
@@ -68,44 +73,51 @@ describe("RTK-style CLI integration parity", () => {
     }
   });
 
-  test("tk grep preserves RTK format-flag output shapes", async () => {
-    const dir = await mkdtemp(path.join(tmpdir(), "tk-rtk-grep-format-"));
-    try {
-      await writeFile(path.join(dir, "with-import.ts"), "import fs from 'node:fs';\n");
-      await writeFile(path.join(dir, "without-import.ts"), "export const value = 1;\n");
+  // POSIX-only: compares tk's output byte-for-byte against the NATIVE grep, using
+  // POSIX-grep-specific flags (-L/-o/-Z). Windows has no standard grep binary to
+  // compare against, so this is honestly skipped there (the \0-framing emit fix it
+  // guards is platform-agnostic and stays covered on Linux/macOS).
+  test.runIf(process.platform !== "win32")(
+    "tk grep preserves RTK format-flag output shapes",
+    async () => {
+      const dir = await mkdtemp(path.join(tmpdir(), "tk-rtk-grep-format-"));
+      try {
+        await writeFile(path.join(dir, "with-import.ts"), "import fs from 'node:fs';\n");
+        await writeFile(path.join(dir, "without-import.ts"), "export const value = 1;\n");
 
-      const filesWithoutMatch = runTk(
-        ["grep", "-L", "import", "with-import.ts", "without-import.ts"],
-        dir,
-      );
-      const nativeFilesWithoutMatch = nativeGrep(
-        ["-L", "import", "with-import.ts", "without-import.ts"],
-        dir,
-      );
-      expect(filesWithoutMatch.status).toBe(0);
-      expect(filesWithoutMatch.stdout).toBe(nativeFilesWithoutMatch.stdout);
-      expect(filesWithoutMatch.stdout).not.toContain("Search:");
-      expect(filesWithoutMatch.stdout).not.toContain("Matches:");
+        const filesWithoutMatch = runTk(
+          ["grep", "-L", "import", "with-import.ts", "without-import.ts"],
+          dir,
+        );
+        const nativeFilesWithoutMatch = nativeGrep(
+          ["-L", "import", "with-import.ts", "without-import.ts"],
+          dir,
+        );
+        expect(filesWithoutMatch.status).toBe(0);
+        expect(filesWithoutMatch.stdout).toBe(nativeFilesWithoutMatch.stdout);
+        expect(filesWithoutMatch.stdout).not.toContain("Search:");
+        expect(filesWithoutMatch.stdout).not.toContain("Matches:");
 
-      const onlyMatching = runTk(["grep", "-o", "import", "with-import.ts"], dir);
-      const nativeOnlyMatching = nativeGrep(["-o", "import", "with-import.ts"], dir);
-      expect(onlyMatching.status).toBe(0);
-      expect(onlyMatching.stdout).toBe(nativeOnlyMatching.stdout);
+        const onlyMatching = runTk(["grep", "-o", "import", "with-import.ts"], dir);
+        const nativeOnlyMatching = nativeGrep(["-o", "import", "with-import.ts"], dir);
+        expect(onlyMatching.status).toBe(0);
+        expect(onlyMatching.stdout).toBe(nativeOnlyMatching.stdout);
 
-      const nullDelimited = runTk(
-        ["grep", "-Z", "-l", "import", "with-import.ts", "without-import.ts"],
-        dir,
-      );
-      const nativeNullDelimited = nativeGrep(
-        ["-Z", "-l", "import", "with-import.ts", "without-import.ts"],
-        dir,
-      );
-      expect(nullDelimited.status).toBe(0);
-      expect(nullDelimited.stdout).toBe(nativeNullDelimited.stdout);
-    } finally {
-      await rm(dir, { recursive: true, force: true });
-    }
-  });
+        const nullDelimited = runTk(
+          ["grep", "-Z", "-l", "import", "with-import.ts", "without-import.ts"],
+          dir,
+        );
+        const nativeNullDelimited = nativeGrep(
+          ["-Z", "-l", "import", "with-import.ts", "without-import.ts"],
+          dir,
+        );
+        expect(nullDelimited.status).toBe(0);
+        expect(nullDelimited.stdout).toBe(nativeNullDelimited.stdout);
+      } finally {
+        await rm(dir, { recursive: true, force: true });
+      }
+    },
+  );
 
   test("tk git diff preserves changed lines from a real repository", async () => {
     const dir = await initGitRepo("tk-rtk-diff-");

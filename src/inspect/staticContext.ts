@@ -6,12 +6,9 @@
 import { analyzeContext, type AnalyzeResult } from "../context/analyzer.js";
 import { contextProjectFingerprint } from "../context/discover.js";
 import { registerAllRules } from "../context/rules/index.js";
+import { vscodeCompressFinding } from "../context/vscodeSettings.js";
 import type { ContextFinding, ContextScope, ContextSurface } from "../context/types.js";
-import {
-  writeInspectBucket,
-  type InspectBucketReport,
-  type ScopeBucket,
-} from "./persist.js";
+import { writeInspectBucket, type InspectBucketReport, type ScopeBucket } from "./persist.js";
 import type { Finding, RuntimeFinding } from "./unified.js";
 
 export type StaticContextRun = {
@@ -32,6 +29,13 @@ export function runStaticContext(opts: {
     home: opts.home,
     cwd: opts.cwd,
   });
+  // VS Code's host-native terminal-output compression toggle is a user-scope,
+  // non-markdown finding — injected here (not a per-file rule) when the user scope
+  // is in play and no `--surface` narrows to a specific markdown surface.
+  if (opts.scopes.includes("user") && !opts.surface) {
+    const vscode = vscodeCompressFinding(process.platform, opts.home);
+    if (vscode) result.findings.push(vscode);
+  }
   return { result, scopes: opts.scopes };
 }
 

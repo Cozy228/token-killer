@@ -128,6 +128,132 @@ describe("buildAdvice — per-command & governance findings", () => {
   });
 });
 
+describe("buildAdvice — workflow-signal gaps (skill / context / storage)", () => {
+  test("skill-gap when manual file reads repeat heavily", () => {
+    const scan = scanWith("vscode", [
+      opp({ key: "read_file", kind: "direct", category: "read", count: 8 }),
+    ]);
+    const f = buildAdvice(scan).find((x) => x.type === "skill-gap");
+    expect(f).toBeDefined();
+    expect(f!.recommendation).toContain("skill");
+  });
+
+  test("context-gap when repo searches repeat heavily", () => {
+    const scan = scanWith("vscode", [
+      opp({ key: "grep_search", kind: "direct", category: "search", count: 7 }),
+    ]);
+    const f = buildAdvice(scan).find((x) => x.type === "context-gap");
+    expect(f).toBeDefined();
+    expect(f!.recommendation).toMatch(/CONTEXT\.md|AGENTS\.md/);
+  });
+
+  test("storage-discovery when sessions exist but no tool events were read", () => {
+    const scan: ScanResult = {
+      inputType: "vscode",
+      session_inventory: 12,
+      transcript_coverage: 0,
+      tool_event_count: 0,
+      unknown_time_records: 0,
+      coverage_errors: 0,
+      opportunities: [],
+    };
+    const f = buildAdvice(scan).find((x) => x.type === "storage-discovery");
+    expect(f).toBeDefined();
+    expect(f!.occurrences).toBe(12);
+  });
+
+  test("no gap findings when reads/searches are incidental", () => {
+    const scan = scanWith("vscode", [
+      opp({ key: "read_file", kind: "direct", category: "read", count: 2 }),
+      opp({ key: "grep_search", kind: "direct", category: "search", count: 2 }),
+    ]);
+    const types = buildAdvice(scan).map((f) => f.type);
+    expect(types).not.toContain("skill-gap");
+    expect(types).not.toContain("context-gap");
+    expect(types).not.toContain("storage-discovery");
+  });
+});
+
+describe("buildAdvice — habit-based cost tips (chronicle parity)", () => {
+  const habits = (over: Partial<import("../../../src/inspect/habits.js").HabitStats> = {}) => ({
+    sessions: 1,
+    total_tool_calls: 0,
+    avg_tool_calls_per_session: 0,
+    max_tool_calls_in_session: 0,
+    prompt_count: 0,
+    avg_prompt_chars: 0,
+    max_prompt_chars: 0,
+    long_prompt_count: 0,
+    ...over,
+  });
+
+  test("flags long agent loops (high tool calls per session)", () => {
+    const scan = scanWith("vscode", []);
+    const f = buildAdvice(
+      scan,
+      undefined,
+      habits({
+        avg_tool_calls_per_session: 25,
+        total_tool_calls: 50,
+        max_tool_calls_in_session: 30,
+      }),
+    ).find((x) => x.type === "cost-tip" && x.title.includes("Long agent loops"));
+    expect(f).toBeDefined();
+    expect(f!.recommendation).toMatch(/fresh session|shorter|scope/i);
+  });
+
+  test("flags oversized prompts", () => {
+    const scan = scanWith("vscode", []);
+    const f = buildAdvice(
+      scan,
+      undefined,
+      habits({ long_prompt_count: 4, avg_prompt_chars: 3000, max_prompt_chars: 9000 }),
+    ).find((x) => x.type === "cost-tip" && x.title.includes("oversized prompts"));
+    expect(f).toBeDefined();
+    expect(f!.occurrences).toBe(4);
+  });
+
+  test("repeated failures → capture-the-fix (improve) even without habits", () => {
+    const scan = scanWith("vscode", [
+      opp({
+        key: "npm test",
+        kind: "shell",
+        category: "execute_adjacent",
+        count: 5,
+        failure_count: 4,
+      }),
+    ]);
+    const f = buildAdvice(scan).find(
+      (x) => x.type === "cost-tip" && x.title.includes("Repeated failures"),
+    );
+    expect(f).toBeDefined();
+    expect(f!.recommendation).toMatch(/AGENTS\.md/);
+  });
+
+  test("flags high orientation cost (reads+searches+lists) → code intelligence", () => {
+    const scan = scanWith("vscode", [
+      opp({ key: "read_file", kind: "direct", category: "read", count: 8 }),
+      opp({ key: "grep_search", kind: "direct", category: "search", count: 5 }),
+    ]);
+    const f = buildAdvice(scan).find(
+      (x) => x.type === "cost-tip" && x.title.includes("orientation cost"),
+    );
+    expect(f).toBeDefined();
+    expect(f!.recommendation).toMatch(/code-intelligence|LSP|scoped/);
+  });
+
+  test("no cost tips for lean habits", () => {
+    const scan = scanWith("vscode", []);
+    expect(
+      buildAdvice(
+        scan,
+        undefined,
+        habits({ avg_tool_calls_per_session: 5, long_prompt_count: 0 }),
+      ).some((x) => x.type === "cost-tip"),
+    ).toBe(false);
+  });
+});
+
 describe("rendering", () => {
   const scan = scanWith("vscode", [
     opp({ key: "git status", kind: "shell", compressible: true, count: 6 }),

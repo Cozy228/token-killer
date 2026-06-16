@@ -3,7 +3,7 @@
   "version": "0.1.0",
   "description": "Token-saving command proxy.",
   "type": "module",
-  "packageManager": "pnpm@11.5.0",
+  "packageManager": "pnpm@10.34.3",
   "bin": {
     "tk": "./dist/cli.js"
   },
@@ -14,6 +14,7 @@
   "scripts": {
     "dev": "tsx src/cli.ts",
     "build": "tsdown",
+    "calibrate-tokens": "tsx scripts/calibrate-tokens.ts",
     "test": "vitest --config vitest.config.ts",
     "test:product": "vitest run --config vitest.config.ts",
     "test:smoke": "bash tests/smoke/smoke.sh",

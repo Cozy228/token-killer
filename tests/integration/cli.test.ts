@@ -2,7 +2,7 @@ import { mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import path from "node:path";
-import { fileURLToPath } from "node:url";
+import { fileURLToPath, pathToFileURL } from "node:url";
 import { spawnSync } from "node:child_process";
 import { describe, expect, test } from "vitest";
 
@@ -10,7 +10,7 @@ import { historyFile, resolveStoredPath } from "../../src/core/dataDir.js";
 
 const repoRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "../..");
 const cli = path.join(repoRoot, "src/cli.ts");
-const tsxLoader = path.join(repoRoot, "node_modules/tsx/dist/loader.mjs");
+const tsxLoader = pathToFileURL(path.join(repoRoot, "node_modules/tsx/dist/loader.mjs")).href;
 
 // Default isolated TOKEN_KILLER_HOME for callers that don't pass an explicit one.
 // Without this, the spawned CLI would inherit the real environment and write its
@@ -52,6 +52,19 @@ function runTk(
 // from PATH and the real tools resolve elsewhere.
 const SHIM_INVOKED: NodeJS.ProcessEnv = { TK_SHIM_DIR: path.join(tmpdir(), "tk-fake-shim") };
 
+// Initialize a fresh git repo with a deterministic identity in `dir`. The Git
+// tests below each need a DIFFERENT working-tree state (dirty + untracked, a
+// specific diff, a clean branch), so they can't share one repo — but this
+// init + identity boilerplate (three spawns) had been copied verbatim into each.
+function gitInit(dir: string): void {
+  // `-b main` pins the initial branch: CI runners (and any box without a global
+  // init.defaultBranch) still default to `master`, which broke the status/branch
+  // assertions below. Pinning makes the branch name environment-independent.
+  spawnSync("git", ["init", "-b", "main"], { cwd: dir });
+  spawnSync("git", ["config", "user.email", "test@test.com"], { cwd: dir });
+  spawnSync("git", ["config", "user.name", "Test"], { cwd: dir });
+}
+
 // ============================================================================
 // 1. Version & Help
 // ============================================================================
@@ -69,7 +82,6 @@ describe("Version & Help", () => {
     expect(result.stdout).toContain("Usage:");
     expect(result.stdout).toContain("--raw");
     expect(result.stdout).toContain("--stats");
-    expect(result.stdout).toContain("--report");
   });
 });
 
@@ -409,9 +421,7 @@ describe("Git", () => {
   test("tk git status works in git repo", async () => {
     const dir = await mkdtemp(path.join(tmpdir(), "tk-git-status-"));
     try {
-      spawnSync("git", ["init"], { cwd: dir });
-      spawnSync("git", ["config", "user.email", "test@test.com"], { cwd: dir });
-      spawnSync("git", ["config", "user.name", "Test"], { cwd: dir });
+      gitInit(dir);
       await writeFile(path.join(dir, "file.txt"), "content");
       spawnSync("git", ["add", "file.txt"], { cwd: dir });
       spawnSync("git", ["commit", "-m", "init"], { cwd: dir });
@@ -431,9 +441,7 @@ describe("Git", () => {
   test("tk git log works", async () => {
     const dir = await mkdtemp(path.join(tmpdir(), "tk-git-log-"));
     try {
-      spawnSync("git", ["init"], { cwd: dir });
-      spawnSync("git", ["config", "user.email", "test@test.com"], { cwd: dir });
-      spawnSync("git", ["config", "user.name", "Test"], { cwd: dir });
+      gitInit(dir);
       await writeFile(path.join(dir, "f.txt"), "v1");
       spawnSync("git", ["add", "f.txt"], { cwd: dir });
       spawnSync("git", ["commit", "-m", "first"], { cwd: dir });
@@ -449,9 +457,7 @@ describe("Git", () => {
   test("tk git diff works", async () => {
     const dir = await mkdtemp(path.join(tmpdir(), "tk-git-diff-"));
     try {
-      spawnSync("git", ["init"], { cwd: dir });
-      spawnSync("git", ["config", "user.email", "test@test.com"], { cwd: dir });
-      spawnSync("git", ["config", "user.name", "Test"], { cwd: dir });
+      gitInit(dir);
       const before = Array.from({ length: 80 }, (_, index) => `line-${index}`).join("\n");
       const after = Array.from({ length: 80 }, (_, index) =>
         index % 4 === 0 ? `changed-${index}` : `line-${index}`,
@@ -510,9 +516,7 @@ describe("Git", () => {
   test("tk git branch works", async () => {
     const dir = await mkdtemp(path.join(tmpdir(), "tk-git-branch-"));
     try {
-      spawnSync("git", ["init"], { cwd: dir });
-      spawnSync("git", ["config", "user.email", "test@test.com"], { cwd: dir });
-      spawnSync("git", ["config", "user.name", "Test"], { cwd: dir });
+      gitInit(dir);
       await writeFile(path.join(dir, "f.txt"), "v1");
       spawnSync("git", ["add", "f.txt"], { cwd: dir });
       spawnSync("git", ["commit", "-m", "init"], { cwd: dir });
@@ -640,7 +644,9 @@ describe("Global Flags", () => {
 
       const history = await readFile(historyFile(dir), "utf8");
       const record = JSON.parse(history.trim()) as { raw_output_path: string };
-      expect(record.raw_output_path).toMatch(/^projects\/repo:[a-f0-9]{12}\/raw\//);
+      // Platform-tolerant: Windows uses `\` separators and sanitizes the ':' in the
+      // fingerprint to '-' (fingerprintSegment), so accept either separator and ':'/'-'.
+      expect(record.raw_output_path).toMatch(/^projects[/\\]repo[:-][a-f0-9]{12}[/\\]raw[/\\]/);
 
       const rawLog = await readFile(resolveStoredPath(record.raw_output_path), "utf8");
       expect(rawLog).toContain("Command: cat sample.txt");
@@ -656,7 +662,7 @@ describe("Global Flags", () => {
     expect(raw.stdout).toBe("raw retained\n");
   });
 
-  test("--raw still records history with zero savings", async () => {
+  test("--raw streams via inherited stdio and records an honest light history row", async () => {
     const dir = await mkdtemp(path.join(tmpdir(), "tk-raw-history-"));
     const tkHome = path.join(dir, "token-killer-data");
     try {
@@ -668,28 +674,81 @@ describe("Global Flags", () => {
       );
       process.env.TOKEN_KILLER_HOME = tkHome;
       expect(result.status).toBe(0);
+      // Streamed verbatim through the inherited stdout — no capture/reprint.
+      expect(result.stdout).toBe("raw retained\n");
 
       const history = await readFile(historyFile(dir), "utf8");
-      const record = JSON.parse(history.trim()) as {
-        handler: string;
-        saved_tokens: number;
-        savings_pct: number;
-      };
+      const record = JSON.parse(history.trim()) as Record<string, unknown>;
       expect(record.handler).toBe("raw");
-      expect(record.saved_tokens).toBe(0);
-      expect(record.savings_pct).toBe(0);
+      expect(record.exit_code).toBe(0);
+      expect(typeof record.duration_ms).toBe("number");
+      // No fabricated byte/token counts: the streaming path captured nothing, so the
+      // size fields are absent on disk rather than written as fake zeros.
+      expect(record.raw_chars).toBeUndefined();
+      expect(record.output_chars).toBeUndefined();
+      expect(record.raw_tokens).toBeUndefined();
+      expect(record.output_tokens).toBeUndefined();
+      expect(record.saved_tokens).toBeUndefined();
+      expect(record.savings_pct).toBeUndefined();
     } finally {
       delete process.env.TOKEN_KILLER_HOME;
       await rm(dir, { recursive: true, force: true });
     }
   });
 
-  test("--verbose shows raw output path", async () => {
-    const dir = await mkdtemp(path.join(tmpdir(), "tk-verbose-"));
+  test("--raw preserves a non-zero exit code while streaming", () => {
+    const result = runTk(["--raw", process.execPath, "-e", "process.exit(7)"], repoRoot);
+    expect(result.status).toBe(7);
+  });
+
+  test("--raw --stats reports the savings summary on stderr, stdout stays verbatim", () => {
+    const result = runTk(
+      ["--raw", "--stats", process.execPath, "-e", "console.log('verbatim out')"],
+      repoRoot,
+    );
+    expect(result.status).toBe(0);
+    // stdout is byte-verbatim — the stats summary must NOT contaminate it.
+    expect(result.stdout).toBe("verbatim out\n");
+    expect(result.stdout).not.toContain("Token Savings");
+    // The summary it forced the capture for is actually emitted (on stderr).
+    expect(result.stderr).toContain("## Token Savings");
+    expect(result.stderr).toContain("Saved:");
+  });
+
+  test("--raw --save-raw captures the bytes and records a full history row", async () => {
+    const dir = await mkdtemp(path.join(tmpdir(), "tk-raw-capture-"));
+    const tkHome = path.join(dir, "token-killer-data");
+    try {
+      const result = runTk(
+        ["--raw", "--save-raw", process.execPath, "-e", "console.log('captured')"],
+        dir,
+        undefined,
+        tkHome,
+      );
+      process.env.TOKEN_KILLER_HOME = tkHome;
+      expect(result.status).toBe(0);
+      expect(result.stdout).toBe("captured\n");
+
+      const history = await readFile(historyFile(dir), "utf8");
+      const record = JSON.parse(history.trim()) as Record<string, unknown>;
+      expect(record.handler).toBe("raw");
+      // --save-raw forces the capture path, so the size fields are present and real.
+      expect(typeof record.raw_chars).toBe("number");
+      expect(record.saved_tokens).toBe(0);
+      expect(record.savings_pct).toBe(0);
+      expect(typeof record.raw_output_path).toBe("string");
+    } finally {
+      delete process.env.TOKEN_KILLER_HOME;
+      await rm(dir, { recursive: true, force: true });
+    }
+  });
+
+  test("--stats shows raw output path", async () => {
+    const dir = await mkdtemp(path.join(tmpdir(), "tk-stats-"));
     try {
       await writeFile(path.join(dir, "sample.txt"), "alpha\n");
 
-      const result = runTk(["--verbose", "--save-raw", "cat", "sample.txt"], dir);
+      const result = runTk(["--stats", "--save-raw", "cat", "sample.txt"], dir);
       expect(result.status).toBe(0);
       expect(result.stdout).toContain("Raw output:");
     } finally {
@@ -699,36 +758,7 @@ describe("Global Flags", () => {
 });
 
 // ============================================================================
-// 8. Report
-// ============================================================================
-
-describe("Report", () => {
-  test("--report aggregates text json and csv history", async () => {
-    const dir = await mkdtemp(path.join(tmpdir(), "tk-report-"));
-    try {
-      await writeFile(path.join(dir, "sample.txt"), "alpha\nbeta\n");
-      expect(runTk(["--stats", "cat", "sample.txt"], dir).status).toBe(0);
-
-      const text = runTk(["--report"], dir);
-      expect(text.status).toBe(0);
-      expect(text.stdout).toContain("Token Savings Report");
-      expect(text.stdout).toContain("Commands: 1");
-
-      const json = runTk(["--report", "--json"], dir);
-      expect(json.status).toBe(0);
-      expect(JSON.parse(json.stdout)).toMatchObject({ commands: 1 });
-
-      const csv = runTk(["--report", "--csv"], dir);
-      expect(csv.status).toBe(0);
-      expect(csv.stdout).toContain("commands,raw_tokens,output_tokens,saved_tokens,savings_pct");
-    } finally {
-      await rm(dir, { recursive: true, force: true });
-    }
-  });
-});
-
-// ============================================================================
-// 9. Error Handling
+// 8. Error Handling
 // ============================================================================
 
 describe("Error Handling", () => {
@@ -737,6 +767,8 @@ describe("Error Handling", () => {
     expect(result.status).toBe(0);
     expect(result.stdout).toContain("tk — Token Killer");
     expect(result.stdout).toContain("Commands:");
+    expect(result.stdout).toContain("refresh the delivery verification timestamp");
+    expect(result.stdout).not.toContain("Read-only — writes nothing");
   });
 
   test("preserves original command exit code", () => {
@@ -777,50 +809,15 @@ describe("Error Handling", () => {
   });
 });
 
-// ============================================================================
-// 10. Acceptance: Route common commands through proper handlers
-// ============================================================================
-
-describe("Acceptance: Handler Routing", () => {
-  test("routes common acceptance commands through compact handlers", async () => {
-    const dir = await mkdtemp(path.join(tmpdir(), "tk-acceptance-"));
-    try {
-      spawnSync("git", ["init"], { cwd: dir, encoding: "utf8" });
-      spawnSync("git", ["config", "user.email", "test@example.com"], {
-        cwd: dir,
-        encoding: "utf8",
-      });
-      spawnSync("git", ["config", "user.name", "Test User"], {
-        cwd: dir,
-        encoding: "utf8",
-      });
-      await writeFile(path.join(dir, "pkg.json"), '{"name":"sample"}\n');
-      await writeFile(path.join(dir, "sample.txt"), "TODO retained\n");
-      spawnSync("git", ["add", "."], { cwd: dir, encoding: "utf8" });
-      spawnSync("git", ["commit", "-m", "initial retained"], {
-        cwd: dir,
-        encoding: "utf8",
-      });
-      await writeFile(path.join(dir, "sample.txt"), "TODO retained\nchanged\n");
-
-      // Each should route to its specific handler (not generic)
-      expect(runTk(["git", "status"], dir).stdout).toContain("* main");
-      expect(runTk(["git", "diff"], dir).stdout).toContain("+changed");
-      expect(runTk(["git", "log", "-1"], dir).stdout).toContain("initial retained");
-      expect(runTk(["git", "show", "--stat", "HEAD"], dir).stdout).toContain("initial retained");
-      expect(runTk(["git", "branch"], dir).stdout).toContain("main");
-      expect(runTk(["cat", "pkg.json"], dir).stdout).toContain("sample");
-      expect(runTk(["ls", "."], dir).stdout).toContain("pkg.json");
-      expect(runTk(["rg", "TODO", "."], dir).stdout).toContain("TODO retained");
-    } finally {
-      await rm(dir, { recursive: true, force: true });
-    }
-    // Spawns many real subprocesses; the 5s default flakes on slow machines.
-  }, 30_000);
-});
+// Removed the "Acceptance: Handler Routing" block: it spawned 8 real commands and
+// only string-matched their output, which never proved a SPECIFIC handler was used
+// (generic passthrough would pass the same assertions). Routing is verified
+// explicitly in tests/unit/router.test.ts (command → handler name for all of git
+// status/diff/log/show/branch, cat, ls, rg), and the end-to-end output is covered
+// by the Git/Grep sections above, the smoke suite, and the handler fixture tests.
 
 // ============================================================================
-// 11. Python / JS / Java handlers (stderr-based output)
+// 10. Python / JS / Java handlers (stderr-based output)
 // ============================================================================
 
 describe("Language-specific handlers", () => {

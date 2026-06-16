@@ -13,7 +13,8 @@ export function contextAdviceDir(): string {
 }
 
 export function adviceFilePath(scope: ContextScope, fingerprint?: string): string {
-  const name = scope === "user" ? "user.md" : `${(fingerprint ?? "unknown").replace(/^repo:/, "")}.md`;
+  const name =
+    scope === "user" ? "user.md" : `${(fingerprint ?? "unknown").replace(/^repo:/, "")}.md`;
   return join(contextAdviceDir(), name);
 }
 
@@ -25,7 +26,6 @@ export function renderContextAdvice(opts: {
   generatedAt: string;
   filesScanned: number;
   findings: ContextFinding[];
-  safeAppliesAvailable: boolean;
 }): string {
   const lines: string[] = [];
   lines.push("# Copilot Context Advice");
@@ -39,7 +39,8 @@ export function renderContextAdvice(opts: {
   lines.push("");
 
   const sorted = [...opts.findings].sort(
-    (a, b) => SEVERITY_ORDER[a.severity] - SEVERITY_ORDER[b.severity] || a.type.localeCompare(b.type),
+    (a, b) =>
+      SEVERITY_ORDER[a.severity] - SEVERITY_ORDER[b.severity] || a.type.localeCompare(b.type),
   );
   if (sorted.length === 0) {
     lines.push("_No static-context findings._");
@@ -56,22 +57,18 @@ export function renderContextAdvice(opts: {
     lines.push("");
   }
 
-  if (opts.safeAppliesAvailable) {
-    lines.push("## Safe applies available");
-    lines.push("");
-    lines.push(
-      "- Run `tk optimize --token-budget-block` to install the managed token budget block in your user-level agent instructions.",
-    );
-    lines.push("");
-  }
-
   return lines.join("\n");
 }
 
-export function writeContextAdvice(scope: ContextScope, fingerprint: string | undefined, content: string): string {
+export function writeContextAdvice(
+  scope: ContextScope,
+  fingerprint: string | undefined,
+  content: string,
+): string {
   const dir = contextAdviceDir();
-  mkdirSync(dir, { recursive: true });
+  // Owner-only like every store under ~/.token-killer/ (0700 dir / 0600 file).
+  mkdirSync(dir, { recursive: true, mode: 0o700 });
   const path = adviceFilePath(scope, fingerprint);
-  writeFileSync(path, content.endsWith("\n") ? content : `${content}\n`);
+  writeFileSync(path, content.endsWith("\n") ? content : `${content}\n`, { mode: 0o600 });
   return path;
 }

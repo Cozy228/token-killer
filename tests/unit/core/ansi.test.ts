@@ -6,7 +6,6 @@ import type { RawResult, TkOptions } from "../../../src/types.js";
 const options: TkOptions = {
   raw: false,
   stats: false,
-  verbose: false,
   maxLines: 120,
   maxChars: 12000,
   saveRaw: false,
@@ -25,7 +24,12 @@ describe("ansi handling", () => {
 
     const result = await genericHandler.filter(
       raw,
-      { program: "colored-tool", args: [], original: ["colored-tool"], displayCommand: "colored-tool" },
+      {
+        program: "colored-tool",
+        args: [],
+        original: ["colored-tool"],
+        displayCommand: "colored-tool",
+      },
       options,
     );
 
