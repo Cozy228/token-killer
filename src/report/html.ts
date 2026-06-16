@@ -69,6 +69,7 @@ const STYLE = `
 body { margin: 0; background: var(--bg); color: var(--ink); font-family: var(--sans); font-size: 15px; line-height: 1.62; -webkit-font-smoothing: antialiased; }
 .wrap { max-width: 880px; margin: 0 auto; padding: 56px 24px 100px; }
 .num { font-family: var(--mono); font-variant-numeric: tabular-nums; }
+.samp { font-family: var(--mono); font-size: 0.78rem; color: var(--slate500); margin-top: 4px; line-height: 1.5; word-break: break-all; }
 .lbl { font-size: 0.62rem; letter-spacing: 0.12em; text-transform: uppercase; font-weight: 600; }
 
 /* Page header */
@@ -285,7 +286,13 @@ function renderGain(L) {
         '<p class="exp">The commands whose output Token Killer compressed the most.</p>' +
         '<div class="panel"><table><thead><tr><th>Command</th><th>Share of savings</th><th class="r">Tokens saved</th><th class="r">Reduced by</th><th class="r">Times run</th></tr></thead><tbody>' +
         bh.map((h2) =>
-          '<tr><td class="num">' + esc(h2.handler) + '</td>' +
+          '<tr><td class="num">' + esc(h2.handler) +
+          (Array.isArray(h2.samples) && h2.samples.length
+            ? '<div class="samp">' +
+              h2.samples.map((s) => esc(s.length > 64 ? s.slice(0, 63) + "…" : s)).join("<br>") +
+              '</div>'
+            : '') +
+          '</td>' +
           '<td style="width:32%"><div class="hbar"><i style="width:' + Math.max(3, Math.round(((h2.saved || 0) / max) * 100)) + '%"></i></div></td>' +
           '<td class="r num">' + n(h2.saved) + '</td><td class="r num">' + pct(h2.pct) + '</td><td class="r num">' + n(h2.count) + '</td></tr>').join("") +
         '</tbody></table></div></div>');

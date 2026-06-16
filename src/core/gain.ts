@@ -312,7 +312,10 @@ const QUALITY_DISPLAY_LABELS: Record<string, string> = {
 function renderSummary(s: GainSummary, scope: string): string {
   const top = s.by_handler
     .slice(0, 5)
-    .map((h) => `  - ${h.handler}: ${h.pct}% (${h.saved} saved, ${h.count}×)`)
+    .map((h) => {
+      const eg = h.samples && h.samples.length ? `  e.g. ${h.samples.slice(0, 2).join(", ")}` : "";
+      return `  - ${h.handler}: ${h.pct}% (${h.saved} saved, ${h.count}×)${eg}`;
+    })
     .join("\n");
   const quality = Object.entries(s.quality_status_counts)
     .sort(([a], [b]) => a.localeCompare(b))

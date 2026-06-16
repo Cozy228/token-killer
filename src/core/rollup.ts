@@ -7,7 +7,12 @@ import { readFile, stat, writeFile } from "node:fs/promises";
 import { createInterface } from "node:readline";
 import path from "node:path";
 
-import { FALLBACK_HANDLER, type GainSummary, type TimeBucket } from "./aggregate.js";
+import {
+  FALLBACK_HANDLER,
+  type GainSummary,
+  type TimeBucket,
+  truncateSample,
+} from "./aggregate.js";
 import {
   historyFile,
   projectDataDir,
@@ -295,6 +300,21 @@ export function topCommandStemsFromRollup(rollup: MergedRollup, limit = 5): stri
     .map((row) => row.stem);
 }
 
+// Up to `cap` distinct example commands for a handler, pulled from the rollup's
+// `recent` list (which carries command + handler). The rollup's by_handler stats are
+// count-only, so samples come from `recent` — best-effort: a handler with no recent
+// row simply shows none.
+function sampleCommandsFor(handler: string, recent: RollupRecent[], cap = 3): string[] {
+  const out: string[] = [];
+  for (const r of recent) {
+    if (r.handler !== handler || !r.command) continue;
+    const sample = truncateSample(r.command);
+    if (!out.includes(sample)) out.push(sample);
+    if (out.length >= cap) break;
+  }
+  return out;
+}
+
 export function rollupToGainSummary(rollup: MergedRollup): GainSummary {
   const { totals } = rollup;
   const by_handler = Object.entries(rollup.by_handler)
@@ -304,6 +324,7 @@ export function rollupToGainSummary(rollup: MergedRollup): GainSummary {
       saved: stats.saved,
       pct: pct(stats.saved, stats.raw),
       count: stats.count,
+      samples: sampleCommandsFor(handler, rollup.recent),
     }))
     .sort((a, b) => b.saved - a.saved);
 
