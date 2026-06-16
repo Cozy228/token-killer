@@ -1,6 +1,6 @@
 {
   "name": "token-killer",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "description": "Token-saving command proxy.",
   "type": "module",
   "packageManager": "pnpm@10.34.3",
