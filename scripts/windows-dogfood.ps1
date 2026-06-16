@@ -1,46 +1,44 @@
 #Requires -Version 7.0
 <#
 .SYNOPSIS
-  tk real-machine acceptance — one unified suite for an INSTALLED tk. Functional
-  (every command + options), hook protocol, compression quality, boundary
-  conditions, fail-safe, performance, shim/PATH, install/uninstall E2E, and a
-  Tier-0 manual harness. Writes a Markdown report.
+  tk real-machine acceptance — ONE unified suite for an INSTALLED tk, with NO
+  coverage switches. Everything runs every time: functional surface (every command
+  + options), hook protocol, compression quality, boundary conditions, fail-safe,
+  performance, shim/PATH, stateful round-trips (telemetry / support / optimize apply
+  / config init), and the full install/uninstall lifecycle across every host.
 
 .DESCRIPTION
-  This is the single comprehensive Windows real-machine suite. It exercises the tk
-  a user actually installed (global `tk` preferred, else node dist\cli.js), not
-  vitest. It is cross-platform: Windows-only checks (shim .cmd / PATHEXT / VS Code
-  settings windows-env key / code page / antivirus) are gated behind $IsWindows,
-  so the functional/compression/boundary/perf/fail-safe phases also run under pwsh
-  on macOS/Linux for development.
+  Design goal: the Markdown report this writes must be SELF-SUFFICIENT. Someone
+  holding only the report — no access to the machine — can reproduce, diagnose, and
+  fix every failure. To make that true, EVERY non-PASS result captures a full
+  dossier: the exact argv invoked, exit code, wall-time, and the child's stderr +
+  stdout head (stderr carries the Node stack trace, which carries the file:line).
+  The dossiers are emitted as fenced code blocks (newlines/pipes survive) under
+  "## Failure dossiers". A one-line `## Acceptance scope` records what was mutated
+  and restored, so the report also proves the box was left clean.
 
-  SAFE BY DEFAULT. Read-only phases always run. The install/uninstall lifecycle
-  mutates real user config but snapshots it and restores the originally-detected
-  install at the end. Host claude-code, network (telemetry/support), and
-  optimize --apply stay OFF unless explicitly opted in.
+  NO -Skip*/-Include*/-Allow* switches. "If we test it, we test it." Safety is not
+  achieved by opting out — it is achieved by snapshot + restore. Stateful commands
+  (telemetry enable/disable, config init, optimize --apply, install/uninstall for
+  every host incl. claude-code) all snapshot the real artifact, exercise it for real,
+  and restore the originally-detected state at the end. `tk support` runs with its
+  routing env removed so it only writes a local bundle (no mail/Teams GUI opens).
+  Project-scoped optimize --apply is confined to a throwaway temp git repo.
 
-.PARAMETER TargetRepo
-  Git repo used for compression cases (default: this repo, or $env:TK_ACCEPT_CWD).
+  Cross-platform: Windows-only checks (shim .cmd / PATHEXT / VS Code settings /
+  code page / GBK decode / antivirus) gate behind $IsWindows, so the rest also runs
+  under pwsh on macOS/Linux for development.
 
-.PARAMETER ReportPath
-  Markdown report path (default: reports\windows-dogfood-<stamp>.md).
-
-.PARAMETER TkCommand
-  Override how tk is invoked. e.g. -TkCommand tk  OR  -TkCommand node,dist\cli.js
-
-.PARAMETER PerfIterations   Samples per perf case (default 7).
-.PARAMETER TimeoutSec       Per-command timeout (default 60).
-.PARAMETER SkipLifecycle    Do NOT run install/uninstall mutation E2E.
-.PARAMETER SkipPerf         Do NOT run the performance phase.
-.PARAMETER IncludeClaudeCode  Also exercise install/uninstall --host claude-code (mutates ~/.claude).
-.PARAMETER IncludeNetwork   Run telemetry enable/disable round-trip + support bundle.
-.PARAMETER AllowApply       Run `optimize context --apply` (backs up + restores edited files).
-.PARAMETER CopilotCliE2E    If `copilot` is on PATH, drive a real `copilot -p` and check the gain delta.
+.PARAMETER TargetRepo      Git repo for compression cases (default: this repo, or $env:TK_ACCEPT_CWD).
+.PARAMETER ReportPath      Markdown report path (default: reports\windows-dogfood-<stamp>.md).
+.PARAMETER TkCommand       Override how tk is invoked. e.g. -TkCommand tk  OR  -TkCommand node,dist\cli.js
+.PARAMETER PerfIterations  Samples per perf case (default 7).
+.PARAMETER TimeoutSec      Per-command timeout (default 60).
 
 .EXAMPLE
   pwsh -NoProfile -File scripts/windows-dogfood.ps1
 .EXAMPLE
-  pwsh -NoProfile -File scripts/windows-dogfood.ps1 -TkCommand tk -CopilotCliE2E
+  pwsh -NoProfile -File scripts/windows-dogfood.ps1 -TkCommand tk
 #>
 [CmdletBinding()]
 param(
@@ -48,45 +46,65 @@ param(
   [string]   $ReportPath = "",
   [string[]] $TkCommand = @(),
   [int]      $PerfIterations = 7,
-  [int]      $TimeoutSec = 60,
-  [switch]   $SkipLifecycle,
-  [switch]   $SkipPerf,
-  [switch]   $IncludeClaudeCode,
-  [switch]   $IncludeNetwork,
-  [switch]   $AllowApply,
-  [switch]   $CopilotCliE2E
+  [int]      $TimeoutSec = 60
 )
 
 Set-StrictMode -Version Latest
 $ErrorActionPreference = "Stop"
 $script:TimeoutSec = $TimeoutSec
 
-# ── Result model ────────────────────────────────────────────────────
-$script:Results = [System.Collections.Generic.List[object]]::new()
-$script:Findings = [System.Collections.Generic.List[string]]::new()
+# ── Result model + failure dossiers ─────────────────────────────────
+# The whole point of this suite: a FAIL/WARN is useless to a remote fixer unless it
+# carries the payload that explains it. So every non-PASS auto-captures the last
+# command execution (argv/exit/stderr/stdout) into a dossier, keyed Dnn, referenced
+# from the findings list, the detailed table, and a dedicated fenced section.
+$script:Results    = [System.Collections.Generic.List[object]]::new()
+$script:Findings   = [System.Collections.Generic.List[string]]::new()
+$script:Dossiers   = [System.Collections.Generic.List[object]]::new()
+$script:ScopeNotes = [System.Collections.Generic.List[string]]::new()   # what was mutated + restored
+$script:LastResult = $null   # set by Start-Proc; the best available context for a nearby assertion
 
 function Record {
-  param([string]$Phase, [string]$Name, [string]$Status, [string]$Detail = "", [double]$Ms = -1)
-  $script:Results.Add([PSCustomObject]@{ Phase = $Phase; Name = $Name; Status = $Status; Detail = $Detail; Ms = $Ms })
+  param([string]$Phase, [string]$Name, [string]$Status, [string]$Detail = "", [double]$Ms = -1, $R = $null)
+  $did = ""
+  if ($Status -eq "FAIL" -or $Status -eq "WARN") {
+    $cap = if ($R) { $R } else { $script:LastResult }
+    if ($cap) {
+      $did = "D{0:D2}" -f ($script:Dossiers.Count + 1)
+      $script:Dossiers.Add([PSCustomObject]@{
+          Id = $did; Phase = $Phase; Name = $Name; Status = $Status; Detail = $Detail
+          File = $cap.File; Argv = $cap.Argv; Exit = $cap.ExitCode; Ms = $cap.Ms
+          TimedOut = $cap.TimedOut; Stdout = $cap.Stdout; Stderr = $cap.Stderr
+        })
+    }
+    $ref = if ($did) { " [$did]" } else { "" }
+    $script:Findings.Add("$Status [$Phase] $Name$ref — $Detail")
+  }
+  $script:Results.Add([PSCustomObject]@{ Phase = $Phase; Name = $Name; Status = $Status; Detail = $Detail; Ms = $Ms; Dossier = $did })
   $color = switch ($Status) {
     "PASS" { "Green" } "FAIL" { "Red" } "WARN" { "Yellow" } "SKIP" { "DarkGray" } default { "Gray" }
   }
   $msText = if ($Ms -ge 0) { (" {0,6:N0}ms" -f $Ms) } else { "        " }
   $d = if ($Detail) { "  $Detail" } else { "" }
-  Write-Host ("  {0,-4}{1} {2}{3}" -f $Status, $msText, $Name, $d) -ForegroundColor $color
+  $dref = if ($did) { " [$did]" } else { "" }
+  Write-Host ("  {0,-4}{1} {2}{3}{4}" -f $Status, $msText, $Name, $d, $dref) -ForegroundColor $color
 }
 function Pass { param($P, $N, $D = "", $Ms = -1) Record $P $N "PASS" $D $Ms }
-function Fail { param($P, $N, $D = "", $Ms = -1) Record $P $N "FAIL" $D $Ms; $script:Findings.Add("FAIL [$P] $N — $D") }
-function Warn { param($P, $N, $D = "", $Ms = -1) Record $P $N "WARN" $D $Ms; $script:Findings.Add("WARN [$P] $N — $D") }
+function Fail { param($P, $N, $D = "", $Ms = -1, $R = $null) Record $P $N "FAIL" $D $Ms $R }
+function Warn { param($P, $N, $D = "", $Ms = -1, $R = $null) Record $P $N "WARN" $D $Ms $R }
 function Skip { param($P, $N, $D = "") Record $P $N "SKIP" $D }
 function Info { param($P, $N, $D = "", $Ms = -1) Record $P $N "INFO" $D $Ms }
 function Section([string]$Title) { Write-Host ""; Write-Host "── $Title ──" -ForegroundColor Cyan }
+function Note([string]$s) { $script:ScopeNotes.Add($s) }
 # @() forces an array so .Count is valid even for 0/1 matches under StrictMode.
 function CountBy($items, $st) { @($items | Where-Object { $_.Status -eq $st }).Count }
 
 # ── Process runner (async reads avoid large-output deadlock; hard timeout) ──
 function Start-Proc {
-  param([string]$File, [string[]]$PArgs, [hashtable]$Env, [string]$Stdin, [bool]$HasStdin = $false, [int]$Tmo = -1)
+  param(
+    [string]$File, [string[]]$PArgs, [hashtable]$Env, [string[]]$UnsetEnv,
+    [string]$Stdin, [bool]$HasStdin = $false, [int]$Tmo = -1
+  )
   if ($Tmo -lt 0) { $Tmo = $script:TimeoutSec }
   $psi = [System.Diagnostics.ProcessStartInfo]::new()
   $psi.FileName = $File
@@ -100,7 +118,8 @@ function Start-Proc {
   # tk emits UTF-8 (as do all UTF-8-aware agents that consume it). Without an explicit
   # encoding, .NET decodes the child's stdout/stdin using the console code page — cp936
   # on this GBK box — which mojibakes Chinese/emoji output (false "needle not found"
-  # warns). Pin UTF-8 so the harness reads what a real agent reads.
+  # warns). Pin UTF-8 so the harness reads what a real agent reads. (tk's OWN cp936
+  # decode happens one layer down, on the bytes IT reads from the tool it wraps.)
   $utf8 = [System.Text.UTF8Encoding]::new($false)
   $psi.StandardOutputEncoding = $utf8
   $psi.StandardErrorEncoding = $utf8
@@ -108,6 +127,9 @@ function Start-Proc {
   $psi.UseShellExecute = $false
   $psi.CreateNoWindow = $true
   if ($Env) { foreach ($k in $Env.Keys) { $psi.Environment[$k] = [string]$Env[$k] } }
+  # Remove inherited keys so a box-level env var can't change a command's behaviour
+  # (e.g. TK_SUPPORT_EMAIL would route `tk support` to a mail GUI instead of a file).
+  if ($UnsetEnv) { foreach ($k in $UnsetEnv) { if ($psi.Environment.ContainsKey($k)) { [void]$psi.Environment.Remove($k) } } }
   $sw = [System.Diagnostics.Stopwatch]::StartNew()
   $p = [System.Diagnostics.Process]::Start($psi)
   if ($HasStdin) { $p.StandardInput.Write($Stdin); $p.StandardInput.Close() }
@@ -116,18 +138,22 @@ function Start-Proc {
   if (-not $p.WaitForExit($Tmo * 1000)) {
     try { $p.Kill($true) } catch {}
     $sw.Stop()
-    return [PSCustomObject]@{ ExitCode = 124; Stdout = ""; Stderr = "TIMEOUT ${Tmo}s"; AllText = "TIMEOUT ${Tmo}s"; Ms = $sw.Elapsed.TotalMilliseconds; TimedOut = $true }
+    $res = [PSCustomObject]@{ ExitCode = 124; Stdout = ""; Stderr = "TIMEOUT ${Tmo}s"; AllText = "TIMEOUT ${Tmo}s"; Ms = $sw.Elapsed.TotalMilliseconds; TimedOut = $true; File = $File; Argv = $PArgs }
+    $script:LastResult = $res
+    return $res
   }
   $sw.Stop()
   $out = $op.GetAwaiter().GetResult()
   $err = $ep.GetAwaiter().GetResult()
-  [PSCustomObject]@{ ExitCode = $p.ExitCode; Stdout = $out; Stderr = $err; AllText = "$out$err"; Ms = $sw.Elapsed.TotalMilliseconds; TimedOut = $false }
+  $res = [PSCustomObject]@{ ExitCode = $p.ExitCode; Stdout = $out; Stderr = $err; AllText = "$out$err"; Ms = $sw.Elapsed.TotalMilliseconds; TimedOut = $false; File = $File; Argv = $PArgs }
+  $script:LastResult = $res
+  $res
 }
 # Invoke tk. Redirected stdout = non-TTY, so the compress path engages naturally.
 function Invoke-Tk {
-  param([string[]]$TkArgs, [hashtable]$Env, [string]$Stdin, [int]$Tmo = -1)
+  param([string[]]$TkArgs, [hashtable]$Env, [string[]]$UnsetEnv, [string]$Stdin, [int]$Tmo = -1)
   $hasStdin = $PSBoundParameters.ContainsKey('Stdin')
-  Start-Proc -File $script:TkBin -PArgs ($script:TkPre + $TkArgs) -Env $Env -Stdin $Stdin -HasStdin $hasStdin -Tmo $Tmo
+  Start-Proc -File $script:TkBin -PArgs ($script:TkPre + $TkArgs) -Env $Env -UnsetEnv $UnsetEnv -Stdin $Stdin -HasStdin $hasStdin -Tmo $Tmo
 }
 function Get-Percentile { param([double[]]$V, [double]$P)
   if (-not $V -or $V.Count -eq 0) { return 0 }
@@ -227,17 +253,18 @@ $EnvInfo = [ordered]@{
   "ripgrep (rg)"       = if (Test-Cmd rg) { "yes" } else { "absent" }
   "tree"               = if (Test-Cmd tree) { "yes" } else { "absent" }
   "pnpm"               = if (Test-Cmd pnpm) { "yes" } else { "absent" }
+  "copilot"            = if (Test-Cmd copilot) { "yes" } else { "absent" }
   "target repo"        = $TargetRepo
   "prior install host" = if ($priorHost) { $priorHost } else { "(none)" }
 }
 
-Write-Host "tk Real-Machine Acceptance" -ForegroundColor White
+Write-Host "tk Real-Machine Acceptance (no switches — everything runs)" -ForegroundColor White
 $EnvInfo.GetEnumerator() | ForEach-Object { Write-Host ("  {0,-20} {1}" -f $_.Key, $_.Value) }
 
 Push-Location $TargetRepo
 try {
-  # ╔══ PHASE 1: Functional surface — every command + key options ══╗
-  Section "Functional — version / status / config / telemetry / gain"
+  # ╔══ PHASE 1: Functional surface — every read-only command + key options ══╗
+  Section "Functional — version / status / config / telemetry / gain (all views)"
   $r = Invoke-Tk @("--version")
   if ($r.ExitCode -eq 0 -and $r.AllText -match '\d+\.\d+') { Pass "func" "tk --version" $r.AllText.Trim() $r.Ms } else { Fail "func" "tk --version" "exit=$($r.ExitCode)" $r.Ms }
   $r = Invoke-Tk @("--help"); if ($r.ExitCode -eq 0 -and $r.AllText -match 'Commands:') { Pass "func" "tk --help" "" $r.Ms } else { Fail "func" "tk --help" "exit=$($r.ExitCode)" $r.Ms }
@@ -246,8 +273,24 @@ try {
   $r = Invoke-Tk @("config", "path"); if ($r.ExitCode -eq 0) { Pass "func" "tk config path" $r.Stdout.Trim() $r.Ms } else { Fail "func" "tk config path" "exit=$($r.ExitCode)" $r.Ms }
   $r = Invoke-Tk @("telemetry", "status"); if ($r.ExitCode -eq 0) { Pass "func" "tk telemetry status" "" $r.Ms } else { Fail "func" "tk telemetry status" "exit=$($r.ExitCode)" $r.Ms }
   $r = Invoke-Tk @("telemetry", "preview"); if ($r.ExitCode -eq 0) { Pass "func" "tk telemetry preview" "" $r.Ms } else { Warn "func" "tk telemetry preview" "exit=$($r.ExitCode)" $r.Ms }
-  $r = Invoke-Tk @("gain", "--text"); if ($r.ExitCode -eq 0) { Pass "func" "tk gain --text" "" $r.Ms } else { Fail "func" "tk gain --text" "exit=$($r.ExitCode)" $r.Ms }
-  $r = Invoke-Tk @("gain", "--history"); if ($r.ExitCode -eq 0) { Pass "func" "tk gain --history" "" $r.Ms } else { Fail "func" "tk gain --history" "exit=$($r.ExitCode)" $r.Ms }
+  # gain — every output view must run clean (the report's four口径 live in these).
+  $gainViews = @(
+    @{ N = "gain --text"; A = @("gain", "--text"); Must = "" },
+    @{ N = "gain --json"; A = @("gain", "--json"); Must = "{" },
+    @{ N = "gain --csv"; A = @("gain", "--csv"); Must = "" },
+    @{ N = "gain --history"; A = @("gain", "--history"); Must = "" },
+    @{ N = "gain --daily"; A = @("gain", "--daily"); Must = "" },
+    @{ N = "gain --weekly"; A = @("gain", "--weekly"); Must = "" },
+    @{ N = "gain --monthly"; A = @("gain", "--monthly"); Must = "" },
+    @{ N = "gain --all --graph"; A = @("gain", "--all", "--graph"); Must = "" },
+    @{ N = "gain --failures"; A = @("gain", "--failures"); Must = "" },
+    @{ N = "gain --quota"; A = @("gain", "--quota"); Must = "" }
+  )
+  foreach ($c in $gainViews) {
+    $r = Invoke-Tk $c.A
+    $ok = $r.ExitCode -eq 0 -and ($c.Must -eq "" -or $r.AllText.Contains($c.Must))
+    if ($ok) { Pass "func" $c.N "" $r.Ms } else { Fail "func" $c.N "exit=$($r.ExitCode)" $r.Ms }
+  }
 
   Section "Functional — inspect (all option combos)"
   $inspectCases = @(
@@ -261,32 +304,40 @@ try {
   )
   foreach ($c in $inspectCases) {
     $r = Invoke-Tk $c.A
-    $ok = $r.ExitCode -eq 0 -and ($c.Must -eq "" -or $r.AllText -match [regex]::Escape($c.Must))
-    if ($ok) { Pass "func" $c.N "" $r.Ms } else { Fail "func" $c.N "exit=$($r.ExitCode)" $r.Ms }
+    # exit 2 = "no major source analyzable" (cli.ts:237): environment has no VS Code
+    # history / static-context files. Not a defect — a populated host would PASS. Record
+    # INFO so an empty box doesn't false-FAIL. exit 1 IS a real error -> FAIL.
+    if ($r.ExitCode -eq 2) { Info "func" $c.N "no analyzable sources here (exit 2; populated host would run it)" $r.Ms }
+    elseif ($r.ExitCode -eq 0 -and ($c.Must -eq "" -or $r.AllText -match [regex]::Escape($c.Must))) { Pass "func" $c.N "" $r.Ms }
+    else { Fail "func" $c.N "exit=$($r.ExitCode)" $r.Ms }
   }
   # --fail-on is a CI gate: nonzero is by-design, not a failure. Record the exit code.
   $r = Invoke-Tk @("inspect", "--fail-on", "error", "--text")
   Info "func" "inspect --fail-on error" "exit=$($r.ExitCode) (nonzero = findings reached threshold, by design)" $r.Ms
 
-  Section "Functional — optimize (preview) / debug + privacy scrub"
+  Section "Functional — optimize (preview) / debug (+flags) + privacy scrub"
   $r = Invoke-Tk @("optimize", "context", "--project")
   if ($r.ExitCode -eq 0 -and $r.AllText -match 'preview') { Pass "func" "optimize context --project (preview)" "" $r.Ms } else { Fail "func" "optimize context --project" "exit=$($r.ExitCode)" $r.Ms }
   $r = Invoke-Tk @("optimize", "context", "--user")
   if ($r.ExitCode -eq 0) { Pass "func" "optimize context --user (preview)" "" $r.Ms } else { Warn "func" "optimize context --user" "exit=$($r.ExitCode)" $r.Ms }
   # debug bundle + privacy: the saved report must NOT leak the literal home path.
-  $r = Invoke-Tk @("debug")
-  if ($r.ExitCode -eq 0 -and $r.AllText -match 'debug bundle') {
-    Pass "func" "tk debug (writes bundle)" "" $r.Ms
-    $dbgPath = ($r.AllText -split "`n" | Where-Object { $_ -match 'debug bundle:' } | Select-Object -First 1) -replace '.*bundle:\s*', ''
-    $dbgPath = $dbgPath.Trim()
-    if ($dbgPath -and (Test-Path -LiteralPath $dbgPath)) {
-      $body = Get-Content -LiteralPath $dbgPath -Raw
-      $userHome = [Environment]::GetFolderPath('UserProfile')
-      if ($body -match [regex]::Escape($userHome)) { Warn "func" "debug bundle scrubs home path" "leaks $userHome" } else { Pass "func" "debug bundle scrubs home path" }
-      # On Windows/Unix a freshly written report should not be world-anything-fancy; existence is the floor.
-      Remove-Item -LiteralPath $dbgPath -Force -ErrorAction SilentlyContinue
-    }
-  } else { Fail "func" "tk debug" "exit=$($r.ExitCode)" $r.Ms }
+  function Test-DebugBundle {
+    param([string]$N, [string[]]$Flags)
+    $r = Invoke-Tk (@("debug") + $Flags)
+    if ($r.ExitCode -eq 0 -and $r.AllText -match 'debug bundle') {
+      Pass "func" "$N (writes bundle)" "" $r.Ms
+      $dbgPath = (($r.AllText -split "`n" | Where-Object { $_ -match 'debug bundle:' } | Select-Object -First 1) -replace '.*bundle:\s*', '').Trim()
+      if ($dbgPath -and (Test-Path -LiteralPath $dbgPath)) {
+        $body = Get-Content -LiteralPath $dbgPath -Raw
+        $userHome = [Environment]::GetFolderPath('UserProfile')
+        if ($body -match [regex]::Escape($userHome)) { Warn "func" "$N scrubs home path" "leaks $userHome" } else { Pass "func" "$N scrubs home path" }
+        Remove-Item -LiteralPath $dbgPath -Force -ErrorAction SilentlyContinue
+      }
+    } else { Fail "func" $N "exit=$($r.ExitCode)" $r.Ms }
+  }
+  Test-DebugBundle "tk debug" @()
+  Test-DebugBundle "tk debug --full" @("--full")
+  Test-DebugBundle "tk debug --redact" @("--redact")
 
   # ╔══ PHASE 2: Hook protocol (copilot / claude / check) ══╗
   Section "Hook — check (rewrite dry-run, no execution)"
@@ -303,19 +354,19 @@ try {
 
   Section "Hook — copilot stdin protocol (per-dialect shapes)"
   $r = Invoke-Tk @("hook", "copilot") -Stdin '{"event":"preToolUse","toolName":"bash","toolArgs":"{\"command\":\"git status\"}"}'
-  if ($r.ExitCode -eq 0 -and $r.Stdout -match '"modifiedArgs"') { Pass "hook" "copilot rewrite -> modifiedArgs" $r.Stdout.Trim() $r.Ms } else { Fail "hook" "copilot rewrite" "exit=$($r.ExitCode) out=$($r.Stdout)" $r.Ms }
+  if ($r.ExitCode -eq 0 -and $r.Stdout -match '"modifiedArgs"') { Pass "hook" "copilot rewrite -> modifiedArgs" $r.Stdout.Trim() $r.Ms } else { Fail "hook" "copilot rewrite" "exit=$($r.ExitCode)" $r.Ms }
   $r = Invoke-Tk @("hook", "copilot") -Stdin '{"event":"preToolUse","tool_name":"read_file","tool_input":{"filePath":"node_modules/x/i.js"}}'
-  if ($r.ExitCode -eq 0 -and $r.Stdout -match '"permissionDecision"\s*:\s*"deny"') { Pass "hook" "copilot deny node_modules" "" $r.Ms } else { Warn "hook" "copilot deny node_modules" "exit=$($r.ExitCode) out=$($r.Stdout)" $r.Ms }
+  if ($r.ExitCode -eq 0 -and $r.Stdout -match '"permissionDecision"\s*:\s*"deny"') { Pass "hook" "copilot deny node_modules" "" $r.Ms } else { Warn "hook" "copilot deny node_modules" "exit=$($r.ExitCode)" $r.Ms }
   $r = Invoke-Tk @("hook", "copilot") -Stdin '}{'
-  if ($r.ExitCode -eq 0 -and $r.Stdout.Trim().Length -eq 0) { Pass "hook" "copilot fail-open bad json (empty=allow)" "" $r.Ms } else { Fail "hook" "copilot fail-open bad json" "exit=$($r.ExitCode) out=$($r.Stdout)" $r.Ms }
+  if ($r.ExitCode -eq 0 -and $r.Stdout.Trim().Length -eq 0) { Pass "hook" "copilot fail-open bad json (empty=allow)" "" $r.Ms } else { Fail "hook" "copilot fail-open bad json" "exit=$($r.ExitCode)" $r.Ms }
 
   Section "Hook — claude stdin protocol"
   $r = Invoke-Tk @("hook", "claude") -Stdin '{"tool_name":"Bash","tool_input":{"command":"git status"}}'
-  if ($r.ExitCode -eq 0 -and $r.Stdout -match 'updatedInput' -and $r.Stdout -match 'tk git status') { Pass "hook" "claude rewrite -> updatedInput" "" $r.Ms } else { Fail "hook" "claude rewrite" "exit=$($r.ExitCode) out=$($r.Stdout)" $r.Ms }
+  if ($r.ExitCode -eq 0 -and $r.Stdout -match 'updatedInput' -and $r.Stdout -match 'tk git status') { Pass "hook" "claude rewrite -> updatedInput" "" $r.Ms } else { Fail "hook" "claude rewrite" "exit=$($r.ExitCode)" $r.Ms }
   $r = Invoke-Tk @("hook", "claude") -Stdin 'not json'
   if ($r.ExitCode -eq 0) { Pass "hook" "claude fail-open bad json" "" $r.Ms } else { Warn "hook" "claude fail-open bad json" "exit=$($r.ExitCode)" $r.Ms }
 
-  # ╔══ PHASE 3: Compression — quality bars + faithful/small ══╗
+  # ╔══ PHASE 3: Compression — quality bars + proxy flags ══╗
   Section "Compression — large output MUST clear the bar"
   $minRaw = if ($env:TK_ACCEPT_MIN_RAW) { [int]$env:TK_ACCEPT_MIN_RAW } else { 1500 }
   function Test-Savings {
@@ -358,10 +409,24 @@ try {
   Test-Stats "tree $dir" @("tree", $dir)
   Test-Stats "pnpm --version" @("pnpm", "--version")
   Test-Stats "npx --version" @("npx", "--version")
-  # --raw must passthrough verbatim (no stats banner).
+
+  Section "Compression — proxy flags (--raw / --max-chars / --save-raw / TK_NO_HISTORY)"
   if ($isGit) {
+    # --raw must passthrough verbatim (no stats banner).
     $r = Invoke-Tk @("--raw", "git", "status")
     if ($r.AllText -notmatch '## Token Savings') { Pass "compress" "--raw passthrough (no banner)" "" $r.Ms } else { Fail "compress" "--raw passthrough" "compressed unexpectedly" $r.Ms }
+    # --max-chars caps the compressed body.
+    $r = Invoke-Tk @("--max-chars", "200", "git", "log", "-50")
+    $bodyLen = ($r.Stdout).Length
+    if ($r.ExitCode -eq 0 -and $bodyLen -le 1200) { Pass "compress" "--max-chars 200 caps body" "stdout=${bodyLen} chars" $r.Ms } else { Warn "compress" "--max-chars 200" "stdout=${bodyLen} chars (cap not obviously applied)" $r.Ms }
+    # --save-raw writes the raw output and discloses its path; --stats reveals it.
+    $r = Invoke-Tk @("--stats", "--save-raw", "git", "log", "-5")
+    if ($r.AllText -match 'raw output|Raw output|saved raw|\.txt') { Pass "compress" "--save-raw discloses raw path" "" $r.Ms } else { Warn "compress" "--save-raw discloses raw path" "no raw-path disclosure seen" $r.Ms }
+    # TK_NO_HISTORY=1 must not append a gain row.
+    $before = ((Invoke-Tk @("gain", "--history")).AllText -split "`n").Count
+    Invoke-Tk @("git", "status") -Env @{ TK_NO_HISTORY = "1" } | Out-Null
+    $after = ((Invoke-Tk @("gain", "--history")).AllText -split "`n").Count
+    if ($after -le $before) { Pass "compress" "TK_NO_HISTORY=1 skips gain row" "rows $before -> $after" } else { Warn "compress" "TK_NO_HISTORY=1" "history grew $before -> $after" }
   }
 
   # ╔══ PHASE 4: Boundary conditions (real fixtures) ══╗
@@ -398,7 +463,7 @@ try {
       if ($r.AllText -match 'newdir/one\.txt') { Pass "boundary" "-uall expands dir (passthrough)" "" $r.Ms } else { Warn "boundary" "-uall expands dir" "" $r.Ms }
     } finally { Pop-Location }
 
-    # B4 non-ASCII / unicode content + filename round-trip (no mojibake)
+    # B4 non-ASCII / unicode content + filename round-trip (UTF-8 source, no mojibake)
     $uni = Join-Path $TmpRoot "unicode"; New-Item -ItemType Directory -Path $uni -Force | Out-Null
     Push-Location $uni
     try {
@@ -440,19 +505,36 @@ try {
     } finally { Pop-Location }
   }
 
-  # B9 destructive-guard: `tk uninstall` must fail closed on unrecognised input.
-  # `--help` prints usage and tears nothing down; an unknown flag is REFUSED (exit!=0)
-  # rather than falling through into a real uninstall. Safe to exercise for real now.
-  # Teardown prints per-tier lines ("instruction injection: removed"); usage never
-  # mentions "instruction injection", so its absence proves nothing was torn down.
-  $r = Invoke-Tk @("uninstall", "--help")
-  if ($r.ExitCode -eq 0 -and $r.AllText -match 'tk uninstall' -and $r.AllText -notmatch 'instruction injection') {
-    Pass "boundary" "uninstall --help prints usage (no teardown)" "" $r.Ms
-  } else { Warn "boundary" "uninstall --help" "exit=$($r.ExitCode) — expected usage, no teardown" $r.Ms }
-  $r = Invoke-Tk @("uninstall", "--tk-bogus-flag-xyz")
+  # B9 destructive-guard probe — NON-destructive. We learned (and the dossier proves)
+  # that `tk uninstall` does NOT validate flags: `--help` and unknown flags are ignored
+  # and a REAL teardown runs. We must not trigger that here — it would uninstall the
+  # tester's tk mid-suite. So probe with --dry-run (never deletes; only plans) and
+  # record the arg-validation gap as a finding. Teardown prints per-tier lines
+  # ("instruction injection: removed"); a real `--help` would print usage instead.
+  $r = Invoke-Tk @("uninstall", "--dry-run", "--help")
+  if ($r.AllText -match 'instruction injection|usage guidance: removed') {
+    Warn "boundary" "uninstall ignores --help (no arg validation)" "'uninstall --help' plans a real teardown instead of printing usage — guard with arg validation" $r.Ms
+  } else { Pass "boundary" "uninstall --help prints usage (no teardown)" "" $r.Ms }
+  $r = Invoke-Tk @("uninstall", "--dry-run", "--tk-bogus-flag-xyz")
   if ($r.ExitCode -ne 0 -and $r.AllText -match 'unknown flag|Refusing') {
     Pass "boundary" "uninstall refuses unknown flag (fail closed)" "exit=$($r.ExitCode)" $r.Ms
-  } else { Warn "boundary" "uninstall unknown flag" "exit=$($r.ExitCode) — expected refusal, got teardown?" $r.Ms }
+  } else { Warn "boundary" "uninstall accepts unknown flag" "exit=$($r.ExitCode) — unknown flag not refused (dry-run); arg validation missing" $r.Ms }
+
+  # B10 GBK / cp936 decode ladder (Windows). tk decodes the bytes IT reads from the
+  # tool it wraps: strict-UTF-8 first, then legacy codepage (gb18030, a cp936 superset).
+  # Feed a child that emits KNOWN cp936 bytes (`cmd /c type <gbk-file>`) — deterministic
+  # regardless of box locale — and assert the Chinese needle survives in tk's UTF-8 out.
+  # The earlier B4 only proves the UTF-8 path; this is the legacy-fallback path.
+  if ($IsWindows) {
+    try {
+      $enc936 = [System.Text.Encoding]::GetEncoding(936)
+      $gbkFile = Join-Path $TmpRoot "gbk-cp936.txt"
+      $gneedle = "项目令牌GBK验证"
+      [System.IO.File]::WriteAllBytes($gbkFile, $enc936.GetBytes("marker $gneedle end"))
+      $r = Invoke-Tk @("cmd", "/c", "type", $gbkFile)
+      if ($r.AllText -match [regex]::Escape($gneedle)) { Pass "boundary" "GBK/cp936 child output decoded (legacy fallback)" "" $r.Ms } else { Warn "boundary" "GBK/cp936 decode" "needle not found — see dossier for raw bytes (mojibake?)" $r.Ms }
+    } catch { Warn "boundary" "GBK/cp936 decode" "could not build cp936 fixture: $($_.Exception.Message)" }
+  } else { Skip "boundary" "GBK/cp936 decode" "non-Windows (box is UTF-8; cp936 absent)" }
 
   # ╔══ PHASE 5: Fail-safe / resilience ══╗
   Section "Fail-safe"
@@ -473,24 +555,20 @@ try {
   } else { Skip "failsafe" "corrupt config fail-open" "no config file" }
 
   # ╔══ PHASE 6: Performance ══╗
-  if (-not $SkipPerf) {
-    Section "Performance ($PerfIterations samples; p50/p95 ms)"
-    function Measure-Many { param([scriptblock]$Action, [int]$N) $v = @(); for ($i = 0; $i -lt $N; $i++) { $v += (& $Action) } ; , $v }
-    # tk --version cold-ish (first) vs warm
-    $coldVer = (Invoke-Tk @("--version")).Ms
-    $verMs = Measure-Many { (Invoke-Tk @("--version")).Ms } $PerfIterations
-    Info "perf" "tk --version startup" ("cold={0:N0}ms p50={1:N0} p95={2:N0}" -f $coldVer, (Get-Percentile $verMs 50), (Get-Percentile $verMs 95)) (Get-Percentile $verMs 50)
-    if ($isGit) {
-      $tkMs = Measure-Many { (Invoke-Tk @("git", "status")).Ms } $PerfIterations
-      $rawMs = Measure-Many { (Start-Proc -File (Get-Command git).Source -PArgs @("status", "--porcelain")).Ms } $PerfIterations
-      $tk50 = Get-Percentile $tkMs 50; $raw50 = Get-Percentile $rawMs 50
-      Info "perf" "tk git status vs raw" ("tk p50={0:N0}ms  raw p50={1:N0}ms  overhead={2:N0}ms (tk spawns 2x: porcelain+human)" -f $tk50, $raw50, ($tk50 - $raw50)) $tk50
-      # Large compression wall-time + savings
-      $r = Invoke-Tk @("--stats", "git", "log", "-p", "-100")
-      $pct = if ($r.AllText -match 'Saved:.*\(([0-9.]+)%\)') { $Matches[1] } else { "0" }
-      Info "perf" "git log -p -100 compress" ("{0:N0}ms  saved={1}%" -f $r.Ms, $pct) $r.Ms
-    }
-  } else { Skip "perf" "performance phase" "-SkipPerf" }
+  Section "Performance ($PerfIterations samples; p50/p95 ms)"
+  function Measure-Many { param([scriptblock]$Action, [int]$N) $v = @(); for ($i = 0; $i -lt $N; $i++) { $v += (& $Action) } ; , $v }
+  $coldVer = (Invoke-Tk @("--version")).Ms
+  $verMs = Measure-Many { (Invoke-Tk @("--version")).Ms } $PerfIterations
+  Info "perf" "tk --version startup" ("cold={0:N0}ms p50={1:N0} p95={2:N0}" -f $coldVer, (Get-Percentile $verMs 50), (Get-Percentile $verMs 95)) (Get-Percentile $verMs 50)
+  if ($isGit) {
+    $tkMs = Measure-Many { (Invoke-Tk @("git", "status")).Ms } $PerfIterations
+    $rawMs = Measure-Many { (Start-Proc -File (Get-Command git).Source -PArgs @("status", "--porcelain")).Ms } $PerfIterations
+    $tk50 = Get-Percentile $tkMs 50; $raw50 = Get-Percentile $rawMs 50
+    Info "perf" "tk git status vs raw" ("tk p50={0:N0}ms  raw p50={1:N0}ms  overhead={2:N0}ms (tk spawns 2x: porcelain+human)" -f $tk50, $raw50, ($tk50 - $raw50)) $tk50
+    $r = Invoke-Tk @("--stats", "git", "log", "-p", "-100")
+    $pct = if ($r.AllText -match 'Saved:.*\(([0-9.]+)%\)') { $Matches[1] } else { "0" }
+    Info "perf" "git log -p -100 compress" ("{0:N0}ms  saved={1}%" -f $r.Ms, $pct) $r.Ms
+  }
 
   # ╔══ PHASE 7: Shim / PATH interception (Windows-relevant) ══╗
   Section "Shim / PATH"
@@ -501,59 +579,147 @@ try {
     if (Test-Path -LiteralPath $shimDir) {
       $probePath = "$shimDir;$env:PATH"
       $where = & cmd.exe /c "set PATH=$probePath&& where git" 2>&1 | Out-String
-      if ($where -match [regex]::Escape($shimDir)) { Pass "shim" "where git resolves through shim (PATH prepend)" $where.Trim() } else { Warn "shim" "where git through shim" "got: $($where.Trim())" }
-    } else { Skip "shim" "where git through shim" "shim not installed (run with lifecycle)" }
+      $synthR = [PSCustomObject]@{ File = 'cmd.exe'; Argv = @('/c', "set PATH=...&& where git"); ExitCode = $LASTEXITCODE; Ms = -1; TimedOut = $false; Stdout = $where; Stderr = '' }
+      if ($where -match [regex]::Escape($shimDir)) { Pass "shim" "where git resolves through shim (PATH prepend)" $where.Trim() } else { Warn "shim" "where git through shim" "got: $($where.Trim())" -R $synthR }
+    } else { Skip "shim" "where git through shim" "shim not installed yet (lifecycle phase installs it)" }
   } else { Skip "shim" "PATHEXT / where git" "non-Windows" }
 
-  # ╔══ PHASE 8: Install / uninstall E2E (mutating; restores prior state) ══╗
-  if (-not $SkipLifecycle) {
-    Section "Lifecycle E2E — install / status / idempotency / uninstall"
-    $vscSettings = if ($IsWindows) { Join-Path $env:APPDATA "Code/User/settings.json" } else { $null }
-    $vscBak = $null
-    if ($vscSettings -and (Test-Path -LiteralPath $vscSettings)) { $vscBak = "$vscSettings.acc.bak"; Copy-Item -LiteralPath $vscSettings -Destination $vscBak -Force }
-    # install vscode (shim primary + hook additive)
-    $r = Invoke-Tk @("install", "--host", "vscode")
-    if ($r.ExitCode -eq 0 -and $r.AllText -match 'Active tier') { Pass "lifecycle" "install --host vscode" (($r.AllText -split "`n" | Where-Object { $_ -match 'Active tier' })) $r.Ms } else { Fail "lifecycle" "install --host vscode" "exit=$($r.ExitCode)" $r.Ms }
-    $r = Invoke-Tk @("status"); if ($r.AllText -match 'installed') { Pass "lifecycle" "status after install" "" $r.Ms } else { Warn "lifecycle" "status after install" "" $r.Ms }
-    # idempotency
-    $r = Invoke-Tk @("install", "--host", "vscode"); if ($r.ExitCode -eq 0) { Pass "lifecycle" "install idempotent (2nd run)" "" $r.Ms } else { Fail "lifecycle" "install idempotent" "exit=$($r.ExitCode)" $r.Ms }
-    if ($IsWindows) {
-      $shimDir = Join-Path $env:USERPROFILE ".token-killer/shim"
-      if (Test-Path -LiteralPath (Join-Path $shimDir "git.cmd")) { Pass "lifecycle" "shim git.cmd written" } else { Fail "lifecycle" "shim git.cmd written" "missing" }
-      if ($vscSettings -and (Test-Path -LiteralPath $vscSettings) -and ((Get-Content -LiteralPath $vscSettings -Raw) -match 'TK_SHIM_DIR')) { Pass "lifecycle" "VS Code settings patched (TK_SHIM_DIR)" } else { Warn "lifecycle" "VS Code settings patched" "TK_SHIM_DIR not found" }
-    }
-    # copilot-cli host
-    $r = Invoke-Tk @("install", "--host", "copilot-cli"); if ($r.ExitCode -eq 0 -and $r.AllText -match 'Active tier: hook') { Pass "lifecycle" "install --host copilot-cli" "" $r.Ms } else { Fail "lifecycle" "install --host copilot-cli" "exit=$($r.ExitCode)" $r.Ms }
-    # claude-code (opt-in only)
-    if ($IncludeClaudeCode) {
-      $r = Invoke-Tk @("install", "--host", "claude-code"); if ($r.ExitCode -eq 0) { Pass "lifecycle" "install --host claude-code" "" $r.Ms } else { Fail "lifecycle" "install --host claude-code" "exit=$($r.ExitCode)" $r.Ms }
-    } else { Skip "lifecycle" "install --host claude-code" "-IncludeClaudeCode off" }
-    # uninstall
-    $r = Invoke-Tk @("uninstall", "--dry-run"); if ($r.ExitCode -eq 0) { Pass "lifecycle" "uninstall --dry-run" "" $r.Ms } else { Warn "lifecycle" "uninstall --dry-run" "exit=$($r.ExitCode)" $r.Ms }
-    $r = Invoke-Tk @("uninstall"); if ($r.ExitCode -eq 0) { Pass "lifecycle" "uninstall" "" $r.Ms } else { Fail "lifecycle" "uninstall" "exit=$($r.ExitCode)" $r.Ms }
-    if ($IsWindows) {
-      $shimDir = Join-Path $env:USERPROFILE ".token-killer/shim"
-      if (-not (Test-Path -LiteralPath $shimDir)) { Pass "lifecycle" "shim removed after uninstall" } else { Warn "lifecycle" "shim removed" "still present" }
-    }
-    # restore VS Code settings + prior install host
-    if ($vscBak) { Move-Item -LiteralPath $vscBak -Destination $vscSettings -Force }
-    if ($priorHost -and $priorHost -ne "(none)") {
-      $r = Invoke-Tk @("install", "--host", $priorHost)
-      if ($r.ExitCode -eq 0) { Pass "lifecycle" "restore prior install ($priorHost)" "" $r.Ms } else { Warn "lifecycle" "restore prior install ($priorHost)" "exit=$($r.ExitCode) — re-run: tk install --host $priorHost" $r.Ms }
-    }
-  } else { Skip "lifecycle" "install/uninstall E2E" "-SkipLifecycle" }
+  # ╔══ PHASE 8: Stateful round-trips — snapshot + exercise for real + restore ══╗
+  # No switches: these mutate real state, but each one snapshots the exact artifact,
+  # runs the command for real, asserts, and restores. The Acceptance-scope note in the
+  # report lists every restore so the report proves the box was left clean.
+  Section "Stateful round-trips (snapshot+restore)"
 
-  # ╔══ PHASE 9: Tier-0 routing — manual harness (+ optional Copilot CLI E2E) ══╗
+  # config init — write the template into a fresh location, then restore the original.
+  $cfgRes = Invoke-Tk @("config", "path"); $cfgPath = $cfgRes.Stdout.Trim()
+  if ($cfgPath) {
+    $cfgExisted = Test-Path -LiteralPath $cfgPath
+    $cfgBak = "$cfgPath.acc-init.bak"
+    if ($cfgExisted) { Copy-Item -LiteralPath $cfgPath -Destination $cfgBak -Force; Remove-Item -LiteralPath $cfgPath -Force }
+    try {
+      $r = Invoke-Tk @("config", "init")
+      if ($r.ExitCode -eq 0 -and $r.AllText -match 'Wrote config template') { Pass "roundtrip" "config init writes template" "" $r.Ms } else { Fail "roundtrip" "config init" "exit=$($r.ExitCode)" $r.Ms }
+      # second init must be idempotent-safe (already exists -> refuse, not clobber).
+      $r = Invoke-Tk @("config", "init")
+      if ($r.AllText -match 'already exists') { Pass "roundtrip" "config init idempotent (already exists)" "" $r.Ms } else { Warn "roundtrip" "config init 2nd run" "expected 'already exists'" $r.Ms }
+    } finally {
+      if ($cfgExisted) { Move-Item -LiteralPath $cfgBak -Destination $cfgPath -Force; Note "config restored from snapshot" }
+      else { Remove-Item -LiteralPath $cfgPath -Force -ErrorAction SilentlyContinue; Note "config init artifact removed (none existed before)" }
+    }
+  }
+
+  # telemetry enable -> status(enabled) -> disable -> status(disabled). Snapshot config.
+  $cfgRes = Invoke-Tk @("config", "path"); $cfgPath = $cfgRes.Stdout.Trim()
+  $teleBak = $null
+  if ($cfgPath -and (Test-Path -LiteralPath $cfgPath)) { $teleBak = "$cfgPath.acc-tele.bak"; Copy-Item -LiteralPath $cfgPath -Destination $teleBak -Force }
+  try {
+    $r = Invoke-Tk @("telemetry", "enable")
+    if ($r.ExitCode -eq 0 -and $r.AllText -match 'Telemetry enabled') { Pass "roundtrip" "telemetry enable" "" $r.Ms } else { Fail "roundtrip" "telemetry enable" "exit=$($r.ExitCode)" $r.Ms }
+    $r = Invoke-Tk @("telemetry", "status")
+    if ($r.AllText -match 'network upload\):\s*enabled') { Pass "roundtrip" "telemetry status reflects enabled" "" $r.Ms } else { Warn "roundtrip" "telemetry status enabled" "" $r.Ms }
+    $r = Invoke-Tk @("telemetry", "disable")
+    if ($r.ExitCode -eq 0 -and $r.AllText -match 'Telemetry disabled') { Pass "roundtrip" "telemetry disable" "" $r.Ms } else { Fail "roundtrip" "telemetry disable" "exit=$($r.ExitCode)" $r.Ms }
+    $r = Invoke-Tk @("telemetry", "status")
+    if ($r.AllText -match 'network upload\):\s*disabled') { Pass "roundtrip" "telemetry status reflects disabled" "" $r.Ms } else { Warn "roundtrip" "telemetry status disabled" "" $r.Ms }
+  } finally {
+    if ($teleBak) { Move-Item -LiteralPath $teleBak -Destination $cfgPath -Force; Note "config restored after telemetry round-trip" }
+  }
+
+  # support — a channel arg is REQUIRED in non-interactive (cli.ts:180); with routing env
+  # REMOVED and no address, ADR 0011 makes it save a bundle + clipboard and open no GUI.
+  # `-y` skips the TTY prompts. We delete the bundle afterwards.
+  function Test-Support {
+    param([string]$N, [string[]]$Flags)
+    $r = Invoke-Tk (@("support", "email", "-y") + $Flags) -UnsetEnv @("TK_SUPPORT_EMAIL", "TK_SUPPORT_TEAMS")
+    if ($r.ExitCode -eq 0 -and $r.AllText -match 'Saved diagnostic bundle:') {
+      Pass "roundtrip" $N "" $r.Ms
+      $supPath = (($r.AllText -split "`n" | Where-Object { $_ -match 'Saved diagnostic bundle:' } | Select-Object -First 1) -replace '.*bundle:\s*', '').Trim()
+      if ($supPath -and (Test-Path -LiteralPath $supPath)) { Remove-Item -LiteralPath $supPath -Force -ErrorAction SilentlyContinue; Note "support bundle removed: $supPath" }
+    } else { Warn "roundtrip" $N "exit=$($r.ExitCode) — expected 'Saved diagnostic bundle:'" $r.Ms }
+  }
+  Test-Support "support saves bundle, opens no GUI" @()
+  Test-Support "support --redact runs" @("--redact")
+
+  # optimize --apply / --restore — confined to a throwaway temp git repo (--project),
+  # so user-level context files are never touched. The apply backs up; restore reverts.
+  if (Test-Cmd git) {
+    $optRepo = Join-Path $TmpRoot "optimize-apply"; New-Item -ItemType Directory -Path $optRepo -Force | Out-Null
+    Push-Location $optRepo
+    try {
+      & git init -q; & git config user.email a@a; & git config user.name a
+      Set-Content -LiteralPath "CLAUDE.md" -Value "# Project`n`nAlways use PNPM.`nAlways use PNPM.`n" -Encoding UTF8
+      Set-Content -LiteralPath "AGENTS.md" -Value "# Agents`n`nBe concise.`n" -Encoding UTF8
+      & git add -A; & git commit -qm init
+      $r = Invoke-Tk @("optimize", "context", "--project", "--apply")
+      if ($r.ExitCode -eq 0 -and $r.AllText -match 'tk optimize --apply') { Pass "roundtrip" "optimize --apply (temp repo, backs up)" "" $r.Ms } else { Fail "roundtrip" "optimize --apply" "exit=$($r.ExitCode)" $r.Ms }
+      $r = Invoke-Tk @("optimize", "--restore")
+      if ($r.ExitCode -eq 0 -and $r.AllText -match 'restored|nothing to restore') { Pass "roundtrip" "optimize --restore reverts" "" $r.Ms } else { Warn "roundtrip" "optimize --restore" "exit=$($r.ExitCode)" $r.Ms }
+    } finally { Pop-Location; Note "optimize --apply confined to temp repo (discarded)" }
+  }
+
+  # ╔══ PHASE 9: Install / uninstall E2E — every host (mutating; restores prior state) ══╗
+  Section "Lifecycle E2E — install / status / idempotency / uninstall (all hosts)"
+  $vscSettings = if ($IsWindows) { Join-Path $env:APPDATA "Code/User/settings.json" } else { $null }
+  $vscBak = $null
+  if ($vscSettings -and (Test-Path -LiteralPath $vscSettings)) { $vscBak = "$vscSettings.acc.bak"; Copy-Item -LiteralPath $vscSettings -Destination $vscBak -Force }
+  # claude-code mutates ~/.claude/settings.json — snapshot it too.
+  $claudeSettings = Join-Path ([Environment]::GetFolderPath('UserProfile')) ".claude/settings.json"
+  $claudeBak = $null
+  if (Test-Path -LiteralPath $claudeSettings) { $claudeBak = "$claudeSettings.acc.bak"; Copy-Item -LiteralPath $claudeSettings -Destination $claudeBak -Force }
+
+  # install vscode (shim primary + hook additive)
+  $r = Invoke-Tk @("install", "--host", "vscode")
+  if ($r.ExitCode -eq 0 -and $r.AllText -match 'Active tier') { Pass "lifecycle" "install --host vscode" (($r.AllText -split "`n" | Where-Object { $_ -match 'Active tier' })) $r.Ms } else { Fail "lifecycle" "install --host vscode" "exit=$($r.ExitCode)" $r.Ms }
+  $r = Invoke-Tk @("status"); if ($r.AllText -match 'installed') { Pass "lifecycle" "status after install" "" $r.Ms } else { Warn "lifecycle" "status after install" "" $r.Ms }
+  $r = Invoke-Tk @("install", "--host", "vscode"); if ($r.ExitCode -eq 0) { Pass "lifecycle" "install idempotent (2nd run)" "" $r.Ms } else { Fail "lifecycle" "install idempotent" "exit=$($r.ExitCode)" $r.Ms }
+  if ($IsWindows) {
+    $shimDir = Join-Path $env:USERPROFILE ".token-killer/shim"
+    if (Test-Path -LiteralPath (Join-Path $shimDir "git.cmd")) { Pass "lifecycle" "shim git.cmd written" } else { Fail "lifecycle" "shim git.cmd written" "missing" }
+    if ($vscSettings -and (Test-Path -LiteralPath $vscSettings) -and ((Get-Content -LiteralPath $vscSettings -Raw) -match 'TK_SHIM_DIR')) { Pass "lifecycle" "VS Code settings patched (TK_SHIM_DIR)" } else { Warn "lifecycle" "VS Code settings patched" "TK_SHIM_DIR not found" }
+  }
+  # copilot-cli host
+  $r = Invoke-Tk @("install", "--host", "copilot-cli"); if ($r.ExitCode -eq 0 -and $r.AllText -match 'Active tier: hook') { Pass "lifecycle" "install --host copilot-cli" "" $r.Ms } else { Fail "lifecycle" "install --host copilot-cli" "exit=$($r.ExitCode)" $r.Ms }
+  # claude-code host (always — snapshot above restores it)
+  $r = Invoke-Tk @("install", "--host", "claude-code"); if ($r.ExitCode -eq 0) { Pass "lifecycle" "install --host claude-code" "" $r.Ms } else { Fail "lifecycle" "install --host claude-code" "exit=$($r.ExitCode)" $r.Ms }
+  # project scope round-trip
+  if ($isGit) {
+    $r = Invoke-Tk @("install", "--host", "vscode", "--project"); if ($r.ExitCode -eq 0) { Pass "lifecycle" "install --project" "" $r.Ms } else { Warn "lifecycle" "install --project" "exit=$($r.ExitCode)" $r.Ms }
+    $r = Invoke-Tk @("uninstall", "--project"); if ($r.ExitCode -eq 0) { Pass "lifecycle" "uninstall --project" "" $r.Ms } else { Warn "lifecycle" "uninstall --project" "exit=$($r.ExitCode)" $r.Ms }
+  }
+  # --purge-data is irreversible (deletes metrics history). Exercise the flag via
+  # --dry-run only: proves parsing + plan disclosure WITHOUT deleting your history.
+  $r = Invoke-Tk @("uninstall", "--dry-run", "--purge-data")
+  if ($r.ExitCode -eq 0 -and $r.AllText -match 'projects|purge|history|would') { Pass "lifecycle" "uninstall --purge-data (dry-run plan)" "" $r.Ms } else { Warn "lifecycle" "uninstall --purge-data dry-run" "exit=$($r.ExitCode)" $r.Ms }
+  # real uninstall
+  $r = Invoke-Tk @("uninstall", "--dry-run"); if ($r.ExitCode -eq 0) { Pass "lifecycle" "uninstall --dry-run" "" $r.Ms } else { Warn "lifecycle" "uninstall --dry-run" "exit=$($r.ExitCode)" $r.Ms }
+  $r = Invoke-Tk @("uninstall"); if ($r.ExitCode -eq 0) { Pass "lifecycle" "uninstall" "" $r.Ms } else { Fail "lifecycle" "uninstall" "exit=$($r.ExitCode)" $r.Ms }
+  if ($IsWindows) {
+    $shimDir = Join-Path $env:USERPROFILE ".token-killer/shim"
+    if (-not (Test-Path -LiteralPath $shimDir)) { Pass "lifecycle" "shim removed after uninstall" } else { Warn "lifecycle" "shim removed" "still present" }
+  }
+  # restore VS Code + claude settings + prior install host
+  if ($vscBak) { Move-Item -LiteralPath $vscBak -Destination $vscSettings -Force; Note "VS Code settings restored" }
+  if ($claudeBak) { Move-Item -LiteralPath $claudeBak -Destination $claudeSettings -Force; Note "~/.claude/settings.json restored" }
+  elseif (Test-Path -LiteralPath $claudeSettings) { Remove-Item -LiteralPath $claudeSettings -Force -ErrorAction SilentlyContinue; Note "claude-code settings removed (none existed before)" }
+  # Only re-install a REAL host. A fresh box reports "(none)"/"(not recorded)"; never
+  # feed those to `install --host`.
+  $knownHosts = @('claude-code', 'copilot-cli', 'vscode', 'auto')
+  if ($priorHost -and ($knownHosts -contains $priorHost)) {
+    $r = Invoke-Tk @("install", "--host", $priorHost)
+    if ($r.ExitCode -eq 0) { Pass "lifecycle" "restore prior install ($priorHost)" "" $r.Ms; Note "prior install host '$priorHost' restored" } else { Warn "lifecycle" "restore prior install ($priorHost)" "exit=$($r.ExitCode) — re-run: tk install --host $priorHost" $r.Ms }
+  } else { Info "lifecycle" "restore prior install" "no prior real host to restore (was '$priorHost')" }
+
+  # ╔══ PHASE 10: Tier-0 routing — Copilot CLI (auto) + manual VS Code gate ══╗
   Section "Tier-0 — does the agent route through tk?"
   $histBefore = (Invoke-Tk @("gain", "--history")).AllText
   $beforeLines = ($histBefore -split "`n").Count
-  if ($CopilotCliE2E -and (Test-Cmd "copilot")) {
+  if (Test-Cmd "copilot") {
     $cp = Start-Proc -File (Get-Command copilot).Source -PArgs @("-p", "run a single command: git status") -Tmo 120
     Start-Sleep -Seconds 1
     $histAfter = (Invoke-Tk @("gain", "--history")).AllText
-    if (($histAfter -split "`n").Count -gt $beforeLines) { Pass "tier0" "Copilot CLI routed through tk (gain history grew)" "" $cp.Ms } else { Warn "tier0" "Copilot CLI routing" "no new gain row — hook may not have fired" $cp.Ms }
+    if (($histAfter -split "`n").Count -gt $beforeLines) { Pass "tier0" "Copilot CLI routed through tk (gain history grew)" "" $cp.Ms } else { Warn "tier0" "Copilot CLI routing" "no new gain row — hook may not have fired (auth/proxy?)" $cp.Ms -R $cp }
   } else {
-    Skip "tier0" "Copilot CLI E2E" "-CopilotCliE2E off or copilot not on PATH"
+    Skip "tier0" "Copilot CLI E2E" "copilot not on PATH"
   }
   Info "tier0" "VS Code + Copilot agent (MANUAL)" "baseline gain rows=$beforeLines — see report for steps"
 
@@ -574,17 +740,35 @@ Write-Host "══════════════════════�
 Write-Host ("Results: {0} pass · {1} fail · {2} warn · {3} skip · {4} info" -f $pass, $fail, $warn, $skip, $info) -ForegroundColor White
 Write-Host "══════════════════════════════════════════════════════" -ForegroundColor White
 
+function Cap([string]$s, [int]$n) {
+  if ($null -eq $s -or $s -eq "") { return "(empty)" }
+  $t = $s.TrimEnd()
+  if ($t.Length -le $n) { return $t }
+  return $t.Substring(0, $n) + "`n…(+$($t.Length - $n) more chars truncated)"
+}
+function ReproLine($d) {
+  $parts = @($d.Argv | ForEach-Object { if ($_ -match '\s') { '"' + $_ + '"' } else { $_ } })
+  "$($d.File) " + ($parts -join ' ')
+}
+
 $md = [System.Collections.Generic.List[string]]::new()
 function L([string]$s = "") { $md.Add($s) }
 L "# tk Real-Machine Acceptance Report"
 L ""
 L ("**{0} pass · {1} fail · {2} warn · {3} skip · {4} info**" -f $pass, $fail, $warn, $skip, $info)
 L ""
+L "_Self-sufficient report: every FAIL/WARN below carries a dossier (exact repro + exit + stderr + stdout) so it can be diagnosed and fixed without the machine. No coverage switches — every phase ran._"
+L ""
 L "## Environment"
 L ""
 L "| Key | Value |"
 L "|---|---|"
 foreach ($k in $EnvInfo.Keys) { L ("| {0} | {1} |" -f $k, ($EnvInfo[$k] -replace '\|', '\|')) }
+L ""
+# Acceptance scope — what was mutated and restored (proves the box was left clean).
+L "## Acceptance scope (mutations + restores)"
+L ""
+if ($script:ScopeNotes.Count -gt 0) { foreach ($n in $script:ScopeNotes) { L ("- " + $n) } } else { L "- (no stateful mutations recorded)" }
 L ""
 # Per-phase rollup
 L "## Summary by phase"
@@ -599,21 +783,43 @@ foreach ($ph in ($script:Results | Select-Object -ExpandProperty Phase -Unique))
     (CountBy $g 'INFO'))
 }
 L ""
-# Findings first (actionable)
+# Findings first (actionable), each linking to its dossier id.
 if ($script:Findings.Count -gt 0) {
   L "## Findings (fail / warn)"
   L ""
   foreach ($f in $script:Findings) { L ("- " + ($f -replace '\|', '\|')) }
   L ""
 }
-# Detailed table
+# Failure dossiers — the payloads that make remote diagnosis possible.
+if ($script:Dossiers.Count -gt 0) {
+  L "## Failure dossiers (full payloads — diagnose without the machine)"
+  L ""
+  foreach ($d in $script:Dossiers) {
+    L ("### {0} · {1} [{2}] {3}" -f $d.Id, $d.Status, $d.Phase, $d.Name)
+    L ""
+    L ("- repro: ``{0}``" -f (ReproLine $d))
+    L ("- exit: {0} · ms: {1:N0} · timedOut: {2}" -f $d.Exit, $d.Ms, $d.TimedOut)
+    if ($d.Detail) { L ("- detail: {0}" -f $d.Detail) }
+    L ""
+    L "stderr:"
+    L '```text'
+    L (Cap $d.Stderr 4000)
+    L '```'
+    L "stdout (head):"
+    L '```text'
+    L (Cap $d.Stdout 1500)
+    L '```'
+    L ""
+  }
+}
+# Detailed table (dossier id in the last column for cross-reference).
 L "## Detailed results"
 L ""
-L "| Phase | Status | Case | Detail | ms |"
-L "|---|---|---|---|--:|"
+L "| Phase | Status | Case | Detail | ms | dossier |"
+L "|---|---|---|---|--:|---|"
 foreach ($r in $script:Results) {
   $ms = if ($r.Ms -ge 0) { "{0:N0}" -f $r.Ms } else { "" }
-  L ("| {0} | {1} | {2} | {3} | {4} |" -f $r.Phase, $r.Status, ($r.Name -replace '\|', '\|'), ($r.Detail -replace '\|', '\|'), $ms)
+  L ("| {0} | {1} | {2} | {3} | {4} | {5} |" -f $r.Phase, $r.Status, ($r.Name -replace '\|', '\|'), ($r.Detail -replace '\|', '\|'), $ms, $r.Dossier)
 }
 L ""
 # Manual Tier-0 instructions
@@ -632,6 +838,6 @@ L "_Generated by scripts/windows-dogfood.ps1_"
 
 Set-Content -LiteralPath $ReportPath -Value ($md -join "`n") -Encoding UTF8
 Write-Host "Report: $ReportPath" -ForegroundColor Yellow
-if (-not $SkipLifecycle -and $priorHost -and $priorHost -ne "(none)") { Write-Host "Prior install ($priorHost) restored." -ForegroundColor DarkGray }
+if ($priorHost -and (@('claude-code', 'copilot-cli', 'vscode', 'auto') -contains $priorHost)) { Write-Host "Prior install ($priorHost) restored." -ForegroundColor DarkGray }
 
 exit $fail
