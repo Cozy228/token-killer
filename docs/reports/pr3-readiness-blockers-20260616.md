@@ -1,6 +1,7 @@
 # PR3 Readiness Blockers And Issues
 
 Date: 2026-06-16 07:53 CST
+Last updated: 2026-06-16 08:02 CST
 Worktree: `/Users/ziyu/Workspace/token-killer-codex`
 Local branch: `codex`
 Base PR: [#3](https://github.com/Cozy228/token-killer/pull/3)
@@ -10,10 +11,11 @@ Base PR: [#3](https://github.com/Cozy228/token-killer/pull/3)
 PR3 is **not ready to merge yet**.
 
 The local `codex` worktree contains fixes for the issues below and has passed the local
-gate, but PR3's remote branch still points at `17cdfd3c405931c28f0efffe0772b9d7cff98dd6`
-and does not contain the `codex` worktree fixes. The remaining hard gate is to run the
-new Windows `.cmd` end-to-end regression on a Windows runner or reachable Windows host
-after these fixes are pushed into a PR branch.
+gate, but PR3's remote branch currently points at
+`84ab31bb1b0197c2c91234b7fca420a3138e10f1` and does not contain the `codex`
+worktree fixes. The remote PR CI is green for that remote head, not for this local branch.
+The remaining hard gate is to run the new Windows `.cmd` end-to-end regression on a
+Windows runner or reachable Windows host after these fixes are pushed into a PR branch.
 
 ## Hard Blockers
 
@@ -22,9 +24,9 @@ after these fixes are pushed into a PR branch.
 Status: open
 
 Evidence:
-- Live PR #3 head: `token-killer-node-cli` at `17cdfd3c405931c28f0efffe0772b9d7cff98dd6`.
-- Local `codex` branch is based on that SHA and has uncommitted fixes.
-- Existing PR #3 CI is green, but it tested the old remote branch, not these fixes.
+- Live PR #3 head: `token-killer-node-cli` at `84ab31bb1b0197c2c91234b7fca420a3138e10f1`.
+- Local `codex` branch is ahead of that head and contains additional commits.
+- Existing PR #3 CI is green, but it tested the remote head, not these local fixes.
 
 Required closure:
 - Push the `codex` fixes to a branch covered by `pull_request` CI, or apply them to
@@ -39,6 +41,8 @@ Status: open
 Evidence:
 - Added `tests/unit/executor.test.ts` coverage that runs only on `process.platform === "win32"`.
 - Local macOS run skips that test by design.
+- Latest remote PR #3 CI passed before these local fixes were pushed, so it did not execute
+  the new `.cmd` regression.
 - Live Windows host check failed: `ssh -o BatchMode=yes -o ConnectTimeout=5 cozyultra hostname`
   timed out against `192.168.31.129`.
 - PR #3 body itself still says Windows real-box verification is pending for the Windows
@@ -134,7 +138,7 @@ Status: open metadata issue
 
 Evidence:
 - PR body currently says `1832 green`.
-- Local `codex` verification after adding tests reports `1769 passed | 4 skipped` in the
+- Local `codex` verification after merging the latest PR head reports `1773 passed | 4 skipped` in the
   product suite, plus install/docs/smoke gates.
 
 Required closure:
@@ -159,12 +163,14 @@ Commands already passed in this worktree during this readiness sweep:
 - `CI=true pnpm install --frozen-lockfile`
 - `pnpm typecheck`
 - `pnpm exec vitest run tests/unit/shim/preflight.test.ts tests/unit/hook/debug.test.ts tests/unit/executor.test.ts tests/integration/cli.test.ts tests/unit/shim/initCli.test.ts`
+- `pnpm exec vitest run tests/unit/shim/preflight.test.ts tests/unit/hook/debug.test.ts tests/unit/executor.test.ts tests/integration/cli.test.ts tests/unit/shim/initCli.test.ts tests/unit/core/dataPermissions.test.ts`
 - `CI=true env -u TK_SHIM_DIR -u TK_SESSION_DEDUP TOKEN_KILLER_HOME=/tmp/token-killer-codex-ci pnpm test:ci`
 - `git diff --check`
 - `pnpm pack --dry-run`
 
 Local gate result:
-- Product tests: `169 passed | 1 skipped` files, `1769 passed | 4 skipped` tests.
+- Focused tests: `6 passed` files, `193 passed | 1 skipped` tests.
+- Product tests: `169 passed | 1 skipped` files, `1773 passed | 4 skipped` tests.
 - Install tests: `6 passed`.
 - Docs validation: `35/35 passed`.
 - Smoke tests: `52 passed`.
@@ -173,5 +179,5 @@ Local gate result:
 Remote PR #3 state at record time:
 - State: open.
 - Mergeable: mergeable.
-- Existing CI: 4/4 passing on the old PR head.
-- Blocker: old PR head does not include this `codex` worktree's fixes.
+- Existing CI: 4/4 passing on `84ab31bb1b0197c2c91234b7fca420a3138e10f1`.
+- Blocker: remote PR head does not include this `codex` worktree's fixes.
