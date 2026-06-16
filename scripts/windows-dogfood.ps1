@@ -5,7 +5,7 @@
 
 .DESCRIPTION
   Exercises the complete delivery stack on Windows (no skips). Mutating git commands
-  use --dry-run. Init steps write real user-level config unless -PreviewInit is set.
+  use --dry-run. Install steps write real user-level config unless -PreviewInit is set.
 
   Prerequisites (all required — missing tools fail the run):
     - Node.js >= 20, pnpm, git, rg, tree
@@ -18,10 +18,10 @@
   Monorepo used for compression tests. Override with -TargetRepo or $env:TK_DOGFOOD_CWD.
 
 .PARAMETER PreviewInit
-  Only dry-run init; do not write shim / hook / VS Code settings.
+  Only dry-run install; do not write shim / hook / VS Code settings.
 
 .PARAMETER Cleanup
-  Run tk init --uninstall and tk shim uninstall after tests (best-effort).
+  Run tk uninstall and tk shim uninstall after tests (best-effort).
 
 .EXAMPLE
   pwsh -NoProfile -File scripts/windows-dogfood.ps1
@@ -341,18 +341,18 @@ try {
   # ── Phase 5: VS Code shim lifecycle ───────────────────────────────
   Write-Section "VS Code shim lifecycle"
   if ($PreviewInit) {
-    Test-TkOk "init --host vscode --dry-run" @("init", "--host", "vscode", "--dry-run") {
+    Test-TkOk "install --host vscode --dry-run" @("install", "--host", "vscode", "--dry-run") {
       param($r) $r.AllText -match "\[dry-run\]"
     }
   } else {
-    Test-TkOk "init --host vscode" @("init", "--host", "vscode") {
+    Test-TkOk "install --host vscode" @("install", "--host", "vscode") {
       param($r) $r.AllText -match "Active tier: shim"
     }
     if (Test-Path -LiteralPath (Join-Path $ShimDir "git.cmd")) { Write-Pass "shim wrapper git.cmd exists" }
     else { Write-Fail "shim wrapper git.cmd exists" }
     if (Test-Path -LiteralPath (Join-Path $ShimDir "rg.cmd")) { Write-Pass "shim wrapper rg.cmd exists" }
     else { Write-Fail "shim wrapper rg.cmd exists" }
-    $status = Invoke-Tk @("init", "shim", "status")
+    $status = Invoke-Tk @("shim", "status")
     if ($status.ExitCode -eq 0 -and $status.AllText -match "probe:\s+PASS") {
       Write-Pass "shim status + probe PASS"
     } else {
@@ -378,11 +378,11 @@ try {
   # ── Phase 6: Copilot CLI hook lifecycle ───────────────────────────
   Write-Section "Copilot CLI hook lifecycle"
   if ($PreviewInit) {
-    Test-TkOk "init --host copilot-cli --dry-run" @("init", "--host", "copilot-cli", "--dry-run") {
+    Test-TkOk "install --host copilot-cli --dry-run" @("install", "--host", "copilot-cli", "--dry-run") {
       param($r) $r.AllText -match "\[dry-run\].*tk-rewrite\.json"
     }
   } else {
-    Test-TkOk "init --host copilot-cli" @("init", "--host", "copilot-cli") {
+    Test-TkOk "install --host copilot-cli" @("install", "--host", "copilot-cli") {
       param($r) $r.AllText -match "Active tier: hook"
     }
     if (Test-Path -LiteralPath $CopilotHook) {
@@ -399,46 +399,46 @@ try {
     }
   }
 
-  Write-Section "Init status (both hosts)"
-  $show = Invoke-Tk @("init", "--show")
+  Write-Section "Install status (both hosts)"
+  $show = Invoke-Tk @("status")
   if ($show.ExitCode -eq 0) {
-    Write-Pass "init --show"
+    Write-Pass "status"
     ($show.AllText -split "`n" | Select-Object -First 8) | ForEach-Object { Write-Host "        $_" }
   } else {
-    Write-Fail "init --show"
+    Write-Fail "status"
   }
 
   # ── Phase 7: Context optimizer ────────────────────────────────────
   Write-Section "Context optimizer"
   $inspectOut = Join-Path $TmpDir "inspect.out"
-  $inspect = Invoke-Tk @("inspect", "--project", "--copilot-context")
+  $inspect = Invoke-Tk @("inspect", "--project", "--text")
   $inspect.AllText | Set-Content -LiteralPath $inspectOut
   if ($inspect.ExitCode -eq 0 -or $inspect.AllText -match "Token Killer Inspect") {
-    Write-Pass "inspect --project --copilot-context"
+    Write-Pass "inspect --project --text"
     (Get-Content -LiteralPath $inspectOut | Select-Object -First 10) | ForEach-Object { Write-Host "        $_" }
   } else {
-    Write-Fail "inspect --project --copilot-context" "exit=$($inspect.ExitCode)"
+    Write-Fail "inspect --project --text" "exit=$($inspect.ExitCode)"
   }
 
-  $opt = Invoke-Tk @("optimize", "context", "--project", "--dry-run")
-  if ($opt.ExitCode -eq 0 -and $opt.AllText -match "--dry-run") {
-    Write-Pass "optimize context --project --dry-run"
+  $opt = Invoke-Tk @("optimize", "context", "--project")
+  if ($opt.ExitCode -eq 0 -and $opt.AllText -match "preview") {
+    Write-Pass "optimize context --project (preview)"
     ($opt.AllText -split "`n" | Select-Object -First 8) | ForEach-Object { Write-Host "        $_" }
   } else {
-    Write-Fail "optimize context --project --dry-run"
+    Write-Fail "optimize context --project (preview)"
   }
 
   # ── Phase 8: Meta / report ────────────────────────────────────────
-  Write-Section "Meta / report"
-  Test-TkStats "report" @("--report")
+  Write-Section "Meta / gain"
+  Test-TkOk "gain --text" @("gain", "--text") { param($r) $r.ExitCode -eq 0 }
   Test-TkOk "config show" @("config", "show") { param($r) $r.ExitCode -eq 0 }
   Test-TkOk "telemetry status" @("telemetry", "status") { param($r) $r.ExitCode -eq 0 }
 
   if ($Cleanup -and -not $PreviewInit) {
     Write-Section "Cleanup"
-    Invoke-Tk @("init", "--uninstall") | Out-Null
+    Invoke-Tk @("uninstall") | Out-Null
     Invoke-Tk @("shim", "uninstall") | Out-Null
-    Write-Pass "cleanup (init --uninstall + shim uninstall)"
+    Write-Pass "cleanup (uninstall + shim uninstall)"
   }
 
 } finally {
@@ -455,7 +455,7 @@ if (-not $PreviewInit -and $Script:Fail -eq 0) {
   Write-Host ""
   Write-Host "Next: restart VS Code integrated terminal, then ask Copilot agent to run:" -ForegroundColor Yellow
   Write-Host "  git status / pnpm list --depth=0 / rg export packages" -ForegroundColor Yellow
-  Write-Host "Copilot CLI sessions pick up hook rewrite automatically after init." -ForegroundColor Yellow
+  Write-Host "Copilot CLI sessions pick up hook rewrite automatically after install." -ForegroundColor Yellow
 }
 
 exit $Script:Fail
