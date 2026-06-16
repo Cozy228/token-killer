@@ -1,6 +1,5 @@
 import { afterEach, beforeEach, describe, expect, test } from "vitest";
 
-import { spawnSync } from "node:child_process";
 import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
@@ -81,17 +80,12 @@ describe("executeCommand", () => {
         writeFileSync(script, "process.stdout.write(JSON.stringify(process.argv.slice(2)));\n");
         writeFileSync(batch, `@echo off\r\n"${process.execPath}" "${script}" %*\r\n`);
 
-        const native = spawnSync(
-          process.env.ComSpec || "cmd.exe",
-          ["/d", "/s", "/c", `"${batch}" "%TK_PERCENT_E2E%"`],
-          {
-            encoding: "utf8",
-            env: { ...process.env, TK_PERCENT_E2E: "expanded" },
-          },
-        );
-        expect(native.status).toBe(0);
-        expect(JSON.parse(native.stdout.trim())).toEqual(["expanded"]);
-
+        // The contrast — that cmd.exe would otherwise EXPAND these %tokens — is pinned by
+        // the buildSpawnTarget unit tests above. Here we drive the REAL spawn end-to-end
+        // and assert the literal % survives to the child's argv. We deliberately do NOT
+        // hand-roll a `cmd /d /s /c "…"` baseline spawn: getting Node→cmd.exe quoting
+        // right (outer-quote wrap + windowsVerbatimArguments) is exactly what tk's
+        // executor does, and duplicating it by hand was brittle on the CI runner.
         const result = await executeCommand({
           program: batch,
           args,
