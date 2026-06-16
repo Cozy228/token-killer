@@ -297,7 +297,7 @@ export async function emitGainHtml(opts: ReportOptions, now: Date = new Date()):
     {
       kind: "gain",
       title: "Your token savings",
-      subtitle: "How much token spend Token Killer saved you, and where it came from.",
+      subtitle: "How much model spend Token Killer saved you, and where it came from.",
       generatedAt: now.toISOString(),
       data: { ...ledgers, ...usdFields(ledgers) },
     },

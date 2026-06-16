@@ -1,9 +1,10 @@
 // Single-file HTML report renderer (no external deps, no network, renders from a
-// file:// URL). Serves both `tk gain report --html` and `tk inspect --html`: data
-// is injected as a JSON blob and a small vanilla renderer draws it. The audience
-// is the END USER, not a log reader: every field has a plain-language label and a
-// one-line explanation. The honesty model still holds — measured savings lead;
-// the dollar figure and ③ are labelled estimates.
+// file:// URL). Serves both `tk gain` and `tk inspect`: data is injected as a JSON
+// blob and a small vanilla renderer draws it. These reports are also tk's product
+// showcase, so they double as a face for the tool — not just a log dump. The
+// audience is a TECHNICAL end user: every field gets a plain-language label and a
+// one-line explanation — precise and concrete, not dumbed down. The honesty model
+// still holds — measured savings lead; the dollar figure and ③ are labelled estimates.
 //
 // Visual language ported from the improve-codebase-architecture review: serif
 // display headings, an uppercase eyebrow label, white panel cards on a warm
@@ -325,7 +326,7 @@ function renderGain(L) {
   if (!isNa(q)) {
     out.push('<div class="section"><h2>Was the compression safe?</h2>' +
       '<p class="exp">Token Killer should never break a command or hide important output. These are the safety checks.</p>' +
-      '<div class="card"><div class="kv"><span class="k">Times it fell back to full output (just in case)</span><span class="v">' + ratePlain(q.fallback_rate) + '</span></div>' +
+      '<div class="card"><div class="kv"><span class="k">Fell back to full output (safety fallback, never truncated)</span><span class="v">' + ratePlain(q.fallback_rate) + '</span></div>' +
       '<div class="kv"><span class="k">Commands that failed</span><span class="v">' + ratePlain(q.failure_rate) + '</span></div>' +
       '<div class="kv"><span class="k">Optimizations later reverted</span><span class="v">' + n(q.findings_reverted) + '</span></div></div></div>');
   }
@@ -597,7 +598,9 @@ export function renderReportHtml(doc: ReportDoc): string {
   // but the meta block must not be the one place an unescaped value could inject (L9).
   function esc(s){return String(s).replace(/[&<>"']/g,function(c){return {'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c];});}
   var bits = [];
-  var scopeLabel = d.data && d.data.scope === "user" ? "all your projects" : d.data && d.data.scope === "project" ? "this project" : d.data && d.data.scope;
+  // Name the project for project-scoped reports ("Covers token-killer"); fall back
+  // to "this project" if the name is missing. User scope covers every project.
+  var scopeLabel = d.data && d.data.scope === "user" ? "all your projects" : d.data && d.data.scope === "project" ? (d.data.project || "this project") : d.data && d.data.scope;
   if (scopeLabel) bits.push('<span>Covers <b>' + esc(scopeLabel) + '</b></span>');
   if (d.data && d.data.since) bits.push('<span>since <b>' + esc(d.data.since) + '</b></span>');
   bits.push('<span>as of ' + esc(new Date(d.generatedAt).toLocaleString()) + '</span>');

@@ -6,6 +6,7 @@
 
 import { randomUUID } from "node:crypto";
 import { homedir } from "node:os";
+import { basename } from "node:path";
 
 import {
   buildAdvice,
@@ -346,11 +347,14 @@ export function runInspect(
         emitHtmlReport(
           {
             kind: "inspect",
-            title: "Ways to optimize your token usage",
+            title: "Your token-saving opportunities",
             subtitle: "Where your AI setup wastes tokens, and how to fix it.",
             generatedAt: new Date(nowMs).toISOString(),
             data: {
               scope: scopes.includes("project") ? "project" : "user",
+              // Name the actual project (cwd basename) so a project-scoped report
+              // says "Covers <name>" instead of the ambiguous "this project".
+              project: scopes.includes("project") ? basename(cwd) : undefined,
               files_scanned: sc.result.files_scanned,
               sessions_analyzed: result?.session_inventory ?? 0,
               footprint,
