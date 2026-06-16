@@ -103,7 +103,7 @@ dependencies** — the tarball is fully self-contained.
 
 ```bash
 pnpm install && pnpm build
-pnpm link --global     # `tk` -> this repo's dist/  (rebuild after src edits, or use `pnpm dev`)
+pnpm add -g .          # `tk` -> this repo's dist/  (rebuild after src edits, or use `pnpm dev`)
 ```
 
 **Hand someone a self-contained tarball:**

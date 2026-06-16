@@ -141,7 +141,7 @@ for a flag that doesn't exist.
    git clone https://github.com/Cozy228/token-killer.git
    cd token-killer
    pnpm install && pnpm build
-   pnpm link --global   # puts `tk` on your PATH
+   pnpm add -g .        # puts `tk` on your PATH
    ```
 
    with one line noting npm publication is planned (keep it to ~5 lines; match
