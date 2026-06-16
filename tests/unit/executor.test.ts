@@ -77,22 +77,28 @@ describe("executeCommand", () => {
       const script = join(dir, "print-args.mjs");
       const cmdBatch = join(dir, "print-args.cmd");
       const batBatch = join(dir, "print-args.bat");
+      const nativeControl = join(dir, "native-control.cmd");
       const args = ["%PATH%", "100%", "a%b", "c%d"];
       try {
         writeFileSync(script, "process.stdout.write(JSON.stringify(process.argv.slice(2)));\n");
         for (const batch of [cmdBatch, batBatch]) {
           writeFileSync(batch, `@echo off\r\n"${process.execPath}" "${script}" %*\r\n`);
         }
+        writeFileSync(
+          nativeControl,
+          `@echo off\r\n"${process.execPath}" "${script}" "%TK_PERCENT_E2E%"\r\n`,
+        );
 
         const native = spawnSync(
           process.env.ComSpec || "cmd.exe",
-          ["/d", "/c", `call "${cmdBatch}" "%TK_PERCENT_E2E%"`],
+          ["/d", "/c", "native-control.cmd"],
           {
+            cwd: dir,
             encoding: "utf8",
             env: { ...process.env, TK_PERCENT_E2E: "expanded" },
           },
         );
-        expect(native.status).toBe(0);
+        expect(native.status, `${native.stdout}\n${native.stderr}`).toBe(0);
         expect(JSON.parse(native.stdout.trim())).toEqual(["expanded"]);
 
         for (const batch of [cmdBatch, batBatch]) {

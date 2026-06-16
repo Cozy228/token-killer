@@ -44,10 +44,12 @@ Evidence:
   - tk `executeCommand` round-trip through real `.cmd` and `.bat` targets for `%PATH%`,
     `100%`, `a%b`, and `c%d`;
   - a percent-dense long-line case that must fail closed with the `8191-char limit` error.
-- GitHub Windows CI on head `9cf55be` failed because the native no-tk control used
-  `cmd.exe /d /s /c`, whose quote-stripping behavior made the control command itself
-  return status 1 before testing tk behavior.
-- The local fix now invokes the control as `cmd.exe /d /c call "<script>" "%TK_PERCENT_E2E%"`.
+- GitHub Windows CI on heads `9cf55be` and `3eef3a9` failed because the native no-tk
+  control command returned status 1 before testing tk behavior. The second failure proved
+  that `cmd.exe /d /c call "<abs .cmd>" ...` is still too sensitive to Windows quote/call
+  parsing to be a reliable control.
+- The local fix now runs a same-directory `native-control.cmd` through `cmd.exe /d /c
+native-control.cmd`, avoiding absolute-path quote/call parsing in the control itself.
 - Live Windows host check failed: `ssh -o BatchMode=yes -o ConnectTimeout=5 cozyultra hostname`
   timed out against `192.168.31.129`, so GitHub-hosted Windows CI is the authoritative
   Windows execution gate for this PR.
