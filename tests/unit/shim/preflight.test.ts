@@ -147,6 +147,17 @@ describe("gatherPreflight — Copilot CLI version", () => {
     const c = find(gatherPreflight(deps), "Copilot CLI version");
     expect(c.detail).toBe("copilot 2.0");
   });
+
+  test("Windows symptom: --version spawn fails but the binary resolves → still installed, ok", () => {
+    // `copilot.cmd` is on PATH (which finds it) but the no-shell --version spawn
+    // returned nothing — must report INSTALLED, never the false "not found" that
+    // contradicts the user's working `copilot --version`.
+    const deps = makeDeps({ resolvable: { copilot: "C:/Users/u/AppData/npm/copilot.cmd" } });
+    const c = find(gatherPreflight(deps), "Copilot CLI version");
+    expect(c.ok).toBe(true);
+    expect(c.detail).toContain("installed");
+    expect(c.detail).toContain("copilot.cmd");
+  });
 });
 
 describe("gatherPreflight — PowerShell 7+", () => {

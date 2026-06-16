@@ -321,7 +321,7 @@ export function runInstall(argv: string[]): number {
   // forced `--host X` stays single-host.
   if (opts.host === "auto") {
     const present: Host[] = [];
-    if (env.copilotDirExists) present.push("copilot-cli");
+    if (env.copilotDirExists || env.copilotOnPath) present.push("copilot-cli");
     if (env.claudeSettingsExists || env.claudeEnv) present.push("claude-code");
     for (const other of present) {
       if (other === host) continue;

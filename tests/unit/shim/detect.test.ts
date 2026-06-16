@@ -7,6 +7,7 @@ function env(overrides: Partial<DetectEnv>): DetectEnv {
     claudeEnv: false,
     claudeSettingsExists: false,
     copilotDirExists: false,
+    copilotOnPath: false,
     termProgram: undefined,
     codeOnPath: false,
     vscodeUserDirExists: false,
@@ -33,6 +34,18 @@ describe("detectHost", () => {
 
   test("Copilot CLI wins when ~/.copilot exists (highest tier)", () => {
     expect(detectHost(env({ copilotDirExists: true, vscodeUserDirExists: true }))).toBe(
+      "copilot-cli",
+    );
+  });
+
+  test("Copilot CLI detected from the binary on PATH even without a ~/.copilot dir", () => {
+    // The Windows symptom: `copilot.cmd` is on PATH (so `copilot --version` works in
+    // the shell) but `~/.copilot` was never created — detection must still find it.
+    expect(detectHost(env({ copilotOnPath: true }))).toBe("copilot-cli");
+  });
+
+  test("Copilot binary on PATH outranks a persistent Claude settings file", () => {
+    expect(detectHost(env({ claudeSettingsExists: true, copilotOnPath: true }))).toBe(
       "copilot-cli",
     );
   });
