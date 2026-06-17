@@ -6,7 +6,7 @@
 
 import { randomUUID } from "node:crypto";
 import { homedir } from "node:os";
-import { basename, sep } from "node:path";
+import { basename, join, sep } from "node:path";
 
 import {
   buildAdvice,
@@ -27,12 +27,14 @@ import { renderStaticContextSection } from "../context/report.js";
 import type { ContextFinding, ContextScope, FindingSeverity } from "../context/types.js";
 import { writeAdviceArtifacts, writeTelemetryExport } from "./persist.js";
 import { emitHtmlReport } from "../report/open.js";
-import { analyzeHabits, type HabitStats } from "./habits.js";
+import { analyzeHabits, type FileHabitExtract, type HabitStats } from "./habits.js";
 import { buildReport, renderJson, renderMarkdown } from "./report.js";
 import { computeFootprint } from "./footprint.js";
 import { makeFileCache } from "./fileCache.js";
+import { makeDiskExtractCache, pruneCache } from "./extractCache.js";
+import { tokenKillerHome } from "../core/dataDir.js";
 import { makeProgressReporter } from "./progress.js";
-import { parseSince, scan, type ScanResult } from "./scan.js";
+import { parseSince, scan, type FileScanExtract, type ScanResult } from "./scan.js";
 import { discoverHost, discoverHosts, hostFound, mergeHosts, type InputType } from "./sources.js";
 import { persistScopeBuckets, runStaticContext } from "./staticContext.js";
 import { buildInspectAggregates } from "./telemetry.js";
@@ -243,6 +245,16 @@ export function runInspect(
       // transcript / session file is read from disk once, not twice — while peak
       // memory stays capped on low-RAM hosts with many large transcripts.
       const fileCache = makeFileCache();
+      // Cross-invocation per-file extract caches (keyed by path+mtime+size). After the
+      // first scan, an unchanged transcript is served from a tiny pre-extracted record
+      // instead of being re-parsed — so a repeated inspect / optimize-triggered scan /
+      // --fail-on only pays for NEW or CHANGED files. Best-effort + TK_NO_SCAN_CACHE
+      // kill-switch live inside the cache; a miss/failure silently falls back to a live
+      // parse. Prune stale entries once per run so the dir can't grow without bound.
+      const cacheRoot = join(tokenKillerHome(), "inspect-cache");
+      pruneCache(cacheRoot, nowMs);
+      const scanCache = makeDiskExtractCache<FileScanExtract>(cacheRoot, "scan");
+      const habitsCache = makeDiskExtractCache<FileHabitExtract>(cacheRoot, "habits");
       progress.phase(
         `Scanning ${discovery.transcriptFiles.length} transcript(s) + ${discovery.sessionFiles.length} session(s)…`,
       );
@@ -251,6 +263,7 @@ export function runInspect(
         session: opts.session,
         onProgress: (done, total, detail) => progress.step(done, total, detail),
         fileCache,
+        scanCache,
       });
       progress.phase(
         `Scanned ${result.tool_event_count.toLocaleString()} tool event(s) across ${result.session_inventory} session(s).`,
@@ -261,6 +274,7 @@ export function runInspect(
         discovery,
         (done, total, detail) => progress.step(done, total, detail),
         fileCache,
+        habitsCache,
       );
       progress.phase(`Analyzed habits across ${habits.sessions} active session(s).`);
     } else {

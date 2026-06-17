@@ -14,6 +14,7 @@
 // nothing here (the opportunity scan still covers their tool counts).
 
 import { readSourceText, type FileCache } from "./fileCache.js";
+import { type CacheKey, type ExtractCache, statKey } from "./extractCache.js";
 import type { SourceDiscovery } from "./sources.js";
 
 // A prompt this long is worth flagging — "write as little context as required, as
@@ -35,6 +36,13 @@ export type HabitStats = {
 
 type Session = { tools: number; promptChars: number[] };
 
+// One file's complete contribution to the habits aggregate — the cacheable unit.
+// Sessions are keyed by their resolved id (or the file path until a session.start
+// declares one), so the cross-run merge reproduces the global grouping exactly.
+export type FileHabitExtract = {
+  sessions: { key: string; tools: number; promptChars: number[] }[];
+};
+
 function isObject(v: unknown): v is Record<string, unknown> {
   return typeof v === "object" && v !== null && !Array.isArray(v);
 }
@@ -54,20 +62,87 @@ function contentLength(data: Record<string, unknown>): number {
   return 0;
 }
 
+// Parse one file's typed-event stream into its per-session habit contribution — the
+// unit the cross-run cache stores. Threads `current` (session id, or file path until a
+// session.start declares one) across the file's lines exactly as the global pass did.
+export function extractFileHabits(text: string, file: string): FileHabitExtract {
+  const local = new Map<string, Session>();
+  const sessionFor = (key: string): Session => {
+    let s = local.get(key);
+    if (!s) {
+      s = { tools: 0, promptChars: [] };
+      local.set(key, s);
+    }
+    return s;
+  };
+  let current = file;
+  for (const line of text.split(/\r?\n/)) {
+    if (line.trim().length === 0) continue;
+    let json: unknown;
+    try {
+      json = JSON.parse(line);
+    } catch {
+      continue;
+    }
+    if (!isObject(json)) continue;
+    const type = typeof json.type === "string" ? json.type : "";
+    const data = isObject(json.data) ? json.data : undefined;
+    if (!data) continue;
+
+    if (type === "session.start") {
+      const sid = typeof data.sessionId === "string" ? data.sessionId : undefined;
+      if (sid) current = sid;
+      sessionFor(current);
+    } else if (type === "user.message") {
+      sessionFor(current).promptChars.push(contentLength(data));
+    } else if (type === "assistant.message") {
+      const reqs = data.toolRequests;
+      if (Array.isArray(reqs)) sessionFor(current).tools += reqs.length;
+    }
+  }
+  return {
+    sessions: [...local.entries()].map(([key, s]) => ({
+      key,
+      tools: s.tools,
+      promptChars: s.promptChars,
+    })),
+  };
+}
+
 export function analyzeHabits(
   discovery: SourceDiscovery,
   onProgress?: (completed: number, total: number, detail?: string) => void,
   fileCache?: FileCache,
+  habitsCache?: ExtractCache<FileHabitExtract>,
 ): HabitStats {
   const sessions = new Map<string, Session>();
 
-  function sessionFor(key: string): Session {
-    let s = sessions.get(key);
-    if (!s) {
-      s = { tools: 0, promptChars: [] };
-      sessions.set(key, s);
+  // Fold one file's per-session contribution into the global grouping (by session key).
+  function fold(extract: FileHabitExtract): void {
+    for (const fs of extract.sessions) {
+      let s = sessions.get(fs.key);
+      if (!s) {
+        s = { tools: 0, promptChars: [] };
+        sessions.set(fs.key, s);
+      }
+      s.tools += fs.tools;
+      s.promptChars.push(...fs.promptChars);
     }
-    return s;
+  }
+
+  // Serve an unchanged file from the cross-run cache; otherwise parse it once and
+  // write the extract back. Returns undefined on read failure (contributes nothing).
+  function loadExtract(file: string): FileHabitExtract | undefined {
+    const key: CacheKey | undefined = habitsCache ? statKey(file) : undefined;
+    if (habitsCache && key) {
+      const hit = habitsCache.get(file, key);
+      if (hit) return hit;
+    }
+    const text = readSourceText(file, fileCache);
+    if (text === undefined) return undefined;
+    const extract = extractFileHabits(text, file);
+    if (habitsCache && key) habitsCache.set(file, key, extract);
+    return extract;
   }
 
   // Both transcripts and (rarely-populated) session files carry the typed stream.
@@ -76,38 +151,8 @@ export function analyzeHabits(
   const tick = (): void =>
     onProgress?.(processed, files.length, `${sessions.size.toLocaleString()} sessions`);
   for (const file of files) {
-    const text = readSourceText(file, fileCache);
-    if (text === undefined) {
-      processed += 1;
-      tick();
-      continue;
-    }
-    // Fall back to the file path as the session key until a session.start declares one.
-    let current = file;
-    for (const line of text.split(/\r?\n/)) {
-      if (line.trim().length === 0) continue;
-      let json: unknown;
-      try {
-        json = JSON.parse(line);
-      } catch {
-        continue;
-      }
-      if (!isObject(json)) continue;
-      const type = typeof json.type === "string" ? json.type : "";
-      const data = isObject(json.data) ? json.data : undefined;
-      if (!data) continue;
-
-      if (type === "session.start") {
-        const sid = typeof data.sessionId === "string" ? data.sessionId : undefined;
-        if (sid) current = sid;
-        sessionFor(current);
-      } else if (type === "user.message") {
-        sessionFor(current).promptChars.push(contentLength(data));
-      } else if (type === "assistant.message") {
-        const reqs = data.toolRequests;
-        if (Array.isArray(reqs)) sessionFor(current).tools += reqs.length;
-      }
-    }
+    const extract = loadExtract(file);
+    if (extract) fold(extract);
     processed += 1;
     tick();
   }
