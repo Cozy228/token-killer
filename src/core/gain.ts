@@ -71,6 +71,43 @@ const EMPTY_DEDUP: DedupSummary = { hits: 0, saved_tokens: 0, by_command: [] };
 
 const SPARK_BLOCKS = "▁▂▃▄▅▆▇█";
 
+// rtk-parity terminal formatting (plan 013). Token totals read as compact K/M/B
+// (11.6M, 786.7K); discrete counts stay comma-grouped (2,927) so the eye never
+// confuses a token total with a run count.
+function compact(value: number): string {
+  const v = Math.round(value);
+  if (!Number.isFinite(v)) return "0";
+  const abs = Math.abs(v);
+  if (abs < 1000) return String(v);
+  for (const [base, suffix] of [
+    [1e9, "B"],
+    [1e6, "M"],
+    [1e3, "K"],
+  ] as const) {
+    if (abs >= base) {
+      // One decimal, but drop a trailing .0 so 2,000,000 reads "2M" not "2.0M".
+      return `${(v / base).toFixed(1).replace(/\.0$/, "")}${suffix}`;
+    }
+  }
+  return String(v);
+}
+
+function grp(value: number): string {
+  return Math.round(value).toLocaleString("en-US");
+}
+
+// A fixed-width column table, rtk-style: left-aligned first column, the rest
+// right-aligned, with a `─` rule under the header.
+function fixedTable(header: string[], rows: string[][]): string {
+  const widths = header.map((h, i) => Math.max(h.length, ...rows.map((r) => (r[i] ?? "").length)));
+  const fmt = (cells: string[]) =>
+    cells.map((c, i) => (i === 0 ? c.padEnd(widths[i]) : (c ?? "").padStart(widths[i]))).join("  ");
+  const rule = "─".repeat(widths.reduce((a, w) => a + w, 0) + (widths.length - 1) * 2);
+  return [fmt(header), rule, ...rows.map(fmt)].join("\n");
+}
+
+const RULE_DOUBLE = "═".repeat(48);
+
 export function parseGainArgs(argv: string[]): GainArgs {
   const args: GainArgs = {
     user: false,
@@ -310,28 +347,46 @@ const QUALITY_DISPLAY_LABELS: Record<string, string> = {
 };
 
 function renderSummary(s: GainSummary, scope: string): string {
-  const top = s.by_handler
-    .slice(0, 5)
-    .map((h) => {
-      const eg = h.samples && h.samples.length ? `  e.g. ${h.samples.slice(0, 2).join(", ")}` : "";
-      return `  - ${h.handler}: ${h.pct}% (${h.saved} saved, ${h.count}×)${eg}`;
-    })
-    .join("\n");
+  // Headline block — rtk-parity labels (Input/Output tokens, Tokens saved) so the
+  // terminal report reads as a scannable summary, not a flat key/value dump.
+  const head = [
+    `📊 Token Killer — Token Savings · ${scope}`,
+    RULE_DOUBLE,
+    "",
+    `Total commands:   ${grp(s.commands)}`,
+    `Input tokens:     ${compact(s.raw_tokens)}`,
+    `Output tokens:    ${compact(s.output_tokens)}`,
+    `Tokens saved:     ${compact(s.saved_tokens)} (${s.savings_pct}%)`,
+    `Avg saved/cmd:    ${compact(s.avg_savings_per_command)}`,
+  ].join("\n");
+
+  // By Command — an aligned table (Count / Saved / Avg%). The per-handler `e.g.`
+  // samples (d33546c) ride as a dim continuation line under each row so they don't
+  // disturb the numeric column alignment.
+  const topHandlers = s.by_handler.slice(0, 5);
+  const table = fixedTable(
+    ["Command", "Count", "Saved", "Avg%"],
+    topHandlers.map((h) => [h.handler, grp(h.count), compact(h.saved), `${h.pct}%`]),
+  );
+  const tableLines = table.split("\n");
+  // Re-thread the sample lines after each data row (header + rule are the first 2).
+  const withSamples: string[] = tableLines.slice(0, 2);
+  topHandlers.forEach((h, i) => {
+    withSamples.push(tableLines[i + 2]);
+    if (h.samples && h.samples.length) {
+      withSamples.push(`    e.g. ${h.samples.slice(0, 2).join(", ")}`);
+    }
+  });
+  const byCommand = topHandlers.length
+    ? ["By Command:", withSamples.join("\n")].join("\n")
+    : "By Command:\n  - none";
+
   const quality = Object.entries(s.quality_status_counts)
     .sort(([a], [b]) => a.localeCompare(b))
     .map(([status, count]) => `  - ${QUALITY_DISPLAY_LABELS[status] ?? status}: ${count}`)
     .join("\n");
-  return [
-    `Token savings — ${scope}`,
-    `  Commands: ${s.commands}`,
-    `  Raw: ${s.raw_tokens} tokens`,
-    `  Saved: ${s.saved_tokens} tokens (${s.savings_pct}%)`,
-    `  Avg saved/command: ${s.avg_savings_per_command} tokens`,
-    "Top handlers:",
-    top || "  - none",
-    "Quality:",
-    quality || "  - none",
-  ].join("\n");
+
+  return [head, "", byCommand, "", "Quality:", quality || "  - none"].join("\n");
 }
 
 async function renderPerProject(projects: ProjectRollup[]): Promise<string> {
@@ -353,8 +408,12 @@ async function renderPerProject(projects: ProjectRollup[]): Promise<string> {
 
 function renderBuckets(bucketing: Bucketing, buckets: TimeBucket[]): string {
   const title = bucketing === "all" ? "All time (per day)" : `${capitalize(bucketing)} savings`;
-  const lines = buckets.map((b) => `  ${b.key}  ${b.saved} saved (${b.pct}%, ${b.commands} cmd)`);
-  return [`${title}:`, lines.join("\n") || "  - none"].join("\n");
+  if (!buckets.length) return [`${title}:`, "  - none"].join("\n");
+  const table = fixedTable(
+    ["Period", "Saved", "Avg%", "Commands"],
+    buckets.map((b) => [b.key, compact(b.saved), `${b.pct}%`, grp(b.commands)]),
+  );
+  return [`${title}:`, table].join("\n");
 }
 
 function renderGraph(daily: TimeBucket[]): string {

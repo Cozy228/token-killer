@@ -180,7 +180,7 @@ describe("runGain fail-open", () => {
       const cap = captureStdout();
       const code = await runGain(["--text"], path.join(home, "empty"));
       expect(code).toBe(0);
-      expect(cap.text()).toContain("Commands: 0");
+      expect(cap.text()).toContain("Total commands:   0");
     });
   });
 });

@@ -124,7 +124,7 @@ describe("runPipeline + session dedup — wiring & separated accounting", () => 
     const text = out.text();
 
     // ① counts the single fresh compression — the dedup hit did not inflate it.
-    expect(text).toContain("Commands: 1");
+    expect(text).toContain("Total commands:   1");
     // The dedup dimension is its own labeled, never-summed block.
     expect(text).toContain("Session dedup");
     expect(text).toContain("Hits: 1");

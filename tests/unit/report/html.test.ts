@@ -92,6 +92,33 @@ describe("renderReportHtml", () => {
     expect(html).toContain("2972"); // gpt-5.5 credits (raw, formatted in-browser)
   });
 
+  test("wires the narrative sections and round-trips the trend time series", () => {
+    // The section renderers (problem / difference / trend) live in the embedded
+    // SCRIPT, so their labels are always present in the doc — assert they are wired.
+    const html = renderReportHtml(GAIN);
+    expect(html).toContain("The problem"); // honest 3-card section
+    expect(html).toContain("Context pollution");
+    expect(html).toContain("See the difference"); // before/after bars
+    expect(html).toContain("Real-world savings"); // daily/weekly/monthly trend
+    // Data-conditional: the base fixture has no time series, so no bucket keys leak
+    // into the embedded JSON (the renderer hides the section at runtime).
+    expect(html).not.toContain("2026-W23");
+
+    const withTrend: ReportDoc = {
+      ...GAIN,
+      data: {
+        ...(GAIN.data as Record<string, unknown>),
+        timeseries: {
+          daily: [{ key: "2026-06-06", commands: 10, raw: 1000, saved: 700, pct: 70 }],
+          weekly: [{ key: "2026-W23", commands: 10, raw: 1000, saved: 700, pct: 70 }],
+          monthly: [{ key: "2026-06", commands: 10, raw: 1000, saved: 700, pct: 70 }],
+        },
+      },
+    };
+    // Provided buckets reach the embedded data, so the runtime renderer can draw them.
+    expect(renderReportHtml(withTrend)).toContain("2026-W23");
+  });
+
   test("embeds inspect findings and the session count", () => {
     const html = renderReportHtml(INSPECT);
     expect(html).toContain("instruction_conflict");
