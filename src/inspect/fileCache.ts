@@ -14,9 +14,10 @@
 
 import { readFileSync } from "node:fs";
 
-// Default ceiling on retained text. ~64 MiB covers typical corpora fully while
-// bounding the worst case on a memory-constrained box.
-const DEFAULT_MAX_BYTES = 64 * 1024 * 1024;
+// Default ceiling on retained text. ~256 MiB covers even large corpora (hundreds
+// of sessions) fully, while still bounding the absolute worst case so a runaway
+// transcript set can't exhaust memory on a constrained box.
+const DEFAULT_MAX_BYTES = 256 * 1024 * 1024;
 
 export type FileCache = {
   // path → text (success) | null (read failure, so the miss is not retried).
