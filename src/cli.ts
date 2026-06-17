@@ -21,19 +21,6 @@ try {
 }
 
 import { parseArgv } from "./parse.js";
-import { replaceFootgunBanner } from "./handlers/common/searchLike.js";
-import { routeCommand, routeSpecific } from "./router.js";
-import { executePassthrough } from "./executor.js";
-import { gateDecision } from "./shim/gate.js";
-import { isInteractive } from "./shim/interactive.js";
-import { isShimmableProgram } from "./shim/programs.js";
-import { tkDebug, logFatalError, emitSupportHintOnce } from "./hook/debug.js";
-import { runPipeline } from "./core/pipeline.js";
-import { recordHistory, recordRawLitePassthrough } from "./core/history.js";
-import { calculateSavings } from "./core/savings.js";
-import { maybeSaveRawOutput } from "./core/rawStore.js";
-import { formatStats } from "./core/stats.js";
-import { emitThenCommit } from "./core/emit.js";
 import { VERSION } from "./version.js";
 import type {
   CommandHandler,
@@ -191,6 +178,11 @@ function help(): string {
 }
 
 async function recordRawPassthrough(raw: RawResult, options: TkOptions): Promise<FilteredResult> {
+  const [{ calculateSavings }, { maybeSaveRawOutput }, { recordHistory }] = await Promise.all([
+    import("./core/savings.js"),
+    import("./core/rawStore.js"),
+    import("./core/history.js"),
+  ]);
   const output = `${raw.stdout}${raw.stderr}`;
   const savings = calculateSavings(output, output);
   const rawOutputPath = await maybeSaveRawOutput(raw, options);
@@ -279,6 +271,12 @@ async function main(): Promise<number> {
   // explicit `--save-raw` (persist the raw log). `--no-save-raw`/auto-save never
   // forces capture — streaming is the point of plain `--raw`.
   if (parsed.options.raw) {
+    const [{ replaceFootgunBanner }, { executePassthrough }, { recordRawLitePassthrough }] =
+      await Promise.all([
+        import("./handlers/common/searchLike.js"),
+        import("./executor.js"),
+        import("./core/history.js"),
+      ]);
     // Correctness advisory for a misused `rg -r` (silently --replace). Goes to STDERR
     // so stdout stays byte-verbatim — the whole point of --raw — while still warning.
     // Needs only program+args, so it works on the streaming path too.
@@ -309,6 +307,10 @@ async function main(): Promise<number> {
 
     // Capture path: --stats / --save-raw need the actual bytes. Uses the full router
     // so every command (including generic fall-throughs) is captured and reprinted.
+    const [{ routeCommand }, { formatStats }] = await Promise.all([
+      import("./router.js"),
+      import("./core/stats.js"),
+    ]);
     const handler = routeCommand(command);
     const raw = await handler.execute(command, parsed.options);
     process.stdout.write(raw.stdout);
@@ -329,6 +331,21 @@ async function main(): Promise<number> {
     return raw.exitCode;
   }
 
+  const [
+    { routeSpecific },
+    { isShimmableProgram },
+    { gateDecision },
+    { isInteractive },
+    { tkDebug },
+    { executePassthrough },
+  ] = await Promise.all([
+    import("./router.js"),
+    import("./shim/programs.js"),
+    import("./shim/gate.js"),
+    import("./shim/interactive.js"),
+    import("./hook/debug.js"),
+    import("./executor.js"),
+  ]);
   const handler = routeSpecific(command);
 
   // Passthrough hardening (U2). A DIRECT `tk <x>` — the shell did NOT resolve a
@@ -401,6 +418,11 @@ async function runCompress(
   command: ParsedCommand,
   options: TkOptions,
 ): Promise<number> {
+  const [{ runPipeline }, { emitThenCommit }, { tkDebug }] = await Promise.all([
+    import("./core/pipeline.js"),
+    import("./core/emit.js"),
+    import("./hook/debug.js"),
+  ]);
   const raw = await handler.execute(command, options);
 
   // The command has now run exactly once. Everything past this point (filtering,
@@ -444,12 +466,14 @@ async function runCompress(
 
 async function failOpenPassthrough(command: ParsedCommand, error: unknown): Promise<number> {
   try {
+    const { executePassthrough } = await import("./executor.js");
     return await executePassthrough(command);
   } catch {
     // Passthrough is also impossible (e.g. the real tool only exists inside the
     // shim dir — true recursion). Surface the original error and exit non-zero
     // with a deterministic code, never an unhandled rejection. This is tk's OWN
     // failure (the wrapped tool never ran), so nudge toward `tk support`.
+    const { emitSupportHintOnce } = await import("./hook/debug.js");
     process.stderr.write(`${error instanceof Error ? error.message : String(error)}\n`);
     emitSupportHintOnce();
     return 1;
@@ -464,6 +488,7 @@ try {
   // errors.log (unconditionally, not gated on TK_DEBUG) so there is a breadcrumb to
   // read after the fact. logFatalError also writes stderr, so this replaces the bare
   // stderr write above.
+  const { logFatalError } = await import("./hook/debug.js");
   logFatalError(`tk ${process.argv.slice(2).join(" ")}`, error);
   process.exitCode = 1;
 }

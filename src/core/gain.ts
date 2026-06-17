@@ -2,9 +2,8 @@
 // fail-open: a missing or corrupt store yields an empty section, never a crash.
 // Reads the incremental rollup cache (history.jsonl remains the source of truth).
 
-import { randomUUID } from "node:crypto";
-
 import type { GainSummary, TimeBucket } from "./aggregate.js";
+import { readConfig } from "./config.js";
 import { projectFingerprint } from "./dataDir.js";
 import { gcRawStore } from "./gc.js";
 import { readProjectMeta } from "./history.js";
@@ -38,7 +37,7 @@ import {
   recentDedupEvents,
   summarizeDedup,
 } from "./dedupLedger.js";
-import { runColdPathTelemetry, type DispatchParams } from "../telemetry/dispatch.js";
+import type { DispatchParams } from "../telemetry/dispatch.js";
 
 type Bucketing = "none" | "daily" | "weekly" | "monthly" | "all";
 // Default output is the HTML report (opened in the browser, four ledger views).
@@ -60,7 +59,7 @@ type GainArgs = {
 type GainContext = {
   rollup: MergedRollup;
   perProject: ProjectRollup[];
-  userRollup: MergedRollup;
+  userRollup?: MergedRollup;
   // ADR 0009: session dedup is a SEPARATE dimension — never folded into the rollup
   // totals above, so it can never be summed with filter savings.
   dedup: DedupSummary;
@@ -70,6 +69,7 @@ type GainContext = {
 const EMPTY_DEDUP: DedupSummary = { hits: 0, saved_tokens: 0, by_command: [] };
 
 const SPARK_BLOCKS = "▁▂▃▄▅▆▇█";
+type TelemetryDispatch = (params: DispatchParams) => void;
 
 // rtk-parity terminal formatting (plan 013). Token totals read as compact K/M/B
 // (11.6M, 786.7K); discrete counts stay comma-grouped (2,927) so the eye never
@@ -154,29 +154,62 @@ export function parseGainArgs(argv: string[]): GainArgs {
   return args;
 }
 
-async function loadGainContext(cwd: string, user: boolean): Promise<GainContext> {
+async function loadGainContext(
+  cwd: string,
+  user: boolean,
+  includeUserRollup: boolean,
+): Promise<GainContext> {
   try {
-    const allProjects = await listProjectRollups();
-    const userRollup = mergeRollups(allProjects);
-    const events = user ? await listAllDedupEvents() : await readDedupEvents(cwd);
+    if (user) {
+      const allProjects = await listProjectRollups();
+      const userRollup = mergeRollups(allProjects);
+      const events = await listAllDedupEvents();
+      const dedup = summarizeDedup(events);
+      const recentDedup = events;
+      return { rollup: userRollup, perProject: allProjects, userRollup, dedup, recentDedup };
+    }
+
+    const rollup = await ensureProjectRollup(cwd);
+    const events = await readDedupEvents(cwd);
     const dedup = summarizeDedup(events);
     // Keep all events; renderText slices to args.history (don't pre-cap at 100, or
     // `--history N` would honor N>100 for filter rows but silently truncate dedup rows).
     const recentDedup = events;
-    if (user) {
-      return { rollup: userRollup, perProject: allProjects, userRollup, dedup, recentDedup };
-    }
-    const rollup = await ensureProjectRollup(cwd);
+    const userRollup = includeUserRollup ? mergeRollups(await listProjectRollups()) : undefined;
     return { rollup, perProject: [rollup], userRollup, dedup, recentDedup };
   } catch {
     const empty = emptyRollup(projectFingerprint(cwd));
     return {
       rollup: empty,
       perProject: [],
-      userRollup: empty,
+      userRollup: includeUserRollup ? empty : undefined,
       dedup: EMPTY_DEDUP,
       recentDedup: [],
     };
+  }
+}
+
+function shouldPrepareTelemetry(dispatchTelemetry?: TelemetryDispatch): boolean {
+  if (dispatchTelemetry) return true;
+  try {
+    return readConfig().telemetry;
+  } catch {
+    return false;
+  }
+}
+
+async function dispatchGainTelemetry(
+  ctx: GainContext,
+  now: Date,
+  dispatchTelemetry?: TelemetryDispatch,
+): Promise<void> {
+  try {
+    const dispatch =
+      dispatchTelemetry ?? (await import("../telemetry/dispatch.js")).runColdPathTelemetry;
+    const { randomUUID } = await import("node:crypto");
+    dispatch({ rollup: ctx.userRollup ?? ctx.rollup, now, runId: randomUUID() });
+  } catch {
+    // telemetry must never break gain
   }
 }
 
@@ -184,7 +217,7 @@ export async function runGain(
   argv: string[],
   cwd: string = process.cwd(),
   now: Date = new Date(),
-  dispatchTelemetry: (params: DispatchParams) => void = runColdPathTelemetry,
+  dispatchTelemetry?: TelemetryDispatch,
 ): Promise<number> {
   const args = parseGainArgs(argv);
   if (args.error) {
@@ -192,15 +225,19 @@ export async function runGain(
     return 1;
   }
 
-  const ctx = await loadGainContext(cwd, args.user);
+  const prepareTelemetry = shouldPrepareTelemetry(dispatchTelemetry);
+  let ctx: GainContext | undefined;
 
   if (args.output === "json") {
+    ctx = await loadGainContext(cwd, args.user, prepareTelemetry);
     process.stdout.write(
       `${JSON.stringify(buildGainJson(ctx.rollup, args, now, ctx.dedup), null, 2)}\n`,
     );
   } else if (args.output === "csv") {
+    ctx = await loadGainContext(cwd, args.user, prepareTelemetry);
     process.stdout.write(renderCsv(ctx.rollup, args, now));
   } else if (args.output === "text") {
+    ctx = await loadGainContext(cwd, args.user, prepareTelemetry);
     process.stdout.write(await renderText(ctx, args, now));
   } else {
     // Default: the four-view HTML report (measured / optimizer / governance /
@@ -209,10 +246,9 @@ export async function runGain(
     await emitGainHtml({ scope: args.user ? "user" : "project", cwd }, now);
   }
 
-  try {
-    dispatchTelemetry({ rollup: ctx.userRollup, now, runId: randomUUID() });
-  } catch {
-    // telemetry must never break gain
+  if (prepareTelemetry) {
+    ctx ??= await loadGainContext(cwd, args.user, true);
+    await dispatchGainTelemetry(ctx, now, dispatchTelemetry);
   }
 
   // H4: GC the raw snapshot dir on this cold path so it cannot grow without bound.

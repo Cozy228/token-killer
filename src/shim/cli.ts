@@ -154,7 +154,11 @@ function uninstall(dryRun: boolean): number {
   return 0;
 }
 
-function status(): number {
+type ShimStatusOptions = {
+  probe?: ProbeResult;
+};
+
+function status(opts: ShimStatusOptions = {}): number {
   const dir = shimDir();
   const manifest = readManifest();
   const pathEntries = (process.env.PATH ?? "").split(delimiter);
@@ -193,14 +197,14 @@ function status(): number {
     );
   }
 
-  const probe = runInterceptionProbe(dir);
+  const probe = opts.probe ?? runInterceptionProbe(dir);
   out(
     `  probe:          ${probe.pass ? "PASS" : "FAIL"}${probe.resolved ? ` → ${probe.resolved}` : ""}`,
   );
   return 0;
 }
 
-export function runShim(argv: string[]): number {
+export function runShim(argv: string[], opts: { statusProbe?: ProbeResult } = {}): number {
   const dryRun = argv.includes("--dry-run");
   // The subcommand is the first non-flag token, so `--dry-run` can appear in any
   // position (e.g. `tk shim install --dry-run`).
@@ -212,7 +216,7 @@ export function runShim(argv: string[]): number {
       return uninstall(dryRun);
     case "status":
     case undefined:
-      return status();
+      return status({ probe: opts.statusProbe });
     default:
       err(`tk shim: unknown subcommand '${sub}' (expected install | uninstall | status)`);
       return 1;

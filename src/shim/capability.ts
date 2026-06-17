@@ -12,7 +12,7 @@ import { guidanceFilePath, guidanceLoader } from "./guidance.js";
 import { readManifest, shimDir } from "./install.js";
 import { userInjectionPath } from "./injection.js";
 import type { PreflightCheck } from "./preflight.js";
-import { runInterceptionProbe } from "./probe.js";
+import { runInterceptionProbe, type ProbeResult } from "./probe.js";
 
 // ADR 0012 #7 — delivery state as a CAPABILITY MATRIX, not a single "active tier".
 //
@@ -381,6 +381,7 @@ export function gatherDeliveryMatrix(params: {
   preflight: PreflightCheck[];
   home?: string;
   env?: NodeJS.ProcessEnv;
+  shimProbe?: ProbeResult;
 }): DeliveryMatrix {
   const home = params.home ?? tokenKillerHome();
   const env = params.env ?? process.env;
@@ -393,7 +394,7 @@ export function gatherDeliveryMatrix(params: {
     claudeStatus: () => claudeHookStatus({}),
     shimManifest: () => readManifest(home),
     shimDirPath: dir,
-    shimProbe: () => runInterceptionProbe(dir),
+    shimProbe: () => params.shimProbe ?? runInterceptionProbe(dir),
     injectionPath: userInjectionPath(params.host, homedir()),
     guidanceFile: guidanceFilePath(params.host, homedir()),
     guidanceLoaderPath: guidanceLoader(params.host, homedir())?.path,

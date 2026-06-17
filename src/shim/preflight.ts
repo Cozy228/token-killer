@@ -1,4 +1,4 @@
-import { spawnSync } from "node:child_process";
+import { spawn, spawnSync } from "node:child_process";
 import { existsSync as fsExistsSync } from "node:fs";
 import { homedir as osHomedir } from "node:os";
 import { delimiter, join } from "node:path";
@@ -53,6 +53,8 @@ export type PreflightDeps = {
   homedir: () => string;
 };
 
+const PREFLIGHT_COMMAND_TIMEOUT_MS = 5000;
+
 // --- real probe defaults ---------------------------------------------------
 // Production `gatherPreflight()` uses these; tests inject fakes so the matrix is
 // deterministic and never depends on what is installed on the box.
@@ -69,7 +71,7 @@ export function runPreflightCommand(cmd: string, args: string[]): RunResult {
     // --version), never user input, so shell use carries no injection risk.
     const r = spawnSync(cmd, args, {
       encoding: "utf8",
-      timeout: 5000,
+      timeout: PREFLIGHT_COMMAND_TIMEOUT_MS,
       shell: process.platform === "win32",
     });
     if (r.error || r.status === null) {
@@ -83,6 +85,68 @@ export function runPreflightCommand(cmd: string, args: string[]): RunResult {
   } catch {
     return { ok: false, stdout: "" };
   }
+}
+
+// Async sibling of runPreflightCommand with IDENTICAL result semantics (shell on
+// win32 for PATHEXT, fold stderr, ok iff exit 0, total/never-rejects). It exists so
+// the independent version probes can run CONCURRENTLY: on Windows each `--version`
+// is a shell-resolved Node CLI cold-start under EDR — multiple seconds apiece — so
+// running them serially (the sync gatherPreflight order) makes `tk status` pay their
+// SUM. Overlapping them pays only the MAX. A timeout kills the child and degrades to
+// not-found, exactly like the sync path.
+export function runPreflightCommandAsync(cmd: string, args: string[]): Promise<RunResult> {
+  return new Promise((resolve) => {
+    let stdout = "";
+    let stderr = "";
+    let settled = false;
+    const done = (r: RunResult): void => {
+      if (settled) return;
+      settled = true;
+      resolve(r);
+    };
+    try {
+      const child = spawn(cmd, args, { shell: process.platform === "win32" });
+      const timer = setTimeout(() => {
+        try {
+          child.kill();
+        } catch {
+          /* already exited */
+        }
+        done({ ok: false, stdout: `${stdout}${stderr}`.trim() });
+      }, PREFLIGHT_COMMAND_TIMEOUT_MS);
+      child.stdout?.on("data", (d) => {
+        stdout += String(d);
+      });
+      child.stderr?.on("data", (d) => {
+        stderr += String(d);
+      });
+      child.on("error", () => {
+        clearTimeout(timer);
+        done({ ok: false, stdout: `${stdout}${stderr}`.trim() });
+      });
+      child.on("close", (code) => {
+        clearTimeout(timer);
+        const out = (stdout.trim() || stderr.trim()).trim();
+        done({ ok: code === 0, stdout: out });
+      });
+    } catch {
+      done({ ok: false, stdout: "" });
+    }
+  });
+}
+
+// Run independent probes concurrently, keyed by command name. Preflight commands are
+// a fixed allowlist with one entry per binary (copilot/pwsh --version), so the bare
+// command is a unique key. Used to pre-warm the synchronous check matrix.
+export async function prewarmProbes(
+  specs: Array<[string, string[]]>,
+): Promise<Map<string, RunResult>> {
+  const results = await Promise.all(
+    specs.map(([cmd, args]) => runPreflightCommandAsync(cmd, args)),
+  );
+  const map = new Map<string, RunResult>();
+  specs.forEach(([cmd], i) => map.set(cmd, results[i]));
+  return map;
 }
 
 // Resolve a program on PATH without spawning a shell. Mirrors the executor's
@@ -146,10 +210,19 @@ export function defaultProtocolProbe(): ProtocolProbeResult {
   }
 }
 
-export function defaultPreflightDeps(): PreflightDeps {
+export function defaultPreflightDeps(prewarmed?: Map<string, RunResult>): PreflightDeps {
+  const whichCache = new Map<string, string | null>();
+  const which = (program: string): string | null => {
+    if (!whichCache.has(program)) whichCache.set(program, defaultWhich(program));
+    return whichCache.get(program) ?? null;
+  };
+  // A pre-warmed result (from the concurrent prewarmProbes) short-circuits the
+  // serial spawnSync; an un-warmed command still falls back to a real spawn, so the
+  // checks behave identically whether or not the caller pre-warmed.
+  const run: Runner = (cmd, args) => prewarmed?.get(cmd) ?? runPreflightCommand(cmd, args);
   return {
-    run: runPreflightCommand,
-    which: (program) => defaultWhich(program),
+    run,
+    which,
     existsSync: fsExistsSync,
     env: process.env,
     platform: process.platform,
@@ -434,6 +507,19 @@ export function gatherPreflight(deps: PreflightDeps = defaultPreflightDeps()): P
     shellToolNameCheck(deps),
     hookProtocolSelfProbe(deps),
   ];
+}
+
+// Production entry for `tk status`: run the two independent version probes
+// (copilot/pwsh --version) CONCURRENTLY, then evaluate the synchronous check matrix
+// against the pre-warmed results — no probe is skipped, only overlapped. The sync
+// gatherPreflight(deps) stays the unit-tested core (tests inject fake runs); this
+// wrapper only changes WHEN the real spawns happen, not WHAT the checks decide.
+export async function gatherPreflightConcurrent(): Promise<PreflightCheck[]> {
+  const prewarmed = await prewarmProbes([
+    ["copilot", ["--version"]],
+    ["pwsh", ["--version"]],
+  ]);
+  return gatherPreflight(defaultPreflightDeps(prewarmed));
 }
 
 // Format the checks for `tk status` to print. A small glyph carries the verdict
