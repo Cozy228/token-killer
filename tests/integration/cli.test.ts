@@ -867,7 +867,10 @@ describe("Language-specific handlers", () => {
       expect(result.stdout).toContain("Problems:");
       expect(result.stdout).toContain("kept");
     } finally {
-      await rm(dir, { recursive: true, force: true });
+      // `tk npm list` spawns a child npm process that can briefly hold a handle
+      // on the temp dir after exit; on Windows that surfaces as EBUSY on rmdir.
+      // Retry so the lingering handle clears instead of failing the teardown.
+      await rm(dir, { recursive: true, force: true, maxRetries: 5, retryDelay: 100 });
     }
   });
 });
