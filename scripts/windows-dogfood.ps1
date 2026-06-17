@@ -99,6 +99,24 @@ function Note([string]$s) { $script:ScopeNotes.Add($s) }
 # @() forces an array so .Count is valid even for 0/1 matches under StrictMode.
 function CountBy($items, $st) { @($items | Where-Object { $_.Status -eq $st }).Count }
 
+# Pull the first line matching $Label out of captured output and return the path
+# after "<label>: ". Returns "" when the line is absent.
+#
+# Why a helper and not an inline one-liner: `(... | Select-Object -First 1) -replace`
+# is NOT null-safe. When Where-Object matches nothing, the sub-pipeline yields an
+# EMPTY ARRAY, and `-replace` maps over arrays element-wise, so it returns an empty
+# array too — then `.Trim()` throws "[System.Object[]] does not contain a method
+# named 'Trim'", an UNCAUGHT exception that aborts the whole suite. That is exactly
+# what `tk inspect --project` (no project-scoped sources → no HTML report emitted)
+# tripped. @() + cast-to-string here keeps the absent case a clean "" so callers
+# fall into their intended "no path emitted" Warn branch.
+function Get-LabeledPath {
+  param([string]$AllText, [string]$Label)
+  $line = @($AllText -split "`n" | Where-Object { $_ -match $Label }) | Select-Object -First 1
+  if (-not $line) { return "" }
+  return ([string]$line -replace ".*${Label}\s*", "").Trim()
+}
+
 # ── Process runner (async reads avoid large-output deadlock; hard timeout) ──
 function Start-Proc {
   param(
@@ -308,7 +326,7 @@ try {
   function Test-HtmlScope {
     param([string]$N, [string[]]$Cmd, [string]$ProjName)
     $r = Invoke-Tk $Cmd -Env @{ TK_NO_OPEN = "1" }
-    $htmlPath = (($r.AllText -split "`n" | Where-Object { $_ -match 'HTML report:' } | Select-Object -First 1) -replace '.*report:\s*', '').Trim()
+    $htmlPath = Get-LabeledPath $r.AllText 'HTML report:'
     if ($htmlPath -and (Test-Path -LiteralPath $htmlPath)) {
       $body = Get-Content -LiteralPath $htmlPath -Raw
       if ($body -match ('"project"\s*:\s*"' + [regex]::Escape($ProjName) + '"')) { Pass "func" $N "Covers $ProjName" $r.Ms }
@@ -355,7 +373,7 @@ try {
     $r = Invoke-Tk (@("debug") + $Flags)
     if ($r.ExitCode -eq 0 -and $r.AllText -match 'debug bundle') {
       Pass "func" "$N (writes bundle)" "" $r.Ms
-      $dbgPath = (($r.AllText -split "`n" | Where-Object { $_ -match 'debug bundle:' } | Select-Object -First 1) -replace '.*bundle:\s*', '').Trim()
+      $dbgPath = Get-LabeledPath $r.AllText 'debug bundle:'
       if ($dbgPath -and (Test-Path -LiteralPath $dbgPath)) {
         $body = Get-Content -LiteralPath $dbgPath -Raw
         $userHome = [Environment]::GetFolderPath('UserProfile')
@@ -662,7 +680,7 @@ try {
     $r = Invoke-Tk (@("support", "email", "-y") + $Flags) -UnsetEnv @("TK_SUPPORT_EMAIL", "TK_SUPPORT_TEAMS")
     if ($r.ExitCode -eq 0 -and $r.AllText -match 'Saved diagnostic bundle:') {
       Pass "roundtrip" $N "" $r.Ms
-      $supPath = (($r.AllText -split "`n" | Where-Object { $_ -match 'Saved diagnostic bundle:' } | Select-Object -First 1) -replace '.*bundle:\s*', '').Trim()
+      $supPath = Get-LabeledPath $r.AllText 'Saved diagnostic bundle:'
       if ($supPath -and (Test-Path -LiteralPath $supPath)) { Remove-Item -LiteralPath $supPath -Force -ErrorAction SilentlyContinue; Note "support bundle removed: $supPath" }
     } else { Warn "roundtrip" $N "exit=$($r.ExitCode) — expected 'Saved diagnostic bundle:'" $r.Ms }
   }
