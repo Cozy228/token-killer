@@ -34,7 +34,13 @@ import { makeFileCache } from "./fileCache.js";
 import { makeDiskExtractCache, pruneCache } from "./extractCache.js";
 import { tokenKillerHome } from "../core/dataDir.js";
 import { makeProgressReporter } from "./progress.js";
-import { parseSince, scan, type FileScanExtract, type ScanResult } from "./scan.js";
+import {
+  parseSince,
+  scan,
+  type FileEventExtract,
+  type FileScanExtract,
+  type ScanResult,
+} from "./scan.js";
 import { inspectSinglePass } from "./passes.js";
 import { discoverHost, discoverHosts, hostFound, mergeHosts, type InputType } from "./sources.js";
 import { persistScopeBuckets, runStaticContext } from "./staticContext.js";
@@ -268,15 +274,19 @@ export function runInspect(
         const cacheRoot = join(tokenKillerHome(), "inspect-cache");
         pruneCache(cacheRoot, nowMs);
         const scanCache = makeDiskExtractCache<FileScanExtract>(cacheRoot, "scan");
+        // Separate namespace for the per-event stream the windowed/session scan slices
+        // post-load (issue #38) — a different payload shape than the folded `scan` extract.
+        const eventCache = makeDiskExtractCache<FileEventExtract>(cacheRoot, "scan-events");
         const habitsCache = makeDiskExtractCache<FileHabitExtract>(cacheRoot, "habits");
         progress.phase(
           `Scanning ${discovery.transcriptFiles.length} transcript(s) + ${discovery.sessionFiles.length} session(s)…`,
         );
         // A per-event filter (--since / --session) makes the UNFILTERED single-pass
-        // extract inapplicable to the scan, so the filtered case keeps the two separate
-        // passes (rare path; habits never honors filters). The common unfiltered case
-        // takes the single-pass path: each transcript / session file is read AND parsed
-        // ONCE, feeding both the scan and habits aggregates (issue #39).
+        // extract inapplicable to the scan, so the filtered case keeps a dedicated scan
+        // (sliced post-load from the warm per-event cache — issue #38; habits never honors
+        // filters). The common unfiltered case takes the single-pass path: each transcript
+        // / session file is read AND parsed ONCE, feeding both the scan and habits
+        // aggregates (issue #39).
         const filtered = sinceMs !== undefined || opts.session !== undefined;
         if (filtered) {
           result = scan(discovery, {
@@ -285,6 +295,7 @@ export function runInspect(
             onProgress: (done, total, detail) => progress.step(done, total, detail),
             fileCache,
             scanCache,
+            eventCache,
           });
           progress.phase(
             `Scanned ${result.tool_event_count.toLocaleString()} tool event(s) across ${result.session_inventory} session(s).`,
