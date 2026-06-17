@@ -176,11 +176,49 @@ tr:last-child td { border-bottom: none; }
 
 .foot { margin-top: 60px; color: var(--faint); font-size: 0.78rem; }
 
+/* Narrative eyebrow (rtk "01 — the problem" parity, tk palette) */
+.eyebrow { font-size: 0.62rem; letter-spacing: 0.14em; text-transform: uppercase; font-weight: 700; color: var(--indigo); margin-bottom: 6px; }
+
+/* "The problem" — three honest, data-driven cards */
+.probgrid { display: grid; gap: 16px; grid-template-columns: repeat(3, 1fr); margin-top: 18px; }
+.probcard { background: var(--surface); border: 1px solid var(--border); border-radius: 14px; box-shadow: 0 1px 2px rgba(15,23,42,0.04); padding: 22px 22px 18px; }
+.probcard.est { background: var(--amber-soft); border-color: var(--amber-line); }
+.probcard .ph { font-family: var(--serif); font-size: 1.04rem; font-weight: 600; margin: 0 0 6px; }
+.probcard.est .ph { color: var(--amber-deep); }
+.probcard .pp { color: var(--slate500); font-size: 0.85rem; line-height: 1.6; margin: 0; }
+.probcard.est .pp { color: var(--amber-ink); }
+.probcard .pp b { color: var(--ink); font-weight: 600; }
+.probcard.est .pp b { color: var(--amber-deep); }
+.probmetric { display: inline-block; margin-top: 14px; padding: 4px 11px; border-radius: 7px; font-family: var(--mono); font-size: 0.74rem; font-weight: 600; background: var(--indigo-soft); color: var(--indigo-ink); border-left: 3px solid var(--indigo); }
+.probcard.est .probmetric { background: #fff7ed; color: var(--amber-deep); border-left-color: var(--amber-ink); }
+
+/* "See the difference" — before/after bars */
+.diffbox { background: var(--surface); border: 1px solid var(--border); border-radius: 14px; box-shadow: 0 1px 2px rgba(15,23,42,0.04); padding: 24px 26px; }
+.diffrow { display: grid; grid-template-columns: 150px 1fr auto; align-items: center; gap: 14px; margin: 10px 0; }
+.diffrow .dl { color: var(--slate600); font-size: 0.86rem; }
+.diffrow .dv { font-family: var(--mono); font-weight: 600; font-size: 0.9rem; white-space: nowrap; }
+.diffbar { height: 22px; border-radius: 6px; min-width: 4px; }
+.diffbar.raw { background: linear-gradient(90deg, #fda4af, var(--rose)); }
+.diffbar.sent { background: linear-gradient(90deg, var(--emerald-300), var(--emerald)); }
+.diffrow .dv.cut { color: var(--emerald-ink); }
+
+/* "Real-world savings" — daily/weekly/monthly trend */
+.trendtabs { display: inline-flex; gap: 4px; background: var(--slate100); border-radius: 10px; padding: 4px; margin: 4px 0 16px; }
+.trendbtn { font: inherit; font-size: 0.8rem; font-weight: 600; cursor: pointer; border: none; background: transparent; color: var(--slate600); padding: 6px 14px; border-radius: 7px; transition: background 0.15s, color 0.15s; }
+.trendbtn.on { background: var(--surface); color: var(--indigo-ink); box-shadow: 0 1px 2px rgba(15,23,42,0.08); }
+.chart { display: flex; align-items: flex-end; gap: 3px; height: 120px; padding: 14px 16px 0; background: var(--surface); border: 1px solid var(--border); border-radius: 14px 14px 0 0; border-bottom: none; overflow: hidden; }
+.chart .col { flex: 1 1 0; min-width: 2px; background: var(--emerald-100); border-radius: 3px 3px 0 0; position: relative; transition: background 0.15s; }
+.chart .col:hover { background: var(--emerald); }
+.chart .col > span { position: absolute; bottom: 100%; left: 50%; transform: translateX(-50%); white-space: nowrap; font-family: var(--mono); font-size: 0.66rem; color: var(--slate600); background: var(--surface); border: 1px solid var(--border); border-radius: 5px; padding: 2px 6px; opacity: 0; pointer-events: none; transition: opacity 0.12s; margin-bottom: 4px; z-index: 2; }
+.chart .col:hover > span { opacity: 1; }
+.trendpanel .panel { border-radius: 0 0 14px 14px; }
+.trendempty { color: var(--faint); font-style: italic; font-size: 0.9rem; padding: 8px 0; }
+
 @media (prefers-reduced-motion: no-preference) {
   .hero, .summary, .card, .item, .section, .panel { animation: rise 0.4s cubic-bezier(0.22,1,0.36,1) both; }
 }
 @keyframes rise { from { opacity: 0; transform: translateY(7px); } to { opacity: 1; transform: none; } }
-@media (max-width: 640px) { .cards { grid-template-columns: 1fr; } .wrap { padding: 40px 18px 72px; } .summary .pri { margin-left: 0; width: 100%; } .pagehead h1 { font-size: 2rem; } }
+@media (max-width: 640px) { .cards, .probgrid { grid-template-columns: 1fr; } .wrap { padding: 40px 18px 72px; } .summary .pri { margin-left: 0; width: 100%; } .pagehead h1 { font-size: 2rem; } .diffrow { grid-template-columns: 110px 1fr; } .diffrow .dv { grid-column: 2; text-align: right; } }
 `;
 
 const SCRIPT = String.raw`
@@ -194,6 +232,16 @@ const isNa = (o) => o && typeof o === "object" && o.scope_na === true;
 function money(x) {
   if (typeof x !== "number" || !isFinite(x)) return null;
   return new Intl.NumberFormat("en-US", { style: "currency", currency: "USD", maximumFractionDigits: x >= 100 ? 0 : 2 }).format(x);
+}
+// Compact K/M/B for chart axes and bar labels (mirrors core/gain.ts compact()).
+function cmp(x) {
+  if (typeof x !== "number" || !isFinite(x)) return "0";
+  const v = Math.round(x), a = Math.abs(v);
+  if (a < 1000) return String(v);
+  for (const [base, suf] of [[1e9, "B"], [1e6, "M"], [1e3, "K"]]) {
+    if (a >= base) return (v / base).toFixed(1).replace(/\.0$/, "") + suf;
+  }
+  return String(v);
 }
 
 const SURFACE_NAMES = {
@@ -243,9 +291,113 @@ function render() {
   if (DOC.kind === "gain") renderGain(DOC.data);
   else renderInspect(DOC.data);
   root.addEventListener("click", (e) => {
-    const b = e.target && e.target.closest ? e.target.closest(".copybtn") : null;
-    if (b) copyText(b.getAttribute("data-prompt") || "", b);
+    const t = e.target;
+    const b = t && t.closest ? t.closest(".copybtn") : null;
+    if (b) { copyText(b.getAttribute("data-prompt") || "", b); return; }
+    const tb = t && t.closest ? t.closest(".trendbtn") : null;
+    if (tb) switchTrend(tb);
   });
+}
+
+// "The problem" — rtk's 3-card framing, but every number is the user's own
+// measured data (never a fabricated brag stat). Card 3 is the existing estimate,
+// kept under the amber est. treatment and never summed into measured tokens.
+function renderProblem(m, L) {
+  const raw = m.raw_tokens || 0;
+  const fills = raw / 200000; // a 200K context window
+  const fillsStr = fills >= 10 ? n(fills) : fills.toFixed(1).replace(/\.0$/, "");
+  const usd = money(L.estimated_savings_usd);
+  const credits = L.estimated_savings_ai_credits;
+  const creditStr = typeof credits === "number" && isFinite(credits) ? n(credits) : null;
+  const cards = [
+    { cls: "", h: "Context pollution",
+      p: "Without Token Killer, <b>" + n(raw) + "</b> tokens of raw command output would have landed in the model's context window — crowding out room for actual reasoning.",
+      metric: "raw &rarr; context: " + cmp(raw) + " tokens" },
+    { cls: "", h: "Sessions cut short",
+      p: "That noise alone fills a 200K context window <b>" + fillsStr + "&times;</b> over. Every fill is a session that overflows and restarts sooner than it should.",
+      metric: "context fills: " + fillsStr + "&times;" },
+    { cls: "est", h: "Cost that adds up",
+      p: "Sending that raw output to the model would have cost about <b>" + (creditStr ? creditStr + " AI Credits" : (usd || "—")) + "</b>" + (creditStr && usd ? " (" + usd + ")" : "") + ". Token Killer trimmed <b>" + pct(m.savings_pct) + "</b> of it before it left your machine.",
+      metric: "est. avoided: " + (usd || "—") },
+  ];
+  return '<div class="section"><p class="eyebrow">The problem</p>' +
+    '<h2>What that command output was costing you</h2>' +
+    '<p class="exp">Every command your agent runs dumps output into the context window. Here is what Token Killer caught — measured from your own runs.</p>' +
+    '<div class="probgrid">' +
+    cards.map((c) => '<div class="probcard ' + c.cls + '"><h3 class="ph">' + esc(c.h) + '</h3>' +
+      '<p class="pp">' + c.p + '</p><div class="probmetric">' + c.metric + '</div></div>').join("") +
+    '</div></div>';
+}
+
+// "See the difference" — two bars scaled to the raw total: what the tool emitted
+// vs what actually reached the model.
+function renderDiff(m) {
+  const raw = m.raw_tokens || 0;
+  const sent = m.output_tokens || 0;
+  if (raw <= 0) return "";
+  const w = (v) => Math.max(2, Math.round((v / raw) * 100));
+  return '<div class="section"><p class="eyebrow">See the difference</p>' +
+    '<h2>Before and after Token Killer</h2>' +
+    '<p class="exp">The same commands, measured two ways: the raw output your tools produced, and the slimmed output that actually reached the model.</p>' +
+    '<div class="diffbox">' +
+    '<div class="diffrow"><span class="dl">Output without tk</span><span class="diffbar raw" style="width:' + w(raw) + '%"></span><span class="dv">' + cmp(raw) + '</span></div>' +
+    '<div class="diffrow"><span class="dl">Sent to the model</span><span class="diffbar sent" style="width:' + w(sent) + '%"></span><span class="dv cut">' + cmp(sent) + ' &middot; &minus;' + pct(m.savings_pct) + '</span></div>' +
+    '</div></div>';
+}
+
+// "Real-world savings" — daily/weekly/monthly trend (rtk Proof parity). Driven by
+// the rollup buckets wired in via core/ledger.ts. Hidden when absent/all-empty.
+function renderTrend(ts) {
+  if (!ts || typeof ts !== "object") return "";
+  const sets = { daily: ts.daily || [], weekly: ts.weekly || [], monthly: ts.monthly || [] };
+  const anyData = ["daily", "weekly", "monthly"].some((k) =>
+    sets[k].some((b) => (b.saved || 0) > 0 || (b.commands || 0) > 0));
+  if (!anyData) return "";
+  const view = (buckets) => {
+    const data = buckets.filter((b) => (b.saved || 0) > 0 || (b.commands || 0) > 0);
+    if (!data.length) return '<div class="trendempty">No activity in this window yet.</div>';
+    const max = Math.max.apply(null, data.map((b) => b.saved || 0).concat([1]));
+    const chart = '<div class="chart">' + data.map((b) =>
+      '<div class="col" style="height:' + Math.max(2, Math.round(((b.saved || 0) / max) * 100)) + '%">' +
+      '<span>' + esc(b.key) + ' &middot; ' + cmp(b.saved) + ' saved &middot; ' + pct(b.pct) + '</span></div>').join("") + '</div>';
+    const rows = data.slice(-12).reverse().map((b) =>
+      '<tr><td class="num">' + esc(b.key) + '</td><td class="r num">' + cmp(b.saved) + '</td>' +
+      '<td class="r num">' + pct(b.pct) + '</td><td class="r num">' + n(b.commands) + '</td></tr>').join("");
+    return chart + '<div class="trendpanel"><div class="panel"><table>' +
+      '<thead><tr><th>Period</th><th class="r">Saved</th><th class="r">Reduced by</th><th class="r">Commands</th></tr></thead>' +
+      '<tbody>' + rows + '</tbody></table></div></div>';
+  };
+  const tabs = [["daily", "Daily"], ["weekly", "Weekly"], ["monthly", "Monthly"]];
+  // Default to the densest view that has data.
+  const first = tabs.map((t) => t[0]).find((k) => sets[k].some((b) => (b.saved || 0) > 0)) || "daily";
+  const btns = tabs.map(([k, label]) =>
+    '<button type="button" class="trendbtn' + (k === first ? " on" : "") + '" data-trend="' + k + '">' + label + '</button>').join("");
+  const panels = tabs.map(([k]) =>
+    '<div class="trendview" data-trendview="' + k + '"' + (k === first ? "" : ' style="display:none"') + '>' + view(sets[k]) + '</div>').join("");
+  return '<div class="section" id="trend"><p class="eyebrow">Real-world savings</p>' +
+    '<h2>Your savings over time</h2>' +
+    '<p class="exp">Daily, weekly, and monthly token savings from your own runs — the same data as <span class="num">tk gain --daily / --weekly / --monthly</span>.</p>' +
+    '<div class="trendtabs">' + btns + '</div>' + panels + '</div>';
+}
+
+// Reduce a sample command to its main command — just the program name, with any
+// leading path stripped ("/usr/bin/grep" → "grep"). Drops every flag, path, search
+// pattern, and other parameter detail. The "Where the savings came from" table shows
+// these (not full invocations) so a category like "read-like"/"search-like" reads as
+// the commands it covers (e.g. "cat, head, tail"), not noisy argument detail.
+function mainCmd(s) {
+  const first = String(s == null ? "" : s).trim().split(/\s+/)[0] || "";
+  const cut = Math.max(first.lastIndexOf("/"), first.lastIndexOf("\\"));
+  return cut >= 0 ? first.slice(cut + 1) : first;
+}
+// De-duplicated list of main commands across a handler's samples (first-seen order).
+function mainCmds(samples) {
+  const seen = [];
+  for (const s of samples) {
+    const m = mainCmd(s);
+    if (m && seen.indexOf(m) === -1) seen.push(m);
+  }
+  return seen;
 }
 
 function renderGain(L) {
@@ -279,6 +431,10 @@ function renderGain(L) {
     h += '</section>';
     out.push(h);
 
+    // Narrative arc (rtk landing parity, tk-honest): the problem → the difference.
+    out.push(renderProblem(m, L));
+    out.push(renderDiff(m));
+
     const bh = Array.isArray(m.by_handler) ? m.by_handler.slice(0, 12) : [];
     if (bh.length) {
       const max = Math.max.apply(null, bh.map((h2) => h2.saved || 0).concat([1]));
@@ -287,16 +443,18 @@ function renderGain(L) {
         '<div class="panel"><table><thead><tr><th>Command</th><th>Share of savings</th><th class="r">Tokens saved</th><th class="r">Reduced by</th><th class="r">Times run</th></tr></thead><tbody>' +
         bh.map((h2) =>
           '<tr><td class="num">' + esc(h2.handler) +
-          (Array.isArray(h2.samples) && h2.samples.length
-            ? '<div class="samp">' +
-              h2.samples.map((s) => esc(s.length > 64 ? s.slice(0, 63) + "…" : s)).join("<br>") +
-              '</div>'
-            : '') +
+          ((() => {
+            const cmds = Array.isArray(h2.samples) ? mainCmds(h2.samples) : [];
+            return cmds.length ? '<div class="samp">' + cmds.map(esc).join(", ") + '</div>' : '';
+          })()) +
           '</td>' +
           '<td style="width:32%"><div class="hbar"><i style="width:' + Math.max(3, Math.round(((h2.saved || 0) / max) * 100)) + '%"></i></div></td>' +
           '<td class="r num">' + n(h2.saved) + '</td><td class="r num">' + pct(h2.pct) + '</td><td class="r num">' + n(h2.count) + '</td></tr>').join("") +
         '</tbody></table></div></div>');
     }
+
+    // Real-world savings — daily/weekly/monthly trend (rollup buckets via ledger.ts).
+    out.push(renderTrend(L.timeseries));
   }
 
   // Supporting detail.
@@ -339,6 +497,20 @@ function renderGain(L) {
   }
 
   root.innerHTML = out.join("");
+}
+
+// Toggle the daily/weekly/monthly trend view. Scoped to the clicked button's
+// #trend section so it never touches anything else.
+function switchTrend(btn) {
+  const sec = btn.closest("#trend");
+  if (!sec) return;
+  const want = btn.getAttribute("data-trend");
+  const btns = sec.querySelectorAll(".trendbtn");
+  for (let i = 0; i < btns.length; i++) btns[i].classList.toggle("on", btns[i] === btn);
+  const views = sec.querySelectorAll(".trendview");
+  for (let i = 0; i < views.length; i++) {
+    views[i].style.display = views[i].getAttribute("data-trendview") === want ? "" : "none";
+  }
 }
 
 function ratePlain(x) {

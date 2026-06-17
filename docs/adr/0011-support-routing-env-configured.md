@@ -5,7 +5,8 @@ status: accepted
 # `tk support` routing is env-configured, with no baked-in destination
 
 `tk support` ships with **no** default support address. The destination is read only from
-`TK_SUPPORT_EMAIL` / `TK_SUPPORT_TEAMS` (Teams as an Entra UPN). When neither is set,
+`TK_SUPPORT_EMAIL` / `TK_SUPPORT_TEAMS` (Teams as an Entra UPN) / `TK_SUPPORT_GITHUB` (an
+`owner/repo` slug or a full repo URL for a GitHub Enterprise host). When none is set,
 `tk support` still gathers and saves the [Support bundle](../../CONTEXT.md) and copies it
 to the clipboard, then prints a hint to set the env vars — it sends nowhere. tk targets
 enterprise-internal environments, so each deployment routes support to its own in-tenant
@@ -34,4 +35,5 @@ Entra UPN, so a baked consumer address could not be a reachable Teams target any
   untouched (routing is env, not persisted config).
 - Channel mechanics are unaffected by this decision: email opens a `mailto:` draft (full
   report attached by hand), Teams opens an `msteams:` chat (full report pasted from the
-  clipboard); neither auto-sends.
+  clipboard), GitHub opens a pre-filled `issues/new` draft (full report pasted in or the
+  saved file drag-dropped); none auto-sends.

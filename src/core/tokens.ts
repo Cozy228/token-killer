@@ -101,3 +101,13 @@ export function estimateTokens(text: string): number {
 
   return Math.ceil(tokens);
 }
+
+// Length-only token estimate for callers that retained a character COUNT but not
+// the content (inspect's "Raw Evidence Policy" — output text is never kept). It
+// reproduces `estimateTokens("x".repeat(chars))` exactly (an all-letters string at
+// the letter ratio) WITHOUT allocating that string — a per-event hot path in the
+// inspect scan, where `chars` is routinely thousands.
+export function estimateTokensFromLength(chars: number): number {
+  if (chars <= 0) return 0;
+  return Math.ceil(chars / CHARS_PER_TOKEN.letter);
+}

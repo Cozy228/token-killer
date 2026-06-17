@@ -93,21 +93,44 @@ export function ensureTokenKillerHome(home: string = tokenKillerHome()): string 
 // add more — all collapse to one walk. Keyed by the RAW cwd string the caller passed
 // (each tk invocation is a fresh process, so the cache never outlives one run).
 const fingerprintCache = new Map<string, string>();
+const anchorCache = new Map<string, string>();
+
+// The path a project is identified BY: the git repo root that contains `cwd` (so a
+// repo is one project regardless of which subdir/worktree a command runs from), or
+// the resolved cwd when it is not inside a repo. Both the fingerprint (hash of this)
+// and the display label (basename of this) derive from it, so they can never
+// disagree — the bug where a repo got hashed by its root but NAMED by a subdir.
+// Memoized per raw cwd: recordHistory asks for the fingerprint AND the label in one
+// run, and this collapses both to a single up-tree walk.
+function projectAnchor(cwd: string): string {
+  const cached = anchorCache.get(cwd);
+  if (cached !== undefined) return cached;
+  const normalized = resolveProjectRoot(cwd);
+  const anchor = gitRepoAnchor(normalized) ?? normalized;
+  anchorCache.set(cwd, anchor);
+  return anchor;
+}
 
 export function projectFingerprint(cwd: string): string {
   const cached = fingerprintCache.get(cwd);
   if (cached !== undefined) return cached;
-  const normalized = resolveProjectRoot(cwd);
-  const anchor = gitRepoAnchor(normalized) ?? normalized;
-  const fingerprint = `repo:${createHash("sha256").update(anchor).digest("hex").slice(0, 12)}`;
+  const fingerprint = `repo:${createHash("sha256").update(projectAnchor(cwd)).digest("hex").slice(0, 12)}`;
   fingerprintCache.set(cwd, fingerprint);
   return fingerprint;
+}
+
+// Display-only project label for `tk gain --user` (ADR 0004 §3): the basename of the
+// repo root, NEVER the full path. Anchored identically to the fingerprint, so the
+// name shown always matches the bucket it labels.
+export function projectLabel(cwd: string): string {
+  return path.basename(projectAnchor(cwd));
 }
 
 // Test-only seam: drop the memoized fingerprints so a test can exercise a changed
 // git layout for a cwd it has already queried within the same process.
 export function resetFingerprintCacheForTests(): void {
   fingerprintCache.clear();
+  anchorCache.clear();
 }
 
 // Render a fingerprint (logical id `repo:<hash>`) into a filesystem-safe path

@@ -33,6 +33,16 @@ import {
   type GovernanceLedger,
 } from "./governance.js";
 import { listProjectHistories, readHistory, type HistoryRecord } from "./history.js";
+import {
+  dailyBucketsFromRollup,
+  emptyRollup,
+  ensureProjectRollup,
+  listProjectRollups,
+  mergeRollups,
+  monthBucketsFromRollup,
+  weekBucketsFromRollup,
+} from "./rollup.js";
+import type { TimeBucket } from "./aggregate.js";
 
 export type ReportScope = "user" | "project" | "runtime";
 
@@ -287,12 +297,39 @@ function usdFields(ledgers: Ledgers): {
   };
 }
 
+// Daily/weekly/monthly savings for the HTML "Real-world savings" section (plan
+// 013). These come from the rollup cache — the SAME source the `--text`/`--csv`/
+// `--json` bucket views use — so the HTML can finally show the time series that
+// was previously terminal-only. The hero/① figure stays history-derived
+// (summarize); both descend from the same history.jsonl, the split the text path
+// already lives with. Fail-open: a missing/corrupt rollup yields empty buckets,
+// never a throw. Runtime scope has no rollup partition → caller omits this.
+export type GainTimeseries = { daily: TimeBucket[]; weekly: TimeBucket[]; monthly: TimeBucket[] };
+
+async function loadTimeseries(opts: ReportOptions, now: Date): Promise<GainTimeseries> {
+  const rollup = await safe(
+    () =>
+      opts.scope === "project"
+        ? ensureProjectRollup(opts.cwd)
+        : listProjectRollups().then(mergeRollups),
+    emptyRollup(projectFingerprint(opts.cwd)),
+  );
+  return {
+    daily: dailyBucketsFromRollup(rollup, 30, now),
+    weekly: weekBucketsFromRollup(rollup),
+    monthly: monthBucketsFromRollup(rollup),
+  };
+}
+
 // Build the four-view savings report (measured / optimizer / governance /
 // quality) and open it in the browser. This is the default `tk gain` surface —
 // `--text`/`--json`/`--csv` keep the terminal forms (see core/gain.ts). The four
 // ledgers are shown side by side, never summed.
 export async function emitGainHtml(opts: ReportOptions, now: Date = new Date()): Promise<void> {
   const ledgers = await loadLedgers(opts);
+  // Time series for the daily/weekly/monthly "Real-world savings" section. Omitted
+  // under runtime scope (no rollup partition) — the renderer hides the section.
+  const timeseries = opts.scope === "runtime" ? undefined : await loadTimeseries(opts, now);
   const { emitHtmlReport } = await import("../report/open.js");
   emitHtmlReport(
     {
@@ -306,6 +343,7 @@ export async function emitGainHtml(opts: ReportOptions, now: Date = new Date()):
       data: {
         ...ledgers,
         ...usdFields(ledgers),
+        timeseries,
         project: opts.scope === "project" ? basename(opts.cwd) : undefined,
       },
     },

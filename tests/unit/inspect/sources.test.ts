@@ -3,7 +3,12 @@ import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
-import { discoverSources } from "../../../src/inspect/sources.js";
+import {
+  discoverHosts,
+  discoverSources,
+  hostFound,
+  mergeHosts,
+} from "../../../src/inspect/sources.js";
 import { vscodeUserDir } from "../../../src/shim/hostConfig.js";
 
 let home: string;
@@ -57,5 +62,32 @@ describe("discoverSources — copilot-cli", () => {
     const d = discoverSources("copilot-cli", home);
     expect(d.found).toBe(true);
     expect(d.transcriptFiles.some((f) => f.endsWith("h.jsonl"))).toBe(true);
+  });
+});
+
+describe("discoverHosts / mergeHosts — multi-host (default, no --input-type)", () => {
+  test("discovers BOTH hosts, each carrying its resolved dir", () => {
+    const hosts = discoverHosts(home, "linux");
+    expect(hosts.map((h) => h.inputType)).toEqual(["vscode", "copilot-cli"]);
+    expect(hosts[0]!.dir).toBe(vscodeUserDir("linux", home));
+    expect(hosts[1]!.dir).toBe(join(home, ".copilot"));
+  });
+
+  test("merges files across hosts; found is true if ANY host has data", () => {
+    // Give only the Copilot CLI data.
+    mkdirSync(join(home, ".copilot", "history"), { recursive: true });
+    writeFileSync(join(home, ".copilot", "history", "h.jsonl"), "{}\n");
+
+    const hosts = discoverHosts(home, "linux");
+    expect(hosts.filter(hostFound).map((h) => h.inputType)).toEqual(["copilot-cli"]);
+
+    const merged = mergeHosts(hosts);
+    expect(merged.found).toBe(true);
+    expect(merged.transcriptFiles.some((f) => f.endsWith("h.jsonl"))).toBe(true);
+  });
+
+  test("merged is not-found when no host has data", () => {
+    const merged = mergeHosts(discoverHosts(home, "linux"));
+    expect(merged.found).toBe(false);
   });
 });

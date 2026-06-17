@@ -16,17 +16,24 @@
 
 import { spawn, spawnSync } from "node:child_process";
 
-export type SupportChannel = "email" | "teams";
+export type SupportChannel = "email" | "teams" | "github";
 
 // Resolve where a support report is routed. Precedence: explicit `override` (a
-// --email/--teams flag) > the matching env var. Returns `undefined` when nothing
-// is configured — the caller then degrades to save+clipboard+hint and sends
+// --email/--teams/--github flag) > the matching env var. Returns `undefined` when
+// nothing is configured — the caller then degrades to save+clipboard+hint and sends
 // nowhere (ADR 0011: tk ships no default address). A blank/whitespace value counts
-// as unset so an empty env export can't masquerade as a destination.
+// as unset so an empty env export can't masquerade as a destination. The GitHub
+// destination is the repo (`owner/name` slug or a full repo URL — see
+// githubRepoBase), configured exactly like the other channels.
 export function resolveDestination(kind: SupportChannel, override?: string): string | undefined {
   const fromOverride = override?.trim();
   if (fromOverride) return fromOverride;
-  const env = kind === "email" ? process.env.TK_SUPPORT_EMAIL : process.env.TK_SUPPORT_TEAMS;
+  const env =
+    kind === "email"
+      ? process.env.TK_SUPPORT_EMAIL
+      : kind === "teams"
+        ? process.env.TK_SUPPORT_TEAMS
+        : process.env.TK_SUPPORT_GITHUB;
   const fromEnv = env?.trim();
   return fromEnv ? fromEnv : undefined;
 }
@@ -64,6 +71,33 @@ export function buildMailto(to: string, subject: string, body: string): string {
 // is a SHORT pointer only — the full report travels via the clipboard.
 export function buildTeamsDeepLink(upn: string, message: string): string {
   return `msteams:/l/chat/0/0?users=${encodeURIComponent(upn)}&message=${encodeURIComponent(message)}`;
+}
+
+// Normalize a configured GitHub destination to its repository base URL. Accepts
+// the common `owner/name` slug (→ https://github.com/owner/name) OR an explicit
+// http(s) repo URL so a GitHub Enterprise host is configurable just like the
+// public one (the "git url + repo" both come from the single configured value).
+// A trailing `/` and a `.git` suffix (as `git remote get-url` emits) are trimmed
+// so the `/issues/new` suffix lands cleanly.
+export function githubRepoBase(repo: string): string {
+  const trimmed = repo
+    .trim()
+    .replace(/\/+$/, "")
+    .replace(/\.git$/i, "");
+  return /^https?:\/\//i.test(trimmed) ? trimmed : `https://github.com/${trimmed}`;
+}
+
+// Build a GitHub "new issue" URL pre-filled with a title + body — the GitHub
+// analogue of a mailto: draft. Opening it lands the user on the repo's issue form
+// with everything filled in; nothing is filed until they click "Submit". GitHub
+// caps the prefill URL near 8 KB, so `body` MUST be the compact SUMMARY, not the
+// full bundle — the full report travels via the clipboard + the saved file
+// (attached by hand), the same split the Teams channel uses. title/body are
+// percent-encoded so the single unencoded `&` between them stays the field
+// separator (no query-param injection from a summary that contains `&`/`#`/`=`).
+export function buildGithubIssueUrl(repo: string, title: string, body: string): string {
+  const base = githubRepoBase(repo);
+  return `${base}/issues/new?title=${encodeURIComponent(title)}&body=${encodeURIComponent(body)}`;
 }
 
 // Fail-fast budget for the launcher to exit. open/xdg-open/rundll32 dispatch the URI

@@ -9,9 +9,11 @@ const { spawnMock, spawnSyncMock } = vi.hoisted(() => ({
 vi.mock("node:child_process", () => ({ spawn: spawnMock, spawnSync: spawnSyncMock }));
 
 import {
+  buildGithubIssueUrl,
   buildMailto,
   buildTeamsDeepLink,
   copyToClipboard,
+  githubRepoBase,
   openExternal,
   resolveDestination,
 } from "../../../src/support/send.js";
@@ -20,6 +22,7 @@ const orig = {
   TK_NO_OPEN: process.env.TK_NO_OPEN,
   TK_SUPPORT_EMAIL: process.env.TK_SUPPORT_EMAIL,
   TK_SUPPORT_TEAMS: process.env.TK_SUPPORT_TEAMS,
+  TK_SUPPORT_GITHUB: process.env.TK_SUPPORT_GITHUB,
   platform: process.platform,
 };
 
@@ -62,6 +65,7 @@ afterEach(() => {
   restoreEnv("TK_NO_OPEN", orig.TK_NO_OPEN);
   restoreEnv("TK_SUPPORT_EMAIL", orig.TK_SUPPORT_EMAIL);
   restoreEnv("TK_SUPPORT_TEAMS", orig.TK_SUPPORT_TEAMS);
+  restoreEnv("TK_SUPPORT_GITHUB", orig.TK_SUPPORT_GITHUB);
   setPlatform(orig.platform);
 });
 
@@ -81,13 +85,21 @@ describe("resolveDestination — env-only routing, NO baked default (ADR 0011)",
   test("undefined when nothing is configured — there is NO default address", () => {
     delete process.env.TK_SUPPORT_EMAIL;
     delete process.env.TK_SUPPORT_TEAMS;
+    delete process.env.TK_SUPPORT_GITHUB;
     expect(resolveDestination("email")).toBeUndefined();
     expect(resolveDestination("teams")).toBeUndefined();
+    expect(resolveDestination("github")).toBeUndefined();
   });
 
   test("a blank/whitespace env value counts as unset", () => {
     process.env.TK_SUPPORT_EMAIL = "   ";
     expect(resolveDestination("email")).toBeUndefined();
+  });
+
+  test("github routes through TK_SUPPORT_GITHUB, override beats env", () => {
+    process.env.TK_SUPPORT_GITHUB = "env-owner/env-repo";
+    expect(resolveDestination("github")).toBe("env-owner/env-repo");
+    expect(resolveDestination("github", "flag-owner/flag-repo")).toBe("flag-owner/flag-repo");
   });
 });
 
@@ -127,6 +139,49 @@ describe("buildTeamsDeepLink", () => {
     expect(uri).not.toContain("https://");
     expect(uri).toContain("users=user%40tenant.com");
     expect(uri).toContain("message=ptr%20%26%20stuff");
+  });
+});
+
+describe("githubRepoBase", () => {
+  test("an owner/name slug maps to the public github.com repo URL", () => {
+    expect(githubRepoBase("acme/widget")).toBe("https://github.com/acme/widget");
+  });
+
+  test("a full http(s) repo URL is kept as-is (GitHub Enterprise host)", () => {
+    expect(githubRepoBase("https://ghe.corp.example/acme/widget")).toBe(
+      "https://ghe.corp.example/acme/widget",
+    );
+  });
+
+  test("trims a trailing slash and a `.git` suffix (as `git remote` emits)", () => {
+    expect(githubRepoBase("acme/widget.git")).toBe("https://github.com/acme/widget");
+    expect(githubRepoBase("https://github.com/acme/widget.git/")).toBe(
+      "https://github.com/acme/widget",
+    );
+  });
+});
+
+describe("buildGithubIssueUrl", () => {
+  test("builds an issues/new URL from a slug with one raw & separating title/body", () => {
+    const uri = buildGithubIssueUrl("acme/widget", "tk report & logs", "line1\nline2 & more");
+    expect(uri.startsWith("https://github.com/acme/widget/issues/new?")).toBe(true);
+    expect(uri).toContain("title=tk%20report%20%26%20logs");
+    expect(uri).toContain("body=line1%0Aline2%20%26%20more");
+    // Exactly one raw `&` — the field separator; title/body `&` are encoded.
+    expect(uri.split("&")).toHaveLength(2);
+  });
+
+  test("a body carrying `&`/`#` cannot inject extra query params", () => {
+    const uri = buildGithubIssueUrl("acme/widget", "t", "b&labels=p0#frag");
+    expect(uri).not.toContain("&labels=");
+    expect(uri).toContain("%26labels%3Dp0%23frag");
+    expect(uri.split("?")).toHaveLength(2);
+    expect(uri.split("&")).toHaveLength(2);
+  });
+
+  test("respects a configured GitHub Enterprise repo URL", () => {
+    const uri = buildGithubIssueUrl("https://ghe.corp.example/acme/widget", "t", "b");
+    expect(uri.startsWith("https://ghe.corp.example/acme/widget/issues/new?")).toBe(true);
   });
 });
 

@@ -28,11 +28,20 @@ const NOOP: ProgressReporter = {
 
 // Progress is shown only on an interactive STDERR and never when opted out. Pure
 // + injectable so the gate is unit-testable without a real TTY.
+//
+// `TK_PROGRESS=1` forces progress ON even when STDERR is not a TTY. The scan blocks
+// the event loop and writes its report only at the very end, so in a non-interactive
+// run (a dogfood harness that pipes stdio, CI) a slow scan emits ZERO bytes until it
+// finishes — making "slow" and "hung" byte-identical, and an opaque kill-at-timeout
+// impossible to diagnose. Forcing progress lets such a runner capture WHERE the scan
+// reached ("450/870 transcripts"). `TK_NO_PROGRESS` still wins (a machine consumer
+// that needs a pristine STDERR can force it off).
 export function progressEnabled(
   env: NodeJS.ProcessEnv = process.env,
   stream: { isTTY?: boolean } = process.stderr,
 ): boolean {
   if (env.TK_NO_PROGRESS) return false;
+  if (env.TK_PROGRESS && env.TK_PROGRESS !== "0") return true;
   return Boolean(stream.isTTY);
 }
 

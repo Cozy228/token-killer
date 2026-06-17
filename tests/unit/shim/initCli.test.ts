@@ -146,7 +146,67 @@ const install = (argv: string[], env?: NodeJS.ProcessEnv, cwd?: string) =>
   callDirect(runInstall, argv, env, cwd);
 const uninstall = (argv: string[], env?: NodeJS.ProcessEnv, cwd?: string) =>
   callDirect(runUninstall, argv, env, cwd);
-const status = (env?: NodeJS.ProcessEnv) => callDirect(runStatus, [], env);
+
+// runStatus is async (it overlaps the copilot/pwsh `--version` probes), so its direct
+// call must AWAIT fn inside the sandbox — the env/stdout overrides have to stay in
+// place until the spawns settle and all output is captured. Same restore contract as
+// the sync callDirect, just across an await.
+async function callDirectAsync(
+  fn: (argv: string[]) => Promise<number>,
+  argv: string[],
+  env: NodeJS.ProcessEnv = {},
+  cwd?: string,
+): Promise<DirectResult> {
+  const overrides: NodeJS.ProcessEnv = {
+    HOME: home,
+    USERPROFILE: home,
+    APPDATA: join(home, "AppData", "Roaming"),
+    TOKEN_KILLER_HOME: join(home, ".token-killer"),
+    PATH: SANDBOX_PATH,
+    CLAUDECODE: "",
+    CLAUDE_CODE_ENTRYPOINT: "",
+    ...env,
+  };
+  const keys = Object.keys(overrides);
+  const savedEnv: Record<string, string | undefined> = {};
+  for (const key of keys) savedEnv[key] = process.env[key];
+  for (const [key, value] of Object.entries(overrides)) {
+    if (value === undefined) delete process.env[key];
+    else process.env[key] = value;
+  }
+
+  const outChunks: string[] = [];
+  const errChunks: string[] = [];
+  const origOut = process.stdout.write.bind(process.stdout);
+  const origErr = process.stderr.write.bind(process.stderr);
+  process.stdout.write = ((chunk: unknown) => {
+    outChunks.push(String(chunk));
+    return true;
+  }) as typeof process.stdout.write;
+  process.stderr.write = ((chunk: unknown) => {
+    errChunks.push(String(chunk));
+    return true;
+  }) as typeof process.stderr.write;
+
+  const savedCwd = process.cwd();
+  if (cwd) process.chdir(cwd);
+
+  let status: number;
+  try {
+    status = await fn(argv);
+  } finally {
+    if (cwd) process.chdir(savedCwd);
+    process.stdout.write = origOut;
+    process.stderr.write = origErr;
+    for (const key of keys) {
+      if (savedEnv[key] === undefined) delete process.env[key];
+      else process.env[key] = savedEnv[key];
+    }
+  }
+
+  return { status, stdout: outChunks.join(""), stderr: errChunks.join("") };
+}
+const status = (env?: NodeJS.ProcessEnv) => callDirectAsync(runStatus, [], env);
 
 const savedInitEnv: Record<string, string | undefined> = {};
 beforeEach(() => {
@@ -570,10 +630,10 @@ describe("tk status", () => {
   // The persisted delivery state lets status report what `tk install` chose even
   // for tiers a live probe can't fully confirm. Install records it; status reads it
   // back and refreshes lastVerified (best-effort, never breaking status).
-  test("status reflects the persisted delivery state written by install", () => {
+  test("status reflects the persisted delivery state written by install", async () => {
     install(["--host", "copilot-cli"]);
     expect(existsSync(join(home, ".token-killer", "delivery-state.json"))).toBe(true);
-    const result = status();
+    const result = await status();
     expect(result.status).toBe(0);
     expect(result.stdout).toContain("installed host:");
     expect(result.stdout).toMatch(/installed host:\s+copilot-cli/);

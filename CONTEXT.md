@@ -198,7 +198,7 @@ The diagnostic artifact `tk support` assembles to share with whoever a deploymen
 support to — the machine-state diagnostic (environment, delivery health, the proxied
 command history with its captured output, recent crashes), home directory scrubbed. It carries full
 technical evidence but **never any chat-prompt text**; tk only opens a pre-filled mail
-draft or Teams chat referencing it and never transmits — the user sends by hand, and
+draft, Teams chat, or GitHub issue referencing it and never transmits — the user sends by hand, and
 that act is the explicit per-run opt-in [Raw evidence](#evidence-and-recovery) requires.
 _Avoid_: support report (collides with [Report](#reporting-and-telemetry)), crash report.
 

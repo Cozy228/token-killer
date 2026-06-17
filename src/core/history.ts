@@ -8,6 +8,7 @@ import { parseJsonl } from "./jsonl.js";
 import {
   historyFile,
   projectFingerprint,
+  projectLabel,
   projectMetaFile,
   projectMetaFileForFingerprint,
   tokenKillerHome,
@@ -56,17 +57,14 @@ function historyDisabled(): boolean {
 // never hit — the mkdir would still fire every command. Instead we just append; only
 // when the dir does not yet exist (ENOENT — the project's first-ever row, or after a
 // deletion) do we pay one mkdir and retry. In steady state (dir present on disk) this
-// is ZERO mkdir per command. Returns whether the dir had to be created, so the caller
-// can write the per-project meta exactly then (and never on the hot path again).
-async function appendJsonLine(file: string, line: string): Promise<{ createdDir: boolean }> {
+// is ZERO mkdir per command.
+async function appendJsonLine(file: string, line: string): Promise<void> {
   try {
     await writeFile(file, line, { encoding: "utf8", flag: "a", mode: 0o600 });
-    return { createdDir: false };
   } catch (error) {
     if ((error as NodeJS.ErrnoException).code !== "ENOENT") throw error;
     await mkdir(path.dirname(file), { recursive: true, mode: 0o700 });
     await writeFile(file, line, { encoding: "utf8", flag: "a", mode: 0o600 });
-    return { createdDir: true };
   }
 }
 
@@ -97,8 +95,8 @@ export async function recordHistory(
   };
   if (options.sessionId) record.session_id = options.sessionId;
 
-  const { createdDir } = await appendJsonLine(file, `${JSON.stringify(record)}\n`);
-  if (createdDir) await writeProjectMeta(options.cwd);
+  await appendJsonLine(file, `${JSON.stringify(record)}\n`);
+  await ensureProjectMeta(options.cwd);
 }
 
 // A `--raw` passthrough that STREAMS via stdio:"inherit" (the light path) captures
@@ -134,8 +132,8 @@ export async function recordRawLitePassthrough(params: {
   };
   if (params.sessionId) record.session_id = params.sessionId;
 
-  const { createdDir } = await appendJsonLine(file, `${JSON.stringify(record)}\n`);
-  if (createdDir) await writeProjectMeta(params.cwd);
+  await appendJsonLine(file, `${JSON.stringify(record)}\n`);
+  await ensureProjectMeta(params.cwd);
 }
 
 // Fill the byte/token fields a light `--raw` row honestly OMITS (see
@@ -153,21 +151,30 @@ export function coerceHistorySizes(record: HistoryRecord): HistoryRecord {
   return record;
 }
 
-// Record the project's display label (directory basename only — never the full path)
-// for `tk gain --user` (ADR 0004 §3). Called ONLY when the project data dir was just
-// created (2.4c) — the moment a project is first seen — so the per-command hot path
-// never pays for it. Best-effort: the `wx` flag and the swallowed catch keep it a
-// no-op when the meta already exists or the disk rejects the write (display-only).
-async function writeProjectMeta(cwd: string): Promise<void> {
+// Keep the project's display label (repo-root basename only — never the full path)
+// for `tk gain --user` (ADR 0004 §3) current and SELF-HEALING. The label is anchored
+// identically to the fingerprint (projectLabel), so a repo entered first from a
+// subdir/worktree no longer gets named after that subdir. Read-then-write-if-stale:
+// in the steady state (label already correct) this is a single small read and no
+// write, so it stays cheap — and it runs only in the deferred accounting commit,
+// after stdout is already emitted, so it is off the user-visible latency path.
+// Heals legacy rows on the next visit: a missing meta (was showing as a bare hash)
+// or a stale label (basename of an old cwd) is rewritten with the correct name.
+// Best-effort: any read/write error is swallowed — the label is display-only and must
+// never affect the command's outcome.
+async function ensureProjectMeta(cwd: string): Promise<void> {
   try {
-    const meta: ProjectMeta = { label: path.basename(cwd) };
+    const label = projectLabel(cwd);
+    const current = await readProjectMeta(projectFingerprint(cwd));
+    if (current?.label === label) return;
+    const meta: ProjectMeta = { label };
     await writeFile(projectMetaFile(cwd), `${JSON.stringify(meta)}\n`, {
       encoding: "utf8",
-      flag: "wx",
+      flag: "w",
       mode: 0o600,
     });
   } catch {
-    // already written or unwritable — display-only, safe to skip
+    // unreadable/unwritable meta — display-only, safe to skip
   }
 }
 
@@ -210,8 +217,8 @@ export async function recordHookFailure(params: {
     quality_status: "failure",
   };
 
-  const { createdDir } = await appendJsonLine(file, `${JSON.stringify(record)}\n`);
-  if (createdDir) await writeProjectMeta(params.cwd);
+  await appendJsonLine(file, `${JSON.stringify(record)}\n`);
+  await ensureProjectMeta(params.cwd);
 }
 
 export async function readHistory(cwd: string): Promise<HistoryRecord[]> {

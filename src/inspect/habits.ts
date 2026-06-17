@@ -13,8 +13,7 @@
 // chatSessions / flat dialects don't carry this turn structure, so they contribute
 // nothing here (the opportunity scan still covers their tool counts).
 
-import { readFileSync } from "node:fs";
-
+import { readSourceText, type FileCache } from "./fileCache.js";
 import type { SourceDiscovery } from "./sources.js";
 
 // A prompt this long is worth flagging — "write as little context as required, as
@@ -57,7 +56,8 @@ function contentLength(data: Record<string, unknown>): number {
 
 export function analyzeHabits(
   discovery: SourceDiscovery,
-  onProgress?: (completed: number, total: number) => void,
+  onProgress?: (completed: number, total: number, detail?: string) => void,
+  fileCache?: FileCache,
 ): HabitStats {
   const sessions = new Map<string, Session>();
 
@@ -73,13 +73,13 @@ export function analyzeHabits(
   // Both transcripts and (rarely-populated) session files carry the typed stream.
   const files = [...discovery.transcriptFiles, ...discovery.sessionFiles];
   let processed = 0;
+  const tick = (): void =>
+    onProgress?.(processed, files.length, `${sessions.size.toLocaleString()} sessions`);
   for (const file of files) {
-    let text: string;
-    try {
-      text = readFileSync(file, "utf8");
-    } catch {
+    const text = readSourceText(file, fileCache);
+    if (text === undefined) {
       processed += 1;
-      onProgress?.(processed, files.length);
+      tick();
       continue;
     }
     // Fall back to the file path as the session key until a session.start declares one.
@@ -109,7 +109,7 @@ export function analyzeHabits(
       }
     }
     processed += 1;
-    onProgress?.(processed, files.length);
+    tick();
   }
 
   // Aggregate only sessions that showed real activity.
