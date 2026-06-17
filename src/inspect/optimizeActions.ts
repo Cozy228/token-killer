@@ -30,6 +30,7 @@ export const SURFACE_EXPOSURE: Record<ContextSurface, ExposureClass> = {
   path_instructions: "path-scoped",
   prompt_file: "on-invocation",
   custom_agent: "on-invocation",
+  chat_mode: "on-invocation",
   skill: "on-invocation",
   // Host setting that compresses every session's terminal output → always-on.
   vscode_settings: "always-on",

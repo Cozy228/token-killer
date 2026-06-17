@@ -24,6 +24,7 @@ import {
   tokensToCredits,
   tokensToUsd,
 } from "./pricing.js";
+import { basename } from "node:path";
 import { projectFingerprint } from "./dataDir.js";
 import {
   listProjectGovernance,
@@ -297,9 +298,16 @@ export async function emitGainHtml(opts: ReportOptions, now: Date = new Date()):
     {
       kind: "gain",
       title: "Your token savings",
-      subtitle: "How much token spend Token Killer saved you, and where it came from.",
+      subtitle: "How much model spend Token Killer saved you, and where it came from.",
       generatedAt: now.toISOString(),
-      data: { ...ledgers, ...usdFields(ledgers) },
+      // Name the actual project (cwd basename) so the scope line reads "Covers
+      // token-killer" instead of the ambiguous "this project" (parity with inspect,
+      // src/inspect/cli.ts). User scope covers every project, so it carries no name.
+      data: {
+        ...ledgers,
+        ...usdFields(ledgers),
+        project: opts.scope === "project" ? basename(opts.cwd) : undefined,
+      },
     },
     now.getTime(),
   );

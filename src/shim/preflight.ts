@@ -61,7 +61,17 @@ export type PreflightDeps = {
 // point of preflight is to report absence, not crash status.
 export function runPreflightCommand(cmd: string, args: string[]): RunResult {
   try {
-    const r = spawnSync(cmd, args, { encoding: "utf8", timeout: 5000 });
+    // On Windows, run through the shell so PATHEXT resolves `copilot.cmd` / `.ps1`
+    // npm shims — a no-shell spawnSync("copilot") returns ENOENT for those (Node
+    // won't exec a `.cmd` directly), which is exactly why `tk status` reported
+    // "version not found" on Windows while `copilot --version` worked in the user's
+    // shell. cmd/args here are a fixed allowlist (copilot/claude/code/pwsh +
+    // --version), never user input, so shell use carries no injection risk.
+    const r = spawnSync(cmd, args, {
+      encoding: "utf8",
+      timeout: 5000,
+      shell: process.platform === "win32",
+    });
     if (r.error || r.status === null) {
       // ENOENT (binary missing) or killed by signal/timeout.
       const out = `${r.stdout ?? ""}${r.stderr ?? ""}`.trim();
@@ -206,12 +216,24 @@ export function probeHostVersion(
 
 function copilotVersionCheck(deps: PreflightDeps): PreflightCheck {
   const r = deps.run("copilot", ["--version"]);
-  if (!r.ok || r.stdout === "") {
-    return { name: "Copilot CLI version", ok: "warn", detail: "not found" };
+  if (r.ok && r.stdout !== "") {
+    // The version string is usually a single line; keep the first non-empty line.
+    const line = r.stdout.split(/\r?\n/).find((l) => l.trim() !== "") ?? r.stdout;
+    return { name: "Copilot CLI version", ok: true, detail: line.trim() };
   }
-  // The version string is usually a single line; keep the first non-empty line.
-  const line = r.stdout.split(/\r?\n/).find((l) => l.trim() !== "") ?? r.stdout;
-  return { name: "Copilot CLI version", ok: true, detail: line.trim() };
+  // The `--version` spawn failed — but if the binary still RESOLVES on PATH (a
+  // Windows `.cmd`/`.ps1` shim a no-shell spawn can't exec, or a wrapper that exits
+  // non-zero on --version), Copilot CLI IS installed. Report that instead of a false
+  // "not found" that contradicts the user's working `copilot --version`.
+  const resolved = deps.which("copilot");
+  if (resolved) {
+    return {
+      name: "Copilot CLI version",
+      ok: true,
+      detail: `installed: ${resolved} (version probe returned nothing)`,
+    };
+  }
+  return { name: "Copilot CLI version", ok: "warn", detail: "not found" };
 }
 
 function pwshCheck(deps: PreflightDeps): PreflightCheck {

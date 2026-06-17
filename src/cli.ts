@@ -104,6 +104,7 @@ function help(): string {
     "           [--project|--user] [--surface instructions|prompts|agents|skills] [--fail-on info|warn|error]",
     "  Read-only scan of your AI setup for missed token savings; ranks the opportunities.",
     "  Opens a single-file HTML report in your browser by default.",
+    "  Shows per-phase progress on stderr when interactive (TK_NO_PROGRESS=1 to silence).",
     "  --text                       Print the report to the terminal instead of opening HTML",
     "  --json                       Output JSON instead",
     "  --since <window>             Only sessions newer than e.g. 7d, 24h, 30m",

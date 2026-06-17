@@ -17,7 +17,17 @@ export type GainSummary = {
   avg_savings_per_command: number;
   total_duration_ms: number;
   // sorted by saved desc; the caller may slice to top-N for display.
-  by_handler: Array<{ handler: string; raw: number; saved: number; pct: number; count: number }>;
+  // `samples`: up to 3 distinct example commands that fed this handler, so a report can
+  // show WHAT "read-like"/"search-like" actually covered. Local report only — telemetry
+  // projects `.handler` (names) and never carries these.
+  by_handler: Array<{
+    handler: string;
+    raw: number;
+    saved: number;
+    pct: number;
+    count: number;
+    samples?: string[];
+  }>;
   quality_status_counts: Record<string, number>;
 };
 
@@ -37,22 +47,38 @@ function pct(saved: number, raw: number): number {
   return raw === 0 ? 0 : Number(((saved / raw) * 100).toFixed(1));
 }
 
+// Example commands are illustrative, not the full record (that's `--history`). Cap each
+// at 80 chars so a giant `grep ... <many paths>` neither bloats the report data nor
+// floods `tk gain --text`. Renderers may shorten further for a narrow column.
+export function truncateSample(command: string): string {
+  return command.length > 80 ? `${command.slice(0, 79)}…` : command;
+}
+
 export function summarize(records: HistoryRecord[]): GainSummary {
   let raw = 0;
   let output = 0;
   let saved = 0;
   let duration = 0;
-  const handlers = new Map<string, { raw: number; saved: number; count: number }>();
+  const handlers = new Map<
+    string,
+    { raw: number; saved: number; count: number; samples: string[] }
+  >();
 
   for (const record of records) {
     raw += record.raw_tokens;
     output += record.output_tokens;
     saved += record.saved_tokens;
     duration += record.duration_ms;
-    const current = handlers.get(record.handler) ?? { raw: 0, saved: 0, count: 0 };
+    const current = handlers.get(record.handler) ?? { raw: 0, saved: 0, count: 0, samples: [] };
     current.raw += record.raw_tokens;
     current.saved += record.saved_tokens;
     current.count += 1;
+    // Keep up to 3 DISTINCT non-empty example commands per handler (failure rows store
+    // command === "", so they are skipped). Lets the report show what each family ran.
+    if (record.command && current.samples.length < 3) {
+      const sample = truncateSample(record.command);
+      if (!current.samples.includes(sample)) current.samples.push(sample);
+    }
     handlers.set(record.handler, current);
   }
 
@@ -63,6 +89,7 @@ export function summarize(records: HistoryRecord[]): GainSummary {
       saved: stats.saved,
       pct: pct(stats.saved, stats.raw),
       count: stats.count,
+      samples: stats.samples,
     }))
     .sort((a, b) => b.saved - a.saved);
 

@@ -4,6 +4,7 @@
 
 import type { ContextFinding } from "../context/types.js";
 import type { AdviceFinding } from "./advice.js";
+import type { Footprint } from "./footprint.js";
 import type { RepoContext } from "./repoContext.js";
 import type { Opportunity, ScanResult } from "./scan.js";
 import type { Finding } from "./unified.js";
@@ -24,6 +25,8 @@ export type Report = {
   // the unified report, plus the merged unified Finding[].
   static_context?: { files_scanned: number; findings: ContextFinding[] };
   findings?: Finding[];
+  // Standing per-session token cost breakdown (instructions / skills / agents / MCP).
+  footprint?: Footprint;
 };
 
 export function buildReport(

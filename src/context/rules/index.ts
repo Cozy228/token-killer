@@ -6,6 +6,7 @@ import { clearRules, registerCrossFileRule, registerPerFileRule } from "../analy
 import { agentOverbreadthRule } from "./agents.js";
 import { alwaysOnBloatRule } from "./alwaysOn.js";
 import { cacheabilityChurnRule } from "./cacheability.js";
+import { chatModeBloatRule } from "./chatModes.js";
 import { conditionalRuleInAlwaysOnRule } from "./conditionalRule.js";
 import { instructionConflictRule } from "./conflicts.js";
 import { instructionDuplicateRule } from "./duplicates.js";
@@ -38,6 +39,7 @@ export function registerAllRules(): void {
   registerPerFileRule(conditionalRuleInAlwaysOnRule);
   registerPerFileRule(taskPromptInInstructionRule);
   registerPerFileRule(agentOverbreadthRule);
+  registerPerFileRule(chatModeBloatRule);
   registerCrossFileRule(instructionDuplicateRule);
   registerCrossFileRule(instructionConflictRule);
   // Slice 4 — skill rules.

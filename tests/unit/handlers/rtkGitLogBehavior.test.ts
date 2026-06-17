@@ -70,7 +70,7 @@ describe("RTK git log behavior", () => {
   // two-commit verbose parser would collapse the log to "Git Log: 2 commits", losing
   // all diffs/stats/name lines entirely.
   describe("H6: rich output flags pass through with content intact", () => {
-    test("git log -p retains patch diff content (old formatter stripped diffs)", async () => {
+    test("git log -p compacts each commit's diff (changed lines kept, headers collapsed)", async () => {
       const patchOutput = [
         "commit abc1234def5678abcdef1234567890abc1234abc",
         "Author: Alice <alice@example.com>",
@@ -102,11 +102,18 @@ describe("RTK git log behavior", () => {
 
       const result = await runHandler(["git", "log", "-p"], patchOutput);
 
-      // With H6 fix: diffs survive. Without: "Git Log: 2 commits" only.
-      expect(result.output).toContain("diff --git a/src/auth.ts");
+      // -p is now COMPACTED like `git show`/`git diff` (not raw-passthrough like the
+      // other rich flags): every changed line + file identity survive, while the
+      // verbose `diff --git`/index/`---`/`+++` boilerplate collapses to a file label.
+      expect(result.output).toContain("src/auth.ts");
       expect(result.output).toContain("-const old = 1;");
       expect(result.output).toContain("+const fixed = 1;");
-      expect(result.output).toContain("diff --git a/src/feature.ts");
+      expect(result.output).toContain("src/feature.ts");
+      expect(result.output).toContain("+export function feature() {}");
+      // Commit headers/messages stay verbatim.
+      expect(result.output).toContain("fix: correct auth flow");
+      // Never collapsed to a bare commit count (the original H6 content-loss bug).
+      expect(result.output).not.toMatch(/Git Log: \d+ commits/);
     });
 
     test("git log --stat retains file statistics (old formatter stripped stat lines)", async () => {

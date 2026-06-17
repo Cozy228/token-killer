@@ -1,6 +1,6 @@
 {
   "name": "token-killer",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "description": "Token-saving command proxy.",
   "type": "module",
   "packageManager": "pnpm@10.34.3",
@@ -14,6 +14,7 @@
   "scripts": {
     "dev": "tsx src/cli.ts",
     "build": "tsdown",
+    "prepack": "tsdown",
     "calibrate-tokens": "tsx scripts/calibrate-tokens.ts",
     "test": "vitest --config vitest.config.ts",
     "test:product": "vitest run --config vitest.config.ts",

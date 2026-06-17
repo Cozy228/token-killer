@@ -33,6 +33,10 @@ function out(line: string): void {
   process.stdout.write(`${line}\n`);
 }
 
+function err(line: string): void {
+  process.stderr.write(`${line}\n`);
+}
+
 // Hosts that have any guidance to clean on uninstall — a standalone TK.md file
 // (claude-code, vscode) OR an inlined loader block (copilot-cli, claude-code).
 // Derived from the guidance module rather than the adapter's `guidancePath()`
@@ -113,21 +117,52 @@ export function runStatus(_argv: string[] = []): number {
 // tk uninstall
 // ---------------------------------------------------------------------------
 
-type UninstallArgs = { project: boolean; dryRun: boolean; purgeData: boolean };
+type UninstallArgs = {
+  project: boolean;
+  dryRun: boolean;
+  purgeData: boolean;
+  help: boolean;
+  error?: string;
+};
+
+const UNINSTALL_USAGE = [
+  "tk uninstall [--project] [--purge-data] [--dry-run]",
+  "",
+  "  --project      Remove only this repo's tk artifacts (leave user-level intact)",
+  "  --purge-data   Also delete measured savings under ~/.token-killer (off by default)",
+  "  --dry-run      Report what would be removed without deleting",
+  "  --help         Show this usage",
+].join("\n");
 
 function parseUninstallArgs(argv: string[]): UninstallArgs {
-  const args: UninstallArgs = { project: false, dryRun: false, purgeData: false };
+  const args: UninstallArgs = { project: false, dryRun: false, purgeData: false, help: false };
   for (const token of argv) {
     if (token === "--project") args.project = true;
     else if (token === "--dry-run") args.dryRun = true;
     else if (token === "--purge-data") args.purgeData = true;
-    // Unknown tokens ignored — every tk write is user-level (no -g/-l switch).
+    else if (token === "--help" || token === "-h") args.help = true;
+    else {
+      // `tk uninstall` is DESTRUCTIVE. An unrecognized flag (a `--help` typo, a stray
+      // rtk-style `-g`, a half-typed switch) must NOT fall through into a real
+      // teardown — fail closed: record the first bad token and let runUninstall refuse.
+      args.error = `unknown flag '${token}'`;
+      break;
+    }
   }
   return args;
 }
 
 export function runUninstall(argv: string[]): number {
   const opts = parseUninstallArgs(argv);
+  if (opts.help) {
+    out(UNINSTALL_USAGE);
+    return 0;
+  }
+  if (opts.error) {
+    err(`tk uninstall: ${opts.error}`);
+    err("Refusing to uninstall on an unrecognized flag. Run `tk uninstall --help` for usage.");
+    return 1;
+  }
   if (opts.dryRun) {
     if (opts.project) uninstallProjectDryRun();
     else uninstallUserDryRun();
@@ -250,10 +285,25 @@ function reportPurgeDryRun(): void {
 // tk install
 // ---------------------------------------------------------------------------
 
-type InstallArgs = { host: Host | "auto"; project: boolean; dryRun: boolean };
+type InstallArgs = {
+  host: Host | "auto";
+  project: boolean;
+  dryRun: boolean;
+  help: boolean;
+  error?: string;
+};
+
+const INSTALL_USAGE = [
+  "tk install [--host auto|claude-code|copilot-cli|vscode] [--project] [--dry-run]",
+  "",
+  "  --host <h>     Force the host instead of auto-detecting",
+  "  --project      Wire this repo only (project-level injection), not the user level",
+  "  --dry-run      Preview what would change without writing",
+  "  --help         Show this usage",
+].join("\n");
 
 function parseInstallArgs(argv: string[]): InstallArgs {
-  const args: InstallArgs = { host: "auto", project: false, dryRun: false };
+  const args: InstallArgs = { host: "auto", project: false, dryRun: false, help: false };
   for (let i = 0; i < argv.length; i += 1) {
     const token = argv[i];
     if (token === "--host") {
@@ -265,15 +315,23 @@ function parseInstallArgs(argv: string[]): InstallArgs {
         value === "auto"
       ) {
         args.host = value;
+      } else {
+        // A bad `--host` value (typo, or an rtk name we don't support) must not
+        // silently install the auto-detected host — the user asked for something
+        // specific. Reject so they can correct it.
+        args.error = `--host expects auto|claude-code|copilot-cli|vscode, got '${value ?? ""}'`;
       }
       i += 1;
     } else if (token === "--project") {
       args.project = true;
     } else if (token === "--dry-run") {
       args.dryRun = true;
+    } else if (token === "--help" || token === "-h") {
+      args.help = true;
     }
-    // Unknown tokens (e.g. a stray `-g` from rtk muscle memory) are ignored —
-    // every tk write is user-level, so there is no global/local switch to honor.
+    // Other unknown tokens (e.g. a stray `-g` from rtk muscle memory) are ignored —
+    // install is non-destructive and every tk write is user-level, so there is no
+    // global/local switch to honor.
   }
   return args;
 }
@@ -295,6 +353,14 @@ function recordInstallState(host: Host): void {
 
 export function runInstall(argv: string[]): number {
   const opts = parseInstallArgs(argv);
+  if (opts.help) {
+    out(INSTALL_USAGE);
+    return 0;
+  }
+  if (opts.error) {
+    err(`tk install: ${opts.error}`);
+    return 1;
+  }
   const env = gatherDetectEnv();
   const host = opts.host === "auto" ? detectHost(env) : opts.host;
   out(`Detected host: ${host}`);
@@ -321,7 +387,7 @@ export function runInstall(argv: string[]): number {
   // forced `--host X` stays single-host.
   if (opts.host === "auto") {
     const present: Host[] = [];
-    if (env.copilotDirExists) present.push("copilot-cli");
+    if (env.copilotDirExists || env.copilotOnPath) present.push("copilot-cli");
     if (env.claudeSettingsExists || env.claudeEnv) present.push("claude-code");
     for (const other of present) {
       if (other === host) continue;

@@ -17,6 +17,13 @@ export type DetectEnv = {
   // A weaker, persistent signal: the user has a Claude Code settings file.
   claudeSettingsExists: boolean;
   copilotDirExists: boolean;
+  // The `copilot` binary resolves on PATH. The AUTHORITATIVE "Copilot CLI is
+  // installed" signal — the `~/.copilot` dir can be absent on a fresh install or
+  // relocated via COPILOT_HOME, while the binary is what the user actually runs.
+  // PATHEXT-aware so a Windows `copilot.cmd` / `copilot.exe` npm shim is found
+  // (the very case where a no-shell `spawnSync("copilot")` returns ENOENT but the
+  // user's shell resolves `copilot --version` fine).
+  copilotOnPath: boolean;
   termProgram?: string;
   codeOnPath: boolean;
   vscodeUserDirExists: boolean;
@@ -32,16 +39,29 @@ export type DetectEnv = {
 export function detectHost(env: DetectEnv): Host {
   if (env.claudeEnv) return "claude-code";
   if (env.termProgram === "vscode") return "vscode";
-  if (env.copilotDirExists) return "copilot-cli";
+  // The binary on PATH is as authoritative as the `~/.copilot` dir (and more
+  // reliable on Windows / under COPILOT_HOME) — either proves Copilot CLI is here.
+  if (env.copilotDirExists || env.copilotOnPath) return "copilot-cli";
   if (env.claudeSettingsExists) return "claude-code";
   if (env.codeOnPath || env.vscodeUserDirExists) return "vscode";
   return "unknown";
 }
 
-function codeResolvesOnPath(): boolean {
-  const entries = (process.env.PATH ?? "").split(delimiter).filter(Boolean);
-  const names = process.platform === "win32" ? ["code.cmd", "code.exe", "code"] : ["code"];
-  return entries.some((dir) => names.some((n) => existsSync(join(dir, n))));
+// Does `<base>` resolve to an executable on PATH? PATHEXT-aware on Windows so an
+// npm-installed `copilot.cmd` / `code.cmd` shim is found — the case a bare
+// `spawnSync("copilot")` (no shell) misses, producing the "installed but tk can't
+// see it" symptom. Never throws.
+function resolvesOnPath(base: string): boolean {
+  try {
+    const entries = (process.env.PATH ?? process.env.Path ?? "").split(delimiter).filter(Boolean);
+    const exts =
+      process.platform === "win32"
+        ? (process.env.PATHEXT ?? ".COM;.EXE;.BAT;.CMD").split(";").filter((e) => e.length > 0)
+        : [""];
+    return entries.some((dir) => exts.some((ext) => existsSync(join(dir, `${base}${ext}`))));
+  } catch {
+    return false;
+  }
 }
 
 export function gatherDetectEnv(home = homedir()): DetectEnv {
@@ -49,8 +69,9 @@ export function gatherDetectEnv(home = homedir()): DetectEnv {
     claudeEnv: Boolean(process.env.CLAUDECODE || process.env.CLAUDE_CODE_ENTRYPOINT),
     claudeSettingsExists: existsSync(join(home, ".claude", "settings.json")),
     copilotDirExists: existsSync(join(home, ".copilot")),
+    copilotOnPath: resolvesOnPath("copilot"),
     termProgram: process.env.TERM_PROGRAM,
-    codeOnPath: codeResolvesOnPath(),
+    codeOnPath: resolvesOnPath("code"),
     vscodeUserDirExists: existsSync(vscodeUserDir(process.platform, home)),
   };
 }

@@ -184,6 +184,23 @@ describe("tk install", () => {
     expect(readFileSync(injected, "utf8")).toContain("Token Killer");
   });
 
+  test("--help prints usage and installs nothing", () => {
+    const result = install(["--help"]);
+    expect(result.status).toBe(0);
+    expect(result.stdout).toContain("tk install");
+    expect(result.stdout).not.toContain("Detected host:");
+    expect(existsSync(join(home, ".token-killer", "shim", SHIM_GIT))).toBe(false);
+  });
+
+  // A bad `--host` value must NOT silently install the auto-detected host — the user
+  // asked for something specific.
+  test("rejects an unknown --host value (exit 1)", () => {
+    const result = install(["--host", "claud"]);
+    expect(result.status).toBe(1);
+    expect(result.stderr).toContain("--host expects");
+    expect(result.stdout).not.toContain("Detected host:");
+  });
+
   // ADR 0012: VS Code is additive — the shim stays PRIMARY and the hook is layered
   // on top. So the install reports BOTH, and the shim wrappers + the shared hook
   // config (~/.copilot/hooks/tk-rewrite.json) are both written.
@@ -494,6 +511,33 @@ describe("tk uninstall", () => {
     expect(result.stdout).toContain("[dry-run]");
     expect(result.stdout).toMatch(/would remove .*projects/);
     expect(existsSync(projects)).toBe(true);
+  });
+
+  // Destructive-guard: an unrecognized flag once fell through into a REAL teardown
+  // (e.g. `tk uninstall --help` uninstalled for real). uninstall must fail closed.
+  test("--help prints usage and uninstalls nothing", () => {
+    install(["--host", "copilot-cli"]);
+    const cfg = join(home, ".copilot", "hooks", "tk-rewrite.json");
+    expect(existsSync(cfg)).toBe(true);
+
+    const result = uninstall(["--help"]);
+    expect(result.status).toBe(0);
+    expect(result.stdout).toContain("tk uninstall");
+    // Teardown emits per-tier lines like "instruction injection: removed"; usage
+    // never does. Its absence + the surviving config prove nothing was torn down.
+    expect(result.stdout).not.toContain("instruction injection");
+    expect(existsSync(cfg)).toBe(true);
+  });
+
+  test("refuses an unknown flag (exit 1) without tearing anything down", () => {
+    install(["--host", "copilot-cli"]);
+    const cfg = join(home, ".copilot", "hooks", "tk-rewrite.json");
+    expect(existsSync(cfg)).toBe(true);
+
+    const result = uninstall(["--nope-typo"]);
+    expect(result.status).toBe(1);
+    expect(result.stderr).toContain("unknown flag");
+    expect(existsSync(cfg)).toBe(true);
   });
 });
 

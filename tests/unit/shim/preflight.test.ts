@@ -1,3 +1,7 @@
+import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
+
 import { describe, expect, test } from "vitest";
 
 import {
@@ -60,22 +64,36 @@ function find(checks: PreflightCheck[], name: string): PreflightCheck {
 }
 
 describe("runPreflightCommand", () => {
-  test("treats a non-zero exit as failed even when it prints version-like output", () => {
-    const result = runPreflightCommand(process.execPath, [
-      "-e",
-      "process.stdout.write('Fake CLI 9.9.9'); process.exit(7)",
-    ]);
+  // runPreflightCommand spawns with `shell: true` on Windows (PATHEXT resolution for
+  // copilot.cmd/.ps1 — see preflight.ts). Passing `node -e "<script>"` through that shell
+  // is fragile: cmd.exe re-parses the script and splits it on the spaces in
+  // "Fake CLI 1.2.3", truncating it to `process.stderr.write('Fake` → SyntaxError — a
+  // Windows-only CI failure. Run a temp script FILE instead: the only shell-exposed token
+  // is a clean temp path (no spaces/quotes/parens for the shell to mangle), so the script
+  // body reaches Node verbatim. Real probes likewise pass one space-free arg (`--version`).
+  function withFakeCli(body: string, run: (scriptPath: string) => void): void {
+    const dir = mkdtempSync(join(tmpdir(), "tk-preflight-"));
+    const script = join(dir, "fake-cli.cjs");
+    writeFileSync(script, body);
+    try {
+      run(script);
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
+  }
 
-    expect(result).toEqual({ ok: false, stdout: "Fake CLI 9.9.9" });
+  test("treats a non-zero exit as failed even when it prints version-like output", () => {
+    withFakeCli("process.stdout.write('Fake CLI 9.9.9'); process.exit(7)", (script) => {
+      const result = runPreflightCommand(process.execPath, [script]);
+      expect(result).toEqual({ ok: false, stdout: "Fake CLI 9.9.9" });
+    });
   });
 
   test("treats a zero exit as successful", () => {
-    const result = runPreflightCommand(process.execPath, [
-      "-e",
-      "process.stderr.write('Fake CLI 1.2.3')",
-    ]);
-
-    expect(result).toEqual({ ok: true, stdout: "Fake CLI 1.2.3" });
+    withFakeCli("process.stderr.write('Fake CLI 1.2.3')", (script) => {
+      const result = runPreflightCommand(process.execPath, [script]);
+      expect(result).toEqual({ ok: true, stdout: "Fake CLI 1.2.3" });
+    });
   });
 });
 
@@ -146,6 +164,17 @@ describe("gatherPreflight — Copilot CLI version", () => {
     const deps = makeDeps({ runs: { copilot: { ok: true, stdout: "\ncopilot 2.0\nextra" } } });
     const c = find(gatherPreflight(deps), "Copilot CLI version");
     expect(c.detail).toBe("copilot 2.0");
+  });
+
+  test("Windows symptom: --version spawn fails but the binary resolves → still installed, ok", () => {
+    // `copilot.cmd` is on PATH (which finds it) but the no-shell --version spawn
+    // returned nothing — must report INSTALLED, never the false "not found" that
+    // contradicts the user's working `copilot --version`.
+    const deps = makeDeps({ resolvable: { copilot: "C:/Users/u/AppData/npm/copilot.cmd" } });
+    const c = find(gatherPreflight(deps), "Copilot CLI version");
+    expect(c.ok).toBe(true);
+    expect(c.detail).toContain("installed");
+    expect(c.detail).toContain("copilot.cmd");
   });
 });
 

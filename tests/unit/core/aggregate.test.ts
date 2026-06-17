@@ -68,6 +68,7 @@ describe("summarize", () => {
       saved: 900,
       pct: 90,
       count: 1,
+      samples: ["git status"],
     });
     expect(summary.by_handler[1]).toEqual({
       handler: "grep",
@@ -75,7 +76,31 @@ describe("summarize", () => {
       saved: 100,
       pct: 50,
       count: 2,
+      samples: ["git status"], // both rows share the default command → deduped to one
     });
+  });
+
+  test("by_handler keeps up to 3 distinct example commands, skipping empty", () => {
+    const summary = summarize([
+      record({ handler: "read-like", command: "read a.txt" }),
+      record({ handler: "read-like", command: "read a.txt" }), // duplicate → not added twice
+      record({ handler: "read-like", command: "read b.txt" }),
+      record({ handler: "read-like", command: "read c.txt" }),
+      record({ handler: "read-like", command: "read d.txt" }), // 4th distinct → capped at 3
+      record({ handler: "fallback", command: "" }), // failure row stores "" → no sample
+    ]);
+    const readLike = summary.by_handler.find((h) => h.handler === "read-like");
+    expect(readLike?.samples).toEqual(["read a.txt", "read b.txt", "read c.txt"]);
+    const fallback = summary.by_handler.find((h) => h.handler === "fallback");
+    expect(fallback?.samples).toEqual([]);
+  });
+
+  test("by_handler truncates a long sample command to 80 chars with an ellipsis", () => {
+    const long = `rg ${"x".repeat(200)}`;
+    const summary = summarize([record({ handler: "search-like", command: long })]);
+    const sample = summary.by_handler[0].samples?.[0] ?? "";
+    expect(sample.length).toBe(80);
+    expect(sample.endsWith("…")).toBe(true);
   });
 });
 

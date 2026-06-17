@@ -16,7 +16,9 @@ set -euo pipefail
 SSH_HOST="${TK_SSH_HOST:-cozyultra}"
 TK_ROOT='C:\Users\cozy2\workspace\token-killer'
 ATLAS='C:\Users\cozy2\workspace\atlas'
-PWSH='C:\Program Files\PowerShell\7\pwsh.exe'
+# pwsh resolved via PATH (cmd default shell finds the WindowsApps/MSI install);
+# the old hardcoded 'C:\Program Files\PowerShell\7\pwsh.exe' is absent on some boxes.
+PWSH='pwsh'
 
 remote() {
   ssh "$SSH_HOST" "\"$PWSH\" -NoProfile -Command \"$*\""
@@ -42,7 +44,7 @@ case "$cmd" in
     remote "if (-not (Test-Path '$ATLAS')) { gh repo clone Cozy228/atlas '$ATLAS' } else { Write-Host 'atlas already exists: $ATLAS' }"
     ;;
   dogfood-preview)
-    remote "\$env:TK_DOGFOOD_CWD='$ATLAS'; Set-Location '$TK_ROOT'; pnpm exec pwsh -NoProfile -File scripts/windows-dogfood.ps1 -PreviewInit"
+    remote "\$env:TK_DOGFOOD_CWD='$ATLAS'; Set-Location '$TK_ROOT'; pnpm exec pwsh -NoProfile -File scripts/windows-dogfood.ps1 -SkipLifecycle"
     ;;
   dogfood)
     remote "\$env:TK_DOGFOOD_CWD='$ATLAS'; Set-Location '$TK_ROOT'; pnpm test:windows-dogfood"

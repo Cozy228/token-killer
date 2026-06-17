@@ -57,6 +57,9 @@ export type ScanResult = {
 export type ScanOptions = {
   sinceMs?: number; // absolute epoch-ms cutoff; records older than this are dropped
   session?: string; // restrict to one session id
+  // Per-file progress hook (decoupled from the reporter). Called after each
+  // transcript/session file with the running 1-based count and the combined total.
+  onProgress?: (completed: number, total: number) => void;
 };
 
 // Multiplexer programs whose first sub-verb is a meaningful, non-sensitive label.
@@ -299,8 +302,15 @@ export function scan(discovery: SourceDiscovery, opts: ScanOptions = {}): ScanRe
     return hadEvent;
   }
 
+  // Combined total spans BOTH loops so the counter runs 0→100% across the whole
+  // scan, not twice.
+  const totalFiles = discovery.transcriptFiles.length + discovery.sessionFiles.length;
+  let processed = 0;
+
   for (const file of discovery.transcriptFiles) {
     if (processFile(file)) transcriptCoverage += 1;
+    processed += 1;
+    opts.onProgress?.(processed, totalFiles);
   }
 
   // Session inventory = count of distinct SESSIONS discovered (one chatSessions file
@@ -312,28 +322,33 @@ export function scan(discovery: SourceDiscovery, opts: ScanOptions = {}): ScanRe
   // their requests are empty and only the session count lands here.
   let sessionInventory = 0;
   for (const file of discovery.sessionFiles) {
-    let text: string;
+    let text: string | undefined;
     try {
       text = readFileSync(file, "utf8");
     } catch {
       coverageErrors += 1;
-      continue;
     }
-    sessionInventory += 1;
-    const ctx: VscodeReadCtx = {};
-    for (const line of text.split(/\r?\n/)) {
-      if (line.trim().length === 0) continue;
-      let json: unknown;
-      try {
-        json = JSON.parse(line);
-      } catch {
-        continue;
-      }
-      if (typeof json !== "object" || json === null) continue;
-      for (const record of flatToolRecords(json as Record<string, unknown>, ctx)) {
-        accumulate(record);
+    if (text !== undefined) {
+      sessionInventory += 1;
+      const ctx: VscodeReadCtx = {};
+      for (const line of text.split(/\r?\n/)) {
+        if (line.trim().length === 0) continue;
+        let json: unknown;
+        try {
+          json = JSON.parse(line);
+        } catch {
+          continue;
+        }
+        if (typeof json !== "object" || json === null) continue;
+        for (const record of flatToolRecords(json as Record<string, unknown>, ctx)) {
+          accumulate(record);
+        }
       }
     }
+    // Advance the counter for every session file, read-failures included, so the
+    // progress total always reaches 100%.
+    processed += 1;
+    opts.onProgress?.(processed, totalFiles);
   }
 
   const opportunities: Opportunity[] = [...accs.values()]

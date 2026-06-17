@@ -55,7 +55,10 @@ function contentLength(data: Record<string, unknown>): number {
   return 0;
 }
 
-export function analyzeHabits(discovery: SourceDiscovery): HabitStats {
+export function analyzeHabits(
+  discovery: SourceDiscovery,
+  onProgress?: (completed: number, total: number) => void,
+): HabitStats {
   const sessions = new Map<string, Session>();
 
   function sessionFor(key: string): Session {
@@ -68,11 +71,15 @@ export function analyzeHabits(discovery: SourceDiscovery): HabitStats {
   }
 
   // Both transcripts and (rarely-populated) session files carry the typed stream.
-  for (const file of [...discovery.transcriptFiles, ...discovery.sessionFiles]) {
+  const files = [...discovery.transcriptFiles, ...discovery.sessionFiles];
+  let processed = 0;
+  for (const file of files) {
     let text: string;
     try {
       text = readFileSync(file, "utf8");
     } catch {
+      processed += 1;
+      onProgress?.(processed, files.length);
       continue;
     }
     // Fall back to the file path as the session key until a session.start declares one.
@@ -101,6 +108,8 @@ export function analyzeHabits(discovery: SourceDiscovery): HabitStats {
         if (Array.isArray(reqs)) sessionFor(current).tools += reqs.length;
       }
     }
+    processed += 1;
+    onProgress?.(processed, files.length);
   }
 
   // Aggregate only sessions that showed real activity.

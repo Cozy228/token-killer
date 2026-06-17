@@ -36,7 +36,7 @@ pnpm build                   # produces dist\cli.js
 node dist\cli.js --version   # expect 0.1.0
 
 # 3. Expose `tk` globally (from the repo dir)
-npm link                     # creates the global `tk` command -> this repo's dist
+pnpm add -g .                    # creates the global `tk` command -> this repo's dist
 tk --version                 # expect 0.1.0
 ```
 
@@ -52,6 +52,7 @@ If corporate policy blocks a step:
 You'll get a file named `token-killer-0.1.0.tgz`. In PowerShell:
 
 ```powershell
+pnpm pack
 npm i -g .\token-killer-0.1.0.tgz
 tk --version                 # expect 0.1.0
 ```
@@ -180,8 +181,6 @@ Copy this filled in (a screenshot of `tk gain --history` and `tk gain` is perfec
 - Anything confusing in install / tk install / its output?   __________
 - Gut feel — would you keep it on?                        __________
 ```
-
-Send to **cozy228@outlook.com**. Thank you 🙏
 
 ## Uninstall (any time)
 
