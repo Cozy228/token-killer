@@ -311,7 +311,8 @@ try {
     @{ N = "gain --monthly"; A = @("gain", "--monthly"); Must = "" },
     @{ N = "gain --all --graph"; A = @("gain", "--all", "--graph"); Must = "" },
     @{ N = "gain --failures"; A = @("gain", "--failures"); Must = "" },
-    @{ N = "gain --quota"; A = @("gain", "--quota"); Must = "" }
+    @{ N = "gain --quota"; A = @("gain", "--quota"); Must = "" },
+    @{ N = "gain --user (cross-project aggregate)"; A = @("gain", "--user", "--text"); Must = "" }
   )
   foreach ($c in $gainViews) {
     $r = Invoke-Tk $c.A
@@ -339,26 +340,35 @@ try {
   Test-HtmlScope "gain HTML names the project (not 'this project')" @("gain") $projName
   Test-HtmlScope "inspect --project HTML names the project" @("inspect", "--project") $projName
 
-  Section "Functional — inspect (all option combos)"
-  $inspectCases = @(
-    @{ N = "inspect --text"; A = @("inspect", "--text"); Must = "Token Killer Inspect" },
-    @{ N = "inspect --json"; A = @("inspect", "--json"); Must = '"schemaVersion"' },
-    @{ N = "inspect --project --text"; A = @("inspect", "--project", "--text"); Must = "" },
-    @{ N = "inspect --user --text"; A = @("inspect", "--user", "--text"); Must = "" },
-    @{ N = "inspect --since 7d --text"; A = @("inspect", "--since", "7d", "--text"); Must = "" },
-    @{ N = "inspect --advice --text"; A = @("inspect", "--advice", "--text"); Must = "" },
-    @{ N = "inspect --surface instructions --text"; A = @("inspect", "--surface", "instructions", "--text"); Must = "" }
-  )
-  foreach ($c in $inspectCases) {
-    $r = Invoke-Tk $c.A
-    # exit 2 = "no major source analyzable" (cli.ts:237): environment has no VS Code
-    # history / static-context files. Not a defect — a populated host would PASS. Record
-    # INFO so an empty box doesn't false-FAIL. exit 1 IS a real error -> FAIL.
-    if ($r.ExitCode -eq 2) { Info "func" $c.N "no analyzable sources here (exit 2; populated host would run it)" $r.Ms }
-    elseif ($r.ExitCode -eq 0 -and ($c.Must -eq "" -or $r.AllText -match [regex]::Escape($c.Must))) { Pass "func" $c.N "" $r.Ms }
-    else { Fail "func" $c.N "exit=$($r.ExitCode)" $r.Ms }
+  Section "Functional — inspect (options folded into few runs — inspect is expensive)"
+  # inspect is the heaviest command (scans every host's transcripts), so we DON'T run
+  # one invocation per flag. Options that compose are folded into a single "kitchen
+  # sink" run; parse-only flags ride the cheap copilot-cli path (usually no sources →
+  # fast exit 2). exit 2 = "no analyzable source here" (cli.ts) — an empty box, NOT a
+  # defect (Info, not Fail); exit 1 is a real error -> Fail.
+  function Test-Inspect {
+    param([string]$N, [string[]]$A, [string]$Must = "")
+    $r = Invoke-Tk (@("inspect") + $A)
+    if ($r.ExitCode -eq 2) { Info "func" $N "no analyzable sources here (exit 2; populated host would run it)" $r.Ms }
+    elseif ($r.ExitCode -eq 0 -and ($Must -eq "" -or $r.AllText -match [regex]::Escape($Must))) { Pass "func" $N "" $r.Ms }
+    else { Fail "func" $N "exit=$($r.ExitCode)" $r.Ms }
+    return $r
   }
-  # --fail-on is a CI gate: nonzero is by-design, not a failure. Record the exit code.
+  # 1) canonical machine render (default scope, default = scans all hosts).
+  Test-Inspect "inspect --json" @("--json") '"schemaVersion"' | Out-Null
+  # 2) kitchen-sink: every composable scope/advice/render flag in ONE scan, and
+  #    --write-advice so its artifacts are verified in the same run.
+  $ksFlags = @("--project", "--user", "--since", "7d", "--advice", "--min-confidence", "0.5",
+    "--min-occurrences", "2", "--surface", "instructions", "--write-advice", "--text")
+  $r = Test-Inspect "inspect (scope+advice+surface+write-advice, one run)" $ksFlags "Token Killer Inspect"
+  if ($r.ExitCode -eq 0 -and $r.AllText -match 'Wrote advice artifacts:') {
+    $adv = @($r.AllText -split "`n" | ForEach-Object { $_.Trim() } | Where-Object { $_ -match '\.(json|md)$' -and (Test-Path -LiteralPath $_) })
+    if ($adv.Count -gt 0) { Pass "func" "inspect --write-advice writes artifacts" "$($adv.Count) file(s)" $r.Ms; $adv | ForEach-Object { Remove-Item -LiteralPath $_ -Force -ErrorAction SilentlyContinue } }
+    else { Warn "func" "inspect --write-advice" "claimed write but no artifact file found" $r.Ms }
+  }
+  # 3) --input-type + --session parse path on the cheap (copilot-cli is usually empty).
+  Test-Inspect "inspect --input-type copilot-cli --session <id>" @("--input-type", "copilot-cli", "--session", "dogfood-no-such-session", "--text") | Out-Null
+  # 4) --fail-on is a CI gate: nonzero is by-design, not a failure. Record the exit code.
   $r = Invoke-Tk @("inspect", "--fail-on", "error", "--text")
   Info "func" "inspect --fail-on error" "exit=$($r.ExitCode) (nonzero = findings reached threshold, by design)" $r.Ms
 
@@ -367,6 +377,8 @@ try {
   if ($r.ExitCode -eq 0 -and $r.AllText -match 'preview') { Pass "func" "optimize context --project (preview)" "" $r.Ms } else { Fail "func" "optimize context --project" "exit=$($r.ExitCode)" $r.Ms }
   $r = Invoke-Tk @("optimize", "context", "--user")
   if ($r.ExitCode -eq 0) { Pass "func" "optimize context --user (preview)" "" $r.Ms } else { Warn "func" "optimize context --user" "exit=$($r.ExitCode)" $r.Ms }
+  $r = Invoke-Tk @("optimize", "context", "--project", "--surface", "instructions")
+  if ($r.ExitCode -eq 0) { Pass "func" "optimize --surface instructions (preview)" "" $r.Ms } else { Warn "func" "optimize --surface instructions" "exit=$($r.ExitCode)" $r.Ms }
   # debug bundle + privacy: the saved report must NOT leak the literal home path.
   function Test-DebugBundle {
     param([string]$N, [string[]]$Flags)
@@ -385,6 +397,13 @@ try {
   Test-DebugBundle "tk debug" @()
   Test-DebugBundle "tk debug --full" @("--full")
   Test-DebugBundle "tk debug --redact" @("--redact")
+  # --out <path> must honor the caller-given destination (not the default reports/ dir).
+  $dbgOut = Join-Path $TmpRoot "debug-custom-out.md"
+  $r = Invoke-Tk @("debug", "--out", $dbgOut)
+  if ($r.ExitCode -eq 0 -and (Test-Path -LiteralPath $dbgOut)) {
+    Pass "func" "tk debug --out honors custom path" $dbgOut $r.Ms
+    Remove-Item -LiteralPath $dbgOut -Force -ErrorAction SilentlyContinue
+  } else { Fail "func" "tk debug --out" "exit=$($r.ExitCode); file at custom path? $(Test-Path -LiteralPath $dbgOut)" $r.Ms }
 
   # ╔══ PHASE 2: Hook protocol (copilot / claude / check) ══╗
   Section "Hook — check (rewrite dry-run, no execution)"
@@ -466,9 +485,16 @@ try {
     $r = Invoke-Tk @("--max-chars", "200", "git", "log", "-50")
     $bodyLen = ($r.Stdout).Length
     if ($r.ExitCode -eq 0 -and $bodyLen -le 1200) { Pass "compress" "--max-chars 200 caps body" "stdout=${bodyLen} chars" $r.Ms } else { Warn "compress" "--max-chars 200" "stdout=${bodyLen} chars (cap not obviously applied)" $r.Ms }
+    # --max-lines caps the compressed body by line count.
+    $r = Invoke-Tk @("--max-lines", "5", "git", "log", "-50")
+    $lineCount = ($r.Stdout -split "`n").Count
+    if ($r.ExitCode -eq 0 -and $lineCount -le 60) { Pass "compress" "--max-lines 5 caps body" "stdout=${lineCount} lines" $r.Ms } else { Warn "compress" "--max-lines 5" "stdout=${lineCount} lines (cap not obviously applied)" $r.Ms }
     # --save-raw writes the raw output and discloses its path; --stats reveals it.
     $r = Invoke-Tk @("--stats", "--save-raw", "git", "log", "-5")
     if ($r.AllText -match 'raw output|Raw output|saved raw|\.txt') { Pass "compress" "--save-raw discloses raw path" "" $r.Ms } else { Warn "compress" "--save-raw discloses raw path" "no raw-path disclosure seen" $r.Ms }
+    # --no-save-raw is the explicit negation: no raw artifact path should be disclosed.
+    $r = Invoke-Tk @("--stats", "--no-save-raw", "git", "log", "-5")
+    if ($r.ExitCode -eq 0 -and $r.AllText -notmatch 'saved raw|raw output:') { Pass "compress" "--no-save-raw suppresses raw artifact" "" $r.Ms } else { Warn "compress" "--no-save-raw" "raw-path disclosure seen despite --no-save-raw" $r.Ms }
     # TK_NO_HISTORY=1 must not append a gain row.
     $before = ((Invoke-Tk @("gain", "--history")).AllText -split "`n").Count
     Invoke-Tk @("git", "status") -Env @{ TK_NO_HISTORY = "1" } | Out-Null
@@ -621,6 +647,12 @@ try {
   Section "Shim / PATH"
   $r = Invoke-Tk @("shim", "status")
   Info "shim" "tk shim status" (($r.AllText -split "`n" | Select-Object -First 1)) $r.Ms
+  # Exercise the install/uninstall SUBCOMMANDS via --dry-run so they're covered
+  # without mutating host configs / PATH (real mutation is the lifecycle phase's job).
+  $r = Invoke-Tk @("shim", "install", "--dry-run")
+  if ($r.ExitCode -eq 0) { Pass "shim" "tk shim install --dry-run (no mutation)" "" $r.Ms } else { Fail "shim" "tk shim install --dry-run" "exit=$($r.ExitCode)" $r.Ms }
+  $r = Invoke-Tk @("shim", "uninstall", "--dry-run")
+  if ($r.ExitCode -eq 0) { Pass "shim" "tk shim uninstall --dry-run (no mutation)" "" $r.Ms } else { Fail "shim" "tk shim uninstall --dry-run" "exit=$($r.ExitCode)" $r.Ms }
   if ($IsWindows) {
     $shimDir = Join-Path $env:USERPROFILE ".token-killer/shim"
     if (Test-Path -LiteralPath $shimDir) {
@@ -676,16 +708,18 @@ try {
   # REMOVED and no address, ADR 0011 makes it save a bundle + clipboard and open no GUI.
   # `-y` skips the TTY prompts. We delete the bundle afterwards.
   function Test-Support {
-    param([string]$N, [string[]]$Flags)
-    $r = Invoke-Tk (@("support", "email", "-y") + $Flags) -UnsetEnv @("TK_SUPPORT_EMAIL", "TK_SUPPORT_TEAMS")
+    param([string]$N, [string]$Channel = "email", [string[]]$Flags)
+    $r = Invoke-Tk (@("support", $Channel, "-y") + $Flags) -UnsetEnv @("TK_SUPPORT_EMAIL", "TK_SUPPORT_TEAMS")
     if ($r.ExitCode -eq 0 -and $r.AllText -match 'Saved diagnostic bundle:') {
       Pass "roundtrip" $N "" $r.Ms
       $supPath = Get-LabeledPath $r.AllText 'Saved diagnostic bundle:'
       if ($supPath -and (Test-Path -LiteralPath $supPath)) { Remove-Item -LiteralPath $supPath -Force -ErrorAction SilentlyContinue; Note "support bundle removed: $supPath" }
     } else { Warn "roundtrip" $N "exit=$($r.ExitCode) — expected 'Saved diagnostic bundle:'" $r.Ms }
   }
-  Test-Support "support saves bundle, opens no GUI" @()
-  Test-Support "support --redact runs" @("--redact")
+  Test-Support "support email saves bundle, opens no GUI" "email" @()
+  Test-Support "support email --redact runs" "email" @("--redact")
+  Test-Support "support email --no-attach runs" "email" @("--no-attach")
+  Test-Support "support teams saves bundle (routing unset)" "teams" @()
 
   # optimize --apply / --restore — confined to a throwaway temp git repo (--project),
   # so user-level context files are never touched. The apply backs up; restore reverts.
@@ -697,6 +731,15 @@ try {
       Set-Content -LiteralPath "CLAUDE.md" -Value "# Project`n`nAlways use PNPM.`nAlways use PNPM.`n" -Encoding UTF8
       Set-Content -LiteralPath "AGENTS.md" -Value "# Agents`n`nBe concise.`n" -Encoding UTF8
       & git add -A; & git commit -qm init
+      # --backup snapshots files BEFORE hand/agent edits. Pass an EXPLICIT file so it
+      # snapshots only this temp repo's CLAUDE.md (a bare --backup would also snapshot
+      # user-scope context). Remove the snapshot dir afterward to leave the box clean.
+      $r = Invoke-Tk @("optimize", "--backup", "CLAUDE.md")
+      if ($r.ExitCode -eq 0 -and $r.AllText -match 'backed up \d+ file\(s\) to (.+)') {
+        Pass "roundtrip" "optimize --backup snapshots files" "" $r.Ms
+        $bkDir = $Matches[1].Trim()
+        if (Test-Path -LiteralPath $bkDir) { Remove-Item -LiteralPath $bkDir -Recurse -Force -ErrorAction SilentlyContinue; Note "optimize --backup snapshot removed: $bkDir" }
+      } else { Warn "roundtrip" "optimize --backup" "exit=$($r.ExitCode)" $r.Ms }
       $r = Invoke-Tk @("optimize", "context", "--project", "--apply")
       if ($r.ExitCode -eq 0 -and $r.AllText -match 'tk optimize --apply') { Pass "roundtrip" "optimize --apply (temp repo, backs up)" "" $r.Ms } else { Fail "roundtrip" "optimize --apply" "exit=$($r.ExitCode)" $r.Ms }
       $r = Invoke-Tk @("optimize", "--restore")
