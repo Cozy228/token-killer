@@ -30,7 +30,7 @@ import { emitHtmlReport } from "../report/open.js";
 import { analyzeHabits, type HabitStats } from "./habits.js";
 import { buildReport, renderJson, renderMarkdown } from "./report.js";
 import { computeFootprint } from "./footprint.js";
-import type { FileCache } from "./fileCache.js";
+import { makeFileCache } from "./fileCache.js";
 import { makeProgressReporter } from "./progress.js";
 import { parseSince, scan, type ScanResult } from "./scan.js";
 import { discoverSources, type InputType } from "./sources.js";
@@ -202,9 +202,10 @@ export function runInspect(
     progress.phase(`Discovering ${opts.inputType} sources…`);
     const discovery = discoverSources(opts.inputType, home);
     if (discovery.found) {
-      // One read-through cache shared across scan + habits so each transcript /
-      // session file is read from disk once, not twice.
-      const fileCache: FileCache = new Map();
+      // One byte-bounded read-through cache shared across scan + habits so each
+      // transcript / session file is read from disk once, not twice — while peak
+      // memory stays capped on low-RAM hosts with many large transcripts.
+      const fileCache = makeFileCache();
       progress.phase(
         `Scanning ${discovery.transcriptFiles.length} transcript(s) + ${discovery.sessionFiles.length} session(s)…`,
       );
