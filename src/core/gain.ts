@@ -96,17 +96,53 @@ function grp(value: number): string {
   return Math.round(value).toLocaleString("en-US");
 }
 
-// A fixed-width column table, rtk-style: left-aligned first column, the rest
-// right-aligned, with a `─` rule under the header.
-function fixedTable(header: string[], rows: string[][]): string {
-  const widths = header.map((h, i) => Math.max(h.length, ...rows.map((r) => (r[i] ?? "").length)));
-  const fmt = (cells: string[]) =>
-    cells.map((c, i) => (i === 0 ? c.padEnd(widths[i]) : (c ?? "").padStart(widths[i]))).join("  ");
-  const rule = "─".repeat(widths.reduce((a, w) => a + w, 0) + (widths.length - 1) * 2);
-  return [fmt(header), rule, ...rows.map(fmt)].join("\n");
+const RULE_DOUBLE = "═".repeat(60);
+
+// rtk-parity 24-cell efficiency bar: "█████████████████░░░░░░░" for 69.3%.
+function meter(pct: number): string {
+  const cells = 24;
+  const filled = Math.max(0, Math.min(cells, Math.round((pct / 100) * cells)));
+  return "█".repeat(filled) + "░".repeat(cells - filled);
 }
 
-const RULE_DOUBLE = "═".repeat(48);
+// rtk-parity 10-cell relative Impact bar: each By-Command row's saved tokens as a
+// fraction of the table's top saver. Absolute-magnitude, NOT savings_pct.
+function impactBar(saved: number, max: number): string {
+  const cells = 10;
+  const filled = max <= 0 ? 0 : Math.max(0, Math.min(cells, Math.round((saved / max) * cells)));
+  return "█".repeat(filled) + "░".repeat(cells - filled);
+}
+
+// Trim a By-Command label so a long handler name can't blow out the column.
+function truncLabel(s: string, max: number): string {
+  return s.length > max ? `${s.slice(0, max - 1)}…` : s;
+}
+
+// ISO week key (YYYY-Www) → its Monday/Sunday bounds, so the weekly view can read as
+// rtk's "05-18 → 05-24" date range instead of the bare ISO ordinal.
+function isoWeekBounds(key: string): { start: Date; end: Date } | undefined {
+  const m = /^(\d{4})-W(\d{2})$/.exec(key);
+  if (!m) return undefined;
+  const year = Number(m[1]);
+  const week = Number(m[2]);
+  const jan4 = new Date(Date.UTC(year, 0, 4));
+  const jan4Dow = (jan4.getUTCDay() + 6) % 7; // 0 = Monday
+  const week1Mon = new Date(jan4.getTime() - jan4Dow * 86_400_000);
+  const start = new Date(week1Mon.getTime() + (week - 1) * 7 * 86_400_000);
+  const end = new Date(start.getTime() + 6 * 86_400_000);
+  return { start, end };
+}
+
+function mmdd(d: Date): string {
+  return `${String(d.getUTCMonth() + 1).padStart(2, "0")}-${String(d.getUTCDate()).padStart(2, "0")}`;
+}
+
+// Weekly display label: "05-18 → 05-24" (rtk parity). Falls back to the raw key if
+// it isn't a well-formed ISO week (defensive — bucket keys are always well-formed).
+function weekLabel(key: string): string {
+  const b = isoWeekBounds(key);
+  return b ? `${mmdd(b.start)} → ${mmdd(b.end)}` : key;
+}
 
 export function parseGainArgs(argv: string[]): GainArgs {
   const args: GainArgs = {
@@ -333,27 +369,78 @@ function valueFields(usd: number): { value_ai_credits: number; value_usd: number
   return { value_ai_credits: Math.round(usdToCredits(usdR) * 1e4) / 1e4, value_usd: usdR };
 }
 
+// rtk-parity CSV: a `# <Period> Data` section comment, then a header row, then data.
+// Output = Input − Saved (saved = raw − output, so exact). savings_pct at 2 decimals
+// like rtk. No time columns. `--all` emits Daily + Weekly + Monthly sections in order.
+function csvDaily(buckets: TimeBucket[]): string {
+  return [
+    "# Daily Data",
+    "date,commands,input_tokens,output_tokens,saved_tokens,savings_pct",
+    ...buckets.map(
+      (b) => `${b.key},${b.commands},${b.raw},${b.raw - b.saved},${b.saved},${b.pct.toFixed(2)}`,
+    ),
+  ].join("\n");
+}
+
+function csvWeekly(buckets: TimeBucket[]): string {
+  return [
+    "# Weekly Data",
+    "week_start,week_end,commands,input_tokens,output_tokens,saved_tokens,savings_pct",
+    ...buckets.map((b) => {
+      const bounds = isoWeekBounds(b.key);
+      const start = bounds ? bounds.start.toISOString().slice(0, 10) : b.key;
+      const end = bounds ? bounds.end.toISOString().slice(0, 10) : b.key;
+      return `${start},${end},${b.commands},${b.raw},${b.raw - b.saved},${b.saved},${b.pct.toFixed(2)}`;
+    }),
+  ].join("\n");
+}
+
+function csvMonthly(buckets: TimeBucket[]): string {
+  return [
+    "# Monthly Data",
+    "month,commands,input_tokens,output_tokens,saved_tokens,savings_pct",
+    ...buckets.map(
+      (b) => `${b.key},${b.commands},${b.raw},${b.raw - b.saved},${b.saved},${b.pct.toFixed(2)}`,
+    ),
+  ].join("\n");
+}
+
 function renderCsv(rollup: MergedRollup, args: GainArgs, now: Date): string {
-  const buckets = bucketsFor(rollup, args.bucketing, now);
-  if (buckets) {
+  const sections: string[] = [];
+  if (args.bucketing === "all") {
+    sections.push(csvDaily(allDaysFromRollup(rollup)));
+    sections.push(csvWeekly(weekBucketsFromRollup(rollup)));
+    sections.push(csvMonthly(monthBucketsFromRollup(rollup)));
+  } else if (args.bucketing === "daily") {
+    sections.push(csvDaily(dailyBucketsFromRollup(rollup, 30, now)));
+  } else if (args.bucketing === "weekly") {
+    sections.push(csvWeekly(weekBucketsFromRollup(rollup)));
+  } else if (args.bucketing === "monthly") {
+    sections.push(csvMonthly(monthBucketsFromRollup(rollup)));
+  } else {
+    const s = rollupToGainSummary(rollup);
     return [
-      "key,commands,raw_tokens,saved_tokens,savings_pct",
-      ...buckets.map((b) => `${b.key},${b.commands},${b.raw},${b.saved},${b.pct}`),
+      "commands,input_tokens,output_tokens,saved_tokens,savings_pct",
+      `${s.commands},${s.raw_tokens},${s.output_tokens},${s.saved_tokens},${s.savings_pct}`,
       "",
     ].join("\n");
   }
-  const s = rollupToGainSummary(rollup);
-  return [
-    "commands,raw_tokens,output_tokens,saved_tokens,savings_pct",
-    `${s.commands},${s.raw_tokens},${s.output_tokens},${s.saved_tokens},${s.savings_pct}`,
-    "",
-  ].join("\n");
+  return `${sections.join("\n\n")}\n`;
 }
 
 async function renderText(ctx: GainContext, args: GainArgs, now: Date): Promise<string> {
   const sections: string[] = [];
-  const buckets = bucketsFor(ctx.rollup, args.bucketing, now);
 
+  if (args.bucketing === "all") {
+    // rtk `gain --all` parity: three independent tables in D → W → M order, each with
+    // its own TOTAL row. Daily uses every active day (not the 30-day --daily window).
+    sections.push(renderBuckets("daily", allDaysFromRollup(ctx.rollup)));
+    sections.push(renderBuckets("weekly", weekBucketsFromRollup(ctx.rollup)));
+    sections.push(renderBuckets("monthly", monthBucketsFromRollup(ctx.rollup)));
+    return `${sections.join("\n\n")}\n`;
+  }
+
+  const buckets = bucketsFor(ctx.rollup, args.bucketing, now);
   if (buckets) {
     // Focused period view (rtk `gain --weekly` parity): lead with just the breakdown
     // table — its TOTAL row is the summary. The headline/by-command/dedup/per-project
@@ -361,7 +448,7 @@ async function renderText(ctx: GainContext, args: GainArgs, now: Date): Promise<
     sections.push(renderBuckets(args.bucketing, buckets));
   } else {
     const summary = rollupToGainSummary(ctx.rollup);
-    sections.push(renderSummary(summary, args.user ? "all projects" : "this project"));
+    sections.push(renderSummary(summary, args.user ? "Global Scope" : "Project Scope"));
     // ADR 0009: shown as its own block, never folded into the summary above.
     if (ctx.dedup.hits > 0) sections.push(renderDedup(ctx.dedup));
     if (args.user) sections.push(await renderPerProject(ctx.perProject));
@@ -393,11 +480,46 @@ const QUALITY_DISPLAY_LABELS: Record<string, string> = {
   empty_output: "reverted-to-raw (empty)",
 };
 
+// By Command — rtk-parity ranked table (Top 10): rank · Command · Count · Saved ·
+// Avg% · Impact. The Impact bar is relative absolute-savings (saved / top saver),
+// so it answers "which command family saved the most", distinct from Avg%. No Time
+// column and no per-handler `e.g.` samples — both dropped for rtk parity.
+function renderByCommand(byHandler: GainSummary["by_handler"]): string {
+  const top = byHandler.slice(0, 10);
+  if (!top.length) return "By Command\n  - none";
+
+  const maxSaved = Math.max(...top.map((h) => h.saved), 0);
+  const cells = top.map((h, i) => ({
+    rank: `${i + 1}.`,
+    cmd: truncLabel(h.handler, 22),
+    count: grp(h.count),
+    saved: compact(h.saved),
+    pct: `${h.pct}%`,
+    impact: impactBar(h.saved, maxSaved),
+  }));
+  const w = {
+    rank: Math.max(1, ...cells.map((c) => c.rank.length)),
+    cmd: Math.max("Command".length, ...cells.map((c) => c.cmd.length)),
+    count: Math.max("Count".length, ...cells.map((c) => c.count.length)),
+    saved: Math.max("Saved".length, ...cells.map((c) => c.saved.length)),
+    pct: Math.max("Avg%".length, ...cells.map((c) => c.pct.length)),
+  };
+  const header = `  ${"#".padStart(w.rank)}  ${"Command".padEnd(w.cmd)}  ${"Count".padStart(w.count)}  ${"Saved".padStart(w.saved)}  ${"Avg%".padStart(w.pct)}  Impact`;
+  const lines = cells.map(
+    (c) =>
+      `  ${c.rank.padStart(w.rank)}  ${c.cmd.padEnd(w.cmd)}  ${c.count.padStart(w.count)}  ${c.saved.padStart(w.saved)}  ${c.pct.padStart(w.pct)}  ${c.impact}`,
+  );
+  const ruleWidth = Math.max(header.length, ...lines.map((l) => l.length));
+  const rule = "─".repeat(ruleWidth);
+  return ["By Command", rule, header, rule, ...lines, rule].join("\n");
+}
+
 function renderSummary(s: GainSummary, scope: string): string {
-  // Headline block — rtk-parity labels (Input/Output tokens, Tokens saved) so the
-  // terminal report reads as a scannable summary, not a flat key/value dump.
+  // Headline block — rtk-parity labels (Input/Output tokens, Tokens saved) plus the
+  // 24-cell efficiency meter. No exec-time line: tk's rollup stores no per-command
+  // duration and we never fabricate one.
   const head = [
-    `📊 Token Killer — Token Savings · ${scope}`,
+    `📊 Token Killer — Token Savings (${scope})`,
     RULE_DOUBLE,
     "",
     `Total commands:   ${grp(s.commands)}`,
@@ -405,28 +527,10 @@ function renderSummary(s: GainSummary, scope: string): string {
     `Output tokens:    ${compact(s.output_tokens)}`,
     `Tokens saved:     ${compact(s.saved_tokens)} (${s.savings_pct}%)`,
     `Avg saved/cmd:    ${compact(s.avg_savings_per_command)}`,
+    `Efficiency meter: ${meter(s.savings_pct)} ${s.savings_pct}%`,
   ].join("\n");
 
-  // By Command — an aligned table (Count / Saved / Avg%). The per-handler `e.g.`
-  // samples (d33546c) ride as a dim continuation line under each row so they don't
-  // disturb the numeric column alignment.
-  const topHandlers = s.by_handler.slice(0, 5);
-  const table = fixedTable(
-    ["Command", "Count", "Saved", "Avg%"],
-    topHandlers.map((h) => [h.handler, grp(h.count), compact(h.saved), `${h.pct}%`]),
-  );
-  const tableLines = table.split("\n");
-  // Re-thread the sample lines after each data row (header + rule are the first 2).
-  const withSamples: string[] = tableLines.slice(0, 2);
-  topHandlers.forEach((h, i) => {
-    withSamples.push(tableLines[i + 2]);
-    if (h.samples && h.samples.length) {
-      withSamples.push(`    e.g. ${h.samples.slice(0, 2).join(", ")}`);
-    }
-  });
-  const byCommand = topHandlers.length
-    ? ["By Command:", withSamples.join("\n")].join("\n")
-    : "By Command:\n  - none";
+  const byCommand = renderByCommand(s.by_handler);
 
   const quality = Object.entries(s.quality_status_counts)
     .sort(([a], [b]) => a.localeCompare(b))
@@ -458,14 +562,20 @@ async function renderPerProject(projects: ProjectRollup[]): Promise<string> {
 // Output = Input − Saved (saved_tokens = raw − output, so this is exact). No Time
 // column: tk's rollup stores no per-bucket duration and we never fabricate one.
 function renderBuckets(bucketing: Bucketing, buckets: TimeBucket[]): string {
-  const unit = bucketing === "weekly" ? "week" : bucketing === "monthly" ? "month" : "day";
-  const periodHeader = bucketing === "weekly" ? "Week" : bucketing === "monthly" ? "Month" : "Date";
-  const title = `${bucketing === "all" ? "All-time" : capitalize(bucketing)} breakdown · ${buckets.length} ${unit}${buckets.length === 1 ? "" : "s"}`;
+  // rtk-parity title: single-letter prefix + "<Period> Breakdown (N <plural>)".
+  const meta = {
+    daily: { letter: "D", word: "Daily", plural: "dailys", header: "Date" },
+    weekly: { letter: "W", word: "Weekly", plural: "weeklys", header: "Week" },
+    monthly: { letter: "M", word: "Monthly", plural: "monthlys", header: "Month" },
+  }[bucketing === "all" || bucketing === "none" ? "daily" : bucketing];
+  const title = `${meta.letter} ${meta.word} Breakdown (${buckets.length} ${meta.plural})`;
   if (!buckets.length) return [title, "  (no activity in range)"].join("\n");
 
-  const header = [periodHeader, "Cmds", "Input", "Output", "Saved", "Save%"];
+  // Weekly key is an ISO ordinal (2026-W21); display it as a date range (05-18 → 05-24).
+  const periodOf = (key: string) => (bucketing === "weekly" ? weekLabel(key) : key);
+  const header = [meta.header, "Cmds", "Input", "Output", "Saved", "Save%"];
   const dataRows = buckets.map((b) => [
-    b.key,
+    periodOf(b.key),
     grp(b.commands),
     compact(b.raw),
     compact(b.raw - b.saved),
@@ -592,8 +702,4 @@ function sparkline(values: number[]): string {
 
 function shortFingerprint(fingerprint: string): string {
   return fingerprint.replace(/^repo:/, "").slice(0, 8);
-}
-
-function capitalize(s: string): string {
-  return s.charAt(0).toUpperCase() + s.slice(1);
 }

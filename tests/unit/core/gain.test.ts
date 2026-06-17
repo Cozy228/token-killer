@@ -196,8 +196,9 @@ describe("runGain --csv --daily window", () => {
       expect(text).not.toContain("1969");
       expect(text).not.toContain("1970");
       const lines = text.trim().split("\n");
-      expect(lines[0]).toBe("key,commands,raw_tokens,saved_tokens,savings_pct");
-      expect(lines).toHaveLength(31); // header + 30 daily buckets
+      expect(lines[0]).toBe("# Daily Data"); // rtk-parity section comment
+      expect(lines[1]).toBe("date,commands,input_tokens,output_tokens,saved_tokens,savings_pct");
+      expect(lines).toHaveLength(32); // section comment + header + 30 daily buckets
       // the recorded row's saved tokens show up on its (today's) bucket line
       expect(text).toContain(",50,");
     });
