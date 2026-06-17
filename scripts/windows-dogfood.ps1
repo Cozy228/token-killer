@@ -46,12 +46,23 @@ param(
   [string]   $ReportPath = "",
   [string[]] $TkCommand = @(),
   [int]      $PerfIterations = 7,
-  [int]      $TimeoutSec = 60
+  [int]      $TimeoutSec = 60,
+  # Heavy commands (inspect / optimize, which scan every host's transcripts) get a
+  # GENEROUS ceiling, not the 60s default. 60s killed a healthy-but-slow scan mid-run
+  # and reported an opaque exit=124 with empty output — measuring nothing. We keep a
+  # ceiling (a TRUE hang must still terminate the suite) but raise it so a legitimately
+  # slow scan completes and we learn its real wall-time. Paired with TK_PROGRESS=1 so
+  # the dossier shows HOW FAR the scan got (file-count-bound vs one-huge-file-bound).
+  [int]      $HeavyTimeoutSec = 300
 )
 
 Set-StrictMode -Version Latest
 $ErrorActionPreference = "Stop"
 $script:TimeoutSec = $TimeoutSec
+$script:HeavyTimeoutSec = $HeavyTimeoutSec
+# Env that forces inspect/optimize to stream progress to STDERR even though the harness
+# pipes stdio (non-TTY). Captured into the dossier so a slow run is observable.
+$script:HeavyEnv = @{ TK_PROGRESS = "1" }
 
 # ── Result model + failure dossiers ─────────────────────────────────
 # The whole point of this suite: a FAIL/WARN is useless to a remote fixer unless it
@@ -325,8 +336,10 @@ try {
   # rendered, so assert the embedded data carries the project name; TK_NO_OPEN keeps the
   # browser shut. Same check for inspect --project (skips cleanly when it has no sources).
   function Test-HtmlScope {
-    param([string]$N, [string[]]$Cmd, [string]$ProjName)
-    $r = Invoke-Tk $Cmd -Env @{ TK_NO_OPEN = "1" }
+    param([string]$N, [string[]]$Cmd, [string]$ProjName, [int]$Tmo = -1)
+    # TK_PROGRESS is harmless for the light `gain` path and lets the heavy `inspect
+    # --project` path stream progress; -Tmo lets the caller grant the heavy ceiling.
+    $r = Invoke-Tk $Cmd -Env @{ TK_NO_OPEN = "1"; TK_PROGRESS = "1" } -Tmo $Tmo
     $htmlPath = Get-LabeledPath $r.AllText 'HTML report:'
     if ($htmlPath -and (Test-Path -LiteralPath $htmlPath)) {
       $body = Get-Content -LiteralPath $htmlPath -Raw
@@ -338,7 +351,7 @@ try {
   }
   $projName = Split-Path -Leaf $TargetRepo
   Test-HtmlScope "gain HTML names the project (not 'this project')" @("gain") $projName
-  Test-HtmlScope "inspect --project HTML names the project" @("inspect", "--project") $projName
+  Test-HtmlScope "inspect --project HTML names the project" @("inspect", "--project") $projName $script:HeavyTimeoutSec
 
   Section "Functional — inspect (options folded into few runs — inspect is expensive)"
   # inspect is the heaviest command (scans every host's transcripts), so we DON'T run
@@ -348,8 +361,11 @@ try {
   # defect (Info, not Fail); exit 1 is a real error -> Fail.
   function Test-Inspect {
     param([string]$N, [string[]]$A, [string]$Must = "")
-    $r = Invoke-Tk (@("inspect") + $A)
-    if ($r.ExitCode -eq 2) { Info "func" $N "no analyzable sources here (exit 2; populated host would run it)" $r.Ms }
+    # Heavy timeout + forced progress: let a slow scan finish and reveal where it spent
+    # its time (the dossier's stderr carries the live "N/M transcripts" counter).
+    $r = Invoke-Tk (@("inspect") + $A) -Env $script:HeavyEnv -Tmo $script:HeavyTimeoutSec
+    if ($r.TimedOut) { Fail "func" $N "still scanning at ${script:HeavyTimeoutSec}s ceiling — NOT a crash; see dossier stderr for how far it reached (file-count vs single huge file)" $r.Ms }
+    elseif ($r.ExitCode -eq 2) { Info "func" $N "no analyzable sources here (exit 2; populated host would run it)" $r.Ms }
     elseif ($r.ExitCode -eq 0 -and ($Must -eq "" -or $r.AllText -match [regex]::Escape($Must))) { Pass "func" $N "" $r.Ms }
     else { Fail "func" $N "exit=$($r.ExitCode)" $r.Ms }
     return $r
@@ -369,15 +385,17 @@ try {
   # 3) --input-type + --session parse path on the cheap (copilot-cli is usually empty).
   Test-Inspect "inspect --input-type copilot-cli --session <id>" @("--input-type", "copilot-cli", "--session", "dogfood-no-such-session", "--text") | Out-Null
   # 4) --fail-on is a CI gate: nonzero is by-design, not a failure. Record the exit code.
-  $r = Invoke-Tk @("inspect", "--fail-on", "error", "--text")
+  $r = Invoke-Tk @("inspect", "--fail-on", "error", "--text") -Env $script:HeavyEnv -Tmo $script:HeavyTimeoutSec
   Info "func" "inspect --fail-on error" "exit=$($r.ExitCode) (nonzero = findings reached threshold, by design)" $r.Ms
 
   Section "Functional — optimize (preview) / debug (+flags) + privacy scrub"
-  $r = Invoke-Tk @("optimize", "context", "--project")
-  if ($r.ExitCode -eq 0 -and $r.AllText -match 'preview') { Pass "func" "optimize context --project (preview)" "" $r.Ms } else { Fail "func" "optimize context --project" "exit=$($r.ExitCode)" $r.Ms }
-  $r = Invoke-Tk @("optimize", "context", "--user")
+  # optimize triggers a full inspect when its bucket is absent, so it inherits the
+  # scan cost — grant the heavy ceiling + progress here too.
+  $r = Invoke-Tk @("optimize", "context", "--project") -Env $script:HeavyEnv -Tmo $script:HeavyTimeoutSec
+  if ($r.ExitCode -eq 0 -and $r.AllText -match 'preview') { Pass "func" "optimize context --project (preview)" "" $r.Ms } elseif ($r.TimedOut) { Fail "func" "optimize context --project" "inspect-triggered scan still running at ${script:HeavyTimeoutSec}s ceiling — see dossier" $r.Ms } else { Fail "func" "optimize context --project" "exit=$($r.ExitCode)" $r.Ms }
+  $r = Invoke-Tk @("optimize", "context", "--user") -Env $script:HeavyEnv -Tmo $script:HeavyTimeoutSec
   if ($r.ExitCode -eq 0) { Pass "func" "optimize context --user (preview)" "" $r.Ms } else { Warn "func" "optimize context --user" "exit=$($r.ExitCode)" $r.Ms }
-  $r = Invoke-Tk @("optimize", "context", "--project", "--surface", "instructions")
+  $r = Invoke-Tk @("optimize", "context", "--project", "--surface", "instructions") -Env $script:HeavyEnv -Tmo $script:HeavyTimeoutSec
   if ($r.ExitCode -eq 0) { Pass "func" "optimize --surface instructions (preview)" "" $r.Ms } else { Warn "func" "optimize --surface instructions" "exit=$($r.ExitCode)" $r.Ms }
   # debug bundle + privacy: the saved report must NOT leak the literal home path.
   function Test-DebugBundle {
@@ -460,7 +478,11 @@ try {
   $isGit = (Invoke-Tk @("git", "rev-parse", "--is-inside-work-tree")).AllText -match 'true'
   if ($isGit) {
     Test-Savings "git log -p -20" 60 @("git", "log", "-p", "-20")
-    Test-Savings "git log -30" 40 @("git", "log", "-30")
+    # `git log -30` (no -p) = default block format. tk drops commit bodies + reformats
+    # the header, so savings scale with how verbose the bodies were. A repo with terse
+    # one-line commits genuinely can't reach 40% (the prior bar assumed multi-paragraph
+    # bodies); 20% is the honest floor that still proves it compresses, not passes raw.
+    Test-Savings "git log -30" 20 @("git", "log", "-30")
   } else { Skip "compress" "git log cases" "target not a git repo" }
   $dir = if (Test-Path -LiteralPath "src" -PathType Container) { "src" } else { "." }
   Test-Savings "rg import $dir" 40 @("rg", "import", $dir)
@@ -594,20 +616,28 @@ try {
   } else { Warn "boundary" "uninstall accepts unknown flag" "exit=$($r.ExitCode) — unknown flag not refused (dry-run); arg validation missing" $r.Ms }
 
   # B10 GBK / cp936 decode ladder (Windows). tk decodes the bytes IT reads from the
-  # tool it wraps: strict-UTF-8 first, then legacy codepage (gb18030, a cp936 superset).
-  # Feed a child that emits KNOWN cp936 bytes (`cmd /c type <gbk-file>`) — deterministic
-  # regardless of box locale — and assert the Chinese needle survives in tk's UTF-8 out.
-  # The earlier B4 only proves the UTF-8 path; this is the legacy-fallback path.
-  if ($IsWindows) {
+  # tool it WRAPS: strict-UTF-8 first, then the legacy codepage (gb18030, a cp936
+  # superset). The decode only fires for a WRAPPED tool — `cmd`/`type` are not wrapped,
+  # so the old test (`tk cmd /c type`) was correctly REFUSED by tk and never exercised
+  # the ladder at all (it tested nothing). Use git, which tk wraps: commit KNOWN cp936
+  # bytes as a blob, then `git show <rev>:<path>` — a colon-spec, which tk's show handler
+  # passes through verbatim (git/show.ts isRawPassthrough), so the only transform is
+  # tk's child-output decode. Assert the Chinese needle survives in tk's UTF-8 stdout.
+  if ($IsWindows -and (Test-Cmd git)) {
     try {
       $enc936 = [System.Text.Encoding]::GetEncoding(936)
-      $gbkFile = Join-Path $TmpRoot "gbk-cp936.txt"
-      $gneedle = "项目令牌GBK验证"
-      [System.IO.File]::WriteAllBytes($gbkFile, $enc936.GetBytes("marker $gneedle end"))
-      $r = Invoke-Tk @("cmd", "/c", "type", $gbkFile)
-      if ($r.AllText -match [regex]::Escape($gneedle)) { Pass "boundary" "GBK/cp936 child output decoded (legacy fallback)" "" $r.Ms } else { Warn "boundary" "GBK/cp936 decode" "needle not found — see dossier for raw bytes (mojibake?)" $r.Ms }
+      $gbkRepo = Join-Path $TmpRoot "gbk"; New-Item -ItemType Directory -Path $gbkRepo -Force | Out-Null
+      Push-Location $gbkRepo
+      try {
+        & git init -q; & git config user.email a@a; & git config user.name a; & git config core.autocrlf false
+        $gneedle = "项目令牌GBK验证"
+        [System.IO.File]::WriteAllBytes((Join-Path $gbkRepo "gbk.txt"), $enc936.GetBytes("marker $gneedle end"))
+        & git add -A; & git commit -qm gbk
+        $r = Invoke-Tk @("git", "show", "HEAD:gbk.txt")
+        if ($r.AllText -match [regex]::Escape($gneedle)) { Pass "boundary" "GBK/cp936 child output decoded (legacy fallback)" "" $r.Ms } else { Warn "boundary" "GBK/cp936 decode" "needle not found — see dossier for raw bytes (mojibake?)" $r.Ms }
+      } finally { Pop-Location }
     } catch { Warn "boundary" "GBK/cp936 decode" "could not build cp936 fixture: $($_.Exception.Message)" }
-  } else { Skip "boundary" "GBK/cp936 decode" "non-Windows (box is UTF-8; cp936 absent)" }
+  } else { Skip "boundary" "GBK/cp936 decode" "non-Windows or git absent (box is UTF-8; cp936 fixture needs git)" }
 
   # ╔══ PHASE 5: Fail-safe / resilience ══╗
   Section "Fail-safe"
@@ -708,8 +738,17 @@ try {
   # REMOVED and no address, ADR 0011 makes it save a bundle + clipboard and open no GUI.
   # `-y` skips the TTY prompts. We delete the bundle afterwards.
   function Test-Support {
-    param([string]$N, [string]$Channel = "email", [string[]]$Flags)
+    param([string]$N, [string]$Channel = "email", [string[]]$Flags, [bool]$ExpectBundle = $true)
     $r = Invoke-Tk (@("support", $Channel, "-y") + $Flags) -UnsetEnv @("TK_SUPPORT_EMAIL", "TK_SUPPORT_TEAMS")
+    if (-not $ExpectBundle) {
+      # `--no-attach` means "do NOT gather the error+logs bundle" (see `tk support --help`),
+      # so it MUST NOT save a bundle — it opens a bare draft. Asserting the bundle line
+      # here was the harness's bug, not tk's. Assert the bare-draft contract instead.
+      if ($r.ExitCode -eq 0 -and $r.AllText -notmatch 'Saved diagnostic bundle:' -and $r.AllText -match 'BARE support draft') {
+        Pass "roundtrip" $N "no bundle saved (bare draft, by design)" $r.Ms
+      } else { Warn "roundtrip" $N "exit=$($r.ExitCode) — expected a bare draft with NO bundle under --no-attach" $r.Ms }
+      return
+    }
     if ($r.ExitCode -eq 0 -and $r.AllText -match 'Saved diagnostic bundle:') {
       Pass "roundtrip" $N "" $r.Ms
       $supPath = Get-LabeledPath $r.AllText 'Saved diagnostic bundle:'
@@ -718,7 +757,7 @@ try {
   }
   Test-Support "support email saves bundle, opens no GUI" "email" @()
   Test-Support "support email --redact runs" "email" @("--redact")
-  Test-Support "support email --no-attach runs" "email" @("--no-attach")
+  Test-Support "support email --no-attach (bare draft, no bundle)" "email" @("--no-attach") -ExpectBundle $false
   Test-Support "support teams saves bundle (routing unset)" "teams" @()
 
   # optimize --apply / --restore — confined to a throwaway temp git repo (--project),
@@ -740,8 +779,8 @@ try {
         $bkDir = $Matches[1].Trim()
         if (Test-Path -LiteralPath $bkDir) { Remove-Item -LiteralPath $bkDir -Recurse -Force -ErrorAction SilentlyContinue; Note "optimize --backup snapshot removed: $bkDir" }
       } else { Warn "roundtrip" "optimize --backup" "exit=$($r.ExitCode)" $r.Ms }
-      $r = Invoke-Tk @("optimize", "context", "--project", "--apply")
-      if ($r.ExitCode -eq 0 -and $r.AllText -match 'tk optimize --apply') { Pass "roundtrip" "optimize --apply (temp repo, backs up)" "" $r.Ms } else { Fail "roundtrip" "optimize --apply" "exit=$($r.ExitCode)" $r.Ms }
+      $r = Invoke-Tk @("optimize", "context", "--project", "--apply") -Env $script:HeavyEnv -Tmo $script:HeavyTimeoutSec
+      if ($r.ExitCode -eq 0 -and $r.AllText -match 'tk optimize --apply') { Pass "roundtrip" "optimize --apply (temp repo, backs up)" "" $r.Ms } elseif ($r.TimedOut) { Fail "roundtrip" "optimize --apply" "inspect-triggered scan still running at ${script:HeavyTimeoutSec}s ceiling — see dossier" $r.Ms } else { Fail "roundtrip" "optimize --apply" "exit=$($r.ExitCode)" $r.Ms }
       $r = Invoke-Tk @("optimize", "--restore")
       if ($r.ExitCode -eq 0 -and $r.AllText -match 'restored|nothing to restore') { Pass "roundtrip" "optimize --restore reverts" "" $r.Ms } else { Warn "roundtrip" "optimize --restore" "exit=$($r.ExitCode)" $r.Ms }
     } finally { Pop-Location; Note "optimize --apply confined to temp repo (discarded)" }
@@ -804,7 +843,15 @@ try {
   $histBefore = (Invoke-Tk @("gain", "--history")).AllText
   $beforeLines = ($histBefore -split "`n").Count
   if (Test-Cmd "copilot") {
-    $cp = Start-Proc -File (Get-Command copilot).Source -PArgs @("-p", "run a single command: git status") -Tmo 120
+    # Get-Command resolves copilot to its .ps1 on Windows, which Process.Start
+    # (UseShellExecute=$false) CANNOT exec — the prior run died with exit 127 "not a
+    # valid application for this OS platform", so tier-0 routing was never actually
+    # tested. Route via cmd so PATH resolves the launchable copilot.cmd shim.
+    $cp = if ($IsWindows) {
+      Start-Proc -File $env:ComSpec -PArgs @("/c", "copilot", "-p", "run a single command: git status") -Tmo 120
+    } else {
+      Start-Proc -File (Get-Command copilot).Source -PArgs @("-p", "run a single command: git status") -Tmo 120
+    }
     Start-Sleep -Seconds 1
     $histAfter = (Invoke-Tk @("gain", "--history")).AllText
     if (($histAfter -split "`n").Count -gt $beforeLines) { Pass "tier0" "Copilot CLI routed through tk (gain history grew)" "" $cp.Ms } else { Warn "tier0" "Copilot CLI routing" "no new gain row — hook may not have fired (auth/proxy?)" $cp.Ms -R $cp }

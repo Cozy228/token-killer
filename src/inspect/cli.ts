@@ -206,8 +206,21 @@ export function runInspect(
     const hosts = opts.inputTypeExplicit
       ? [discoverHost(opts.inputType, home)]
       : discoverHosts(home);
+    // Home-relative display for progress. On win32 the filesystem is case-insensitive
+    // and the two sources disagree on case — homedir() yields `C:\Users\Alice` while a
+    // dir resolved via APPDATA can be `c:\users\alice\...` — so a case-SENSITIVE prefix
+    // test fails and the path renders absolute, leaking the home dir into progress.
+    // Compare case-insensitively on win32; slice from the original so the tail keeps its case.
+    const ci = process.platform === "win32";
+    const eqHome = (a: string): boolean =>
+      ci ? a.toLowerCase() === home.toLowerCase() : a === home;
+    const underHome = (a: string): boolean => {
+      const prefix = home + sep;
+      const head = a.slice(0, prefix.length);
+      return ci ? head.toLowerCase() === prefix.toLowerCase() : head === prefix;
+    };
     const relHome = (dir: string): string =>
-      dir === home ? "~" : dir.startsWith(home + sep) ? `~${dir.slice(home.length)}` : dir;
+      eqHome(dir) ? "~" : underHome(dir) ? `~${dir.slice(home.length)}` : dir;
     progress.phase(
       opts.inputTypeExplicit
         ? `Discovering ${opts.inputType} sources…`
