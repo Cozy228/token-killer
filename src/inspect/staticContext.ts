@@ -21,6 +21,7 @@ export function runStaticContext(opts: {
   surface?: ContextSurface | string;
   home?: string;
   cwd?: string;
+  onProgress?: (completed: number, total: number, detail?: string) => void;
 }): StaticContextRun {
   registerAllRules();
   const result = analyzeContext({
@@ -28,6 +29,7 @@ export function runStaticContext(opts: {
     surface: opts.surface as ContextSurface | undefined,
     home: opts.home,
     cwd: opts.cwd,
+    onProgress: opts.onProgress,
   });
   // VS Code's host-native terminal-output compression toggle is a user-scope,
   // non-markdown finding — injected here (not a per-file rule) when the user scope

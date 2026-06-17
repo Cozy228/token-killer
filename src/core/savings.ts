@@ -1,6 +1,6 @@
-import { estimateTokens } from "./tokens.js";
+import { estimateTokens, estimateTokensFromLength } from "./tokens.js";
 
-export { estimateTokens };
+export { estimateTokens, estimateTokensFromLength };
 
 export type Savings = {
   rawChars: number;

@@ -30,6 +30,7 @@ import { emitHtmlReport } from "../report/open.js";
 import { analyzeHabits, type HabitStats } from "./habits.js";
 import { buildReport, renderJson, renderMarkdown } from "./report.js";
 import { computeFootprint } from "./footprint.js";
+import type { FileCache } from "./fileCache.js";
 import { makeProgressReporter } from "./progress.js";
 import { parseSince, scan, type ScanResult } from "./scan.js";
 import { discoverSources, type InputType } from "./sources.js";
@@ -201,17 +202,29 @@ export function runInspect(
     progress.phase(`Discovering ${opts.inputType} sources…`);
     const discovery = discoverSources(opts.inputType, home);
     if (discovery.found) {
+      // One read-through cache shared across scan + habits so each transcript /
+      // session file is read from disk once, not twice.
+      const fileCache: FileCache = new Map();
       progress.phase(
         `Scanning ${discovery.transcriptFiles.length} transcript(s) + ${discovery.sessionFiles.length} session(s)…`,
       );
       result = scan(discovery, {
         sinceMs,
         session: opts.session,
-        onProgress: (done, total) => progress.step(done, total),
+        onProgress: (done, total, detail) => progress.step(done, total, detail),
+        fileCache,
       });
+      progress.phase(
+        `Scanned ${result.tool_event_count.toLocaleString()} tool event(s) across ${result.session_inventory} session(s).`,
+      );
       // Per-session habit metrics feed the cost-tips advice (chronicle parity).
       progress.phase("Analyzing usage habits…");
-      habits = analyzeHabits(discovery, (done, total) => progress.step(done, total));
+      habits = analyzeHabits(
+        discovery,
+        (done, total, detail) => progress.step(done, total, detail),
+        fileCache,
+      );
+      progress.phase(`Analyzed habits across ${habits.sessions} active session(s).`);
     } else {
       progress.done();
       process.stderr.write(
@@ -221,8 +234,15 @@ export function runInspect(
 
     // Static-context analysis (always runs, scope-aware).
     progress.phase("Analyzing context files…");
-    const sc = runStaticContext({ scopes, surface: opts.surface, home, cwd });
+    const sc = runStaticContext({
+      scopes,
+      surface: opts.surface,
+      home,
+      cwd,
+      onProgress: (done, total, detail) => progress.step(done, total, detail),
+    });
     const staticFindings: ContextFinding[] = sc.result.findings;
+    progress.phase(`Analyzed ${sc.result.files_scanned} context file(s).`);
 
     // Exit 2 only when BOTH runtime and static context are empty (goal exit table).
     // "static empty" means no files scanned AND no synthesized findings (e.g. the

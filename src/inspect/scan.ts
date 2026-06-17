@@ -6,9 +6,8 @@
 // never command argument values, search terms, paths, or file/result content
 // (inspect-v1-design.md "Raw Evidence Policy").
 
-import { readFileSync } from "node:fs";
-
-import { estimateTokens } from "../core/savings.js";
+import { estimateTokensFromLength } from "../core/savings.js";
+import { readSourceText, type FileCache } from "./fileCache.js";
 import { classifyTool, normalize, type ToolCategory } from "../hook/normalize.js";
 import { governDirectTool } from "../hook/govern.js";
 import { rewriteCommand } from "../hook/rewrite.js";
@@ -58,8 +57,13 @@ export type ScanOptions = {
   sinceMs?: number; // absolute epoch-ms cutoff; records older than this are dropped
   session?: string; // restrict to one session id
   // Per-file progress hook (decoupled from the reporter). Called after each
-  // transcript/session file with the running 1-based count and the combined total.
-  onProgress?: (completed: number, total: number) => void;
+  // transcript/session file — and periodically WITHIN a large file — with the
+  // running 1-based file count, the combined total, and a live detail string
+  // (e.g. "transcripts · 12,403 events") so the counter visibly advances.
+  onProgress?: (completed: number, total: number, detail?: string) => void;
+  // Shared read-through cache so a file already read by another analyzer (habits)
+  // in the same run is not read from disk again.
+  fileCache?: FileCache;
 };
 
 // Multiplexer programs whose first sub-verb is a meaningful, non-sensitive label.
@@ -250,7 +254,7 @@ export function scan(discovery: SourceDiscovery, opts: ScanOptions = {}): ScanRe
 
     acc.count += 1;
     acc.total_output_chars += outChars;
-    acc.total_output_tokens += estimateTokens("x".repeat(outChars));
+    acc.total_output_tokens += estimateTokensFromLength(outChars);
     acc.max_output_chars = Math.max(acc.max_output_chars, outChars);
     acc.total_input_chars += inChars;
     acc.max_input_chars = Math.max(acc.max_input_chars, inChars);
@@ -272,20 +276,41 @@ export function scan(discovery: SourceDiscovery, opts: ScanOptions = {}): ScanRe
     return true;
   }
 
+  // Combined total spans BOTH loops so the counter runs 0→100% across the whole
+  // scan, not twice.
+  const totalFiles = discovery.transcriptFiles.length + discovery.sessionFiles.length;
+  let processed = 0;
+
+  // Live counter line. `group` names which pass we are in so the user sees what the
+  // scan is "continuing on", and the running event tally makes the line move even
+  // while a single large file is being parsed.
+  function tick(group: string): void {
+    opts.onProgress?.(
+      processed,
+      totalFiles,
+      `${group} · ${toolEventCount.toLocaleString()} events`,
+    );
+  }
+
+  // Re-emit the counter every PROGRESS_LINE_STRIDE lines within a file so a single
+  // huge transcript does not look frozen.
+  const PROGRESS_LINE_STRIDE = 4000;
+
   // Read one source file, extract+accumulate every tool record it carries. A fresh
   // VscodeReadCtx per file threads the session id across that file's lines. Returns
   // whether the file contributed any event (for transcript coverage).
-  function processFile(file: string): boolean {
-    let text: string;
-    try {
-      text = readFileSync(file, "utf8");
-    } catch {
+  function processFile(file: string, group: string): boolean {
+    const text = readSourceText(file, opts.fileCache);
+    if (text === undefined) {
       coverageErrors += 1;
       return false;
     }
     const ctx: VscodeReadCtx = {};
     let hadEvent = false;
+    let lineNo = 0;
     for (const line of text.split(/\r?\n/)) {
+      lineNo += 1;
+      if (lineNo % PROGRESS_LINE_STRIDE === 0) tick(group);
       if (line.trim().length === 0) continue;
       let json: unknown;
       try {
@@ -302,15 +327,10 @@ export function scan(discovery: SourceDiscovery, opts: ScanOptions = {}): ScanRe
     return hadEvent;
   }
 
-  // Combined total spans BOTH loops so the counter runs 0→100% across the whole
-  // scan, not twice.
-  const totalFiles = discovery.transcriptFiles.length + discovery.sessionFiles.length;
-  let processed = 0;
-
   for (const file of discovery.transcriptFiles) {
-    if (processFile(file)) transcriptCoverage += 1;
+    if (processFile(file, "transcripts")) transcriptCoverage += 1;
     processed += 1;
-    opts.onProgress?.(processed, totalFiles);
+    tick("transcripts");
   }
 
   // Session inventory = count of distinct SESSIONS discovered (one chatSessions file
@@ -322,16 +342,16 @@ export function scan(discovery: SourceDiscovery, opts: ScanOptions = {}): ScanRe
   // their requests are empty and only the session count lands here.
   let sessionInventory = 0;
   for (const file of discovery.sessionFiles) {
-    let text: string | undefined;
-    try {
-      text = readFileSync(file, "utf8");
-    } catch {
+    const text = readSourceText(file, opts.fileCache);
+    if (text === undefined) {
       coverageErrors += 1;
-    }
-    if (text !== undefined) {
+    } else {
       sessionInventory += 1;
       const ctx: VscodeReadCtx = {};
+      let lineNo = 0;
       for (const line of text.split(/\r?\n/)) {
+        lineNo += 1;
+        if (lineNo % PROGRESS_LINE_STRIDE === 0) tick("sessions");
         if (line.trim().length === 0) continue;
         let json: unknown;
         try {
@@ -348,7 +368,7 @@ export function scan(discovery: SourceDiscovery, opts: ScanOptions = {}): ScanRe
     // Advance the counter for every session file, read-failures included, so the
     // progress total always reaches 100%.
     processed += 1;
-    opts.onProgress?.(processed, totalFiles);
+    tick("sessions");
   }
 
   const opportunities: Opportunity[] = [...accs.values()]

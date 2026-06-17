@@ -37,6 +37,10 @@ export type AnalyzeOptions = {
   surface?: ContextSurface | string;
   home?: string;
   cwd?: string;
+  // Per-file progress hook. Called after each context file with the running 1-based
+  // count, the total candidate count, and the file's display name (context files
+  // are well-known config names — CLAUDE.md, AGENTS.md — never sensitive content).
+  onProgress?: (completed: number, total: number, detail?: string) => void;
 };
 
 export type AnalyzeResult = {
@@ -105,7 +109,10 @@ export function analyzeContext(opts: AnalyzeOptions): AnalyzeResult {
   const analyzed: AnalyzedFile[] = [];
   const findings: ContextFinding[] = [];
 
+  let processed = 0;
   for (const file of candidates) {
+    processed += 1;
+    opts.onProgress?.(processed, candidates.length, file.display);
     const content = readContextFile(file.path);
     if (content === undefined) continue;
     const parsed = parseMarkdown(content);
