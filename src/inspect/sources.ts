@@ -24,6 +24,19 @@ export type SourceDiscovery = {
   found: boolean;
 };
 
+// Per-host discovery — carries the resolved root dir tk looked in so the run can
+// show WHERE it scanned (progress), not just which host.
+export type HostDiscovery = {
+  inputType: InputType;
+  dir: string;
+  sessionFiles: string[];
+  transcriptFiles: string[];
+};
+
+export function hostFound(h: HostDiscovery): boolean {
+  return h.sessionFiles.length + h.transcriptFiles.length > 0;
+}
+
 function listByExt(dir: string, exts: string[]): string[] {
   if (!existsSync(dir)) return [];
   try {
@@ -68,7 +81,7 @@ function listSubdirs(dir: string): string[] {
 // Stable VS Code storage only (Insiders/Codium out of scope). Sessions live in
 // `chatSessions/`, analyzable events in the Copilot chat `transcripts/` — kept as
 // two distinct counts (coverage semantics: never collapse them).
-function discoverVscode(home: string, platform: NodeJS.Platform): SourceDiscovery {
+function discoverVscode(home: string, platform: NodeJS.Platform): HostDiscovery {
   const userDir = vscodeUserDir(platform, home);
   const sessionFiles: string[] = [];
   const transcriptFiles: string[] = [];
@@ -80,34 +93,59 @@ function discoverVscode(home: string, platform: NodeJS.Platform): SourceDiscover
     transcriptFiles.push(...listJsonl(join(root, "transcripts")));
   }
 
-  return {
-    inputType: "vscode",
-    sessionFiles,
-    transcriptFiles,
-    found: sessionFiles.length + transcriptFiles.length > 0,
-  };
+  return { inputType: "vscode", dir: userDir, sessionFiles, transcriptFiles };
 }
 
 // Copilot CLI session-state stores under ~/.copilot. Layout varies by version;
 // probe the common subdirs tolerantly.
-function discoverCopilotCli(home: string): SourceDiscovery {
+function discoverCopilotCli(home: string): HostDiscovery {
   const base = join(home, ".copilot");
   const transcriptFiles: string[] = [];
   for (const sub of ["history", "session-state", "sessions", "logs"]) {
     transcriptFiles.push(...listJsonl(join(base, sub)));
   }
+  return { inputType: "copilot-cli", dir: base, sessionFiles: [], transcriptFiles };
+}
+
+// Discover ONE host (used when --input-type is explicit).
+export function discoverHost(
+  inputType: InputType,
+  home: string = homedir(),
+  platform: NodeJS.Platform = process.platform,
+): HostDiscovery {
+  return inputType === "copilot-cli" ? discoverCopilotCli(home) : discoverVscode(home, platform);
+}
+
+// Discover EVERY known host (used when --input-type is NOT given): tk scans both
+// VS Code and the Copilot CLI so a user driving either is covered without a flag.
+export function discoverHosts(
+  home: string = homedir(),
+  platform: NodeJS.Platform = process.platform,
+): HostDiscovery[] {
+  return [discoverVscode(home, platform), discoverCopilotCli(home)];
+}
+
+// Merge per-host discoveries into one SourceDiscovery: scan()/analyzeHabits() read
+// the union of files and don't care which host a file came from (flatToolRecords
+// already handles both the VS Code and flat/CLI line shapes). `inputType` is set to
+// a representative host (first with data) purely for the legacy ScanResult field —
+// the report's host LABEL is computed separately in the CLI from the host list.
+export function mergeHosts(hosts: HostDiscovery[]): SourceDiscovery {
+  const withData = hosts.find(hostFound) ?? hosts[0];
   return {
-    inputType: "copilot-cli",
-    sessionFiles: [],
-    transcriptFiles,
-    found: transcriptFiles.length > 0,
+    inputType: withData?.inputType ?? "vscode",
+    sessionFiles: hosts.flatMap((h) => h.sessionFiles),
+    transcriptFiles: hosts.flatMap((h) => h.transcriptFiles),
+    found: hosts.some(hostFound),
   };
 }
 
+// Back-compat single-host SourceDiscovery (kept for callers/tests that want the
+// flat shape for one host).
 export function discoverSources(
   inputType: InputType,
   home: string = homedir(),
   platform: NodeJS.Platform = process.platform,
 ): SourceDiscovery {
-  return inputType === "copilot-cli" ? discoverCopilotCli(home) : discoverVscode(home, platform);
+  return mergeHosts([discoverHost(inputType, home, platform)]);
 }

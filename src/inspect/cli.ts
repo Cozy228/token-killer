@@ -6,7 +6,7 @@
 
 import { randomUUID } from "node:crypto";
 import { homedir } from "node:os";
-import { basename } from "node:path";
+import { basename, sep } from "node:path";
 
 import {
   buildAdvice,
@@ -33,7 +33,7 @@ import { computeFootprint } from "./footprint.js";
 import { makeFileCache } from "./fileCache.js";
 import { makeProgressReporter } from "./progress.js";
 import { parseSince, scan, type ScanResult } from "./scan.js";
-import { discoverSources, type InputType } from "./sources.js";
+import { discoverHost, discoverHosts, hostFound, mergeHosts, type InputType } from "./sources.js";
 import { persistScopeBuckets, runStaticContext } from "./staticContext.js";
 import { buildInspectAggregates } from "./telemetry.js";
 import { runtimeFindings, type Finding } from "./unified.js";
@@ -199,8 +199,32 @@ export function runInspect(
     // Runtime analysis (orthogonal to scope).
     let result: ScanResult | undefined;
     let habits: HabitStats | undefined;
-    progress.phase(`Discovering ${opts.inputType} sources…`);
-    const discovery = discoverSources(opts.inputType, home);
+    // Host selection: an explicit --input-type scans just that host; otherwise tk
+    // scans EVERY known host (vscode + copilot-cli) and merges, so a user driving
+    // either is covered without a flag. The host list is shown with the resolved
+    // directory so the run reveals WHERE it looked, not only which host.
+    const hosts = opts.inputTypeExplicit
+      ? [discoverHost(opts.inputType, home)]
+      : discoverHosts(home);
+    const relHome = (dir: string): string =>
+      dir === home ? "~" : dir.startsWith(home + sep) ? `~${dir.slice(home.length)}` : dir;
+    progress.phase(
+      opts.inputTypeExplicit
+        ? `Discovering ${opts.inputType} sources…`
+        : `Discovering sources (${hosts.map((h) => h.inputType).join(" + ")})…`,
+    );
+    for (const h of hosts) {
+      progress.phase(
+        `  ${h.inputType.padEnd(11)} ${relHome(h.dir)} — ${h.transcriptFiles.length} transcript(s), ${h.sessionFiles.length} session(s)`,
+      );
+    }
+    // Host label for the report (no paths — STDOUT may be saved/shared): the hosts
+    // that actually had data, or all attempted hosts when none did.
+    const foundHosts = hosts.filter(hostFound);
+    const hostsLabel = (foundHosts.length > 0 ? foundHosts : hosts)
+      .map((h) => h.inputType)
+      .join(" + ");
+    const discovery = mergeHosts(hosts);
     if (discovery.found) {
       // One byte-bounded read-through cache shared across scan + habits so each
       // transcript / session file is read from disk once, not twice — while peak
@@ -228,8 +252,9 @@ export function runInspect(
       progress.phase(`Analyzed habits across ${habits.sessions} active session(s).`);
     } else {
       progress.done();
+      const where = hosts.map((h) => `${h.inputType} (${relHome(h.dir)})`).join(", ");
       process.stderr.write(
-        `tk inspect: no ${opts.inputType} session sources found (this is normal if the host stores transcripts elsewhere).\n`,
+        `tk inspect: no session sources found in ${where} (this is normal if the host stores transcripts elsewhere).\n`,
       );
     }
 
@@ -314,6 +339,9 @@ export function runInspect(
     report.static_context = { files_scanned: sc.result.files_scanned, findings: staticFindings };
     report.findings = unifiedFindings;
     report.footprint = footprint;
+    // Reflect EVERY host scanned (e.g. "vscode + copilot-cli"), not just the
+    // representative one ScanResult carries.
+    report.inputType = hostsLabel;
 
     const reportJson = renderJson(report);
     const staticSection = renderStaticContextSection({

@@ -76,7 +76,10 @@ describe("tk inspect — exit codes & output", () => {
   test("no sources → exit 2", () => {
     const r = runTk(["inspect"]);
     expect(r.status).toBe(2);
-    expect(r.stderr).toContain("no vscode session sources");
+    // Default scans every host and names each one it checked.
+    expect(r.stderr).toContain("no session sources found");
+    expect(r.stderr).toContain("vscode");
+    expect(r.stderr).toContain("copilot-cli");
   });
 
   test("default report opens an HTML file → exit 0", () => {

@@ -86,10 +86,14 @@ function actionLines(report: Report): string[] {
 // rather than printing "Sessions: 8 / Tool actions: 0" and an empty table that reads
 // like everything is fine.
 function couldNotReadSessions(report: Report): string[] {
+  const hasVscode = report.inputType.includes("vscode");
+  const hasCopilot = report.inputType.includes("copilot");
   const inputHint =
-    report.inputType === "vscode"
-      ? "If you drive the agent from the Copilot CLI instead, run `tk inspect --input-type copilot-cli`."
-      : "If you use VS Code Copilot instead, run `tk inspect --input-type vscode`.";
+    hasVscode && hasCopilot
+      ? "tk checked both VS Code and the Copilot CLI — if you drive the agent from another host, its transcripts live elsewhere."
+      : hasVscode
+        ? "If you drive the agent from the Copilot CLI instead, run `tk inspect --input-type copilot-cli`."
+        : "If you use VS Code Copilot instead, run `tk inspect --input-type vscode`.";
   return [
     "## Couldn't read your agent activity",
     "",
