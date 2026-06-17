@@ -41,6 +41,8 @@ export default defineConfig({
       // Shipped-handler behavior coverage — every rtk*Behavior suite (all assert
       // tk's actual ADR-0001 behavior; the RTK divergences are ratified).
       "tests/unit/handlers/rtk*Behavior.test.ts",
+      // Issue #40: git status spawns the child once on the common path.
+      "tests/unit/handlers/gitStatusSingleSpawn.test.ts",
       "tests/unit/handlers/registeredHandlerCoverage.test.ts",
       "tests/unit/handlers/fixtureWiring.test.ts",
       "tests/unit/handlers/fixtureRegressionDebt.test.ts",
