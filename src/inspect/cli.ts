@@ -58,6 +58,12 @@ type InspectArgs = {
   scopeProject: boolean;
   surface?: string;
   failOn?: FailOnSeverity;
+  // Internal: skip the runtime scan (transcripts + habits) and analyze only the
+  // static-context surfaces. `tk optimize` triggers inspect this way when it will
+  // consume nothing but static findings — so a first-time, no-bucket optimize never
+  // pays for a multi-minute transcript scan it then discards (issue #41). Not part
+  // of the public flag surface; no HTML/JSON report is meaningful for it.
+  staticOnly: boolean;
   error?: string; // set on a parse error → exit 1
 };
 
@@ -83,6 +89,7 @@ export function parseInspectArgs(argv: string[]): InspectArgs {
     minOccurrences: DEFAULT_ADVICE_OPTIONS.minOccurrences,
     scopeUser: false,
     scopeProject: false,
+    staticOnly: false,
   };
   const SURFACES = new Set(["instructions", "prompts", "agents", "modes", "skills"]);
   for (let i = 0; i < argv.length; i += 1) {
@@ -105,6 +112,8 @@ export function parseInspectArgs(argv: string[]): InspectArgs {
       args.scopeProject = true;
     } else if (token === "--user") {
       args.scopeUser = true;
+    } else if (token === "--static-only") {
+      args.staticOnly = true;
     } else if (token === "--surface") {
       const value = argv[i + 1];
       i += 1;
@@ -201,89 +210,94 @@ export function runInspect(
     // Runtime analysis (orthogonal to scope).
     let result: ScanResult | undefined;
     let habits: HabitStats | undefined;
-    // Host selection: an explicit --input-type scans just that host; otherwise tk
-    // scans EVERY known host (vscode + copilot-cli) and merges, so a user driving
-    // either is covered without a flag. The host list is shown with the resolved
-    // directory so the run reveals WHERE it looked, not only which host.
-    const hosts = opts.inputTypeExplicit
-      ? [discoverHost(opts.inputType, home)]
-      : discoverHosts(home);
-    // Home-relative display for progress. On win32 the filesystem is case-insensitive
-    // and the two sources disagree on case — homedir() yields `C:\Users\Alice` while a
-    // dir resolved via APPDATA can be `c:\users\alice\...` — so a case-SENSITIVE prefix
-    // test fails and the path renders absolute, leaking the home dir into progress.
-    // Compare case-insensitively on win32; slice from the original so the tail keeps its case.
-    const ci = process.platform === "win32";
-    const eqHome = (a: string): boolean =>
-      ci ? a.toLowerCase() === home.toLowerCase() : a === home;
-    const underHome = (a: string): boolean => {
-      const prefix = home + sep;
-      const head = a.slice(0, prefix.length);
-      return ci ? head.toLowerCase() === prefix.toLowerCase() : head === prefix;
-    };
-    const relHome = (dir: string): string =>
-      eqHome(dir) ? "~" : underHome(dir) ? `~${dir.slice(home.length)}` : dir;
-    progress.phase(
-      opts.inputTypeExplicit
-        ? `Discovering ${opts.inputType} sources…`
-        : `Discovering sources (${hosts.map((h) => h.inputType).join(" + ")})…`,
-    );
-    for (const h of hosts) {
+    // `--static-only` (optimize's scoped trigger, issue #41): skip host discovery,
+    // the transcript scan, and habit extraction entirely — analyze only the static
+    // context surfaces below. `result`/`habits` stay undefined, which the report and
+    // exit-code logic already treat as "no runtime data".
+    let hostsLabel = opts.inputType as string;
+    if (!opts.staticOnly) {
+      // Host selection: an explicit --input-type scans just that host; otherwise tk
+      // scans EVERY known host (vscode + copilot-cli) and merges, so a user driving
+      // either is covered without a flag. The host list is shown with the resolved
+      // directory so the run reveals WHERE it looked, not only which host.
+      const hosts = opts.inputTypeExplicit
+        ? [discoverHost(opts.inputType, home)]
+        : discoverHosts(home);
+      // Home-relative display for progress. On win32 the filesystem is case-insensitive
+      // and the two sources disagree on case — homedir() yields `C:\Users\Alice` while a
+      // dir resolved via APPDATA can be `c:\users\alice\...` — so a case-SENSITIVE prefix
+      // test fails and the path renders absolute, leaking the home dir into progress.
+      // Compare case-insensitively on win32; slice from the original so the tail keeps its case.
+      const ci = process.platform === "win32";
+      const eqHome = (a: string): boolean =>
+        ci ? a.toLowerCase() === home.toLowerCase() : a === home;
+      const underHome = (a: string): boolean => {
+        const prefix = home + sep;
+        const head = a.slice(0, prefix.length);
+        return ci ? head.toLowerCase() === prefix.toLowerCase() : head === prefix;
+      };
+      const relHome = (dir: string): string =>
+        eqHome(dir) ? "~" : underHome(dir) ? `~${dir.slice(home.length)}` : dir;
       progress.phase(
-        `  ${h.inputType.padEnd(11)} ${relHome(h.dir)} — ${h.transcriptFiles.length} transcript(s), ${h.sessionFiles.length} session(s)`,
+        opts.inputTypeExplicit
+          ? `Discovering ${opts.inputType} sources…`
+          : `Discovering sources (${hosts.map((h) => h.inputType).join(" + ")})…`,
       );
-    }
-    // Host label for the report (no paths — STDOUT may be saved/shared): the hosts
-    // that actually had data, or all attempted hosts when none did.
-    const foundHosts = hosts.filter(hostFound);
-    const hostsLabel = (foundHosts.length > 0 ? foundHosts : hosts)
-      .map((h) => h.inputType)
-      .join(" + ");
-    const discovery = mergeHosts(hosts);
-    if (discovery.found) {
-      // One byte-bounded read-through cache shared across scan + habits so each
-      // transcript / session file is read from disk once, not twice — while peak
-      // memory stays capped on low-RAM hosts with many large transcripts.
-      const fileCache = makeFileCache();
-      // Cross-invocation per-file extract caches (keyed by path+mtime+size). After the
-      // first scan, an unchanged transcript is served from a tiny pre-extracted record
-      // instead of being re-parsed — so a repeated inspect / optimize-triggered scan /
-      // --fail-on only pays for NEW or CHANGED files. Best-effort + TK_NO_SCAN_CACHE
-      // kill-switch live inside the cache; a miss/failure silently falls back to a live
-      // parse. Prune stale entries once per run so the dir can't grow without bound.
-      const cacheRoot = join(tokenKillerHome(), "inspect-cache");
-      pruneCache(cacheRoot, nowMs);
-      const scanCache = makeDiskExtractCache<FileScanExtract>(cacheRoot, "scan");
-      const habitsCache = makeDiskExtractCache<FileHabitExtract>(cacheRoot, "habits");
-      progress.phase(
-        `Scanning ${discovery.transcriptFiles.length} transcript(s) + ${discovery.sessionFiles.length} session(s)…`,
-      );
-      result = scan(discovery, {
-        sinceMs,
-        session: opts.session,
-        onProgress: (done, total, detail) => progress.step(done, total, detail),
-        fileCache,
-        scanCache,
-      });
-      progress.phase(
-        `Scanned ${result.tool_event_count.toLocaleString()} tool event(s) across ${result.session_inventory} session(s).`,
-      );
-      // Per-session habit metrics feed the cost-tips advice (chronicle parity).
-      progress.phase("Analyzing usage habits…");
-      habits = analyzeHabits(
-        discovery,
-        (done, total, detail) => progress.step(done, total, detail),
-        fileCache,
-        habitsCache,
-      );
-      progress.phase(`Analyzed habits across ${habits.sessions} active session(s).`);
-    } else {
-      progress.done();
-      const where = hosts.map((h) => `${h.inputType} (${relHome(h.dir)})`).join(", ");
-      process.stderr.write(
-        `tk inspect: no session sources found in ${where} (this is normal if the host stores transcripts elsewhere).\n`,
-      );
-    }
+      for (const h of hosts) {
+        progress.phase(
+          `  ${h.inputType.padEnd(11)} ${relHome(h.dir)} — ${h.transcriptFiles.length} transcript(s), ${h.sessionFiles.length} session(s)`,
+        );
+      }
+      // Host label for the report (no paths — STDOUT may be saved/shared): the hosts
+      // that actually had data, or all attempted hosts when none did.
+      const foundHosts = hosts.filter(hostFound);
+      hostsLabel = (foundHosts.length > 0 ? foundHosts : hosts).map((h) => h.inputType).join(" + ");
+      const discovery = mergeHosts(hosts);
+      if (discovery.found) {
+        // One byte-bounded read-through cache shared across scan + habits so each
+        // transcript / session file is read from disk once, not twice — while peak
+        // memory stays capped on low-RAM hosts with many large transcripts.
+        const fileCache = makeFileCache();
+        // Cross-invocation per-file extract caches (keyed by path+mtime+size). After the
+        // first scan, an unchanged transcript is served from a tiny pre-extracted record
+        // instead of being re-parsed — so a repeated inspect / optimize-triggered scan /
+        // --fail-on only pays for NEW or CHANGED files. Best-effort + TK_NO_SCAN_CACHE
+        // kill-switch live inside the cache; a miss/failure silently falls back to a live
+        // parse. Prune stale entries once per run so the dir can't grow without bound.
+        const cacheRoot = join(tokenKillerHome(), "inspect-cache");
+        pruneCache(cacheRoot, nowMs);
+        const scanCache = makeDiskExtractCache<FileScanExtract>(cacheRoot, "scan");
+        const habitsCache = makeDiskExtractCache<FileHabitExtract>(cacheRoot, "habits");
+        progress.phase(
+          `Scanning ${discovery.transcriptFiles.length} transcript(s) + ${discovery.sessionFiles.length} session(s)…`,
+        );
+        result = scan(discovery, {
+          sinceMs,
+          session: opts.session,
+          onProgress: (done, total, detail) => progress.step(done, total, detail),
+          fileCache,
+          scanCache,
+        });
+        progress.phase(
+          `Scanned ${result.tool_event_count.toLocaleString()} tool event(s) across ${result.session_inventory} session(s).`,
+        );
+        // Per-session habit metrics feed the cost-tips advice (chronicle parity).
+        progress.phase("Analyzing usage habits…");
+        habits = analyzeHabits(
+          discovery,
+          (done, total, detail) => progress.step(done, total, detail),
+          fileCache,
+          habitsCache,
+        );
+        progress.phase(`Analyzed habits across ${habits.sessions} active session(s).`);
+      } else {
+        progress.done();
+        const where = hosts.map((h) => `${h.inputType} (${relHome(h.dir)})`).join(", ");
+        process.stderr.write(
+          `tk inspect: no session sources found in ${where} (this is normal if the host stores transcripts elsewhere).\n`,
+        );
+      }
+    } // end if (!opts.staticOnly)
 
     // Static-context analysis (always runs, scope-aware).
     progress.phase("Analyzing context files…");
