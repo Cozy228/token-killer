@@ -915,8 +915,28 @@ try {
     if ($r.ExitCode -eq 0) { Pass "lifecycle" "restore prior install ($priorHost)" "" $r.Ms; Note "prior install host '$priorHost' restored" } else { Warn "lifecycle" "restore prior install ($priorHost)" "exit=$($r.ExitCode) — re-run: tk install --host $priorHost" $r.Ms }
   } else { Info "lifecycle" "restore prior install" "no prior real host to restore (was '$priorHost')" }
 
-  # ╔══ PHASE 10: Tier-0 routing — Copilot CLI (auto) + manual VS Code gate ══╗
+  # ╔══ PHASE 10: Tier-0 routing — health (agent-independent) + Copilot CLI E2E ══╗
   Section "Tier-0 — does the agent route through tk?"
+  # ── 10a) ROUTING HEALTH — agent-independent (issue #42). ──────────────────────
+  # The authoritative "is the command-routing hook wired correctly?" gate. It
+  # dry-runs the rewrite decision via `tk hook check` — the SAME engine the live
+  # hook uses (src/hook/rewrite.ts) — so a `rewrite:` verdict PROVES routing works
+  # without invoking the agent or spending a token of budget. This is orthogonal to
+  # agent auth/budget: it passes even when the live Copilot/VS Code call below fails
+  # for "no budget" or "not logged in". The old signal (10b) inferred firing from a
+  # new gain row and so conflated a mis-installed hook with an agent that simply had
+  # no budget to run the wrapped command — those two are now separated.
+  $hk = Invoke-Tk @("hook", "check", "git", "status")
+  if ($hk.ExitCode -eq 0 -and $hk.AllText -match '(?m)^\s*rewrite:\s*tk\b') {
+    Pass "tier0" "routing health: hook rewrites 'git status' -> tk (agent-independent)" $hk.AllText.Trim() $hk.Ms
+  } else {
+    # A non-rewrite verdict here means the rewrite engine itself is broken/mis-built —
+    # a REAL routing defect, independent of any agent. Fail (not Warn) so it can't be
+    # dismissed as "the agent had no budget".
+    Fail "tier0" "routing health: hook rewrites 'git status' -> tk" "expected 'rewrite: tk …', got: $($hk.AllText.Trim()) (exit=$($hk.ExitCode))" $hk.Ms $hk
+  }
+
+  # ── 10b) Copilot CLI E2E — does the agent ACTUALLY route at runtime? ──────────
   $histBefore = (Invoke-Tk @("gain", "--history")).AllText
   $beforeLines = ($histBefore -split "`n").Count
   if (Test-Cmd "copilot") {
@@ -931,7 +951,22 @@ try {
     }
     Start-Sleep -Seconds 1
     $histAfter = (Invoke-Tk @("gain", "--history")).AllText
-    if (($histAfter -split "`n").Count -gt $beforeLines) { Pass "tier0" "Copilot CLI routed through tk (gain history grew)" "" $cp.Ms } else { Warn "tier0" "Copilot CLI routing" "no new gain row — hook may not have fired (auth/proxy?)" $cp.Ms -R $cp }
+    if (($histAfter -split "`n").Count -gt $beforeLines) {
+      Pass "tier0" "Copilot CLI routed through tk (gain history grew)" "" $cp.Ms
+    }
+    elseif ($cp.ExitCode -ne 0) {
+      # The AGENT call failed (exit nonzero — budget exceeded, not authed, proxy down).
+      # The wrapped command never ran, so the MISSING gain row says nothing about the
+      # hook. Routing health (10a) already proved the hook is installed correctly, so
+      # this is an agent-environment limitation, NOT a routing defect — Info, not Warn.
+      Info "tier0" "Copilot CLI E2E inconclusive (agent call failed)" "copilot exited $($cp.ExitCode) (budget/auth/proxy?) — no command ran, so no gain row; routing health proven by 10a" $cp.Ms
+    }
+    else {
+      # Agent call SUCCEEDED (exit 0) yet no gain row appeared: the command ran but did
+      # NOT go through tk. With routing health green, this points at a delivery/PATH gap
+      # at runtime (e.g. Copilot ran outside the env that carries the shim/hook).
+      Warn "tier0" "Copilot CLI ran but did not route through tk" "agent exit 0 yet no new gain row — runtime delivery/PATH gap (routing engine itself is healthy per 10a)" $cp.Ms -R $cp
+    }
   } else {
     Skip "tier0" "Copilot CLI E2E" "copilot not on PATH"
   }
@@ -1054,6 +1089,15 @@ L "3. Prompt: *""Summarize what changed in the last 20 commits.""* (runs ``git l
 L "4. In the VS Code terminal: ``tk gain --history``."
 L "   - **PASS**: the command Copilot ran appears as a row with a savings %. Note whether ``tk status`` tier is **hook** or **shim**."
 L "   - **DID NOT ENGAGE**: no new row — Copilot ran outside the integrated-terminal env. A key finding: pivot to the hook tier."
+L ""
+L "**First isolate routing from the agent (issue #42).** Before blaming the hook for a"
+L "missing gain row, run ``tk hook check ""git status""`` — it dry-runs the rewrite with"
+L "no agent and no budget. ``rewrite: tk git status`` means routing is healthy, so a"
+L "missing gain row is an *agent* problem (no budget / not logged in / ran outside the"
+L "shimmed env), NOT a broken hook. The automated **tier0 / routing health** check above"
+L "asserts exactly this. (Opt-in: set ``TK_HOOK_BEACON=1`` to have the live hook inject a"
+L "one-line ``tk active`` beacon into the transcript on each rewrite for positive"
+L "confirmation; default-off keeps the wire byte-identical.)"
 L ""
 L "_Generated by scripts/windows-dogfood.ps1_"
 
