@@ -212,7 +212,7 @@ function flatToolRecords(
   return extractVscodeRecords(parsed, ctx);
 }
 
-type Accumulator = Omit<Opportunity, "share" | "avg_output_chars">;
+export type Accumulator = Omit<Opportunity, "share" | "avg_output_chars">;
 
 function blankAcc(key: string, kind: "shell" | "direct", category: ToolCategory): Accumulator {
   return {
@@ -294,7 +294,7 @@ function accumulateRecord(
 
 // Merge one file's accumulator into a running map (sum the additive fields, max the
 // maxes, OR the compressible flag). Folds each per-file extract into the scan total.
-function mergeAcc(into: Map<string, Accumulator>, from: Accumulator): void {
+export function mergeAcc(into: Map<string, Accumulator>, from: Accumulator): void {
   const acc = into.get(from.key);
   if (!acc) {
     // Clone so a cached payload (which may be reused within the run) is never mutated.
@@ -319,36 +319,75 @@ function mergeAcc(into: Map<string, Accumulator>, from: Accumulator): void {
 // transcript does not look frozen on a cold (cache-miss) parse.
 const PROGRESS_LINE_STRIDE = 4000;
 
-// Parse one file's text into its complete, UNFILTERED scan contribution — the unit the
-// cross-run cache stores. `onLine` fires every PROGRESS_LINE_STRIDE lines (with the
-// running event tally) so a large file still advances the progress counter.
-function extractFileScan(text: string, onLine?: (events: number) => void): FileScanExtract {
+// Exported for the single-pass orchestrator (passes.ts) so a large file's combined
+// parse re-emits progress on the same line stride as the standalone scan.
+export { PROGRESS_LINE_STRIDE };
+
+// A per-file UNFILTERED scan accumulator that can be fed already-parsed JSON values
+// (one transcript line each). Factored out of extractFileScan so the single-pass
+// extractor can drive the SAME state from the SAME JSON.parse the habits pass uses —
+// the file is parsed once, both analyzers see every line. `parseFailed()` records a
+// line the caller could not JSON.parse, mirroring the inline try/catch counter.
+export type ScanAccumulator = {
+  // Feed one parsed JSON value (one transcript line). Non-object / non-tool values
+  // are ignored, matching the standalone walk.
+  step(json: unknown): void;
+  // Count one line that failed to JSON.parse (coverage error for transcripts).
+  parseFailed(): void;
+  // Running tool-event tally (drives the progress detail string).
+  events(): number;
+  // Collapse into the cacheable extract.
+  finish(): FileScanExtract;
+};
+
+export function makeScanAccumulator(): ScanAccumulator {
   const accs = new Map<string, Accumulator>();
   const counters: ScanCounters = { toolEventCount: 0, unknownTime: 0 };
   const ctx: VscodeReadCtx = {};
   let parseErrors = 0;
   let hadEvent = false;
+  return {
+    step(json: unknown): void {
+      if (typeof json !== "object" || json === null) return;
+      for (const record of flatToolRecords(json as Record<string, unknown>, ctx)) {
+        if (accumulateRecord(record, accs, {}, counters)) hadEvent = true;
+      }
+    },
+    parseFailed(): void {
+      parseErrors += 1;
+    },
+    events(): number {
+      return counters.toolEventCount;
+    },
+    finish(): FileScanExtract {
+      return { accs: [...accs.values()], hadEvent, parseErrors };
+    },
+  };
+}
+
+// Parse one file's text into its complete, UNFILTERED scan contribution — the unit the
+// cross-run cache stores. `onLine` fires every PROGRESS_LINE_STRIDE lines (with the
+// running event tally) so a large file still advances the progress counter.
+function extractFileScan(text: string, onLine?: (events: number) => void): FileScanExtract {
+  const acc = makeScanAccumulator();
   let lineNo = 0;
   for (const line of text.split(/\r?\n/)) {
     lineNo += 1;
-    if (lineNo % PROGRESS_LINE_STRIDE === 0) onLine?.(counters.toolEventCount);
+    if (lineNo % PROGRESS_LINE_STRIDE === 0) onLine?.(acc.events());
     if (line.trim().length === 0) continue;
     let json: unknown;
     try {
       json = JSON.parse(line);
     } catch {
-      parseErrors += 1;
+      acc.parseFailed();
       continue;
     }
-    if (typeof json !== "object" || json === null) continue;
-    for (const record of flatToolRecords(json as Record<string, unknown>, ctx)) {
-      if (accumulateRecord(record, accs, {}, counters)) hadEvent = true;
-    }
+    acc.step(json);
   }
-  return { accs: [...accs.values()], hadEvent, parseErrors };
+  return acc.finish();
 }
 
-type ScanTotals = {
+export type ScanTotals = {
   sessionInventory: number;
   transcriptCoverage: number;
   toolEventCount: number;
@@ -359,7 +398,7 @@ type ScanTotals = {
 // Rank the merged accumulators and assemble the ScanResult. A deterministic key
 // tiebreak keeps the order stable regardless of which path (live vs cached) produced
 // the map, so equal-volume opportunities never reorder between runs.
-function finishScan(
+export function finishScan(
   discovery: SourceDiscovery,
   accs: Map<string, Accumulator>,
   totals: ScanTotals,

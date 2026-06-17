@@ -35,6 +35,7 @@ import { makeDiskExtractCache, pruneCache } from "./extractCache.js";
 import { tokenKillerHome } from "../core/dataDir.js";
 import { makeProgressReporter } from "./progress.js";
 import { parseSince, scan, type FileScanExtract, type ScanResult } from "./scan.js";
+import { inspectSinglePass } from "./passes.js";
 import { discoverHost, discoverHosts, hostFound, mergeHosts, type InputType } from "./sources.js";
 import { persistScopeBuckets, runStaticContext } from "./staticContext.js";
 import { buildInspectAggregates } from "./telemetry.js";
@@ -258,24 +259,45 @@ export function runInspect(
       progress.phase(
         `Scanning ${discovery.transcriptFiles.length} transcript(s) + ${discovery.sessionFiles.length} session(s)…`,
       );
-      result = scan(discovery, {
-        sinceMs,
-        session: opts.session,
-        onProgress: (done, total, detail) => progress.step(done, total, detail),
-        fileCache,
-        scanCache,
-      });
-      progress.phase(
-        `Scanned ${result.tool_event_count.toLocaleString()} tool event(s) across ${result.session_inventory} session(s).`,
-      );
-      // Per-session habit metrics feed the cost-tips advice (chronicle parity).
-      progress.phase("Analyzing usage habits…");
-      habits = analyzeHabits(
-        discovery,
-        (done, total, detail) => progress.step(done, total, detail),
-        fileCache,
-        habitsCache,
-      );
+      // A per-event filter (--since / --session) makes the UNFILTERED single-pass
+      // extract inapplicable to the scan, so the filtered case keeps the two separate
+      // passes (rare path; habits never honors filters). The common unfiltered case
+      // takes the single-pass path: each transcript / session file is read AND parsed
+      // ONCE, feeding both the scan and habits aggregates (issue #39).
+      const filtered = sinceMs !== undefined || opts.session !== undefined;
+      if (filtered) {
+        result = scan(discovery, {
+          sinceMs,
+          session: opts.session,
+          onProgress: (done, total, detail) => progress.step(done, total, detail),
+          fileCache,
+          scanCache,
+        });
+        progress.phase(
+          `Scanned ${result.tool_event_count.toLocaleString()} tool event(s) across ${result.session_inventory} session(s).`,
+        );
+        progress.phase("Analyzing usage habits…");
+        habits = analyzeHabits(
+          discovery,
+          (done, total, detail) => progress.step(done, total, detail),
+          fileCache,
+          habitsCache,
+        );
+      } else {
+        const both = inspectSinglePass(discovery, {
+          onProgress: (done, total, detail) => progress.step(done, total, detail),
+          fileCache,
+          scanCache,
+          habitsCache,
+        });
+        result = both.scan;
+        habits = both.habits;
+        progress.phase(
+          `Scanned ${result.tool_event_count.toLocaleString()} tool event(s) across ${result.session_inventory} session(s).`,
+        );
+        // Per-session habit metrics feed the cost-tips advice (chronicle parity).
+        progress.phase("Analyzing usage habits…");
+      }
       progress.phase(`Analyzed habits across ${habits.sessions} active session(s).`);
     } else {
       progress.done();
