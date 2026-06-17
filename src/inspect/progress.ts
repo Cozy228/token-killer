@@ -45,13 +45,49 @@ export function progressEnabled(
   return Boolean(stream.isTTY);
 }
 
+// Milestone thresholds (percent) for the non-TTY path. A pipe can't collapse `\r`
+// overwrites, so per-step lines pile up (issue #46: 510+ lines / ~69 KB captured on a
+// forced-progress dogfood run). When the sink is not a TTY we instead emit at most one
+// line per 10%-crossing — a bounded, log-friendly trail that still shows WHERE a slow
+// scan reached without printing one line per file.
+const MILESTONE_STEP_PCT = 10;
+
 export function makeProgressReporter(opts?: {
   enabled?: boolean;
   write?: (s: string) => void;
+  // Whether the sink renders in place (a real terminal) vs. a pipe / file. When false,
+  // `step` degrades to bounded milestone lines instead of `\r` overwrites. Defaults to
+  // STDERR's TTY-ness so a forced-on (`TK_PROGRESS=1`) non-TTY run never floods.
+  tty?: boolean;
 }): ProgressReporter {
   const enabled = opts?.enabled ?? progressEnabled();
   if (!enabled) return NOOP;
   const write = opts?.write ?? ((s: string): void => void process.stderr.write(s));
+  const tty = opts?.tty ?? Boolean(process.stderr.isTTY);
+
+  if (!tty) {
+    // Non-TTY (pipe / CI / dogfood capture): in-place `\r` rendering can't collapse, so
+    // emit a milestone line only when completion crosses the next 10% boundary (or hits
+    // 100%). A piped run then sees a handful of newline-separated lines, not one per file.
+    let lastBucket = -1;
+    return {
+      phase(label: string): void {
+        lastBucket = -1; // reset thresholds per phase
+        write(`${label}\n`);
+      },
+      step(current: number, total: number, detail?: string): void {
+        if (total <= 0) return; // no denominator → no milestone math
+        const pct = Math.min(100, Math.floor((current / total) * 100));
+        const bucket = Math.floor(pct / MILESTONE_STEP_PCT);
+        if (bucket <= lastBucket && current < total) return;
+        lastBucket = bucket;
+        const head = `  ${current}/${total} (${pct}%)`;
+        write(detail ? `${head} ${detail}\n` : `${head}\n`);
+      },
+      done(): void {},
+    };
+  }
+
   let lineLen = 0; // width of the live counter line, tracked so we can erase it
 
   function clear(): void {
