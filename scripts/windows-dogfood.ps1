@@ -405,8 +405,12 @@ try {
     $r = Invoke-Tk (@("inspect") + $A) -Env $script:HeavyEnv -Tmo $script:HeavyTimeoutSec -Stream:$Stream
     if ($r.TimedOut) { Fail "func" $N "still scanning at ${script:HeavyTimeoutSec}s ceiling — NOT a crash; see dossier stderr for how far it reached (file-count vs single huge file)" $r.Ms }
     elseif ($r.ExitCode -eq 2) { Info "func" $N "no analyzable sources here (exit 2; populated host would run it)" $r.Ms }
-    elseif ($r.ExitCode -eq 0 -and ($Must -eq "" -or $r.AllText -match [regex]::Escape($Must))) { Pass "func" $N "" $r.Ms }
-    else { Fail "func" $N "exit=$($r.ExitCode)" $r.Ms }
+    elseif ($r.ExitCode -ne 0) { Fail "func" $N "exit=$($r.ExitCode)" $r.Ms }
+    elseif ($Must -eq "" -or $r.AllText -match [regex]::Escape($Must)) { Pass "func" $N "" $r.Ms }
+    # Clean exit, but the asserted substring is absent. This is an assertion gap, NOT a
+    # crash — reporting "exit=0" here reads as a command failure and contradicts any
+    # artifact-based PASS for the same run. Say what actually went wrong instead.
+    else { Fail "func" $N "exit=0 but expected output '$Must' not found" $r.Ms }
     return $r
   }
 
@@ -443,7 +447,10 @@ try {
   #    this is the one scan that still parses, but bounded to the 7d window.
   $ksFlags = @("--project", "--user", "--since", "7d", "--advice", "--min-confidence", "0.5",
     "--min-occurrences", "2", "--surface", "instructions", "--write-advice", "--text")
-  $r = Test-Inspect "inspect (scope+advice+surface+write-advice, one run)" $ksFlags "Token Killer Inspect" -Stream
+  # --write-advice intentionally suppresses the report stream (src/inspect/cli.ts), so the
+  # "Token Killer Inspect" report header never prints under this combo — assert the actual
+  # --write-advice contract instead. The dedicated artifact check below validates the files.
+  $r = Test-Inspect "inspect (scope+advice+surface+write-advice, one run)" $ksFlags "Wrote advice artifacts:" -Stream
   if ($r.ExitCode -eq 0 -and $r.AllText -match 'Wrote advice artifacts:') {
     $adv = @($r.AllText -split "`n" | ForEach-Object { $_.Trim() } | Where-Object { $_ -match '\.(json|md)$' -and (Test-Path -LiteralPath $_) })
     if ($adv.Count -gt 0) { Pass "func" "inspect --write-advice writes artifacts" "$($adv.Count) file(s)" $r.Ms; $adv | ForEach-Object { Remove-Item -LiteralPath $_ -Force -ErrorAction SilentlyContinue } }
@@ -477,7 +484,10 @@ try {
         if ($body -match [regex]::Escape($userHome)) { Warn "func" "$N scrubs home path" "leaks $userHome" } else { Pass "func" "$N scrubs home path" }
         Remove-Item -LiteralPath $dbgPath -Force -ErrorAction SilentlyContinue
       }
-    } else { Fail "func" $N "exit=$($r.ExitCode)" $r.Ms }
+    } elseif ($r.ExitCode -ne 0) { Fail "func" $N "exit=$($r.ExitCode)" $r.Ms }
+    # Clean exit but the 'debug bundle' confirmation line is absent — an assertion gap, not
+    # a crash. Don't render it as "exit=0" (reads as a command failure).
+    else { Fail "func" $N "exit=0 but no 'debug bundle' confirmation in output" $r.Ms }
   }
   Test-DebugBundle "tk debug" @()
   Test-DebugBundle "tk debug --full" @("--full")
