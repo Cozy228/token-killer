@@ -36,6 +36,101 @@ export type HabitStats = {
 
 type Session = { tools: number; promptChars: number[] };
 
+// A per-file habits accumulator that can be fed one already-parsed JSON line at a
+// time. Factored out of extractFileHabits so the single-pass extractor (passes.ts)
+// can drive the SAME state from the SAME JSON.parse the scan pass uses — the file is
+// parsed once, both analyzers see every line. `current` threads the session id (or
+// the file path until a session.start declares one) exactly as the standalone pass.
+export type HabitAccumulator = {
+  // Feed one parsed JSON value (one transcript line). Non-typed-event values are
+  // ignored, matching the standalone walk.
+  step(json: unknown): void;
+  // Collapse the accumulated per-session state into the cacheable extract.
+  finish(): FileHabitExtract;
+};
+
+export function makeHabitAccumulator(file: string): HabitAccumulator {
+  const local = new Map<string, Session>();
+  const sessionFor = (key: string): Session => {
+    let s = local.get(key);
+    if (!s) {
+      s = { tools: 0, promptChars: [] };
+      local.set(key, s);
+    }
+    return s;
+  };
+  let current = file;
+  return {
+    step(json: unknown): void {
+      if (!isObject(json)) return;
+      const type = typeof json.type === "string" ? json.type : "";
+      const data = isObject(json.data) ? json.data : undefined;
+      if (!data) return;
+      if (type === "session.start") {
+        const sid = typeof data.sessionId === "string" ? data.sessionId : undefined;
+        if (sid) current = sid;
+        sessionFor(current);
+      } else if (type === "user.message") {
+        sessionFor(current).promptChars.push(contentLength(data));
+      } else if (type === "assistant.message") {
+        const reqs = data.toolRequests;
+        if (Array.isArray(reqs)) sessionFor(current).tools += reqs.length;
+      }
+    },
+    finish(): FileHabitExtract {
+      return {
+        sessions: [...local.entries()].map(([key, s]) => ({
+          key,
+          tools: s.tools,
+          promptChars: s.promptChars,
+        })),
+      };
+    },
+  };
+}
+
+// Fold one file's per-session habit contribution into a running session map (sum
+// tool calls, concatenate prompt sizes), grouped by session key. Shared by the
+// standalone analyzeHabits loop and the single-pass orchestrator so both produce a
+// byte-identical aggregate.
+export function foldHabitExtract(into: Map<string, Session>, extract: FileHabitExtract): void {
+  for (const fs of extract.sessions) {
+    let s = into.get(fs.key);
+    if (!s) {
+      s = { tools: 0, promptChars: [] };
+      into.set(fs.key, s);
+    }
+    s.tools += fs.tools;
+    s.promptChars.push(...fs.promptChars);
+  }
+}
+
+// Reduce a fully-folded session map into the public HabitStats. Shared so the
+// single-pass path and the standalone path compute identical statistics.
+export function summarizeHabits(sessions: Map<string, Session>): HabitStats {
+  const active = [...sessions.values()].filter((s) => s.tools > 0 || s.promptChars.length > 0);
+  const toolCounts = active.map((s) => s.tools);
+  const promptChars = active.flatMap((s) => s.promptChars);
+  const totalToolCalls = toolCounts.reduce((a, b) => a + b, 0);
+  const totalPromptChars = promptChars.reduce((a, b) => a + b, 0);
+  return {
+    sessions: active.length,
+    total_tool_calls: totalToolCalls,
+    avg_tool_calls_per_session:
+      active.length === 0 ? 0 : Math.round(totalToolCalls / active.length),
+    max_tool_calls_in_session: toolCounts.length === 0 ? 0 : Math.max(...toolCounts),
+    prompt_count: promptChars.length,
+    avg_prompt_chars:
+      promptChars.length === 0 ? 0 : Math.round(totalPromptChars / promptChars.length),
+    max_prompt_chars: promptChars.length === 0 ? 0 : Math.max(...promptChars),
+    long_prompt_count: promptChars.filter((n) => n > LONG_PROMPT_CHARS).length,
+  };
+}
+
+// The session-map type used by the habits aggregate (exported so the single-pass
+// orchestrator can hold the running map between fold and summarize).
+export type HabitSessionMap = Map<string, Session>;
+
 // One file's complete contribution to the habits aggregate — the cacheable unit.
 // Sessions are keyed by their resolved id (or the file path until a session.start
 // declares one), so the cross-run merge reproduces the global grouping exactly.
@@ -66,16 +161,7 @@ function contentLength(data: Record<string, unknown>): number {
 // unit the cross-run cache stores. Threads `current` (session id, or file path until a
 // session.start declares one) across the file's lines exactly as the global pass did.
 export function extractFileHabits(text: string, file: string): FileHabitExtract {
-  const local = new Map<string, Session>();
-  const sessionFor = (key: string): Session => {
-    let s = local.get(key);
-    if (!s) {
-      s = { tools: 0, promptChars: [] };
-      local.set(key, s);
-    }
-    return s;
-  };
-  let current = file;
+  const acc = makeHabitAccumulator(file);
   for (const line of text.split(/\r?\n/)) {
     if (line.trim().length === 0) continue;
     let json: unknown;
@@ -84,29 +170,9 @@ export function extractFileHabits(text: string, file: string): FileHabitExtract 
     } catch {
       continue;
     }
-    if (!isObject(json)) continue;
-    const type = typeof json.type === "string" ? json.type : "";
-    const data = isObject(json.data) ? json.data : undefined;
-    if (!data) continue;
-
-    if (type === "session.start") {
-      const sid = typeof data.sessionId === "string" ? data.sessionId : undefined;
-      if (sid) current = sid;
-      sessionFor(current);
-    } else if (type === "user.message") {
-      sessionFor(current).promptChars.push(contentLength(data));
-    } else if (type === "assistant.message") {
-      const reqs = data.toolRequests;
-      if (Array.isArray(reqs)) sessionFor(current).tools += reqs.length;
-    }
+    acc.step(json);
   }
-  return {
-    sessions: [...local.entries()].map(([key, s]) => ({
-      key,
-      tools: s.tools,
-      promptChars: s.promptChars,
-    })),
-  };
+  return acc.finish();
 }
 
 export function analyzeHabits(
@@ -115,20 +181,10 @@ export function analyzeHabits(
   fileCache?: FileCache,
   habitsCache?: ExtractCache<FileHabitExtract>,
 ): HabitStats {
-  const sessions = new Map<string, Session>();
+  const sessions: HabitSessionMap = new Map<string, Session>();
 
   // Fold one file's per-session contribution into the global grouping (by session key).
-  function fold(extract: FileHabitExtract): void {
-    for (const fs of extract.sessions) {
-      let s = sessions.get(fs.key);
-      if (!s) {
-        s = { tools: 0, promptChars: [] };
-        sessions.set(fs.key, s);
-      }
-      s.tools += fs.tools;
-      s.promptChars.push(...fs.promptChars);
-    }
-  }
+  const fold = (extract: FileHabitExtract): void => foldHabitExtract(sessions, extract);
 
   // Serve an unchanged file from the cross-run cache; otherwise parse it once and
   // write the extract back. Returns undefined on read failure (contributes nothing).
@@ -158,22 +214,5 @@ export function analyzeHabits(
   }
 
   // Aggregate only sessions that showed real activity.
-  const active = [...sessions.values()].filter((s) => s.tools > 0 || s.promptChars.length > 0);
-  const toolCounts = active.map((s) => s.tools);
-  const promptChars = active.flatMap((s) => s.promptChars);
-  const totalToolCalls = toolCounts.reduce((a, b) => a + b, 0);
-  const totalPromptChars = promptChars.reduce((a, b) => a + b, 0);
-
-  return {
-    sessions: active.length,
-    total_tool_calls: totalToolCalls,
-    avg_tool_calls_per_session:
-      active.length === 0 ? 0 : Math.round(totalToolCalls / active.length),
-    max_tool_calls_in_session: toolCounts.length === 0 ? 0 : Math.max(...toolCounts),
-    prompt_count: promptChars.length,
-    avg_prompt_chars:
-      promptChars.length === 0 ? 0 : Math.round(totalPromptChars / promptChars.length),
-    max_prompt_chars: promptChars.length === 0 ? 0 : Math.max(...promptChars),
-    long_prompt_count: promptChars.filter((n) => n > LONG_PROMPT_CHARS).length,
-  };
+  return summarizeHabits(sessions);
 }
