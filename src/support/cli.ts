@@ -16,6 +16,7 @@ import {
   type SupportReport,
 } from "./report.js";
 import {
+  buildGithubIssueUrl,
   buildMailto,
   buildTeamsDeepLink,
   copyToClipboard,
@@ -33,22 +34,25 @@ function err(line: string): void {
 
 function usage(): string {
   return [
-    "tk support [email|teams] [--email <addr>] [--teams <upn>] [--no-attach] [--redact] [-y]",
+    "tk support [email|teams|github] [--email <addr>] [--teams <upn>] [--github <owner/repo>]",
+    "           [--no-attach] [--redact] [-y]",
     "  Produce a shareable diagnostic (recent error + logs) and open your mail client",
-    "  (mailto:) or Microsoft Teams (msteams: scheme) to send it. Nothing is sent",
-    "  automatically — you review and send by hand. The full report is saved to",
-    "  ~/.token-killer/reports/.",
+    "  (mailto:), Microsoft Teams (msteams: scheme), or a GitHub issue draft to send it.",
+    "  Nothing is sent automatically — you review and send/submit by hand. The full",
+    "  report is saved to ~/.token-killer/reports/.",
     "",
-    "  email | teams   Channel to reach support through (prompted if omitted in a TTY)",
-    "  --email <addr>  Destination email (overrides TK_SUPPORT_EMAIL)",
-    "  --teams <upn>   Destination Teams in-tenant UPN (overrides TK_SUPPORT_TEAMS)",
-    "  --no-attach     Do NOT gather the error + logs bundle (send a bare message)",
-    "  --redact        Lengths/labels only — no command text, output bytes, or config bodies",
-    "  -y, --yes       Skip the interactive prompts (use the channel + attach defaults)",
+    "  email | teams | github  Channel to reach support through (prompted if omitted in a TTY)",
+    "  --email <addr>          Destination email (overrides TK_SUPPORT_EMAIL)",
+    "  --teams <upn>           Destination Teams in-tenant UPN (overrides TK_SUPPORT_TEAMS)",
+    "  --github <owner/repo>   Destination GitHub repo, an owner/name slug or a repo URL",
+    "                          (overrides TK_SUPPORT_GITHUB)",
+    "  --no-attach             Do NOT gather the error + logs bundle (send a bare message)",
+    "  --redact                Lengths/labels only — no command text, output bytes, or config bodies",
+    "  -y, --yes               Skip the interactive prompts (use the channel + attach defaults)",
     "",
-    "  Routing is env-only (ADR 0011): with neither TK_SUPPORT_EMAIL nor TK_SUPPORT_TEAMS",
-    "  set, tk saves the bundle, copies it to your clipboard, and prints a hint — it",
-    "  sends nowhere.",
+    "  Routing is env-only (ADR 0011): with none of TK_SUPPORT_EMAIL / TK_SUPPORT_TEAMS /",
+    "  TK_SUPPORT_GITHUB set, tk saves the bundle, copies it to your clipboard, and prints",
+    "  a hint — it sends nowhere.",
     "",
   ].join("\n");
 }
@@ -59,6 +63,7 @@ type SupportArgs = {
   redact: boolean;
   email?: string;
   teams?: string;
+  github?: string;
   yes: boolean;
   help: boolean;
 };
@@ -67,7 +72,7 @@ function parseArgs(argv: string[]): SupportArgs | { error: string } {
   const a: SupportArgs = { noAttach: false, redact: false, yes: false, help: false };
   for (let i = 0; i < argv.length; i += 1) {
     const t = argv[i];
-    if (t === "email" || t === "teams") {
+    if (t === "email" || t === "teams" || t === "github") {
       a.channel = t;
     } else if (t === "--no-attach") {
       a.noAttach = true;
@@ -87,16 +92,28 @@ function parseArgs(argv: string[]): SupportArgs | { error: string } {
       if (v === undefined) return { error: "--teams requires a value" };
       a.teams = v;
       i += 1;
+    } else if (t === "--github") {
+      const v = argv[i + 1];
+      if (v === undefined) return { error: "--github requires a value" };
+      a.github = v;
+      i += 1;
     } else {
       return { error: `unknown flag '${t}'` };
     }
   }
-  // Convenience: a lone --email/--teams override expresses the channel too, so
-  // `tk support --email x@y.z` works without repeating the positional. Ambiguous
-  // only if BOTH are given with no positional, in which case the user must pick.
+  // Convenience: a lone --email/--teams/--github override expresses the channel
+  // too, so `tk support --github owner/repo` works without repeating the
+  // positional. Ambiguous only if MORE THAN ONE is given with no positional, in
+  // which case the user must pick the channel explicitly.
   if (!a.channel) {
-    if (a.email !== undefined && a.teams === undefined) a.channel = "email";
-    else if (a.teams !== undefined && a.email === undefined) a.channel = "teams";
+    const implied = (
+      [
+        ["email", a.email],
+        ["teams", a.teams],
+        ["github", a.github],
+      ] as const
+    ).filter(([, v]) => v !== undefined);
+    if (implied.length === 1) a.channel = implied[0][0];
   }
   return a;
 }
@@ -146,6 +163,30 @@ function emailBody(report: SupportReport | undefined, bundlePath: string | undef
   return lines.join("\n");
 }
 
+// GitHub issue body — markdown (GitHub renders it), so it uses headings + a fenced
+// summary rather than the plain-text mailto body. Carries the SAME context as the
+// other channels (the diagnostic summary) and the SAME attachment hook (the saved
+// bundle path, pasted in or drag-dropped). The path is home-scrubbed because the
+// body travels in the issue URL and the rendered issue, both of which leave the
+// machine. Empty under --no-attach (no report/bundle), leaving a bare problem form.
+function githubIssueBody(
+  report: SupportReport | undefined,
+  bundlePath: string | undefined,
+): string {
+  const lines = [
+    "## Describe the problem",
+    "",
+    "<!-- What went wrong, and what did you expect to happen? -->",
+    "",
+  ];
+  if (report) lines.push("## Diagnostic summary", "", "```", report.summary, "```", "");
+  if (bundlePath)
+    lines.push(
+      `Full report saved at \`${scrubHomePath(bundlePath)}\` — paste it below or drag the file in to attach it.`,
+    );
+  return lines.join("\n");
+}
+
 export async function runSupport(argv: string[]): Promise<number> {
   const parsed = parseArgs(argv);
   if ("error" in parsed) {
@@ -164,8 +205,11 @@ export async function runSupport(argv: string[]): Promise<number> {
   // Interactive flow (only when both ends are a TTY and the user didn't pass -y).
   if (interactive && !parsed.yes) {
     if (!channel) {
-      const answer = (await ask("Reach support via: [1] Email  [2] Microsoft Teams: ")).trim();
-      channel = answer === "2" ? "teams" : answer === "1" ? "email" : undefined;
+      const answer = (
+        await ask("Reach support via: [1] Email  [2] Microsoft Teams  [3] GitHub issue: ")
+      ).trim();
+      channel =
+        answer === "2" ? "teams" : answer === "3" ? "github" : answer === "1" ? "email" : undefined;
       if (!channel) {
         err("tk support: no channel selected\n");
         return 1;
@@ -194,7 +238,8 @@ export async function runSupport(argv: string[]): Promise<number> {
     out(`Saved diagnostic bundle: ${bundlePath}\n`);
   }
 
-  const override = channel === "email" ? parsed.email : parsed.teams;
+  const override =
+    channel === "email" ? parsed.email : channel === "teams" ? parsed.teams : parsed.github;
   const destination = resolveDestination(channel, override);
 
   // ADR 0011: no env (and no override) ⇒ copy to clipboard, print the path + the
@@ -205,8 +250,9 @@ export async function runSupport(argv: string[]): Promise<number> {
       out(copied ? "Report copied to clipboard.\n" : "Report saved (clipboard unavailable).\n");
     }
     out(
-      "No support destination configured. Set TK_SUPPORT_EMAIL or TK_SUPPORT_TEAMS " +
-        "(an in-tenant Teams UPN) to enable one-tap send. Nothing was sent.\n",
+      "No support destination configured. Set TK_SUPPORT_EMAIL, TK_SUPPORT_TEAMS " +
+        "(an in-tenant Teams UPN), or TK_SUPPORT_GITHUB (an owner/repo) to enable " +
+        "one-tap send. Nothing was sent.\n",
     );
     return 0;
   }
@@ -216,7 +262,7 @@ export async function runSupport(argv: string[]): Promise<number> {
     const opened = await openExternal(uri);
     if (!opened) out(`Open this link to email support:\n${uri}\n`);
     if (bundlePath) out(`Attach this file to the email: ${bundlePath}\n`);
-  } else {
+  } else if (channel === "teams") {
     // Teams: the clipboard carries the FULL report; the deep link opens the chat
     // with a short pointer (the scheme's `message=` is a pointer, not the payload).
     const copied = report ? copyToClipboard(report.markdown) : false;
@@ -229,6 +275,25 @@ export async function runSupport(argv: string[]): Promise<number> {
     if (bundlePath) {
       out(
         `Report saved: ${bundlePath}${copied ? " — and copied to your clipboard; paste it into the chat." : " — paste it into the chat from this file."}\n`,
+      );
+    }
+  } else {
+    // GitHub: open the repo's "new issue" form pre-filled with a title + the
+    // diagnostic SUMMARY. Like Teams, the FULL report rides the clipboard + the
+    // saved file (the prefill URL is length-capped, and an issue body takes a
+    // pasted block or a drag-dropped attachment). The issue is a DRAFT — nothing
+    // is filed until the user clicks Submit.
+    const copied = report ? copyToClipboard(report.markdown) : false;
+    const uri = buildGithubIssueUrl(
+      destination,
+      "tk support report",
+      githubIssueBody(report, bundlePath),
+    );
+    const opened = await openExternal(uri);
+    if (!opened) out(`Open this link to draft a GitHub issue:\n${uri}\n`);
+    if (bundlePath) {
+      out(
+        `Report saved: ${bundlePath}${copied ? " — and copied to your clipboard; paste it into the issue (or drag the file in to attach)." : " — paste it into the issue from this file (or drag the file in to attach)."}\n`,
       );
     }
   }
