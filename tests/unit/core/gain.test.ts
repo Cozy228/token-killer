@@ -1,10 +1,11 @@
-import { mkdtemp, rm } from "node:fs/promises";
+import { mkdtemp, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import { afterEach, describe, expect, test, vi } from "vitest";
 
+import { projectFingerprint, projectMetaFileForFingerprint } from "../../../src/core/dataDir.js";
 import { parseGainArgs, runGain } from "../../../src/core/gain.js";
-import { recordHistory } from "../../../src/core/history.js";
+import { recordHistory, readProjectMeta } from "../../../src/core/history.js";
 import type { FilteredResult, RawResult, TkOptions } from "../../../src/types.js";
 
 const previousHome = process.env.TOKEN_KILLER_HOME;
@@ -149,6 +150,35 @@ describe("runGain --user", () => {
 
       expect(cap.text()).toContain("By project:");
       expect(cap.text()).toContain("proj-a");
+    });
+  });
+
+  test("self-heals a missing label on the next record (no bare-hash fallback)", async () => {
+    await withHome(async (home) => {
+      const cwd = path.join(home, "proj-heal");
+      await recordHistory(rawResult(), filtered(50), options(cwd));
+
+      // Simulate legacy data whose meta.json was never written (showed as a hash).
+      const fingerprint = projectFingerprint(cwd);
+      await rm(projectMetaFileForFingerprint(fingerprint), { force: true });
+      expect(await readProjectMeta(fingerprint)).toBeUndefined();
+
+      await recordHistory(rawResult(), filtered(50), options(cwd));
+      expect((await readProjectMeta(fingerprint))?.label).toBe("proj-heal");
+    });
+  });
+
+  test("self-heals a stale label written by an older cwd", async () => {
+    await withHome(async (home) => {
+      const cwd = path.join(home, "proj-stale");
+      await recordHistory(rawResult(), filtered(50), options(cwd));
+
+      // Simulate a label frozen from a subdir/worktree under the old write-once rule.
+      const fingerprint = projectFingerprint(cwd);
+      await writeFile(projectMetaFileForFingerprint(fingerprint), JSON.stringify({ label: "src" }));
+
+      await recordHistory(rawResult(), filtered(50), options(cwd));
+      expect((await readProjectMeta(fingerprint))?.label).toBe("proj-stale");
     });
   });
 });

@@ -90,17 +90,18 @@ describe("recordHistory fs-op slimming (2.4)", () => {
     expect(row.project_fingerprint).toBe(projectFingerprint(cwd));
   });
 
-  test("writes project meta only when the project dir is first created (2.4c)", async () => {
+  test("writes project meta on first record, and self-heals it when missing", async () => {
     const cwd = join(home, "workspace");
     await recordHistory(raw(), filtered(), options(cwd)); // dir created → meta written
     expect(existsSync(projectMetaFile(cwd))).toBe(true);
 
-    // Delete the meta but leave the dir: a subsequent record APPENDS without recreating
-    // the dir, so meta is NOT rewritten — proving the open(wx) is off the hot path and
-    // fires only on first dir creation, not every command.
+    // Delete the meta but leave the dir: a subsequent record RECREATES it. Legacy rows
+    // that showed as a bare fingerprint hash (no meta) recover their name on next visit.
+    // The read-then-write-if-stale runs in the deferred accounting commit, off the hot
+    // path, so the steady state (meta already correct) is a single read and no write.
     rmSync(projectMetaFile(cwd));
     await recordHistory(raw(), filtered(), options(cwd));
-    expect(existsSync(projectMetaFile(cwd))).toBe(false);
+    expect(existsSync(projectMetaFile(cwd))).toBe(true);
   });
 
   test("self-heals when the data dir is deleted mid-run (ledger-① never dropped)", async () => {
