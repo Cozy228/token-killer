@@ -106,12 +106,16 @@ async function defaultTriggerInspect(
   cwd: string,
   nowMs: number,
 ): Promise<void> {
-  // Dynamic import avoids a static inspect↔context cycle. A full inspect run
-  // (runtime + static) keeps the persisted bucket complete (goal §"Optimize").
-  // We only want inspect's side effect (the persisted bucket): force `--text` so it
-  // never writes/opens an HTML report, and its (text) stdout is suppressed below —
-  // optimize owns the output stream.
-  const argv = scope === "user" ? ["--user", "--text"] : ["--project", "--text"];
+  // Dynamic import avoids a static inspect↔context cycle. `tk optimize` consumes
+  // ONLY static-context findings, so we trigger a `--static-only` inspect: it skips
+  // the transcript scan + habit extraction the bucket's static surfaces don't need,
+  // sparing a first-time, no-bucket optimize a multi-minute cold scan it discards
+  // (issue #41). `--text` keeps it from writing/opening an HTML report, and its
+  // stdout is suppressed below — optimize owns the output stream.
+  const argv =
+    scope === "user"
+      ? ["--user", "--static-only", "--text"]
+      : ["--project", "--static-only", "--text"];
   const mod = await import("../inspect/cli.js");
   await withSuppressedStdout(() => {
     mod.runInspect(argv, nowMs, home, cwd);
@@ -174,7 +178,12 @@ export async function runOptimize(
 
       let bucket = readInspectBucket(bucketRef);
       if (!bucket) {
-        // Bucket absent → trigger a full inspect for this scope, then re-read.
+        // Bucket absent → trigger a static-only inspect for this scope, then re-read.
+        // Tell the user why first: this scoped scan only analyzes context files (run
+        // `tk inspect` for the full session report with transcript/habit findings).
+        process.stderr.write(
+          `tk optimize: no prior inspect for the ${scope} scope; scanning context files to find optimizations (run \`tk inspect\` first for the full session report).\n`,
+        );
         await trigger(scope, home, cwd, nowMs);
         bucket = readInspectBucket(bucketRef);
       }

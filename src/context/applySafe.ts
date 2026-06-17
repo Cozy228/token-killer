@@ -207,9 +207,21 @@ async function triggerInspectForScope(
   const trigger =
     deps.triggerInspect ??
     (async (s: ContextScope, h: string, c: string, n: number) => {
+      // `--apply` consumes ONLY static-context findings, so trigger a `--static-only`
+      // inspect: it skips the transcript scan + habit extraction and analyzes just the
+      // context surfaces, sparing a first-time, no-bucket apply a multi-minute cold scan
+      // it would discard (issue #41). `--text` keeps it from opening an HTML report; its
+      // stdout is suppressed — optimize owns the output stream.
       const mod = await import("../inspect/cli.js");
       await withSuppressedStdout(() =>
-        mod.runInspect(s === "user" ? ["--user"] : ["--project"], n, h, c),
+        mod.runInspect(
+          s === "user"
+            ? ["--user", "--static-only", "--text"]
+            : ["--project", "--static-only", "--text"],
+          n,
+          h,
+          c,
+        ),
       );
     });
   await trigger(scope, home, cwd, nowMs);
@@ -241,6 +253,12 @@ export async function runApply(
         : { scope: "project", fingerprint: contextProjectFingerprint(cwd) };
     let bucket = readInspectBucket(bucketRef);
     if (!bucket) {
+      // No persisted bucket for this scope → trigger an inspect to populate it.
+      // Tell the user WHY before it runs, and that this scoped scan only analyzes
+      // context files (no transcript/habit findings — run `tk inspect` for those).
+      process.stderr.write(
+        `tk optimize: no prior inspect for the ${scope} scope; scanning context files to find optimizations (run \`tk inspect\` first for the full session report).\n`,
+      );
       await triggerInspectForScope(deps, scope, home, cwd, nowMs);
       bucket = readInspectBucket(bucketRef);
     }
