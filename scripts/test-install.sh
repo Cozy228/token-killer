@@ -40,6 +40,23 @@ else
     fail "node dist/cli.js --version"
 fi
 
+# ── Step 3b: baked VERSION matches package.json (drift guard) ──
+#
+# The version is baked into the bundle at build time (tsdown `define`
+# __TK_VERSION__ ← package.json.version; see src/version.ts). If the manifest is
+# bumped but the shipped artifact carries a stale literal — or vice versa — the
+# CLI silently self-reports the wrong version (issue #45). Assert the freshly
+# built bundle's `tk --version` equals package.json.version so the manifest and
+# bundle can never diverge.
+
+PKG_VERSION=$(node -p "require('./package.json').version")
+BUILT_VERSION=$(node dist/cli.js --version 2>/dev/null | tr -d '[:space:]')
+if [ "$BUILT_VERSION" = "$PKG_VERSION" ]; then
+    pass "baked VERSION ($BUILT_VERSION) == package.json.version"
+else
+    fail "baked VERSION ($BUILT_VERSION) != package.json.version ($PKG_VERSION)"
+fi
+
 # ── Step 4: --help prints usage ─────────────────────
 
 if node dist/cli.js --help 2>&1 | grep -q 'Usage'; then
