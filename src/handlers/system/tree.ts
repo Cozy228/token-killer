@@ -127,21 +127,32 @@ function filterTreeOutput(raw: string): string {
   return `${filtered.join("\n")}\n`;
 }
 
-function formatTree(raw: RawResult, noiseFiltered: boolean): string {
-  const tree = filterTreeOutput(raw.stdout);
-  // H17: when noise dirs were injected via -I, append ONE declared disclosure line
-  // so the agent knows tool dirs (dist, build, coverage, etc.) may be present.
-  if (noiseFiltered) {
-    return `${tree}(+N tool dirs may be hidden: use -a or -I to show — run tree -a for all)\n`;
-  }
-  return tree;
+// H17: the declared disclosure line so the agent knows tool dirs (dist, build,
+// coverage, etc.) may be hidden by the injected `-I`. Carried as a `banner` (not
+// inlined into the tree body) so makeFilteredResult excludes it from the inflation
+// math while still counting it toward savings — see makeFilteredResult's banner doc.
+const DISCLOSURE_BANNER =
+  "(+N tool dirs may be hidden: use -a or -I to show — run tree -a for all)";
+
+// Issue #43: on a tiny tree the ~70-char disclosure dominates and inflates the
+// output past raw (Saved 0% / negative bytes). The transparency note is worth far
+// less than its byte cost on a 3-line tree, where no tool dir realistically went
+// missing anyway. Below this raw-byte threshold the banner is suppressed; at or
+// above it (trees large enough that hidden dirs actually matter) it is shown.
+const DISCLOSURE_MIN_RAW_CHARS = 200;
+
+function formatTree(raw: RawResult): string {
+  return filterTreeOutput(raw.stdout);
 }
 
 export const treeHandler: CommandHandler = {
   name: "tree",
-  // H17: marked structural so the inflation check never reverts the output when
-  // the disclosure line makes it marginally longer than the filtered raw.
-  traits: { cacheable: true, ttlClass: "fast", structural: true },
+  // The disclosure is now carried as a `banner` (excluded from inflation math by
+  // makeFilteredResult), and the tree BODY only ever strips lines (summary +
+  // trailing blanks), so it cannot inflate raw. The handler therefore no longer
+  // needs the `structural` exemption — dropping it lets the inflation guard apply
+  // on the rare case the body somehow grows (issue #43).
+  traits: { cacheable: true, ttlClass: "fast" },
   programs: ["tree"],
   matches(command) {
     return command.program === "tree";
@@ -180,6 +191,11 @@ export const treeHandler: CommandHandler = {
     const showAll = cleaned.some((a) => a === "-a" || a === "--all");
     const hasIgnore = cleaned.some((a) => a === "-I" || a.startsWith("--ignore="));
     const noiseFiltered = !showAll && !hasIgnore;
-    return makeFilteredResult(this, raw, formatTree(raw, noiseFiltered), options);
+    // Issue #43: suppress the disclosure on tiny trees where the banner would
+    // dominate the byte budget; show it once the tree is large enough that a
+    // hidden tool dir actually matters.
+    const showDisclosure = noiseFiltered && raw.stdout.length >= DISCLOSURE_MIN_RAW_CHARS;
+    const banner = showDisclosure ? DISCLOSURE_BANNER : undefined;
+    return makeFilteredResult(this, raw, formatTree(raw), options, undefined, undefined, banner);
   },
 };
