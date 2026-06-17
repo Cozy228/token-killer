@@ -3,8 +3,13 @@ import { mkdtempSync, readdirSync, rmSync, utimesSync, writeFileSync } from "nod
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
-import { makeDiskExtractCache, pruneCache, statKey } from "../../../src/inspect/extractCache.js";
-import { scan, type FileScanExtract } from "../../../src/inspect/scan.js";
+import {
+  makeDiskExtractCache,
+  pruneCache,
+  statKey,
+  type ExtractCache,
+} from "../../../src/inspect/extractCache.js";
+import { scan, type FileEventExtract, type FileScanExtract } from "../../../src/inspect/scan.js";
 import { analyzeHabits, type FileHabitExtract } from "../../../src/inspect/habits.js";
 import type { SourceDiscovery } from "../../../src/inspect/sources.js";
 
@@ -126,6 +131,153 @@ describe("scan disk cache", () => {
     expect(r.tool_event_count).toBe(1); // only the recent event
     // The filtered path never touches the disk cache.
     expect(() => readdirSync(join(cacheRoot, "scan"))).toThrow(/ENOENT/);
+  });
+});
+
+// Issue #38 — the windowed/session scan reuses a per-event cross-run cache instead of
+// re-parsing raw JSON every run. These cover: warm-cache consultation for --since, a
+// materially faster second run, best-effort fallback on corruption, and --session.
+describe("scan event cache (--since / --session)", () => {
+  // Timestamped sample spanning two eras so a --since cutoff drops the old half.
+  function tsEvent(command: string, ts: string, session?: string) {
+    const rec: Record<string, unknown> = {
+      toolName: "bash",
+      toolArgs: JSON.stringify({ command }),
+      toolResult: "x".repeat(120),
+      timestamp: ts,
+    };
+    if (session) rec.sessionId = session;
+    return rec;
+  }
+  const WINDOWED = [
+    tsEvent("git status", "2026-06-17T00:00:00Z", "S1"),
+    tsEvent("git status", "2026-06-17T01:00:00Z", "S1"),
+    tsEvent("git diff", "2000-01-01T00:00:00Z", "S2"), // too old for the --since window
+    { toolName: "bash", toolArgs: JSON.stringify({ command: "git log" }), toolResult: "x" }, // no ts
+  ];
+  const cutoff = Date.parse("2026-01-01T00:00:00Z");
+
+  // Wrap a real cache to count consultations + a NEW write (a cold extract). A warm run
+  // should record hits and ZERO new sets.
+  function counting<T>(inner: ExtractCache<T>) {
+    const stats = { gets: 0, hits: 0, sets: 0 };
+    const wrapped: ExtractCache<T> = {
+      get(file, key) {
+        stats.gets += 1;
+        const v = inner.get(file, key);
+        if (v !== undefined) stats.hits += 1;
+        return v;
+      },
+      set(file, key, payload) {
+        stats.sets += 1;
+        inner.set(file, key, payload);
+      },
+    };
+    return { wrapped, stats };
+  }
+
+  test("--since consults the on-disk event cache and skips re-parse on a warm cache", () => {
+    const file = writeTranscript("t.jsonl", WINDOWED);
+    const disk = makeDiskExtractCache<FileEventExtract>(cacheRoot, "scan-events");
+
+    // Cold: a cache miss → extract + write back exactly one entry.
+    const cold = counting(disk);
+    const r1 = scan(discovery([file]), { eventCache: cold.wrapped, sinceMs: cutoff });
+    expect(r1.tool_event_count).toBe(2); // two recent git status; old + unknown-time dropped
+    expect(r1.unknown_time_records).toBe(1);
+    expect(cold.stats.hits).toBe(0);
+    expect(cold.stats.sets).toBe(1);
+    expect(readdirSync(join(cacheRoot, "scan-events")).length).toBe(1);
+
+    // Warm: served from disk, no new extract written.
+    const warm = counting(disk);
+    const r2 = scan(discovery([file]), { eventCache: warm.wrapped, sinceMs: cutoff });
+    expect(r2).toEqual(r1);
+    expect(warm.stats.hits).toBe(1);
+    expect(warm.stats.sets).toBe(0); // nothing re-parsed/re-written
+
+    // And it matches a fresh live scan (cache is transparent).
+    expect(r2).toEqual(scan(discovery([file]), { sinceMs: cutoff }));
+  });
+
+  test("a second identical --since run is materially faster than the cold run", () => {
+    // A large file so the raw-parse cost dominates the cheap post-load filter.
+    const many: unknown[] = [];
+    for (let i = 0; i < 6000; i += 1) {
+      many.push(tsEvent(`git status`, "2026-06-17T00:00:00Z"));
+    }
+    const file = writeTranscript("big.jsonl", many);
+    const disk = makeDiskExtractCache<FileEventExtract>(cacheRoot, "scan-events");
+
+    const t0 = performance.now();
+    const cold = scan(discovery([file]), { eventCache: disk, sinceMs: cutoff });
+    const coldMs = performance.now() - t0;
+
+    const t1 = performance.now();
+    const warm = scan(discovery([file]), { eventCache: disk, sinceMs: cutoff });
+    const warmMs = performance.now() - t1;
+
+    expect(warm).toEqual(cold);
+    expect(cold.tool_event_count).toBe(6000);
+    // Warm reuses the cached event stream; the raw JSON.parse pass is skipped. Assert a
+    // clear margin (warm under half the cold time) to stay robust to CI jitter.
+    expect(warmMs).toBeLessThan(coldMs * 0.5);
+  });
+
+  test("a corrupt event-cache entry falls back to a live parse (best-effort)", () => {
+    const file = writeTranscript("t.jsonl", WINDOWED);
+    const disk = makeDiskExtractCache<FileEventExtract>(cacheRoot, "scan-events");
+    scan(discovery([file]), { eventCache: disk, sinceMs: cutoff }); // populate
+
+    for (const name of readdirSync(join(cacheRoot, "scan-events"))) {
+      writeFileSync(join(cacheRoot, "scan-events", name), "{ not json");
+    }
+    const recovered = scan(discovery([file]), { eventCache: disk, sinceMs: cutoff });
+    expect(recovered).toEqual(scan(discovery([file]), { sinceMs: cutoff }));
+  });
+
+  test("a changed file (new mtime/size) invalidates its event-cache entry", () => {
+    const file = writeTranscript("t.jsonl", WINDOWED);
+    const disk = makeDiskExtractCache<FileEventExtract>(cacheRoot, "scan-events");
+    expect(scan(discovery([file]), { eventCache: disk, sinceMs: cutoff }).tool_event_count).toBe(2);
+
+    writeFileSync(
+      file,
+      [...WINDOWED, tsEvent("git status", "2026-06-18T00:00:00Z")]
+        .map((r) => JSON.stringify(r))
+        .join("\n") + "\n",
+    );
+    const second = scan(discovery([file]), { eventCache: disk, sinceMs: cutoff });
+    expect(second.tool_event_count).toBe(3);
+    expect(second).toEqual(scan(discovery([file]), { sinceMs: cutoff }));
+  });
+
+  test("--session also benefits from the event cache", () => {
+    const file = writeTranscript("t.jsonl", WINDOWED);
+    const disk = makeDiskExtractCache<FileEventExtract>(cacheRoot, "scan-events");
+
+    const cold = counting(disk);
+    const r1 = scan(discovery([file]), { eventCache: cold.wrapped, session: "S1" });
+    expect(r1.tool_event_count).toBe(2); // both S1 git status events
+    expect(r1.opportunities[0].key).toBe("git status");
+    expect(cold.stats.sets).toBe(1);
+
+    const warm = counting(disk);
+    const r2 = scan(discovery([file]), { eventCache: warm.wrapped, session: "S1" });
+    expect(r2).toEqual(r1);
+    expect(warm.stats.hits).toBe(1);
+    expect(warm.stats.sets).toBe(0);
+    expect(r2).toEqual(scan(discovery([file]), { session: "S1" }));
+  });
+
+  test("TK_NO_SCAN_CACHE disables the event cache (no entries written)", () => {
+    const file = writeTranscript("t.jsonl", WINDOWED);
+    const disk = makeDiskExtractCache<FileEventExtract>(cacheRoot, "scan-events", {
+      TK_NO_SCAN_CACHE: "1",
+    } as NodeJS.ProcessEnv);
+    const r = scan(discovery([file]), { eventCache: disk, sinceMs: cutoff });
+    expect(r).toEqual(scan(discovery([file]), { sinceMs: cutoff }));
+    expect(() => readdirSync(join(cacheRoot, "scan-events"))).toThrow(/ENOENT/);
   });
 });
 

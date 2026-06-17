@@ -34,7 +34,13 @@ import { makeFileCache } from "./fileCache.js";
 import { makeDiskExtractCache, pruneCache } from "./extractCache.js";
 import { tokenKillerHome } from "../core/dataDir.js";
 import { makeProgressReporter } from "./progress.js";
-import { parseSince, scan, type FileScanExtract, type ScanResult } from "./scan.js";
+import {
+  parseSince,
+  scan,
+  type FileEventExtract,
+  type FileScanExtract,
+  type ScanResult,
+} from "./scan.js";
 import { discoverHost, discoverHosts, hostFound, mergeHosts, type InputType } from "./sources.js";
 import { persistScopeBuckets, runStaticContext } from "./staticContext.js";
 import { buildInspectAggregates } from "./telemetry.js";
@@ -254,6 +260,9 @@ export function runInspect(
       const cacheRoot = join(tokenKillerHome(), "inspect-cache");
       pruneCache(cacheRoot, nowMs);
       const scanCache = makeDiskExtractCache<FileScanExtract>(cacheRoot, "scan");
+      // Separate namespace for the per-event stream the windowed/session scan slices
+      // post-load (issue #38) — a different payload shape than the folded `scan` extract.
+      const eventCache = makeDiskExtractCache<FileEventExtract>(cacheRoot, "scan-events");
       const habitsCache = makeDiskExtractCache<FileHabitExtract>(cacheRoot, "habits");
       progress.phase(
         `Scanning ${discovery.transcriptFiles.length} transcript(s) + ${discovery.sessionFiles.length} session(s)…`,
@@ -264,6 +273,7 @@ export function runInspect(
         onProgress: (done, total, detail) => progress.step(done, total, detail),
         fileCache,
         scanCache,
+        eventCache,
       });
       progress.phase(
         `Scanned ${result.tool_event_count.toLocaleString()} tool event(s) across ${result.session_inventory} session(s).`,

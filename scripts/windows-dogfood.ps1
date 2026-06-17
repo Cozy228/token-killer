@@ -433,14 +433,33 @@ try {
       Warn "perf" "inspect scan cache warms" ("warm not faster than cold (cold {0:N0}ms, warm {1:N0}ms) — cache may not be biting" -f $cold.Ms, $warm.Ms)
     }
   }
+  # 1b) WINDOWED cold->warm: --since took the live (uncached) path before issue #38; it now
+  #     reuses the per-event cache. Clear, run cold (populate), run warm (slice cached
+  #     events), and assert the windowed path warms too — the previously cache-blind scan.
+  if (Test-Path -LiteralPath $cacheDir) { Remove-Item -LiteralPath $cacheDir -Recurse -Force -ErrorAction SilentlyContinue }
+  $sinceCold = Test-Inspect "inspect --since 7d --json (cold, warms event cache)" @("--since", "7d", "--json") '"schemaVersion"' -Stream
+  $sinceWarm = Test-Inspect "inspect --since 7d --json (warm, event cache hit)" @("--since", "7d", "--json") '"schemaVersion"'
+  if ($sinceCold.ExitCode -eq 0 -and $sinceWarm.ExitCode -eq 0) {
+    if ($sinceCold.Ms -ge 500 -and $sinceWarm.Ms -lt $sinceCold.Ms) {
+      $pct = [math]::Round((1 - $sinceWarm.Ms / $sinceCold.Ms) * 100, 0)
+      Pass "perf" "inspect --since event cache warms" ("cold {0:N0}ms -> warm {1:N0}ms ({2}% faster)" -f $sinceCold.Ms, $sinceWarm.Ms, $pct)
+    }
+    elseif ($sinceCold.Ms -lt 500) {
+      Info "perf" "inspect --since event cache warms" ("corpus too small to time meaningfully (cold {0:N0}ms)" -f $sinceCold.Ms)
+    }
+    else {
+      Warn "perf" "inspect --since event cache warms" ("warm not faster than cold (cold {0:N0}ms, warm {1:N0}ms) — event cache may not be biting" -f $sinceCold.Ms, $sinceWarm.Ms)
+    }
+  }
   # 2) HTML report: default-scope (no --text/--json) MUST emit an HTML report — the
   #    surface a real user sees. Warm now, so cheap. Asserts the file is actually written
   #    and carries report data; TK_NO_OPEN keeps the browser shut.
   Test-HtmlScope "inspect --project HTML names the project" @("inspect", "--project") $projName $script:HeavyTimeoutSec -Stream
   # 3) kitchen-sink: every composable scope/advice/render flag in ONE run, plus
-  #    --write-advice so its artifacts are verified here. NOTE: --since takes the live
-  #    (uncached) path by design — a windowed scan can't reuse the full-file extract — so
-  #    this is the one scan that still parses, but bounded to the 7d window.
+  #    --write-advice so its artifacts are verified here. NOTE: --since now reuses the
+  #    cross-run per-EVENT cache (issue #38) — the windowed scan slices a cached event
+  #    stream instead of re-parsing raw JSON — so on a warm cache this no longer pays the
+  #    full parse. (A cold/warm --since timing pair is asserted just above.)
   $ksFlags = @("--project", "--user", "--since", "7d", "--advice", "--min-confidence", "0.5",
     "--min-occurrences", "2", "--surface", "instructions", "--write-advice", "--text")
   $r = Test-Inspect "inspect (scope+advice+surface+write-advice, one run)" $ksFlags "Token Killer Inspect" -Stream

@@ -70,6 +70,12 @@ export type ScanOptions = {
   // Only consulted when no per-event filter is active (no `sinceMs` / `session`), since
   // the cached payload is the file's FULL, unfiltered aggregation.
   scanCache?: ExtractCache<FileScanExtract>;
+  // Cross-invocation cache of each file's per-event stream (timestamp + session + the
+  // already-sanitized per-event fields), keyed by (path, mtime, size). Unlike `scanCache`
+  // (a folded full-file aggregate that can't be re-filtered), this stores enough per
+  // event to apply --since / --session POST-load — so the windowed/session path reuses
+  // the warm cache instead of re-parsing raw JSON. Consulted only when a filter is active.
+  eventCache?: ExtractCache<FileEventExtract>;
 };
 
 // One file's complete, UNFILTERED contribution to a scan — the cacheable unit. Stores
@@ -79,6 +85,31 @@ export type ScanOptions = {
 export type FileScanExtract = {
   accs: Accumulator[];
   hadEvent: boolean;
+  parseErrors: number;
+};
+
+// One already-sanitized tool event, the unit a windowed/session scan folds. Carries the
+// time/session fields the filters need PLUS the derived per-event measurements (so the
+// expensive normalize/govern/rewrite work runs once, at extraction time, never on a warm
+// hit). Holds no raw content — only the sanitized key/category and integer counts.
+export type CachedEvent = {
+  key: string;
+  kind: "shell" | "direct";
+  category: ToolCategory;
+  ts?: number; // reliable timestamp (epoch-ms), undefined when none was found
+  session?: string; // session id, undefined when none was found
+  outChars: number;
+  inChars: number;
+  failure: boolean;
+  large: boolean; // output ≥ LARGE_OUTPUT_CHARS
+  compressible: boolean; // shell command the proxy could compress
+  governed: "deny" | "suggest" | "none"; // direct-tool governance verdict
+};
+
+// One file's complete, UNFILTERED per-event stream — the cacheable unit for the windowed
+// /session path. Re-filterable post-load (slice by ts/session), unlike FileScanExtract.
+export type FileEventExtract = {
+  events: CachedEvent[];
   parseErrors: number;
 };
 
@@ -236,60 +267,94 @@ function blankAcc(key: string, kind: "shell" | "direct", category: ToolCategory)
 
 type ScanCounters = { toolEventCount: number; unknownTime: number };
 
-// Fold ONE flat tool record into `accs`, honoring the session/time filters in `opts`
-// and updating `counters`. Returns true when the record passed the filters and was
-// counted (drives coverage). Shared by the live (filtered) scan and the per-file
-// extractor, so both paths compute byte-identical aggregates.
+// Reduce ONE flat tool record to its sanitized, UNFILTERED CachedEvent — the unit both
+// the windowed/session cache and the live folder share. Runs the expensive
+// normalize/govern/rewrite work exactly once (here), and retains the time/session fields
+// the filters need plus the derived counts. No filtering happens here.
+function recordToCachedEvent(record: Record<string, unknown>): CachedEvent {
+  const ev = normalize(record);
+  const isShell = ev.category === "execute_adjacent" && typeof ev.command === "string";
+  const key = isShell ? shellKey(ev.command ?? "") : ev.toolName.toLowerCase() || classifyTool("");
+  const kind: "shell" | "direct" = isShell ? "shell" : "direct";
+  const outChars = outputLength(ev.toolResult);
+  const inChars = isShell ? (ev.command ?? "").length : stringLength(ev.toolInput);
+
+  let compressible = false;
+  let governed: "deny" | "suggest" | "none" = "none";
+  // Transient governance signals (Slice 5). The path/command stays local to this
+  // iteration — only the resulting boolean/verdict is kept.
+  if (isShell) {
+    if (rewriteCommand(ev.command ?? "").decision === "rewrite") compressible = true;
+  } else {
+    const verdict = governDirectTool(ev).decision;
+    if (verdict === "deny") governed = "deny";
+    else if (verdict === "suggest") governed = "suggest";
+  }
+
+  return {
+    key,
+    kind,
+    category: ev.category,
+    ts: reliableTimestamp(record),
+    session: recordSession(record),
+    outChars,
+    inChars,
+    failure: isFailure(record, ev.toolResult),
+    large: outChars >= LARGE_OUTPUT_CHARS,
+    compressible,
+    governed,
+  };
+}
+
+// Fold ONE sanitized event into `accs`, honoring the session/time filters in `opts` and
+// updating `counters`. Returns true when the event passed the filters and was counted
+// (drives coverage). Shared by every scan path (live, full-file extract, windowed cache)
+// so all compute byte-identical aggregates.
+function foldCachedEvent(
+  ev: CachedEvent,
+  accs: Map<string, Accumulator>,
+  opts: { sinceMs?: number; session?: string },
+  counters: ScanCounters,
+): boolean {
+  if (opts.session && ev.session !== opts.session) return false;
+
+  // Time-window filter: events without a reliable timestamp are excluded from windowed
+  // analysis and counted separately (never an mtime fallback).
+  if (opts.sinceMs !== undefined) {
+    if (ev.ts === undefined) {
+      counters.unknownTime += 1;
+      return false;
+    }
+    if (ev.ts < opts.sinceMs) return false;
+  }
+
+  const acc = accs.get(ev.key) ?? blankAcc(ev.key, ev.kind, ev.category);
+  acc.count += 1;
+  acc.total_output_chars += ev.outChars;
+  acc.total_output_tokens += estimateTokensFromLength(ev.outChars);
+  acc.max_output_chars = Math.max(acc.max_output_chars, ev.outChars);
+  acc.total_input_chars += ev.inChars;
+  acc.max_input_chars = Math.max(acc.max_input_chars, ev.inChars);
+  if (ev.failure) acc.failure_count += 1;
+  else acc.success_count += 1;
+  if (ev.large) acc.large_output_count += 1;
+  if (ev.compressible) acc.compressible = true;
+  if (ev.governed === "deny") acc.governed_deny += 1;
+  else if (ev.governed === "suggest") acc.governed_suggest += 1;
+  accs.set(ev.key, acc);
+  counters.toolEventCount += 1;
+  return true;
+}
+
+// Fold ONE flat tool record into `accs`, honoring the session/time filters in `opts` and
+// updating `counters`. Convenience wrapper used by the live path; reduces then folds.
 function accumulateRecord(
   record: Record<string, unknown>,
   accs: Map<string, Accumulator>,
   opts: { sinceMs?: number; session?: string },
   counters: ScanCounters,
 ): boolean {
-  if (opts.session && recordSession(record) !== opts.session) return false;
-
-  // Time-window filter: records without a reliable timestamp are excluded from
-  // windowed analysis and counted separately (never an mtime fallback).
-  if (opts.sinceMs !== undefined) {
-    const ts = reliableTimestamp(record);
-    if (ts === undefined) {
-      counters.unknownTime += 1;
-      return false;
-    }
-    if (ts < opts.sinceMs) return false;
-  }
-
-  const ev = normalize(record);
-  const isShell = ev.category === "execute_adjacent" && typeof ev.command === "string";
-  const key = isShell ? shellKey(ev.command ?? "") : ev.toolName.toLowerCase() || classifyTool("");
-  const kind: "shell" | "direct" = isShell ? "shell" : "direct";
-
-  const acc = accs.get(key) ?? blankAcc(key, kind, ev.category);
-  const outChars = outputLength(ev.toolResult);
-  const inChars = isShell ? (ev.command ?? "").length : stringLength(ev.toolInput);
-
-  acc.count += 1;
-  acc.total_output_chars += outChars;
-  acc.total_output_tokens += estimateTokensFromLength(outChars);
-  acc.max_output_chars = Math.max(acc.max_output_chars, outChars);
-  acc.total_input_chars += inChars;
-  acc.max_input_chars = Math.max(acc.max_input_chars, inChars);
-  if (isFailure(record, ev.toolResult)) acc.failure_count += 1;
-  else acc.success_count += 1;
-  if (outChars >= LARGE_OUTPUT_CHARS) acc.large_output_count += 1;
-
-  // Transient governance signals (Slice 5). The path/command stays local to this
-  // iteration — only the resulting counts/boolean are kept.
-  if (isShell) {
-    if (rewriteCommand(ev.command ?? "").decision === "rewrite") acc.compressible = true;
-  } else {
-    const verdict = governDirectTool(ev).decision;
-    if (verdict === "deny") acc.governed_deny += 1;
-    else if (verdict === "suggest") acc.governed_suggest += 1;
-  }
-  accs.set(key, acc);
-  counters.toolEventCount += 1;
-  return true;
+  return foldCachedEvent(recordToCachedEvent(record), accs, opts, counters);
 }
 
 // Merge one file's accumulator into a running map (sum the additive fields, max the
@@ -348,6 +413,34 @@ function extractFileScan(text: string, onLine?: (events: number) => void): FileS
   return { accs: [...accs.values()], hadEvent, parseErrors };
 }
 
+// Parse one file's text into its complete, UNFILTERED per-event stream — the unit the
+// windowed/session cross-run cache stores. Each record is reduced to a CachedEvent here
+// (the costly normalize/govern work), so a warm hit only re-applies the cheap filter.
+// `onLine` fires every PROGRESS_LINE_STRIDE lines so a large file still advances the bar.
+function extractFileEvents(text: string, onLine?: (events: number) => void): FileEventExtract {
+  const events: CachedEvent[] = [];
+  const ctx: VscodeReadCtx = {};
+  let parseErrors = 0;
+  let lineNo = 0;
+  for (const line of text.split(/\r?\n/)) {
+    lineNo += 1;
+    if (lineNo % PROGRESS_LINE_STRIDE === 0) onLine?.(events.length);
+    if (line.trim().length === 0) continue;
+    let json: unknown;
+    try {
+      json = JSON.parse(line);
+    } catch {
+      parseErrors += 1;
+      continue;
+    }
+    if (typeof json !== "object" || json === null) continue;
+    for (const record of flatToolRecords(json as Record<string, unknown>, ctx)) {
+      events.push(recordToCachedEvent(record));
+    }
+  }
+  return { events, parseErrors };
+}
+
 type ScanTotals = {
   sessionInventory: number;
   transcriptCoverage: number;
@@ -391,12 +484,16 @@ function finishScan(
 
 export function scan(discovery: SourceDiscovery, opts: ScanOptions = {}): ScanResult {
   // A per-event filter (--since / --session) makes the FULL-file cached extract
-  // inapplicable — it would need re-filtering — so a windowed/session scan takes the
-  // live, uncached path. Everything else (the common case: default inspect, --json,
-  // --fail-on, optimize-triggered) takes the per-file extract path, which the
-  // cross-run cache turns near-instant on repeat.
+  // inapplicable (it's already folded and can't be re-filtered). But the per-EVENT cache
+  // CAN serve it: load each file's sanitized event stream once, then slice it by the
+  // time/session filter post-load (issue #38). With an event cache available the windowed
+  // /session run reuses the warm cache instead of re-parsing raw JSON every time; without
+  // one it falls back to the live, uncached parse. Everything else (the common case:
+  // default inspect, --json, --fail-on, optimize-triggered) takes the full-file extract
+  // path, which the cross-run cache turns near-instant on repeat.
   const filtered = opts.sinceMs !== undefined || opts.session !== undefined;
-  return filtered ? scanLive(discovery, opts) : scanCached(discovery, opts);
+  if (filtered) return opts.eventCache ? scanWindowed(discovery, opts) : scanLive(discovery, opts);
+  return scanCached(discovery, opts);
 }
 
 // Live (uncached) path — honors --since / --session, parsing every line every run.
@@ -543,6 +640,79 @@ function scanCached(discovery: SourceDiscovery, opts: ScanOptions): ScanResult {
     transcriptCoverage,
     toolEventCount,
     unknownTime: 0,
+    coverageErrors,
+  });
+}
+
+// Windowed/session cached path (issue #38) — honors --since / --session WHILE reusing the
+// cross-run cache. Each file's UNFILTERED sanitized event stream is the cached unit: an
+// unchanged file (matching mtime+size) is served from the event cache, otherwise it's
+// parsed once and written back. The --since / --session filter is then applied per event
+// post-load, so a repeated windowed run pays only for NEW/CHANGED files. Best-effort: a
+// cache miss / corruption / unreadable file falls back to a live parse without error.
+// Yields the same ScanResult as scanLive for the same (filtered) inputs.
+function scanWindowed(discovery: SourceDiscovery, opts: ScanOptions): ScanResult {
+  const accs = new Map<string, Accumulator>();
+  const counters: ScanCounters = { toolEventCount: 0, unknownTime: 0 };
+  let coverageErrors = 0;
+  let transcriptCoverage = 0;
+  let sessionInventory = 0;
+
+  const totalFiles = discovery.transcriptFiles.length + discovery.sessionFiles.length;
+  let processed = 0;
+  const tick = (group: string, partial = 0): void =>
+    opts.onProgress?.(
+      processed,
+      totalFiles,
+      `${group} · ${(counters.toolEventCount + partial).toLocaleString()} events`,
+    );
+
+  function loadEvents(file: string, group: string): FileEventExtract | undefined {
+    const key: CacheKey | undefined = opts.eventCache ? statKey(file) : undefined;
+    if (opts.eventCache && key) {
+      const hit = opts.eventCache.get(file, key);
+      if (hit) return hit;
+    }
+    const text = readSourceText(file, opts.fileCache);
+    if (text === undefined) return undefined;
+    const extract = extractFileEvents(text, (partial) => tick(group, partial));
+    if (opts.eventCache && key) opts.eventCache.set(file, key, extract);
+    return extract;
+  }
+
+  for (const file of discovery.transcriptFiles) {
+    const ex = loadEvents(file, "transcripts");
+    if (ex === undefined) {
+      coverageErrors += 1;
+    } else {
+      let had = false;
+      for (const ev of ex.events) {
+        if (foldCachedEvent(ev, accs, opts, counters)) had = true;
+      }
+      if (had) transcriptCoverage += 1;
+      coverageErrors += ex.parseErrors;
+    }
+    processed += 1;
+    tick("transcripts");
+  }
+  for (const file of discovery.sessionFiles) {
+    const ex = loadEvents(file, "sessions");
+    if (ex === undefined) {
+      coverageErrors += 1;
+    } else {
+      sessionInventory += 1;
+      for (const ev of ex.events) foldCachedEvent(ev, accs, opts, counters);
+      // Session-file parse errors are NOT coverage errors (see scanLive.processFile).
+    }
+    processed += 1;
+    tick("sessions");
+  }
+
+  return finishScan(discovery, accs, {
+    sessionInventory,
+    transcriptCoverage,
+    toolEventCount: counters.toolEventCount,
+    unknownTime: counters.unknownTime,
     coverageErrors,
   });
 }

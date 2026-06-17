@@ -144,7 +144,7 @@ export function pruneCache(
   env: NodeJS.ProcessEnv = process.env,
 ): void {
   if (cacheDisabled(env)) return;
-  for (const namespace of ["scan", "habits"]) {
+  for (const namespace of ["scan", "scan-events", "habits"]) {
     const dir = join(root, namespace);
     let names: string[];
     try {
