@@ -380,6 +380,26 @@ function renderTrend(ts) {
     '<div class="trendtabs">' + btns + '</div>' + panels + '</div>';
 }
 
+// Reduce a sample command to its main command — just the program name, with any
+// leading path stripped ("/usr/bin/grep" → "grep"). Drops every flag, path, search
+// pattern, and other parameter detail. The "Where the savings came from" table shows
+// these (not full invocations) so a category like "read-like"/"search-like" reads as
+// the commands it covers (e.g. "cat, head, tail"), not noisy argument detail.
+function mainCmd(s) {
+  const first = String(s == null ? "" : s).trim().split(/\s+/)[0] || "";
+  const cut = Math.max(first.lastIndexOf("/"), first.lastIndexOf("\\"));
+  return cut >= 0 ? first.slice(cut + 1) : first;
+}
+// De-duplicated list of main commands across a handler's samples (first-seen order).
+function mainCmds(samples) {
+  const seen = [];
+  for (const s of samples) {
+    const m = mainCmd(s);
+    if (m && seen.indexOf(m) === -1) seen.push(m);
+  }
+  return seen;
+}
+
 function renderGain(L) {
   const m = L.measured_command_savings || {};
   const out = [];
@@ -423,11 +443,10 @@ function renderGain(L) {
         '<div class="panel"><table><thead><tr><th>Command</th><th>Share of savings</th><th class="r">Tokens saved</th><th class="r">Reduced by</th><th class="r">Times run</th></tr></thead><tbody>' +
         bh.map((h2) =>
           '<tr><td class="num">' + esc(h2.handler) +
-          (Array.isArray(h2.samples) && h2.samples.length
-            ? '<div class="samp">' +
-              h2.samples.map((s) => esc(s.length > 64 ? s.slice(0, 63) + "…" : s)).join("<br>") +
-              '</div>'
-            : '') +
+          ((() => {
+            const cmds = Array.isArray(h2.samples) ? mainCmds(h2.samples) : [];
+            return cmds.length ? '<div class="samp">' + cmds.map(esc).join(", ") + '</div>' : '';
+          })()) +
           '</td>' +
           '<td style="width:32%"><div class="hbar"><i style="width:' + Math.max(3, Math.round(((h2.saved || 0) / max) * 100)) + '%"></i></div></td>' +
           '<td class="r num">' + n(h2.saved) + '</td><td class="r num">' + pct(h2.pct) + '</td><td class="r num">' + n(h2.count) + '</td></tr>').join("") +
