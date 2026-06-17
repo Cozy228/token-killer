@@ -228,15 +228,21 @@ export async function runGain(
   const prepareTelemetry = shouldPrepareTelemetry(dispatchTelemetry);
   let ctx: GainContext | undefined;
 
-  if (args.output === "json") {
+  // A period breakdown (--daily/--weekly/--monthly/--all) is a terminal table, not
+  // the HTML showcase. `html` is only ever the default (there is no --html flag), so
+  // it reliably means "no terminal format was chosen" — route those to --text and
+  // off the slow loadLedgers/browser path. An explicit --json/--csv still wins.
+  const output = args.bucketing !== "none" && args.output === "html" ? "text" : args.output;
+
+  if (output === "json") {
     ctx = await loadGainContext(cwd, args.user, prepareTelemetry);
     process.stdout.write(
       `${JSON.stringify(buildGainJson(ctx.rollup, args, now, ctx.dedup), null, 2)}\n`,
     );
-  } else if (args.output === "csv") {
+  } else if (output === "csv") {
     ctx = await loadGainContext(cwd, args.user, prepareTelemetry);
     process.stdout.write(renderCsv(ctx.rollup, args, now));
-  } else if (args.output === "text") {
+  } else if (output === "text") {
     ctx = await loadGainContext(cwd, args.user, prepareTelemetry);
     process.stdout.write(await renderText(ctx, args, now));
   } else {
@@ -345,16 +351,21 @@ function renderCsv(rollup: MergedRollup, args: GainArgs, now: Date): string {
 }
 
 async function renderText(ctx: GainContext, args: GainArgs, now: Date): Promise<string> {
-  const summary = rollupToGainSummary(ctx.rollup);
-  const sections: string[] = [renderSummary(summary, args.user ? "all projects" : "this project")];
-
-  // ADR 0009: shown as its own block, never folded into the summary above.
-  if (ctx.dedup.hits > 0) sections.push(renderDedup(ctx.dedup));
-
-  if (args.user) sections.push(await renderPerProject(ctx.perProject));
-
+  const sections: string[] = [];
   const buckets = bucketsFor(ctx.rollup, args.bucketing, now);
-  if (buckets) sections.push(renderBuckets(args.bucketing, buckets));
+
+  if (buckets) {
+    // Focused period view (rtk `gain --weekly` parity): lead with just the breakdown
+    // table — its TOTAL row is the summary. The headline/by-command/dedup/per-project
+    // blocks belong to the default `tk gain --text`, not a period drill-down.
+    sections.push(renderBuckets(args.bucketing, buckets));
+  } else {
+    const summary = rollupToGainSummary(ctx.rollup);
+    sections.push(renderSummary(summary, args.user ? "all projects" : "this project"));
+    // ADR 0009: shown as its own block, never folded into the summary above.
+    if (ctx.dedup.hits > 0) sections.push(renderDedup(ctx.dedup));
+    if (args.user) sections.push(await renderPerProject(ctx.perProject));
+  }
 
   if (args.graph) sections.push(renderGraph(dailyBucketsFromRollup(ctx.rollup, 30, now)));
 
@@ -442,14 +453,54 @@ async function renderPerProject(projects: ProjectRollup[]): Promise<string> {
   return ["By project:", lines.join("\n") || "  - none"].join("\n");
 }
 
+// rtk-parity period breakdown: a fixed-width table (Period · Cmds · Input · Output
+// · Saved · Save%) bracketed by a ═ title rule and a ─ rule above a TOTAL row.
+// Output = Input − Saved (saved_tokens = raw − output, so this is exact). No Time
+// column: tk's rollup stores no per-bucket duration and we never fabricate one.
 function renderBuckets(bucketing: Bucketing, buckets: TimeBucket[]): string {
-  const title = bucketing === "all" ? "All time (per day)" : `${capitalize(bucketing)} savings`;
-  if (!buckets.length) return [`${title}:`, "  - none"].join("\n");
-  const table = fixedTable(
-    ["Period", "Saved", "Avg%", "Commands"],
-    buckets.map((b) => [b.key, compact(b.saved), `${b.pct}%`, grp(b.commands)]),
+  const unit = bucketing === "weekly" ? "week" : bucketing === "monthly" ? "month" : "day";
+  const periodHeader = bucketing === "weekly" ? "Week" : bucketing === "monthly" ? "Month" : "Date";
+  const title = `${bucketing === "all" ? "All-time" : capitalize(bucketing)} breakdown · ${buckets.length} ${unit}${buckets.length === 1 ? "" : "s"}`;
+  if (!buckets.length) return [title, "  (no activity in range)"].join("\n");
+
+  const header = [periodHeader, "Cmds", "Input", "Output", "Saved", "Save%"];
+  const dataRows = buckets.map((b) => [
+    b.key,
+    grp(b.commands),
+    compact(b.raw),
+    compact(b.raw - b.saved),
+    compact(b.saved),
+    `${b.pct}%`,
+  ]);
+  const t = buckets.reduce(
+    (a, b) => ({ commands: a.commands + b.commands, raw: a.raw + b.raw, saved: a.saved + b.saved }),
+    { commands: 0, raw: 0, saved: 0 },
   );
-  return [`${title}:`, table].join("\n");
+  const totalPct = t.raw === 0 ? 0 : Number(((t.saved / t.raw) * 100).toFixed(1));
+  const totalRow = [
+    "TOTAL",
+    grp(t.commands),
+    compact(t.raw),
+    compact(t.raw - t.saved),
+    compact(t.saved),
+    `${totalPct}%`,
+  ];
+
+  const all = [header, ...dataRows, totalRow];
+  const widths = header.map((_, i) => Math.max(...all.map((r) => r[i].length)));
+  const fmt = (r: string[]) =>
+    r.map((c, i) => (i === 0 ? c.padEnd(widths[i]) : c.padStart(widths[i]))).join("  ");
+  const ruleWidth = widths.reduce((a, w) => a + w, 0) + (widths.length - 1) * 2;
+  const single = "─".repeat(ruleWidth);
+  return [
+    title,
+    "═".repeat(ruleWidth),
+    fmt(header),
+    single,
+    ...dataRows.map(fmt),
+    single,
+    fmt(totalRow),
+  ].join("\n");
 }
 
 function renderGraph(daily: TimeBucket[]): string {

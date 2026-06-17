@@ -96,9 +96,9 @@ describe("renderReportHtml", () => {
     // The section renderers (problem / difference / trend) live in the embedded
     // SCRIPT, so their labels are always present in the doc — assert they are wired.
     const html = renderReportHtml(GAIN);
-    expect(html).toContain("The problem"); // honest 3-card section
-    expect(html).toContain("Context pollution");
-    expect(html).toContain("See the difference"); // before/after bars
+    expect(html).toContain("The problem"); // merged problem + before/after section
+    expect(html).toContain("Redundant noise"); // stat tile (raw repeat removed)
+    expect(html).toContain("See the difference"); // before/after bars, now folded in
     expect(html).toContain("Real-world savings"); // daily/weekly/monthly trend
     // Data-conditional: the base fixture has no time series, so no bucket keys leak
     // into the embedded JSON (the renderer hides the section at runtime).
