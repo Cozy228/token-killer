@@ -35,6 +35,20 @@ vi.mock("../../../src/inspect/habits.js", async (importOriginal) => {
     },
   };
 });
+// The common UNFILTERED inspect path now does its runtime scan via the single-pass
+// extractor (issue #39), not the exported `scan`/`analyzeHabits`. So "a full inspect
+// did runtime work" is asserted here; `--static-only` must call NONE of the three.
+const singlePassSpy = vi.fn<(...args: unknown[]) => void>();
+vi.mock("../../../src/inspect/passes.js", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("../../../src/inspect/passes.js")>();
+  return {
+    ...actual,
+    inspectSinglePass: (...args: Parameters<typeof actual.inspectSinglePass>) => {
+      singlePassSpy(...args);
+      return actual.inspectSinglePass(...args);
+    },
+  };
+});
 
 // Imported AFTER the mocks so cli.ts binds the spied versions.
 const { runInspect } = await import("../../../src/inspect/cli.js");
@@ -73,6 +87,7 @@ beforeEach(() => {
   registerAllRules();
   scanSpy.mockClear();
   habitsSpy.mockClear();
+  singlePassSpy.mockClear();
   root = mkdtempSync(join(tmpdir(), "tk-opt-static-"));
   home = join(root, "home");
   cwd = join(root, "repo");
@@ -103,6 +118,7 @@ describe("optimize triggers a static-only inspect (#41)", () => {
     // The discarded heavy passes never ran on the optimize-triggered cold path.
     expect(scanSpy).not.toHaveBeenCalled();
     expect(habitsSpy).not.toHaveBeenCalled();
+    expect(singlePassSpy).not.toHaveBeenCalled();
     // But the bucket WAS populated with static findings it can consume.
     const bucket = readInspectBucket({
       scope: "project",
@@ -124,6 +140,7 @@ describe("optimize triggers a static-only inspect (#41)", () => {
     expect(code).toBe(0);
     expect(scanSpy).not.toHaveBeenCalled();
     expect(habitsSpy).not.toHaveBeenCalled();
+    expect(singlePassSpy).not.toHaveBeenCalled();
   });
 
   test("static findings from the scoped path match those from a full inspect", async () => {
@@ -141,11 +158,12 @@ describe("optimize triggers a static-only inspect (#41)", () => {
     const fullStatic = (fullBucket?.findings ?? []).filter(
       (f) => (f as { source?: string }).source === "static_context",
     );
-    expect(scanSpy).toHaveBeenCalled(); // a full inspect DOES scan
+    expect(singlePassSpy).toHaveBeenCalled(); // a full inspect DOES run the single-pass scan
 
     // Wipe the bucket; re-derive via the static-only path.
     rmSync(join(home, ".token-killer"), { recursive: true, force: true });
     scanSpy.mockClear();
+    singlePassSpy.mockClear();
     const sScoped = silenceStdout();
     runInspect(["--project", "--static-only", "--text"], 1000, home, cwd);
     sScoped.mockRestore();
@@ -158,6 +176,7 @@ describe("optimize triggers a static-only inspect (#41)", () => {
     );
 
     expect(scanSpy).not.toHaveBeenCalled(); // the scoped path does NOT scan
+    expect(singlePassSpy).not.toHaveBeenCalled(); // …nor run the single-pass extractor
     expect(scopedStatic.length).toBeGreaterThan(0);
     // Identical static findings (type + file + severity), order-independent.
     const key = (f: { type: string; file?: string; severity: string }) =>
@@ -179,6 +198,7 @@ describe("optimize triggers a static-only inspect (#41)", () => {
     expect(code).toBe(0);
     expect(scanSpy).not.toHaveBeenCalled();
     expect(habitsSpy).not.toHaveBeenCalled();
+    expect(singlePassSpy).not.toHaveBeenCalled();
   });
 
   test("user is told why before the scoped scan runs", async () => {
