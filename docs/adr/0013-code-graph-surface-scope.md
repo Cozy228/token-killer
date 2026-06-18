@@ -1,45 +1,48 @@
-# Code graph as a graph-centered, search/read-lane surface
+# Code graph as additive retrieval, not a gateway
 
-**Status:** proposed (grilling 2026-06-18; design `docs/reports/code-graph-design-20260618.md`)
+**Status:** accepted (grilling 2026-06-18; design `docs/reports/code-graph-design-20260618.md`)
 
-tk grows a new **[Code graph](../../CONTEXT.md)** surface: a structural symbol/call/import
-index that answers "how does X work / who calls Y / what breaks if I change Z" in one query
-returning verbatim `file:line` source. It is positioned as a *synthesis* — the structural graph
-is the center, and the best **search/read token-saving techniques** from other projects fold in
-as enhancements — explicitly **not** a competitor to any single tool and **not** a port of
-codegraph alone.
+tk grows a new **[Code graph](../../CONTEXT.md)** surface: an additive retrieval plane for
+orientation, targeted reads, callers-style search, and local verification. It is **not** an
+API gateway, not a VS Code extension in v1, and not hook-time projection of Copilot's built-in
+`read_file` / `search` results.
 
 ## Decision
 
-- **Graph is the center; other families are enhancements**, drawn only in the
-  search/read token-optimization lane (signature-collapse from Repomix, two-stage
-  candidate→block from Probe, on-demand full-code fetch, conversation-seeded ranking from aider).
-- The earlier `§8` differentiation claim ("no other tool foregrounds honesty") is **withdrawn** —
-  the reference (codegraph) already ships provenance tags, low-confidence hand-back, and staleness
-  banners. tk's real justification is **unification** (existing tk users get it with zero extra
-  install, co-located with the compression layer, CLI output auto-compressed by the shim).
+- v1 is an **enterprise VS Code Copilot pilot** with a hard prerequisite: the organization must allow
+  MCP or the graph tools cannot reach the direct-tool surface. CLI graph commands still work locally.
+- v1 ships a **static** AST/import/PageRank-style graph only. LSP precision is a v2 candidate; no
+  language server is started or required in v1.
+- v1 includes `light_edit_window` as an explicit `tk_read` mode and `tk_verify` for local diff /
+  test-failure summaries. It does not implement a general edit loop, prompt rewriting, model routing,
+  history compaction, or full payload proxying.
+- A VS Code extension is a **v2 delivery candidate** after the retrieval core stabilizes. It is not
+  part of v1.
 
 ## The explicit no-s (as load-bearing as the yes-s)
 
-- **Embeddings / semantic retrieval — out**, by tk invariant (needs model/key/code-egress; and a
-  semantic match can be plausibly-related-but-wrong, the antithesis of "never fabricate").
-- **Broad "context gateway" — out**: this surface does not expand into a general log/diff/JSON
-  interception layer; those stay with the existing handler/`read` compression lines.
-- **The framework-resolver moat — out** of scope (no React-rerender / Django-route / RN-ObjC
-  bridging, no community detection, no flow tracing). Keeps the maintenance surface small.
-- **Enterprise-locked VS Code Copilot — uncovered**, accepted: MCP is admin-default-OFF there and
-  the only other door was a VS Code extension, which the npm-only constraint forbids.
+- **Gateway/proxy — out.** tk will not sit between the agent and model provider for this feature.
+- **Direct tool result projection — still out.** Existing hook no-go remains true; graph tools are
+  new additive tools, not modified host results.
+- **Embeddings — out.** No model/key/code-egress dependency for v1.
+- **LSP — out for v1.** Record as a v2 candidate only.
+- **VS Code extension — out for v1.** Record as a v2 candidate only.
 
 ## Considered options
 
-- *Detect-and-recommend codegraph only* (build nothing): smallest maintenance, but reduces tk to a
-  store-front and forgoes the unification value. Rejected.
-- *Port codegraph and keep the honesty sales pitch*: the pitch is false (codegraph has it), rejected.
+- *API gateway / BYOK proxy*: highest theoretical leverage, but it would turn tk into a different
+  product category and is off the default GitHub-hosted Copilot path. Rejected.
+- *VS Code extension first*: best long-term direct-tool channel, but adds extension packaging,
+  enterprise allow-listing, VS Code API testing, and release surface before the retrieval core exists.
+  Deferred to v2.
+- *LSP-first retrieval*: better reference precision, but requires per-language server install/startup
+  and a much larger enterprise support matrix. Deferred to v2.
 
 ## Consequences
 
-- **Pro:** a genuinely additive capability for tk's target hosts; one install; honest positioning.
-- **Pro:** scope discipline caps the maintenance surface (risk #6) and dodges the embeddings
-  invariant conflict.
-- **Con:** tk takes on a meaningfully larger codebase than the current handler set.
-- **Con:** users already running codegraph/Serena gain little; tk's angle is integration, not first-mover.
+- **Pro:** keeps v1 buildable inside tk's Node/TypeScript product shape while addressing the highest
+  new retrieval opportunity.
+- **Pro:** documents the enterprise prerequisite honestly instead of pretending MCP policy can be
+  bypassed.
+- **Con:** locked enterprise VS Code without MCP enabled cannot use the graph tools from the agent loop.
+- **Con:** LSP-grade reference precision and extension delivery wait for v2.

@@ -1,35 +1,36 @@
-# Measurement harness precedes the code-graph feature
+# Measurement co-evolves with the code graph
 
-**Status:** proposed (grilling 2026-06-18) — implementation design:
-[`measurement-harness-design-20260618.md`](../reports/measurement-harness-design-20260618.md)
+**Status:** accepted (grilling 2026-06-18)
 
 The code graph's headline value is **borrowed benchmark percentages** ("47% fewer tokens") that
 the research itself flags as directional, unreproducible, and up to 30× run-to-run variance. tk's
 moat is the opposite — "honesty is the moat: a measured number is never combined with an estimate"
-(the ledger model, `estimate_kind`, `saved_tokens`). So we **build the measurement harness first,
-before building the graph**, and never report a borrowed % as if measured.
+(the ledger model, `estimate_kind`, `saved_tokens`). So graph implementation and measurement are built
+together: every slice carries safety and measurement evidence, but measurement does not block graph
+development as a separate phase.
 
 ## Decision
 
-- A **new first slice (before the tree-sitter/sqlite spike)** builds the evaluation harness from
-  research-compendium §11: `uncached_input_tokens` delta, `search_result_usefulness`,
-  `omission_bug_rate`, `duplicate_reads`, tool-call/round counts, and the **fallback-replay** method
-  (re-run a failed task with the projected evidence escalated to raw; if it flips, count a context-
-  omission bug). A **baseline** (agent without the graph) is captured first.
-- The graph reports **only mechanical facts of what it did** (nodes returned, `file:line` count,
-  reads avoided this turn) under `estimate_kind = opportunity/heuristic`. It **never** writes
-  `saved_tokens` — that name is reserved for ledger ① measured command savings.
-- **No external % claim** ships until it has passed our own harness on real multi-turn tasks.
+- Each implementation slice includes measurement hooks for `uncached_input_tokens` deltas,
+  returned anchor counts, avoided reads, duplicate-read pressure, fallback/raw escalation, and
+  verification outcomes where applicable.
+- The release hard gate is **safety**, not a savings percentage: anchors resolve, raw recovery exists,
+  stale/hash mismatches are explicit, and graph output does not fabricate file locations.
+- Savings are still mandatory to measure and report, but v1 does not fail release on a fixed token-savings
+  threshold.
+- The graph never writes `saved_tokens`; that name remains reserved for ledger ① measured command savings.
+  Graph value uses `estimate_kind = opportunity/heuristic` unless a controlled measurement proves otherwise.
 
 ## Considered options
 
-- *Build the graph first, measure later*: the natural order, but risks optimizing the wrong number
-  (risk #10) and shipping unverifiable claims into an honesty-branded tool. Rejected.
-- *Skip value accounting, treat the graph as a pure capability*: simplest, but forgoes proving — in
-  tk's own honest ledgers — that the feature actually cuts uncached input tokens. Rejected.
+- *Measurement-first as a separate phase*: maximally honest, but it delays the first usable retrieval
+  capability and over-serializes work that can be validated per slice. Rejected.
+- *Savings threshold as release gate*: tempting for marketing, but fragile across repos and agents.
+  Rejected for v1.
+- *Dogfood only*: too weak for an honesty-branded token product. Rejected.
 
 ## Consequences
 
-- **Pro:** every subsequent slice's value is measured, not assumed; keeps "measured ≠ estimate" intact.
-- **Pro:** the harness doubles as the safety net (omission-bug-rate guards the quality gate).
-- **Con:** slower to first visible feature — the instrument is built before the thing it measures.
+- **Pro:** graph work can proceed while still producing evidence for every slice.
+- **Pro:** safety remains non-negotiable and independently testable.
+- **Con:** v1 may ship without a single headline savings percentage.
