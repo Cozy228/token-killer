@@ -11,6 +11,8 @@
 // flat fills throughout, no decorative gradients or grain. All inline — no
 // Tailwind, no CDN, no fonts fetched — so the file stays openable offline from file://.
 
+import { PROMPT_MODEL_SRC } from "./promptModel.js";
+
 export type ReportKind = "gain" | "inspect";
 
 export type ReportDoc = {
@@ -255,40 +257,12 @@ function cmp(x) {
   return String(v);
 }
 
-const SURFACE_NAMES = {
-  agent_instructions: "Agent instructions (AGENTS.md / CLAUDE.md)",
-  copilot_instructions: "Copilot instructions",
-  path_instructions: "Path-scoped instructions",
-  prompt_file: "Prompt files",
-  custom_agent: "Custom agents",
-  chat_mode: "Chat modes",
-  skill: "Skills",
-};
+// Prompt model (issue #58): SURFACE_NAMES, PROBLEM, humanize, whereOf, surfaceName,
+// fillTpl, PROMPT_TPL, buildPrompt and buildAllPrompt are defined ONCE in promptModel.ts
+// and injected here verbatim, so the browser and the Node tests run identical code.
+${PROMPT_MODEL_SRC}
+
 const EXPOSURE_PLAIN = { "always-on": "loads into every session", "on-invocation": "loads only when used" };
-const PROBLEM = {
-  always_on_bloat: "A file that loads every session is too large",
-  instruction_conflict: "Two instructions contradict each other",
-  skill_invocation_policy: "A skill can be auto-run by the model",
-  prompt_metadata_gap: "A prompt is missing its description",
-  skill_entrypoint_bloat: "A skill's main file is too long",
-  skill_description_bloat: "A skill's description is too long",
-  chat_mode_bloat: "A chat mode's instructions are too long",
-  skill_count_bloat: "Your skills load a lot of metadata every session",
-  output_verbosity_unset: "No output-brevity instruction is set",
-  vscode_compress_disabled: "VS Code isn't compressing terminal output",
-  duplicate_instructions: "The same instruction is repeated in several places",
-  conditional_rule_missing: "A broad rule should be scoped to specific paths",
-  review_truncation_risk: "Long content risks being cut off mid-review",
-  cacheability_churn: "Volatile content breaks prompt caching",
-  // Aggregated runtime findings (one per kind, never per-tool).
-  uncompressed_commands: "Terminal commands run raw instead of through tk",
-  orientation_cost: "The agent spends tokens finding its way around the code",
-  repeated_failures: "The same command keeps failing and retrying",
-  dependency_reads: "Reading dependency / build files wastes tokens",
-  long_agent_loops: "Sessions run long, re-sending the transcript each turn",
-  oversized_prompts: "Prompts are larger than they need to be",
-  mcp_bloat: "Too many MCP servers load their tools every session",
-};
 const FIXCLASS_PLAIN = {
   safe_mechanical: { t: "tk can apply this for you", auto: true },
   suggested_diff: { t: "Manual edit", auto: false },
@@ -296,7 +270,6 @@ const FIXCLASS_PLAIN = {
   delivery: { t: "Setup step", auto: false },
   non_goal: { t: "Out of scope", auto: false },
 };
-function humanize(t) { return String(t || "Opportunity").replace(/_/g, " ").replace(/^./, (c) => c.toUpperCase()); }
 
 function render() {
   if (DOC.kind === "gain") renderGain(DOC.data);
@@ -585,13 +558,6 @@ function groupByType(list) {
   return order.map((t) => ({ type: t, items: map[t] }));
 }
 
-// The actionable location: a real file (+ line) for static findings, else the
-// runtime finding's where (a setup step / config target), else a dash.
-function whereOf(f) {
-  if (f.file) return f.file + (f.start_line ? ", line " + f.start_line : "");
-  return f.where || "—";
-}
-
 // De-duplicated, capped list of locations for a grouped card.
 function whereList(items) {
   const seen = [];
@@ -644,63 +610,6 @@ function itemHtml(f, grp) {
     (f.recommendation ? '<div class="field"><span class="lab">Fix</span><span class="val fix">' + esc(f.recommendation) + '</span></div>' : '') +
     actions +
     '</div>';
-}
-
-// The displayed fix is for the human; the COPIED text is an agent-ready prompt.
-// It always tells the agent to SNAPSHOT first (tk optimize --backup) so the human
-// can revert the agent's edits later with tk optimize --restore.
-function buildPrompt(f) {
-  // Runtime / setup findings have no source file — they are an action to take (install
-  // a shim, add durable context), not a file edit. Emit a plain instruction with no
-  // backup/restore dance.
-  if (!f.file) {
-    return [
-      "Reduce my AI/agent token usage — apply this one improvement:",
-      "",
-      "  Where: " + (f.where || "your agent setup"),
-      "  Problem: " + (PROBLEM[f.type] || humanize(f.type)),
-      f.evidence ? "  Why it matters: " + f.evidence : "",
-      "  Do this: " + (f.recommendation || ""),
-    ].filter(Boolean).join("\n");
-  }
-  const where = f.file + (f.start_line ? " (line " + f.start_line + ")" : "");
-  const backupCmd = "tk optimize --backup " + f.file;
-  return [
-    "Fix a token-wasting issue in my AI/agent configuration.",
-    "",
-    "Step 1 — before editing, snapshot the file so the change is reversible:",
-    "  " + backupCmd,
-    "Step 2 — apply this edit directly:",
-    "  File: " + where,
-    "  Problem: " + (PROBLEM[f.type] || humanize(f.type)),
-    f.evidence ? "  Why it matters: " + f.evidence : "",
-    "  Change to make: " + (f.recommendation || ""),
-    "  Leave everything else in the file unchanged.",
-    "",
-    "Do not run tk optimize --restore yourself — that is the human's manual undo; it reverts to the step-1 snapshot.",
-  ].filter(Boolean).join("\n");
-}
-
-function buildAllPrompt(findings) {
-  const files = [];
-  for (const f of findings) if (f.file && files.indexOf(f.file) === -1) files.push(f.file);
-  const list = findings
-    .map((f, i) => "  " + (i + 1) + ". " + whereOf(f) + " — " + (PROBLEM[f.type] || humanize(f.type)) + "\n     " + (f.recommendation || ""))
-    .join("\n");
-  const head = ["Reduce my AI/agent token usage by addressing the items below.", ""];
-  // Only frame the backup/restore dance when there are actual files to edit; a list
-  // of pure setup actions (install shim, add context) has nothing to snapshot.
-  if (files.length) {
-    return head.concat([
-      "Step 1 — before editing any file, snapshot it so your changes are reversible:",
-      "  tk optimize --backup " + files.join(" "),
-      "Step 2 — apply each fix directly, leaving the rest of each file unchanged:",
-      list,
-      "",
-      "When done, verify nothing broke. Do not run tk optimize --restore yourself — that is the human's manual undo; it reverts to the step-1 snapshot.",
-    ]).join("\n");
-  }
-  return head.concat(["Apply each item below (setup/config actions, not file edits):", list]).join("\n");
 }
 
 function copyText(text, btn) {

@@ -4,6 +4,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 
 import { renderReportHtml, type ReportDoc } from "../../../src/report/html.js";
+import { promptModel } from "../../../src/report/promptModel.js";
 import { writeReport, openInBrowser, emitHtmlReport } from "../../../src/report/open.js";
 
 const GAIN: ReportDoc = {
@@ -134,6 +135,140 @@ describe("renderReportHtml", () => {
     // The agent is told to snapshot before editing and not to run restore itself.
     expect(html).toContain("tk optimize --backup");
     expect(html).toContain("tk optimize --restore");
+  });
+
+  test("the report SCRIPT carries the prompt model so prompts build client-side", () => {
+    const html = renderReportHtml(INSPECT);
+    // The injected model (promptModel.ts) ships its grounded, real-host advice into
+    // the page — proof the per-category registry reaches the browser, not just Node.
+    expect(html).toContain("disable-model-invocation: true"); // real skill frontmatter key
+    expect(html).toContain("chat.tools.compressOutput.enabled"); // real VS Code setting key
+    expect(html).toContain(".github/instructions/"); // real scoped-instructions target
+    expect(html).toContain("function buildPrompt"); // build machinery present
+  });
+
+  // The "Copy as prompt" payload is built in the browser, so its FILLED text never
+  // appears in the static HTML. promptModel exports the exact same source the page
+  // runs, so these assert the real per-category output (issue #58).
+  test("a file-edit finding names its concrete file/line + category-specific how", () => {
+    const p = promptModel.buildPrompt({
+      type: "instruction_conflict",
+      file: "AGENTS.md",
+      start_line: 4,
+      evidence: "two rules clash",
+      recommendation: "pick one",
+    });
+    // task names the concrete target, not a generic skeleton...
+    expect(p).toContain("Resolve the contradictory instructions detected at AGENTS.md (line 4)");
+    // ...carries a category-specific How block...
+    expect(p).toContain("  How:");
+    expect(p).toContain("delete the losing side");
+    // ...keeps the reversible-edit framing for file findings...
+    expect(p).toContain("tk optimize --backup AGENTS.md");
+    expect(p).toContain("tk optimize --restore");
+    // ...and drops the old generic labels.
+    expect(p).not.toContain("Change to make:");
+    expect(p).not.toContain("Problem:");
+  });
+
+  test("a finding with no start_line collapses the (line ) artifact cleanly", () => {
+    const p = promptModel.buildPrompt({
+      type: "skill_description_bloat",
+      file: "skills/foo/SKILL.md",
+      surface: "skill",
+    });
+    expect(p).toContain(
+      "Tighten the description of the skill defined in skills/foo/SKILL.md to a concise trigger.",
+    );
+    expect(p).not.toContain("(line )");
+  });
+
+  test("the skill invocation-policy prompt names the real frontmatter flags", () => {
+    const p = promptModel.buildPrompt({
+      type: "skill_invocation_policy",
+      file: ".claude/skills/deploy/SKILL.md",
+      start_line: 1,
+      surface: "skill",
+    });
+    expect(p).toContain("disable-model-invocation: true");
+    expect(p).toContain("user-invocable: false");
+    expect(p).toContain("allowed-tools");
+    // The space before a leading-dot path must survive the punctuation cleanup.
+    expect(p).toContain("on the skill at .claude/skills/deploy/SKILL.md (line 1).");
+    expect(p).not.toContain("at.claude");
+  });
+
+  test("a runtime/setup finding is where-based with no backup/restore dance", () => {
+    const p = promptModel.buildPrompt({
+      type: "mcp_bloat",
+      where: "your MCP server config",
+      evidence: "5 servers configured",
+      recommendation: "disable unused",
+    });
+    expect(p).toContain("Prune the MCP servers configured at: your MCP server config");
+    expect(p).toContain("prefer it over the equivalent MCP server");
+    expect(p).not.toContain("tk optimize --backup");
+    expect(p).not.toContain("Step 1");
+  });
+
+  test("an unknown finding type falls back to its own recommendation (no empty prompt)", () => {
+    const p = promptModel.buildPrompt({
+      type: "some_future_type",
+      where: "somewhere",
+      recommendation: "do the thing",
+    });
+    expect(p).toContain("Do this: do the thing");
+  });
+
+  test("every closed-set finding type has a template (issue #58 coverage)", () => {
+    const CONTEXT_TYPES = [
+      "always_on_bloat",
+      "conditional_rule_in_always_on",
+      "path_instruction_overbreadth",
+      "task_prompt_in_instruction",
+      "prompt_metadata_gap",
+      "agent_overbreadth",
+      "chat_mode_bloat",
+      "skill_invocation_policy",
+      "skill_entrypoint_bloat",
+      "skill_description_bloat",
+      "skill_count_bloat",
+      "output_verbosity_unset",
+      "instruction_duplicate",
+      "instruction_conflict",
+      "copilot_review_truncation",
+      "cacheability_churn",
+      "malformed_frontmatter",
+      "discovery_truncated",
+      "vscode_compress_disabled",
+    ];
+    const RUNTIME_TYPES = [
+      "uncompressed_commands",
+      "orientation_cost",
+      "repeated_failures",
+      "dependency_reads",
+      "long_agent_loops",
+      "oversized_prompts",
+      "mcp_bloat",
+    ];
+    for (const t of [...CONTEXT_TYPES, ...RUNTIME_TYPES]) {
+      expect(promptModel.PROMPT_TPL[t], `missing template for ${t}`).toBeTruthy();
+      expect(promptModel.PROMPT_TPL[t].task.length).toBeGreaterThan(0);
+      // The human-facing PROBLEM label must key off the SAME real f.type — the old
+      // map had keys (duplicate_instructions, …) that matched no finding.
+      expect(promptModel.PROBLEM[t], `missing PROBLEM label for ${t}`).toBeTruthy();
+    }
+  });
+
+  test("buildAllPrompt composes one paste with per-item tasks", () => {
+    const all = promptModel.buildAllPrompt([
+      { type: "instruction_conflict", file: "AGENTS.md", start_line: 4 },
+      { type: "mcp_bloat", where: "your MCP server config" },
+    ]);
+    expect(all).toContain("Resolve the contradictory instructions detected at AGENTS.md (line 4)");
+    expect(all).toContain("Prune the MCP servers configured at: your MCP server config");
+    // A file is present → the snapshot framing leads.
+    expect(all).toContain("tk optimize --backup AGENTS.md");
   });
 
   test("escapes a </script> breakout attempt in the data", () => {
