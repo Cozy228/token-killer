@@ -68,6 +68,30 @@ Assumption: this report is a next-stage plan. It should not silently replace
 accepted v1 scope. The richer `tg_*` tools requested below are treated as a
 logical v2 schema and can be folded into the four accepted v1 tools first.
 
+## Merge Notes From `deep-research-report-code-wiki.md`
+
+The deep research report was useful as a broad thesis document, but it was not
+safe as the canonical implementation contract because it contained chat-style
+source markers, assumed the live repository was unavailable, proposed file
+paths that do not match this repo's report style, and did not fully reconcile
+its richer MCP surface with ADRs 0013-0016.
+
+This merged report keeps the strongest findings from that draft:
+
+- One persistent repository index should power agent tools, CLI queries, impact
+  analysis, wiki pages, and human GUI views.
+- The human surface should start as a structural, LLM-free graph explorer and
+  source-linked wiki, not as pre-generated LLM prose.
+- VS Code should be treated as the viewer and Copilot host. `tk` provides MCP,
+  CLI, local HTML, and possibly extension tools; it does not own an LLM or spend
+  API tokens.
+- Enterprise Copilot integration is policy-gated. MCP and extension tools are
+  official integration paths, but org settings may disable them; the local HTML
+  viewer and CLI still work without that approval.
+- Closed or SaaS references such as DeepWiki and Google Code Wiki are useful
+  for interaction patterns, especially outline-first wiki reads and source
+  linked prose, but not for local enterprise implementation choices.
+
 ## Project-by-Project Matrix
 
 | Project | Category | Best idea to borrow | What to avoid | Relevance | Difficulty | Enterprise fit |
@@ -90,6 +114,8 @@ logical v2 schema and can be folded into the four accepted v1 tools first.
 | RepoMaster | Research repo understanding | Hierarchical code tree + call graph + module graph for task packs | External web/API agents and repo-discovery scope | Medium | Medium | Low for product |
 | RANGER | Graph-enhanced retrieval paper | Deterministic entity queries first, semantic graph walk later | MCTS/embeddings/cross-encoder in MVP | Medium | High | Medium later |
 | RIG | Deterministic architecture graph paper | Build/test/config nodes with evidence-backed architecture | CMake-only overfit | High | Medium | High |
+| DeepWiki | Closed wiki + MCP reference | Cheap outline-first wiki ladder and declarative page control | Closed/SaaS assumptions and delayed freshness | Medium | Low | Low for implementation |
+| Google Code Wiki | Closed code wiki reference | Source-linked prose and commit-aware freshness | Closed preview surface, no local implementation | Medium | Low | Low for implementation |
 
 ## Detailed Project Notes
 
@@ -387,6 +413,20 @@ logical v2 schema and can be folded into the four accepted v1 tools first.
   first.
 - Borrow: BuildTarget/Test/Script/Config nodes and evidence-backed repo map.
 - Avoid: making v1 graph depend on build-system integration.
+
+### 19. DeepWiki and Google Code Wiki
+
+- Identity: closed or SaaS-like code wiki references, not implementation
+  sources for `tk`.
+- Surface: human-facing wiki plus agent query/chat patterns.
+- Patterns: cheap outline-first ladder before full page reads, declarative page
+  control, source-linked prose, and freshness tied to repository changes.
+- Gaps for `tk`: not local-first, not implementation-copyable, and not a
+  reliable model for enterprise-restricted Windows machines.
+- Borrow: `map -> page outline -> focused content -> source anchor` as both
+  wiki and MCP interaction grammar.
+- Avoid: hidden regeneration, closed hosting, and claims the local graph cannot
+  independently verify.
 
 ## Unified Pattern
 
@@ -800,6 +840,11 @@ Required views:
 - Staleness view: changed files, stale nodes, stale wiki pages.
 - Token savings dashboard: raw/projected/fallback measurement events.
 
+The human surface should report navigation facts, not invented token savings:
+nodes shown, total nodes, expansion depth, stale nodes, anchors opened, and raw
+source links followed. Token savings belong to the agent-facing projection
+surface where raw and projected outputs can be measured.
+
 ## Enterprise VS Code and Copilot Integration
 
 | Path | Feasibility | Security risk | Enterprise fit | Maintenance | Token reduction | Notes |
@@ -815,6 +860,12 @@ Required views:
 | CI integration | Medium | Low-medium | Medium-high | Medium | Medium | Impact reports, policy gates |
 | CDP/Electron automation | Low | High | Low | High | Uncertain | Do not rely on proprietary internals |
 | Copilot traffic interception | Not proven | High | Low | High | High if possible | Non-goal unless vendor-supported |
+
+Officially supported VS Code/Copilot paths include MCP tools, extension tools,
+custom agents, chat participants, instruction files, and prompt/context
+customization. Those are the durable integration points for `tk`. Anything that
+requires observing or rewriting proprietary Copilot traffic is out of scope
+unless the vendor publishes a supported API.
 
 ## Token Reduction Mechanics
 
@@ -987,3 +1038,9 @@ Recommended later:
 - RepoMaster paper: https://arxiv.org/abs/2505.21577
 - RANGER paper: https://arxiv.org/abs/2509.25257
 - Repository Intelligence Graph paper: https://arxiv.org/abs/2601.10112
+- VS Code tools with agents: https://code.visualstudio.com/docs/copilot/agents/agent-tools
+- VS Code MCP developer guide: https://code.visualstudio.com/api/extension-guides/ai/mcp
+- VS Code custom agents: https://code.visualstudio.com/docs/agent-customization/custom-agents
+- VS Code Language Model Tool API: https://code.visualstudio.com/api/extension-guides/ai/tools
+- VS Code custom instructions GA note: https://code.visualstudio.com/updates/v1_98
+- GitHub Copilot MCP overview: https://docs.github.com/en/copilot/concepts/context/mcp
