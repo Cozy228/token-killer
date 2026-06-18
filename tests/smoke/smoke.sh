@@ -338,7 +338,7 @@ section "Gain"
 
 assert_run "tk gain --text" ok has:"Token Savings" -- $TK gain --text
 assert_run "tk gain --json" ok has:'"commands"' -- $TK gain --json
-assert_run "tk gain --csv" ok has:"commands,raw_tokens" -- $TK gain --csv
+assert_run "tk gain --csv" ok has:"commands,input_tokens,output_tokens,saved_tokens,savings_pct" -- $TK gain --csv
 assert_contains "tk gain default → HTML"        "Generated HTML report" env TK_NO_OPEN=1 $TK gain
 
 # ── 11. Error handling ──────────────────────────────
