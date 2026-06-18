@@ -97,14 +97,37 @@ function discoverVscode(home: string, platform: NodeJS.Platform): HostDiscovery 
 }
 
 // Copilot CLI session-state stores under ~/.copilot. Layout varies by version;
-// probe the common subdirs tolerantly.
+// probe the common locations tolerantly.
+//
+// Modern layout (copilot ≥1.0, verified against 1.0.63): ONE directory per session
+// under `session-state/`, each holding the append-only event log:
+//   ~/.copilot/session-state/<session-id>/events.jsonl
+// Each such file IS one session AND its analyzable transcript — the event envelope
+// ({type, data, id, timestamp, parentId}) is the same typed-event stream the VS Code
+// reader already understands, so it counts as a session FILE (session_inventory),
+// and its tool activity also lands in transcript_coverage (handled in scan).
+//
+// Older / alternate flat layouts kept loose `*.jsonl` directly under a few subdirs;
+// probe those too so a downgraded or differently-versioned CLI still resolves.
 function discoverCopilotCli(home: string): HostDiscovery {
   const base = join(home, ".copilot");
+  const sessionFiles: string[] = [];
   const transcriptFiles: string[] = [];
-  for (const sub of ["history", "session-state", "sessions", "logs"]) {
+
+  const sessionStateRoot = join(base, "session-state");
+  // Per-session directories: <id>/events.jsonl (the common modern case).
+  for (const dir of listSubdirs(sessionStateRoot)) {
+    sessionFiles.push(...listJsonl(dir));
+  }
+  // Some builds drop a loose `*.jsonl` directly under session-state (no per-id dir).
+  sessionFiles.push(...listJsonl(sessionStateRoot));
+
+  // Flat fallbacks for older / alternate layouts.
+  for (const sub of ["history", "sessions", "logs"]) {
     transcriptFiles.push(...listJsonl(join(base, sub)));
   }
-  return { inputType: "copilot-cli", dir: base, sessionFiles: [], transcriptFiles };
+
+  return { inputType: "copilot-cli", dir: base, sessionFiles, transcriptFiles };
 }
 
 // Discover ONE host (used when --input-type is explicit).

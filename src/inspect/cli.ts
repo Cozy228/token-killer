@@ -30,6 +30,8 @@ import { emitHtmlReport } from "../report/open.js";
 import { analyzeHabits, type FileHabitExtract, type HabitStats } from "./habits.js";
 import { buildReport, renderJson, renderMarkdown } from "./report.js";
 import { computeFootprint } from "./footprint.js";
+import { analyzeSessionTokens, type SessionTokenDetail } from "./sessionTokens.js";
+import { estimateSavings } from "./savings.js";
 import { makeFileCache } from "./fileCache.js";
 import { makeDiskExtractCache, pruneCache } from "./extractCache.js";
 import { tokenKillerHome } from "../core/dataDir.js";
@@ -217,6 +219,10 @@ export function runInspect(
     // Runtime analysis (orthogonal to scope).
     let result: ScanResult | undefined;
     let habits: HabitStats | undefined;
+    // Measured token detail (ground truth from hosts that record it, e.g. Copilot
+    // CLI's session.shutdown). Computed inside the discovery block where the file
+    // cache is warm, attached to the report below.
+    let sessionTokens: SessionTokenDetail | undefined;
     // `--static-only` (optimize's scoped trigger, issue #41): skip host discovery,
     // the transcript scan, and habit extraction entirely — analyze only the static
     // context surfaces below. `result`/`habits` stay undefined, which the report and
@@ -324,6 +330,9 @@ export function runInspect(
           progress.phase("Analyzing usage habits…");
         }
         progress.phase(`Analyzed habits across ${habits.sessions} active session(s).`);
+        // Measured token detail — reuses the warm file cache so session files are
+        // not re-read. Undefined when no session recorded usage (e.g. VS Code-only).
+        sessionTokens = analyzeSessionTokens(discovery, fileCache);
       } else {
         progress.done();
         const where = hosts.map((h) => `${h.inputType} (${relHome(h.dir)})`).join(", ");
@@ -414,6 +423,7 @@ export function runInspect(
     report.static_context = { files_scanned: sc.result.files_scanned, findings: staticFindings };
     report.findings = unifiedFindings;
     report.footprint = footprint;
+    if (sessionTokens) report.session_tokens = sessionTokens;
     // Reflect EVERY host scanned (e.g. "vscode + copilot-cli"), not just the
     // representative one ScanResult carries.
     report.inputType = hostsLabel;
@@ -471,8 +481,8 @@ export function runInspect(
         emitHtmlReport(
           {
             kind: "inspect",
-            title: "Your token-saving opportunities",
-            subtitle: "Where your AI setup wastes tokens, and how to fix it.",
+            title: "Your AI session report",
+            subtitle: "What your past sessions spent on tokens — and where you can save.",
             generatedAt: new Date(nowMs).toISOString(),
             data: {
               scope: scopes.includes("project") ? "project" : "user",
@@ -481,18 +491,34 @@ export function runInspect(
               project: scopes.includes("project") ? basename(cwd) : undefined,
               files_scanned: sc.result.files_scanned,
               sessions_analyzed: result?.session_inventory ?? 0,
+              tool_event_count: result?.tool_event_count ?? 0,
+              // Measured token analysis (ground truth from session.shutdown).
+              session_tokens: sessionTokens,
+              // Per-tool/command breakdown (the "by tool" detail of the analysis).
+              opportunities: result?.opportunities ?? [],
               footprint,
-              findings: unifiedFindings.map((f) => ({
-                severity: f.severity,
-                type: f.type,
-                file: (f as { file?: string }).file,
-                start_line: (f as { start_line?: number }).start_line,
-                // Runtime findings carry an actionable `where` instead of a file.
-                where: (f as { where?: string }).where,
-                evidence: f.evidence,
-                recommendation: f.recommendation,
-                fix_class: f.fix_class,
-              })),
+              findings: unifiedFindings.map((f) => {
+                // Estimated saving for every fix — graded grounded (real figure) vs
+                // rough (coarse per-type default) so the report never fakes precision.
+                const sv = estimateSavings({
+                  type: f.type,
+                  evidence: f.evidence,
+                  metrics: (f as { metrics?: { total_output_tokens?: number } }).metrics,
+                });
+                return {
+                  severity: f.severity,
+                  type: f.type,
+                  file: (f as { file?: string }).file,
+                  start_line: (f as { start_line?: number }).start_line,
+                  // Runtime findings carry an actionable `where` instead of a file.
+                  where: (f as { where?: string }).where,
+                  evidence: f.evidence,
+                  recommendation: f.recommendation,
+                  fix_class: f.fix_class,
+                  est_savings_tokens: sv.tokens,
+                  est_savings_grounded: sv.grounded,
+                };
+              }),
             },
           },
           nowMs,

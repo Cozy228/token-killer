@@ -22,6 +22,7 @@ const scanResult: ScanResult = {
       avg_output_chars: 200,
       max_output_chars: 300,
       total_input_chars: 18,
+      total_input_tokens: 5,
       max_input_chars: 9,
       success_count: 2,
       failure_count: 0,
@@ -63,7 +64,9 @@ describe("renderMarkdown", () => {
     expect(md).toContain("Sessions found: 12");
     expect(md).toContain("Sessions with readable tool activity: 4");
     expect(md).toContain("`git status`");
-    expect(md).toContain("| 2 | 66.7% |");
+    // By-tool row now carries per-tool input + output token totals and a token share.
+    expect(md).toContain("≈5 | ≈100 | ≈105");
+    expect(md).toContain("100.0%");
   });
 
   test("leads with action items when advice is present", () => {
@@ -79,9 +82,10 @@ describe("renderMarkdown", () => {
         },
       ]),
     );
-    // The action section appears before the data table.
+    // inspect reads analysis-first: the optimization actions ("What to do") close the
+    // report, AFTER the "Where your tokens go" analysis they're derived from.
     expect(md).toContain("## What to do");
-    expect(md.indexOf("## What to do")).toBeLessThan(md.indexOf("Where the tokens go"));
+    expect(md.indexOf("## Where your tokens go")).toBeLessThan(md.indexOf("## What to do"));
     expect(md).toContain("Run `tk install`");
   });
 
@@ -111,5 +115,77 @@ describe("renderJson", () => {
     expect(parsed.schemaVersion).toBe("1");
     expect(parsed.opportunities[0].total_output_chars).toBe(400);
     expect(parsed.opportunities[0].success_count).toBe(2);
+  });
+});
+
+describe("renderMarkdown — Where your tokens go (measured analysis)", () => {
+  test("renders measured totals, per-model + per-session tables, cache hit and context split", () => {
+    const r = buildReport(scanResult, GENERATED);
+    r.session_tokens = {
+      sessions: 3,
+      input: 25,
+      output: 264,
+      cache_read: 60_000,
+      cache_write: 20_000,
+      reasoning: 159,
+      premium_requests: 0.66,
+      models: [
+        {
+          model: "claude-sonnet-4.6",
+          requests: 4,
+          inputTokens: 53_000,
+          outputTokens: 264,
+          cacheReadTokens: 60_000,
+          cacheWriteTokens: 20_000,
+          reasoningTokens: 159,
+          cost: 1.3,
+        },
+      ],
+      bySession: [
+        {
+          id: "a3f9c1bb",
+          model: "claude-sonnet-4.6",
+          prompt: 60_025,
+          output: 264,
+          cache_hit: 0.75,
+          premium: 0.66,
+        },
+      ],
+      last_context: { system: 5526, conversation: 297, tool_definitions: 8947 },
+    };
+    const md = renderMarkdown(r);
+    expect(md).toContain("## Where your tokens go");
+    expect(md).toContain("Measured across 3 session(s)");
+    // 60000 / (25 + 60000 + 20000) ≈ 75% cache hit.
+    expect(md).toContain("cache hit 75%");
+    expect(md).toContain("### By model");
+    expect(md).toContain("`claude-sonnet-4.6`");
+    expect(md).toContain("### By session");
+    expect(md).toContain("`a3f9c1bb`");
+    expect(md).toContain("tool defs 9k");
+  });
+
+  test("the per-tool breakdown carries category, success rate and flags", () => {
+    const md = renderMarkdown(buildReport(scanResult, GENERATED));
+    expect(md).toContain("### By tool & command");
+    // scanResult's git-status opportunity is compressible and 100% success.
+    expect(md).toContain("compressible");
+    expect(md).toContain("100%");
+  });
+
+  test("optimization points (What to do) render AFTER the analysis", () => {
+    const r = buildReport(scanResult, GENERATED, undefined, [
+      {
+        id: "a1",
+        title: "Install the shim",
+        recommendation: "Run tk install",
+        severity: "warn",
+        confidence: 0.9,
+        evidence: "x",
+        fix_class: "delivery",
+      } as never,
+    ]);
+    const md = renderMarkdown(r);
+    expect(md.indexOf("## Where your tokens go")).toBeLessThan(md.indexOf("## What to do"));
   });
 });

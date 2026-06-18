@@ -31,6 +31,7 @@ export type Opportunity = {
   avg_output_chars: number;
   max_output_chars: number;
   total_input_chars: number;
+  total_input_tokens: number;
   max_input_chars: number;
   success_count: number;
   failure_count: number;
@@ -255,6 +256,7 @@ function blankAcc(key: string, kind: "shell" | "direct", category: ToolCategory)
     total_output_tokens: 0,
     max_output_chars: 0,
     total_input_chars: 0,
+    total_input_tokens: 0,
     max_input_chars: 0,
     success_count: 0,
     failure_count: 0,
@@ -334,6 +336,7 @@ function foldCachedEvent(
   acc.total_output_tokens += estimateTokensFromLength(ev.outChars);
   acc.max_output_chars = Math.max(acc.max_output_chars, ev.outChars);
   acc.total_input_chars += ev.inChars;
+  acc.total_input_tokens += estimateTokensFromLength(ev.inChars);
   acc.max_input_chars = Math.max(acc.max_input_chars, ev.inChars);
   if (ev.failure) acc.failure_count += 1;
   else acc.success_count += 1;
@@ -371,6 +374,7 @@ export function mergeAcc(into: Map<string, Accumulator>, from: Accumulator): voi
   acc.total_output_tokens += from.total_output_tokens;
   acc.max_output_chars = Math.max(acc.max_output_chars, from.max_output_chars);
   acc.total_input_chars += from.total_input_chars;
+  acc.total_input_tokens += from.total_input_tokens;
   acc.max_input_chars = Math.max(acc.max_input_chars, from.max_input_chars);
   acc.success_count += from.success_count;
   acc.failure_count += from.failure_count;
@@ -595,7 +599,12 @@ function scanLive(discovery: SourceDiscovery, opts: ScanOptions): ScanResult {
   for (const file of discovery.sessionFiles) {
     const r = processFile(file, "sessions");
     if (!r.read) coverageErrors += 1;
-    else sessionInventory += 1;
+    else {
+      sessionInventory += 1;
+      // A session file that itself carries tool activity (Copilot CLI events.jsonl,
+      // or a populated VS Code snapshot) is also a session WITH readable activity.
+      if (r.had) transcriptCoverage += 1;
+    }
     processed += 1;
     tick("sessions");
   }
@@ -668,6 +677,8 @@ function scanCached(discovery: SourceDiscovery, opts: ScanOptions): ScanResult {
     } else {
       sessionInventory += 1;
       fold(ex);
+      // A session file carrying tool activity also counts as readable coverage.
+      if (ex.hadEvent) transcriptCoverage += 1;
       // Session-file parse errors are NOT coverage errors (see processFile above).
     }
     processed += 1;
@@ -740,7 +751,12 @@ function scanWindowed(discovery: SourceDiscovery, opts: ScanOptions): ScanResult
       coverageErrors += 1;
     } else {
       sessionInventory += 1;
-      for (const ev of ex.events) foldCachedEvent(ev, accs, opts, counters);
+      let had = false;
+      for (const ev of ex.events) {
+        if (foldCachedEvent(ev, accs, opts, counters)) had = true;
+      }
+      // A session file carrying tool activity also counts as readable coverage.
+      if (had) transcriptCoverage += 1;
       // Session-file parse errors are NOT coverage errors (see scanLive.processFile).
     }
     processed += 1;

@@ -19,6 +19,7 @@ function opp(over: Partial<Opportunity> & { key: string; category: ToolCategory 
     avg_output_chars: Math.round(outChars / count),
     max_output_chars: over.max_output_chars ?? outChars,
     total_input_chars: over.total_input_chars ?? 100,
+    total_input_tokens: over.total_input_tokens ?? 25,
     max_input_chars: over.max_input_chars ?? 50,
     success_count: over.success_count ?? count,
     failure_count: over.failure_count ?? 0,

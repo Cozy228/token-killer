@@ -68,6 +68,97 @@ describe("extractVscodeRecords — transcripts", () => {
   });
 });
 
+describe("extractVscodeRecords — Copilot CLI events.jsonl dialect", () => {
+  // The Copilot CLI shares the {type,data,...} envelope but is RICHER: a tool call
+  // spans assistant.message / tool.execution_start (name + args) and
+  // tool.execution_complete (RESULT + success). We pair by toolCallId and emit ONE
+  // enriched record from the completion so OUTPUT and failure are captured.
+  function startCopilot(ctx: VscodeReadCtx): void {
+    expect(
+      extractVscodeRecords(
+        { type: "session.start", data: { sessionId: "S9", producer: "copilot-agent" } },
+        ctx,
+      ),
+    ).toEqual([]);
+    expect(ctx.copilot).toBe(true);
+  }
+
+  test("pairs execution_start/complete into one record with input + output + session", () => {
+    const ctx: VscodeReadCtx = {};
+    startCopilot(ctx);
+
+    // The start carries name + args but no output → no record yet.
+    expect(
+      extractVscodeRecords(
+        {
+          type: "tool.execution_start",
+          data: { toolCallId: "t1", toolName: "bash", arguments: { command: "echo hi" } },
+        },
+        ctx,
+      ),
+    ).toEqual([]);
+
+    // The completion carries result + success but NO name/args → grafts the remembered
+    // ones and becomes the single tool record.
+    const recs = extractVscodeRecords(
+      {
+        type: "tool.execution_complete",
+        timestamp: "2026-06-18T07:26:41.509Z",
+        data: { toolCallId: "t1", success: true, result: { content: "hi\n" } },
+      },
+      ctx,
+    );
+    expect(recs).toHaveLength(1);
+    expect(recs[0].tool_name).toBe("bash");
+    expect(recs[0].tool_input).toEqual({ command: "echo hi" });
+    expect(recs[0].tool_response).toBe("hi\n");
+    expect(recs[0].isError).toBe(false);
+    expect(recs[0].sessionId).toBe("S9");
+  });
+
+  test("assistant.message does NOT double-emit in Copilot dialect (completion is the record)", () => {
+    const ctx: VscodeReadCtx = {};
+    startCopilot(ctx);
+    // The request only stashes name/args — emitting here would double-count the call.
+    expect(
+      extractVscodeRecords(
+        {
+          type: "assistant.message",
+          data: {
+            toolRequests: [{ toolCallId: "t1", name: "bash", arguments: { command: "ls" } }],
+          },
+        },
+        ctx,
+      ),
+    ).toEqual([]);
+    const recs = extractVscodeRecords(
+      {
+        type: "tool.execution_complete",
+        data: { toolCallId: "t1", success: true, result: { content: "x" } },
+      },
+      ctx,
+    );
+    expect(recs.map((r) => r.tool_name)).toEqual(["bash"]);
+  });
+
+  test("a failed tool call sets isError so failure detection fires", () => {
+    const ctx: VscodeReadCtx = {};
+    startCopilot(ctx);
+    extractVscodeRecords(
+      { type: "tool.execution_start", data: { toolCallId: "t2", toolName: "bash", arguments: {} } },
+      ctx,
+    );
+    const recs = extractVscodeRecords(
+      {
+        type: "tool.execution_complete",
+        data: { toolCallId: "t2", success: false, result: { content: "boom" } },
+      },
+      ctx,
+    );
+    expect(recs[0].isError).toBe(true);
+  });
+});
+
 describe("extractVscodeRecords — chatSessions", () => {
   test("an empty requests snapshot yields nothing (the live stub case)", () => {
     expect(extractVscodeRecords({ kind: 0, v: { requests: [] } })).toEqual([]);

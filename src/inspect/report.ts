@@ -7,6 +7,7 @@ import type { AdviceFinding } from "./advice.js";
 import type { Footprint } from "./footprint.js";
 import type { RepoContext } from "./repoContext.js";
 import type { Opportunity, ScanResult } from "./scan.js";
+import type { SessionTokenDetail } from "./sessionTokens.js";
 import type { Finding } from "./unified.js";
 
 export type Report = {
@@ -27,6 +28,9 @@ export type Report = {
   findings?: Finding[];
   // Standing per-session token cost breakdown (instructions / skills / agents / MCP).
   footprint?: Footprint;
+  // MEASURED token usage from session logs that record it (Copilot CLI's
+  // `session.shutdown`). Ground truth — not the char-based estimate used elsewhere.
+  session_tokens?: SessionTokenDetail;
 };
 
 export function buildReport(
@@ -107,11 +111,147 @@ function couldNotReadSessions(report: Report): string[] {
   ];
 }
 
+// Compact token magnitude: 184321 → "184k", 1_240_000 → "1.2M", 79 → "79".
+function fmtTokens(n: number): string {
+  if (n >= 1_000_000) return `${(n / 1_000_000).toFixed(1)}M`;
+  if (n >= 1_000) return `${Math.round(n / 1_000)}k`;
+  return `${n}`;
+}
+
+// How many per-session rows to print in markdown (the rest are in --json).
+const SESSIONS_TOP = 10;
+
+const CATEGORY_SHORT: Record<string, string> = {
+  execute_adjacent: "execute",
+  "agent-orchestration": "agent",
+};
+function shortCategory(c: string): string {
+  return CATEGORY_SHORT[c] ?? c;
+}
+
+// Per-tool flags surfaced in the breakdown (what tk can act on).
+function oppFlags(o: Opportunity): string {
+  const f: string[] = [];
+  if (o.compressible) f.push("compressible");
+  if (o.large_output_count > 0) f.push("large");
+  if (o.governed_deny > 0) f.push("deny");
+  return f.length ? ` _(${f.join(", ")})_` : "";
+}
+
+function successRate(o: Opportunity): string {
+  const total = o.success_count + o.failure_count;
+  return total === 0 ? "—" : `${Math.round((o.success_count / total) * 100)}%`;
+}
+
+// "Where your tokens go" — the unified analysis of every past session. Measured
+// totals (ground truth from session.shutdown) up top, then the per-model, per-session
+// and per-tool detail that explains where the tokens went. Same sessions, more zoom.
+function tokensGoLines(report: Report): string[] {
+  const st = report.session_tokens;
+  const opps = report.opportunities;
+  // Nothing measured AND no tool activity → no analysis section at all.
+  if ((!st || st.sessions === 0) && opps.length === 0) return [];
+
+  const out: string[] = ["## Where your tokens go", ""];
+
+  if (st && st.sessions > 0) {
+    const promptTotal = st.input + st.cache_read + st.cache_write;
+    const hitRate = promptTotal > 0 ? `${Math.round((st.cache_read / promptTotal) * 100)}%` : "n/a";
+    out.push(
+      `Measured across ${st.sessions} session(s) that recorded usage (ground truth, not an estimate):`,
+    );
+    out.push("");
+    out.push(`- Prompt tokens      ${fmtTokens(promptTotal)}  (cache hit ${hitRate})`);
+    out.push(`-   ├ fresh input    ${fmtTokens(st.input)}`);
+    out.push(`-   ├ cache read     ${fmtTokens(st.cache_read)}`);
+    out.push(`-   └ cache write    ${fmtTokens(st.cache_write)}`);
+    out.push(
+      `- Output             ${fmtTokens(st.output)}${st.reasoning > 0 ? ` (incl. ${fmtTokens(st.reasoning)} reasoning)` : ""}`,
+    );
+    out.push(`- Premium requests   ${st.premium_requests}`);
+    out.push("");
+
+    if (st.models.length > 0) {
+      out.push("### By model");
+      out.push("");
+      out.push(
+        "| Model | reqs | input | output | cache read | cache write | reasoning | premium |",
+      );
+      out.push("|---|--:|--:|--:|--:|--:|--:|--:|");
+      for (const m of st.models) {
+        out.push(
+          `| \`${m.model}\` | ${m.requests} | ${fmtTokens(m.inputTokens)} | ${fmtTokens(m.outputTokens)} | ${fmtTokens(m.cacheReadTokens)} | ${fmtTokens(m.cacheWriteTokens)} | ${fmtTokens(m.reasoningTokens)} | ${Number(m.cost.toFixed(2))} |`,
+        );
+      }
+      out.push("");
+    }
+
+    if (st.bySession.length > 0) {
+      out.push("### By session");
+      out.push("");
+      out.push("| Session | model | prompt | output | cache hit | premium |");
+      out.push("|---|---|--:|--:|--:|--:|");
+      for (const s of st.bySession.slice(0, SESSIONS_TOP)) {
+        out.push(
+          `| \`${s.id}\` | ${s.model || "—"} | ${fmtTokens(s.prompt)} | ${fmtTokens(s.output)} | ${Math.round(s.cache_hit * 100)}% | ${s.premium} |`,
+        );
+      }
+      if (st.bySession.length > SESSIONS_TOP) {
+        out.push("");
+        out.push(`_+${st.bySession.length - SESSIONS_TOP} more session(s) in \`--json\` output._`);
+      }
+      out.push("");
+    }
+  }
+
+  if (opps.length > 0) {
+    out.push("### By tool & command");
+    out.push("");
+    out.push(
+      "What the agent ran, with per-tool token traffic (input + output, a chars→tokens estimate). " +
+        (st && st.sessions > 0 ? "The measured totals above are the ground truth." : "") +
+        " Share is each tool's portion of total tool token traffic.",
+    );
+    out.push("");
+    // Denominator for the token share: total in+out tokens across ALL tools.
+    const toolTokens = (o: Opportunity): number => o.total_input_tokens + o.total_output_tokens;
+    const totalToolTokens = opps.reduce((s, o) => s + toolTokens(o), 0);
+    const shareOf = (o: Opportunity): string =>
+      totalToolTokens === 0 ? "0.0%" : `${((toolTokens(o) / totalToolTokens) * 100).toFixed(1)}%`;
+    out.push(
+      "| Command/Tool | category | calls | in ≈tok | out ≈tok | total ≈tok | tok share | success |",
+    );
+    out.push("|---|---|--:|--:|--:|--:|--:|--:|");
+    for (const o of opps.slice(0, MARKDOWN_TOP)) {
+      out.push(
+        `| \`${o.key}\`${oppFlags(o)} | ${shortCategory(o.category)} | ${o.count} | ≈${o.total_input_tokens} | ≈${o.total_output_tokens} | ≈${toolTokens(o)} | ${shareOf(o)} | ${successRate(o)} |`,
+      );
+    }
+    if (opps.length > MARKDOWN_TOP) {
+      out.push("");
+      out.push(`_+${opps.length - MARKDOWN_TOP} more in \`--json\` output._`);
+    }
+    out.push("");
+  }
+
+  if (st?.last_context) {
+    const c = st.last_context;
+    out.push("### Standing context cost (most recent session)");
+    out.push("");
+    out.push(
+      `Re-sent every turn before you type: tool defs ${fmtTokens(c.tool_definitions)} · system ${fmtTokens(c.system)} · conversation ${fmtTokens(c.conversation)}.`,
+    );
+    out.push("");
+  }
+  return out;
+}
+
+// inspect produces a read-only ANALYSIS of every past session, then the potential
+// optimizations that fall out of it. So the report reads analysis-first: coverage →
+// where your tokens go (measured + per-tool detail) → repo context → finally "What to
+// do" (the optimization points), which cite the analysis above.
 export function renderMarkdown(report: Report): string {
   const lines: string[] = ["# Token Killer Inspect", ""];
-
-  // Lead with action items (what to do), if inspect found anything actionable.
-  lines.push(...actionLines(report));
 
   // Honest diagnostic: sessions discovered but nothing readable came out of them.
   if (report.session_inventory > 0 && report.tool_event_count === 0) {
@@ -133,6 +273,16 @@ export function renderMarkdown(report: Report): string {
   }
   lines.push("");
 
+  // The unified analysis: measured token spend + per-model / per-session / per-tool
+  // detail. Empty only when there is no measured usage AND no tool activity.
+  const tokensGo = tokensGoLines(report);
+  if (tokensGo.length > 0) {
+    lines.push(...tokensGo);
+  } else if (report.tool_event_count > 0) {
+    lines.push("_No token-saving opportunities found — your agent activity is already lean._");
+    lines.push("");
+  }
+
   if (report.repo_context) {
     const rc = report.repo_context;
     lines.push("## Repository context");
@@ -145,31 +295,8 @@ export function renderMarkdown(report: Report): string {
     lines.push("");
   }
 
-  if (report.opportunities.length === 0) {
-    // No table to show. The honest block above already explained an empty scan; a
-    // healthy scan with no opportunities means the activity is already lean.
-    if (report.tool_event_count > 0) {
-      lines.push("_No token-saving opportunities found — your agent activity is already lean._");
-      lines.push("");
-    }
-    return `${lines.join("\n")}\n`;
-  }
+  // Close with the optimization points derived from the analysis above.
+  lines.push(...actionLines(report));
 
-  lines.push("## Where the tokens go (cost heuristic, not a token bill)");
-  lines.push("");
-  lines.push(
-    "| Command/Tool | count | share | out chars (≈tok) | avg out | max out | in chars | max in | ok | fail |",
-  );
-  lines.push("|---|--:|--:|--:|--:|--:|--:|--:|--:|--:|");
-  for (const o of report.opportunities.slice(0, MARKDOWN_TOP)) {
-    lines.push(
-      `| \`${o.key}\` | ${o.count} | ${pct(o.share)} | ${o.total_output_chars} (≈${o.total_output_tokens}) | ${o.avg_output_chars} | ${o.max_output_chars} | ${o.total_input_chars} | ${o.max_input_chars} | ${o.success_count} | ${o.failure_count} |`,
-    );
-  }
-  if (report.opportunities.length > MARKDOWN_TOP) {
-    lines.push("");
-    lines.push(`_+${report.opportunities.length - MARKDOWN_TOP} more in \`--json\` output._`);
-  }
-  lines.push("");
   return `${lines.join("\n")}\n`;
 }

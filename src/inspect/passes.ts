@@ -175,6 +175,9 @@ function aggregate(
           coverageErrors += ex.scan.parseErrors;
         } else {
           sessionInventory += 1;
+          // A session file carrying tool activity (Copilot CLI events.jsonl, or a
+          // populated VS Code snapshot) also counts as readable coverage.
+          if (ex.scan.hadEvent) transcriptCoverage += 1;
         }
       }
       processed += 1;

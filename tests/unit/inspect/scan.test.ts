@@ -151,6 +151,46 @@ describe("scan — aggregation & ranking", () => {
     expect(git.compressible).toBe(true);
   });
 
+  test("a Copilot CLI events.jsonl session file counts AND contributes its tool activity", () => {
+    // Modern Copilot layout: events.jsonl is discovered as a SESSION file (one per
+    // session dir). It must both count toward session_inventory AND, because it
+    // carries tool activity, toward transcript_coverage — with output volume + failure
+    // captured from tool.execution_complete (paired with the start by toolCallId).
+    const events = join(dir, "events.jsonl");
+    writeFileSync(
+      events,
+      [
+        { type: "session.start", data: { sessionId: "S1", producer: "copilot-agent" } },
+        {
+          type: "assistant.message",
+          data: {
+            toolRequests: [{ toolCallId: "t1", name: "bash", arguments: { command: "echo hi" } }],
+          },
+        },
+        {
+          type: "tool.execution_start",
+          data: { toolCallId: "t1", toolName: "bash", arguments: { command: "echo hi" } },
+        },
+        {
+          type: "tool.execution_complete",
+          timestamp: "2026-06-18T07:26:41.509Z",
+          data: { toolCallId: "t1", success: true, result: { content: "hi\n<exit 0>" } },
+        },
+      ]
+        .map((e) => JSON.stringify(e))
+        .join("\n"),
+    );
+    const r = scan(discovery([], [events]));
+    expect(r.session_inventory).toBe(1);
+    expect(r.transcript_coverage).toBe(1); // the session carried readable activity
+    expect(r.tool_event_count).toBe(1); // ONE record (not double-counted from the request)
+    const echo = r.opportunities.find((o) => o.key === "echo")!;
+    expect(echo).toBeDefined();
+    expect(echo.kind).toBe("shell");
+    expect(echo.total_output_chars).toBeGreaterThan(0); // output captured from the completion
+    expect(echo.failure_count).toBe(0);
+  });
+
   test("transcript --session filter uses the session.start id from the event stream", () => {
     const file = writeTranscript("transcript.jsonl", [
       { type: "session.start", data: { sessionId: "WANT" } },

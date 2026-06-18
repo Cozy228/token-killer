@@ -16,6 +16,7 @@ function opp(key: string, category: Opportunity["category"], count: number): Opp
     avg_output_chars: 0,
     max_output_chars: 0,
     total_input_chars: 0,
+    total_input_tokens: 0,
     max_input_chars: 0,
     success_count: count,
     failure_count: 0,
@@ -37,8 +38,22 @@ const scan: ScanResult = {
 };
 
 const findings: AdviceFinding[] = [
-  { type: "delivery", title: "t", detail: "d", occurrences: 5, confidence: 0.9, recommendation: "r" },
-  { type: "shell-noise", title: "t", detail: "d", occurrences: 5, confidence: 0.8, recommendation: "r" },
+  {
+    type: "delivery",
+    title: "t",
+    detail: "d",
+    occurrences: 5,
+    confidence: 0.9,
+    recommendation: "r",
+  },
+  {
+    type: "shell-noise",
+    title: "t",
+    detail: "d",
+    occurrences: 5,
+    confidence: 0.8,
+    recommendation: "r",
+  },
 ];
 
 describe("buildInspectAggregates — allow-listed aggregates only", () => {
@@ -46,7 +61,11 @@ describe("buildInspectAggregates — allow-listed aggregates only", () => {
 
   test("carries category counts, coverage, recommendation type counts", () => {
     expect(t.tool_category_counts).toEqual({ execute_adjacent: 5, read: 2 });
-    expect(t.source_coverage).toEqual({ session_inventory: 9, transcript_coverage: 3, tool_events: 7 });
+    expect(t.source_coverage).toEqual({
+      session_inventory: 9,
+      transcript_coverage: 3,
+      tool_events: 7,
+    });
     expect(t.recommendation_type_counts).toEqual({ delivery: 1, "shell-noise": 1 });
   });
 

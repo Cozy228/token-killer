@@ -17,6 +17,7 @@ function opp(over: Partial<Opportunity> & Pick<Opportunity, "key" | "kind">): Op
     avg_output_chars: 0,
     max_output_chars: 0,
     total_input_chars: 0,
+    total_input_tokens: 0,
     max_input_chars: 0,
     success_count: 0,
     failure_count: 0,

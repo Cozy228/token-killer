@@ -126,6 +126,126 @@ describe("renderReportHtml", () => {
     expect(html).toContain("37"); // sessions analyzed
   });
 
+  test("every finding card carries a prominent Saves field (grounded number or 'varies')", () => {
+    const withSaving: ReportDoc = {
+      ...INSPECT,
+      data: {
+        ...(INSPECT.data as Record<string, unknown>),
+        findings: [
+          {
+            severity: "warn",
+            type: "skill_count_bloat",
+            evidence: "~2248 tokens",
+            recommendation: "prune",
+            fix_class: "advisory",
+            est_savings_tokens: 2248,
+          },
+          {
+            severity: "info",
+            type: "skill_invocation_policy",
+            evidence: "missing policy",
+            recommendation: "add",
+            fix_class: "safe_mechanical",
+          },
+        ],
+      },
+    };
+    const html = renderReportHtml(withSaving);
+    expect(html).toContain("savesField"); // the per-card Saves renderer is wired
+    expect(html).toContain('"est_savings_tokens":2248'); // grounded saving round-trips
+    // a fix with no measurable saving is NOT fabricated as 0 in the data
+    expect(html).not.toContain('"est_savings_tokens":0');
+  });
+
+  test("keeps three tiers (no problems dropped) — 'Lower impact' replaces 'Minor'", () => {
+    const html = renderReportHtml(INSPECT);
+    expect(html).toContain("Fix now");
+    expect(html).toContain("Worth fixing");
+    expect(html).toContain("Lower impact"); // the old info tier, kept + renamed
+    expect(html).not.toContain(">Minor<");
+    // The per-type severity promotion (de-split, no drop) is wired in the SCRIPT.
+    expect(html).toContain("consolidateFindings");
+  });
+
+  test("wires the measured token-analysis section labels (rendered client-side)", () => {
+    // renderTokenAnalysis lives in the embedded SCRIPT, so its section labels are
+    // always present in the doc — assert the analysis-first layout is wired.
+    const html = renderReportHtml(INSPECT);
+    expect(html).toContain("Where your tokens go");
+    expect(html).toContain("By model");
+    expect(html).toContain("By session");
+    expect(html).toContain("By tool");
+    expect(html).toContain("Standing context cost");
+    expect(html).toContain("What you can improve");
+  });
+
+  test("round-trips measured session_tokens + per-tool opportunities into the embedded data", () => {
+    const withTokens: ReportDoc = {
+      ...INSPECT,
+      data: {
+        ...(INSPECT.data as Record<string, unknown>),
+        tool_event_count: 312,
+        session_tokens: {
+          sessions: 18,
+          input: 142_000,
+          output: 88_000,
+          cache_read: 1_840_000,
+          cache_write: 412_000,
+          reasoning: 31_000,
+          premium_requests: 14.2,
+          models: [
+            {
+              model: "claude-sonnet-4.6",
+              requests: 12,
+              inputTokens: 118_000,
+              outputTokens: 71_000,
+              cacheReadTokens: 1_620_000,
+              cacheWriteTokens: 338_000,
+              reasoningTokens: 27_000,
+              cost: 12.8,
+            },
+          ],
+          bySession: [
+            {
+              id: "a3f9c1bb",
+              model: "claude-sonnet-4.6",
+              prompt: 684_000,
+              output: 21_000,
+              cache_hit: 0.81,
+              premium: 4.1,
+            },
+          ],
+          last_context: { system: 5526, conversation: 12_400, tool_definitions: 8947 },
+        },
+        opportunities: [
+          {
+            key: "cat",
+            category: "execute_adjacent",
+            count: 312,
+            share: 0.41,
+            total_output_tokens: 41_000,
+            avg_output_chars: 132,
+            max_output_chars: 9800,
+            total_input_chars: 8,
+            max_input_chars: 8,
+            success_count: 312,
+            failure_count: 0,
+            compressible: true,
+            governed_deny: 0,
+            governed_suggest: 0,
+            large_output_count: 4,
+            kind: "shell",
+          },
+        ],
+      },
+    };
+    const html = renderReportHtml(withTokens);
+    expect(html).toContain("claude-sonnet-4.6"); // per-model row data
+    expect(html).toContain("a3f9c1bb"); // per-session row id
+    expect(html).toContain("14.2"); // premium requests
+    expect(html).toContain('"compressible":true'); // per-tool flag data round-trips
+  });
+
   test("inspect report offers copy-as-prompt (agent-ready) plus a copy-all", () => {
     const html = renderReportHtml(INSPECT);
     expect(html).toContain("Copy as prompt");

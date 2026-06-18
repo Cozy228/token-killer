@@ -56,12 +56,35 @@ describe("discoverSources — copilot-cli", () => {
     expect(discoverSources("copilot-cli", home).found).toBe(false);
   });
 
-  test("finds session-state jsonl under ~/.copilot", () => {
+  test("finds flat-layout jsonl under ~/.copilot/history (older builds)", () => {
     mkdirSync(join(home, ".copilot", "history"), { recursive: true });
     writeFileSync(join(home, ".copilot", "history", "h.jsonl"), "{}\n");
     const d = discoverSources("copilot-cli", home);
     expect(d.found).toBe(true);
     expect(d.transcriptFiles.some((f) => f.endsWith("h.jsonl"))).toBe(true);
+  });
+
+  // Modern layout (copilot ≥1.0): ONE dir per session, each holding events.jsonl.
+  test("finds per-session events.jsonl under session-state/<id>/ as session files", () => {
+    const sid = "8eb01199-fdf2-45bc-82b9-f7b28ee95d60";
+    mkdirSync(join(home, ".copilot", "session-state", sid), { recursive: true });
+    writeFileSync(
+      join(home, ".copilot", "session-state", sid, "events.jsonl"),
+      '{"type":"session.start","data":{}}\n',
+    );
+    const d = discoverSources("copilot-cli", home);
+    expect(d.found).toBe(true);
+    // events.jsonl counts as a SESSION file (each dir = one session), not a transcript.
+    expect(d.sessionFiles.some((f) => f.endsWith("events.jsonl"))).toBe(true);
+  });
+
+  test("counts one session file per session-state subdir", () => {
+    for (const sid of ["aaa", "bbb", "ccc"]) {
+      mkdirSync(join(home, ".copilot", "session-state", sid), { recursive: true });
+      writeFileSync(join(home, ".copilot", "session-state", sid, "events.jsonl"), "{}\n");
+    }
+    const d = discoverSources("copilot-cli", home);
+    expect(d.sessionFiles.filter((f) => f.endsWith("events.jsonl"))).toHaveLength(3);
   });
 });
 
