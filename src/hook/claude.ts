@@ -20,6 +20,7 @@
 import { rewriteCommand } from "./rewrite.js";
 import { readStreamWithTimeout } from "./copilot.js";
 import { recordHookError, tkDebug } from "./debug.js";
+import { rewriteBeacon } from "./beacon.js";
 
 // Ground-truth reason string Claude Code shows for the auto-rewrite (the tk
 // analogue of RTK's "RTK auto-rewrite").
@@ -47,6 +48,10 @@ export type ClaudeHookOutput = {
     permissionDecisionReason: string;
     // The full original tool_input with only `command` overwritten (see decide).
     updatedInput: Record<string, unknown>;
+    // Issue #42: optional one-line "tk active" routing beacon (opt-in via
+    // TK_HOOK_BEACON). Present only when the operator asked for it, so the default
+    // wire is byte-identical and the transparent-rewrite contract is unchanged.
+    additionalContext?: string;
   };
 };
 
@@ -78,6 +83,7 @@ export function decide(input: unknown): ClaudeHookOutput | null {
   });
   if (r.decision !== "rewrite" || !r.rewritten) return null;
 
+  const beacon = rewriteBeacon(r.rewritten);
   return {
     hookSpecificOutput: {
       hookEventName: "PreToolUse",
@@ -89,6 +95,8 @@ export function decide(input: unknown): ClaudeHookOutput | null {
       // fields the agent set (run_in_background, timeout, description), silently
       // changing how the rewritten command runs.
       updatedInput: { ...payload.tool_input, command: r.rewritten },
+      // Beacon only when opted in; spread keeps the key absent otherwise.
+      ...(beacon !== undefined ? { additionalContext: beacon } : {}),
     },
   };
 }

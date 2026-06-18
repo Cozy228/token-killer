@@ -132,7 +132,14 @@ function Get-LabeledPath {
 function Start-Proc {
   param(
     [string]$File, [string[]]$PArgs, [hashtable]$Env, [string[]]$UnsetEnv,
-    [string]$Stdin, [bool]$HasStdin = $false, [int]$Tmo = -1
+    [string]$Stdin, [bool]$HasStdin = $false, [int]$Tmo = -1,
+    # -Stream tees the child's STDERR to this console LINE BY LINE as it arrives, while
+    # still buffering it for the dossier. Heavy commands (inspect/optimize) set this so
+    # a slow scan shows its live "Scanning N transcripts… / Scanned M events…" progress
+    # (TK_PROGRESS milestones) instead of a frozen console — and so a TRUE timeout still
+    # captures how far the scan reached. Off by default: the perf-measurement calls need
+    # a clean console and precise timing, so they keep the silent buffered path.
+    [switch]$Stream
   )
   if ($Tmo -lt 0) { $Tmo = $script:TimeoutSec }
   $psi = [System.Diagnostics.ProcessStartInfo]::new()
@@ -172,26 +179,56 @@ function Start-Proc {
   }
   if ($HasStdin) { $p.StandardInput.Write($Stdin); $p.StandardInput.Close() }
   $op = $p.StandardOutput.ReadToEndAsync()
-  $ep = $p.StandardError.ReadToEndAsync()
+  # STDERR: stream-and-buffer when -Stream, else the silent buffered read. The streamed
+  # path uses an ErrorDataReceived event whose handler appends to a StringBuilder passed
+  # as -MessageData AND echoes the line to this console, so progress is visible live.
+  $errSb = $null; $errReg = $null; $ep = $null
+  if ($Stream) {
+    $errSb = [System.Text.StringBuilder]::new()
+    $errReg = Register-ObjectEvent -InputObject $p -EventName ErrorDataReceived -MessageData $errSb -Action {
+      if ($null -ne $EventArgs.Data) {
+        [void]$Event.MessageData.AppendLine($EventArgs.Data)
+        [Console]::Error.WriteLine($EventArgs.Data)
+      }
+    }
+    $p.BeginErrorReadLine()
+  }
+  else {
+    $ep = $p.StandardError.ReadToEndAsync()
+  }
   if (-not $p.WaitForExit($Tmo * 1000)) {
     try { $p.Kill($true) } catch {}
+    if ($errReg) { try { Unregister-Event -SourceIdentifier $errReg.Name -ErrorAction SilentlyContinue } catch {} }
     $sw.Stop()
-    $res = [PSCustomObject]@{ ExitCode = 124; Stdout = ""; Stderr = "TIMEOUT ${Tmo}s"; AllText = "TIMEOUT ${Tmo}s"; Ms = $sw.Elapsed.TotalMilliseconds; TimedOut = $true; File = $File; Argv = $PArgs }
+    # On a streamed timeout the buffer holds the progress milestones reached before the
+    # kill — keep them in the dossier (how far it got), prefixed by the TIMEOUT marker.
+    $partial = if ($errSb) { $errSb.ToString() } else { "" }
+    $stderr = if ($partial) { "TIMEOUT ${Tmo}s`n$partial" } else { "TIMEOUT ${Tmo}s" }
+    $res = [PSCustomObject]@{ ExitCode = 124; Stdout = ""; Stderr = $stderr; AllText = $stderr; Ms = $sw.Elapsed.TotalMilliseconds; TimedOut = $true; File = $File; Argv = $PArgs }
     $script:LastResult = $res
     return $res
   }
+  # Child exited within the ceiling: drain the async readers, then stop the live tee.
+  $p.WaitForExit()
   $sw.Stop()
   $out = $op.GetAwaiter().GetResult()
-  $err = $ep.GetAwaiter().GetResult()
+  if ($Stream) {
+    Start-Sleep -Milliseconds 50   # let the last ErrorDataReceived events flush
+    if ($errReg) { try { Unregister-Event -SourceIdentifier $errReg.Name -ErrorAction SilentlyContinue } catch {} }
+    $err = $errSb.ToString()
+  }
+  else {
+    $err = $ep.GetAwaiter().GetResult()
+  }
   $res = [PSCustomObject]@{ ExitCode = $p.ExitCode; Stdout = $out; Stderr = $err; AllText = "$out$err"; Ms = $sw.Elapsed.TotalMilliseconds; TimedOut = $false; File = $File; Argv = $PArgs }
   $script:LastResult = $res
   $res
 }
 # Invoke tk. Redirected stdout = non-TTY, so the compress path engages naturally.
 function Invoke-Tk {
-  param([string[]]$TkArgs, [hashtable]$Env, [string[]]$UnsetEnv, [string]$Stdin, [int]$Tmo = -1)
+  param([string[]]$TkArgs, [hashtable]$Env, [string[]]$UnsetEnv, [string]$Stdin, [int]$Tmo = -1, [switch]$Stream)
   $hasStdin = $PSBoundParameters.ContainsKey('Stdin')
-  Start-Proc -File $script:TkBin -PArgs ($script:TkPre + $TkArgs) -Env $Env -UnsetEnv $UnsetEnv -Stdin $Stdin -HasStdin $hasStdin -Tmo $Tmo
+  Start-Proc -File $script:TkBin -PArgs ($script:TkPre + $TkArgs) -Env $Env -UnsetEnv $UnsetEnv -Stdin $Stdin -HasStdin $hasStdin -Tmo $Tmo -Stream:$Stream
 }
 function Get-Percentile { param([double[]]$V, [double]$P)
   if (-not $V -or $V.Count -eq 0) { return 0 }
@@ -336,10 +373,11 @@ try {
   # rendered, so assert the embedded data carries the project name; TK_NO_OPEN keeps the
   # browser shut. Same check for inspect --project (skips cleanly when it has no sources).
   function Test-HtmlScope {
-    param([string]$N, [string[]]$Cmd, [string]$ProjName, [int]$Tmo = -1)
+    param([string]$N, [string[]]$Cmd, [string]$ProjName, [int]$Tmo = -1, [switch]$Stream)
     # TK_PROGRESS is harmless for the light `gain` path and lets the heavy `inspect
-    # --project` path stream progress; -Tmo lets the caller grant the heavy ceiling.
-    $r = Invoke-Tk $Cmd -Env @{ TK_NO_OPEN = "1"; TK_PROGRESS = "1" } -Tmo $Tmo
+    # --project` path stream progress; -Tmo lets the caller grant the heavy ceiling;
+    # -Stream tees that progress to the console live (heavy inspect only).
+    $r = Invoke-Tk $Cmd -Env @{ TK_NO_OPEN = "1"; TK_PROGRESS = "1" } -Tmo $Tmo -Stream:$Stream
     $htmlPath = Get-LabeledPath $r.AllText 'HTML report:'
     if ($htmlPath -and (Test-Path -LiteralPath $htmlPath)) {
       $body = Get-Content -LiteralPath $htmlPath -Raw
@@ -351,51 +389,106 @@ try {
   }
   $projName = Split-Path -Leaf $TargetRepo
   Test-HtmlScope "gain HTML names the project (not 'this project')" @("gain") $projName
-  Test-HtmlScope "inspect --project HTML names the project" @("inspect", "--project") $projName $script:HeavyTimeoutSec
 
-  Section "Functional — inspect (options folded into few runs — inspect is expensive)"
-  # inspect is the heaviest command (scans every host's transcripts), so we DON'T run
-  # one invocation per flag. Options that compose are folded into a single "kitchen
-  # sink" run; parse-only flags ride the cheap copilot-cli path (usually no sources →
-  # fast exit 2). exit 2 = "no analyzable source here" (cli.ts) — an empty box, NOT a
-  # defect (Info, not Fail); exit 1 is a real error -> Fail.
+  Section "Functional — inspect (one cold scan warms a cross-run cache; the rest reuse it)"
+  # inspect is the heaviest command (it scans every host's transcripts). It now caches
+  # each file's extracted contribution under ~/.token-killer/inspect-cache, keyed by
+  # (path,mtime,size) — so the FIRST scan pays the full parse, and every later inspect /
+  # optimize-triggered scan / --fail-on re-parses only NEW or CHANGED files. We exploit
+  # that: run ONE cold scan to warm the cache, prove a second scan is much faster, then
+  # let all the remaining inspect/optimize checks ride the warm cache. -Stream tees the
+  # live TK_PROGRESS milestones to this console so a slow cold scan is never a frozen
+  # screen. exit 2 = "no analyzable source here" (an empty box, Info not Fail); exit 1
+  # is a real error -> Fail.
   function Test-Inspect {
-    param([string]$N, [string[]]$A, [string]$Must = "")
-    # Heavy timeout + forced progress: let a slow scan finish and reveal where it spent
-    # its time (the dossier's stderr carries the live "N/M transcripts" counter).
-    $r = Invoke-Tk (@("inspect") + $A) -Env $script:HeavyEnv -Tmo $script:HeavyTimeoutSec
+    param([string]$N, [string[]]$A, [string]$Must = "", [switch]$Stream)
+    $r = Invoke-Tk (@("inspect") + $A) -Env $script:HeavyEnv -Tmo $script:HeavyTimeoutSec -Stream:$Stream
     if ($r.TimedOut) { Fail "func" $N "still scanning at ${script:HeavyTimeoutSec}s ceiling — NOT a crash; see dossier stderr for how far it reached (file-count vs single huge file)" $r.Ms }
     elseif ($r.ExitCode -eq 2) { Info "func" $N "no analyzable sources here (exit 2; populated host would run it)" $r.Ms }
-    elseif ($r.ExitCode -eq 0 -and ($Must -eq "" -or $r.AllText -match [regex]::Escape($Must))) { Pass "func" $N "" $r.Ms }
-    else { Fail "func" $N "exit=$($r.ExitCode)" $r.Ms }
+    elseif ($r.ExitCode -ne 0) { Fail "func" $N "exit=$($r.ExitCode)" $r.Ms }
+    elseif ($Must -eq "" -or $r.AllText -match [regex]::Escape($Must)) { Pass "func" $N "" $r.Ms }
+    # Clean exit, but the asserted substring is absent. This is an assertion gap, NOT a
+    # crash — reporting "exit=0" here reads as a command failure and contradicts any
+    # artifact-based PASS for the same run. Say what actually went wrong instead.
+    else { Fail "func" $N "exit=0 but expected output '$Must' not found" $r.Ms }
     return $r
   }
-  # 1) canonical machine render (default scope, default = scans all hosts).
-  Test-Inspect "inspect --json" @("--json") '"schemaVersion"' | Out-Null
-  # 2) kitchen-sink: every composable scope/advice/render flag in ONE scan, and
-  #    --write-advice so its artifacts are verified in the same run.
+
+  # 0) COLD warm-up: clear the scan cache, then run the canonical machine render so this
+  #    invocation pays the full parse and populates the cache. Streamed so its progress
+  #    is visible live. This is the only scan expected to be slow on a populated box.
+  $cacheDir = Join-Path (Join-Path $HOME ".token-killer") "inspect-cache"
+  if (Test-Path -LiteralPath $cacheDir) { Remove-Item -LiteralPath $cacheDir -Recurse -Force -ErrorAction SilentlyContinue }
+  $cold = Test-Inspect "inspect --json (cold scan, warms cache)" @("--json") '"schemaVersion"' -Stream
+  # 1) WARM re-run: identical scan, now served from the cache. On a populated box this
+  #    should be dramatically faster; assert the cache actually bites (warm < cold, with
+  #    a margin). On an empty box (exit 2, ~0 work) the times are both tiny — skip the
+  #    ratio assertion there and just record it.
+  $warm = Test-Inspect "inspect --json (warm scan, cache hit)" @("--json") '"schemaVersion"'
+  if ($cold.ExitCode -eq 0 -and $warm.ExitCode -eq 0) {
+    if ($cold.Ms -ge 500 -and $warm.Ms -lt $cold.Ms) {
+      $pct = [math]::Round((1 - $warm.Ms / $cold.Ms) * 100, 0)
+      Pass "perf" "inspect scan cache warms" ("cold {0:N0}ms -> warm {1:N0}ms ({2}% faster)" -f $cold.Ms, $warm.Ms, $pct)
+    }
+    elseif ($cold.Ms -lt 500) {
+      Info "perf" "inspect scan cache warms" ("corpus too small to time meaningfully (cold {0:N0}ms)" -f $cold.Ms)
+    }
+    else {
+      Warn "perf" "inspect scan cache warms" ("warm not faster than cold (cold {0:N0}ms, warm {1:N0}ms) — cache may not be biting" -f $cold.Ms, $warm.Ms)
+    }
+  }
+  # 1b) WINDOWED cold->warm: --since took the live (uncached) path before issue #38; it now
+  #     reuses the per-event cache. Clear, run cold (populate), run warm (slice cached
+  #     events), and assert the windowed path warms too — the previously cache-blind scan.
+  if (Test-Path -LiteralPath $cacheDir) { Remove-Item -LiteralPath $cacheDir -Recurse -Force -ErrorAction SilentlyContinue }
+  $sinceCold = Test-Inspect "inspect --since 7d --json (cold, warms event cache)" @("--since", "7d", "--json") '"schemaVersion"' -Stream
+  $sinceWarm = Test-Inspect "inspect --since 7d --json (warm, event cache hit)" @("--since", "7d", "--json") '"schemaVersion"'
+  if ($sinceCold.ExitCode -eq 0 -and $sinceWarm.ExitCode -eq 0) {
+    if ($sinceCold.Ms -ge 500 -and $sinceWarm.Ms -lt $sinceCold.Ms) {
+      $pct = [math]::Round((1 - $sinceWarm.Ms / $sinceCold.Ms) * 100, 0)
+      Pass "perf" "inspect --since event cache warms" ("cold {0:N0}ms -> warm {1:N0}ms ({2}% faster)" -f $sinceCold.Ms, $sinceWarm.Ms, $pct)
+    }
+    elseif ($sinceCold.Ms -lt 500) {
+      Info "perf" "inspect --since event cache warms" ("corpus too small to time meaningfully (cold {0:N0}ms)" -f $sinceCold.Ms)
+    }
+    else {
+      Warn "perf" "inspect --since event cache warms" ("warm not faster than cold (cold {0:N0}ms, warm {1:N0}ms) — event cache may not be biting" -f $sinceCold.Ms, $sinceWarm.Ms)
+    }
+  }
+  # 2) HTML report: default-scope (no --text/--json) MUST emit an HTML report — the
+  #    surface a real user sees. Warm now, so cheap. Asserts the file is actually written
+  #    and carries report data; TK_NO_OPEN keeps the browser shut.
+  Test-HtmlScope "inspect --project HTML names the project" @("inspect", "--project") $projName $script:HeavyTimeoutSec -Stream
+  # 3) kitchen-sink: every composable scope/advice/render flag in ONE run, plus
+  #    --write-advice so its artifacts are verified here. NOTE: --since now reuses the
+  #    cross-run per-EVENT cache (issue #38) — the windowed scan slices a cached event
+  #    stream instead of re-parsing raw JSON — so on a warm cache this no longer pays the
+  #    full parse. (A cold/warm --since timing pair is asserted just above.)
   $ksFlags = @("--project", "--user", "--since", "7d", "--advice", "--min-confidence", "0.5",
     "--min-occurrences", "2", "--surface", "instructions", "--write-advice", "--text")
-  $r = Test-Inspect "inspect (scope+advice+surface+write-advice, one run)" $ksFlags "Token Killer Inspect"
+  # --write-advice intentionally suppresses the report stream (src/inspect/cli.ts), so the
+  # "Token Killer Inspect" report header never prints under this combo — assert the actual
+  # --write-advice contract instead. The dedicated artifact check below validates the files.
+  $r = Test-Inspect "inspect (scope+advice+surface+write-advice, one run)" $ksFlags "Wrote advice artifacts:" -Stream
   if ($r.ExitCode -eq 0 -and $r.AllText -match 'Wrote advice artifacts:') {
     $adv = @($r.AllText -split "`n" | ForEach-Object { $_.Trim() } | Where-Object { $_ -match '\.(json|md)$' -and (Test-Path -LiteralPath $_) })
     if ($adv.Count -gt 0) { Pass "func" "inspect --write-advice writes artifacts" "$($adv.Count) file(s)" $r.Ms; $adv | ForEach-Object { Remove-Item -LiteralPath $_ -Force -ErrorAction SilentlyContinue } }
     else { Warn "func" "inspect --write-advice" "claimed write but no artifact file found" $r.Ms }
   }
-  # 3) --input-type + --session parse path on the cheap (copilot-cli is usually empty).
+  # 4) --input-type + --session parse path on the cheap (copilot-cli is usually empty).
   Test-Inspect "inspect --input-type copilot-cli --session <id>" @("--input-type", "copilot-cli", "--session", "dogfood-no-such-session", "--text") | Out-Null
-  # 4) --fail-on is a CI gate: nonzero is by-design, not a failure. Record the exit code.
+  # 5) --fail-on is a CI gate: nonzero is by-design, not a failure. Warm (cache hit).
   $r = Invoke-Tk @("inspect", "--fail-on", "error", "--text") -Env $script:HeavyEnv -Tmo $script:HeavyTimeoutSec
   Info "func" "inspect --fail-on error" "exit=$($r.ExitCode) (nonzero = findings reached threshold, by design)" $r.Ms
 
   Section "Functional — optimize (preview) / debug (+flags) + privacy scrub"
   # optimize triggers a full inspect when its bucket is absent, so it inherits the
   # scan cost — grant the heavy ceiling + progress here too.
-  $r = Invoke-Tk @("optimize", "context", "--project") -Env $script:HeavyEnv -Tmo $script:HeavyTimeoutSec
+  $r = Invoke-Tk @("optimize", "context", "--project") -Env $script:HeavyEnv -Tmo $script:HeavyTimeoutSec -Stream
   if ($r.ExitCode -eq 0 -and $r.AllText -match 'preview') { Pass "func" "optimize context --project (preview)" "" $r.Ms } elseif ($r.TimedOut) { Fail "func" "optimize context --project" "inspect-triggered scan still running at ${script:HeavyTimeoutSec}s ceiling — see dossier" $r.Ms } else { Fail "func" "optimize context --project" "exit=$($r.ExitCode)" $r.Ms }
-  $r = Invoke-Tk @("optimize", "context", "--user") -Env $script:HeavyEnv -Tmo $script:HeavyTimeoutSec
+  $r = Invoke-Tk @("optimize", "context", "--user") -Env $script:HeavyEnv -Tmo $script:HeavyTimeoutSec -Stream
   if ($r.ExitCode -eq 0) { Pass "func" "optimize context --user (preview)" "" $r.Ms } else { Warn "func" "optimize context --user" "exit=$($r.ExitCode)" $r.Ms }
-  $r = Invoke-Tk @("optimize", "context", "--project", "--surface", "instructions") -Env $script:HeavyEnv -Tmo $script:HeavyTimeoutSec
+  $r = Invoke-Tk @("optimize", "context", "--project", "--surface", "instructions") -Env $script:HeavyEnv -Tmo $script:HeavyTimeoutSec -Stream
   if ($r.ExitCode -eq 0) { Pass "func" "optimize --surface instructions (preview)" "" $r.Ms } else { Warn "func" "optimize --surface instructions" "exit=$($r.ExitCode)" $r.Ms }
   # debug bundle + privacy: the saved report must NOT leak the literal home path.
   function Test-DebugBundle {
@@ -410,7 +503,10 @@ try {
         if ($body -match [regex]::Escape($userHome)) { Warn "func" "$N scrubs home path" "leaks $userHome" } else { Pass "func" "$N scrubs home path" }
         Remove-Item -LiteralPath $dbgPath -Force -ErrorAction SilentlyContinue
       }
-    } else { Fail "func" $N "exit=$($r.ExitCode)" $r.Ms }
+    } elseif ($r.ExitCode -ne 0) { Fail "func" $N "exit=$($r.ExitCode)" $r.Ms }
+    # Clean exit but the 'debug bundle' confirmation line is absent — an assertion gap, not
+    # a crash. Don't render it as "exit=0" (reads as a command failure).
+    else { Fail "func" $N "exit=0 but no 'debug bundle' confirmation in output" $r.Ms }
   }
   Test-DebugBundle "tk debug" @()
   Test-DebugBundle "tk debug --full" @("--full")
@@ -779,7 +875,7 @@ try {
         $bkDir = $Matches[1].Trim()
         if (Test-Path -LiteralPath $bkDir) { Remove-Item -LiteralPath $bkDir -Recurse -Force -ErrorAction SilentlyContinue; Note "optimize --backup snapshot removed: $bkDir" }
       } else { Warn "roundtrip" "optimize --backup" "exit=$($r.ExitCode)" $r.Ms }
-      $r = Invoke-Tk @("optimize", "context", "--project", "--apply") -Env $script:HeavyEnv -Tmo $script:HeavyTimeoutSec
+      $r = Invoke-Tk @("optimize", "context", "--project", "--apply") -Env $script:HeavyEnv -Tmo $script:HeavyTimeoutSec -Stream
       if ($r.ExitCode -eq 0 -and $r.AllText -match 'tk optimize --apply') { Pass "roundtrip" "optimize --apply (temp repo, backs up)" "" $r.Ms } elseif ($r.TimedOut) { Fail "roundtrip" "optimize --apply" "inspect-triggered scan still running at ${script:HeavyTimeoutSec}s ceiling — see dossier" $r.Ms } else { Fail "roundtrip" "optimize --apply" "exit=$($r.ExitCode)" $r.Ms }
       $r = Invoke-Tk @("optimize", "--restore")
       if ($r.ExitCode -eq 0 -and $r.AllText -match 'restored|nothing to restore') { Pass "roundtrip" "optimize --restore reverts" "" $r.Ms } else { Warn "roundtrip" "optimize --restore" "exit=$($r.ExitCode)" $r.Ms }
@@ -838,8 +934,28 @@ try {
     if ($r.ExitCode -eq 0) { Pass "lifecycle" "restore prior install ($priorHost)" "" $r.Ms; Note "prior install host '$priorHost' restored" } else { Warn "lifecycle" "restore prior install ($priorHost)" "exit=$($r.ExitCode) — re-run: tk install --host $priorHost" $r.Ms }
   } else { Info "lifecycle" "restore prior install" "no prior real host to restore (was '$priorHost')" }
 
-  # ╔══ PHASE 10: Tier-0 routing — Copilot CLI (auto) + manual VS Code gate ══╗
+  # ╔══ PHASE 10: Tier-0 routing — health (agent-independent) + Copilot CLI E2E ══╗
   Section "Tier-0 — does the agent route through tk?"
+  # ── 10a) ROUTING HEALTH — agent-independent (issue #42). ──────────────────────
+  # The authoritative "is the command-routing hook wired correctly?" gate. It
+  # dry-runs the rewrite decision via `tk hook check` — the SAME engine the live
+  # hook uses (src/hook/rewrite.ts) — so a `rewrite:` verdict PROVES routing works
+  # without invoking the agent or spending a token of budget. This is orthogonal to
+  # agent auth/budget: it passes even when the live Copilot/VS Code call below fails
+  # for "no budget" or "not logged in". The old signal (10b) inferred firing from a
+  # new gain row and so conflated a mis-installed hook with an agent that simply had
+  # no budget to run the wrapped command — those two are now separated.
+  $hk = Invoke-Tk @("hook", "check", "git", "status")
+  if ($hk.ExitCode -eq 0 -and $hk.AllText -match '(?m)^\s*rewrite:\s*tk\b') {
+    Pass "tier0" "routing health: hook rewrites 'git status' -> tk (agent-independent)" $hk.AllText.Trim() $hk.Ms
+  } else {
+    # A non-rewrite verdict here means the rewrite engine itself is broken/mis-built —
+    # a REAL routing defect, independent of any agent. Fail (not Warn) so it can't be
+    # dismissed as "the agent had no budget".
+    Fail "tier0" "routing health: hook rewrites 'git status' -> tk" "expected 'rewrite: tk …', got: $($hk.AllText.Trim()) (exit=$($hk.ExitCode))" $hk.Ms $hk
+  }
+
+  # ── 10b) Copilot CLI E2E — does the agent ACTUALLY route at runtime? ──────────
   $histBefore = (Invoke-Tk @("gain", "--history")).AllText
   $beforeLines = ($histBefore -split "`n").Count
   if (Test-Cmd "copilot") {
@@ -854,7 +970,22 @@ try {
     }
     Start-Sleep -Seconds 1
     $histAfter = (Invoke-Tk @("gain", "--history")).AllText
-    if (($histAfter -split "`n").Count -gt $beforeLines) { Pass "tier0" "Copilot CLI routed through tk (gain history grew)" "" $cp.Ms } else { Warn "tier0" "Copilot CLI routing" "no new gain row — hook may not have fired (auth/proxy?)" $cp.Ms -R $cp }
+    if (($histAfter -split "`n").Count -gt $beforeLines) {
+      Pass "tier0" "Copilot CLI routed through tk (gain history grew)" "" $cp.Ms
+    }
+    elseif ($cp.ExitCode -ne 0) {
+      # The AGENT call failed (exit nonzero — budget exceeded, not authed, proxy down).
+      # The wrapped command never ran, so the MISSING gain row says nothing about the
+      # hook. Routing health (10a) already proved the hook is installed correctly, so
+      # this is an agent-environment limitation, NOT a routing defect — Info, not Warn.
+      Info "tier0" "Copilot CLI E2E inconclusive (agent call failed)" "copilot exited $($cp.ExitCode) (budget/auth/proxy?) — no command ran, so no gain row; routing health proven by 10a" $cp.Ms
+    }
+    else {
+      # Agent call SUCCEEDED (exit 0) yet no gain row appeared: the command ran but did
+      # NOT go through tk. With routing health green, this points at a delivery/PATH gap
+      # at runtime (e.g. Copilot ran outside the env that carries the shim/hook).
+      Warn "tier0" "Copilot CLI ran but did not route through tk" "agent exit 0 yet no new gain row — runtime delivery/PATH gap (routing engine itself is healthy per 10a)" $cp.Ms -R $cp
+    }
   } else {
     Skip "tier0" "Copilot CLI E2E" "copilot not on PATH"
   }
@@ -977,6 +1108,15 @@ L "3. Prompt: *""Summarize what changed in the last 20 commits.""* (runs ``git l
 L "4. In the VS Code terminal: ``tk gain --history``."
 L "   - **PASS**: the command Copilot ran appears as a row with a savings %. Note whether ``tk status`` tier is **hook** or **shim**."
 L "   - **DID NOT ENGAGE**: no new row — Copilot ran outside the integrated-terminal env. A key finding: pivot to the hook tier."
+L ""
+L "**First isolate routing from the agent (issue #42).** Before blaming the hook for a"
+L "missing gain row, run ``tk hook check ""git status""`` — it dry-runs the rewrite with"
+L "no agent and no budget. ``rewrite: tk git status`` means routing is healthy, so a"
+L "missing gain row is an *agent* problem (no budget / not logged in / ran outside the"
+L "shimmed env), NOT a broken hook. The automated **tier0 / routing health** check above"
+L "asserts exactly this. (Opt-in: set ``TK_HOOK_BEACON=1`` to have the live hook inject a"
+L "one-line ``tk active`` beacon into the transcript on each rewrite for positive"
+L "confirmation; default-off keeps the wire byte-identical.)"
 L ""
 L "_Generated by scripts/windows-dogfood.ps1_"
 

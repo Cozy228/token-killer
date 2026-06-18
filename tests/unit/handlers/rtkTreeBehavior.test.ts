@@ -120,11 +120,12 @@ describe("RTK tree behavior", () => {
 
     expectRtkParity(result, {
       critical: ["├── src", "│   ├── main.rs", "│   └── lib.rs", "└── tests", "    └── test.rs"],
-      // Only the "N directories, M files" summary is removed; H17 disclosure appended.
+      // Only the "N directories, M files" summary is removed.
       forbidden: [/directories,/, /\d+ files?$/m],
     });
-    // H17 disclosure line is present when noise dirs were filtered.
-    expect(result.output).toContain("tool dirs");
+    // Issue #43: this fixture is a tiny tree (< DISCLOSURE_MIN_RAW_CHARS), so the
+    // H17 disclosure is suppressed — it would otherwise dominate the byte budget.
+    expect(result.output).not.toContain("tool dirs");
   });
 
   // tk divergence G3: filter_tree_output must PRESERVE tree's native
@@ -179,19 +180,32 @@ describe("RTK tree behavior", () => {
   });
 });
 
+// A tree whose raw stdout exceeds DISCLOSURE_MIN_RAW_CHARS (200), so the H17
+// disclosure is large enough to matter and is shown. The summary line is appended
+// by the caller where a stripped-summary assertion is needed.
+function largeTree(): string {
+  const entries = Array.from(
+    { length: 30 },
+    (_, i) => `│   ├── module_${String(i).padStart(2, "0")}.ts`,
+  ).join("\n");
+  return `.\n├── src\n${entries}\n└── README.md\n`;
+}
+
 // Regression tests for audit findings.
 describe("tree audit regressions", () => {
   // H17: when tree's -I filter was injected (no -a / user -I), a disclosure line
   // must appear so the agent knows tool dirs like dist/build/coverage may be hidden.
-  test("H17: disclosure line is present when noise dirs were filtered", async () => {
+  // Issue #43: only on trees large enough that a hidden tool dir actually matters.
+  test("H17: disclosure line is present when noise dirs were filtered (large tree)", async () => {
     const result = await filterRtkOutput(
       ["tree", "."],
-      ".\n├── src\n│   └── main.ts\n\n2 directories, 1 file\n",
+      `${largeTree()}\n2 directories, 31 files\n`,
     );
 
     // Structure is preserved.
-    expect(result.output).toContain("└── main.ts");
-    // Disclosure line is appended.
+    expect(result.output).toContain("└── README.md");
+    expect(result.output).toContain("module_00.ts");
+    // Disclosure line is present.
     expect(result.output).toContain("tool dirs");
     expect(result.output).toContain("use -a");
   });
@@ -199,7 +213,7 @@ describe("tree audit regressions", () => {
   test("H17: no disclosure line when user passes -a (show all)", async () => {
     const result = await filterRtkOutput(
       ["tree", "-a", "."],
-      ".\n├── src\n│   └── main.ts\n\n2 directories, 1 file\n",
+      `${largeTree()}\n2 directories, 31 files\n`,
     );
 
     expect(result.output).not.toContain("tool dirs");
@@ -208,10 +222,58 @@ describe("tree audit regressions", () => {
   test("H17: no disclosure line when user passes their own -I pattern", async () => {
     const result = await filterRtkOutput(
       ["tree", "-I", "node_modules", "."],
-      ".\n├── src\n│   └── main.ts\n\n2 directories, 1 file\n",
+      `${largeTree()}\n2 directories, 31 files\n`,
     );
 
     expect(result.output).not.toContain("tool dirs");
+  });
+
+  // Issue #43: on a small tree the disclosure banner is suppressed so it cannot
+  // inflate the output past the raw input. The disclosure is worth less than its
+  // ~70-char byte cost on a 3-line tree.
+  describe("issue #43: small-tree disclosure suppression", () => {
+    const smallTree = ".\n├── src\n│   └── main.ts\n\n2 directories, 1 file\n";
+
+    test("no disclosure banner on a small filtered tree", async () => {
+      const result = await filterRtkOutput(["tree", "."], smallTree);
+
+      expect(result.output).toContain("└── main.ts");
+      // The banner is suppressed below the threshold.
+      expect(result.output).not.toContain("tool dirs");
+    });
+
+    test("output is not larger than raw input solely due to the banner", async () => {
+      const result = await filterRtkOutput(["tree", "."], smallTree);
+
+      // The shipped output must never exceed the raw input on a small tree — the
+      // summary line is stripped and no banner is added.
+      expect(result.output.length).toBeLessThanOrEqual(smallTree.length);
+      expect(result.outputChars).toBeLessThanOrEqual(result.rawChars);
+    });
+
+    test("savings never goes negative purely from the banner", async () => {
+      const result = await filterRtkOutput(["tree", "."], smallTree);
+
+      expect(result.savedTokens).toBeGreaterThanOrEqual(0);
+      expect(result.savingsPct).toBeGreaterThanOrEqual(0);
+      // Stripping the summary line is a real (non-negative) win, not a loss.
+      expect(result.outputChars).toBeLessThan(result.rawChars);
+    });
+
+    test("a large tree shows the banner without it dominating the byte budget", async () => {
+      const raw = `${largeTree()}\n2 directories, 31 files\n`;
+      const result = await filterRtkOutput(["tree", "."], raw);
+
+      // The banner IS shown (AC2): hidden tool dirs matter on a tree this size, and
+      // the compacted form shipped (not reverted to raw by the inflation guard).
+      expect(result.output).toContain("tool dirs");
+      // The banner overhead is a small fraction of a large tree, never dominating
+      // it the way it would a 3-line tree (issue #43 root cause).
+      expect(result.outputChars - result.rawChars).toBeLessThan(80);
+      // Savings accounting stays non-negative.
+      expect(result.savedTokens).toBeGreaterThanOrEqual(0);
+      expect(result.savingsPct).toBeGreaterThanOrEqual(0);
+    });
   });
 });
 

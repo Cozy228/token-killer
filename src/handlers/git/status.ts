@@ -1,3 +1,6 @@
+import { existsSync, readFileSync, statSync } from "node:fs";
+import { dirname, isAbsolute, join, resolve } from "node:path";
+
 import { executeCommand } from "../../executor.js";
 import type { CommandHandler, ParsedCommand, RawResult, TkOptions } from "../../types.js";
 import { makeFilteredResult, rawText } from "../base.js";
@@ -146,6 +149,96 @@ export function extractDetachedHead(raw: string): string | undefined {
     .find((line) => line.startsWith("HEAD detached "));
 }
 
+// Issue #40: locate the per-worktree git directory by walking up from `cwd`,
+// purely with stat/readFile (no `git` fork) so the compression hot path stays
+// cheap. A `.git` DIRECTORY is the main worktree's git dir. A `.git` FILE marks a
+// linked worktree (`gitdir: <common>/worktrees/<name>`) — the in-progress state
+// files (MERGE_HEAD, rebase-merge/, …) and the detached HEAD live in THAT per-
+// worktree dir, not the common dir, so we follow the pointer. `GIT_DIR` (when an
+// env override is in effect) wins outright. Returns undefined when no repo is
+// found; the caller then skips probing entirely (a non-repo status already exits
+// nonzero on the porcelain spawn). Capped at 64 levels like core/dataDir.ts.
+export function resolveGitDir(cwd: string): string | undefined {
+  const override = process.env.GIT_DIR;
+  if (override) return isAbsolute(override) ? override : resolve(cwd, override);
+
+  let dir = cwd;
+  for (let depth = 0; depth < 64; depth += 1) {
+    const dotgit = join(dir, ".git");
+    let stat: ReturnType<typeof statSync> | undefined;
+    try {
+      stat = statSync(dotgit);
+    } catch {
+      stat = undefined;
+    }
+    if (stat) {
+      if (stat.isDirectory()) return dotgit;
+      // `.git` file → linked worktree pointer. Resolve it relative to the dir
+      // holding the file. An unparseable file means we can't probe; bail.
+      try {
+        const match = /gitdir:\s*(.+?)\s*$/m.exec(readFileSync(dotgit, "utf8"));
+        if (match) {
+          const target = match[1]!;
+          return isAbsolute(target) ? target : resolve(dir, target);
+        }
+      } catch {
+        // fall through to undefined
+      }
+      return undefined;
+    }
+    const parent = dirname(dir);
+    if (parent === dir) break;
+    dir = parent;
+  }
+  return undefined;
+}
+
+// Issue #40: in-progress operations git would print in the human status block
+// (rebase / merge / cherry-pick / revert / bisect / am) leave a marker file or
+// directory in the git dir. `--porcelain -b` drops that block, so RTK recovered
+// it from a SECOND full `git status` capture. These probes are a handful of
+// existsSync calls instead — they tell us *whether* an operation is in progress
+// without a spawn, so the second capture only runs when one actually is. The
+// marker→summary map mirrors detectStatusState; a present marker but no exact
+// summary still flags "an op is in progress" so the caller knows to capture.
+const STATE_MARKERS: Array<{ paths: string[]; summary?: string }> = [
+  // rebase-merge covers interactive + merge-backend rebases AND the `am` session
+  // path? No: `git am` uses rebase-apply. Both map to a rebase/am summary the
+  // second capture refines, so leave summary undefined and let extractStateHeader
+  // produce the precise phrase ("rebase in progress" vs "am session in progress").
+  { paths: ["rebase-merge", "rebase-apply"] },
+  { paths: ["MERGE_HEAD"], summary: "merge in progress" },
+  { paths: ["CHERRY_PICK_HEAD"], summary: "cherry-pick in progress" },
+  { paths: ["REVERT_HEAD"], summary: "revert in progress" },
+  { paths: ["BISECT_LOG"], summary: "bisect in progress" },
+];
+
+// True when any in-progress-operation marker is present under `gitDir`. Cheap:
+// a few existsSync calls, no spawn.
+export function hasInProgressState(gitDir: string): boolean {
+  return STATE_MARKERS.some(({ paths }) => paths.some((p) => existsSync(join(gitDir, p))));
+}
+
+// Issue #40: recover the detached-HEAD ref WITHOUT the second `git status`.
+// `--porcelain -b` collapses detached HEAD to `## HEAD (no branch)`; the human
+// capture printed `HEAD detached at <short-oid>`. When detached, the git dir's
+// `HEAD` file holds the raw object id (a plain 40/64-hex line, not `ref: ...`),
+// so we read it and abbreviate to git's default 7-char form, reconstructing the
+// same `HEAD detached at <short>` line extractDetachedHead would have returned.
+// Returns undefined if HEAD is a symref (on a branch) or unreadable, leaving the
+// porcelain `* HEAD (no branch)` fallback in place.
+export function detachedHeadFromGitDir(gitDir: string): string | undefined {
+  let head: string;
+  try {
+    head = readFileSync(join(gitDir, "HEAD"), "utf8").trim();
+  } catch {
+    return undefined;
+  }
+  if (head.startsWith("ref:")) return undefined; // on a branch, not detached
+  if (!/^[0-9a-f]{7,64}$/.test(head)) return undefined;
+  return `HEAD detached at ${head.slice(0, 7)}`;
+}
+
 // RTK: git/git.rs::filter_status_with_args — minimal filtering for explicit args:
 // drop git hints + empty lines, collapse a clean tree to its one-line summary.
 export function filterStatusWithArgs(output: string): string {
@@ -193,16 +286,50 @@ export const gitStatusHandler: CommandHandler = {
       return executeCommand(command);
     }
 
-    // RTK runs `git status --porcelain -b` for the compact formatted output and a
-    // plain `git status` (C locale, so the English state phrases parse) for the
-    // in-progress state / detached-HEAD recovery.
+    // Issue #40: RTK ran the child TWICE on every compact status — once as
+    // `git status --porcelain -b` (the formatted output) and once as a plain
+    // `git status` (C locale) captured ONLY to recover the in-progress-operation
+    // header and the detached-HEAD ref. That doubled latency on the common
+    // clean/dirty tree where neither recovery is needed (~600ms/call on AV-heavy
+    // boxes). We now spawn once on that hot path: the porcelain capture, plus a
+    // few existsSync/readFile probes under the git dir that recover detached HEAD
+    // for free and tell us *whether* an operation is in progress. The second
+    // human `git status` only runs when a `.git/` state marker is actually
+    // present — i.e. only mid rebase/merge/cherry-pick/revert/bisect/am.
     const porcelain = await executeCommand({
       ...command,
       args: ["status", "--porcelain", "-b"],
       displayCommand: "git status --porcelain -b",
     });
-    const human = await executeCommand({ ...command, args: ["status", ...args] }, { LC_ALL: "C" });
-    return { ...porcelain, auxStdout: human.stdout };
+
+    if (porcelain.exitCode !== 0) {
+      // Not a repo / index.lock / dubious ownership — the filter surfaces the
+      // error verbatim; no point probing or capturing further.
+      return porcelain;
+    }
+
+    const gitDir = resolveGitDir(process.cwd());
+
+    // Only fall back to the second full capture when the git dir shows an
+    // operation in progress; that's the sole thing the porcelain output + probes
+    // can't summarise on their own.
+    if (gitDir && hasInProgressState(gitDir)) {
+      const human = await executeCommand(
+        { ...command, args: ["status", ...args] },
+        { LC_ALL: "C" },
+      );
+      return { ...porcelain, auxStdout: human.stdout };
+    }
+
+    // Fast path — one spawn. Recover the detached-HEAD ref from the git dir's
+    // HEAD file (filesystem, no spawn) when porcelain collapsed it to
+    // `## HEAD (no branch)`, and synthesise a minimal auxStdout carrying just
+    // that line so the existing filter logic (extractDetachedHead) stays unchanged.
+    const isDetached = porcelain.stdout
+      .split(/\r?\n/)
+      .some((l) => l.trim() === "## HEAD (no branch)");
+    const detached = gitDir && isDetached ? detachedHeadFromGitDir(gitDir) : undefined;
+    return detached ? { ...porcelain, auxStdout: detached } : porcelain;
   },
 
   async filter(raw: RawResult, command, options: TkOptions) {
@@ -230,21 +357,37 @@ export const gitStatusHandler: CommandHandler = {
       return makeFilteredResult(this, raw, `${raw.stdout}${raw.stderr}`, options);
     }
 
-    const human = raw.auxStdout ?? "";
-    const detached = extractDetachedHead(human);
+    const aux = raw.auxStdout ?? "";
+    const detached = extractDetachedHead(aux);
     let formatted = formatStatusOutput(raw.stdout, detached);
-    const state = extractStateHeader(human);
+    const state = extractStateHeader(aux);
     if (state) {
       formatted = `${state}\n${formatted}`;
     }
 
-    // RTK: git.rs::run_status tracks savings against the plain `git status`
-    // capture (raw_output), not the compact `--porcelain -b` stdout. When the
-    // plain capture is available (real execution), use it as the savings/raw
-    // baseline so reported savings reflect human→compact, matching RTK. In the
-    // formatter-only test path auxStdout is absent, so fall back to `raw`.
-    const baseline: RawResult = human
-      ? { ...raw, stdout: human, stderr: "", auxStdout: undefined }
+    // Issue #40 savings baseline — deliberate RTK-parity trade-off.
+    //
+    // RTK tracked savings against the plain `git status` capture (raw_output),
+    // not the compact `--porcelain -b` stdout, so its reported numbers reflected
+    // human→compact. We now AVOID that second spawn on the common path, so a full
+    // human capture only exists when an operation is in progress (the in-progress
+    // fallback ran). In that case `auxStdout` is the full human status and we use
+    // it as the baseline, preserving the exact RTK savings number. On the fast
+    // path `auxStdout` is either absent or holds ONLY the synthesised
+    // `HEAD detached at …` recovery line — never a full capture — so we fall back
+    // to the porcelain stdout as the baseline. The reported savings on the common
+    // path are therefore porcelain→formatted (smaller, since porcelain is already
+    // terse) rather than human→formatted; this is an intentional accuracy↔latency
+    // trade documented in the PR, not a regression in what's compressed.
+    // The fast-path detached recovery line is a SINGLE `HEAD detached at …`
+    // line; a real human capture is always multi-line (the status block), so a
+    // one-line `HEAD detached` aux can only be our synthesised marker.
+    const auxTrimmed = aux.trim();
+    const isSynthesizedDetachedLine =
+      auxTrimmed !== "" && !auxTrimmed.includes("\n") && auxTrimmed.startsWith("HEAD detached ");
+    const fullHuman = aux !== "" && !isSynthesizedDetachedLine ? aux : "";
+    const baseline: RawResult = fullHuman
+      ? { ...raw, stdout: fullHuman, stderr: "", auxStdout: undefined }
       : raw;
 
     return makeFilteredResult(this, baseline, `${formatted}\n`, options);

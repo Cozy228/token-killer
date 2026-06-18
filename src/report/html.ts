@@ -6,11 +6,10 @@
 // one-line explanation — precise and concrete, not dumbed down. The honesty model
 // still holds — measured savings lead; the dollar figure and ③ are labelled estimates.
 //
-// Visual language ported from the improve-codebase-architecture review: serif
-// display headings, an uppercase eyebrow label, white panel cards on a warm
-// stone canvas, a deep slate-gradient hero, and an indigo/emerald/amber/rose
-// palette. All inline — no Tailwind, no CDN, no fonts fetched — so the file stays
-// openable offline straight from file://.
+// Visual language: serif display headings, white panel cards on a cool neutral
+// canvas, a solid deep-slate hero, and an indigo/emerald/amber/rose palette —
+// flat fills throughout, no decorative gradients or grain. All inline — no
+// Tailwind, no CDN, no fonts fetched — so the file stays openable offline from file://.
 
 export type ReportKind = "gain" | "inspect";
 
@@ -33,7 +32,7 @@ function embed(data: unknown): string {
 
 const STYLE = `
 :root {
-  --bg: #fafaf9;          /* stone-50 canvas */
+  --bg: #f8fafc;          /* slate-50: a cool neutral canvas, not warm cream */
   --surface: #ffffff;
   --ink: #0f172a;         /* slate-900 */
   --slate700: #334155;
@@ -60,7 +59,9 @@ const STYLE = `
   --hi: #e11d48;
   --mid: #b45309;
   --lo: #4f46e5;
-  --deep: linear-gradient(135deg, #0f172a, #1e293b);
+  /* Dark + high-contrast so the hero dominates — a single solid deep slate, no
+     gradient. Contrast does the work; the white number carries it. */
+  --deep: #0f172a;
   --mono: ui-monospace, "SF Mono", "JetBrains Mono", Menlo, Consolas, monospace;
   --sans: system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
   --serif: ui-serif, Georgia, "Times New Roman", serif;
@@ -86,6 +87,7 @@ body { margin: 0; background: var(--bg); color: var(--ink); font-family: var(--s
 
 /* Gain hero */
 .hero { border-radius: 16px; padding: 38px 36px 30px; }
+.hero.deep { box-shadow: inset 0 1px 0 rgba(255,255,255,0.06); }
 .hero.deep .kick { color: var(--emerald-300); }
 .hero .big { font-family: var(--mono); font-size: clamp(2.6rem, 7vw, 3.9rem); font-weight: 700; line-height: 1.05; letter-spacing: -0.03em; margin: 12px 0 0; color: #fff; }
 .hero .big small { font-family: var(--sans); font-size: 1rem; font-weight: 500; color: var(--slate300); margin-left: 12px; letter-spacing: 0; }
@@ -179,18 +181,20 @@ tr:last-child td { border-bottom: none; }
 /* Narrative eyebrow (rtk "01 — the problem" parity, tk palette) */
 .eyebrow { font-size: 0.62rem; letter-spacing: 0.14em; text-transform: uppercase; font-weight: 700; color: var(--indigo); margin-bottom: 6px; }
 
-/* "The problem" — three honest, data-driven cards */
-.probgrid { display: grid; gap: 16px; grid-template-columns: repeat(3, 1fr); margin-top: 18px; }
-.probcard { background: var(--surface); border: 1px solid var(--border); border-radius: 14px; box-shadow: 0 1px 2px rgba(15,23,42,0.04); padding: 22px 22px 18px; }
-.probcard.est { background: var(--amber-soft); border-color: var(--amber-line); }
-.probcard .ph { font-family: var(--serif); font-size: 1.04rem; font-weight: 600; margin: 0 0 6px; }
-.probcard.est .ph { color: var(--amber-deep); }
-.probcard .pp { color: var(--slate500); font-size: 0.85rem; line-height: 1.6; margin: 0; }
-.probcard.est .pp { color: var(--amber-ink); }
-.probcard .pp b { color: var(--ink); font-weight: 600; }
-.probcard.est .pp b { color: var(--amber-deep); }
-.probmetric { display: inline-block; margin-top: 14px; padding: 4px 11px; border-radius: 7px; font-family: var(--mono); font-size: 0.74rem; font-weight: 600; background: var(--indigo-soft); color: var(--indigo-ink); border-left: 3px solid var(--indigo); }
-.probcard.est .probmetric { background: #fff7ed; color: var(--amber-deep); border-left-color: var(--amber-ink); }
+/* "The problem" — a connected stat ledger; every number is measured from the
+   user's own runs (the estimate tile carries the amber treatment). */
+.problem { display: grid; grid-template-columns: repeat(2, 1fr); margin-top: 20px; background: var(--surface); border: 1px solid var(--border); border-radius: 16px; box-shadow: 0 1px 2px rgba(15,23,42,0.04); overflow: hidden; }
+.diff-lbl { margin-top: 6px; }
+.pstat { padding: 26px 26px 24px; border-right: 1px solid var(--border); }
+.pstat:last-child { border-right: none; }
+.pstat.est { background: var(--amber-soft); }
+.pstat .ptag { font-size: 0.6rem; letter-spacing: 0.12em; text-transform: uppercase; font-weight: 700; color: var(--indigo); margin: 0 0 16px; }
+.pstat.est .ptag { color: var(--amber-ink); }
+.pnum { font-family: var(--mono); font-size: 2.1rem; font-weight: 700; letter-spacing: -0.02em; color: var(--ink); line-height: 1; }
+.pstat.est .pnum { color: var(--amber-ink); }
+.pnum .punit { font-family: var(--sans); font-size: 0.76rem; font-weight: 600; color: var(--slate500); margin-left: 7px; letter-spacing: 0; }
+.plabel { color: var(--slate600); font-size: 0.86rem; line-height: 1.55; margin: 14px 0 0; }
+.pstat.est .plabel { color: var(--amber-ink); }
 
 /* "See the difference" — before/after bars */
 .diffbox { background: var(--surface); border: 1px solid var(--border); border-radius: 14px; box-shadow: 0 1px 2px rgba(15,23,42,0.04); padding: 24px 26px; }
@@ -198,27 +202,34 @@ tr:last-child td { border-bottom: none; }
 .diffrow .dl { color: var(--slate600); font-size: 0.86rem; }
 .diffrow .dv { font-family: var(--mono); font-weight: 600; font-size: 0.9rem; white-space: nowrap; }
 .diffbar { height: 22px; border-radius: 6px; min-width: 4px; }
-.diffbar.raw { background: linear-gradient(90deg, #fda4af, var(--rose)); }
-.diffbar.sent { background: linear-gradient(90deg, var(--emerald-300), var(--emerald)); }
+.diffbar.raw { background: var(--rose); }
+.diffbar.sent { background: var(--emerald); }
 .diffrow .dv.cut { color: var(--emerald-ink); }
 
 /* "Real-world savings" — daily/weekly/monthly trend */
 .trendtabs { display: inline-flex; gap: 4px; background: var(--slate100); border-radius: 10px; padding: 4px; margin: 4px 0 16px; }
 .trendbtn { font: inherit; font-size: 0.8rem; font-weight: 600; cursor: pointer; border: none; background: transparent; color: var(--slate600); padding: 6px 14px; border-radius: 7px; transition: background 0.15s, color 0.15s; }
 .trendbtn.on { background: var(--surface); color: var(--indigo-ink); box-shadow: 0 1px 2px rgba(15,23,42,0.08); }
-.chart { display: flex; align-items: flex-end; gap: 3px; height: 120px; padding: 14px 16px 0; background: var(--surface); border: 1px solid var(--border); border-radius: 14px 14px 0 0; border-bottom: none; overflow: hidden; }
-.chart .col { flex: 1 1 0; min-width: 2px; background: var(--emerald-100); border-radius: 3px 3px 0 0; position: relative; transition: background 0.15s; }
-.chart .col:hover { background: var(--emerald); }
-.chart .col > span { position: absolute; bottom: 100%; left: 50%; transform: translateX(-50%); white-space: nowrap; font-family: var(--mono); font-size: 0.66rem; color: var(--slate600); background: var(--surface); border: 1px solid var(--border); border-radius: 5px; padding: 2px 6px; opacity: 0; pointer-events: none; transition: opacity 0.12s; margin-bottom: 4px; z-index: 2; }
+.chartwrap { background: var(--surface); border: 1px solid var(--border); border-radius: 14px; box-shadow: 0 1px 2px rgba(15,23,42,0.04); padding: 16px 20px 14px; }
+.chartymax { font-family: var(--mono); font-size: 0.7rem; color: var(--faint); margin: 0 0 6px; }
+.chartymax b { color: var(--slate600); font-weight: 600; }
+/* Clean baseline only — no gridline stripes. Heights + the peak caption read the scale. */
+.chart { position: relative; display: flex; align-items: flex-end; gap: 3px; height: 132px; padding-top: 20px; border-bottom: 1px solid var(--slate300); }
+.chart .col { flex: 1 1 0; min-width: 2px; align-self: flex-end; background: var(--emerald); border-radius: 3px 3px 0 0; position: relative; transition: background 0.15s; }
+.chart .col.zero { background: var(--slate100); min-height: 3px; }
+.chart .col:hover { background: var(--emerald-ink); }
+.chart .col > span { position: absolute; bottom: 100%; left: 50%; transform: translateX(-50%); white-space: nowrap; font-family: var(--mono); font-size: 0.66rem; color: var(--slate700); background: var(--surface); border: 1px solid var(--border); border-radius: 6px; padding: 3px 7px; opacity: 0; pointer-events: none; transition: opacity 0.12s; margin-bottom: 6px; z-index: 3; box-shadow: 0 4px 12px rgba(15,23,42,0.10); }
 .chart .col:hover > span { opacity: 1; }
-.trendpanel .panel { border-radius: 0 0 14px 14px; }
+.chartx { display: flex; justify-content: space-between; font-family: var(--mono); font-size: 0.68rem; color: var(--faint); margin-top: 8px; }
+.trendpanel { margin-top: 12px; }
+.trendpanel .panel { border-radius: 14px; }
 .trendempty { color: var(--faint); font-style: italic; font-size: 0.9rem; padding: 8px 0; }
 
 @media (prefers-reduced-motion: no-preference) {
   .hero, .summary, .card, .item, .section, .panel { animation: rise 0.4s cubic-bezier(0.22,1,0.36,1) both; }
 }
 @keyframes rise { from { opacity: 0; transform: translateY(7px); } to { opacity: 1; transform: none; } }
-@media (max-width: 640px) { .cards, .probgrid { grid-template-columns: 1fr; } .wrap { padding: 40px 18px 72px; } .summary .pri { margin-left: 0; width: 100%; } .pagehead h1 { font-size: 2rem; } .diffrow { grid-template-columns: 110px 1fr; } .diffrow .dv { grid-column: 2; text-align: right; } }
+@media (max-width: 640px) { .cards, .problem { grid-template-columns: 1fr; } .problem .pstat { border-right: none; border-bottom: 1px solid var(--border); } .problem .pstat:last-child { border-bottom: none; } .wrap { padding: 40px 18px 72px; } .summary .pri { margin-left: 0; width: 100%; } .pagehead h1 { font-size: 2rem; } .diffrow { grid-template-columns: 110px 1fr; } .diffrow .dv { grid-column: 2; text-align: right; } }
 `;
 
 const SCRIPT = String.raw`
@@ -299,49 +310,43 @@ function render() {
   });
 }
 
-// "The problem" — rtk's 3-card framing, but every number is the user's own
-// measured data (never a fabricated brag stat). Card 3 is the existing estimate,
-// kept under the amber est. treatment and never summed into measured tokens.
+// "The problem" — one section that both SHOWS the waste (before/after bars: raw
+// output vs what actually reached the model) and frames its cost (two stat tiles:
+// the noise share stripped, and the estimated spend avoided). Folds in the old
+// standalone "See the difference" bars so the raw→sent figures appear once here,
+// not duplicated across two adjacent sections. Every number is measured from the
+// user's own runs; the spend tile is the amber estimate, never summed into tokens.
 function renderProblem(m, L) {
   const raw = m.raw_tokens || 0;
-  const fills = raw / 200000; // a 200K context window
-  const fillsStr = fills >= 10 ? n(fills) : fills.toFixed(1).replace(/\.0$/, "");
+  const sent = m.output_tokens || 0;
   const usd = money(L.estimated_savings_usd);
   const credits = L.estimated_savings_ai_credits;
   const creditStr = typeof credits === "number" && isFinite(credits) ? n(credits) : null;
-  const cards = [
-    { cls: "", h: "Context pollution",
-      p: "Without Token Killer, <b>" + n(raw) + "</b> tokens of raw command output would have landed in the model's context window — crowding out room for actual reasoning.",
-      metric: "raw &rarr; context: " + cmp(raw) + " tokens" },
-    { cls: "", h: "Sessions cut short",
-      p: "That noise alone fills a 200K context window <b>" + fillsStr + "&times;</b> over. Every fill is a session that overflows and restarts sooner than it should.",
-      metric: "context fills: " + fillsStr + "&times;" },
-    { cls: "est", h: "Cost that adds up",
-      p: "Sending that raw output to the model would have cost about <b>" + (creditStr ? creditStr + " AI Credits" : (usd || "—")) + "</b>" + (creditStr && usd ? " (" + usd + ")" : "") + ". Token Killer trimmed <b>" + pct(m.savings_pct) + "</b> of it before it left your machine.",
-      metric: "est. avoided: " + (usd || "—") },
+  const price = L.price_per_mtok || 3;
+  const w = (v) => (raw > 0 ? Math.max(2, Math.round((v / raw) * 100)) : 2);
+  const bars = raw > 0
+    ? '<p class="eyebrow diff-lbl">See the difference</p>' +
+      '<div class="diffbox">' +
+      '<div class="diffrow"><span class="dl">Output without tk</span><span class="diffbar raw" style="width:' + w(raw) + '%"></span><span class="dv">' + cmp(raw) + '</span></div>' +
+      '<div class="diffrow"><span class="dl">Sent to the model</span><span class="diffbar sent" style="width:' + w(sent) + '%"></span><span class="dv cut">' + cmp(sent) + ' &middot; &minus;' + pct(m.savings_pct) + '</span></div>' +
+      '</div>'
+    : '';
+  const tiles = [
+    { cls: "", tag: "Redundant noise", num: pct(m.savings_pct), unit: "",
+      p: "of that raw output was boilerplate Token Killer stripped before it ever reached the model." },
+    { cls: "est", tag: "Spend avoided", num: creditStr ? creditStr : (usd || "—"),
+      unit: creditStr ? "AI Credits" : "",
+      p: "estimated model spend on that raw output" + (creditStr && usd ? " (" + usd + ")" : "") +
+        ", valued at $" + price + " / 1M tokens." },
   ];
   return '<div class="section"><p class="eyebrow">The problem</p>' +
     '<h2>What that command output was costing you</h2>' +
-    '<p class="exp">Every command your agent runs dumps output into the context window. Here is what Token Killer caught — measured from your own runs.</p>' +
-    '<div class="probgrid">' +
-    cards.map((c) => '<div class="probcard ' + c.cls + '"><h3 class="ph">' + esc(c.h) + '</h3>' +
-      '<p class="pp">' + c.p + '</p><div class="probmetric">' + c.metric + '</div></div>').join("") +
-    '</div></div>';
-}
-
-// "See the difference" — two bars scaled to the raw total: what the tool emitted
-// vs what actually reached the model.
-function renderDiff(m) {
-  const raw = m.raw_tokens || 0;
-  const sent = m.output_tokens || 0;
-  if (raw <= 0) return "";
-  const w = (v) => Math.max(2, Math.round((v / raw) * 100));
-  return '<div class="section"><p class="eyebrow">See the difference</p>' +
-    '<h2>Before and after Token Killer</h2>' +
-    '<p class="exp">The same commands, measured two ways: the raw output your tools produced, and the slimmed output that actually reached the model.</p>' +
-    '<div class="diffbox">' +
-    '<div class="diffrow"><span class="dl">Output without tk</span><span class="diffbar raw" style="width:' + w(raw) + '%"></span><span class="dv">' + cmp(raw) + '</span></div>' +
-    '<div class="diffrow"><span class="dl">Sent to the model</span><span class="diffbar sent" style="width:' + w(sent) + '%"></span><span class="dv cut">' + cmp(sent) + ' &middot; &minus;' + pct(m.savings_pct) + '</span></div>' +
+    '<p class="exp">Every command your agent runs dumps its output into the context window. Here is what that cost, and what Token Killer cut before it reached the model.</p>' +
+    bars +
+    '<div class="problem">' +
+    tiles.map((t) => '<div class="pstat ' + t.cls + '"><p class="ptag">' + esc(t.tag) + '</p>' +
+      '<div class="pnum">' + t.num + (t.unit ? '<span class="punit">' + esc(t.unit) + '</span>' : '') + '</div>' +
+      '<p class="plabel">' + esc(t.p) + '</p></div>').join("") +
     '</div></div>';
 }
 
@@ -353,13 +358,24 @@ function renderTrend(ts) {
   const anyData = ["daily", "weekly", "monthly"].some((k) =>
     sets[k].some((b) => (b.saved || 0) > 0 || (b.commands || 0) > 0));
   if (!anyData) return "";
+  // Render the WHOLE series in order — never filter out empty buckets, or the trend
+  // loses its time axis and reads as jumpy noise. Idle periods render as faint
+  // baseline ticks (.zero), so the line of activity stays continuous and honest.
   const view = (buckets) => {
-    const data = buckets.filter((b) => (b.saved || 0) > 0 || (b.commands || 0) > 0);
-    if (!data.length) return '<div class="trendempty">No activity in this window yet.</div>';
+    const data = buckets;
+    if (!data.length || !data.some((b) => (b.saved || 0) > 0)) {
+      return '<div class="trendempty">No activity in this window yet.</div>';
+    }
     const max = Math.max.apply(null, data.map((b) => b.saved || 0).concat([1]));
-    const chart = '<div class="chart">' + data.map((b) =>
-      '<div class="col" style="height:' + Math.max(2, Math.round(((b.saved || 0) / max) * 100)) + '%">' +
-      '<span>' + esc(b.key) + ' &middot; ' + cmp(b.saved) + ' saved &middot; ' + pct(b.pct) + '</span></div>').join("") + '</div>';
+    const bars = data.map((b) => {
+      const saved = b.saved || 0;
+      const h = saved <= 0 ? 0 : Math.max(3, Math.round((saved / max) * 100));
+      return '<div class="col' + (saved <= 0 ? " zero" : "") + '" style="height:' + h + '%">' +
+        '<span>' + esc(b.key) + ' &middot; ' + cmp(saved) + ' saved &middot; ' + pct(b.pct) + '</span></div>';
+    }).join("");
+    const chart = '<div class="chartwrap"><p class="chartymax">peak <b>' + cmp(max) + '</b> tokens saved</p>' +
+      '<div class="chart">' + bars + '</div>' +
+      '<div class="chartx"><span>' + esc(data[0].key) + '</span><span>' + esc(data[data.length - 1].key) + '</span></div></div>';
     const rows = data.slice(-12).reverse().map((b) =>
       '<tr><td class="num">' + esc(b.key) + '</td><td class="r num">' + cmp(b.saved) + '</td>' +
       '<td class="r num">' + pct(b.pct) + '</td><td class="r num">' + n(b.commands) + '</td></tr>').join("");
@@ -376,28 +392,8 @@ function renderTrend(ts) {
     '<div class="trendview" data-trendview="' + k + '"' + (k === first ? "" : ' style="display:none"') + '>' + view(sets[k]) + '</div>').join("");
   return '<div class="section" id="trend"><p class="eyebrow">Real-world savings</p>' +
     '<h2>Your savings over time</h2>' +
-    '<p class="exp">Daily, weekly, and monthly token savings from your own runs — the same data as <span class="num">tk gain --daily / --weekly / --monthly</span>.</p>' +
+    '<p class="exp">Daily, weekly, and monthly token savings from your own runs, the same data as <span class="num">tk gain --daily / --weekly / --monthly</span>.</p>' +
     '<div class="trendtabs">' + btns + '</div>' + panels + '</div>';
-}
-
-// Reduce a sample command to its main command — just the program name, with any
-// leading path stripped ("/usr/bin/grep" → "grep"). Drops every flag, path, search
-// pattern, and other parameter detail. The "Where the savings came from" table shows
-// these (not full invocations) so a category like "read-like"/"search-like" reads as
-// the commands it covers (e.g. "cat, head, tail"), not noisy argument detail.
-function mainCmd(s) {
-  const first = String(s == null ? "" : s).trim().split(/\s+/)[0] || "";
-  const cut = Math.max(first.lastIndexOf("/"), first.lastIndexOf("\\"));
-  return cut >= 0 ? first.slice(cut + 1) : first;
-}
-// De-duplicated list of main commands across a handler's samples (first-seen order).
-function mainCmds(samples) {
-  const seen = [];
-  for (const s of samples) {
-    const m = mainCmd(s);
-    if (m && seen.indexOf(m) === -1) seen.push(m);
-  }
-  return seen;
 }
 
 function renderGain(L) {
@@ -431,9 +427,9 @@ function renderGain(L) {
     h += '</section>';
     out.push(h);
 
-    // Narrative arc (rtk landing parity, tk-honest): the problem → the difference.
+    // Narrative arc (tk-honest): one "problem" section that shows the raw→sent
+    // difference and frames its cost — no duplicate before/after section.
     out.push(renderProblem(m, L));
-    out.push(renderDiff(m));
 
     const bh = Array.isArray(m.by_handler) ? m.by_handler.slice(0, 12) : [];
     if (bh.length) {
@@ -442,12 +438,7 @@ function renderGain(L) {
         '<p class="exp">The commands whose output Token Killer compressed the most.</p>' +
         '<div class="panel"><table><thead><tr><th>Command</th><th>Share of savings</th><th class="r">Tokens saved</th><th class="r">Reduced by</th><th class="r">Times run</th></tr></thead><tbody>' +
         bh.map((h2) =>
-          '<tr><td class="num">' + esc(h2.handler) +
-          ((() => {
-            const cmds = Array.isArray(h2.samples) ? mainCmds(h2.samples) : [];
-            return cmds.length ? '<div class="samp">' + cmds.map(esc).join(", ") + '</div>' : '';
-          })()) +
-          '</td>' +
+          '<tr><td class="num">' + esc(h2.handler) + '</td>' +
           '<td style="width:32%"><div class="hbar"><i style="width:' + Math.max(3, Math.round(((h2.saved || 0) / max) * 100)) + '%"></i></div></td>' +
           '<td class="r num">' + n(h2.saved) + '</td><td class="r num">' + pct(h2.pct) + '</td><td class="r num">' + n(h2.count) + '</td></tr>').join("") +
         '</tbody></table></div></div>');
@@ -481,7 +472,7 @@ function renderGain(L) {
     '<div class="kv"><span class="k">Huge prompts blocked</span><span class="v">' + n(g.denied_large_prompts) + '</span></div>' +
     '<div class="kv"><span class="k">Large prompts flagged</span><span class="v">' + n(g.suggested_large_prompts) + '</span></div>' +
     '<div class="est-num">≈ ' + n(g.avoided_tokens_estimate) + ' tokens</div>' +
-    '<div class="est-cap">roughly what those actions would have cost — an estimate, not measured savings</div>';
+    '<div class="est-cap">roughly what those actions would have cost (an estimate, not measured savings)</div>';
   cards.push(cardHtml("est", "Wasteful actions you avoided", "When a huge read, search, or prompt was about to run, Token Killer blocked or flagged it. This is an estimate of what they would have cost.", c3));
 
   out.push('<div class="cards">' + cards.join("") + '</div>');

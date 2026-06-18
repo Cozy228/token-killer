@@ -20,6 +20,7 @@ import { failureSourceAdapter, handleError } from "./error.js";
 import { recordHookFailure } from "../core/history.js";
 import { recordGovernance } from "../core/governance.js";
 import { recordHookError, tkDebug } from "./debug.js";
+import { rewriteBeacon } from "./beacon.js";
 
 const ALLOW: Decision = { decision: "allow" };
 
@@ -64,10 +65,15 @@ function hostFields(d: Decision): HostFields | null {
       // so emitting `{ command }` alone drops required fields (`explanation`, `goal`,
       // `mode`, …) and VS Code SILENTLY IGNORES the rewrite. Both pieces are applied
       // in toHostOutput below; here we only carry the rewritten command forward.
+      // Issue #42: optionally attach a one-line "tk active" beacon (opt-in via
+      // TK_HOOK_BEACON) so a transcript can positively confirm the hook fired,
+      // independent of any later gain row. Default-off ⇒ field omitted ⇒ wire
+      // byte-identical, so the transparent-rewrite contract is unchanged.
       return {
         permissionDecision: "allow",
         permissionDecisionReason: COPILOT_REWRITE_REASON,
         command: d.rewritten_command,
+        additionalContext: rewriteBeacon(d.rewritten_command),
       };
     case "deny":
       return { permissionDecision: "deny", permissionDecisionReason: d.reason };
