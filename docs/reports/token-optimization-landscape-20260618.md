@@ -12,7 +12,58 @@
 
 ---
 
-## TL;DR — the three things that matter most
+## TL;DR — verdict for the ENTERPRISE VS Code Copilot target
+
+> The bottom line the whole report builds to. Verdicts are for **enterprise VS Code Copilot
+> specifically** (the most locked-down host); they differ on terminal hosts (Copilot CLI,
+> Claude Code, Codex) where shim+hook+MCP are all open. Legend: ✅ tk can cover · 🟡 advisory
+> only (nudge, can't enforce) · 🔴 closed (host-owned or BYOK-off-path only).
+>
+> **Why 6 of 10 are 🔴:** enterprise VS Code Copilot exposes **no third-party access to the
+> model payload or the agent loop** (verified against official docs). So any technique that
+> needs to rewrite the request, route the model, or inject into the agent loop is structurally
+> closed here — not a tk limitation, a host ceiling.
+
+The 10 token surfaces:
+
+| # | Surface | Enterprise VS Code Copilot | Mechanism | tk today |
+|---|---|:--:|---|---|
+| 1 | Conversation history | 🔴 closed | host-native (`/compact` + auto) | — not tk's |
+| 2 | Prompt-cache economics | 🔴 closed | GitHub assembles/caches server-side | — BYOK-off-path only |
+| 3 | Output (4× price) | 🟡 advisory | brevity directive via instructions | guidance (structural diff closed) |
+| 4 | Tool / MCP schema | 🟡 advisory | advise trim + host MCP Tool Search | counts only |
+| 5 | **Retrieval / read files** | ✅ **coverable** | terminal=interceptive shim; direct-tool=**additive tool** | partial — **the main arena** |
+| 6 | Model routing | 🔴 closed | admin-locked model picker | — BYOK-off-path only |
+| 7 | Reasoning / thinking budget | 🔴 closed | not exposed by Copilot | — |
+| 8 | **Command output** | ✅ **covered** | interceptive shim/hook | ✅ core (host `compressOutput` overlaps) |
+| 9 | Subagent context | 🔴 closed | can't inject into Copilot agent loop | — |
+| 10 | Inference infra (batch/local/cache) | 🔴 closed | needs control of the model call | — BYOK/self-host only |
+
+The 4 originally-named ideas:
+
+| Idea | Maps to | Enterprise VS Code Copilot | Note |
+|---|---|:--:|---|
+| **上下文压缩 (context compression)** | #8/#5 vs #1 | ✅ / 🔴 | output compression = done/coverable ✅; **conversation-history** compression = host-native 🔴 |
+| **CodeGraph** | #5 retrieval | ✅ **coverable** | additive `tk_map` + terminal `tk map` — **the one genuinely-new opportunity worth building** |
+| **Caveman syntax** | #3 output | 🟡 advisory | only as a "code-only/terse" directive; on tool *output* it violates retention — pointless |
+| **SubAgents engineering** | #9 | 🔴 closed | can't inject into Copilot's agent loop in this host |
+
+**Net:** in enterprise VS Code Copilot, tk's real playground is **#5 (retrieval/read) + #8 (command output)**,
+with #3/#4 as advisory nudges; the other 6 surfaces are structurally closed. Of the 4 named ideas, output
+compression is already core, **CodeGraph is the single new win worth pursuing**, Caveman shrinks to one
+instruction line, and SubAgents is off-limits here. To reach the 6 closed surfaces you must change *host*
+(Copilot CLI / Claude Code / Codex — terminal-native, all channels open) or change *form* (tk becomes a
+proxy / its own agent) — there is no VS Code trick for them.
+
+**Mechanism note (the crux):** the shim is *interceptive* (agent can't avoid the savings, terminal only);
+MCP/extension tools are *additive* (the agent must choose them — nudge via tool descriptions + instructions,
+never 100%). Additive is worth it only where there is **no built-in competitor** (e.g. `tk_map`) or where
+**interception is impossible** (the direct-tool read/search surface — no `modifiedResult`). For terminal
+commands, keep the interceptive shim; do not re-wrap them as additive tools.
+
+---
+
+## TL;DR — the three things that matter most (cross-host / full-space)
 
 1. **tk's lineage is now explicit.** `rtk` = **"Rust Token Killer"** ([rtk-ai/rtk]) — the
    command-output compressor this repo benchmarks "rtk parity" against. token-killer is the
@@ -283,13 +334,15 @@ If reopening scope, leverage-ranked:
 
 | Ch | Channel | Reaches | Robustness in locked enterprise |
 |---|---|---|---|
-| **C1** | PATH shim (`tk <cmd>`) | terminal commands the agent runs (`run_in_terminal`) | **highest** — terminal is rarely removed; policy-independent (ADR 0002) |
+| **C1** | PATH shim (`tk <cmd>`) | **only** terminal commands (`run_in_terminal`) — a *shrinking* surface | **NOT the safe default** — (a) structurally misses the direct-tool surface (Copilot agent prefers built-in `read_file`/`search`, no shell); (b) PATH is itself enterprise-manageable (endpoint mgmt, locked terminals, fresh-terminal RC-not-sourced, PATHEXT/AV); (c) host-native `compressOutput` now compresses the same commands |
 | **C2** | PreToolUse hook (`updatedInput`) | rewrite a command at protocol layer | medium — official **Preview** feature (`chat.useCustomAgentHooks` + `chat.hookFilesLocations`); `PreToolUse` can `allow`/`deny`/`ask` and rewrite via `updatedInput`. **No output rewrite** — `PostToolUse` can only add `additionalContext` or `block`, never modify a tool's output (no `modifiedResult`). |
 | **C3** | MCP server (new tools) | inject NEW tools (repo-map, LSP, retrieval, memory) | medium — MCP is **GA** (VS Code 1.102, `chat.mcp.discovery.enabled`), **but the enterprise admin policy "MCP servers in Copilot" is DISABLED BY DEFAULT** — off until an admin enables it (then "Allow all" vs "Registry only"). So in a default locked org, this channel is closed. |
 | **C4** | Host settings | `chat.tools.compressOutput.enabled` (VS Code 1.121, off by default) | low-med — some keys org-locked |
 | **C5** | Instruction/context injection | AGENTS.md / copilot-instructions.md | low — advisory; model may ignore |
 | **C6** | Model-payload control (API proxy / BYOK custom endpoint) | the request sent to the model | **narrow & off-path** — only via **BYOK "Custom Endpoint"** (Insiders/preview), gated by the "Bring Your Own Language Model Key in VS Code" policy (**enabled by default, admin can disable**). Using it **leaves the GitHub-hosted model path entirely** (your provider, your billing, no GitHub content filter). On the default GitHub-hosted path the request is processed by GitHub's own systems and is not third-party-interceptable. |
 | **C7** | Copilot agent-loop internals | model choice, subagents | unavailable — closed (note: **history compaction is host-native**, see direction 1) |
+| **C8** | **VS Code extension — Language Model Tool API** (`vscode.lm.registerTool` + `languageModelTools`) | **the direct-tool surface** — offer compressed `tk_read`/`tk_search`/`tk_map`/git tools the agent auto-invokes; results flow into model context | **GA.** The only channel that reaches the file-read/search surface the shim can't. But **additive** (the agent chooses your tool over the built-in; won via tool descriptions + instruction nudges, not guaranteed) and gated by `extensions.allowed` / `AllowedExtensions` (Intune/GPO). An extension can ALSO register an MCP server programmatically (`registerMcpServerDefinitionProvider`, GA). |
+| **C9** | **VS Code extension — Terminal Shell Integration API** (`onDidEnd…ShellExecution`, read raw output) | terminal output (observe/read) | **GA (1.93).** Observe-only — can read the terminal output but cannot rewrite what the agent's terminal tool returns to the model. |
 
 ### Verdict legend
 
@@ -308,8 +361,8 @@ Per-project usability tag: **[Run]** = the project itself runs inside Copilot (M
 | 2 | Prompt-cache economics | 🔴 F3 (off-path only) | C6 | Copilot assembles & caches server-side on the GitHub-hosted path — no breakpoint/ordering access. Only possible if you leave that path via BYOK custom endpoint (preview, policy-gated). |
 | 3 | Output reduction | 🟡 F2 (diff 🔴) | C5 / C6 | Brevity/"code-only" directive via instructions (🟡). Diff/apply edit-format is Copilot-owned (🔴). |
 | 4 | Tool / MCP schema | 🟡 F2 | C4/C5 | Advise cutting MCP server count (tk already does); lazy-load is now a host feature ("MCP Tool Search"). |
-| 5 | **Repo map / code graph** | 🟢 F0 / 🔵 F1 | C1 / C3 | **`tk map` in terminal (🟢)** or a repo-map **MCP server (🔵)**. Highest-value *new* capability that fits. |
-| 6 | **Code-intel retrieval (LSP/AST/embed)** | 🔵 F1 (🟢 partial) | C3 / C1 | MCP servers (serena etc.) run in VS Code Copilot today (🔵, org-gated); LSP CLI via shim partial (🟢). |
+| 5 | **Repo map / code graph** | 🟢 F0 / 🔵 F1 | C1 / C3 / **C8** | **`tk map` in terminal (🟢)**, a repo-map MCP server, or an **extension LM-tool** the agent calls (🔵). Highest-value *new* capability that fits. |
+| 6 | **Code-intel retrieval (LSP/AST/embed)** | 🔵 F1 (🟢 partial) | C3 / **C8** / C1 | MCP servers (serena etc.) run in Copilot today, or an extension LM-tool (🔵, allowlist + MCP-policy gated); LSP CLI via shim partial (🟢). |
 | 7 | Model routing | 🔴 F3 | C6/C7 | Model is picker/admin-locked; can't auto-route. Nothing (user picks manually). |
 | 8 | Reasoning budget | 🔴 F3 | C7 | Not exposed by Copilot. Nothing. |
 | 9 | Subagent isolation | 🔴 F3 | C7 | Can't inject into Copilot's agent loop; Copilot ships its own. Nothing. |
@@ -348,22 +401,82 @@ Per-project usability tag: **[Run]** = the project itself runs inside Copilot (M
 | 11 Lossy | LLMLingua, Selective_Context, GPTCache, ModelCache | Infra | 🔴 sit on the model call/payload |
 | + Proxy | litellm, Portkey, optillm | Infra | 🔴 the enabler that enterprise Copilot forecloses |
 
-### Conclusion — this INVERTS the prior "pivot to a proxy" headline
+### Conclusion — there is NO policy-independent channel, and the shim is one of the WEAKER bets
 
-For the **enterprise VS Code Copilot** target specifically, the API-proxy pivot is 🔴 **infeasible** —
-the closed extension→backend channel forecloses it. That means the whole proxy-dependent cluster
-(history compaction, prompt-cache economics, model routing, reasoning budget, aggressive prompt
-compression) is **off the table here**, and so are the *proxy surfaces of the competitors* —
-**headroom and leanCTX only help in this host through their MCP/shell-hook surfaces, not their proxy.**
+Reframed after official-doc verification (sources below). Two earlier claims were wrong:
 
-The feasible investment set collapses to four things, in robustness order:
+- **The PATH shim is not "the most robust channel."** It reaches *only* `run_in_terminal` — a shrinking
+  surface (Copilot agent prefers built-in `read_file`/`search`, which never touch a shell), its PATH is
+  itself enterprise-manageable, and VS Code now compresses those same commands natively
+  (`chat.tools.compressOutput.enabled`, 1.121). Betting the product on it is betting on a surface the
+  vendor is eating and the agent is leaving.
+- **The API-proxy pivot is not categorically impossible.** BYOK "Custom Endpoint" (Insiders/preview) is an
+  official seam — but it is gated by the BYOK policy (admin-disablable) and takes you *off* the
+  GitHub-hosted model path (own provider/billing, no GitHub content filter). On the canonical
+  locked-enterprise GitHub-hosted path it stays foreclosed; in a permissive org it opens the whole
+  proxy-dependent cluster.
 
-1. 🟢 **Command-output compression** (C1 shim / C2 hook) — already tk's core.
-2. 🟢 **Repo map** as `tk map` (C1 shim) — the highest-value *new* capability that survives the enterprise lockdown; MCP variant (🔵) where the org allows MCP. Port Aider's algorithm / study RepoMapper.
-3. 🔵 **Code-intel retrieval via MCP** (serena / claude-context / mcp-language-server) — strong, but org-MCP-gated, so treat as opt-in, not default.
-4. 🟡 **Advisory**: brevity directive (C5), MCP-server-count trim (C4/C5), `compressOutput` setting (C4).
+Accurate picture:
 
-Channel-robustness ranking for betting: **C1 shim > C2 hook (policy-lockable) > C3 MCP (org-gated) > C4/C5 advisory.** Highest-confidence new bet = **repo map via the shim**, because it needs only the one channel enterprise can't easily take away (the terminal).
+- **Every channel is policy-gated.** PATH/endpoint mgmt (shim), hooks Preview+policy (C2), MCP admin policy
+  *default-off* (C3 + extension-MCP), `extensions.allowed`/`AllowedExtensions` Intune/GPO (any extension),
+  BYOK policy (C8 proxy). "Policy-independent" does not exist — including for the shim.
+- **No channel is interceptive on the direct-tool surface.** The host owns `read_file`/`search` output. The
+  only interceptive seam at all is `PreToolUse updatedInput` — terminal-only, pre-exec, Preview, no output
+  rewrite. Everything else on the direct-tool surface is *additive* (offer a tool the agent may decline),
+  *host-native* (vendor compresses), or *advisory*.
+- **History compaction is host-native** (auto-compact + `/compact`) — not tk's to build.
+
+So pick a channel by the **surface** you must reach, not by an imaginary "most stable" one:
+
+| To reach… | Use | Nature | Reality |
+|---|---|---|---|
+| terminal commands | C1 shim / C2 hook | interceptive | shrinking surface; host-native `compressOutput` competes |
+| **direct-tool surface** (file read / search / map) | **extension — Language Model Tool API** (`registerTool`); or extension-registered MCP | **additive** (agent chooses; nudge via tool descriptions + instructions) | the *growing* surface; the shim can never reach it; extension-allowlist gated |
+| terminal output (observe) | extension Shell Integration API | observe-only | can't rewrite what the terminal tool returns to the model |
+| conversation history | — | host-native | already done by Copilot |
+| full payload (all surfaces) | C8 BYOK custom endpoint | interceptive | off GitHub path, policy-gated, preview |
+
+**Opened-up takeaway:** the real delivery reframe is not "shim vs hook" — it is **tk-as-a-VS-Code-extension**.
+One signed extension can register compressed `tk_read`/`tk_search`/`tk_map` tools (Language Model Tool API —
+reaches the direct-tool surface the shim misses), register an MCP server programmatically, observe terminal
+output via shell integration, toggle `compressOutput`, and inject instructions — i.e. it unifies almost every
+viable channel into one artifact that survives where the shim doesn't. Its limits are honest and official:
+it is **additive** (the agent must choose your tool over the built-in — won by tool descriptions + instruction
+nudges, not forced) and **extension-allowlist gated**.
+
+Highest-value bets, ranked by *surface coverage* rather than false stability:
+
+1. 🔵 **A tk VS Code extension** exposing `tk_read` / `tk_search` / `tk_map` via the Language Model Tool API
+   (+ programmatic MCP). Reaches the growing direct-tool surface; one artifact, multi-channel.
+2. 🟢 **Repo map** delivered as *both* that extension tool *and* a terminal `tk map` (port Aider's algorithm /
+   study RepoMapper). Highest-value *new* capability regardless of channel.
+3. 🟡 **Configure host-native** wins you don't have to build: turn on `compressOutput`, trim MCP server count,
+   inject a brevity/"code-only" directive.
+4. 🟢 **Keep the shim as a fallback** for terminal commands — not the centerpiece.
+
+### Official-doc basis (verified 2026-06-18)
+
+- Agent hooks (Preview), `PreToolUse`/`updatedInput`, no output rewrite, `chat.useCustomAgentHooks` /
+  `chat.hookFilesLocations`: https://code.visualstudio.com/docs/agent-customization/hooks
+- MCP GA (1.102) + `chat.mcp.discovery.enabled`; admin policy **"MCP servers in Copilot" disabled by default**
+  (Allow all / Registry only): https://github.blog/changelog/2025-07-14-model-context-protocol-mcp-support-in-vs-code-is-generally-available/ ·
+  https://docs.github.com/en/copilot/how-tos/administer-copilot/manage-mcp-usage/configure-mcp-server-access
+- `chat.tools.compressOutput.enabled` (1.121, off by default): https://code.visualstudio.com/updates/v1_121
+- Language Model Tool API (`vscode.lm.registerTool` + `languageModelTools`, GA; results flow to model):
+  https://code.visualstudio.com/api/extension-guides/ai/tools
+- Extension-registered MCP (`registerMcpServerDefinitionProvider`, GA):
+  https://code.visualstudio.com/api/extension-guides/ai/mcp
+- Terminal Shell Integration API (read raw output, GA 1.93): https://code.visualstudio.com/updates/v1_93
+- Enterprise extension allow-list (`extensions.allowed` / `AllowedExtensions`, Intune/GPO):
+  https://code.visualstudio.com/docs/enterprise/extensions
+- BYOK + Custom Endpoint (core GA / custom-endpoint Insiders-preview), policy default-on admin-disablable:
+  https://code.visualstudio.com/docs/agent-customization/language-models ·
+  https://github.blog/changelog/2026-04-22-bring-your-own-language-model-key-in-vs-code-now-available/
+- Model availability admin control (default-model rules): https://docs.github.com/en/copilot/how-tos/administer-copilot/manage-for-enterprise/manage-availability-of-default-models
+- Requests processed through GitHub's own systems / content filters: https://docs.github.com/en/copilot/reference/ai-models/model-hosting
+- Host-native context compaction + `/compact`: https://code.visualstudio.com/docs/copilot/chat/copilot-chat-context
+- Copilot agent built-in tools (`read_file`/`edit_file`/`run_in_terminal`): https://code.visualstudio.com/docs/agents/agent-tools
 
 ---
 
