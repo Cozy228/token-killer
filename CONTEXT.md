@@ -25,6 +25,19 @@ context; `--project` selects the current repo. Diagnostic only, never enforcemen
 produces one unified set of [Findings](#findings-and-optimization).
 _Avoid_: audit, monitor, session scanner (it is no longer session-only).
 
+**Code graph**:
+The structural-index surface (proposed, not yet built): tree-sitter parses git-tracked
+source into a symbol/call/import graph queried via FTS, answering "how does X work / who
+calls Y / what breaks if I change Z" in one call that returns verbatim `file:line` source
+instead of a grep/read loop. It is the *center*; the best search/read token-saving techniques
+from other projects (signature-collapse, two-stage candidate→block, on-demand full-code fetch,
+conversation-seeded ranking) fold in as *enhancements*. It stays strictly in the search/read
+token-optimization lane — it does **not** expand into community detection, flow tracing, the
+framework-resolver moat, or a general log/diff interception layer.
+_Avoid_: context gateway (the broad "wrap every tool output" framing — deliberately rejected as
+too wide), repo map (the flattened, edge-less packing fallback, not the graph), codegraph (the
+MIT reference being studied, not the name of tk's surface).
+
 ## Delivery
 
 How the agent comes to invoke the [Command proxy](#surfaces) at all. The proxy is the

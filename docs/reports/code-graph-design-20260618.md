@@ -13,6 +13,35 @@
 
 ---
 
+> ## ⚑ Resolution status — grilled 2026-06-18 (`/grill-with-docs`)
+>
+> A grilling session walked the decision tree top-down and resolved every load-bearing fork.
+> **Where this document and the ADRs below disagree, the ADRs win** — the prose in later sections
+> is being reconciled to them. Resolutions:
+>
+> 1. **Reframe (root):** this is **not** a codegraph port and **not** a competitor — it is a
+>    **graph-centered *synthesis*** that folds in other projects' *search/read* token-saving
+>    techniques as enhancements. The §8 "honesty is unique" differentiation is **withdrawn**
+>    (codegraph already has provenance/hand-back/staleness); the real justification is
+>    **unification** (zero extra install for existing tk users, co-located with the compression
+>    layer, CLI auto-compressed by the shim). → [ADR 0013](../adr/0013-code-graph-surface-scope.md)
+> 2. **tk becomes an MCP server** (per-session stdio child, *not* a daemon; hand-rolled JSON-RPC,
+>    no SDK). Full triad (MCP + CLI + install wiring) all in v1. → [ADR 0014](../adr/0014-tk-becomes-mcp-server.md)
+> 3. **Decision 1 (2 WASM deps): accepted.** **Decision 2: `node:sqlite` + Node ≥ 22.5 gate**, core
+>    stays ≥ 20 — **contingent on an install-base Node-version check before commit**.
+>    → [ADR 0015](../adr/0015-node-sqlite-feature-gate.md)
+> 4. **Index location: out-of-tree, period** — no in-tree mode even as a future toggle (it would
+>    violate the codified "repo is never written" invariant). Open question §10.3 is **closed**.
+> 5. **Measurement harness is built *first*, before the graph** — value is reported only as
+>    mechanical `opportunity` facts, never `saved_tokens`. → [ADR 0016](../adr/0016-measurement-before-feature.md)
+> 6. **v1 is navigation-only** (locate/understand). The edit-window + `purpose=` machinery (§11.2–3)
+>    moves to **v2** — editing-must-be-exact is too heavy a burden for v1.
+> 7. **The explicit no-s:** embeddings out (invariant); the broad "context gateway" out (no
+>    general log/diff/JSON layer — stays with existing handlers); the framework-resolver moat out;
+>    enterprise-locked VS Code Copilot uncovered (accepted).
+
+---
+
 ## 0. TL;DR
 
 1. **Approach: structural code graph** (tree-sitter → symbol/call/import graph → SQLite+FTS5 → query),
@@ -30,15 +59,19 @@
    alternative. Everywhere else (personal/permissive VS Code Copilot, Copilot CLI, Claude Code, Cursor,
    Codex) the MCP + CLI channels work. codegraph accepts the same limit (it doesn't list VS Code Copilot
    as a target at all).
-4. **Port, don't reinvent:** codegraph is MIT — port its DB schema, extraction/resolution structure, and
-   (most importantly) its `buildContext`/explore ranking algorithm. Re-skin onto tk's house style
+4. **Synthesize, don't single-port** *(reframed — see ⚑ banner, [ADR 0013](../adr/0013-code-graph-surface-scope.md))*:
+   the graph is the center, and the best **search/read** techniques from across the survey fold in as
+   enhancements. codegraph (MIT) is the richest *single* source to draw from — its DB schema,
+   extraction/resolution structure, and (most importantly) its `buildContext`/explore ranking. Re-skin onto tk's house style
    (`defineHandler`, the `(path,mtime,size)` extract cache, the per-project `~/.token-killer` store, the
    single-file HTML report, the `hostAdapter` install table). Study GitNexus/cocoindex only for *ideas*
    (GitNexus is PolyForm-Noncommercial — no code reuse).
-5. **Two decisions need your sign-off** (they change tk's identity): (a) add **2 pure-WASM/JS deps**
-   (`web-tree-sitter`, `tree-sitter-wasms`) — tk leaves "zero production deps" but keeps "no native build";
-   (b) the graph store uses **`node:sqlite`**, a Node **22.5+** builtin — the map feature gates on Node
-   ≥22.5 with graceful "feature unavailable" degradation on older runtimes (tk core stays ≥20).
+5. **Two identity decisions — now resolved** *(⚑ banner; [ADR 0015](../adr/0015-node-sqlite-feature-gate.md))*:
+   (a) **accepted** — add **2 pure-WASM/JS deps** (`web-tree-sitter`, `tree-sitter-wasms`); tk leaves "zero
+   production deps" but keeps "no native build" (the load-bearing guarantee). (b) **accepted, contingent** —
+   the graph store uses **`node:sqlite`** (Node **22.5+** builtin); the feature gates on Node ≥ 22.5 with
+   graceful degradation, tk core stays ≥ 20 — **pending an install-base Node-version check before commit**,
+   since the gate breaks tk's "works the same everywhere" property.
 
 ---
 
@@ -303,20 +336,26 @@ never invokes node-gyp / a C toolchain / platform-specific binaries.** They are 
 `tk map`/`tk serve` runs**, so the compression hot path and users who never touch the graph pay nothing at
 runtime (the cost is tarball size at install).
 
-> **Decision 1 (needs sign-off):** accept leaving "zero production deps" for these two pure-WASM/JS deps,
-> in exchange for the highest-value new capability in the landscape report. *Recommendation: yes* — the
-> "no native build" guarantee is the one that's load-bearing for tk's varied install base, and that holds.
+> **Decision 1 — RESOLVED: accepted** (grilled 2026-06-18). Leave "zero production deps" for these two
+> pure-WASM/JS deps; the "no native build" guarantee — the one that's load-bearing for tk's varied install
+> base — holds. This is forced by "build the graph at all": no parser, no graph, and WASM is the only
+> no-native-compilation path. See the ⚑ banner. ([ADR 0015](../adr/0015-node-sqlite-feature-gate.md) records
+> the dep + store choices together.)
 
 ### 6.2 Node version
 
 `node:sqlite` needs **Node ≥ 22.5**. tk's engine floor is currently `>=20`. Unlike codegraph, **tk does
 not bundle its own Node runtime** — it runs on the user's Node. So:
 
-> **Decision 2 (needs sign-off):** the **code-graph feature** requires Node ≥ 22.5; tk **core** stays
-> `>=20`. On older Node, `tk map`/`tk serve` print a clear "code graph needs Node ≥22.5 (you have X);
-> compression features are unaffected" message and exit cleanly. *Recommendation: this gating* over (a)
-> bumping tk's whole floor to 22.5 (breaks existing users) or (b) shipping a pure-JS SQLite/FTS
-> reimplementation (large, slow, redundant with a builtin).
+> **Decision 2 — RESOLVED: accepted, contingent** (grilled 2026-06-18; [ADR 0015](../adr/0015-node-sqlite-feature-gate.md)).
+> The **code-graph feature** requires Node ≥ 22.5; tk **core** stays `>=20`. On older Node, `tk map`/`tk serve`
+> print a clear "code graph needs Node ≥22.5 (you have X); compression features are unaffected" message and
+> exit cleanly. **The contingency:** the gate silently darkens the feature on Node 20/21 (still LTS, large
+> install share), which collides with tk's "works the same everywhere" principle — so **before committing,
+> check the install-base Node-version distribution; if the `<22.5` share is large, reconsider a WASM SQLite
+> (sql.js / wa-sqlite, FTS5-built)**. Chosen over (a) bumping tk's whole floor (breaks existing users) or
+> (b) a pure-JS SQLite/FTS reimplementation (large, slow, redundant), and over the WASM-SQLite option
+> *unless the data says otherwise* (it adds a second WASM heap to manage — risk #6).
 
 ### 6.3 Packaging
 
@@ -363,15 +402,28 @@ surface. For a code graph that means concretely:
    *declared* projection (the agent knows to `tk_node` for the full body), mirroring tk's
    `OmissionDeclaration` contract.
 
-This is what makes a tk code graph *different from* a naive repo-map: it is honest about what it inferred
-and what it might be stale on. No other tool in the survey foregrounds this.
+This honesty is what separates the graph from a naive repo-map. **Correction (grilled 2026-06-18,
+[ADR 0013](../adr/0013-code-graph-surface-scope.md)):** the earlier claim that "no other tool foregrounds
+this" is **withdrawn** — the reference implementation (codegraph) already ships provenance tags, the
+low-confidence hand-back, and the staleness banner (research compendium §4.1). So these are *table stakes
+ported in*, **not** tk's differentiator. tk's actual edge is **unification** — the graph is co-located with
+tk's compression layer, installs with a tool the user already has, and its CLI output is auto-compressed by
+the shim — not a unique honesty story.
 
 ---
 
 ## 9. Phased roadmap (vertical slices)
 
-Each slice is independently shippable and ends green.
+Each slice is independently shippable and ends green. **Reordered (grilled 2026-06-18,
+[ADR 0016](../adr/0016-measurement-before-feature.md)): the measurement harness comes first**, and the whole
+v1 is **navigation-only** ([ADR 0013](../adr/0013-code-graph-surface-scope.md)) — the edit-window / `purpose=`
+machinery (§11.2–3) is deferred to v2.
 
+- **Slice −1 — measurement harness (FIRST):** build the evaluation instrument from the research
+  compendium §11 *before* the graph exists — `uncached_input_tokens` delta, `search_result_usefulness`,
+  `omission_bug_rate`, `duplicate_reads`, tool-call/round counts, and the **fallback-replay** method;
+  capture a **baseline** (agent without the graph) on a real multi-turn task set. Every later slice reports
+  *measured* value against this, never a borrowed benchmark %.
 - **Slice 0 — spike:** `web-tree-sitter` + `tree-sitter-wasms` + `node:sqlite` proof on tk's own repo;
   extract TS symbols+import edges into `graph.db`; confirm no native build on macOS/Win/Linux + Node 22.5.
 - **Slice 1 — extract+store (TS/JS/Python):** parse-worker pool (ported), schema+FTS5, incremental via
@@ -390,11 +442,13 @@ Each slice is independently shippable and ends green.
 
 ## 10. Risks & open questions
 
-1. **Identity / dependency departure** (Decision 1) — needs your call. *Rec: accept the 2 pure-WASM deps.*
-2. **Node 22.5 floor for the feature** (Decision 2) — needs your call. *Rec: gate the feature, keep core ≥20.*
-3. **Index location — out-of-tree (`~/.token-killer/...`) vs in-tree (`.codegraph`-style)** — tk
-   convention says out-of-tree; in-tree would help CI/sharing and a watcher. *Open — rec: out-of-tree v1,
-   in-tree as opt-in later.*
+1. ~~**Identity / dependency departure** (Decision 1)~~ — **RESOLVED: accepted** (forced by building the
+   graph). [ADR 0015](../adr/0015-node-sqlite-feature-gate.md)
+2. ~~**Node 22.5 floor for the feature** (Decision 2)~~ — **RESOLVED: gate the feature, keep core ≥20 —
+   contingent on an install-base Node-version check before commit.** [ADR 0015](../adr/0015-node-sqlite-feature-gate.md)
+3. ~~**Index location — out-of-tree vs in-tree**~~ — **RESOLVED: out-of-tree, period.** In-tree is *not* a
+   v1 toggle and not a deferred option — it would violate the codified "repo is never written" invariant, so
+   adopting it later is an invariant amendment, not a flag.
 4. **Resolution coverage** — v1 (imports + direct calls) will miss dynamic dispatch / framework routes
    that codegraph handles; the *honest hand-back* mitigates wrong answers but coverage will read lower
    than codegraph's headline %s. Set expectations; grow resolvers by demand.
@@ -408,7 +462,109 @@ Each slice is independently shippable and ends green.
 
 ---
 
-## 11. References
+## 11. Read-projection modes & agent policy (adjacent design, from the low-token research)
+
+> **Scope correction (grilled 2026-06-18, [ADR 0013](../adr/0013-code-graph-surface-scope.md)).** The §11.1
+> framing of the feature as a broad **"context gateway"** that *"also governs reads, logs, and diffs"* is
+> **narrowed and partly rejected**: the surface stays in the **search/read** lane only and does **not** grow
+> a general log/diff/JSON interception layer (those remain with tk's existing handler/`read` compression
+> lines). The modes below are read as a *menu the graph draws from*, not a committed product surface.
+> Concretely for v1: **navigation-only** — the **metadata / outline / imports / symbol / range /
+> structural-compress** modes and the **low-confidence hand-back** are in scope; the **edit-window** (§11.3),
+> the **`purpose=` legality machinery** (§11.2), and **diff-only / test-failure projection** move to **v2**.
+
+The code-graph above is one capability. The merged research compendium
+([`low-token-agent-research-compendium-20260618.md`](./low-token-agent-research-compendium-20260618.md))
+surfaced a broader design frame that the graph slots into. Recorded here as **design principles** (concepts,
+no protocol/interface code) so they outlive the report; most extend §4 (Explore) and §8 (quality gate).
+
+### 11.1 The framing — a context gateway, not a compressor
+
+Treat the whole feature as a layer that **intercepts or wraps tool output before it enters agent context**
+and emits the *smallest truthful evidence needed for the next action*. The code graph is the structural
+realization of that layer; the same gateway also governs reads, logs, and diffs (below). The guiding workflow
+the literature converges on is **structure → candidates → exact code → verify-by-delta** — i.e.
+`repo map → bounded candidate search → metadata-first results → symbol/range read → edit window →
+diff-only or failure-only verification`, replacing the `grep → read → grep → read more → inspect → retry`
+loop.
+
+### 11.2 Read as a family of *purpose-aware* modes, not one `read_file`
+
+The unit of evidence is the **smallest truthful slice** for the next action. Conceptually, a smart-read
+surface offers modes along a compress↔exact axis, gated by **three context classes** (§2 of the compendium):
+*understanding* may be projected, *editing* must be exact, *verification* can be delta-only. Modes worth
+having (concept level): **metadata** (path/size/lang/hash/class flags), **outline** (top-level symbols +
+signatures), **imports/exports**, **symbol** (exact one-symbol body — the default exact read), **range**
+(exact lines for traces/config), **semantic-expand** (exact enclosing block around a line/hunk),
+**structural-compress** (signatures, bodies dropped — understanding only), **edit-window** (see §11.3),
+**diff-only** (post-edit verification), **test-failure** (failing names + error cluster + referenced ranges,
+raw log on disk by hash), and projection/suppression for **JSON, markdown sections, lockfiles, and
+generated/minified files**. tk's `read --level aggressive` already implements the structural-compress idea
+for one file; `tk_node`/`tk_explore` cover symbol/outline; the graph adds the relational hops.
+
+A **`purpose`** parameter (locate / understand / edit / debug / verify / architecture) decides which modes are
+legal: `purpose=edit` must reject lossy structural-compress and either return an edit-window or escalate to a
+full exact read. **Compression is never silent** — every non-exact response declares what was omitted, why,
+and how to escalate (mirrors tk's `OmissionDeclaration`).
+
+### 11.3 The edit-window — the safe unit for any modification
+
+For any edit, return the **exact target symbol/range plus surrounding anchors**, the nearby types/imports the
+edit depends on, and optionally one-hop callers/callees — verbatim, with a **content hash** and stable
+anchors. This is the concrete shape of "editing context must be exact": small enough to save tokens, large
+enough to preserve syntax and local invariants. If the window is too small to be safe, escalate (larger
+window → full file) rather than guess.
+
+### 11.4 Search routing & bounded output
+
+Route, don't broadcast. Recorded routing policy: **don't search** when the target was already read exactly
+and the next action is a local edit/verify; **repo map / graph** when the area is unknown or the question is
+relational (callers/callees/impact/flow); **literal** for exact identifiers, errors, routes, config keys, SQL,
+CLI flags; **symbol** for identifier-like queries with a likely module; **semantic** only for conceptual
+queries with no literal anchor (and tk declines embeddings, so this is a documented gap, not a tk mode);
+**LSP/SCIP** for rename/reference-impact where available. **At most one broad candidate-generation step per
+intent change** — if intent is unchanged, refine the last candidate set instead of re-searching (this is the
+direct counter to "repeated exploration is the cost driver"). Broad search must be projected into **grouped
+candidates with hard caps** (matches/file, files/set, chars/snippet) and should hand the agent an explicit
+**next-read instruction**, not a wall of raw grep lines.
+
+### 11.5 Confidence exposure
+
+Expose confidence in plain structured form — **high / medium / low + reasons** ("high: exact symbol-name +
+declaration match"; "medium: high semantic similarity, no literal anchor") — and never overstate certainty on
+non-exact matches. Low-confidence results carry an explicit recommended next action ("run literal search for
+X", "read outline of Y before editing"). This is §8's honest hand-back, generalized to every projection.
+
+### 11.6 Editability invariants & the retention-first ladder
+
+Non-negotiables for any edit/verify path: (1) editable context returned **verbatim**, never summarized;
+(2) carries a content hash + stable anchors; (3) includes enough exact surroundings to preserve syntax and
+local invariants; (4) post-edit verification defaults to **diff + the specific changed tests/errors**, not
+whole-file rereads; (5) on any truncation-risk ambiguity, **fail open to more exact code**. The escalation
+ladder: `metadata → outline → symbol/range → edit_window → full file`, and `failure-projection → raw log` —
+escalate when confidence is low, exactness is required, or the agent asks to edit from a non-exact view.
+
+### 11.7 Agent policy still matters
+
+Tool design alone does not stop waste — CodeGraph's maintainers note instruction-only steering is weak versus
+the tool contract + answer sufficiency, yet Continue/Roo show repository-local rules do shape behavior. So
+pair the tools with a concise, operational policy in the instruction file tk already writes
+(`src/shim/guidance.ts`): prefer map/graph before broad search; prefer symbol/outline/range/edit-window over
+raw whole-file reads; treat prior `readId` results as already-read and ask for a delta; don't repeat a broad
+search unless intent changed; verify with diff + failing tests first; never edit from a response marked
+non-exact. (Principles, authored in tk's voice — not a verbatim third-party policy file.)
+
+### 11.8 Relation to the §9 roadmap
+
+These modes are not a separate product — they refine the existing slices. The code-graph slices (§9) already
+deliver outline/symbol/range/edit-adjacent reads and the honest-handback. The **log/diff/JSON/lockfile
+projection** modes are a distinct compression track tk partly already has (handler families, `read` levels);
+they belong with the gateway framing but do not block the graph. Sequencing stays as §9 defines it for the
+graph; the read-projection modes are the lens for how each slice should *shape* its output.
+
+---
+
+## 12. References
 
 - **codegraph** (MIT, cloned + read): https://github.com/colbymchenry/codegraph — the port source.
 - **GitNexus** (PolyForm Noncommercial — ideas only): https://github.com/abhigyanpatwari/GitNexus —
