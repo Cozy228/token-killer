@@ -69,20 +69,18 @@ afterEach(() => {
   setPlatform(orig.platform);
 });
 
-describe("resolveDestination — env-only routing, NO baked default (ADR 0011)", () => {
-  test("an explicit override beats the env var", () => {
-    process.env.TK_SUPPORT_EMAIL = "env@x.com";
-    expect(resolveDestination("email", "flag@x.com")).toBe("flag@x.com");
-  });
-
-  test("falls back to the matching env var when no override", () => {
+// The destination is baked at build time (ADR 0013). Under vitest there is no
+// tsdown `define`, so resolveDestination falls back to the TK_SUPPORT_* env var —
+// these tests drive that test-mode fallback, which mirrors what a build bakes.
+describe("resolveDestination — build-time baked destination (ADR 0013)", () => {
+  test("resolves the matching baked value for the channel", () => {
     delete process.env.TK_SUPPORT_EMAIL;
     process.env.TK_SUPPORT_TEAMS = "u@tenant.com";
     expect(resolveDestination("teams")).toBe("u@tenant.com");
     expect(resolveDestination("email")).toBeUndefined();
   });
 
-  test("undefined when nothing is configured — there is NO default address", () => {
+  test("undefined when this build baked no destination for the channel", () => {
     delete process.env.TK_SUPPORT_EMAIL;
     delete process.env.TK_SUPPORT_TEAMS;
     delete process.env.TK_SUPPORT_GITHUB;
@@ -91,15 +89,14 @@ describe("resolveDestination — env-only routing, NO baked default (ADR 0011)",
     expect(resolveDestination("github")).toBeUndefined();
   });
 
-  test("a blank/whitespace env value counts as unset", () => {
+  test("a blank/whitespace baked value counts as unset", () => {
     process.env.TK_SUPPORT_EMAIL = "   ";
     expect(resolveDestination("email")).toBeUndefined();
   });
 
-  test("github routes through TK_SUPPORT_GITHUB, override beats env", () => {
+  test("github routes through the baked GitHub destination", () => {
     process.env.TK_SUPPORT_GITHUB = "env-owner/env-repo";
     expect(resolveDestination("github")).toBe("env-owner/env-repo");
-    expect(resolveDestination("github", "flag-owner/flag-repo")).toBe("flag-owner/flag-repo");
   });
 });
 

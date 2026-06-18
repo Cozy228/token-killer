@@ -11,31 +11,52 @@
 // both mailto: and the Teams scheme). macOS `open` / Linux `xdg-open` take the URI
 // directly, exactly as openInBrowser does for files.
 //
-// ADR 0011: there is NO baked-in destination — routing is env-only, so each
-// deployment points support at its own in-tenant identity.
+// ADR 0013: the support destination is BAKED AT BUILD TIME, not configured at
+// runtime — `tk support` reaches whoever PACKAGED this build (the maintainer), so a
+// per-distribution identity is fixed by the packager, never retargeted by an end
+// user. Mirrors the telemetry-endpoint build arg (src/telemetry/endpoint.ts).
 
 import { spawn, spawnSync } from "node:child_process";
 
 export type SupportChannel = "email" | "teams" | "github";
 
-// Resolve where a support report is routed. Precedence: explicit `override` (a
-// --email/--teams/--github flag) > the matching env var. Returns `undefined` when
-// nothing is configured — the caller then degrades to save+clipboard+hint and sends
-// nowhere (ADR 0011: tk ships no default address). A blank/whitespace value counts
-// as unset so an empty env export can't masquerade as a destination. The GitHub
-// destination is the repo (`owner/name` slug or a full repo URL — see
-// githubRepoBase), configured exactly like the other channels.
-export function resolveDestination(kind: SupportChannel, override?: string): string | undefined {
-  const fromOverride = override?.trim();
-  if (fromOverride) return fromOverride;
-  const env =
-    kind === "email"
-      ? process.env.TK_SUPPORT_EMAIL
-      : kind === "teams"
-        ? process.env.TK_SUPPORT_TEAMS
-        : process.env.TK_SUPPORT_GITHUB;
-  const fromEnv = env?.trim();
-  return fromEnv ? fromEnv : undefined;
+// Build-time destination constants — replaced by tsdown's `define` with
+// JSON.stringify(process.env.TK_SUPPORT_* ?? "") at build (see tsdown.config.mjs). A
+// generic build bakes "" ⇒ that channel has no destination and degrades to
+// save+clipboard. An enterprise build bakes the maintainer's address/UPN/repo.
+declare const __TK_SUPPORT_EMAIL__: string | undefined;
+declare const __TK_SUPPORT_TEAMS__: string | undefined;
+declare const __TK_SUPPORT_GITHUB__: string | undefined;
+
+// The raw baked value for a channel. Under tsx/vitest there is no `define`, so the
+// identifier is undefined and we honor the env var ONLY THEN (local runs + tests can
+// point at a destination). A real build always replaces the identifier with its
+// verbatim value — including "" — so the env fallback is unreachable in production
+// and an installed CLI can never be retargeted by a runtime env export.
+function bakedDestination(kind: SupportChannel): string {
+  if (kind === "email") {
+    return typeof __TK_SUPPORT_EMAIL__ !== "undefined"
+      ? (__TK_SUPPORT_EMAIL__ ?? "")
+      : (process.env.TK_SUPPORT_EMAIL ?? "");
+  }
+  if (kind === "teams") {
+    return typeof __TK_SUPPORT_TEAMS__ !== "undefined"
+      ? (__TK_SUPPORT_TEAMS__ ?? "")
+      : (process.env.TK_SUPPORT_TEAMS ?? "");
+  }
+  return typeof __TK_SUPPORT_GITHUB__ !== "undefined"
+    ? (__TK_SUPPORT_GITHUB__ ?? "")
+    : (process.env.TK_SUPPORT_GITHUB ?? "");
+}
+
+// Resolve where a support report is routed for a channel, from the build-time baked
+// value (ADR 0013). Returns `undefined` when this build baked no destination for the
+// channel — the caller then degrades to save+clipboard+hint and sends nowhere. A
+// blank/whitespace value counts as unset. The GitHub destination is the repo
+// (`owner/name` slug or a full repo URL — see githubRepoBase).
+export function resolveDestination(kind: SupportChannel): string | undefined {
+  const value = bakedDestination(kind).trim();
+  return value ? value : undefined;
 }
 
 // Percent-encode an addr-spec for the mailto: `to` slot per RFC 6068 §2. In an

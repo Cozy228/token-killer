@@ -1,8 +1,14 @@
 ---
-status: accepted
+status: superseded
+superseded-by: 0013-support-destination-baked-at-build
 ---
 
 # `tk support` routing is env-configured, with no baked-in destination
+
+> **Superseded by [ADR 0013](0013-support-destination-baked-at-build.md).** The destination
+> is now baked at build time (the packager's identity), not read from a runtime env var, and
+> the `--email`/`--teams`/`--github` override flags are removed. ADR 0013 keeps this ADR's
+> core property — a generic public build carries no address and sends nowhere.
 
 `tk support` ships with **no** default support address. The destination is read only from
 `TK_SUPPORT_EMAIL` / `TK_SUPPORT_TEAMS` (Teams as an Entra UPN) / `TK_SUPPORT_GITHUB` (an

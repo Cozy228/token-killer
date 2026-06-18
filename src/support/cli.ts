@@ -1,9 +1,11 @@
 // `tk support` — one command to produce a shareable diagnostic (recent error +
 // logs, auto-gathered and saved) and route it to the maintainer via the user's mail
 // client (mailto:) or Microsoft Teams (msteams: scheme). NO SMTP/HTTP, no auto-send:
-// the user always reviews and sends by hand. Routing is env-only (ADR 0011) — when
-// neither TK_SUPPORT_EMAIL nor TK_SUPPORT_TEAMS is set, tk still gathers + saves the
-// bundle and copies it to the clipboard, then prints a hint, sending nowhere.
+// the user always reviews and sends by hand. The destination is BAKED AT BUILD TIME
+// (ADR 0013) — `tk support` reaches whoever packaged this build; the end user picks
+// only the channel, never the address. When this build baked no destination for the
+// chosen channel, tk still gathers + saves the bundle and copies it to the clipboard,
+// then prints a hint, sending nowhere.
 //
 // Lazily imported from src/cli.ts so the compression hot path never loads it (I5).
 
@@ -34,25 +36,20 @@ function err(line: string): void {
 
 function usage(): string {
   return [
-    "tk support [email|teams|github] [--email <addr>] [--teams <upn>] [--github <owner/repo>]",
-    "           [--no-attach] [--redact] [-y]",
+    "tk support [email|teams|github] [--no-attach] [--redact] [-y]",
     "  Produce a shareable diagnostic (recent error + logs) and open your mail client",
     "  (mailto:), Microsoft Teams (msteams: scheme), or a GitHub issue draft to send it.",
     "  Nothing is sent automatically — you review and send/submit by hand. The full",
     "  report is saved to ~/.token-killer/reports/.",
     "",
     "  email | teams | github  Channel to reach support through (prompted if omitted in a TTY)",
-    "  --email <addr>          Destination email (overrides TK_SUPPORT_EMAIL)",
-    "  --teams <upn>           Destination Teams in-tenant UPN (overrides TK_SUPPORT_TEAMS)",
-    "  --github <owner/repo>   Destination GitHub repo, an owner/name slug or a repo URL",
-    "                          (overrides TK_SUPPORT_GITHUB)",
     "  --no-attach             Do NOT gather the error + logs bundle (send a bare message)",
     "  --redact                Lengths/labels only — no command text, output bytes, or config bodies",
     "  -y, --yes               Skip the interactive prompts (use the channel + attach defaults)",
     "",
-    "  Routing is env-only (ADR 0011): with none of TK_SUPPORT_EMAIL / TK_SUPPORT_TEAMS /",
-    "  TK_SUPPORT_GITHUB set, tk saves the bundle, copies it to your clipboard, and prints",
-    "  a hint — it sends nowhere.",
+    "  The destination is fixed at build time (ADR 0013): `tk support` reaches whoever",
+    "  packaged this build. If this build baked no destination for the chosen channel, tk",
+    "  saves the bundle, copies it to your clipboard, and prints a hint — it sends nowhere.",
     "",
   ].join("\n");
 }
@@ -61,9 +58,6 @@ type SupportArgs = {
   channel?: SupportChannel;
   noAttach: boolean;
   redact: boolean;
-  email?: string;
-  teams?: string;
-  github?: string;
   yes: boolean;
   help: boolean;
 };
@@ -82,38 +76,9 @@ function parseArgs(argv: string[]): SupportArgs | { error: string } {
       a.yes = true;
     } else if (t === "--help" || t === "-h") {
       a.help = true;
-    } else if (t === "--email") {
-      const v = argv[i + 1];
-      if (v === undefined) return { error: "--email requires a value" };
-      a.email = v;
-      i += 1;
-    } else if (t === "--teams") {
-      const v = argv[i + 1];
-      if (v === undefined) return { error: "--teams requires a value" };
-      a.teams = v;
-      i += 1;
-    } else if (t === "--github") {
-      const v = argv[i + 1];
-      if (v === undefined) return { error: "--github requires a value" };
-      a.github = v;
-      i += 1;
     } else {
       return { error: `unknown flag '${t}'` };
     }
-  }
-  // Convenience: a lone --email/--teams/--github override expresses the channel
-  // too, so `tk support --github owner/repo` works without repeating the
-  // positional. Ambiguous only if MORE THAN ONE is given with no positional, in
-  // which case the user must pick the channel explicitly.
-  if (!a.channel) {
-    const implied = (
-      [
-        ["email", a.email],
-        ["teams", a.teams],
-        ["github", a.github],
-      ] as const
-    ).filter(([, v]) => v !== undefined);
-    if (implied.length === 1) a.channel = implied[0][0];
   }
   return a;
 }
@@ -238,21 +203,20 @@ export async function runSupport(argv: string[]): Promise<number> {
     out(`Saved diagnostic bundle: ${bundlePath}\n`);
   }
 
-  const override =
-    channel === "email" ? parsed.email : channel === "teams" ? parsed.teams : parsed.github;
-  const destination = resolveDestination(channel, override);
+  const destination = resolveDestination(channel);
 
-  // ADR 0011: no env (and no override) ⇒ copy to clipboard, print the path + the
-  // "set TK_SUPPORT_*" hint, and send nothing.
+  // ADR 0013: this build baked no destination for the chosen channel ⇒ copy to the
+  // clipboard, print the path + a hint, and send nothing. The end user can't set the
+  // address (it's fixed at build time), so the hint points at the packager.
   if (destination === undefined) {
     if (report) {
       const copied = copyToClipboard(report.markdown);
       out(copied ? "Report copied to clipboard.\n" : "Report saved (clipboard unavailable).\n");
     }
     out(
-      "No support destination configured. Set TK_SUPPORT_EMAIL, TK_SUPPORT_TEAMS " +
-        "(an in-tenant Teams UPN), or TK_SUPPORT_GITHUB (an owner/repo) to enable " +
-        "one-tap send. Nothing was sent.\n",
+      `This build has no ${channel} support destination — it was not configured when ` +
+        "tk was packaged. The report is saved (and copied) for you to send by hand. " +
+        "Nothing was sent.\n",
     );
     return 0;
   }
