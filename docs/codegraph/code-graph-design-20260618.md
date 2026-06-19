@@ -624,6 +624,35 @@ Precedence:
 - §11 is only the merge ledger.
 - Research and landscape reports remain evidence sources, not implementation contracts.
 
+### 11.6 Grilling outcomes (2026-06-18/19) — standing principles + decision ledger
+
+A grilling session (combining the former absorption + next-stage designs and the §0–§10 design) reframed the
+axis from ADR-compliance to **cost / benefit / feasibility / "can it really land."** Two standing principles
+from the user govern the whole 1.0.0:
+
+- **(a) Don't slice features across phases.** Ship each feature **complete + optimized**, never "design now,
+  refactor later." Half-built substrate that needs a later rewrite is the debt this principle rejects.
+- **(b) 1.0.0 = 底座 + codegraph only (no Code Wiki), but the 底座 must be future-facing for Code Wiki.**
+  Doc-provenance kinds/tables are documented-but-reserved, not built.
+
+Resolved decisions G1–G5 (already folded into the body; pointers given so this stays a ledger, not a copy):
+
+| # | Decision | Where in body |
+|---|---|---|
+| **G1** | Human surface = HTML explorer **+** graph-derived Markdown, both `source=graph`; tk holds/calls **no LLM**; `source` provenance field reserves `source=host_llm` for future host-LLM prose | §0, §8, §9, §10 |
+| **G2** | impact split by **cost/ROI tiers, not version**: T1 (1-hop callers + `co_changes_with` + CODEOWNERS `owns`) first; T2 (tests/routes/configs) framework-specific, on-demand, `confidence=low`; T3 (CI gates) opt-in | §0, §4, §7 |
+| **G3** | incremental = **symbol-level change detection as a v1 底座 primitive, built complete now**: per-node `content_hash` + `referencer_set_hash` + git-diff→changed-symbols→downstream BFS + **AST `ChangeType` filter** (NEW/REMOVED/API_SIGNATURE_CHANGED/BODY_CHANGED/COMMENT_ONLY, drop comment-only); lazy trigger, no daemon | §4, §5, §7 |
+| **G4** | 底座 = generic `nodes(kind,…,metadata_json)` + `edges(kind,…)` single tables + migrations; Code Wiki kinds are future pure-additive; **ConceptNode dropped** (low signal + needs LLM) | §4 |
+| **G5** | storage = `node:sqlite` + **Node ≥22.13 gate** (core tk stays ≥20; graph path prints a clean version message + no-warning child re-entry) | §5, §6 |
+
+**Code Wiki effort estimate** (for when 1.0.0 底座 + codegraph is done; recorded here, not a 1.0.0 commitment):
+because the 底座 is future-faced (G3/G4), Code Wiki is mostly *derive + render*, not *rebuild* — doc-provenance
++ staleness reuse G3; the **page-derivation engine (graph→Markdown) is the main cost**, scaling with the number
+of page types; mermaid-from-edges is small-medium; the **HTML explorer/renderer is the wildcard** (vendor vs
+self-built). Rough total for one experienced dev: **~2.5–4 weeks if the explorer is shared with codegraph's
+human surface, ~4–7 weeks if Code Wiki gets its own renderer.** Runtime generation is **seconds, no LLM, no
+token cost.** Two drivers to pin down: number of page types, and vendor-vs-self-built renderer.
+
 ---
 
 ## 12. Measurement harness (Slice −1)
