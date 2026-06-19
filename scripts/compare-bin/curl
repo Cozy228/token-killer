@@ -1,6 +1,0 @@
-#!/bin/sh
-if [ "$1" = "-s" ] || [ "$1" = "-S" ] || [ "$1" = "https://"* ] || [ -n "$1" ]; then
-  cat
-  exit 0
-fi
-exec /usr/bin/curl "$@"

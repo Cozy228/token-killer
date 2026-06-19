@@ -1,6 +1,0 @@
-#!/bin/sh
-if [ "$1" = "-c" ]; then
-  cat
-  exit 0
-fi
-exec /opt/homebrew/opt/postgresql@17/bin/psql "$@"

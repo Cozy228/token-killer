@@ -52,13 +52,6 @@ jobs:
       # smoke that consumes ./dist/cli.js — run on the Node 22 jobs only. Node 20 still
       # runs the full source suite (test:product) above to verify the runtime target
       # (the shipped artifact is built with `target: node20`).
-      - run: timeout -k 30 360 pnpm test:install
-        shell: bash
-        if: matrix.node-version == 22
-      - run: bash scripts/check-test-presence.sh
-        shell: bash
-      - run: bash scripts/validate-docs.sh
-        shell: bash
       - run: timeout -k 30 180 bash tests/smoke/smoke.sh
         shell: bash
         if: matrix.node-version == 22

@@ -1,6 +1,0 @@
-#!/bin/sh
-if [ "$1" = "mr" ] && [ "$2" = "list" ]; then
-  cat
-  exit 0
-fi
-exec /opt/homebrew/bin/glab "$@"

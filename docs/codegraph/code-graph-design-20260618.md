@@ -738,7 +738,7 @@ The **only** token-savings number tk may surface next to this is the **reference
 | Token denominator | `estimateTokens` `src/core/tokens.ts:72` (fallback only) | provider-usage capture per run (primary) |
 | Trajectory source | inspect readers `src/inspect/vscodeReader.ts:24` + `ToolCategory` classifier | per-run aggregation |
 | Ledger separation / `estimate_kind` | four-ledger model `src/core/ledger.ts:65` | the opportunity ledger (Track 2) + an eval-results ledger (Track 1) |
-| Bench scaffold | `scripts/benchmark/run.ts` (5-phase VM) | the A/B runner hooked into it |
+| Bench scaffold | — (prior RTK-era `scripts/benchmark/` removed) | A/B runner built fresh |
 | — | — | **trajectory analyser** (`duplicate_reads`, `search_result_usefulness`, …) |
 | — | — | **A/B runner** (drive `copilot`/`claude -p` headless, MCP on/off, collect usage) |
 | — | — | **task oracle** (per-task answer key / test verdict) |
@@ -802,7 +802,7 @@ Four measurement *philosophies*. Only **A (trajectory A/B delta)** measures W2 (
 
 - Compendium §11 (telemetry set, operational defs, fallback-replay, eval principle): [`low-token-agent-research-compendium-20260618.md`](./low-token-agent-research-compendium-20260618.md).
 - ADR: [0016 measurement-before-feature](../adr/0016-measurement-before-feature.md) · scope [0013](../adr/0013-code-graph-surface-scope.md).
-- tk infra reused by the harness: `src/core/tokens.ts` (estimator), `src/core/savings.ts` (within-call diff), `src/core/history.ts` (`HistoryRecord`), `src/core/ledger.ts` (four-ledger `estimate_kind` separation), `src/inspect/vscodeReader.ts` + `src/inspect/scan.ts` + `src/inspect/habits.ts` (trajectory source), `scripts/benchmark/run.ts` (scaffold).
+- tk infra reused by the harness: `src/core/tokens.ts` (estimator), `src/core/savings.ts` (within-call diff), `src/core/history.ts` (`HistoryRecord`), `src/core/ledger.ts` (four-ledger `estimate_kind` separation), `src/inspect/vscodeReader.ts` + `src/inspect/scan.ts` + `src/inspect/habits.ts` (trajectory source). The prior RTK-era `scripts/benchmark/` scaffold was removed; the A/B runner is built fresh.
 - Sources audited live 2026-06-18: codegraph (github.com/colbymchenry/codegraph), FastContext (arxiv 2606.14066 + github.com/microsoft/fastcontext), SWE-Pruner (arxiv 2601.16746), SWE-ContextBench (arxiv 2602.08316), claude-context (github.com/zilliztech/claude-context), aider (aider.chat/docs/repomap.html), Probe (github.com/probelabs/probe), codesearch (github.com/flupkede/codesearch), Serena (github.com/oraios/serena), Repomix (repomix.com/guide/code-compress), GitNexus (github.com/abhigyanpatwari/GitNexus), cocoindex-code.
 
 ---

@@ -87,7 +87,7 @@ That intersection — **real graph + auth-free MCP + per-commit incremental + me
 
 ## Notable anti-patterns observed
 - **deepwiki-open**: diagrams are LLM-hallucinated mermaid, not derived from structure; ~2280-line React component holds generation + inlined prompts. The clearest "what not to copy" for a KG product.
-- **OpenDeepWiki**: `SearchDoc` is `LIKE '%query%'` substring + a 12k-token LLM summary papering over weak retrieval; plaintext repo creds, seeded default admin.
+- **OpenDeepWiki**: `SearchDoc` is `LIKE '%query%'` substring + a 12k-token LLM summary per query; plaintext repo creds, seeded default admin.
 - **CodeWiki / RepoDoc / RepoAgent** all rely on fragile tag/JSON parsing of LLM output (`eval()` on cluster output in CodeWiki).
 - **License traps**: GitNexus = PolyForm Noncommercial (can't lift code), RepoDoc = no license (reimplement, don't copy).
 

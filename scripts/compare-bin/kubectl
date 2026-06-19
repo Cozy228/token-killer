@@ -1,6 +1,0 @@
-#!/bin/sh
-if [ "$1" = "get" ] && [ "$2" = "pods" ]; then
-  cat
-  exit 0
-fi
-exec /usr/local/bin/kubectl "$@"
