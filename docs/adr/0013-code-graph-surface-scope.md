@@ -1,6 +1,6 @@
 # Code graph as additive retrieval, not a gateway
 
-**Status:** accepted (grilling 2026-06-18; design `docs/reports/code-graph-design-20260618.md`)
+**Status:** accepted (grilling 2026-06-18; design `docs/codegraph/code-graph-design-20260618.md`)
 
 tk grows a new **[Code graph](../../CONTEXT.md)** surface: an additive retrieval plane for
 orientation, targeted reads, callers-style search, and local verification. It is **not** an
