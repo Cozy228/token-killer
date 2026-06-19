@@ -46,6 +46,8 @@ row when done.
 
 Status values: TODO | IN PROGRESS | DONE | BLOCKED (with one-line reason) | REJECTED (with one-line rationale)
 
+> **Note (2026-06-19):** the DONE plan files (001-009, 011, 012) were removed after implementation; this table remains as the ledger (rows link to the shipped issues). Only open plans (010, 013) keep their files.
+
 ## Dependency notes
 
 - 001 first: it is the verification baseline — every other plan's "full suite

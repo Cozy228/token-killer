@@ -5,7 +5,7 @@ amends: 0002, 0005
 
 # VS Code is hook-capable: additive hook + shim delivery (tiers are complementary, not exclusive)
 
-> Decided 2026-06-15. Source: `docs/reports/rtk-vscode-copilot-windows-research-20260615.md`.
+> Decided 2026-06-15. Source: `docs/archive/rtk-vscode-copilot-windows-research-20260615.md`.
 > Lands via #19 (prerequisite), #20, #22 (wiring), #23, #26 (status as capability matrix).
 
 ## Context
