@@ -3,9 +3,9 @@
 > Companion to [`token-optimization-landscape-20260618.md`](./token-optimization-landscape-20260618.md).
 > The landscape report is a research map; this document is the committed design direction after grilling.
 >
-> **This is the single canonical code-graph design.** It incorporates the former
-> `codegraph-1.0-absorption-design` (now §11, layer-by-layer absorption) and
-> `measurement-harness-design` (now §12, Slice −1 measurement) — both merged here on 2026-06-19.
+> **This is the single canonical code-graph design.** It incorporates the former absorption notes
+> (now §11, absorption ledger) and measurement-harness notes (now §12, Slice −1 measurement),
+> both merged here on 2026-06-19.
 
 Status: **accepted design, not implemented**. ADRs are the source of truth:
 [ADR 0013](../adr/0013-code-graph-surface-scope.md),
@@ -24,9 +24,12 @@ v1 adds an **additive retrieval plane**, not a gateway:
 - **Install:** `tk install --graph` is explicit opt-in. Plain `tk install` does not enable graph MCP.
 - **Tools:** exactly `tk_map`, `tk_read`, `tk_search`, `tk_verify`.
 - **Engine:** static AST/import/PageRank graph for TS/JS/Python/Java. No LSP in v1.
-- **Store:** `~/.token-killer/projects/<fingerprint>/graph.db`, using `node:sqlite` behind a graph-only Node >=22.13 gate.
+- **Store:** `~/.token-killer/projects/<fingerprint>/graph.db`, using `node:sqlite` behind a graph-only Node >=22.13 gate. The graph schema is generic `nodes(kind, ...)` + `edges(kind, ...)`; v1 populates code kinds only.
+- **Freshness:** symbol-level incremental is a v1 base primitive: content hash, referencer-set hash, git diff to changed symbols, downstream traversal.
+- **Impact:** no new MCP tool in v1. T1 impact facts live inside existing search/verify/read modes: static callers, git co-change, and CODEOWNERS ownership. Framework-specific tests/routes/configs are lower-confidence, on-demand evidence.
+- **Human surface:** structural, LLM-free graph explorer and graph-derived Markdown from the same graph. `source=graph`; tk owns no LLM and spends no API tokens.
 - **Scope:** map/read/search/verify. No API proxy, no prompt-cache rewriting, no model routing, no host built-in direct-tool result projection.
-- **Deferred:** VS Code extension and optional LSP enhancement are v2 candidates.
+- **Deferred:** VS Code extension, optional LSP enhancement, full Code Wiki editing, embeddings/vector search, and CI policy gates are later candidates.
 
 The important distinction: `tk` still cannot rewrite Copilot's built-in `read_file` / `search` results.
 Instead, it offers better tools the agent may choose. That is additive, probabilistic, and honest.
@@ -59,6 +62,7 @@ be bypassed by a plain npm package. `tk graph doctor` must say that plainly rath
 | `tk graph search <query>` | Text, symbol, and callers modes. |
 | `tk graph verify` | Local diff and test-failure summaries. |
 | `tk graph serve --mcp` | Stdio MCP server entrypoint. |
+| Human graph output | Structural HTML explorer and graph-derived Markdown from the same query core. Final CLI spelling is still an implementation choice; candidate spellings are `tk graph map --html`, `tk graph explore`, or a narrow `tk wiki build --html` wrapper. |
 
 Indexing is **lazy + explicit**: graph tools refresh changed files by hash, and `tk graph index` lets a pilot
 prewarm or CI-check the store.
@@ -76,6 +80,34 @@ Keep resident schema small:
 
 There is no separate node tool, no separate callers tool, and no extra exploration synonym in v1.
 
+Impact stays inside this four-tool surface. `callers` remains a `tk_search` mode; diff and local evidence
+stay in `tk_verify`; richer logical tools such as `impact` or `trace` are query modes/backlog items, not v1
+MCP schema additions.
+
+### Human output
+
+The human surface is a deterministic projection of the same graph:
+
+- HTML explorer: repository/module overview, lazy-expand graph navigation, focus mode, source anchors, stale
+  state, and evidence panels.
+- Graph-derived Markdown: structural pages and blocks tagged `source=graph`, with source anchors and
+  freshness metadata. This is not LLM prose generation.
+- VS Code delivery: open the local HTML URL in Simple Browser first; a Webview extension is a later delivery
+  option.
+
+Graph-derived Markdown rules:
+
+- Every page or generated block references source nodes, files, line ranges, or evidence hashes.
+- Generated blocks are tagged `source=graph`; future host-LLM prose, if ever allowed, must be tagged
+  `source=host_llm` or `source=llm_draft` and must carry citations.
+- Human-authored/manual blocks are never overwritten silently.
+- Stale pages and stale generated blocks are visible as stale, not presented as current truth.
+- HTML rendering must work without CDN access.
+
+The capability is accepted; exact command naming is intentionally left to implementation acceptance because
+the current source docs still contain multiple candidates. Whichever spelling wins must call the same
+retrieval core and must not create a second docs database.
+
 ### Guidance
 
 Graph guidance is written only after `tk install --graph` succeeds or `tk graph doctor` confirms graph MCP is
@@ -86,10 +118,11 @@ existing marker-managed instruction system, not a new unmanaged project file.
 
 ## 3. Architecture
 
-Flow: source files enter the extractor (`web-tree-sitter` + `tree-sitter-wasms`), the resolver builds
-imports/direct references/static edges, the store persists them in `graph.db` (`node:sqlite` + FTS), the
-retrieval core handles rank/map/read/search/verify, and delivery adapters expose the same core through CLI
-and MCP.
+Flow: source files and git evidence enter the extractor (`web-tree-sitter` + `tree-sitter-wasms`), the
+resolver builds imports/direct references/static edges, the incremental layer keeps node hashes and
+referencer sets fresh, the store persists the generic graph in `graph.db` (`node:sqlite` + FTS), the
+retrieval core handles rank/map/read/search/verify/projection, and delivery adapters expose the same core
+through CLI, MCP, and human HTML/Markdown projections.
 
 Primary module: `src/retrieval`.
 
@@ -97,9 +130,12 @@ Suggested internal boundaries:
 
 - `src/retrieval/nodeGate.ts` — graph-only Node >=22.13 check and no-warning re-entry.
 - `src/retrieval/indexer/*` — file discovery, language detection, tree-sitter extraction, incremental refresh.
+- `src/retrieval/indexer/incremental.ts` — git diff to changed symbols, hash comparison, downstream traversal.
 - `src/retrieval/store/*` — sqlite adapter, schema, migrations, FTS.
 - `src/retrieval/query/*` — ranking, symbol lookup, callers mode, read-window construction.
+- `src/retrieval/project/*` — budgeted projections, graph-derived Markdown blocks, raw fallback pointers.
 - `src/retrieval/mcp/*` — hand-rolled JSON-RPC stdio transport and 4 tool handlers.
+- `src/retrieval/html/*` — HTML explorer data/view model; uses `src/report/html.ts` for rendering.
 - `src/retrieval/cli.ts` — `tk graph ...` command dispatch.
 
 The command-compression hot path must not import this module eagerly.
@@ -117,9 +153,10 @@ handlers should call one narrow interface. The interface has four request kinds:
 | `verify` | `cwd` | diff, test output, token budget | Summarize local diff and test-failure evidence. |
 
 Every response carries model-facing output, resolvable anchors, confidence (`high` / `medium` / `low`),
-diagnostics, and measurement facts (`returnedAnchors`, `returnedChars`, optional raw size, optional avoided
-read candidates). CLI and MCP adapters may wrap transport metadata, but must not reinterpret or rewrite the
-model-facing output. Tests should exercise this interface directly before testing adapters.
+diagnostics, provenance (`source=static` in v1), stale/hash state, impact facts when requested, and
+measurement facts (`returnedAnchors`, `returnedChars`, optional raw size, optional avoided read candidates).
+CLI, MCP, and human-output adapters may wrap transport metadata, but must not reinterpret or rewrite the
+core output. Tests should exercise this interface directly before testing adapters.
 
 ---
 
@@ -136,27 +173,70 @@ Supported languages:
 
 Extraction stores:
 
-- files: path, language, content hash, mtime/size, indexing status.
-- symbols: kind, name, qualified name, file, range, signature.
-- edges: contains, imports, references/calls where statically resolvable.
-- FTS rows for symbol names, qualified names, and signatures.
+- `files`: path, language, content hash, mtime/size, indexing status, generated/vendor flags, token estimate.
+- `nodes`: stable id, kind, name, qualified name, file/range, signature, content hash, confidence,
+  provenance metadata. v1 populates repository/module/directory/file/symbol/function/class/interface/type
+  and selected config/dependency/script nodes.
+- `edges`: source node, target node, kind, confidence, source (`static` in v1, `lsp` later), provenance
+  metadata.
+- FTS rows for path, symbol name, qualified name, signature, and selected comments/headings.
 
 Minimum store entities:
 
 | Entity | Required fields |
 |---|---|
-| Files | path, language, content hash, mtime, size, indexed-at timestamp |
-| Symbols | stable id, file path, kind, name, qualified name, start/end lines, signature |
-| Edges | source symbol, target symbol, kind, confidence, metadata |
+| Files | path, language, content hash, mtime, size, token estimate, indexed-at timestamp |
+| Nodes | stable id, kind, file id, name, qualified name, start/end lines, signature, content hash, confidence, provenance |
+| Edges | source node id, target node id, kind, confidence, source, provenance |
+| FTS | node id or file id, path, name, qualified name, signature, selected text |
+| Measurements | operation, raw/projected/returned sizes where available, fallback reason, metadata |
 
-Add FTS over symbol name, qualified name, and signature. Use migrations even for v1 so future LSP fields do
-not force ad-hoc DB rewrites.
+Use one typed node table and one typed edge table, not separate tables per edge kind. New graph kinds should
+usually be row values plus migrations for new metadata, not new bespoke tables. Use migrations from the first
+slice so future LSP fields and Code Wiki metadata do not force ad-hoc DB rewrites.
+
+1.0.0 is codegraph only: doc/wiki kinds are documented-but-reserved, not populated. `ConceptNode` is dropped
+from the base design because it needs LLM judgement and has low deterministic signal.
+
+Canonical node/edge shape:
+
+| Kind family | v1 status | Notes |
+|---|---|---|
+| Repository / module / directory / file | yes | Derived from git root and file inventory. |
+| Symbol / function / class / interface / type | yes | Derived from AST; exact ranges and signatures required. |
+| Package / dependency / config / script | partial | Deterministic manifests and scripts only. |
+| Route / endpoint / test / build target | later/on-demand | Framework-specific, lower confidence until extractors exist. |
+| WikiPage / generated block | reserved | Future additive graph-derived Markdown, `source=graph`. |
+| ChangeSet | yes for verify/index | Derived from git status/diff and used for freshness/impact. |
+
+| Edge family | v1 status | Notes |
+|---|---|---|
+| `contains`, `imports`, `exports`, `references`, `calls`, `extends`, `implements` | yes/partial by language | Static, confidence-labelled. |
+| `changed_by`, `impacts` | yes as derived evidence | Used by `tk_verify` and stale projections. |
+| `owns`, `co_changes_with` | T1 impact facts | Heuristic evidence from CODEOWNERS and git history. |
+| `tests`, `routes_to`, `configures`, `builds` | later/on-demand | Framework-specific; low confidence until proven. |
+| `documents` | reserved | Future Code Wiki block/page provenance. |
 
 `graph.db` may persist signature/map snippets. It must not persist full source slices used by `tk_read` or
 `mode=edit_window`; those are read from the live workspace and validated with hash/anchors.
 
-LSP remains a v2 candidate. If v2 adds it, responses should be able to distinguish `source=static` from
-`source=lsp` and expose confidence rather than silently upgrading semantics.
+LSP remains a v2 candidate. If v2 adds it, nodes/edges distinguish `source=static` from `source=lsp` and
+expose confidence rather than silently upgrading semantics.
+
+### Incremental freshness
+
+Freshness is a base feature, not a later cleanup:
+
+1. Track each node's `content_hash` and a derived `referencer_set_hash`.
+2. On query or explicit index, use git/file metadata to find changed files, then parse old/new ASTs for
+   changed symbols where available.
+3. Classify changes as new/removed/signature/body/comment-only. Comment/whitespace-only changes do not
+   force downstream recompute.
+4. Traverse downstream over `calls` / references / imports to identify stale derived nodes and projections.
+5. Emit measurement facts: files scanned, symbols reparsed, symbols skipped, stale nodes, and fallback reason.
+
+No resident watcher daemon is required in v1. The trigger is lazy query/index refresh, with an optional git
+event hook later.
 
 ### Query behavior
 
@@ -167,6 +247,8 @@ LSP remains a v2 candidate. If v2 adds it, responses should be able to distingui
 - Return grouped files, signatures, and the smallest source snippets needed for orientation.
 - Prefer answer sufficiency over raw volume: include the next recommended `tk_read` target when confidence is
   not high.
+- Encode the cheap-outline-first ladder directly in the output: map first, focused read second, raw fallback
+  only when anchors/confidence require it.
 
 `tk_read`:
 
@@ -174,18 +256,43 @@ LSP remains a v2 candidate. If v2 adds it, responses should be able to distingui
   hand-back with candidate anchors.
 - `mode=edit_window` returns exact target slice, stable nearby anchors, and file hash. It does not add
   imports/callers automatically in v1.
+- Related callers/callees/imports are separate bounded sections only when requested by mode or budget, not
+  automatic context expansion.
 
 `tk_search`:
 
 - `mode=text` returns grouped text hits with anchors.
 - `mode=symbol` searches symbol names/signatures.
 - `mode=callers` uses static reference/call edges where available and labels low-confidence results.
+- `mode=impact-lite` or equivalent adapter mode may return T1 impact facts: 1-hop static callers,
+  `co_changes_with` git-pairwise evidence, and CODEOWNERS `owns` evidence. It must label heuristics and stay
+  inside the four-tool MCP surface.
 
 `tk_verify`:
 
 - Summarizes local diff and test-failure output into changed files, failing tests/errors, and referenced
   anchors.
 - Stores or points to raw recovery for over-budget failure output. It does not claim a patch is correct.
+- Uses the same changed-symbol and downstream traversal substrate as incremental indexing. T2 evidence
+  (tests/routes/configs) is on-demand and low-confidence unless framework-specific extraction proves it.
+
+### Projection safety contract
+
+The retrieval plane follows one rule: **structure first, candidates second, exact code last, verification by
+delta**.
+
+- Understanding contexts may use metadata, outline, imports/exports, structural projection, graph-derived
+  Markdown, and compact candidate groups.
+- Editing contexts must return exact symbol/range/edit-window content with content hash and stable anchors.
+  Non-exact projection is rejected or escalated when `purpose=edit`.
+- Verification contexts prefer diff, changed symbols, failing tests/errors, and raw-recovery pointers instead
+  of re-reading every touched file.
+- Broad literal search is projected into grouped candidates with hard caps: max files, max matches per file,
+  max snippet chars, confidence reasons, and an exact next read.
+- Generated, lock, minified, giant JSON, and machine-produced artifacts are suppressed by default with an
+  explicit warning and raw fallback.
+- Retention-first escalation is mandatory: `metadata -> outline -> symbol/range -> edit_window -> full file`;
+  `failure projection -> raw log` when parser confidence is low or the user asks for raw evidence.
 
 ---
 
@@ -201,7 +308,10 @@ Retention:
 
 Refresh:
 
-- Tool calls refresh changed files by content hash / stat metadata before answering.
+- Tool calls refresh by content hash / stat metadata first, then narrow to changed symbols where the language
+  extractor supports it.
+- Stale derived projections are computed from node content hashes, referencer-set hashes, and downstream edge
+  traversal.
 - `tk graph index` is available for explicit prewarm.
 - No watcher daemon in v1.
 
@@ -257,23 +367,30 @@ Savings measurement is mandatory but not a fixed release threshold:
 Implementation slices:
 
 1. Node gate + empty `tk graph doctor` / `tk graph index` surface.
-2. Store + schema + hash-based file inventory under `~/.token-killer/projects/<fingerprint>/graph.db`.
-3. TS/JS extraction and `tk graph map` for this repo.
-4. Python + Java extraction.
-5. `tk graph read` including `mode=edit_window`.
-6. `tk graph search` with text/symbol/callers modes.
-7. MCP stdio server with exactly four tools.
-8. `tk install --graph` host wiring + graph guidance.
-9. `tk graph verify` and measurement report fields.
+2. Store + generic `files` / `nodes` / `edges` schema + migrations under
+   `~/.token-killer/projects/<fingerprint>/graph.db`.
+3. TS/JS extraction, stable node IDs, and `tk graph map` for this repo.
+4. Symbol-level incremental substrate: content hash, referencer-set hash, changed-symbol detection, stale
+   projection facts.
+5. Python + Java extraction.
+6. `tk graph read` including `mode=edit_window`.
+7. `tk graph search` with text/symbol/callers modes plus T1 impact facts inside existing modes.
+8. MCP stdio server with exactly four tools.
+9. `tk install --graph` host wiring + graph guidance.
+10. `tk graph verify` and measurement report fields.
+11. Human projection: structural HTML explorer + graph-derived Markdown from the same query core, with final
+    CLI spelling accepted during implementation.
 
 Acceptance tests:
 
 - Unit fixtures for TS/JS/Python/Java extraction.
-- Store migration and stale-file refresh tests.
+- Store migration, stable node-id, and stale-symbol refresh tests.
 - Interface tests for all four `GraphRequest` kinds.
 - CLI tests for Node gate, lazy refresh, and exact anchor/hash output.
 - MCP schema snapshot proving only `tk_map`, `tk_read`, `tk_search`, `tk_verify` are exposed.
 - Install dry-run tests proving plain `tk install` does not enable graph and `tk install --graph` does.
+- HTML/Markdown projection tests proving generated claims carry source anchors, freshness metadata, and
+  `source=graph`.
 
 ---
 
@@ -295,21 +412,26 @@ This is not a product failure to hide. It is the host ceiling documented in the 
 - VS Code extension using the Language Model Tool API: v2 candidate after retrieval core stabilizes.
 - Optional LSP enhancement for higher-precision def/ref/callers: v2 candidate.
 - File watcher / daemon.
-- Embeddings, vector search, prompt compression, model routing, history compaction, and API gateway: out of
-  scope for this product direction unless a future ADR explicitly reverses it.
+- Full Code Wiki editing / manual round-trip.
+- T2/T3 impact: tests/routes/configs/framework-specific impact and CI policy gates.
+- Embeddings, vector search, prompt compression, model routing, history compaction, cloud services, model API
+  keys, and API gateway: out of scope for this product direction unless a future ADR explicitly reverses it.
+- Proprietary Copilot traffic interception is out of scope. Use supported channels: MCP, CLI, instruction
+  files, local HTML, and later VS Code extension APIs.
+- Graph/wiki artifacts are not written into the repository by default. Repository export requires an explicit
+  flag and must preserve manual blocks.
 
 ---
 
-## 10. Human surface — graph explorer (design absorption, proposed extension)
+## 10. Human surface — graph explorer
 
-> **Status:** proposed extension beyond ADR 0013's navigation-only-CLI scope. This section captures *design
-> intent and what to borrow* from the 8 studied projects (cloned under `/tmp/tk-research/`, see
-> §11 Layer 3 below and
+> **Status:** accepted human-surface design for the same codegraph plane. This section captures *design intent
+> and what to borrow* from the studied projects (see
 > [`codegraph-wiki-landscape-20260618.md`](./codegraph-wiki-landscape-20260618.md)). It is **structural and
 > LLM-free**: the human reads the *same `graph.db`* the agent queries; any chat is the host's Copilot via
 > tk's MCP/Language-Model-Tool surface, never a tk-owned LLM. **Renderer tech is deliberately NOT fixed
-> here** — only the UX contract and the borrowed design ideas are. Engine choice (vendored graph lib vs
-> self-built SVG/Canvas) is a separate decision after this design is accepted.
+> here**: only the UX contract and the data seam are fixed. Engine choice (vendored graph lib vs self-built
+> SVG/Canvas) is a separate implementation decision.
 
 ### 10.1 Why a human surface at all
 
@@ -453,13 +575,16 @@ Extends the §7 implementation slices; each is independently shippable and measu
    (reuses ADR 0014 backend; no renderer yet). Test: JSON contract matches `tk_map`.
 2. **Static template.** Render that JSON into an `src/report/html.ts`-style page: sidebar file/module tree +
    content pane + clickable `file:line` anchors. No graph-viz engine yet — text/tree only. Already useful.
-3. **Graph view.** Add the node/edge canvas with the overview → lazy-expand → focus UX (10.2-A). Renderer
+3. **Graph-derived Markdown.** Generate structural Markdown blocks/pages from the same graph output, tagged
+   `source=graph`, with source anchors, freshness metadata, and manual-block preservation. This is not
+   full editable Code Wiki.
+4. **Graph view.** Add the node/edge canvas with the overview → lazy-expand → focus UX (10.2-A). Renderer
    chosen here per the deferred decision; the UX layer is tk-owned and engine-agnostic.
-4. **Detail panels + snippets.** Per-symbol panel = signature + anchors + graph-derived call snippet
+5. **Detail panels + snippets.** Per-symbol panel = signature + anchors + graph-derived call snippet
    (validated + fallback, 10.2-D).
-5. **VS Code integration.** `tk graph explore` opens Simple Browser; anchors become `vscode://file` deep
+6. **VS Code integration.** `tk graph explore` opens Simple Browser; anchors become `vscode://file` deep
    links when served in-IDE (10.2-G). Document the enterprise MCP/extension policy ceiling (§8).
-6. **Export + optional control.** `tk graph export --html` self-contained snapshot (10.2-B/C); later
+7. **Export + optional control.** `tk graph export --html` self-contained snapshot (10.2-B/C); later
    `.tk/graph.json` notes/page steering (10.2-E). Editable round-trip (10.2-F) remains deferred.
 
 Measurement (per ADR 0016): the explorer is a human surface, so report *navigation* facts (nodes shown vs
@@ -468,147 +593,36 @@ not compression. The token story stays on the agent surface (§7).
 
 ---
 
-## 11. Layer-by-layer absorption (base / agent / human / incremental)
+## 11. Absorption ledger
 
-> Merged from the former `codegraph-1.0-absorption-design-20260618.md` (2026-06-19). **Framing (per user
-> 2026-06-18):** NOT competitor analysis, NOT "must own one base + dual surface." The question is narrower
-> and constructive: across the 10 studied projects, **how is each of the three layers best designed, and how
-> does tk absorb it into `feat/1.0.0`?** Grounded in tk's real choices: `node:sqlite` + FTS, `web-tree-sitter`
-> static engine, 4 MCP tools (`tk_map/read/search/verify`), measurement-first, `src/retrieval` (not yet
-> created), and tk's existing `src/report/html.ts` + `src/inspect` HTML infra. Raw research companion:
-> [`codegraph-wiki-landscape-20260618.md`](./codegraph-wiki-landscape-20260618.md).
+The old design files have been absorbed into this document and should not be treated as separate contracts.
 
-### 11.1 Layer 1 — 底座 (the graph base): how to design it best
+Merged sources:
 
-tk's planned base: `files / symbols / edges` tables + FTS, signatures-only persistence, source read live-from-disk with hash. That is sound. What the field teaches:
+- Former absorption design: base / agent / human / incremental absorption.
+- Former next-stage architecture design: unified architecture, graph model, Code Wiki block
+  rules, GUI/HTML shape, enterprise integration, roadmap, risks, and first engineering tasks.
+- Former `measurement-harness-design-20260618.md`: now §12.
 
-#### Absorb
-1. **One typed-edge table, not one table per edge kind** (GitNexus's hybrid schema, translated to SQL). tk already plans `edges(source, target, kind, confidence, metadata)` — keep exactly this. It is the SQL analog of GitNexus's single `CodeRelation{type}` table: cheap DDL, and any new edge kind is a row value, not a migration. **Confirms tk's current edge model; don't split it.**
-2. **Stable string node IDs, references stored as IDs not pointers** (RepoAgent). tk's `relative_path::QualifiedName` (GitNexus/CodeWiki both use this exact form) makes the graph **serializable and diffable across runs** — the precondition for sound incremental. Persist edges as `(srcId, dstId)` string pairs; rehydrate on load. tk's "out-of-tree index" period needs this.
-3. **Per-node fingerprint + sorted referencer-set, stored in the row** (RepoAgent's invalidation precondition). Add to the `symbols` table: `code_hash` (content fingerprint) and a derived `referencer_set_hash`. This is what makes "did my code change?" and "did my callers change?" answerable without a full reparse — see Layer-4 incremental below. Cheap to add now, expensive to retrofit.
-4. **Typed *weighted* edges with a `confidence`/`source` field** (RepoDoc `{calls, implements, describes, semantic_impact}` weighted; tk already has `confidence`). Keep `confidence` AND add a `source` enum (`static` now, `lsp` later) so v2 LSP can coexist with v1 static edges without silently upgrading semantics — design §4 already wants this; make it a column, not a post-hoc flag.
+What was absorbed into the canonical design:
 
-#### Absorb *only if* the Human/Wiki layer is added (see Layer 3 decision)
-5. **Heterogeneous node types: CodeNode + DocNode + ConceptNode** (RepoDoc, ~200 LOC NetworkX). tk's v1 base is **CodeNode-only**, which is correct for navigation-only. A `DocNode` (with `version:int` for staleness) and `describes` edge are needed **only** when tk generates human docs/wiki tied to code. Decision gate: don't add these tables in v1 unless the Wiki layer ships; design the migration so they slot in (tk already mandates migrations from v1).
+| Source idea | Canonical location |
+|---|---|
+| One backend with CLI/MCP/human projections | §2, §3, §10 |
+| Generic `nodes(kind, ...)` + `edges(kind, ...)` schema | §4 |
+| Stable node ids, content hashes, referencer-set hashes | §4, §5, §7 |
+| Cheap-outline-first ladder and bounded outputs | §4 Query behavior, §4 Projection safety contract |
+| T1 impact facts: callers, co-change, CODEOWNERS | §0, §4, §7 |
+| Structural HTML explorer and graph-derived Markdown | §2, §10 |
+| Manual block preservation, freshness metadata, no CDN | §2 Human output, §10 |
+| No tk-owned LLM, no model API key, no proprietary Copilot interception | §0, §8, §9, §10 |
+| Measurement harness and honesty boundaries | §7, §12 |
 
-#### Don't copy
-- **Embeddings / vector store** as the base (deepwiki-open FAISS, OpenDeepWiki none) — out of scope per ADR 0013, and the research confirms graph-backed retrieval beats naive 350-word chunking. tk's FTS + PageRank is the right v1 retrieval primitive.
-- **Graph-DB engine** (LadybugDB/Kuzu/NetworkX) — tk's `node:sqlite` choice is fine; GitNexus's value is the *schema shape*, not the engine. Their WASM-portability win is irrelevant to tk's CLI-first delivery.
-- **CodeWiki's single untyped `depends_on`** — collapses inheritance/import/call into one set; tk's typed edges are strictly better.
+Precedence:
 
-#### tk integration
-`src/retrieval/store/schema.ts`: `files`, `symbols (+ code_hash, referencer_set_hash)`, `edges(src,dst,kind,confidence,source,meta)`, FTS over name/qualified-name/signature. IDs = `relpath::qualname`. Persist signatures only; never source slices (already in design §4). Migrations from row one.
-
-### 11.2 Layer 2 — Agent 面: how to design it best
-
-tk's planned agent surface: 4 MCP tools `tk_map / tk_read / tk_search / tk_verify`, one deep `src/retrieval` core behind thin CLI + MCP adapters, every response carrying anchors + confidence + measurement facts. The field strongly validates this and sharpens it:
-
-#### Absorb
-1. **Cheap-outline-first tool ladder** (DeepWiki's `read_wiki_structure → read_wiki_contents → ask_question`). This is the single best agent-API idea in the whole landscape: the agent pulls a **cheap structural outline first, full content only on demand** — token-frugal by construction. tk's `tk_map → tk_read` is already this shape; make it **explicit in tool descriptions and in `tk_map`'s output** ("next recommended `tk_read` target when confidence not high" — already in design §4, elevate it to the contract). This is tk's token-saving mechanism on the agent side: **precompute + bounded outline**, not output compression.
-2. **Bounded responses as the token lever** (GitNexus: depth clamps, `include_code:false` default, paginated lists, per-process caps). tk should default every tool to **anchors + signatures, not bodies**; `tk_read` is the only body-returning tool, and it returns the *smallest resolving slice*. Add explicit token-budget inputs (tk design already has "token budget" per request kind) and **log returned vs. avoided bytes** (tk's measurement facts).
-3. **"One backend, thin adapters"** (GitNexus `LocalBackend` → MCP/HTTP/CLI; CodeWiki MCP calls same `run()` as CLI). tk already plans `src/retrieval` as a deep module with CLI + MCP adapters that "must not reinterpret model-facing output." Validated at 42K★ scale — **keep this seam rigid**; it is also what lets a future Human/HTTP surface reuse the same core for free (Layer 3).
-4. **Provenance / `SourceFiles` on every answer** (OpenDeepWiki) — tk already mandates resolvable anchors + content hash. This is what makes "cite the file:line" answers and the verify gate possible. Keep it a hard correctness gate (design §7), not a nicety.
-
-#### Absorb as v2 candidate tools (don't add to v1's 4)
-5. **`impact` / `trace` / `detect_changes`** (GitNexus). These are the high-value *navigation* tools beyond map/read/search: blast-radius (downstream dependents of a change), shortest-path between two symbols, git-diff→affected-symbols. They fit tk's graph perfectly and are pure-static (no LLM). **`tk_verify` already overlaps `detect_changes`.** Keep v1 at 4 tools (ADR scope discipline); note `impact`/`trace` as the first v2 additions once measurement proves ROI.
-
-#### Don't copy
-- **OpenDeepWiki's `SearchDoc` = `LIKE '%query%'` + a 12k-token LLM summary per query** — burns tokens to paper over weak retrieval. tk's FTS + symbol/callers modes are better and LLM-free.
-- **Slash-command "re-prompt the host LLM" as the agent API** (Understand-Anything has no real query engine; "semantic search" is dead code). tk's MCP tools with a real query core are the right call.
-- **Re-reading the whole repo per call** (Davia's 1000-file/130k dump). tk's hash-incremental refresh is correct.
-
-#### tk integration
-Keep `src/retrieval/mcp/*` at exactly 4 tools (schema-snapshot test enforces this, design §7). Encode the outline-first ladder in tool descriptions + `tk_map` "next read" hint. v2 backlog: `tk_impact`, `tk_trace` reusing the same `edges` table.
-
-### 11.3 Layer 3 — Human 面
-
-The human-surface design is specified in full in **§10** (graph explorer): structural, LLM-free, reusing
-`src/report/html.ts`, graph-viz lib or self-built SVG/Canvas over inline JSON (NOT mermaid as primary),
-self-built lazy-expand/anchor-panel UX, opened in VS Code Simple Browser; chat = Copilot via MCP/LM-Tool,
-never a tk-owned LLM. The layer-absorption framing reached the same resolution:
-
-> **Correction (user, 2026-06-18): "a Wiki does NOT need an LLM."** A code Wiki is mostly deterministic from
-> the graph — file tree, module overview, symbol/signature lists, call hierarchy, import graph, mermaid from
-> real `edges`, PageRank "key files", cross-links — **zero LLM**. LLM only buys natural-language prose
-> narration, which is precisely the hallucination-prone, token-hungry, freshness-lagging part. So tk's
-> Human surface is **structural and LLM-free by default**; §10 *is* the Wiki, not a lesser substitute.
-> Optional later additives (no tk-owned LLM): a `.tk/wiki.json` control file (DeepWiki `.devin/wiki.json`
-> shape) to steer which structural pages render; wiki-as-grounding-context for Copilot Q&A; editable
-> round-trip (Davia) deferred.
-
-**Delivery: VS Code is the human viewer AND the LLM — tk owns neither** (the clean architecture, confirmed
-against the landscape report's host-channel analysis): **one graph → human reads it in VS Code, agent chats
-it via Copilot — tk supplies graph + viewer, the LLM is always the host's.**
-
-| Side | What | tk provides | LLM source |
-|---|---|---|---|
-| Human | Structural HTML explorer opened **inside VS Code via built-in `Simple Browser: Show`** (localhost URL → editor webview tab, **no extension needed**), or a Webview extension | `tk graph serve` + `src/report/html.ts` render | **none** (structural) |
-| Agent | Copilot navigates/chats the graph | MCP 4 tools (channel **C3**) or VS Code extension **Language Model Tool API** `vscode.lm.registerTool` (channel **C8**) | **Copilot** (user's existing subscription) |
-
-This **dissolves the "needs a subscription-mode LLM" concern entirely**: in VS Code, Copilot already *is* the
-user's subscription LLM, grounded via MCP/tools — tk never holds an API key, never spends API tokens, and
-never violates ADR 0013's "no LLM in v1." If narrative prose is ever wanted, the honest path is **ask Copilot
-to narrate a module on-demand through the graph tools**, not pre-generate prose with a tk-owned model.
-
-**Honest ceiling** (landscape report channels C3/C8): in *enterprise-locked* VS Code Copilot, MCP (C3) is
-**admin-disabled by default** and extensions (C8) are `extensions.allowed`-gated — so the *Copilot-chats-the-graph*
-path is org-policy-gated (the already-documented host ceiling, §8). But the **human Simple-Browser explorer is
-NOT gated** (it only opens a localhost page) — it always works; personal-edition VS Code opens both paths.
-
-**tk integration** (extends §10.3/§10.4): `src/retrieval/html/*` consumes the retrieval core's `map` output →
-`src/report/html.ts` renderer, emitting inline graph JSON; new `tk graph serve` (localhost) + `tk graph
-explore` printing/opening the URL in VS Code Simple Browser. Lazy-expand graph nav as inline client-side JS
-over embedded JSON (no framework). v2 (deferred per §9): a single VS Code extension hosting the Webview
-explorer **and** registering the Language Model Tool API tools **and** watching files for incremental — one
-extension serving both surfaces.
-
-### 11.4 Layer 4 — incremental freshness (cross-cutting, the hardest correctness lever)
-
-Both surfaces need the graph to stay fresh cheaply. tk's design has hash-based per-file refresh — correct but coarse. The field gives the **sound symbol-level algorithm** (RepoDoc + RepoAgent), directly portable to tk's `symbols`/`edges` tables:
-
-1. **AST-level diff, not text diff** (RepoDoc `diff_analysis.py`): on changed files, parse old (`git show base:file`) + new, classify each symbol into a `ChangeType` (`NEW / REMOVED / API_SIGNATURE_CHANGED / BODY_CHANGED / COMMENT_ONLY`). **Drop comment/whitespace-only changes → no re-index, no recompute.**
-2. **Two-snapshot invalidation via stored fingerprints** (RepoAgent): a symbol is stale if its `code_hash` changed OR its `referencer_set_hash` changed (a caller appeared/disappeared). `new ⊆ old` = caller-removed; else caller-added — both invalidate dependents. This is why Layer-1 step 3 (store those hashes) matters.
-3. **Scoped recompute via edge traversal** (RepoDoc): BFS downstream over `calls` edges from changed symbols → the exact set whose derived artifacts (map rank, doc, anchors) need refresh; topological order. tk's `tk_verify` / `tk graph index` should use this, not full reparse.
-4. **Component-precise extraction** (RepoDoc `git show` + range): re-read only the changed symbol's slice, not the file.
-5. **The "fake file" HEAD-vs-dirty trick** (RepoAgent): to answer "what is the graph at commit-state" while the working tree is dirty, swap dirty file out / HEAD content in / parse / restore. Useful for tk's `tk_verify` commit-time semantics.
-
-> **Avoid CodeWiki's incremental** (path-substring + module-tree-ancestor-only) — unsound, misses real call-graph dependents.
-
-#### tk integration
-`src/retrieval/indexer/incremental.ts`: git-diff → AST ChangeType filter → fingerprint compare → downstream BFS over `edges` → scoped re-extract. Emit measurement facts (symbols reparsed vs skipped) — this *is* the offline A/B denominator the measurement harness (§12) wants.
-
-### 11.5 Summary: what tk absorbs, per layer
-
-| Layer | Absorb into tk | Source | Conflicts with current ADR? |
-|---|---|---|---|
-| 底座 | one typed-edge table (confirm), stable string IDs, per-node `code_hash`+`referencer_set_hash`, `source` enum column | GitNexus, RepoAgent, RepoDoc | No — sharpens design §4 |
-| 底座 (gated) | DocNode tables (only for editable round-trip, far future) | RepoDoc | Only if a doc-editing layer ships |
-| Agent | outline-first ladder explicit in contract; bounded/signature-default responses; keep 1-backend seam; `impact`/`trace` as v2 | DeepWiki, GitNexus | No — sharpens 4-tool design |
-| Human | **structural (no-LLM) HTML graph explorer** reusing `src/report/html.ts`; **graph-viz lib (Cytoscape/Sigma) or self-built SVG/Canvas over inline JSON — NOT mermaid as primary**; self-built lazy-expand/anchor-panel UX; opened in **VS Code Simple Browser**; chat = **Copilot via MCP/LM-Tool**, not a tk-owned LLM | GitNexus (Sigma), Understand-Anything (React Flow/ELK), CodeWiki, DeepWiki | **Extends v1 — no tk-owned LLM, no ADR conflict** (see §10) |
-| Incremental | AST ChangeType filter + fingerprint diff + downstream BFS + fake-file trick | RepoDoc, RepoAgent | No — sharpens design §5/§7 |
-
-**Resolved direction (user, 2026-06-18):** the Human面 is a **structural, LLM-free graph→HTML explorer**, opened inside VS Code (Simple Browser / Webview); "Wiki" needs no LLM, and any chat over it is **Copilot** (the host's LLM) grounded via tk's MCP/Language-Model-Tool surface. **tk owns no LLM and spends no API tokens on either surface.** Everything else is additive sharpening of the already-accepted design. Remaining open item is only the org-policy ceiling (enterprise Copilot MCP/extension gating), which is pre-existing and documented, not a new decision.
-
-### 11.6 Grilling outcomes (2026-06-18/19) — supersede §11.1–11.5 where they conflict
-
-A subsequent grilling session (combining this absorption analysis, the §0–§10 design, and
-[`codegraph-codewiki-next-stage-20260618.md`](./codegraph-codewiki-next-stage-20260618.md)) reframed the axis
-away from ADR-compliance to **cost / benefit / feasibility / "can it really land"**, with two standing
-principles from the user: **(a) don't slice features across phases — ship each feature as complete +
-optimized, never "design now, refactor later"; (b) 1.0.0 = 底座 + codegraph only (no codewiki), but the 底座
-must be future-facing for codewiki.** Resolved decisions:
-
-- **G1 — Human surface.** HTML explorer **+** graph-derived Markdown, both **`source=graph`, tk holds/calls NO LLM**. Keep a `source` provenance field as a schema affordance (future host-LLM/Copilot prose would be tagged `source=host_llm`); no `llm_draft` pipeline in tk.
-- **G2 — impact split by cost/ROI, not version.** T1 (1-hop static callers + `co_changes_with` git-pairwise + CODEOWNERS `owns`) first — cheap, deterministic/language-agnostic, highest ROI. T2 (tests/routes/configs) framework-specific, on-demand, `confidence=low` + raw-diff fallback. T3 (CI gates) opt-in separate surface.
-- **G3 — incremental = symbol-level change detection as a 底座 primitive, built complete + tested now** (per-node `content_hash` + `referencer_set_hash` + git-diff→changed-symbols→downstream BFS + ChangeType filter). Trigger is lazy (on query / git event, no resident daemon). Rationale: codegraph used live during editing needs a fresh graph; and codewiki's "always-current" staleness is structurally a diff/invalidation query that must read this substrate — deferring it = the refactor-debt the user rejects.
-- **G4 — 底座 graph model is generic (`nodes(kind,…,metadata_json)` + `edges(kind,…)` single tables) + migration system**, so codewiki's WikiPage/`documents`/wiki_blocks are future **pure-additive** kinds/tables, zero 底座 redesign. 1.0.0 populates only code-kinds; doc-provenance kinds are documented-but-reserved, not built. **ConceptNode dropped** (low signal + needs LLM).
-- **G5 — storage = `node:sqlite` + Node ≥22.13 gate** (user's choice: accept cutting the Node-20 cohort in exchange for zero-dependency + native speed; core tk stays ≥20, graph path prints a clean version message + uses the no-warning child re-entry).
-- **codewiki effort (estimate).** Because the 底座 is future-faced (G3/G4), codewiki is mostly *derive + render*, not *rebuild*: doc-provenance + staleness ~small (reuses G3); **page-derivation engine (graph→Markdown) is the main cost**, scaling with the number of page types; mermaid-from-edges small-med; **HTML explorer/renderer is the wildcard** (vendor vs self-built). Rough total for one experienced dev, 底座+codegraph done: **~2.5–4 weeks if the HTML explorer is shared with codegraph's human surface, ~4–7 weeks if codewiki gets its own renderer.** Runtime generation is **seconds, no LLM, no token cost** (vs DeepWiki/CodeWiki minutes+tokens). Two effort drivers to pin down: number of page types, and vendor-vs-self-built renderer.
-
-> **Note on precedence.** §11.6 reflects the latest grilling and **supersedes** the earlier layer-by-layer
-> notes (§11.1–11.5) and the §0–§10 design where they conflict — notably: impact is split by cost/ROI tiers
-> (G2) not deferred wholesale to v2; incremental is a v1 底座 primitive (G3) not a "sharpening"; the schema is
-> a single generic `nodes`/`edges` model (G4) with ConceptNode dropped; Node ≥22.13 is locked (G5).
+- §0 to §10 and §12 are the design contract.
+- §11 is only the merge ledger.
+- Research and landscape reports remain evidence sources, not implementation contracts.
 
 ---
 
@@ -799,7 +813,7 @@ Four measurement *philosophies*. Only **A (trajectory A/B delta)** measures W2 (
 - Research compendium (five-family evidence base + telemetry §11): [`low-token-agent-research-compendium-20260618.md`](./low-token-agent-research-compendium-20260618.md).
 - Research companion (raw survey): [`code-graph-research-20260618.md`](./code-graph-research-20260618.md).
 - Code-graph + Wiki landscape (10 projects): [`codegraph-wiki-landscape-20260618.md`](./codegraph-wiki-landscape-20260618.md).
-- Next-stage architecture synthesis: [`codegraph-codewiki-next-stage-20260618.md`](./codegraph-codewiki-next-stage-20260618.md).
+- Absorbed next-stage architecture synthesis: see §11 absorption ledger.
 - ADRs (source of truth): [0013](../adr/0013-code-graph-surface-scope.md) · [0014](../adr/0014-tk-becomes-mcp-server.md) · [0015](../adr/0015-node-sqlite-feature-gate.md) · [0016](../adr/0016-measurement-before-feature.md).
 - Aider repo map: https://aider.chat/docs/repomap.html.
 - Serena: https://github.com/oraios/serena.
