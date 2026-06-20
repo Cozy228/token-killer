@@ -60,6 +60,7 @@ function writeGuidanceStep(host: Host, dryRun: boolean): void {
   }
   const written = writeGuidance(host);
   if (written.guidance) out(`Wrote usage guidance: ${written.guidance}`);
+  if (written.lazy) out(`Wrote lazy-dev guidance: ${written.lazy}`);
   if (written.loader) out(`Referenced it from: ${written.loader}`);
 }
 

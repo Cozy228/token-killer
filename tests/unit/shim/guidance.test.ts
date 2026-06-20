@@ -8,6 +8,8 @@ import {
   guidanceDoc,
   guidanceFilePath,
   guidanceLoader,
+  lazyFilePath,
+  ponytailDoc,
   unwriteGuidance,
   writeGuidance,
 } from "../../../src/shim/guidance.js";
@@ -34,9 +36,11 @@ describe("guidanceDoc", () => {
     expect(doc).toContain("tk read --max-lines 200");
     expect(doc).toContain("tk rg <pattern> <path>");
     expect(doc).toContain("tk tree <path>");
-    // Output-brevity habit (highest-ROI agent behavior).
-    expect(doc).toMatch(/Keep your own replies short/);
-    expect(doc).toMatch(/4× input/);
+    // TK.md is the INPUT-side lever only — the output-side "write less / be brief"
+    // doctrine moved to PONYTAIL.md, so it must NOT be repeated here.
+    expect(doc).not.toMatch(/Keep your own replies short/);
+    expect(doc).not.toMatch(/lazy senior developer/);
+    expect(ponytailDoc()).toMatch(/lazy senior developer/);
     // Human-only analytics surfaces must NOT live in always-on agent context.
     expect(doc).not.toContain("tk gain");
     expect(doc).not.toContain("tk inspect");
@@ -129,6 +133,56 @@ describe("writeGuidance — vscode (user-level .instructions.md, inlined)", () =
     expect(readFileSync(file, "utf8")).toContain("applyTo");
     unwriteGuidance("vscode", home);
     expect(() => readFileSync(file, "utf8")).toThrow();
+  });
+});
+
+describe("PONYTAIL.md — the lazy-dev doctrine, a second standalone file", () => {
+  test("ponytailDoc is the verbatim lazy-senior-dev instruction", () => {
+    const doc = ponytailDoc();
+    expect(doc).toContain("lazy senior developer");
+    expect(doc).toContain("stop at the first rung that holds");
+    // Provenance preserved (MIT redistribution).
+    expect(doc).toContain("github.com/DietrichGebert/ponytail");
+  });
+
+  test("claude-code writes PONYTAIL.md and adds a second @import to the same block", () => {
+    const written = writeGuidance("claude-code", home);
+    expect(written.lazy).toBe(path.join(home, ".claude", "PONYTAIL.md"));
+    expect(readFileSync(lazyFilePath("claude-code", home)!, "utf8")).toContain(
+      "lazy senior developer",
+    );
+
+    const claudeMd = readFileSync(path.join(home, ".claude", "CLAUDE.md"), "utf8");
+    expect(claudeMd).toContain("@TK.md");
+    expect(claudeMd).toContain("@PONYTAIL.md");
+    // Still ONE guarded block, not two.
+    expect(claudeMd.match(/token-killer >>>/g)?.length).toBe(1);
+  });
+
+  test("vscode writes a second always-on .instructions.md for the doctrine", () => {
+    writeGuidance("vscode", home);
+    const file = path.join(home, ".copilot", "instructions", "token-killer-lazy.instructions.md");
+    expect(lazyFilePath("vscode", home)).toBe(file);
+    const instr = readFileSync(file, "utf8");
+    expect(instr.startsWith("---\napplyTo: '**'\n---\n")).toBe(true);
+    expect(instr).toContain("lazy senior developer");
+  });
+
+  test("copilot-cli inlines the doctrine (no import syntax) and writes no standalone file", () => {
+    const written = writeGuidance("copilot-cli", home);
+    expect(written.lazy).toBeUndefined();
+    expect(lazyFilePath("copilot-cli", home)).toBeUndefined();
+    const instr = readFileSync(path.join(home, ".copilot", "copilot-instructions.md"), "utf8");
+    expect(instr).toContain("git status --short"); // TK.md guidance
+    expect(instr).toContain("lazy senior developer"); // ponytail doctrine
+  });
+
+  test("unwriteGuidance removes PONYTAIL.md too", () => {
+    writeGuidance("claude-code", home);
+    const file = lazyFilePath("claude-code", home)!;
+    expect(existsSync(file)).toBe(true);
+    unwriteGuidance("claude-code", home);
+    expect(existsSync(file)).toBe(false);
   });
 });
 
