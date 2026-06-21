@@ -9,7 +9,8 @@
 > 3. **`## 跨需求实施路线`** —— 有序、依赖感知的落地步骤(测量针提前)。
 > 4. **`# 源指南索引` + `# 官方文档复核清单`** —— 读哪个 clone/文件、借鉴/避免什么、动手前先核哪些官方文档。
 > 5. **`# 各需求 ACTION 明细(A–M)`** —— 逐需求 copyable 代码(决策 + 文件 + 代码 + 数值 + 步骤 + 测试)。
-> 6. **`# 附录 A1`**(PageRank/SCIP/gitnexus 可抄实现)、**`# 附录 A2`**(gitnexus 全量可抄清单)—— 范围扩张项与 gitnexus 挖矿的真实代码。
+> 6. **附录**:**`A1`**(PageRank/SCIP/gitnexus 可抄实现)、**`A2`**(gitnexus 全量 9 子系统)、**`A3`**(对照两份新研究文档的补充:候选生成上游/finalScore 融合/跨文件类型传播)、**`A4`**(语义/领域/业务逻辑层:五层 semantic、无-embedding 结构化语义检索、四种可信度、Code/Behavior/Domain/Evidence 多图、Smart Read 三模式、CodeQuery 协议)。
+> 7. **查询架构骨架**见 `## 查询五段流水线`(Lexical→AST→SCIP→PageRank→Smart Read);语义/领域/业务理解层见 **附录 A4**(服务 A/B/I/J;v1 仅承诺 Phase-1 可验证语义,domain/business 为后续阶段)。
 >
 > ### 正文尚未回写、实施前必须以顶部为准的已知冲突点
 > 正文 A–M 为 2026-06-20 综合初稿,以下几处仍是**旧推荐**,已被顶部拍板推翻 —— 实施时以顶部 + 本清单为准:
@@ -69,6 +70,8 @@
 
 **另：M25 license 边界也已推翻（用户确认本工具自用、不分发）** —— license 拷贝边界放宽，gitnexus/codewiki/repodoc 等任何源均可直接抄用；仅给非 permissive 源（gitnexus PolyForm-NC、codewiki/repodoc 无 license）的逐字片段加 `[非分发安全]` 书签，供将来若转为公开发布时一键重写。详见下文 M25。
 
+**另：domain/business 知识层 = v1 全 4 阶段(2026-06-21 拍板,选项 c)** —— domain/business/evidence 知识层与结构 code graph 在 v1 同等交付(Phase-1 可验证语义 + Phase-2 领域词汇/用例 + Phase-3 多源 + Phase-4 人工确认),需求 **A 人理解上半 + I 协作升为 v1 一等**。**张力**:Phase-3 外连源(Jira/Confluence/runtime-trace)需 egress,与零-egress 强倾向冲突 → **tk 只消费本地 / 宿主取来的证据,不自持 egress、不内置凭据**;本地源(git/README/docs/OpenAPI/DB schema)直接做。详见**附录 A4**(尤其 A4.5 四种可信度 + A4.6 多图 + A4.11)。
+
 ## 决策总表
 
 | 需求 | 一句话决策（committed） | 服务 |
@@ -86,6 +89,44 @@
 | **K** 证明 | 两轨两工作 + 一条诚实不变量：Job B 在 Claude Code headless（唯一干净未缓存 token runner）跑离线 A/B（MCP on/off，4 跑/臂，中位数），**主指标 = uncached_input_tokens 差**（推翻 codegraph 的含缓存 total）；安全靠 fallback-replay 的 omission_bug_rate；主机宿主用 Track-2 机会事实（永不汇入 saved_tokens）；Job A 用小 N 任务协议明标"指示性" | 两者 |
 | **L** 分发/运行时 | 双通道：主＝`npm i -g token-killer` 极薄 CJS shim（用户自带 Node 运行）+ 各平台 vendored-Node bundle 作 optionalDependencies + GitHub Releases 自愈下载；备＝独立安装脚本拉同一 .zip/.tar.gz；vendored Node 锁 24.x（≥22.5 硬底）；22.5 bootstrap 硬阻断；Windows 直调 node.exe 不经 .cmd；tk Windows 既有修复列为强制不变量 | 两者 |
 | **M** 横切最佳实践 | 采用 M1–M17（三上下文类压缩边界为治理法、诚实低置信交还、provenance 标记、陈旧 banner、AST ChangeType、referencer set-diff、metadata-first、签名折叠、cheap-outline MCP 阶梯、声明式控制文件、订阅/宿主 LLM、uncached 主指标、fallback-replay）；M18 拒 embeddings/RL 默认、defer daemon/watcher；M19–M25 黑名单（eval LLM 输出、前缀祖先增量、幻觉图、裸 dump、种子默认管理员、12k token/查询、抄许可受限代码） | 两者 |
+
+## 查询五段流水线(架构骨架:Lexical → AST → SCIP → PageRank → Smart Read)
+
+> 与"ONE BACKEND, TWO DIETS"(存储架构)互补的**查询时架构骨架**。来源:`docs/codegraph/Token-killer-Research.md` 结论 + §三者职责边界(line 690-770 / 1671)。一句话:
+>
+> **Lexical 找入口,AST 建结构,SCIP 消歧义,PageRank 排优先级,Smart Read 只返回精确源码范围。**
+>
+> embeddings v1 **OUT**(已确认),所以"找入口"是**纯 lexical**(无 semantic 候选,`finalScore` 的 semanticScore 项置 0,见附录 A3 §1);其余四段确定性、零 egress。
+
+**一次查询的数据流:**
+
+```
+query
+  → ① Lexical 候选生成      标识符/关键词/路径候选(FTS5 + 词干扩展 + 路径先验 + 动作同义)
+  → ② AST symbol index     tree-sitter → node:sqlite 的 nodes/edges(符号、范围、调用、导入)
+  → ③ SCIP enrichment      (opt-in)跨文件符号身份/定义/引用消歧;无 indexer 则回退 tree-sitter 启发式
+  → ④ Personalized PageRank 以候选为种子跑 finalScore 融合排序 → Top-K symbols
+  → ⑤ Smart Read           只返回 Top-K 的精确 file:line 范围(signature-collapse / leaf-verbatim / char 预算)
+  → stop broad search       一次结构化回答顶替几十条 grep
+```
+
+**五层职责边界(做什么 / 不做什么 / 落在计划哪里):**
+
+| 层 | 解决 | 不负责 | 计划落点 |
+|---|---|---|---|
+| **Lexical 找入口** | 据 query 产生初始候选(exact / prefix / BM25) | 不理解真实调用关系 | 需求 A 第①步 + **附录 A3 §2**(getStemVariants / scorePathRelevance / A5b 同义词典) |
+| **AST 建结构** | 文件里有哪些函数/类/调用/导入 + 符号精确范围 | 跨文件引用未必准 | 需求 A / C / D(tree-sitter → node:sqlite 图) |
+| **SCIP 消歧义** | 这个引用精确指向哪个符号;定义/引用/实现 | 不决定哪个最重要 | **附录 A1 Need D SCIP opt-in** + 需求 D |
+| **PageRank 排优先级** | 哪些符号最值得优先看(任务种子) | 不解析代码、不产候选 | **附录 A1 PageRank** + **A3 §0/§1 finalScore** |
+| **Smart Read 精确范围** | 只返回 Top-K 的精确源码区间,不 dump 整文件 | 不做检索/排序 | 需求 G(输出经济)+ 需求 F(MCP read 工具) |
+
+研究原文压缩:**AST = structure,SCIP = identity,PageRank = priority**;补两端 = Lexical(entry)、Smart Read(exact-range output)。
+
+**与 tk 既有决策的契合:**
+- 五段全部**零 egress / 零 API token**:Lexical/AST/PageRank/Smart Read 纯静态确定性;SCIP 是 opt-in 本地 indexer。契合"LLM 仅借宿主"强倾向。
+- 每个 node 带 `file:line` span(C/J 决策)是第 ⑤ 段 Smart Read 的前提——"精确范围"不是裁剪文本,而是图节点自带 span 直接取。
+- 第 ③ 段 SCIP **opt-in**(决策 #8):装了 indexer 走编译级消歧,没装回退 tree-sitter 启发式,保住 Windows 零安装。
+- 这正是 gap 分析里 `architecture-3tier` agent 失败、未交付的那块——本节补齐。
 
 ## 跨需求实施路线(有序、依赖感知)
 
@@ -193,7 +234,7 @@
 
 ## 需求 A — Core method（这份"智能"是什么形态）
 
-**总纲（与 DEP MAP coherence 一致）：ONE BACKEND, TWO DIETS。** 唯一存储 = node:sqlite + FTS5 单文件里的一张 typed property graph（nodes + edges + nodes_fts），每个 node 携带可解析的 `file:line` span。两套渲染 diet 共享同一张子图：Agent diet（服务 B，确定性混合检索）与 Human diet（服务 A，ASCII/HTML 树）。embeddings、PageRank、LSP-as-core 全部排除出 v1。packing（signature-collapse）不是底座，是 Agent diet 内部的压缩函数。下游 C 是这张图的物理落地、D 是填图的 WASM tree-sitter 抽取器、F 是把 Agent diet 暴露成 MCP 工具、H 渲染 Human diet、G/J 塑形与背书输出。
+**总纲（与 DEP MAP coherence 一致）：ONE BACKEND, TWO DIETS。** 唯一存储 = node:sqlite + FTS5 单文件里的一张 typed property graph（nodes + edges + nodes_fts），每个 node 携带可解析的 `file:line` span。两套渲染 diet 共享同一张子图：Agent diet（服务 B，确定性混合检索）与 Human diet（服务 A，ASCII/HTML 树）。embeddings 与 LSP-as-core 排除出 v1;**PageRank v1 默认 ON**（决策 #8 / 附录 A1）、SCIP opt-in。packing（signature-collapse）不是底座，是 Agent diet 内部的压缩函数。下游 C 是这张图的物理落地、D 是填图的 WASM tree-sitter 抽取器、F 是把 Agent diet 暴露成 MCP 工具、H 渲染 Human diet、G/J 塑形与背书输出。
 
 > 跨需求版本闸（A 此前标 stillOpen，现由 D+A 关闭）：因 A 承诺 tree-sitter **WASM** 作抽取器（D1），L 的"是否 ship WASM"被定性回答=是 → 单一闸 `engines.node ">=22.5.0 <25.0.0"`，vendored Node 钉 24.x LTS，解析进程强制 `--liftoff-only`。FTS5 由 vendored-Node bundle 保证存在；仅 npm-shim-on-user-Node 路径需 C7 的 `LIKE`-scan 兜底。DB 路径走 out-of-tree（per-project fingerprint 目录于 user store），`.tk/` 树只放 human 工件（wiki）+ gitignored staging——**修正 A1 旧串 `.tk/codegraph.db` → out-of-tree 路径**。
 
@@ -465,9 +506,11 @@ export function formatSubgraphTree(subgraph: Subgraph, entryPoints: Node[]): str
 
 ---
 
-### 决策 A9 — PageRank/personalization 出 v1（FTS+结构排序足够）   服务 B
+### 决策 A9 — PageRank v1 默认 ON（FTS+结构 boost 是其廉价快路径/种子打分器,非替代）   服务 B
 
-(1) **决策**：v1 排序 = FTS 分 + exact-name co-location boost（同文件每多一个 query 符号 +20）+ dominant-file boost（一文件边数 ≥3× 次高）+ multi-term 乘性 boost（2 词→2×，3 词→2.5×）。PageRank 作为 v2 可选升级，仅在实测 FTS 排序 under-recall 时重开。
+> ⚠️ **已按 2026-06-20 拍板(决策 #8)更新**:PageRank v1 **默认 ON**;原"出 v1"措辞作废。实现见 **附录 A1**(PageRank 纯 TS)+ **附录 A3 §0/§1**(与 FTS boost 的 `finalScore` 融合)。
+
+(1) **决策**：v1 排序 = 两段互补信号经 `finalScore` 融合(见附录 A3 §1):(a) **FTS 分 + exact-name co-location boost（同文件每多一个 query 符号 +20）+ dominant-file boost（一文件边数 ≥3× 次高）+ multi-term 乘性 boost（2 词→2×，3 词→2.5×）** —— 廉价快路径,既为 PageRank 选 personalization 种子,又贡献 `lexicalScore` 分量;(b) **personalized PageRank(附录 A1)默认 ON** —— 提供结构中心性。两者互补、非二选一;无 `--no-rank` 时即走此路径。
 
 (4) **具体数值**：co-location +20/extra symbol；dominant 阈 ≥3×；multi-term ×2 / ×2.5。
 
@@ -536,8 +579,8 @@ instructions: indexed ? SERVER_INSTRUCTIONS : SERVER_INSTRUCTIONS_UNINDEXED,
 
 ### stillOpenForUser（A 相关，需你拍板）
 - **版本闸**：D+A 已关闭 Node 25 / `--liftoff-only`——请确认接受 `>=22.5.0 <25.0.0` + vendored Node 24.x 作单一跨需求版本锚。
-- **A9 personalization**：v1 出局；仅实测 FTS+结构排序在 conversation-context query 上 under-recall 时重开——确认 v1 不需要。
-- **embeddings/SCIP/PageRank** 全部 committed OUT of v1——确认 v1 scope 不需要。
+- **A9 personalization**:**v1 默认 ON**(已拍板决策 #8;原"出局"作废)。personalization 种子 = query 命中符号(FTS)+ 当前编辑文件 + 错误栈节点,按信号分 mass(FTS 100 / stack-trace 80 / git-changed 70 / edited 60,见附录 A3 §4.1)。这是"任务相关"而非"全局重要"排序——避免 logger/config/utils 这类全局高分但任务无关的符号霸榜(研究 §2)。
+- **embeddings/SCIP/PageRank**:已拍板(决策 #8)——**embeddings 仍 OUT**;**PageRank v1 默认 ON**;**SCIP opt-in 进 v1**(探测到 indexer 才用,否则回退 tree-sitter)。
 - **Human diet 形态**（A8/H）：v1 默认 live HTML（html.ts 按需打开）；是否同时出 CodeWiki 式 self-contained `index.html` 静态工件归 H 决策，A 只要求同一子图喂它。
 
 
@@ -12387,3 +12430,547 @@ def _make_cache_key(repo_info: dict) -> str:
 - **gitnexus · SWE-bench EVAL harness (serves K)**: `gitnexus-augment` 脚本本体（tool_registry 里只有 fallback `npx gitnexus augment`，eval-server 无 /tool/augment endpoint，走纯 CLI）——augment 的实际富化逻辑在 gitnexus 别处，本 subsystem 没覆盖；tk 的 grep 富化已有自己的实现，但要确认输出里带可被 `[GitNexus]`-style sentinel 检测的 marker，否则 augment_hit 永远为 0 = 需实现时补。
 - **gitnexus · SWE-bench EVAL harness (serves K)**: 成本统计（`model_stats.instance_cost` / `api_calls`）来自 mini-swe-agent + litellm 的 cost DB。tk 若用 Claude Code headless 当 agent，cost/token 口径要换成 Claude Code 的 usage（与 MEMORY host-token-visibility 一致：Claude Code headless 是唯一干净 token runner）= 需实现时补对接。
 - **gitnexus · SWE-bench EVAL harness (serves K)**: native_augment 是 gitnexus 推荐主臂，但 tk 主 track 是 codegraph agent-eval（非 SWE-bench）。本 subsystem 只给了 SWE-bench cross-check 的协议；cross-check 与主 track 的结果如何交叉验证/取舍（哪个为准、不一致怎么办）= 属 tk-K 决策，需补。
+
+
+# 附录 A3：对照 GitNexus 技术细节 / Token-killer-Research 的补充(2026-06-21)
+
+> 本附录把两份新研究文档(`docs/codegraph/Token-killer-Research.md`、`docs/codegraph/GitNexus 技术细节.md`)相对行动计划主体的真实增量，整理成**可直接粘贴的补充内容**(中文叙述 + English code)。每条注明「增补计划哪一节」与「来自新文档哪一节」。算法/可抄代码层(附录 A1 的 PageRank TS、附录 A2 的调用解析引擎、A5 符号抽取正则、impact SQL)已强，本附录不重复。
+>
+> **诚实说明**：本次 5 份 gap 报告中 topic=`test`、`architecture-3tier` 两份为占位空内容，未提供任何增量，故本附录不含其条目——不凑数。
+
+---
+
+## 0. 排序层 reconciliation(优先级 #1：先修矛盾，再谈补充)
+
+**增补：决策 A9(line 468) + stillOpenForUser(line 539) + line 8235；来自：Token-killer-Research §1-3 + 计划顶部矩阵 line 20。**
+
+决策 A9 当前文字「PageRank/personalization 出 v1」是 **2026-06-20 拍板前的陈旧表述**，与顶部矩阵 line 20「PageRank v1 默认 ON」、line 8256「v1 默认 ON」、整个附录 A1 直接矛盾。留着会让实现者跳过整个附录 A1。**A9 应整体改写为**：
+
+> **决策 A9 — PageRank v1 默认 ON；FTS+结构 boost 是其廉价快路径/种子打分器，非替代。**
+> v1 排序走两段互补信号：(a) FTS 分 + co-location boost(同文件每多一 query 符号 +30，index.ts:820) + dominant-file boost(一文件边数 ≥3× 次高，index.ts:642) + multi-term 乘性 boost(2 词→2×、3 词→2.5×) —— 这一段是廉价快路径，既挑 PageRank 的 personalization 种子，又贡献 `lexicalScore` 分量；(b) personalized PageRank(附录 A1)提供结构中心性。两者经下面的 `finalScore` 融合，不是二选一。无 `--no-rank` 时即走此路径。
+
+---
+
+## 1. 候选 rerank 融合公式 finalScore(最大的「融合层」缺口)
+
+**增补：附录 A1 §3 末尾 + 重写后的 A9；来自：Token-killer-Research §3.2(line 189-204)。**
+
+计划只说 A1 输出 rank Map 喂 G/H，从未说 rank 如何与 lexical/path/session 信号合并。补入：
+
+```ts
+// 候选 rerank 加权融合(源: Token-killer-Research §3.2)
+finalScore =
+    0.35 * lexicalScore         // FTS5 BM25 / exact-name (= A9 的 co-location/multi-term boost)
+  + 0.25 * semanticScore        // embeddings OUT of v1 → v1 置 0
+  + 0.20 * personalizedPageRank // 附录 A1 的 rank Map
+  + 0.10 * pathPrior            // scorePathRelevance(见 §2.2)
+  + 0.10 * sessionProximity;    // 与当前编辑文件/已读符号接近
+```
+
+**v1 关键调整**：embeddings OUT → `semanticScore` 项置 0，其 **0.25 权重并入 lexicalScore**，得 v1 实际权重：
+
+```
+lexicalScore 0.60 / personalizedPageRank 0.20 / pathPrior 0.10 / sessionProximity 0.10
+```
+
+这就是把 A9 的 FTS 结构 boost 与 A1 的 PageRank 统一的桥：A9 的 boost 是 `lexicalScore` 分量，不是 PageRank 的替代。
+
+---
+
+## 2. 无 embedding 候选生成的两层上游(verbatim 可抄，计划 A5 漏)
+
+> **最大真实空洞**。计划 A5 只 port 了 `codegraph/src/context/index.ts:44` 的符号抽取正则，漏掉了 codegraph 自己 query 管线入口 `query-utils.ts:156 extractSearchTerms` 内部跑的两层：词干扩展 + 正向路径先验。计划全文仅 1 处 `extractSearchTerms`(line 5411，在需求 J grading，非候选生成)，零处 `getStemVariants`/`scorePathRelevance`。纯 lexical 召回因此显著弱于 codegraph 实测基线。
+
+### 2.1 词干扩展层 getStemVariants
+
+**增补：A5(line 349) 第①步后新增『①.5 词干扩展』子步；来自：研究 §5.2(line 1074-1116)+§11(line 1589-1619)；clone query-utils.ts:85-142,156。**
+
+在符号抽取后、喂 FTS prefix 前，把 query token 的轻量英文形态还原变体并进 token 集(纯字符串规则、无依赖、无 embedding)：
+
+```ts
+// getStemVariants — 轻量英文形态还原(源: query-utils.ts:85-142, verbatim 抄)
+// -ing→cach/cache、-tion→evict、-ment→manage、-ies→entry、-es/-s 去复数、-ed→handle、-er→build/builde
+function getStemVariants(word: string): string[] { /* 抄 clone:85-142 */ }
+
+// extractSearchTerms(query, {stems:true}) 把变体并进 token 集喂 FTS prefix(query-utils.ts:156)
+```
+
+**验收**：query `'caching'` 命中 `CacheBuilder`；`'eviction'` 命中 `evictEntries`。
+**注**：算 path 相关性时 stem 变体要排除(会灌水路径分)——见 §2.2 用 `{stems:false}`。
+
+### 2.2 正向路径先验 scorePathRelevance
+
+**增补：A9 排序公式增设 path-prior 项；来自：研究 §5.4(line 1161-1185)；clone query-utils.ts:221-275。**
+
+计划 A5/A6/A9 只有 test-file ×0.3 这一条**负向**，缺正向路径加权。codegraph 已给精确权重：
+
+```ts
+// scorePathRelevance(源: query-utils.ts:221-275, verbatim 抄)
+//   文件名命中  +10
+//   目录命中    +5
+//   一般路径命中 +3
+//   test 文件   -15  (除非 query 含 test/spec)
+//   project-name token 丢弃 (避免 <ProjectName>/ 下每个文件靠项目名赢；修了 codegraph #720)
+// 关键：算路径分时用 extractSearchTerms(word, {stems:false}) 排除 stem 变体，
+//       避免一个 PascalCase 词裂成 4 子 token 把同一路径段灌 4×
+```
+
+**验收**：query `'session repository'` 时 `src/session/postgres-session-repository.ts` 路径分高于 `src/util/misc.ts`。
+计划「FTS+结构排序足够」的结论仍成立(不引入 PageRank 也能跑)，但「结构排序」须含 path 先验，否则弱于 codegraph 实测基线。
+
+### 2.3 静态动作同义词典 A5b(三处都缺的真空洞，需自造)
+
+**增补：A5 新增决策 A5b + A 的工具 schema 增 identifiers[] 入参；来自：研究 §5.2(line 1116)+§11(line 1589-1619)。**
+
+词干扩展救不了不同词根：用户问 `'invalidate auth state'` 而代码叫 `revokeCredential`/`clearPrincipal`/`deleteLoginTicket`。必须靠同义词典(codegraph 与计划都没有)：
+
+```
+query 'invalidate authentication state'
+  → expanded_terms = [invalidate, revoke, clear, remove, delete,
+                       auth, authentication, credential, session, token]
+```
+
+**决策 A5b**：静态动作/状态同义词典 —
+(a) 项目无关的小静态表，≤~200 条，覆盖 CRUD 动词族 + auth/session/error/lifecycle 高频领域动作；后续可叠加项目内 README/git-history 术语映射(研究 §11 line 1591-1600 的增强源)；
+(b) 同义词只进候选生成，**不进图边**；
+(c) 这是 NL 召回上限的已知弱点(研究 line 1619 自承)，对 Coding Agent 可由 Agent 主动给 `identifiers[]` 绕过：
+
+```ts
+// A 的 CodeQuery schema 增入参(对应研究 line 1216-1224)
+searchCode({ query?: string, identifiers?: string[], purpose?: RankingProfile })
+```
+
+tk 需自造此词典，**无现成可抄**(研究反复要求但从未给条目/规模/构造法——这是研究文档最大的「说了要做没给怎么做」)。
+
+---
+
+## 3. intent → ranking-profile + 边方向随任务翻转
+
+**增补：A5(line 349) 第④步 BFS direction 参数化 + M10(line 7683) 升级为 profile；来自：研究 §7(line 1313-1383) + CodeQuery.purpose(line 1634-1671)；GitNexus §12 方向注。**
+
+M10 当前把 intent 简化为 `goal?:string` 自由文本；A5 第④步 BFS 固定 `direction:both` 会污染两边。改为：
+
+```ts
+type RankingProfile = 'locate' | 'follow-call' | 'impact'
+                    | 'architecture' | 'find-tests' | 'debug';
+
+// 各 profile 的 BFS 方向(A5 第④步参数化，源: 研究 §7 + GitNexus §12)
+//   查实现 follow-call : entry→callees      direction:out
+//   查影响面 impact     : changed→callers     direction:in
+//   查架构 architecture : module imports/exports
+//   查测试 find-tests   : production→referencing tests
+```
+
+`goal?:string` 保留为人读精度提示；另加结构化 `purpose` 枚举驱动方向。PageRank 的 profile 化可推迟到 v2，但**边方向随 intent 翻转**在 v1 的 BFS 扩展就该做。
+
+---
+
+## 4. personalization 种子多来源加权 + symbol→file 聚合 + 反向 PPR
+
+### 4.1 种子按信号类型分 mass(非同质量)
+
+**增补：附录 A1 §3 seeds.ts(line 8554) + §4 阈值表(8537-8546)；来自：研究 §2(line 117-145)+§8 git/session signals。**
+
+计划硬编码 `Map(node_id -> 100)` 同质量。错误栈/正在编辑的文件是强信号，应分级：
+
+```
+seed mass 分级(源: 研究 §2):
+  query 命中符号(FTS)        100
+  recent stack-trace file     80
+  changed file (git)          70
+  currently edited file       60
+```
+
+即便 v1 没接 git/session，也要把 seeds.ts 设计成 `Map<nodeId, mass>` 而非同质量集合，为 §4.3/session 信号留口。
+
+### 4.2 symbol-level rank → file-level 聚合
+
+**增补：附录 A1 §3「喂给 G/H」段(line 8529-8531)；来自：研究 §8(line ~600-615)。**
+
+纯 file-level PageRank 三个坑(超大文件因引用多虚高 / 指不出读哪个函数 / 仍整文件读取)。H 需要文件骨架排序时用聚合式，而非对 file 节点直接跑 PageRank：
+
+```ts
+fileScore = max(symbolScores) * 0.6 + sum(top3SymbolScores) * 0.4;
+```
+
+支撑计划既有的「每节点带 file:line span」决策(能下钻到函数)。
+
+### 4.3 反向 Personalized PageRank 用于影响面(附录 A1 新增 §3.5)
+
+**增补：附录 A1 §3 新增子节 §3.5；来自：研究 §3.4(line 222-234)+§8 direction note。**
+
+改一个符号时，从该符号出发跑**反向** PPR(沿 callee→caller 反边传播)，优先返回最可能受影响的调用链，而非 dump 几百条 references。零成本复用现有 `pageRank()`：
+
+```ts
+// 同一个 pageRank()，传入 reversed Edge[](src/dst 互换)
+const reversed = edges.map(e => ({ ...e, src: e.dst, dst: e.src }));
+const impact = pageRank(reversed, { personalization: { [changedSymbolId]: 100 } });
+// top-N 即影响排序(direct callers / API routes / tests / consumers)
+```
+
+直接服务需求 J/impact 叙事。
+
+---
+
+## 5. gitnexus 跨文件类型传播(typeBindings 填充来源)
+
+**增补：附录 A2 调用解析(line 9209-9510) Step 2 之后插入；来自：GitNexus §4(line 268-283)；clone finalize-algorithm.ts:208-245 + imported-return-types.ts:18-32,144-225 [非分发安全]。**
+
+A2(line 9304)只讲解析时**读** `typeBindings`，漏了怎么跨文件**填**；缺它 `u=getUser(); u.save()` 只在同文件可解析。算法：
+
+```
+1. 对 File→IMPORTS→File 图跑 Tarjan SCC，得反向拓扑序(leaves first)。
+2. 按序遍历每 SCC：SCC 内 bounded fixpoint，迭代上限 = |SCC 内边数|(无进展即停)。
+3. 每 importer 在镜像 import binding 前，先 chain-follow 源模块 typeBindings，
+   使多跳 alias 一遍塌缩成 app.user → User。
+4. cyclic SCC 只达 partial fixpoint。
+```
+
+**纪律契约(I3/I6)**：此 pass 在 `finalizeScopeModel` 后、`resolveReferenceSites` 前跑；mutate 非冻结的 `Scope.typeBindings`(故意不 freeze)。
+**node:sqlite 落地**：复用 A2 **计划已有的** `findImportCycles`(Tarjan，import-cycles.ts:6-110，见 plan line 10745)拿 SCC，按反向拓扑序内存做 typeBinding 镜像 + chain-follow，类型写 `nodes.return_type`。MVP 只做 acyclic，cyclic 后补。
+**收敛护栏(研究留白)**：cyclic SCC 的迭代上限 capacity=|SCC 内边数|(finalize-algorithm.ts:227)必须抄，否则深 import 环有挂死风险。
+
+---
+
+## 6. gitnexus Leiden 社区检测(回填 plan:9196/9199/11230)
+
+**增补：附录 A2 新增 community 节；来自：GitNexus §6(line 368-407)；clone community-processor.ts [非分发安全]。**
+
+计划只用 cohesion 当排序信号 + defer community，无算法。配方：
+
+```
+1. Function/Method/Class/Interface 放进 graphology 图，主要用 CALLS 边(非文件夹)。
+2. 跑 vendored Leiden(graphology-communities-leiden，never published npm，vendor/leiden/index.cjs)。
+3. 确定性 PRNG：固定 seed mulberry32，LEIDEN_SEED = 0xc0de(community-processor.ts:51)
+   —— 对 tk E 增量稳定是硬需求，否则 reindex 社区号乱跳、human diff 全红。
+4. symbolCount > 10_000 时过滤低置信+低度数噪音，限迭代 + 60s 超时。
+5. 产出 Community 节点 + MEMBER_OF 边；label 启发式(§12 不可当权威)；cohesion = 内部边/总边。
+```
+
+**node:sqlite**：Community 落 `nodes(kind='community')`，MEMBER_OF 落 `edges`。解掉 plan:9199(模块划分来源)、plan:9196(moduleCount 数据源)。
+Leiden 是 vendored 非 npm 包，标 `[非分发安全]`；不想引 graphology 可用 label-propagation/连通分量占位，cohesion 退化 callers-count(plan:11230 已是)。建议标 **opt-in/A 专用**，默认不跑避 Leiden CPU 尖峰。
+
+---
+
+## 7. gitnexus Process 流程提取(回填 plan:9196/plan:11199 Flows:)
+
+**增补：附录 A2 community 节之后；来自：GitNexus §7(line 408-485)；clone process-processor.ts / entry-point-scoring.ts [非分发安全]。**
+
+**诚实定位(§7+§12)**：Process 非运行时 trace，是 CALLS 图启发式路径，label 启发式，只当导航/候选，不可当权威业务逻辑(接进 J)。配方：
+
+```
+1. 入口打分 = f(caller数, callee数, exported, 命名, 路径, 框架)；
+   高分名 main/bootstrap/handleLogin/onSubmit/...；识别 Next.js/Express/Django。
+2. 从入口沿 CALLS BFS，护栏 maxTraceDepth=10 / maxBranching=4 / minSteps=3 / maxProcesses=75，禁重复节点。
+3. 两轮去重：删子路径；同 entry→terminal 留最长。
+4. 产出 Process{entryPointId, terminalId, stepCount, communities[],
+            processType ∈ {intra,cross}_community}；STEP_IN_PROCESS{step:N}；Route/Tool 加 ENTRY_POINT_OF。
+```
+
+**node:sqlite**：`nodes(kind='process')` + `edges(kind='STEP_IN_PROCESS', step=N)`(plan:10446 已预留 step)。让 `Flows:` 字段(plan:11199)有数据。Process 依赖 Community→不做社区则退化纯 entry→terminal 串。标 opt-in/A 专用，与 community 同批后补。
+**调参缺口(研究留白)**：§7 抽象掉了各维度权重/入口分阈值——entry-point-scoring.ts 里有实际数值，实现时需读 clone 补。
+
+---
+
+## 8. construct-level 可靠性分级表(GitNexus §12 → 需求 J)
+
+**增补：需求 J(J3 加表、J5 强制 LOW、J12 加徽章)；来自：GitNexus §12(line 608-653)+收尾段(line 697-701)。**
+
+计划 J2-J4(line 5318-5517)把 provenance 钉在**边的来源方法**上，缺按**代码构造**分级的信任先验表。三档常量表放 J3 `synthesizedBy` 旁：
+
+```
+相对可靠(confidence 高):
+  文件结构 / 显式定义 / 显式 import / 显式继承 / 显式类型 / 构造器类型 /
+  直接调用 / 同文件作用域 / 显式路由工具
+中等可靠(降级标 heuristic):
+  跨文件 alias / 返回类型传播 / 接口实现 / 方法重载 / receiver 类型推断
+易误判漏判(低置信或不发边):
+  反射 / 动态 import / DI 容器 / monkeypatch / 运行时注册 / 事件总线 /
+  字符串调用 / 动态属性 / JS duck typing / 宏展开 / 复杂 C++ template
+```
+
+落地：
+1. 三档常量表给 `resolvedBy` 标先验信任档(落易误判构造→压到阈值下，J13 keep-but-tag)。
+2. J5 命中易误判构造(`obj[methodName]()`、`import(var)`)**强制 LOW**，非靠词频。
+3. J12：Process/Community label 启发式，human 视图带 **heuristic projection 徽章**，不当事实。
+
+非新算法，是把 edge-level provenance 升级为 construct→trust 先验。与 codegraph 的 synthesizedBy 词表分工互补：edge-level 抄 codegraph(J2/J3 已是)，construct-level 抄 gitnexus §12。
+
+---
+
+## 9. 索引/存储补充(小项)
+
+### 9.1 BM25 以 symbol 为文档单位，扩 FTS 列
+
+**增补：A4(line 313-343) FTS 列扩展 + 需求 D 捕获模型；来自：研究 §5.3(line 1118-1159)。**
+
+A4 `nodes_fts` 仅 4 列，搜字符串字面量(错误消息)或路由名命不中。扩列：
+
+```sql
+-- nodes_fts 增列(源: 研究 §5.3 SymbolSearchDocument)
+identifier_tokens,  -- 预拆分子词(喂 stem 前的原词)
+literals            -- string literals + route names + test names
+```
+
+需与需求 D 捕获模型对齐：这些 token 在 AST extract 阶段填出。
+
+### 9.2 unresolved 调用边的 BFS 策略
+
+**增补：A5(line 349) 第④步；来自：研究 §2(line 892-915)+§3(line 945-998)。**
+
+`CallEdge.confidence ∈ {exact, likely, unresolved}`。A5 第④步 BFS 沿 calls 扩展时，**unresolved 边降权计入(不剪枝)**——SCIP 未装时大量跨文件调用都是 unresolved，剪掉就断链；待 SCIP/TypeChecker(A11)介入再升级。
+
+### 9.3 graph-storage 对照注
+
+**增补：C5/C6(plan:1318/1383) + C 决策汇总(plan:1656)；来自：GitNexus §5(line 305-367)。**
+
+gitnexus 单张 `CodeRelation` 表 + type，边带 `{type, confidence, reason, step?}`——tk edges 已等价。但 LadybugDB/Kuzu 必须显式声明每种 `(起点 kind, 终点 kind)` 组合致 schema 极长；**node:sqlite generic 表无此约束(FK 只认 id)**——这是 committed node:sqlite 相对 graph-DB 的未点出好处，补进 C 决策汇总。另：gitnexus node-kind 含 Route/Tool/Community/Process/Section，C5 kind 枚举若支持 community/process 需预留这些值。
+
+---
+
+## 10. dangling 溯源补全(小项)
+
+**增补：附录 A1 §2b 注(line 8406) + §3 代码注释(line 8500)；来自：clone _pagerank.py:115-116 vs plan 8500-8506。**
+
+tsa `_pagerank.py` 的 dangling 质量**均匀**撒到所有节点(`base=(1-alpha)/n + dangling_sum`)；计划 TS 版把 dangling 质量乘到 personalization 向量 `p[]`(aider 式 dangling=personalization)。两者都是合法变体但结果不同。§2b 注现只列了(a)边权重(b)personalization 替换 uniform，**漏了第三点(c)dangling 再分配从 uniform 改成偏 p**。在 §2b 注末尾补明：计划走 aider 路线(有种子时质量不漏给无关全局节点)，**选择正确，只是溯源说明不完整**，避免实现者误以为 TS 版是 tsa 直译。
+
+---
+
+## 11. 两份新文档自身的留白(实现前需自补，无现成可抄)
+
+- **静态动作同义词典内容**：研究反复要求却从未给条目/规模/构造法(§5.2/§11)。tk 需自造(建议从 CRUD 动词族 + auth/session/lifecycle 高频动作起，≤~200 条)。
+- **NL 概念召回上限无量化**：研究 line 1619 自承「无 embedding 上限会低一些」「没想象中严重」是纯论断，无 recall@k。需求 K 度量针应把『纯 lexical+stem+同义 vs 加 embedding』的 recall 差列为实测项，否则 embeddings-OUT 核心假设缺验证。
+- **边权重无 benchmark 来源**：关系权重表(call 1.0/impl 0.9/type 0.7…)是工程直觉，无消融。计划 harness(A9 记 recall@k)本可标定，但没人把 edge-weight 标定列为实验。
+- **PPR 性能上界 / 局部子图策略**：两 doc 都没给大 monorepo(10^5~10^6 节点)纯 TS 幂迭代延迟，也没把『PPR 只在种子诱导子图上跑』明确为性能策略；计划 rankService(line 8555)拉全图按 query 指纹缓存，query 一变缓存即失效，可能成热路径瓶颈。配合分层缓存：全局无种子 PageRank(给 H)缓存一次 + 每 query 只跑增量种子偏置。
+- **Semantic Slice 切片算法**：研究 §8(line 1413-1453)只列应含/排除什么，没给『哪个 import 相关 / 哪个 field 在目标方法被用』的判定算法；计划 A7 只做 code-block 截断+container outline，未触及 dependency-aware slice。
+- **detect_changes / rename 复合工具未映射**：gitnexus 的 `detect_changes`(git diff -U0 行范围→符号→受影响流程)正是 tk E 增量+impact 的天然组合，两文档都漏了映射进 tk 工具面，是现成产品形态。
+
+
+# 附录 A4:语义 / 领域 / 业务逻辑层的吸收(2026-06-21,来自 `Token-killer-Research.md` Part 3–4)
+
+> **为什么补这节**:行动计划主体(及附录 A1–A3)偏"结构图 + 找代码"(强服务 B);而 `Token-killer-Research.md` 后半 ~2100 行(line 1718–3808)是一整套**语义 / 领域 / 业务逻辑理解层**,服务 **需求 A(人理解上半)、B(智能来源的静态↔LLM 边界)、I(协作:领域词汇/用例追溯/人工确认)、J(信任:四种可信度)**。之前 gap 分析的 `architecture-3tier` agent 失败 + 只扫了前 1200 行,故这块漏吸收。
+>
+> **关键定位(研究 §八 line 2843)**:这是叠在结构 code graph 之上的**"知识层"(Repository Intelligence / Context Knowledge Layer)**,**不是塞进 tk 的输出压缩内核**。v1 只承诺 Phase-1(代码可验证语义);domain/business 为后续阶段,且 **LLM 仅借宿主做"命名/解释",绝不发明事实、不读整仓**(契合强倾向 + 需求 B 的 derive-not-generate)。
+
+## A4.0 一句话边界(总纲)
+
+| 层 | 谁来做 | 产出 | 可信度档 |
+|---|---|---|---|
+| operational semantics(程序做了什么) | 静态:AST / SCIP / CFG / DFG | 条件/状态/读写/异常/副作用(可验证) | **Observed / Derived** |
+| business semantics(为什么、叫什么) | **宿主 LLM**(只解释已抽取的 semantic slice) | 业务命名、规则候选 | **Inferred** |
+| canonical(权威) | 人工 / Jira / 领域专家 / 文档 | 确认的业务规则 | **Confirmed** |
+
+> 研究 §十(line 3010)的 thesis:**"真正有价值的 semantic layer 不是一个 embedding index,而是一个带类型、来源、证据、版本和置信度的可追溯知识层。"** —— 这正是 embeddings-OUT 决策对"语义检索"也成立的根据:做 **structural semantic retrieval(靠类型化边 + 领域词典),不是 vector semantic search**(研究 §四 line 2486)。
+
+## A4.1 五层 semantic(术语纪律:系统设计中禁止单说 "semantic",必须标明哪一层)
+
+来源:研究 §一(line 1718–1923)。服务 A(定义"intelligence"到底指什么)。
+
+| 层 | 来源 | 回答 | tk 落点 |
+|---|---|---|---|
+| **Lexical** 词汇语义 | 标识符/路径/注释/错误/API名/DB字段/commit | 用了哪些词、可能对应什么概念 | 需求 A 候选生成 + 附录 A3 §2(词干/同义)+ A4.2 Level 1–2 |
+| **Program** 程序语义 | AST/TypeChecker/SCIP/CFG/DFG/调用/读写/异常 | 程序实际如何执行、数据流向 | 需求 A/C/D + 附录 A2(CFG/dataflow)= Behavior facts |
+| **Architectural** 架构语义 | 模块/目录/API边界/DB所有权/消息/部署/git-ownership/聚类 | 这段代码在系统里扮演什么角色 | 需求 H(人理解)+ A4.6 Domain Graph;**多信号融合**(文件夹名≠架构) |
+| **Domain** 领域语义 | DDD:BoundedContext/UbiquitousLanguage/Entity/ValueObject/Aggregate/Command/Event/Policy | 业务世界的概念与关系 | A4.5 DomainNodeKind;**同名≠同节点**(Sales.Customer ≠ Billing.AccountHolder) |
+| **Business** 业务语义(最难) | 规则/不变量/决策表/状态机/公式/权限/工作流/合规/补偿 | 为什么这么做、什么条件允许/禁止/改变结果 | A4.5 BusinessRule + A4.7 还原五步;**非 LLM 不可**(需带置信推断) |
+
+**边界铁律(研究 line 1699/3443)**:调用图能证 `OrderController.confirm → OrderService.confirm → Inventory.reserve → Payment.authorize`,但**证不了**"只有库存预留成功且支付授权通过,订单才能进 Confirmed —— 这是公司交易一致性规则"。后者含业务意图/约束/为什么 → 需代码外证据或带置信推断。**CPG 恢复 operational semantics,LLM/domain 恢复 business semantics**。
+
+## A4.2 无-embedding 结构化语义检索 5 级(服务 B,操作化 embeddings-OUT)
+
+来源:研究 §五(line 2522–2680)。这是"Lexical 找入口 + PageRank 排优先级"在**语义/业务问题**上的展开。
+
+1. **Level 1 领域词典匹配**:`业务术语 → 别名 → 代码术语`(词典来源:人工确认 / 文档提取 / 代码提取 / LLM 建议未确认)。无 embedding 时尤其重要(= 附录 A3 §2.3 的动作同义词典的领域版)。
+2. **Level 2 Lexical / BM25**:索引 symbol/qualified/path/signature/comments/error/test/API/event/schema 名;**以 symbol 和 rule-candidate 为文档单位,不要只以文件为单位**(增补需求 A4 的 nodes_fts,见 A3 §11)。
+3. **Level 3 Typed Graph Expansion**:沿 `DEFINES/CALLS/READS/WRITES/EMITS/HANDLES/VALIDATES/TRANSITIONS_TO/IMPLEMENTS/TESTED_BY/DOCUMENTED_BY/CHANGED_WITH` 扩展。**"语义"来自边的类型,而非相似度。**
+4. **Level 4 Task-specific PageRank**(不同问题不同边权,= 附录 A3 §3 ranking-profile 的语义版):
+   - 查业务规则 → guard / validation / state-transition / error / test-assertion
+   - 查业务流程 → entrypoint / call / event / persistence / external-side-effect
+   - 查领域模型 → type-relationship / ownership / aggregate-containment / event-command
+   - 查影响面 → reverse-calls / type-refs / event-consumers / tests / co-change
+5. **Level 5 Evidence Projection**:**不给 Agent 整个图**,只给最小证据投影(这是需求 G 输出经济 + J 信任的统一输出格式):
+
+```yaml
+# 源: Token-killer-Research.md §五 Level 5 (line 2653-2677), verbatim
+concept: Order Cancellation
+candidate_rules:
+  - statement: Settled orders cannot be cancelled
+    status: inferred
+    confidence: 0.91
+    evidence:
+      - src/domain/order.ts#Order.cancel:72-84
+      - tests/order-cancel.test.ts:41-67
+      - error: SettledOrderCannotBeCancelled
+implementation_flow:
+  - CancelOrderHandler.execute
+  - Order.cancel
+  - OrderRepository.save
+  - OrderCancelled event
+unresolved:
+  - whether administrators can override this restriction
+next_read:
+  symbol: Order.cancel
+  mode: edit_window
+```
+
+## A4.3 Smart Read 三模式(吸收进需求 G —— 输出经济不止 signature-collapse)
+
+来源:研究 §8(line 1387–1471)。"PageRank 找到该读的符号,AST 决定如何返回最少但足够的源码。"
+
+- **Symbol Read**:`smartRead({path, mode:"symbol", symbol})` → 只返回该方法体。
+- **Semantic Slice**:编辑方法时只返回 `相关 imports + class fields + constructor 相关依赖 + 目标方法 + 直接引用的本地 helper + 必要类型声明`;**不返回**无关方法/imports/长注释/其他类/测试 fixture。
+- **Edit Window**(联动 J):编辑上下文**源码必须 byte-exact + content_hash**,**编辑窗本身不可概括**:
+
+```yaml
+# 源: Token-killer-Research.md §8 Edit Window (line 1459-1469), verbatim
+type: edit_window
+path: src/session/session-service.ts
+range: { start: 34, end: 65 }
+symbol: SessionService.create
+content_hash: sha256:...
+content: |
+  ...
+```
+
+> **增补需求 G**:G 的 char 预算分层之上,read 工具按 `mode: symbol | slice | edit_window` 三态;`edit_window` 不参与压缩、带 `content_hash`(与 J 的 staleness/`content_hash` 同源)。
+
+## A4.4 CodeQuery 统一查询协议(吸收进需求 F —— 一个协议藏住五段,而非各开一个工具)
+
+来源:研究 §最终组合(line 1633–1667)。比附录 A3 §3 的 `purpose` 枚举更全。
+
+```ts
+// 源: Token-killer-Research.md 最终组合 (line 1633-1656), verbatim
+interface CodeQuery {
+  query?: string;
+  symbols?: string[];
+  paths?: string[];
+  purpose:
+    | "locate" | "understand" | "edit" | "debug" | "verify" | "architecture";
+  relations?: Array<
+    | "definitions" | "references" | "callers" | "callees"
+    | "implementations" | "tests"
+  >;
+  maxResults?: number;
+  maxGraphDepth?: number;
+  tokenBudget?: number;
+}
+// 内部执行: symbol/BM25 candidate → AST graph expansion → SCIP/TypeChecker resolution
+//          → Personalized PageRank → AST semantic slice
+```
+
+> **增补需求 F**:tk 的 search/read 工具收敛到这个统一协议(`purpose` 驱动 PageRank 边权 + BFS 方向 + Smart Read 模式),而非 AST/SCIP/PageRank 各暴露一个工具——契合 F 的"少工具好 steer"决策。
+
+## A4.5 四种可信度 + 知识数据模型(吸收进需求 J,精化 C)
+
+来源:研究 §七(line 2794–2837)+ §六(line 2681–2790)+ Part4 §4(line 3613–3683)。**"这是整个系统能否真正企业级的关键。"**
+
+- **Observed**:AST/SCIP 可验证的直接事实(`Order.cancel 在 72–84 行抛 SettledOrderCannotBeCancelled`)。
+- **Derived**:确定性推导(SCIP/TypeChecker 精确解析的调用)。
+- **Inferred**:语义推断(`Order.cancel 可能实现"结算后禁止取消"`)—— **必须标记**。
+- **Confirmed**:人工/权威文档确认 —— 才可作 canonical domain knowledge。
+
+> **精化需求 J**:把现有二元 high/low 检索分级升级为 **4-tier(Observed/Derived/Inferred/Confirmed)**;每条结论携 `EvidenceRef[]` + `derivation`。可抄数据模型:
+
+```ts
+// 源: Token-killer-Research.md §六 (line 2685-2737), verbatim
+type KnowledgeStatus = "observed" | "inferred" | "confirmed" | "conflicted" | "deprecated";
+type EvidenceKind = "source-code" | "test" | "api-schema" | "database-schema"
+  | "documentation" | "requirement" | "issue" | "commit" | "runtime-trace" | "human";
+interface EvidenceRef {
+  kind: EvidenceKind; uri: string; symbolId?: string;
+  startLine?: number; endLine?: number; revision?: string; hash?: string;
+}
+interface KnowledgeAssertion {
+  id: string; subjectId: string; predicate: string; objectId?: string;
+  literalValue?: string | number | boolean;
+  status: KnowledgeStatus; confidence: number;
+  evidence: EvidenceRef[];
+  derivation: "direct" | "ast-rule" | "graph-inference" | "lexical-inference"
+            | "llm-proposal" | "human-authored";
+  validFromRevision?: string; validToRevision?: string; lastVerifiedAt?: string;
+}
+```
+
+**BusinessRule 必须结构化(非 NL 串)** —— 反 Understand-Anything 的 `businessRules: ["..."]`:
+
+```ts
+// 源: Token-killer-Research.md Part4 §4 (line 3613-3647), verbatim
+interface BusinessRule {
+  id: string; domainId?: string; useCaseId: string;
+  title: string; description?: string;
+  ruleType: "precondition" | "invariant" | "authorization" | "state-transition"
+          | "calculation" | "temporal" | "consistency" | "compensation";
+  condition?: LogicExpression; outcome: BusinessOutcome;
+  status: "observed" | "derived" | "inferred" | "confirmed" | "conflicted" | "deprecated";
+  confidence: number; evidence: EvidenceRef[];
+  introducedAt?: string; lastVerifiedCommit: string;
+}
+```
+
+> **精化需求 C**:domain 信息 **不写进 AST/SCIP 节点**(研究 §六 line 2683 "保持不同知识层和来源隔离")。在 node:sqlite 的**同一张表**里用 **SEPARATE node kind** 表达:
+> `DomainNodeKind = bounded-context | capability | use-case | actor | entity | value-object | aggregate | command | event | policy | business-rule | state | workflow`;
+> `TechnicalNodeKind = repository | package | module | file | symbol | endpoint | table | column | queue | config | test`;
+> 跨层边:`UseCase IMPLEMENTED_BY Symbol`、`BusinessRule ENFORCED_BY Symbol / VERIFIED_BY Test`、`Entity PERSISTED_IN Table`、`Command HANDLED_BY Symbol`、`Event EMITTED_BY/CONSUMED_BY Symbol`、`Concept ALIAS_OF Concept`、`Symbol BELONGS_TO_CONTEXT BoundedContext`。
+
+## A4.6 多图模型:Code / Behavior / Domain / Evidence(架构精化,与 "ONE BACKEND" 协调)
+
+来源:研究 §八(line 2867–2927)+ Part4 §5(line 3717–3777)。**四张相互关联但不混淆的图**:
+
+| 图 | 内容 | 回答 |
+|---|---|---|
+| **Code Graph** | symbols / calls / imports / types / references | 代码如何连接 |
+| **Behavior Graph** | entrypoints / conditions / branches / state-transitions / reads-writes / events / exceptions / side-effects | 程序实际行为(CFG/dataflow,= 附录 A2) |
+| **Domain Graph** | domains / capabilities / use-cases / entities / rules / policies / workflows | 系统在业务上表达什么 |
+| **Evidence Graph** | code / tests / docs / requirements / commits / runtime-traces / human-validation | 凭什么相信这个结论 |
+
+连接:`UseCase IMPLEMENTED_BY Symbol`、`Rule ENFORCED_BY Guard`、`Rule VERIFIED_BY Test`、`Flow STARTS_AT Entrypoint`、`Step CAUSES StateTransition`、`Step EMITS Event`、`DomainRule DOCUMENTED_BY Requirement`、`Rule INTRODUCED_BY Commit`。
+
+> **与 "ONE BACKEND, TWO DIETS" 协调**:仍是**一个 node:sqlite 单文件**,但 4 类 node kind + 跨图边。"四图"是**逻辑分层不是四个库**;别把 domain 揉进 code 节点(否则 staleness/置信度/来源混在一起无法分别失效)。
+
+## A4.7 业务逻辑还原:per use-case 五步(domain/business 能力的落地配方,后续阶段·host-LLM)
+
+来源:研究 Part4 §3(line 3464–3594)。**可靠方法不是"让 LLM 总结整仓业务",而是以单个业务用例为单位**:
+
+1. **识别入口**:HTTP route / GraphQL resolver / CLI / event consumer / scheduled job / UI action / workflow handler。
+2. **恢复执行切片**(AST/SCIP/调用图/类型):**只保留**业务判断/状态变化/持久化/外部调用/事件/异常/补偿;**折叠**日志/mapper/通用工具。
+3. **提取行为事实**(CFG/AST/dataflow → 结构化字段,非 NL 段落):`preconditions / guards / stateTransitions / writes / events / errors / sideEffects`。
+4. **LLM 语义命名**:**LLM 不发明事实,只把已抽取事实解释成业务语言**;输入**只给相关 semantic slice**,不给整文件/整仓。产出 `rule.title + formalCondition + outcome`。
+5. **测试 / 文档交叉验证**:测试佐证 → `status: corroborated`;README 与源码冲突 → `status: conflicted`,**系统不擅自选边**。
+
+## A4.8 反面清单(吸收进需求 M —— 从 Understand-Anything / DeepWiki / Codebase-Memory)
+
+来源:研究 Part4(line 3166/3257/3401/3793–3801)。
+
+- **summary 叠加误差**:文件摘要 → 节点摘要 → 二次 LLM 领域归纳;第一层漏了 guard/异常/状态,domain 分析一路看不到 → **domain 必须重锚源码,不在有损摘要上二次推导**。
+- **businessRules 存成无证据 NL 串**(Understand-Anything)→ 必须结构化 `BusinessRule + EvidenceRef`(A4.5)。
+- **LLM 决定流程顺序而不校验 call/CFG**。
+- **community(技术聚类)≠ bounded-context(业务域)**:共享 utils / 公共鉴权 / 统一日志 / ORM 基础设施在结构图里连很多模块,但通常不是业务域 → community 是确定性聚类、"它是哪个业务域"是 LLM 推断,二者分开标。
+- **schema 正确 ≠ 业务内容正确**:只验图结构/schema 而不对每条业务结论重读源码反证 = 假可信。
+- **CPG 恢复 operational semantics,别误当 business semantics**(`status==SETTLED 抛异常` ≠ "SETTLED 在企业里意味着资金已结算不可逆")。
+
+## A4.9 构建顺序(4 阶段,reconcile "跨需求实施路线")
+
+来源:研究 §九(line 2931–2969)。
+
+- **Phase 1 代码可验证语义(= tk v1 承诺范围)**:symbol/AST index + SCIP/TypeChecker + import/call/type graph + route/event/DB/test 识别 + 条件/异常/状态转换/校验规则抽取;**所有结论留源码范围 + hash**。= Behavior facts,可验证、零/借宿主。
+- **Phase 2 领域词汇 + 用例**:identifier/comments/schema term mining、glossary/alias、route→service→domain→DB/event 流程、tests→Given/When/Then、business-rule candidates。
+- **Phase 3 多源知识**:README/ADR/docs、git/PR/issue、Jira/Confluence、DB schema、OpenAPI/AsyncAPI、runtime traces。
+- **Phase 4 人工确认 + 持续**:确认 bounded-context、确认正式业务规则、冲突检测、版本化 + 失效、commit 增量重算。
+
+> **统一执行模式**(研究 line 2997 / Part4 §5):`结构解析 → 领域词汇抽取 → 用例链路恢复 → 规则候选提取 → 多源证据关联 → 明确置信度 → 人工确认 → 按任务投影最小证据`。**不是**"LLM 读完整仓总结业务"。
+
+## A4.10 借鉴 / 不照搬 Understand-Anything(服务 A/H)
+
+**借鉴**:Tree-sitter 与 LLM 分工;先结构图再语义;`Domain → Flow → Step` 展示模型;以入口点作业务流程线索;增量更新;Knowledge Graph 与 Domain Graph 分离;给业务角色独立视图(persona)。
+**不照搬**:从文件摘要二次推导完整业务逻辑;规则存无证据字符串;LLM 定流程顺序不校验控制流;Domain 节点无版本化证据;不区分 observed/inferred/confirmed;不显式建模异常/状态/事务/副作用/补偿;图 schema 正确就认为业务内容正确。
+
+## A4.11 用户已拍板(2026-06-21)+ 残留细化
+
+**已拍:domain/business 知识层 = v1 全 4 阶段(选项 c,覆盖原"倾向 (a)")。** domain/business/evidence 知识层与结构 code graph 在 v1 **同等交付** —— Phase-1 代码可验证语义 + Phase-2 领域词汇/用例 + Phase-3 多源知识 + Phase-4 人工确认全部 in-scope。这把需求 **A(人理解上半)、I(协作)从"后续阶段"提升为 v1 一等**。
+
+> ⚠️ **必须正视的张力(实施前细化,不推翻决策)**:选 (c) 含 **Phase-3 多源 = Jira / Confluence / runtime-traces**,这些需 **egress / 外部集成**,与"无 server / 零 egress"强倾向冲突。**调和**:本地源(git history / README / ADR / docs / OpenAPI / DB schema)零 egress、v1 直接做;**外连源(Jira/Confluence/runtime-traces)的取数必须经宿主或用户自配连接器,tk 自身不持 egress、不内置凭据**(与 M23 明文凭据黑名单一致)。即 Phase-3"多源"在 v1 范围内,但 **tk 只消费"已在本地 / 由宿主取来"的证据,不自己外连**。
+
+**残留细化(非阻塞 v1 起建)**:
+1. **business semantics 的宿主 LLM 调用 = on-demand**(用户点某 use-case 才生成,不预生成全仓);per-use-case 五步设调用上限,实施时定具体数字。倾向如此。
+2. **EvidenceKind 的 `runtime-trace` / `issue` / `requirement`** 等外连来源:v1 若无本地数据则为**空槽位**(schema 预留、数据后填),不阻塞 Phase-1/2。
+3. **Domain Graph 的人工确认 UI**(Phase-4)走需求 I 的 `.tk/` 文件回写(JSONC 控制文件 + human-fence),复用已拍的协作机制,不另起 server。
