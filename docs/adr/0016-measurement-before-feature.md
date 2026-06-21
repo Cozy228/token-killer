@@ -1,6 +1,9 @@
 # Measurement co-evolves with the code graph
 
-**Status:** accepted (grilling 2026-06-18)
+**Status:** extended by Product Contract §15 (2026-06-21). Measurement remains co-evolving; the
+primary metric is the `uncached_input_tokens` delta on Claude Code headless, with a mandatory 4-way
+layer ablation (Code-only / 4-layer ranking + Code projection / 4-layer ranking + profile projection
+/ force-feed). Original: accepted (grilling 2026-06-18).
 
 The code graph's headline value is **borrowed benchmark percentages** ("47% fewer tokens") that
 the research itself flags as directional, unreproducible, and up to 30× run-to-run variance. tk's

@@ -1,6 +1,9 @@
 # tk exposes graph retrieval through MCP and CLI
 
-**Status:** accepted (grilling 2026-06-18)
+**Status:** amended by Product Contract §10 + [ADR 0020](0020-selection-vs-projection.md) (2026-06-21).
+Delivery is now the VS Code extension's Language Model Tool API (primary) plus a hand-rolled
+zero-dependency stdio MCP and CLI (secondary); tools name projection profiles. Original: accepted
+(grilling 2026-06-18).
 
 To deliver the [Code graph](../../CONTEXT.md), tk grows a graph-specific MCP server and local CLI
 commands. The server is an additive retrieval surface: it offers tools the agent can choose, but it

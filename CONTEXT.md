@@ -25,28 +25,120 @@ context; `--project` selects the current repo. Diagnostic only, never enforcemen
 produces one unified set of [Findings](#findings-and-optimization).
 _Avoid_: audit, monitor, session scanner (it is no longer session-only).
 
-**Code graph**:
-The additive retrieval surface (proposed, not yet built): tree-sitter parses git-tracked
-source into a static symbol/import graph queried through `tk_map`, `tk_read`, `tk_search`,
-and `tk_verify`. It answers orientation, targeted reads, callers-style search, and local
-diff/test-failure verification with resolvable `file:line` anchors. It is not an API
-gateway and does not intercept Copilot's built-in `read_file` / `search` outputs.
+**codemap**:
+tk's project-local code-intelligence product (one complete, bounded product — never sliced by
+version). A unified canonical backend over git-tracked source feeds two co-equal Required
+surfaces: the [Agent Surface](#surfaces) and the [codeguide](#surfaces). The backend holds
+four Required, capability-bounded knowledge layers — [Code Graph layer](#codemap-layers),
+[Behavior Graph](#codemap-layers), [Domain Graph](#codemap-layers), [Evidence
+Graph](#codemap-layers) — each with real producers, `file:line` anchors, and an authority
+level. It is not an API gateway and does not intercept Copilot's built-in `read_file` / `search`.
+The full binding spec is `docs/codemap/codemap-action-plan-20260620.md` (Product Contract).
 _Avoid_: context gateway (the broad "wrap every tool output" framing — deliberately rejected),
-direct tool projection (hook-time rewriting of host-owned tool results), codegraph (the MIT
-reference being studied, not the name of tk's surface).
+direct tool projection (hook-time rewriting of host-owned tool results); **"codegraph" (lowercase,
+`@colbymchenry/codegraph`) = the MIT reference assimilated into the backend, not tk's product**
+([ADR 0017](docs/adr/0017-source-assimilate-codegraph.md)).
 
 **Additive retrieval tool**:
-A new `tk`-owned tool exposed through MCP or CLI that the agent may choose instead of broad
-search/read loops. It is additive because the host still owns its built-in tools; `tk` can
-describe and guide these tools, but cannot force Copilot to use them.
-_Avoid_: direct tool interception, modifiedResult, gateway.
+A `tk`-owned tool the agent may choose instead of broad search/read loops, exposed through the
+[Agent Surface](#surfaces) (VS Code LM Tool API primary, hand-rolled stdio MCP secondary). It is
+additive because the host still owns its built-in tools; `tk` can describe and guide these tools
+but cannot force Copilot to use them. The tools name [projection profiles](#codemap-layers):
+`find_code` / `understand_symbol` / `trace_flow` / `analyze_impact` / `domain_context` /
+`explain_evidence`.
+_Avoid_: direct tool interception, modifiedResult, gateway, intent classifier (the agent declares
+the profile; tk does not guess intent).
 
-**Graph index**:
-The local derived store for the [Code graph](#surfaces), kept under
-`~/.token-killer/projects/<fingerprint>/graph.db`. It may persist paths, symbols, ranges,
-hashes, ranks, and signature-level map snippets, but exact read/edit-window slices come from
-the live workspace source file.
-_Avoid_: source cache, vector store, in-repo index.
+**Canonical store**:
+The local materialized read model for the [codemap](#surfaces), kept out-of-tree under
+`~/.token-killer/projects/<fingerprint>/`. It materializes FactClaims, identity bindings,
+ArbitrationDecisions, canonical edges, and function-local CFG/def-use/effect facts; cross-function
+flow, impact paths, Context Packets, and query-local PageRank are computed per query, not stored.
+Exact read slices still come from the live workspace source file.
+_Avoid_: source cache, vector store, in-repo index, graph index (superseded), overlay on an
+external DB (the backend is tk's own unified store, not a layer over codegraph's DB).
+
+**Agent Surface**:
+The Required, action-oriented face of the [codemap](#surfaces): a sparse, token-budgeted
+projection the agent consumes through [additive retrieval tools](#surfaces). Primary delivery is a
+VS Code extension (Language Model Tool API + programmatic MCP); secondary is a hand-rolled
+zero-dependency stdio JSON-RPC MCP (`tk mcp`) for Claude Code.
+_Avoid_: gateway, the second product (it shares the backend with the codeguide but not the
+final Context Packet).
+
+**codeguide**:
+The Required, **read-only**, bounded understanding face of the [codemap](#surfaces). It provides
+human-specific navigation and read models over all four [layers](#codemap-layers) — Repository
+Overview / Symbol Inspector / Flow Inspector / Domain Inspector / Evidence Drawer — but owns no
+separate truth, indexing, arbitration, authored-content lifecycle, arbitrary graph exploration, or
+collaboration workflow. Deep drill-down is on-demand; the capability boundary is closed.
+_Avoid_: wiki, editor, collaboration surface (those are [outside current product
+scope](#codemap-layers)); generic graph debugger; second indexing/arbitration pipeline.
+
+## codemap layers
+
+The four Required, capability-bounded knowledge layers of the [codemap](#surfaces) backend, plus
+the governing vocabulary. Anchor: `#codemap-layers`.
+
+**Code Graph layer**:
+Deterministic structure from tree-sitter — symbols, calls, imports, inheritance,
+override/implements, symbol-level reads/writes/returns — each with a precise `file:line` span.
+
+**Behavior Graph**:
+A closed Behavior IR: Structural Execution (all supported languages), Intraprocedural CFG and
+scalar def-use (Behavior language set: TS/JS/TSX/JSX, Python, Java, C#, Go), and Dispatch/Effect
+over a **closed framework profile catalog**. Outside the catalog records `coverage=unspecified`.
+_Avoid_: PDG, taint analysis, whole-program analysis (all [unsupported](#codemap-layers)).
+
+**Domain Graph**:
+A Deterministic Domain Core (operational with no LLM — entities, resources, glossary terms,
+candidates) plus on-demand host-LLM Semantic Promotion (Inferred, non-load-bearing). Static only
+produces what it can prove: `ContextCandidate` not `BoundedContext`, `UseCaseSkeleton`,
+`RuleCandidate`.
+_Avoid_: business model (the deterministic core names candidates, not confirmed business truth).
+
+**Evidence Graph**:
+The connective layer: producers submit immutable **FactClaims**; an independent arbitration layer
+produces a reconstructible canonical view. Every fact carries source/revision/producer/authority/
+confidence/freshness and typed support/conflict relations.
+_Avoid_: provenance string (it is a claim+arbitration model, not a single tag).
+
+**Authority level**:
+A fact's credibility tier, coexisting in one product (never a development phase): **Observed**
+(direct source fact), **Derived** (computed — CFG, clustering), **Inferred** (host-LLM proposal),
+**Confirmed** (authoritative document or human-approved).
+_Avoid_: phase, stage, version.
+
+**Capability state**:
+The only allowed way to describe a capability (see Terminology Law in the Product Contract):
+**Required**, **Optional at runtime**, **On-demand**, **Profile-specific**, **Capability-bounded**,
+**Unsupported**, **Outside current product scope**, **Implementation dependency**.
+_Avoid_: v1, v2, MVP, thin slice, 留槽, defer, roadmap phase — all banned; complexity is controlled
+by capability boundaries, build order by implementation dependencies.
+
+**FactClaim** / **CanonicalSymbol** / **ArbitrationDecision** / **canonical view**:
+A **FactClaim** is an immutable producer assertion. A **CanonicalSymbol** is a stable opaque-ID
+identity (a SCIP symbol is external identity only, never replacing it). An **ArbitrationDecision**
+is a materialized canonical edge referencing supporting + conflicting claims, chosen by a
+predicate-specific policy with declared cardinality (single / set / possible-set). The **canonical
+view** is the reconstructible accepted-edge graph that ranking, behavior, and projection read.
+_Avoid_: merged edge (raw claims are never fused), best-match (arbitration is cross-producer, typed).
+
+**Selection Graph** vs **Projection Graph**:
+All four layers participate in candidate retrieval, ranking, and disambiguation (**Selection**), but
+only facts the current [projection profile](#codemap-layers) needs are serialized into agent
+context (**Projection**). A layer earns default output budget only by lowering total task tokens or
+materially improving correctness.
+_Avoid_: force-feed (projecting every layer into every answer — it inflates tokens and defeats the
+token-saving goal).
+
+**Projection profile**:
+A named output shape the agent declares explicitly: **locate** (leanest — code anchors + trust
+envelope), **understand** (bounded Behavior slice + Domain labels), **flow** / **impact** /
+**domain** / **verify** (promote Behavior / Domain / Evidence respectively). The char budget is a
+hard ceiling, not a fill quota; at the cap it returns omitted counts + expansion handles, never a
+silent truncation.
+_Avoid_: dump, fill-to-budget.
 
 ## Delivery
 

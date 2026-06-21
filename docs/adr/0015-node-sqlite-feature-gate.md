@@ -1,6 +1,8 @@
 # node:sqlite for the graph store; feature gated at Node ≥ 22.13
 
-**Status:** accepted (grilling 2026-06-18)
+**Status:** superseded in part (2026-06-21). node:sqlite survives as the store; the gate is now
+declare-only `>=22.5.0 <25.0.0` with an FTS5 LIKE fallback for builds lacking FTS5 (Product Contract
+§17, Open Decision 5), not `≥ 22.13`. Original: accepted (grilling 2026-06-18).
 
 The [Code graph](../../CONTEXT.md) stores nodes/edges in **`node:sqlite` (`DatabaseSync`, WAL,
 FTS5)** — real SQLite compiled into Node, zero external dependency. The graph feature gates at
