@@ -43,11 +43,15 @@ direct tool projection (hook-time rewriting of host-owned tool results); **"code
 A `tk`-owned tool the agent may choose instead of broad search/read loops, exposed through the
 [Agent Surface](#surfaces) (VS Code LM Tool API primary, hand-rolled stdio MCP secondary). It is
 additive because the host still owns its built-in tools; `tk` can describe and guide these tools
-but cannot force Copilot to use them. The tools name [projection profiles](#codemap-layers):
-`find_code` / `understand_symbol` / `trace_flow` / `analyze_impact` / `domain_context` /
-`explain_evidence`.
-_Avoid_: direct tool interception, modifiedResult, gateway, intent classifier (the agent declares
-the profile; tk does not guess intent).
+but cannot force Copilot to use them. The default surface is **four operation-contract tools** —
+`tk_explore` (primary exploration), `tk_search` (cheap search), `tk_node` (precise node read),
+`tk_callers` (reverse calls) — the codegraph-validated set (tiny repos drop to three). Each tool
+compiles narrow parameters into an internal [QueryPlan](#codemap-layers); the six [projection
+profiles](#codemap-layers) are QueryPlan presets, **not** tool names. Domain/Evidence layers are
+reached via `tk_explore.layers` / `tk_node.include`, not new tools, until tk's own harness proves a
+dedicated tool earns its place ([ADR 0029](docs/adr/0029-agent-tool-surface-operation-contracts-queryplan.md)).
+_Avoid_: direct tool interception, modifiedResult, gateway, intent classifier (the agent picks a
+tool + narrow params; tk does not guess intent); profile-as-tool-name (profiles are internal presets).
 
 **Canonical store**:
 The local materialized read model for the [codemap](#surfaces), kept out-of-tree under
@@ -60,11 +64,16 @@ external DB (the backend is tk's own unified store, not a layer over codegraph's
 
 **Agent Surface**:
 The Required, action-oriented face of the [codemap](#surfaces): a sparse, token-budgeted
-projection the agent consumes through [additive retrieval tools](#surfaces). Primary delivery is a
-VS Code extension (Language Model Tool API + programmatic MCP); secondary is a hand-rolled
-zero-dependency stdio JSON-RPC MCP (`tk mcp`) for Claude Code.
-_Avoid_: gateway, the second product (it shares the backend with the codeguide but not the
-final Context Packet).
+projection the agent consumes through [additive retrieval tools](#surfaces). One Repository
+Intelligence Core is reached through **two asymmetric adapters** sharing one [QueryPlan](#codemap-layers)
++ result contract: **`tk mcp`** — the host-neutral hand-rolled zero-dependency stdio JSON-RPC MCP
+reference adapter (Claude Code, Codex CLI, all terminal hosts); and the **VS Code extension** — the
+Copilot-specific managed adapter (Language Model Tool API + programmatic MCP; value = VS Code APIs +
+install + editor integration). The actual entry point is decided by **org policy**, not fixed —
+extension-tools-allowed / MCP-only / extension-only / both-banned (→ CLI + codeguide only) — with no
+duplicated retrieval ([ADR 0031](docs/adr/0031-asymmetric-dual-adapter-delivery.md)).
+_Avoid_: gateway, extension-as-global-primary (entry is policy-determined), the second product (it
+shares the backend with the codeguide but not the final Context Packet).
 
 **codeguide**:
 The Required, **read-only**, bounded understanding face of the [codemap](#surfaces). It provides
@@ -127,18 +136,30 @@ _Avoid_: merged edge (raw claims are never fused), best-match (arbitration is cr
 **Selection Graph** vs **Projection Graph**:
 All four layers participate in candidate retrieval, ranking, and disambiguation (**Selection**), but
 only facts the current [projection profile](#codemap-layers) needs are serialized into agent
-context (**Projection**). A layer earns default output budget only by lowering total task tokens or
-materially improving correctness.
+context (**Projection**). A layer earns a profile's default output budget only by a measured
+improvement in correctness or [portable utility](#hosts-and-dialects) — never on
+[proxy-host](#hosts-and-dialects) token savings alone ([ADR 0022](docs/adr/0022-measurement-and-claim-boundaries.md)).
 _Avoid_: force-feed (projecting every layer into every answer — it inflates tokens and defeats the
 token-saving goal).
 
+**QueryPlan**:
+The internal protocol every [additive retrieval tool](#surfaces) compiles its narrow parameters
+into; never exposed to the agent. It has three orthogonal dimensions: **selection** (which
+[layers](#codemap-layers) to query), **traversal** (graph direction — callers / callees / flow /
+impact), and **projection** (output mode — understanding / editing / verification × locations /
+outline / source / evidence). Decomposing it this way is why the six profiles are presets, not
+tools: they mix dimensions (locate/understand are goals, flow/impact are traversal, domain is a
+layer, verify is a trust mode) ([ADR 0029](docs/adr/0029-agent-tool-surface-operation-contracts-queryplan.md)).
+_Avoid_: CodeQuery (the rejected single-tool monolith), purpose enum (flattens the three dimensions).
+
 **Projection profile**:
-A named output shape the agent declares explicitly: **locate** (leanest — code anchors + trust
-envelope), **understand** (bounded Behavior slice + Domain labels), **flow** / **impact** /
-**domain** / **verify** (promote Behavior / Domain / Evidence respectively). The char budget is a
-hard ceiling, not a fill quota; at the cap it returns omitted counts + expansion handles, never a
-silent truncation.
-_Avoid_: dump, fill-to-budget.
+A named **QueryPlan preset** (internal, not an agent-declared tool name): **locate** (leanest —
+code anchors + trust envelope), **understand** (bounded Behavior slice + Domain labels), **flow** /
+**impact** / **domain** / **verify** (promote Behavior / Domain / Evidence respectively). The agent
+selects a profile implicitly by choosing a tool + narrow params, not by naming it. The char budget
+is a hard ceiling, not a fill quota; at the cap it returns omitted counts + expansion handles, never
+a silent truncation.
+_Avoid_: dump, fill-to-budget, profile-as-tool-name.
 
 ## Delivery
 
@@ -196,6 +217,25 @@ _Avoid_: TTY command, raw command.
 A Copilot surface that invokes Token Killer hooks. The two in scope are Copilot CLI and
 VS Code Copilot Chat. GitHub Copilot hooks are one unified system shared across them.
 _Avoid_: editor, client, IDE.
+
+**Proxy host** vs **Target host**:
+An [evaluation](#hosts-and-dialects)-role distinction (not the hook sense of [Host](#hosts-and-dialects)
+above). The **proxy host** is **Claude Code headless** — the only runner that exposes clean
+`uncached_input_tokens`, so it is where the [codemap](#surfaces)'s token deltas are measured. The
+**target host** is **VS Code Copilot on Windows** — the surface the product is primarily optimized for,
+which exposes no clean token (only [opportunity facts](#metrics-ledgers)). A token number measured on the
+proxy carries a footer and never speaks as a target number; product defaults are decided by
+correctness + Copilot/human-observable [portable utility](#hosts-and-dialects), not by the proxy token
+alone ([ADR 0022](docs/adr/0022-measurement-and-claim-boundaries.md)).
+_Avoid_: test host, runner, eval host (use proxy/target host).
+
+**Portable utility**:
+The host-independent value signals that decide product defaults: human task signals (`hit@1`,
+`time-to-file`) and [target-host](#hosts-and-dialects)-observable signals (tool calls, avoided raw
+reads, expansion requests, payload reduction). It is the primary axis for whether a layer earns a
+profile's default budget; [proxy-host](#hosts-and-dialects) token savings are only a guardrail and
+tie-breaker.
+_Avoid_: token savings (that is the proxy-only secondary signal), benchmark score.
 
 **CLI dialect**:
 The camelCase payload convention used by Copilot CLI: `toolName`, `toolArgs` (JSON

@@ -1,9 +1,12 @@
 # Measurement co-evolves with the code graph
 
-**Status:** extended by Product Contract §15 (2026-06-21). Measurement remains co-evolving; the
-primary metric is the `uncached_input_tokens` delta on Claude Code headless, with a mandatory 4-way
-layer ablation (Code-only / 4-layer ranking + Code projection / 4-layer ranking + profile projection
-/ force-feed). Original: accepted (grilling 2026-06-18).
+**Status:** extended by Product Contract §15 (2026-06-21) and refined by
+[ADR 0022](0022-measurement-and-claim-boundaries.md) (grilling D10–D12). Measurement remains
+co-evolving; the primary metric is the `whole-task uncached_input_tokens` delta on Claude Code headless
+(total-incl-cached is an audit column only). It is measured on the **proxy** host (Claude Code); product
+defaults are decided by correctness + Copilot/human-observable portable utility, with the proxy token as a
+cost constraint only (ADR 0022). Ablation and benchmark protocol: [ADR 0023](0023-benchmark-architecture.md)
++ [ADR 0024](0024-ablation-protocol.md). Original: accepted (grilling 2026-06-18).
 
 The code graph's headline value is **borrowed benchmark percentages** ("47% fewer tokens") that
 the research itself flags as directional, unreproducible, and up to 30× run-to-run variance. tk's

@@ -23,9 +23,12 @@ agent without bloating the common case.
 - **Budget is a hard ceiling, not a fill quota.** Facts compete by *marginal utility per serialized
   char*; surplus budget is not filled with low-value content; at the cap the answer returns omitted
   counts + expansion handles, never a silent truncation.
-- **Earning the budget is measured.** Evaluation ablates "layer in ranking" vs "layer in projection"
-  separately. A layer earns a profile's default output budget only if it lowers *total task* tokens
-  or materially improves correctness — not by being available.
+- **Earning the budget is measured** (refined by
+  [ADR 0022](0022-measurement-and-claim-boundaries.md), grilling D10). Evaluation ablates "layer in
+  ranking" vs "layer in projection" separately. A layer earns a profile's default output budget only
+  after passing a hard **correctness** gate and showing a **portable utility** improvement
+  (Copilot- and human-observable) — with proxy (Claude Code) `whole-task uncached` tokens as only a cost
+  constraint and tie-breaker, never the sole basis, and never by being available.
 
 ## Considered options
 

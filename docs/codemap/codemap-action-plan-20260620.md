@@ -91,7 +91,7 @@
 
 逻辑实体：`FactClaim`（不可变，producer 提交）、`CanonicalSymbol`（稳定 opaque ID）、`SourceDefinition`/`SourceOccurrence`、`ArbitrationDecision`（物化的 canonical edge，引用 supporting/conflictingClaims）、dependency index（claim→decision→canonical edge→local derived fact）、canonical generations（canonicalGeneration / behaviorGeneration / rankEpoch）。
 
-> 物理 schema（表切分、迁移、FTS5 列、节点/边落表方式）= **Open Decision**（§17）。原计划 C5/C6 的"单一 generic nodes(kind)/edges(kind)"不足以承载 claim/arbitration/decision 分离，须扩为 claims + 物化 canonical + decisions + identity-bindings + dependency-index + generations。
+> 物理 schema（D18 / [ADR 0030](../adr/0030-physical-schema-claims-serving-tiers.md)）= **两层 + tk 独有仲裁账本**：① raw 事实层 `fact_claims`（append-only，借 Kythe `Entry`/Wikibase Statement）；② 物化 serving 层 = C5/C6 `nodes`/`edges`（借 Kythe serving table + codegraph 热路径；edges = 已接受 ArbitrationDecision 带 decision_id + claim refs，ranking/behavior/projection **只读此层**）；③ 中间 tk 独有 `arbitration_decisions` + `decision_claims`（Kythe/Wikibase 都缺的独立 decision ledger）。另加 `identity_bindings`、`dependency_index`（claim→decision→edge 反向索引，增量失效用）、generations 计数。FTS5 列见 C7 + §9.1（加 identifier_tokens/literals）。无参考有 claim+arbitration（皆单层图），故此层为 tk 自研。
 
 ## 6. Producers and Authority Levels
 
@@ -177,11 +177,11 @@ Profiles：`locate / understand / flow / impact / domain / verify`。
 
 ## 15. Evaluation and Acceptance Gates
 
-> **此节为 Open Decision 进行中**（grilling Q10）：主指标测量 host、proxy→target 转移裂缝的披露口径尚未拍板（候选见 §17）。以下为当前承诺的不变量。
+> **Q10 已拍（grilling 2026-06-21 D10–D12，收敛为 3 项）**：① **测量与声明边界**（[ADR 0022](../adr/0022-measurement-and-claim-boundaries.md)）——Claude Code=token proxy、Copilot=observational facts、human=portable metrics，一 host 数字绝不冒充另一 host；默认配置由 correctness 硬闸 + portable utility 决定，proxy token 仅成本约束/tie-breaker，配置在 Copilot 周期复核（无运行时自动反证/状态机）。② **Benchmark 架构**（[ADR 0023](../adr/0023-benchmark-architecture.md)）——GitNexus 式 SWE-bench 端到端 + Codebase-Memory 式 per-language 能力集，tk 自有 repo=regression only，Human Inspector 用自动回归 + 小规模盲测。③ **消融协议**（[ADR 0024](../adr/0024-ablation-protocol.md)）——K13 测技术、D7 graph 臂内测投影，不跑全矩阵，final config 对 baseline 确认一次。**✅ Q10 完成。** 以下为当前承诺的不变量。
 
-- **PRIMARY 指标 = `uncached_input_tokens` 增量（input − cache_read）**，推翻含缓存 total。
-- **离线 A/B 跑器 = Claude Code headless**（唯一干净 uncached runner），MCP on/off，4 跑/臂取中位数 + min/max。
-- **4 路 profile 消融（必做）**：Code-only / 四层 ranking + Code-only projection / 四层 ranking + profile projection / 四层 force-feed。**完整任务 total input tokens + 后续 read/tool-calls + time-to-correct-file + task success** 为主，非单次响应长度。**只有降低总任务 token 或显著提高正确率的层，才获得某 profile 的默认输出预算。**
+- **PRIMARY 指标 = `uncached_input_tokens` 增量（input − cache_read）**，推翻含缓存 total。统一口径 = **whole-task uncached**（全任务轨迹，非单次响应；total-incl-cached 仅审计列，永不进 budget-earning 判定）。
+- **离线 A/B 跑器 = Claude Code headless**（唯一干净 uncached runner，proxy host），MCP on/off，4 跑/臂取中位数 + min/max。target host（VS Code Copilot/Windows）token 不可测，只产 Track-2。
+- **消融协议**（[ADR 0024](../adr/0024-ablation-protocol.md)）：K13 测检索技术（baseline/+compression/+smart-read/+graph/+symbol，全 cell 锁同一 projection control）；D7 在 graph 臂内测投影（Code-only vs 四层，per profile）。**不跑全矩阵**：K13/D7 winner 各自选出后对 baseline 做一次组合确认。**默认配置闸**（[ADR 0022](../adr/0022-measurement-and-claim-boundaries.md)）：correctness 非回归(硬闸) + portable utility(Copilot/人类可观测)决定默认；proxy whole-task uncached 仅成本约束/tie-breaker，绝不单独定默认；配置在 Copilot 周期复核，不足则维持保守静态。
 - **安全** = fallback-replay → `omission_bug_rate`；**检索质量** = localization F1（与任务质量分开报）；**任务正确性** = FAIL_TO_PASS / PASS_TO_PASS。
 - **Track-2（目标宿主 VS Code Copilot）= opportunity facts**（call_count / payload_bytes / avoided_raw_reads / dedup，`estimate_kind:"opportunity"`，**永不汇入 measured saved_tokens**）。
 - **诚实不变量**：measured 与 opportunity 两类行永不相加；Arbitration 也被度量（producer agreement / arbitration precision / identity false-merge / conflict-disclosure 成本）。
@@ -209,15 +209,15 @@ Canonical schema
 
 仍待拍板（不含已由 D1–D9 闭合的项）：
 
-1. **Evaluation acceptance-gate 披露口径（Q10，进行中）**：PRIMARY 在 proxy host（Claude Code）测得，target host（VS Code Copilot）仅 Track-2 opportunity facts；loop-avoidance host-agnostic 转移**作为明文假设披露 vs 其它**——待拍。
-2. **Agent Surface 工具映射**：6 profiles ↔ VS Code LM Tool API 贡献点的精确形态、small-repo 降工具策略、`TK_MCP_TOOLS` 消融臂。
-3. **物理 schema / 迁移**：claims + 物化 canonical + decisions + identity-bindings + dependency-index + generations 的具体表切分、FTS5 列、节点/边落表。
-4. **SCIP 摄入依赖**：`index.scip` protobuf 消费（新依赖 vs 手写解析）。
+1. **Evaluation acceptance-gate（Q10）✅ 完成（D10–D12 / [ADR 0022](../adr/0022-measurement-and-claim-boundaries.md)–[0024](../adr/0024-ablation-protocol.md)）**，收敛为 3 项：① **测量与声明边界**（ADR 0022）——host→可证之物 + 默认配置闸 + 两类结论边界；② **Benchmark 架构**（ADR 0023）——GitNexus 式 SWE-bench 端到端 + Codebase-Memory 式 per-language 能力集 + tk 自有 repo regression-only + Human Inspector 盲测；③ **消融协议**（ADR 0024）——K13 测技术/D7 graph 臂内测投影/不跑全矩阵/一次组合确认。其余（token 口径计算、run 预算、premiumRequests 丢弃、Job-A 评分方式、SWE-bench 语言披露）降为评估协议细节。本项不再 Open。
+2. ~~**Agent Surface 工具映射**：6 profiles ↔ VS Code LM Tool API 贡献点的精确形态、small-repo 降工具策略、`TK_MCP_TOOLS` 消融臂。~~ ✅ **组织原则闭合（D17 / [ADR 0029](../adr/0029-agent-tool-surface-operation-contracts-queryplan.md)）**：表面 = 4 操作合同工具(tk_explore/search/node/callers，tiny-repo 降 3，TK_MCP_TOOLS 消融臂保留 = F.3/F.7)；6 profile 降内部 QueryPlan preset(selection/traversal/projection 三维)；Domain/Evidence 经工具 param 暴露、harness 证明才加新工具。（剩余实现细节：LM Tool API package.json 贡献点的逐字 JSON 形态 = 实现期照 F.6 真实 schema 落地，非 Open。）
+3. ~~**物理 schema / 迁移**：claims + 物化 canonical + decisions + identity-bindings + dependency-index + generations 的具体表切分、FTS5 列、节点/边落表。~~ ✅ **闭合（D18 / [ADR 0030](../adr/0030-physical-schema-claims-serving-tiers.md)）**：两层 + tk 独有仲裁账本——`fact_claims`(Kythe/Wikibase)+物化 `nodes`/`edges`(Kythe serving+codegraph 热路径)+`arbitration_decisions`/`decision_claims`+`identity_bindings`+`dependency_index`+generations；FTS5 列 = C7 + §9.1。（剩余:逐字 DDL/迁移脚本 = 实现期照 C7-C9 + ADR 0030 落地，非 Open。）
+4. ~~**SCIP 摄入依赖**：`index.scip` protobuf 消费（新依赖 vs 手写解析）。~~ ✅ **闭合（D16 / [ADR 0028](../adr/0028-scip-streaming-consumer-official-binding.md)）**：官方 TS binding `@scip-code/scip` + 薄 streaming importer，锁版构建依赖打成 lazy chunk（装后无 runtime dep），逐 Document 流式解码，否决 pbjs 平行 binding 与手写嵌套解码器。
 5. **Distribution / Runtime**：declare-only Node gate（`>=22.5.0 <25.0.0`，上限为"未测保守"非已证 OOM）、FTS5 缺失 LIKE 兜底、npm provenance、vendored-Node bundle 作 Optional-at-runtime 逃生口。
 
 ---
 
-## Decision Log（grilling 2026-06-21，D1–D9）
+## Decision Log（grilling 2026-06-21 + 2026-06-22 round 4，D1–D22）
 
 > 与上文契约一致；此处为可追溯的逐项摘要。每项均已**用 Terminology Law 重述**（无版本语言）。
 
@@ -232,9 +232,19 @@ Canonical schema
 | **D7** | Selection vs Projection | 四层都进 selection/ranking，只有 profile 需要的才进 projection；预算 hard ceiling + marginal-utility；4 路消融。 |
 | **D8** | 物化读模型 + 增量 | 物化 canonical + dirty queue + repair overlay + query-local PPR(Required)/global prior(optional cache)；无 daemon 惰性。 |
 | **D9** | codeguide 有界只读 | 共享 backend、不共享 Context Packet；封闭组成；on-demand 下钻；明确排除协作/编辑/任意图探索。 |
-
----
----
+| **D10** | 测量与声明边界 | Q10。Claude Code=token proxy(whole-task uncached，footer 声明非 Copilot 数)、Copilot=observational facts、human=portable metrics，一 host 数字绝不冒充另一 host。默认配置 = correctness 硬闸 + portable utility(Copilot/人类可观测)决定，proxy token 仅成本约束/tie-breaker，配置在 Copilot 周期复核(无运行时自动反证/状态机)。对外只两类结论。[ADR 0022](docs/adr/0022-measurement-and-claim-boundaries.md)。 |
+| **D11** | Benchmark 架构 | Q10（K 主体）。复用两参考 harness 各做一个可证伪声称:**GitNexus 式 SWE-bench 端到端**(3 臂 baseline/tk-native/tk-projection，官方 F2P/P2P + whole-task uncached/cost/calls；Python 偏向须披露、不得声明 TS/JS 端到端)；**Codebase-Memory 式 per-language 能力集**(TS/TSX/JS/Py/Go，PASS/PARTIAL/FAIL)。tk 自有 repo=regression only。Human Inspector=自动回归 + 小规模盲测(评审≠作者、不知分组，永报 N/repos/tasks，无 comprehension %)。[ADR 0023](docs/adr/0023-benchmark-architecture.md)。 |
+| **D12** | 消融协议 | Q10。K13 与 D7 非笛卡尔——D7 活在 K13 `+graph` 臂内。K13 测检索技术(全 cell 锁同一 projection control，隔离技术 vs 投影)；D7 在 graph 臂内测投影(Code-only vs 四层，per profile)。不跑全矩阵：K13/D7 winner 各自选出，对 baseline 做一次组合确认。ablation 嵌入两 harness。[ADR 0024](docs/adr/0024-ablation-protocol.md)。 |
+| **D13** | 排序 = 分级管线 | round 3。检索排序是**分级 cascade**非加权和/RRF：词法(FTS5 BM25+codegraph 启发式)产出**候选锚点** → AST 扩展出**结构邻域** → SCIP/类型检查器解析身份 → 词法+显式 symbols/paths+局部性+purpose 归一化成 **PPR 种子** → query-local PPR **主排序**。词法是 PPR 的上游(选锚点)+下游(tie-break)，**不在末端与 PPR 加权融合**(同一证据重复计数)；用户显式 symbol/path 确定性优先；RRF 仅留给真正独立通道(lexical+embedding，embeddings Unsupported 故休眠)。作废早稿加权和 `0.60/0.20/0.10/0.10`。[ADR 0025](docs/adr/0025-staged-ranking-pipeline.md)。 |
+| **D14** | NL→代码召回 = Core 自有分层桥 | round 3。gap **单一方案补不了**：平铺静态同义表(覆盖不了 jargon、动词上下文相关) ✗，Agent identifiers 当主路(Human+不配合 Agent 失 NL 能力) ✗。**Core-owned 分层 Query Vocabulary Bridge**：L1 词法归一(stem+缩写+高精度归一化)；L2 ~十几个低权重 action family，action **须与对象词联合命中**、只进候选不发图边；L3 **带 provenance 的项目词汇**(docs/tests/API·schema/git-rename/Domain Model/人工确认，Evidence Graph 事实)。Agent `identifierHints[]`+`conceptHints[]` 高权重但**只附加**、非主路。本仓共现可加但只产 `RELATED_IN_REPOSITORY` 候选、**不发 SYNONYM_OF/可信边** → **A11 embeddings Unsupported 保持干净**。(codebase-memory 0.75 是多信号融合+预训练向量，**非**纯 RI 证据。)[ADR 0026](docs/adr/0026-recall-bridge-agent-identifiers-not-synonym-dict.md)。 |
+| **D15** | 图增强:Community Optional / Process 出局 / Flows 证据化 | round 3。两能力信任风险不同、分开裁。**Community**=Optional-at-runtime/default-off 的 **derived architecture projection**(非 bounded context、不进 Domain truth)；Core 已有 module 层次+import SCC+连通分量+callers-count 故无 Leiden 也完整；gitnexus Leiden=vendored+PolyForm-NC 不可复制，从零/独立许可写，关时 cohesion 走 callers-count。**gitnexus 式 `HeuristicCallsBfsProcess`=Outside scope**(只证图可达，证不了运行序/guard/事件序/状态迁移，加徽章也违 A4.8 双流程真相)→ **C5 删 `process` kind、移除 STEP_IN_PROCESS 边**。但出局的是机制非能力:**`Flows:` 仍 Required，由 `EvidenceBackedFlowProjection` 提供**(entrypoint + resolved call-site + CFG/CDG + guards + state + events + writes + effects，按需投影，显式 complete/partial/unknown，不物化 Process 节点)。修文档矛盾(community 旧标 Outside-scope 作废)。[ADR 0027](docs/adr/0027-community-optional-flows-evidence-backed.md)。 |
+| **D16** | SCIP 消费 = 官方 binding + streaming importer | round 3（§17 Open #4 闭合）。`index.scip` 用**官方 Apache-2.0 TS binding `@scip-code/scip`**(protoc-gen-es 生成，v0.8.1，依赖 `@bufbuild/protobuf`)消费，**否决** pbjs 平行 binding 与手写嵌套解码器。binding+protobuf 作**锁版构建依赖**，tsdown 打成**独立 lazy chunk**，装后**无 runtime dep/无 native addon**，仅探测到 `index.scip` 才加载。**不整文件 decode**(官方警告 Index 占内存大)：只手写顶层 Index framing(field tag+length-delimited)，逐 Document 用官方 `DocumentSchema` 等解码→写 SQLite staging→释放(等价 Go `ParseStreaming`，零手写嵌套 wire decoder)。range **typed-first**(packed 3/4-int 已 deprecated 作 fallback)+保 Document position encoding(UTF-8/16/32)；symbol_roles 按 bitmask。失败**整代 rollback**+透明回退 tree-sitter/TS checker。state:ScipIndexer=Optional-at-runtime，ScipConsumer+StreamingScipImporter=Required，WholeIndexDecode=仅 fixtures。[ADR 0028](docs/adr/0028-scip-streaming-consumer-official-binding.md)。 |
+| **D17** | Agent 工具面 = 4 操作合同 + 内部 QueryPlan | round 3（§17 Open #2 闭合，修三方矛盾）。表面 = codegraph 实测的 **4 操作合同工具** `tk_explore/tk_search/tk_node/tk_callers`(4 职责，非 6 profile 非 1 万能工具；tiny-repo<500 降 3)。**六 profile 混维度**(locate/understand=任务目标、flow/impact=遍历模式、domain=知识层、verify=信任/投影模式)→ 降为**内部 QueryPlan preset**，**不当工具名、不塞单 purpose 枚举**。**CodeQuery 单体分解为 `QueryPlan{selection,traversal,projection}` 三正交维度**；每工具把窄参编译成 QueryPlan，不外暴露重参协议。Domain/Evidence 先经 `tk_explore.layers`+`tk_node.include`，**harness 证明独立工具显著改善选中率/调用数/质量才加一个新默认工具**(不预开 tk_domain/tk_verify)。守住 4-tool eval 证据(1-tool 门 −43%→+107%、impact 零 eval)。[ADR 0029](docs/adr/0029-agent-tool-surface-operation-contracts-queryplan.md)。 |
+| **D18** | 物理 schema = 两层 + tk 独有仲裁账本 | round 3（§17 Open #3 闭合）。无参考有 claim+arbitration(CodeGraph/GitNexus/codebase-memory/RepoDoc 皆**单层图**:抽取器直写 nodes/edges+单 provenance tag=ADR 0019 拒的模式)。tk **组合三系统**:① raw 层 `fact_claims`(append-only，借 **Kythe** `Entry`/**Wikibase** Statement);② 物化 serving 层 = C5/C6 `nodes`/`edges`(借 Kythe serving table + codegraph 热路径，edges=已接受 decision 带 decision_id+claim refs，ranking/behavior/projection **只读此层**);③ 中间 tk 独有 `arbitration_decisions`+`decision_claims`(Kythe 默认接受 entries/Wikibase 选择存 rank 上，**两者都缺独立 decision ledger + dependency 失效**)。+`identity_bindings`+`dependency_index`(claim→decision→edge 反向索引)+generations。Wikibase truthy-dump vs full-dump = canonical projection vs 全 claims 物理化。[ADR 0030](docs/adr/0030-physical-schema-claims-serving-tiers.md)。 |
+| **D19** | 交付 = 一 Core + 两不对等适配器，入口由 policy 决定 | round 3（global Open #7 闭合，**修 F.1 错误前提**）。F.1 旧称"enterprise MCP 默认锁、LM-Tool 是唯一触达 built-in 通道"**错**:`chat.mcp.access` 默认 **`all`** 非锁；扩展 LM Tool 有独立治理(`chat.extensionTools.enabled`+`extensions.allowed`)非绕过通道;VS Code 把 built-in/extension/MCP 列为**三种并列工具类型**，扩展不接管 built-in read/search。改为:**Repository Intelligence Core 唯一实现**(一套 QueryPlan+result contract)+ **`tk mcp`=host-neutral 参考适配器** + **VS Code 扩展=Copilot 专用 managed 适配器**(值=VS Code API+安装+编辑器集成)。**入口由组织 policy 决定**:扩展允→推荐扩展/仅MCP→tk mcp/MCP禁+扩展允→扩展唯一 Agent 通道/皆禁→只剩 CLI+codeguide;Claude Code·Codex→直接 MCP。非"扩展全局 PRIMARY"非"两面同等实现"。policy 键默认值入官方复核清单。[ADR 0031](docs/adr/0031-asymmetric-dual-adapter-delivery.md)。 |
+| **D20** | 代码签名 = artifact-gated；AV 税是性能问题 | round 3（global Open #9 / §17 #5 闭合，**修 #9 错误前提**）。现在**无 tk 自有未签 PE 可签**(tk=npm JS 包 `tk→dist/cli.js` 跑用户 Node；bundle 内 node.exe 是**官方已签** Node 重打包)。Authenticode 现在签不到东西、也无证据消 CrowdStrike spawn 税。**artifact-gated**:现用 SHA256SUMS+npm provenance+release attestation **不买证书**；tk 首发**自有 Windows PE**(SEA/daemon-EXE/MSI/MSIX；install.ps1 是脚本不算)时 Authenticode **成硬发布门**，macOS notarize 同理(.app/.pkg/.dmg/native 才启)；现可**预留 CI signing stage+验证合同**不接真证书。**CrowdStrike 400-1100ms = 性能/架构问题非签名**(EDR 拦 process-creation+file-access，tk 多 spawn 一次 Node 多付一次扫描)→ 真解 = D21 的 CommandProxyResident。[ADR 0032](docs/adr/0032-artifact-gated-signing-av-tax-is-perf.md)。 |
+| **D21** | daemon 三拆；codemap 不需跨-session daemon | round 3（global Open #4 闭合）。**重要修正**:codegraph **有** daemon(detached+proxy，跨调用复用内存图，#277/#411 生命周期 bug)，gitnexus 有持久 HTTP server——tk no-daemon 是刻意背离。旧 E11 把三事捆 "daemon"，拆为:① **CrossSessionRepositoryDaemon = Outside scope**(tk on-disk node:sqlite + per-session MCP 已是正式暖路径:每 session 开一次 DB 复用 connection/prepared-stmt/bounded-cache；codegraph daemon 解的是"多独立调用共享内存后端"另一形态，带 election/socket/orphan/idle/crash，对 tk 只省一次 open 不值；**重开闸=实测 hydration p95>250ms + 频繁重开 + 原型砍≥50% first-query**)；② **IndexWatcher = Optional-at-runtime 默认关**(原 E11 代码即此)；③ **CommandProxyResident = 独立 Required capability/Optional-at-runtime**(D20 的 AV spawn 税唯一真解=shim 不再 spawn Node 改连常驻 proxy；缓存 exec 路径/异步 I/O 消不掉 spawn；属命令代理子系统非 codemap)。E11 重写为仅 IndexWatcher。[ADR 0033](docs/adr/0033-daemon-decomposed-three-capabilities.md)。 |
+| **D22** | B LLM 委派 = 宿主借用，零 key 零凭据 | round 4（需求 B Open Decisions 全闭合）。叙事/Domain 生成委派给 tk **不拥有、不付费**的模型：主路径宿主 slash-command；次目标 Claude Code/macOS 在宿主会话与 logged-in CLI **同时**可用时**默认复用 in-session 宿主模型**（省进程），caw 订阅子进程仅真 headless 兜底；**永不构造 api_key LLM 客户端**，**显式 BYO-key 逃生口严格拒绝**（即便 opt-in）——保 CI gate `openai/api_key/faiss/embedding` 命中=0（repodoc `llm.py:43` 反例 + M23 + A4.11 无凭据/无 egress）；无模型可借→ship static-only（B-D7）诚实降级。leaf 阈值沿用 codewiki `16_000`/`depth-2` 作初值，harness 后重标定。[ADR 0034](docs/adr/0034-llm-delegation-host-borrowed-no-byo-key.md)。 |
 
 # Part II — Capability Specifications & Implementation Evidence
 
@@ -272,10 +282,10 @@ Canonical schema
 - **Language Model API** — https://code.visualstudio.com/api/extension-guides/ai/language-model — 借宿主模型(需求 B)的接口。
 - **MCP developer guide** — https://code.visualstudio.com/api/extension-guides/ai/mcp — 扩展内编程式注册 MCP(tk 的次交付面)。
 
-### VS Code MCP 配置 / 企业策略(需求 F —— 决定"扩展为主 vs MCP 为主"的闸)
+### VS Code MCP 配置 / 企业策略(需求 F —— 决定 D19 policy-入口阶梯，非"扩展为主 vs MCP 为主"单闸)
 - **MCP configuration reference** — https://code.visualstudio.com/docs/agents/reference/mcp-configuration — `mcp.json` 形状(`.vscode/mcp.json` / 用户态、`servers`/`inputs`/`sandbox`)。
 - **Add / manage MCP servers** — https://code.visualstudio.com/docs/agent-customization/mcp-servers
-- **Manage AI settings in enterprise environments** — https://code.visualstudio.com/docs/enterprise/ai-settings — **复核 `ChatMCP` 策略(MCP 从哪装)+ `McpGalleryServiceUrl`(私有 registry)+ `enterpriseManaged`/XAA。** 这条决定企业是否默认禁 MCP → 直接定 F 的"扩展为主"是否成立。
+- **Manage AI settings in enterprise environments** — https://code.visualstudio.com/docs/enterprise/ai-settings — **复核三个并列治理键（D19 修正：扩展非天然绕过 MCP 治理）**：① `chat.mcp.access`（**默认 `all` 非锁闭**，企业可设 `none`）+ `McpGalleryServiceUrl`（私有 registry）；② `chat.extensionTools.enabled`（扩展 LM Tool 的独立中央开关）；③ `extensions.allowed`（扩展安装 allowlist）。这三键共同决定 D19 的 policy-入口阶梯（扩展允/仅MCP/仅扩展/皆禁→CLI+Human），**非** "扩展为主是否成立" 的单一闸。**待官方逐字确认默认值**（per user 给出，本清单兜底）。
 - **Centrally manage VS Code settings with policies** — https://code.visualstudio.com/docs/enterprise/policies
 
 ### 运行时 / 存储(需求 C / L)
@@ -443,7 +453,7 @@ END;
 
 ### 决策 A5 — codemap (agent surface) 检索管线（6 步确定性混合检索）   (serves the codemap agent surface)
 
-(1) **决策**：固定为 ① query 符号抽取（CamelCase/snake/SCREAMING/acronym/dotted/lowercase 正则 − ~130 词 stoplist）→ ② 3 通道（exact-name +co-location、definition-prefix +brevity、FTS multi-term）按 **MAX** 合并 → ③ re-rank（multi-term 共现、test-file ×0.3、dominant-file boost）→ ④ BFS depth-1 direction:both over contains/calls → ⑤ 自适应 code-block 抽取 → ⑥ 低置信诚实兜底。
+(1) **决策**：固定为 ① query 符号抽取（CamelCase/snake/SCREAMING/acronym/dotted/lowercase 正则 − ~130 词 stoplist）→ ② 3 通道（exact-name +co-location、definition-prefix +brevity、FTS multi-term）按 **MAX** 合并 → ③ re-rank（multi-term 共现、test-file ×0.3、dominant-file boost）**产出有界候选锚点**（非最终序）→ ④ BFS expansion over contains/calls 构建结构邻域（BFS 方向随 query.purpose 翻转，见 §3；direction 默认 both 仅在 purpose 缺省时）→ ⑤ **query-local PPR 对邻域做主排序**（锚点的 ③-分作 personalization 种子 + tie-breaker，见 §1 / D13 / [ADR 0025](../adr/0025-staged-ranking-pipeline.md)）→ ⑥ 自适应 code-block 抽取 → ⑦ 低置信诚实兜底。**注**：①–③ 是分级管线的「词法选锚点」段，⑤ 是「PPR 主排序」段；词法分**不在 ⑤ 之后与 PPR 加权融合**（重复计数）。
 
 (3) **可抄代码**（源: `/tmp/tk-research/codegraph/src/context/index.ts:44`，符号抽取正则，verbatim）：
 ```ts
@@ -566,7 +576,7 @@ export function formatSubgraphTree(subgraph: Subgraph, entryPoints: Node[]): str
 
 > ⚠️ **已按 2026-06-20 拍板(决策 #8)更新**:PageRank **Required, default on**;原"Unsupported"措辞作废。实现见 **附录 A1**(PageRank 纯 TS)+ **附录 A3 §0/§1**(与 FTS boost 的 `finalScore` 融合)。
 
-(1) **决策**：排序 = 两段互补信号经 `finalScore` 融合(见附录 A3 §1):(a) **FTS 分 + exact-name co-location boost（同文件每多一个 query 符号 +20）+ dominant-file boost（一文件边数 ≥3× 次高）+ multi-term 乘性 boost（2 词→2×，3 词→2.5×）** —— 廉价快路径,既为 PageRank 选 personalization 种子,又贡献 `lexicalScore` 分量;(b) **personalized PageRank(附录 A1)Required, default on** —— 提供结构中心性。两者互补、非二选一;无 `--no-rank` 时即走此路径。
+(1) **决策**：排序 = **分级管线**（见附录 A3 §1 / D13 / [ADR 0025](../adr/0025-staged-ranking-pipeline.md)），非加权和：(a) **FTS 分 + exact-name co-location boost（同文件每多一个 query 符号 +30）+ dominant-file boost（一文件边数 ≥3× 次高）+ multi-term 乘性 boost（2 词→2×，3 词→2.5×）** —— 廉价快路径，**职责是为 PageRank 选 personalization 种子 + 给最终序当 tie-breaker**，不是与 PPR 并列融合的打分通道（并列会重复计数）；(b) **personalized PageRank(附录 A1)Required, default on** —— 对结构邻域做**主排序**，最终序主要由 PPR 决定；用户显式 symbol/path 保留确定性优先。无 `--no-rank` 时即走此路径。
 
 (4) **具体数值**：co-location +20/extra symbol；dominant 阈 ≥3×；multi-term ×2 / ×2.5。
 
@@ -1205,9 +1215,11 @@ src/codemap/store/retrieve.ts   # 检索：FTS5 + 边遍历，强制 provenance=
 
 ### Open Decisions（交用户确认）
 
-1. 当宿主 slash-command 上下文与 logged-in 本地 CLI **同时**存在（Claude Code/macOS），默认 provider：倾向 in-session 宿主模型（省一个进程）vs 新起 caw 子进程？需一行确认。
-2. 是否对 power user 开「显式用户自带 key」逃生口（strong lean 默认绝不 ship key；问的是显式 user-supplied-key 是否可接受、还是严格禁止）。
-3. leaf token 阈值 / max-depth：对 tk 自身代码库沿用 codewiki 的 16_000 / depth-2，还是等 Slice-1 harness 出真实项目尺寸后重标定。
+✅ **全部闭合（D22 / [ADR 0034](../adr/0034-llm-delegation-host-borrowed-no-byo-key.md)，grilling 2026-06-22 round 4）**：
+
+1. ✅ **默认 provider = 复用宿主 in-session 模型**（Claude Code/macOS 次目标，宿主会话与 logged-in CLI 同时存在时）。caw 订阅子进程仅在真正 headless（无宿主会话可借）时兜底。
+2. ✅ **严格禁止显式 BYO-key 逃生口**——永不 ship 构造 LLM 客户端的代码路径，保持 CI gate `grep -E 'openai|AsyncOpenAI|api_key|faiss|embedding'` 命中=0（repodoc `llm.py:43` 反例 + M23 + A4.11 无凭据原则）。无模型可借时 ship static-only（B-D7）诚实降级。
+3. ✅ **leaf 阈值 = 沿用 codewiki `16_000` / `depth-2` 作可发布初值**，Slice-1 harness 出真实尺寸后重标定。
 
 ---
 
@@ -1758,6 +1770,7 @@ export function refuseDangerousRoot(target: string): void {
 - **覆写 ADR-0015**（graph-DB / WASM 替代仍开）→ 判给 node:sqlite：gitnexus 的 WASM 路径只浏览器可用，其 CLI/MCP 路径（我们的真实目标面）仍要原生 `lbugjs.node`，并带 PolyForm-NC 许可。Cypher graph-DB 作为默认被拒。
 - **覆写 prior「per-type tables for richness」**→ 用 generic 单 `nodes(kind)`/`edges(kind)`，让 code+doc+concept（需求 A）共享一个 FTS 索引、加 kind 是值而非 DDL 迁移。Ladybug 的 31 张 per-type 表作为 Outside-current-product-scope 的 view 保留。
 - **确认并固化 prior「index out-of-tree」**→ 永久 + 具体化为 `~/.token-killer/projects/<fingerprint>/index.db`，复用 tk 既有 0700/0600 存储，非过渡态、非 in-repo。
+- **D18 / [ADR 0030](../adr/0030-physical-schema-claims-serving-tiers.md) 扩展**：上面的 generic `nodes(kind)`/`edges(kind)` 是**物化 serving 层**（ranking/behavior/projection 只读它，借 Kythe serving table + codegraph 热路径）。其上游加 **raw 层 `fact_claims`**（append-only，借 Kythe `Entry`/Wikibase Statement）+ **tk 独有 `arbitration_decisions`/`decision_claims`** 仲裁账本 + `identity_bindings` + `dependency_index`（claim→decision→edge 反向索引）+ generations。即"generic 单表"只管 serving 层，claim/arbitration 分离层叠在其上（ADR 0019 要求，非单 provenance tag）。
 
 ### Open Decisions（C 自身）
 
@@ -2942,9 +2955,11 @@ function markerBlock(): string {
 
 ---
 
-### E11 — daemon + native watcher（Required capability; its runtime activation is Optional at runtime），WSL2 /mnt 硬禁（serves the codemap agent surface）
+### E11 — IndexWatcher（native watcher，Optional-at-runtime 默认关），WSL2 /mnt 硬禁（serves the codemap agent surface）
 
-**(1) 决策**：daemon+watcher 作显式逃生舱（`TK_WATCH=1` / `tk watch`）——Required capability; its runtime activation is Optional at runtime，debounce **2000ms**，在 WSL2 `/mnt/<drive>` 挂载与超 fd 上限时**硬禁**。把所有常驻进程 Windows 风险局限在显式接受的用户。
+> **D21 / [ADR 0033](../adr/0033-daemon-decomposed-three-capabilities.md) 三拆**：旧 E11 标题"daemon + native watcher"把三件事捆一起——已拆：① **CrossSessionRepositoryDaemon = Outside current product scope**（codemap 不需要 codegraph 式跨 session 内存图 daemon；tk on-disk node:sqlite + per-session MCP 已是正式暖路径，每 session 开一次 DB 复用 connection/prepared-stmt/bounded-cache；codegraph daemon 带 election/socket/orphan/idle/crash 生命周期 #277/#411，对 tk 只省一次 session 级 open，不值；**重开闸 = 实测 hydration p95>250ms + 频繁重开 + 原型砍 ≥50% first-query**）；② **IndexWatcher = 本节**（Optional-at-runtime 默认关）；③ **CommandProxyResident = 独立 Required capability/Optional-at-runtime**（D20 的 AV spawn 税唯一真解 = shim 不再 spawn Node 改连常驻 proxy runtime；属命令代理子系统、非 codemap）。本节 E11 仅保留 ② IndexWatcher 语义。
+
+**(1) 决策**：native watcher 作显式逃生舱（`TK_WATCH=1` / `tk watch`）——Optional at runtime（默认关），debounce **2000ms**，在 WSL2 `/mnt/<drive>` 挂载与超 fd 上限时**硬禁**。把所有常驻进程 Windows 风险局限在显式接受的用户。**不含** cross-session daemon（Outside-scope，见上 D21）。
 
 **(2) 要动的文件**：`src/freshness/watchPolicy.ts`（移植 codegraph watch-policy.ts，env 名 `CODEGRAPH_*`→`TK_*`）；`src/freshness/watcher.ts`（runtime activation Optional at runtime）。
 
@@ -3175,7 +3190,7 @@ if (analysis) {
 本需求服务 **B（agent find-code / token 优化）**，但其交付载体（VS Code 扩展）同时是 H（人类 HTML viewer）和 I（协作 round-trip）的宿主 —— 即 DEP MAP 的「ONE BACKEND, TWO SURFACES (codemap = agent, codeguide = human), TWO FRONT-ENDS」收敛点。所有工具仅暴露 A 的 retrieval 面（B1 静态层），LLM 生成层（B 叙事 tier）不进入任何被列出的工具。
 
 锚点绑定：
-- **传输 = stdio**（DEP MAP `E/F/J/M` 冲突已裁定：单进程 per-session，无 daemon；daemon 是 M18 受 K op-count 度量门控的条件分支，作为后续实现步骤的依赖项而非当前产品范围内的能力）。
+- **传输 = stdio**（DEP MAP `E/F/J/M` 冲突已裁定：单进程 per-session，无 daemon；per-session MCP 即正式暖路径。cross-session daemon = **Outside current product scope**（D21 / [ADR 0033](../adr/0033-daemon-decomposed-three-capabilities.md)，重开闸 hydration p95>250ms 等），非泛"M18 测量门控条件分支"）。
 - **输出预算单位 = char**，数值 `13000/18000/24000` 由 G1 拥有，F **import** 不重定义（DEP MAP `G/F` 冲突裁定；G1 为事实归属层级，非阶段）。
 - **DB 路径 = 库外** `~/.token-killer/projects/<fp>/index.db`（POSIX）/ `%LOCALAPPDATA%\token-killer\...`（Win）；`.tk/` 仅放人类工件（DEP MAP `C/L` 冲突裁定）。本需求所有「indexed?」探测以「能否解析到该库外 fingerprint dir」为准，不依赖 `.codegraph/`（upstream reference）。
 - **Node gate** `>=22.5.0 <25.0.0`（跨需求统一）。
@@ -3184,7 +3199,9 @@ if (analysis) {
 
 ### F.1 决策：双前端 / 单后端交付形态（serves the codemap agent surface）
 
-**(1) 决策**：PRIMARY = VS Code Copilot/Windows 上的 **tk VS Code 扩展**，同时注册 (a) Language Model Tools（`vscode.lm.registerTool` + `languageModelTools` contribution）和 (b) 同一后端的程序化 MCP（`registerMcpServerDefinitionProvider`）；SECONDARY = Claude Code/Mac 及全部终端宿主上的单一 stdio MCP server，命令 `tk mcp`。两前端调用同一套 tool handler。理由：enterprise MCP-in-Copilot **默认锁闭**，LM-Tool API 是唯一能触达 built-in read/search 面的通道；终端宿主所有通道开放，raw MCP 完整可用。
+**(1) 决策（D19 / [ADR 0031](../adr/0031-asymmetric-dual-adapter-delivery.md)，修正旧 "extension-为主" 前提）**：一个 **Repository Intelligence Core 唯一实现**（一套 QueryPlan + result contract，绝不两套 retrieval），其上两个**不对等适配器**：`tk mcp` = **host-neutral 参考适配器**；VS Code 扩展 = **Copilot 专用 managed 适配器**（价值 = 能调 VS Code API + 更好的安装/编辑器集成）。两适配器共享同一 QueryPlan + result contract。**入口由组织 policy 决定**（非固定 PRIMARY）：扩展工具获批→文档推荐扩展；只允许 MCP→`tk mcp`；MCP 禁但扩展工具允→扩展是唯一 Agent 通道；两者皆禁→只剩 CLI/codeguide(Human) 面；Claude Code/Codex CLI 等终端→直接 MCP。
+
+> ⚠️ **作废旧前提**：F.1 旧文称 "enterprise MCP 默认锁闭、LM-Tool API 是唯一触达 built-in read/search 的通道"——**错**。事实（per user，已入官方复核清单）：`chat.mcp.access` 默认 **`all`**（非锁闭）；扩展 LM Tool 有**独立**治理（`chat.extensionTools.enabled` 可中央关、安装受 `extensions.allowed` allowlist 限），**不是绕过 MCP 治理的 robust 通道**；VS Code 把 built-in/extension/MCP 定义为**三种并列工具类型**，扩展**不接管** built-in read/search。故无哪个通道是"保证 robust 的全局 PRIMARY"——改为 Core + 两不对等适配器 + policy 决定入口 + 优雅降级到 CLI/Human。
 
 **(2) 要动的文件**（tk repo，新建为主）：
 ```
@@ -3382,6 +3399,8 @@ protected idPrefix(): string {
 ### F.3 决策：默认 4 工具 + tiny-repo 3 工具 + `TK_MCP_TOOLS` ablation（serves the codemap agent surface）
 
 **(1) 决策**：默认工具面 = 4 个 `tk_` 前缀工具 —— `tk_explore`(PRIMARY) / `tk_node` / `tk_search` / `tk_callers`。`callees/impact/files/status` 的 handler 保留但默认不列出；环境变量 `TK_MCP_TOOLS`（逗号分隔短名）重新启用任意工具，被 ablate 的工具从 `tools/list` 真正缺席（非 call 时拒绝）—— 这同时是 A/B harness 的基线臂（F.7）。**500 索引文件以下**降到 3 工具三件套（`tk_explore/tk_search/tk_node`，丢 `tk_callers`）。理由（codegraph（upstream reference）实测）：1-tool 门 express 从 -43%WIN→+107%LOSS；`impact` 在零 eval 出现（blast-radius 已内联在 explore 和 node）；`callees` 冗余（body 即 callee list）。gitnexus（upstream reference）无条件列 17（已核实 `tools.ts` 26 个 `name:` 含别名/重载）= 文档化的「navigation-tool ceiling」反模式。
+
+> **组织原则（D17 / [ADR 0029](../adr/0029-agent-tool-surface-operation-contracts-queryplan.md)）**：这 4 个是**操作合同**（4 种职责：主探索 / 廉价搜索 / 精确节点读 / 反向调用），**不是** 6 个 profile 工具、**不是** 1 个 purpose 万能工具。六 profile 降为**内部 QueryPlan preset**（见 A4.4，QueryPlan = selection/traversal/projection 三正交维度）；每个工具把窄参编译成 QueryPlan，不外暴露重参协议。Domain/Evidence 先经 `tk_explore.layers` + `tk_node.include` 暴露，**harness 证明前不加** tk_domain/tk_verify。
 
 **(2) 要动的文件**：`src/mcp/tools.ts`（`DEFAULT_MCP_TOOLS` + `getStaticTools` + `ToolHandler.getTools` + tiny-repo 门 + `toolAllowlist/isToolAllowed`）。
 
@@ -3812,7 +3831,7 @@ private async initFromRoots(): Promise<void> {
 | F.8 | root 解析顺序 + Windows file:// | roots/list 5000ms 一次性；win32 盘符剥斜杠 | codegraph session.ts:42,183,304 |
 | F.9 | 引导 = additive/概率性；shim 仅管命令输出 | 引导面 3 处；MCP∩shell=0 | landscape TL;DR/§Conclusion |
 
-**跨需求绑定备忘**：F8 的 `maxOutputChars` **import** G1（`src/budget.ts`）不重定义；传输 = stdio（无 daemon，daemon 为 M18 受 K 门控的条件分支，作为后续实现步骤的依赖项而非当前产品范围内的能力）；DB 库外、`.tk/` 仅人类工件；扩展是 H(viewer)/I(round-trip) 的宿主，经 L 渠道发布；measured A/B 跑在 Claude Code headless（SECONDARY），PRIMARY 走 Track-2 opportunity facts。
+**跨需求绑定备忘**：F8 的 `maxOutputChars` **import** G1（`src/budget.ts`）不重定义；传输 = stdio（无 daemon，per-session MCP 即暖路径；cross-session daemon = Outside-scope，D21/[ADR 0033](../adr/0033-daemon-decomposed-three-capabilities.md)）；DB 库外、`.tk/` 仅人类工件；扩展是 H(viewer)/I(round-trip) 的宿主，经 L 渠道发布；measured A/B 跑在 Claude Code headless（SECONDARY），PRIMARY 走 Track-2 opportunity facts。
 
 
 ---
@@ -6225,7 +6244,7 @@ export function localizationF1(pred: Span[], oracle: Span[]) {
 
 ### K6 任务正确性 = FAIL_TO_PASS + PASS_TO_PASS — (serves the codemap agent surface)
 
-**(1) 决策**：带 patch 的任务用 SWE-bench 式 `FAIL_TO_PASS`（修前失败/修后通过）+ `PASS_TO_PASS`（修前通过/修后仍通过）。任务记为 solved 当且仅当 **所有 FAIL_TO_PASS 通过 且 所有 PASS_TO_PASS 仍通过**。
+**(1) 决策**：带 patch 的任务用 SWE-bench 式 `FAIL_TO_PASS`（修前失败/修后通过）+ `PASS_TO_PASS`（修前通过/修后仍通过）。任务记为 solved 当且仅当 **所有 FAIL_TO_PASS 通过 且 所有 PASS_TO_PASS 仍通过**。**语料源（grilling D11 / Q10，全文 [ADR 0023](../adr/0023-benchmark-architecture.md)）= 复用两 harness、拆分证明责任**：Job-B 端到端用 **SWE-bench 官方切片**（GitNexus 3 臂 baseline/tk-native/tk-projection）+ 同记 whole-task uncached/cost/tool-calls/reads/searches/projection；**语言/图能力另由 K16 的 per-language 问题集证明**，SWE-bench 语言分布须披露但不背全语言覆盖责任。**tk 自有 repo = regression only**（CI 回归/筛选/快消融，永不作主对外基准）。
 
 **(2) 要动的文件**：
 ```
@@ -6389,6 +6408,8 @@ export function incrementalRatio(full: { total_tokens: number }, inc: { total_to
 
 **(1) 决策**：Job A 走独立 small-N 协议（非 token）。两项度量：(a) find-correct-file rate——给人一个问题 + 仅人类 surface，记 hit@1 + time-to-correct-file；(b) comprehension——固定问题集对照 oracle answer key，`score = correct/total`。一律打印 N + 「small-N indicative, not benchmark-grade」标注。**采用 Serena 拒绝伪造 comprehension % 的诚实立场。**
 
+**(1b) grader/corpus**（grilling D11 / Q10，全文 [ADR 0023](../adr/0023-benchmark-architecture.md)）：无分档品牌。两样——自动 **regression tasks**（内部手写 tk-repo + host-agent，防导航/查询退化，**不作人类理解 claim**）+ 小规模 **blind human study**（外部 corpus + 评审者**非**功能作者、**不知**实验分组，baseline vs Human Inspector 比 hit@1/time-to-file/answer correctness，存分歧记录）。人类价值**只能**由盲测证明,永报 `N / repos / tasks`,**绝不**输出泛化 "comprehension +X%"。host-agent 不能证明人类理解。
+
 **(2) 要动的文件**：
 ```
 scripts/eval/
@@ -6551,49 +6572,54 @@ export function searchUsefulness(
 
 ---
 
-### K12 loop-avoidance TRANSFER 假设：明文声明，不隐藏 — (serves both surfaces)
+### K12 transfer footer = 对象①（proxy-only token 数字）的披露单位 — (serves both surfaces)
 
-**(1) 决策**：Claude-Code 测得的 uncached delta 仅在 **「W2 loop-avoidance 宿主无关」** 假设下声称可转移到 VS Code Copilot——该假设在每个被转移数字旁**逐字打印**，并附注：Copilot 侧由 Track-2 opportunity facts（call/payload/avoided-read 计数）佐证，而非 token。
+**(1) 决策**（refined by Q10 / [ADR 0022](../adr/0022-measurement-and-claim-boundaries.md)）：transfer footer 盖 **对外报的 uncached token 数字**——它 target 永远测不了,只能明文声明。footer 内容 5 条:measurement host=Claude Code headless;primary target=VS Code Copilot/Windows;compatible task-level target token telemetry=unavailable;target-host token effect=unknown;**no equivalent Copilot token reduction is claimed**。W2 loop-avoidance 仅作 **mechanism hypothesis**(非已验证 target token 声称)。产品默认 config 的转移不靠 footer,而由 K15 的**周期性 Copilot 复核**(portable 信号 target 可观测)处理——无运行时自动反证/状态机。
 
 **(2) 要动的文件**：
 ```
 scripts/eval/
-  report.ts                        ← 报告渲染，强制带 transfer footer
+  report.ts                        ← 报告渲染，强制带 transfer footer（仅对象①）
 ```
 
-**(3) 可抄代码**：tk 报告 footer（tk 新建，强制声明）：
+**(3) 可抄代码**：tk 报告 footer（tk 新建，强制声明，5 条）：
 
 ```ts
-// 源: scripts/eval/report.ts （tk 新建）
-export const TRANSFER_FOOTER =
-  "Token deltas measured on Claude Code headless. Transfer to VS Code Copilot " +
-  "assumes loop-avoidance (W2) is host-agnostic; on Copilot we report only mechanical " +
-  "facts (calls / payload / avoided reads), never a token %.";
+// 源: scripts/eval/report.ts （tk 新建；仅用于对象① proxy-only token 数字）
+export const TRANSFER_FOOTER = [
+  "Measurement host: Claude Code headless.",
+  "Primary target: VS Code Copilot on Windows.",
+  "Compatible task-level target token telemetry: unavailable.",
+  "Target-host token effect: unknown.",
+  "No equivalent Copilot token reduction is claimed.",
+  "(loop-avoidance W2 = mechanism hypothesis, not a verified target token claim;",
+  " config-level transfer is falsified by the K16 target-side checker, not this footer.)",
+].join("\n");
 
 export function renderHeadline(delta: number, withMed: number, withoutMed: number): string {
   return [
     `uncached Δ (WITHOUT − WITH) = ${delta} tokens`,
     `  WITH med=${withMed}  WITHOUT med=${withoutMed}`,
     "",
-    TRANSFER_FOOTER,   // 每个被转移数字都带它
+    TRANSFER_FOOTER,   // 每个被转移的 token 数字都带它
   ].join("\n");
 }
 ```
 
-**(4) 具体数值**：footer 文本固定；任何对 Copilot 的转移声称必须紧邻此 footer，否则视为违反诚实不变量。
+**(4) 具体数值**：footer 文本固定 5 条;任何对 Copilot 的 **token** 转移声称必须紧邻此 footer,否则视为违反诚实不变量。footer **不**用于对象②（config 默认走 provenance + K16 finding）。
 
 **(5) 有序步骤**：
 1. 实现 `renderHeadline` 强制拼接 `TRANSFER_FOOTER`——独立可测。
 
-**(6) 测试**：断言 `renderHeadline(...)` 输出必含 `TRANSFER_FOOTER` 全文；断言无 footer 的渲染路径不存在（grep 测试）。
+**(6) 测试**：断言 `renderHeadline(...)` 输出必含 `TRANSFER_FOOTER` 全 5 条；断言无 footer 的 token-数字渲染路径不存在（grep 测试）。
 
-**(7) 证据回指**：MEMORY measurement-harness-design（W2 = A/B-only，transfer 是假设）；K12 dossier。
+**(7) 证据回指**：[ADR 0022](../adr/0022-measurement-and-claim-boundaries.md)（host 边界 + footer）；MEMORY measurement-harness-design（W2 = A/B-only，transfer 是假设）。
 
 ---
 
 ### K13 系统变体消融阶梯 — (serves the codemap agent surface)
 
-**(1) 决策**：对比变体 = `baseline · baseline+output-compression-only · baseline+smart-read · baseline+repo-map/graph · baseline+symbol-index`。每个变体一个独立 WITH config，隔离每层贡献；无 embeddings/gateway 变体（leans 范围外）。
+**(1) 决策**：对比变体（OUTER ladder）= `S0 baseline · S1 +output-compression · S2 +smart-read · S3 +repo-map/graph · S4 +symbol-index`。每变体一个独立 WITH config，隔离每检索技术贡献；无 embeddings/gateway 变体（leans 范围外）。**所有 K13 cell 用同一把锁定的 projection config**（cell 间绝不变更 = 保守 Code-only graph projection 或上次 validated 生产配置）——K13 只测**检索技术**增量，不把 graph 建设与 projection 策略混淆。D7 四路 profile 消融是 `+graph` 臂的 **INNER 消融**，二者嵌套不平铺，组合方式见 K17 / [ADR 0024](../adr/0024-ablation-protocol.md)。
 
 **(2) 要动的文件**：
 ```
@@ -6678,20 +6704,57 @@ export function scorerFor(category: string): "A" | "B" | "both" {
 
 ---
 
+### K15 measurement & claim boundaries — (serves both surfaces)
+
+**(1) 决策**（grilling D10 / Q10，全文 [ADR 0022](../adr/0022-measurement-and-claim-boundaries.md)）：每个 host 只证它能证的，**绝不让一个 host 的数字冒充另一 host**。Claude Code = token proxy（唯一干净 whole-task uncached，附 footer 声明非 Copilot 数）；VS Code Copilot = target observational facts（tool_calls/avoided_reads/payload，`estimate_kind:"opportunity"`，永不汇入 `saved_tokens`）；human = portable task metrics（hit@1/time-to-file/answer correctness）。
+
+**(2) 默认配置闸**（D10 产品形状部分）：层挣得某 profile 默认输出预算 = (1) correctness 非回归（硬闸）+ (2) portable utility（Copilot/人类可观测）决定默认 + (3) proxy whole-task uncached 仅作**成本约束 + 辅助 tie-breaker**，绝不单独定默认。配置选定后**周期性在 Copilot 用 observational facts 复核**——无运行时自动反证引擎、无 validation-status 状态机、无自动 demotion（target 数据是观察性的、易受任务分布扰动，供周期复核，不驱动实时行为）。
+
+**(3) 证据回指**：[ADR 0022](../adr/0022-measurement-and-claim-boundaries.md)；[ADR 0020](../adr/0020-selection-vs-projection.md)（earning-budget by ablation）；[ADR 0016](../adr/0016-measurement-before-feature.md)（uncached 口径）。
+
+---
+
+### K16 benchmark architecture — (serves both surfaces; K 的主体)
+
+**(1) 决策**（grilling D11 / Q10，全文 [ADR 0023](../adr/0023-benchmark-architecture.md)）：复用两套已验证参考 harness，每套只做**一个可证伪声称**，不自建 benchmark 分级：
+- **Agent 端到端 = GitNexus 式 SWE-bench harness**：3 臂 `baseline / tk-native / tk-projection`，SWE-bench 官方 F2P/P2P 判 resolve，同记 whole-task uncached / cost / tool·API calls。证'agent 是否更易完成真实修复任务 + token 是否降'。**SWE-bench 的 Python 偏向只须在报告披露，不得用于声明 TS/JS 端到端收益。**
+- **Backend 能力 = Codebase-Memory 式多仓问题集**：TS/TSX/JS、Python、Go 各代表性真实 OSS repo，固定可机械验证问题（symbol location / callers·callees / flow / impact / Domain candidates / Evidence arbitration），记 PASS/PARTIAL/FAIL。证'声明语言上 Code/Behavior/Domain/Evidence 是否正确'，**不与** SWE-bench 混成一个指标。
+
+**(2) tk 自有 repo = regression only**（CI 回归/功能检查/快消融，永不作主对外基准）。
+
+**(3) Human Inspector（codeguide）**：无分档品牌。只两样——自动 **regression tasks**（防导航/查询退化，不作人类理解 claim）+ 小规模 **blind human study**（评审≠作者、不知分组）比 baseline vs Human Inspector 的 hit@1 / time-to-file / answer correctness；永报 `N / repos / tasks`，绝不输出泛化 "comprehension +X%"。
+
+**(4) 要动的文件**：`scripts/eval/harness-swebench.ts`（GitNexus 3 臂）；`scripts/eval/harness-langsuite.ts`（per-language runner）；`scripts/eval/human-study.ts`（盲测记录）；复用 K6 oracle + K10 schema。
+
+**(5) 证据回指**：[ADR 0023](../adr/0023-benchmark-architecture.md)；GitNexus SWE-bench 评测模式；Codebase Memory repository question suite。
+
+---
+
+### K17 ablation protocol — (serves the codemap agent surface)
+
+**(1) 决策**（grilling D12 / Q10，全文 [ADR 0024](../adr/0024-ablation-protocol.md)）：K13 与 D7 **不是笛卡尔矩阵**——D7 的投影臂活在 K13 的 `+graph` 臂内。K13 测**检索技术**（baseline/+compression/+smart-read/+graph/+symbol，全 cell 锁同一 projection control，隔离技术 vs 投影）；D7 在 graph 臂内测**投影**（Code-only vs 四层，per profile）。**不跑全矩阵**：K13 winner 与 D7 winner 各自独立选出后，对 baseline 做**一次组合确认**（correctness 非回归、预期收益仍在、token 不实质反向）。ablation 嵌入 K16 两 harness（K13 在 SWE-bench 对照臂、D7 在固定 task slice）。
+
+**(2) 要动的文件**：`scripts/eval/ablation.ts`（K13 锁投影阶梯 → D7 graph 臂内 → 一次组合确认）；复用 K16 harness。
+
+**(3) 证据回指**：[ADR 0024](../adr/0024-ablation-protocol.md)；[ADR 0020](../adr/0020-selection-vs-projection.md)。
+
+---
+
 ### 跨 K 子决策的诚实不变量（acceptance gate）
 
-1. **never report a number we cannot mechanically derive**——measured（K1-K6, K8, K10-K11）走 Claude Code 实测；opportunity（K7）打不同 `estimate_kind` 永不汇总；Job A（K9）永带「indicative」标注。
-2. **uncached not total**（K1）——OVERRULES codegraph total 头条。
+1. **never report a number we cannot mechanically derive**——measured（K1-K6, K8, K10-K11）走 Claude Code 实测；opportunity（K7）打不同 `estimate_kind` 永不汇总；Job-A 自动任务只作 regression（不作人类理解 claim），人类价值仅小规模盲测、永报 N/repos/tasks。
+2. **uncached not total**（K1）——OVERRULES codegraph total 头条；统一 = whole-task uncached（total 仅审计列）。
 3. **每个 token 增量必与非回归 success_rate 配对**（K6 Pareto），绝不单报 token。
-4. **transfer 假设明文**（K12）——Copilot 侧只有机械事实，无 token %。
-5. 全工坊只写 JSONL/sqlite ledger，**自身不跑任何模型**（守 strong lean：无 API key、无 model egress）；Job-A oracle 由宿主 agent 或人类评分（见 Open Decisions），永不用 tool-embedded model。
+4. **host boundary**（K15 / [ADR 0022](../adr/0022-measurement-and-claim-boundaries.md)）——Claude=token proxy(footer 标注，不冒充 Copilot) / Copilot=observational facts(`estimate_kind:"opportunity"`，永不汇入 saved) / human=portable task metrics；一个 host 的数字绝不冒充另一 host。
+5. 全工坊只写 JSONL/sqlite ledger，**自身不跑任何模型**（无 API key、无 model egress）；Job-A 评分由 host-agent（regression）或盲测人类（study），永不用 tool-embedded model。
+6. **default by correctness + portable utility**（K15 / [ADR 0022](../adr/0022-measurement-and-claim-boundaries.md)）——层挣默认预算须 correctness 非回归(硬闸) + portable utility(Copilot/人类可观测)；proxy uncached 仅成本约束/tie-breaker，绝不单独定默认；配置周期性在 Copilot 复核（无运行时自动反证/降级状态机）。
+7. **claim boundary = 两类结论**（K16 / [ADR 0023](../adr/0023-benchmark-architecture.md)）——K 对外只声称 ① 真实任务上 tk 提高成功率/降低 agent 成本 ② 声明的语言与图能力真工作；通用 comprehension %、单一 blended score、跨语言/跨 host 外推一律 out of bounds。
+8. **ablation embeds, no matrix**（K17 / [ADR 0024](../adr/0024-ablation-protocol.md)）——K13 测技术(锁投影)、D7 graph 臂内测投影；不跑全矩阵，final config 对 baseline 确认一次；tk 自有 repo = regression only。
 
 ### Open Decisions
-- Job-A 语料来源：手写 tk-repo 题集（可控、小 N、可能偏置）vs 外部 onboarding 基准（更可信、映射成本高）。
-- Job-A grader：宿主 agent（便宜，但 LLM 评 LLM-assisted human）vs 人类评审（可信、不可扩展）——决定 A 数字是「indicative」还是 defensible。
-- 是否保留 Copilot CLI `premiumRequests` 作 billing-unit 旁证（非 token、auto-route haiku，可能误导多于佐证）。
-- Job-B task oracle 来源：tk 自有 repo + 手写 answer-key/gold-patch vs SWE-bench 切片（真 FAIL/PASS、但重且 Python 偏）。
-- N 与 run 预算：4 次/臂对齐 codegraph，但 ≤30× 方差下高方差大 repo cell 可能要更多 run（成本 vs 更紧 spread）。
+
+> **✅ Need-K 全部闭合 → Q10 完成（D10–D12 / [ADR 0022](../adr/0022-measurement-and-claim-boundaries.md)–[0024](../adr/0024-ablation-protocol.md)）。** K 收敛为三件事:**在哪个 host 能证什么**(K15)、**用哪两套现成 benchmark**(K16)、**少量消融如何嵌入**(K17)。对外结论只两类:① 真实任务上 tk 提高成功率/降低 agent 成本;② 声明的语言与图能力真工作。其余(通用 comprehension %、单一 blended score、跨语言/跨 host 外推)一律 out of bounds。
+> 已降为评估协议细节(非产品架构):token 口径计算、run 预算(4/臂+自适应)、premiumRequests 丢弃、Job-A host-agent vs 盲测人类、SWE-bench 语言披露。
 
 
 ---
@@ -7470,8 +7533,8 @@ db.exec("PRAGMA journal_mode = WAL;");
 ### Open Decisions（本节相关）
 
 - **Node 25 / `--liftoff-only`**：已被 A+D 关闭（ship WASM → 25 排除、两 flag 必带）。请确认接受单一 gate `>=22.5.0 <25.0.0` + vendored Node 24.x（L5/L6/L7）。
-- **Code-signing**：Windows Authenticode + macOS notarization 是真正的「下载即跑」缺口（SmartScreen/Gatekeeper、CrowdStrike 可能隔离未签名 node.exe）。把签名作为 Required 现在就做（证书 + CI 成本），还是不签 + installer-only 接受首跑 friction？
-- **CrowdStrike/AV 冷启动税**：tk 实测每次 spawn ~400–1100ms AV 税，新下载未签名 node.exe 首跑可能被更重扫描。是否申请 IT 排除路径 / 文档化，还是接受首跑延迟？
+- **Code-signing ✅ 定（D20 / [ADR 0032](../adr/0032-artifact-gated-signing-av-tax-is-perf.md)）= artifact-gated**：现在**无 tk 自有未签 PE 可签**（tk = npm JS 包 `tk→dist/cli.js` 跑用户 Node；bundle 里的 node.exe 是**官方已签** Node 重打包）。故现在**不买证书**，继续 SHA256SUMS(L15)+npm provenance(决策#9)+release attestation；**当 tk 首发自有 Windows PE**（SEA / daemon-EXE / MSI/MSIX；PowerShell `install.ps1` 是脚本不算 PE）时 Authenticode **成硬发布门**，macOS notarization 同理（.app/.pkg/.dmg/bundled native 才启）。现在可**预留 CI signing stage + 验证合同**（不接真证书）。
+- **CrowdStrike/AV 冷启动税 = 性能问题非签名问题（D20）**：EDR 拦 process-creation+file-access（`git --version`/`node -e 0` 皆慢），tk 多 spawn 一次 Node 即结构性多付一次扫描。**由 daemon / 减 spawn / 缓存 exec 路径 / 减热路径 I/O 解**（接 daemon Open Decision + Windows startup-perf 工作），**签名替代不了**。是否另申请 IT 排除路径 = 部署文档项，非产品闸。
 - **Node pin 刷新节奏**：v24.16.0 钉死可复现，但 tk 自担 Node CVE 更新。固定 pin 还是 floating 24 LTS？
 - **Scoop**：是否也发 Scoop（企业 Windows 友好、免管理员）？codegraph 留 TODO，对 Windows-primary 可能值得。
 
@@ -8315,28 +8378,30 @@ export function mermaidFromGraph(
 
 ## Open Decisions
 
+> **Round 3 收口（2026-06-21，D13–D21 / ADR 0025–0033）**：所有 reference-groundable 设计 fork + 真 ops fork 已闭合（#4 daemon→D21、#7 交付→D19、#9 签名→D20，+ §17 #2 工具→D17、#3 schema→D18、#4 SCIP→D16，+ 附录 A3/A4 检索/语义全 gap）。**下列 #1/#2/#3/#5/#8 + 次级 B-provider 经参考+既有决策核验为 reference-consistent，round-3 ratified 锁定**（其答案见各项 ✅ 行）；仅 **#6 eval rigor** 与 **#5 的 char→token 重表达** 保留为 **measurement-gated**（K harness 实测后再定，非设计开放）。
+
 以下是确需用户拍板的真实开放项（已闭合项不再列）：
 
-1. **Node 版本闸门确认**：Node 25/--liftoff-only 已由 D+A 闭合（WASM 已发布 → 排除 25、强制 --liftoff-only）。请确认接受 `>=22.5.0 <25.0.0` + vendored Node 24.x 作为唯一跨需求版本锚点（原在 A/C/D/L 各自独立开放）。
+1. **Node 版本闸门确认**：Node 25/--liftoff-only 已由 D+A 闭合（WASM 已发布 → 排除 25、强制 --liftoff-only）。请确认接受 `>=22.5.0 <25.0.0` + vendored Node 24.x 作为唯一跨需求版本锚点（原在 A/C/D/L 各自独立开放）。✅ **round-3 ratified**：接受为唯一跨需求版本锚点（上限 `<25` 是"未测保守"，非已证 OOM；实测后可放宽）。
 
-2. **协作往返的编辑器表面**（I Open Decision #1）：连贯的 Required 默认＝VS-Code-native 文件编辑 + file-watcher 回写（HTML 查看器保持只读）。请确认仅文件路线，或授权更重的 Tiptap 式 web 编辑器构建。
+2. **协作往返的编辑器表面**（I Open Decision #1）：连贯的 Required 默认＝VS-Code-native 文件编辑 + file-watcher 回写（HTML 查看器保持只读）。请确认仅文件路线，或授权更重的 Tiptap 式 web 编辑器构建。✅ **round-3 ratified**：**仅文件路线**（VS-Code-native 编辑 + file-watcher 回写，HTML 只读；I-4/I-5 已定，davia file-backed 即此参考），**不建** Tiptap web 编辑器。
 
-3. **控制文件格式**（I）：JSONC 是连贯选择（tk 已解析 JSONC、可手编、VS Code 内可 schema 补全）。请确认选 JSONC 而非 YAML。
+3. **控制文件格式**（I）：JSONC 是连贯选择（tk 已解析 JSONC、可手编、VS Code 内可 schema 补全）。请确认选 JSONC 而非 YAML。✅ **round-3 ratified**：JSONC（非 YAML）。
 
-4. **Daemon/共享索引分支**（M18 / F #2 / E）：Required 承诺单进程/会话 stdio、无 daemon；条件 daemon 分支门控于 K 的 op-count/cold-start 测量。请设定能翻转它的冷启动延迟预算，或确认"daemon 永不"。
+4. ~~**Daemon/共享索引分支**（M18 / F #2 / E）：条件 daemon 分支门控于 K 的 op-count/cold-start 测量。~~ ✅ **闭合（D21 / [ADR 0033](../adr/0033-daemon-decomposed-three-capabilities.md)）**：旧"daemon"把三事捆一起，**三拆**——① **CrossSessionRepositoryDaemon = Outside scope**（tk on-disk node:sqlite + per-session MCP 已是暖路径；重开闸=hydration p95>250ms + 频繁重开 + 原型砍≥50% first-query）；② **IndexWatcher = Optional-at-runtime 默认关**（E11）；③ **CommandProxyResident = 独立 Required/Optional-at-runtime**（命令代理 shim 连常驻 proxy，是 D20 AV 税的唯一真解，属命令代理子系统）。修正：codegraph **有** daemon（非"no-daemon"），tk 刻意背离。
 
-5. **输出经济单位**（G/K）：现以 char 分级（13000/18000/24000）作可移植代理，仅在 K 的 harness 测出 VS Code Copilot Windows 真实内联帽后再以 token 重新表达。请确认"现在用 char / 测量后用 token"，因主机宿主无法直接测 token。
+5. **输出经济单位**（G/K）：现以 char 分级（13000/18000/24000）作可移植代理，仅在 K 的 harness 测出 VS Code Copilot Windows 真实内联帽后再以 token 重新表达。请确认"现在用 char / 测量后用 token"，因主机宿主无法直接测 token。✅ **round-3 ratified**：现用 char 分级；**token 重表达 = measurement-gated**（K 测出真实内联帽后），非设计开放。
 
-6. **Job-B 任务 oracle + Job-A 评分者**（K Open Decision）：手写 tk-repo 题集/gold patch vs SWE-bench 切片；宿主 Agent 评分 vs 人工评审理解答案——严谨度对工作量的取舍，只能由你定。
+6. **Job-B 任务 oracle + Job-A 评分者**（K Open Decision）：手写 tk-repo 题集/gold patch vs SWE-bench 切片；宿主 Agent 评分 vs 人工评审理解答案——严谨度对工作量的取舍，只能由你定。⏳ **measurement-gated（非设计开放）**：总基调已定（D11/[ADR 0023](../adr/0023-benchmark-architecture.md)：复用 SWE-bench + Codebase-Memory 两 harness，Job-A 小 N 盲测，round-2 lesson = 保持 LEAN）；具体 oracle/评分者在 K harness 起立时按实测定，**不在 round 3 设计阶段拍**。
 
-7. **目标组织 MCP 策略现实**（F #3）："扩展为主"承诺假设企业 MCP-in-Copilot 默认锁。若真实目标组织已启用 MCP，raw-MCP 路径可作主、扩展工作量更小——请确认真实组织策略。
+7. ~~**目标组织 MCP 策略现实**（F #3）："扩展为主"承诺假设企业 MCP-in-Copilot 默认锁。~~ ✅ **闭合（D19 / [ADR 0031](../adr/0031-asymmetric-dual-adapter-delivery.md)）**：旧前提**错**（`chat.mcp.access` 默认 `all`、扩展 LM Tool 有独立治理、扩展不接管 built-in）。改为 **Core 唯一实现 + 两不对等适配器**（`tk mcp` host-neutral 参考 / VS Code 扩展 Copilot managed），**入口由组织 policy 决定** + 优雅降级到 CLI/Human；非固定"扩展为主"。policy 键（`chat.mcp.access`/`chat.extensionTools.enabled`/`extensions.allowed`）默认值待官方复核。
 
-8. **Embeddings/SCIP/PageRank 范围确认**：三者均承诺 Outside current product scope（A11/B9/C reserve-only/D14/M18），仅在实测召回不足（A9 aider 个性化）或互操作决策时重开。请确认当前范围都不需要。
+8. **Embeddings/SCIP/PageRank 范围确认**：三者均承诺 Outside current product scope（A11/B9/C reserve-only/D14/M18），仅在实测召回不足（A9 aider 个性化）或互操作决策时重开。请确认当前范围都不需要。✅ **round-3 ratified（D13/D14/D16 已实证锚定，注意 SCIP/PageRank 非 Outside-scope）**：**embeddings = Unsupported**（D14 重申，本仓共现仅 `RELATED_IN_REPOSITORY` 候选实验臂，无预训练向量）；**SCIP = Required**（D16 官方 binding 流式消费，indexer 为 Optional-at-runtime）；**PageRank = Required**（D13 分级管线**主排序**）。即 embeddings 确认 out，但 SCIP/PageRank 早已是 Required（旧"三者皆 Outside"措辞作废）。
 
-9. **代码签名 + AV 冷启动税**（L Open Decision）：现在签 Windows Authenticode/macOS notarize（成本：证书 + CI）vs 不签只发安装器并接受 SmartScreen/CrowdStrike 首次运行摩擦——Windows 主目标分发抉择。
+9. ~~**代码签名 + AV 冷启动税**（L Open Decision）：现在签 Windows Authenticode/macOS notarize vs 不签接受首跑摩擦。~~ ✅ **闭合（D20 / [ADR 0032](../adr/0032-artifact-gated-signing-av-tax-is-perf.md)）**：**修错误前提**——现在**无 tk 自有未签 PE 可签**(npm JS 包跑用户 Node；bundle 内 node.exe 是官方已签)。**artifact-gated signing**:现 SHA256+provenance+attestation 不买证书；tk 首发自有 Windows PE(SEA/daemon-EXE/MSI/MSIX)时 Authenticode 成硬发布门，macOS 同理。**AV 冷启动税 = 性能问题非签名**→ daemon/减 spawn/缓存 exec/减热路径 I/O（接 Open #4 daemon）。
 
-附次级、可后置但建议一并确认的项（来自各需求 Open Decisions，非阻塞产品起建）：
-- **B 生成 provider 默认**：次目标上宿主 in-session 模型 vs 新起 caw 子进程（倾向 in-session，需一行确认）；是否允许显式用户自带 key 的逃生口（强倾向"绝不默认发 key"，问题是显式 escape hatch 是否可接受）。
+附次级、可后置但建议一并确认的项（来自各需求 Open Decisions，非阻塞产品起建）。**Round-3 ratified（批量）**：下列各项**按其所述 lean 锁定**为 reference-consistent 默认，均非设计 fork，逐字 impl 细节在实现期照各需求节落地：
+- **B 生成 provider 默认** ✅ **已正式裁定 → D22 / [ADR 0034](../adr/0034-llm-delegation-host-borrowed-no-byo-key.md)**（宿主借用、零 api_key、BYO-key 显式拒绝、无模型可借→static-only 降级；完整理由 + CI 不变量见该 ADR，此处不复述）。
 - **C content_hash 算法**：sha256（零依赖、node:crypto）vs blake3（需 vendor），倾向 sha256 除非大库吞吐实测证明值得。
 - **E 首查大跳变行为**：HEAD 大幅前移时静默 FULL_UPDATE vs 出 frozen banner 要求显式 `tk sync`（成本 vs 惊讶取舍）；Windows/NTFS mtime 粒度是否单靠 mtime_ns 还是必须 size+hash 兜底（倾向 hash 兜底，需 Windows 现场核）；COSMETIC 编辑下人类徽章是否标"doc 可能落后"（A/B 分歧可调）。
 - **D 框架/标记提取器**：当前范围是否发任何（Razor 触及 .NET 企业主目标可能例外，Vue/Svelte 倾向仅文件级）；C# 外的 vendored-wasm 集（tier-2/3 体积 vs 正确性）；SCIP emit/consume 互操作是否纳入当前范围。
@@ -8833,14 +8898,19 @@ enum SymbolRole { Definition = 0x1; Import = 0x2; WriteAccess = 0x4; ReadAccess 
                   Generated = 0x10; Test = 0x20; ForwardDefinition = 0x40; }
 ```
 
-> **关键事实**:与 graphify 简化版不同,**官方 occurrences 挂在 Document 上,不挂在每个 symbol 上**(源: graphify/scip_ingest.py:27-30 自己点明这个分歧)。`range` 是 3 元 `[startLine, startChar, endChar]`(单行)或 4 元 `[startLine, startChar, endLine, endChar]`,**0-based**(源: scip.proto VERBATIM)。`symbol_roles` 是位掩码,`role & 0x1` 即 Definition。
+> **关键事实**:与 graphify 简化版不同,**官方 occurrences 挂在 Document 上,不挂在每个 symbol 上**(源: graphify/scip_ingest.py:27-30 自己点明这个分歧)。`symbol_roles` 是**位掩码**,按 `role & 0x1` 判 Definition——**绝不**用枚举相等判定。
+> **range 消费修正(D16）**:当前协议已**优先 typed `single_line_range` / `multi_line_range`**，旧的 packed 3 元 `[startLine,startChar,endChar]` / 4 元 `[startLine,startChar,endLine,endChar]`（0-based）**已 deprecated**。consumer 必须 **typed-first、packed fallback**，并保留每个 Document 的 **position encoding（UTF-8 / UTF-16 / UTF-32）**（char offset 的码元口径随之不同，落库前须按 Document 编码归一）。
 
-**依赖选择(诚实)**:tk 零运行时依赖,clones 里**没有任何逐字 TS SCIP protobuf 解码器可抄**(graphify 的是 Python 且只吃简化 JSON)。三选一,推荐方案 A:
-- **A(推荐)**:把 `scip.proto` 编译进仓(`pbjs`/`pbts` 预生成静态 JS+d.ts,**构建期**依赖,运行时零依赖)→ `Index.decode(buffer)`。保持运行时零依赖承诺。
-- B:运行时引 `protobufjs`(反射式 `.proto` 加载)——破坏零依赖,不取。
-- C:自写 minimal protobuf varint 解码器(仅 Index/Document/Occurrence 三层)——可控但 **需实现时补** 且易错。
+**解码方案（D16 / [ADR 0028](../adr/0028-scip-streaming-consumer-official-binding.md)）——官方 TS binding + 薄顶层 streaming importer；pbjs 平行 binding 与手写嵌套解码器均 Rejected**：
 
-protobuf→buffer→`Index` 的解码 glue **需实现时补**(无逐字来源)。解码后的映射逻辑,**可改写自 graphify 的真实两遍法**(源: graphify/scip_ingest.py:74-129, 251-273,PolyForm-NC **[非分发安全]**,若分发需重写)——核心是"pass1 建 symbol→node 索引,pass2 发边,目标解析优先同文档、唯一跨文档兜底":
+官方 SCIP 现已提供 **Apache-2.0 的 TS binding `@scip-code/scip`**（由 `protoc-gen-es` 生成；已核对 v0.8.1 / Apache-2.0 / 依赖 `@bufbuild/protobuf ^2.11.0`，后者 Apache-2.0 AND BSD-3-Clause）。标准消费 = `fromBinary(IndexSchema, bytes)`。故：
+- **不再** pbjs/pbts 自生成平行 binding（旧 A，**Rejected**）；**不**手写完整嵌套 protobuf 解码器（旧 C，**Rejected**）；运行时 `protobufjs` 反射（旧 B）本就否决。
+- `@scip-code/scip` + `@bufbuild/protobuf` 作**精确锁版的构建依赖**，由 **tsdown** 打进**独立、lazy-loaded 的 SCIP chunk**；安装后仍 **无 npm runtime dependency、无 native addon**，**仅探测到 `index.scip` 时才加载**。
+- **内存（生产路径不整文件 decode）**：官方 schema 明确警告完整 `Index` 可能占用大量内存，故**不**执行 `fromBinary(IndexSchema, wholeFile)`。tk **只手写顶层 Index framing**：读 field tag + length-delimited payload，再分别用官方 `MetadataSchema` / `DocumentSchema` / `SymbolInformationSchema` 解码；每个 Document 解码后**立即写入 SQLite staging 并释放**。结构等价于官方 Go `ParseStreaming`，但**没有手写任何嵌套 SCIP 消息的 wire decoder**（只手写最外层 framing）。
+- **失败处置**：解码或导入失败必须**整代（generation）rollback**，并透明回退 tree-sitter / TypeScript checker（接 E 的 index_generation + J 的 fail-open）。
+- **capability state**：`ScipIndexer` = **Optional-at-runtime**；`ScipConsumer` + `StreamingScipImporter` = **Required**；`WholeIndexDecode` = 仅 tests / small fixtures。
+
+解码后的**映射逻辑**(把 Document/Occurrence/SymbolInformation 映成 tk 边),仍**可改写自 graphify 的两遍法**(源: graphify/scip_ingest.py:74-129, 251-273,PolyForm-NC **[非分发安全]**,若分发需重写)——核心是"pass1 建 symbol→node 索引,pass2 发边,目标解析优先同文档、唯一跨文档兜底"（注：下面 `ScipIndex/ScipDocument` 形已由官方 Document decode 产出，**不再来自旧方案 A 的 `Index.decode`**；range 读取须 typed-first 见上）：
 
 ```ts
 // 需实现时补 (解码 glue);映射逻辑 已改写自 graphify/scip_ingest.py 两遍法 [非分发安全]
@@ -10529,6 +10599,8 @@ export const REL_TYPES = [
   // PDG/taint substrate（保留，尚未发射）：
   'CFG','REACHING_DEF','TAINTED','SANITIZES','TAINT_PATH','CDG','POST_DOMINATE',
 ] as const;
+// ⚠️ 抄用警示（D15 / ADR 0027）：tk **不**采纳 `STEP_IN_PROCESS`（gitnexus 式 Process 机制 Outside scope）。
+//    edges 表不设该 kind、GraphRelationship 不设 `step?` 字段；Flows 由 EvidenceBackedFlowProjection 按需算。
 ```
 
 边的运行期对象形（确认存在 graph/types.ts:182-206），决定 tk `edges` 表该有哪些列：
@@ -12469,7 +12541,7 @@ def _make_cache_key(repo_info: dict) -> str:
 - **gitnexus · incremental + staleness**: deleteAllInterprocTaintPaths / TAINT_PATH 只在 pdg 开时存在；tk 当前 schema 是否有等价的『整图属性边』（如全局 dataflow/taint）未知，若无则该步可省，需实现时补对照 tk 边 kind 清单。
 - **gitnexus · incremental + staleness**: sibling-clone 漂移检测（checkCwdMatch）依赖一个全局 registry（readRegistry）+ remoteUrl 指纹。tk 是否维护跨 clone 的全局 registry 未定；若 tk 只做 project-local 单仓，可只保留 checkStaleness 的 commitsBehind 横幅，省掉 sibling 逻辑。需实现时补 tk 的 registry 决策。
 - **gitnexus · token-economy levers (precompute / grep-augment / impact)**: cohesion / community / cluster 排序信号：augment 用 `c.cohesion`（Community 节点 MEMBER_OF 边）做内部排序，tk schema 暂无 community 检测——需实现时补，先用「callers 数」当排序代理
-- **gitnexus · token-economy levers (precompute / grep-augment / impact)**: Process / 执行流（STEP_IN_PROCESS 边、Process 节点、heuristicLabel、stepCount、entryPointId）：augment 的 Flows 行、graph-queries 的 getProcessesForFiles、impact 的 affected_processes 全依赖它；tk 是否要做 process 检测未定——需实现时补；不做则 impact 的 risk 评分里 processCount 恒 0（仍可用 directCount/total 阈值）
+- **gitnexus · token-economy levers (precompute / grep-augment / impact)**: Process / 执行流（STEP_IN_PROCESS 边、Process 节点、heuristicLabel、stepCount、entryPointId）：**已裁（D15 / [ADR 0027](../adr/0027-community-optional-flows-evidence-backed.md)）——gitnexus 式启发式 Process 检测 Outside scope，不建 Process 节点/STEP_IN_PROCESS 边**。`Flows:` 改由 `EvidenceBackedFlowProjection`（Behavior IR 证据，按需）提供；impact 的 risk 评分不依赖 processCount（走 directCount/total 阈值 + 反向 PPR 影响面，附录 A1 §3.5）。
 - **gitnexus · token-economy levers (precompute / grep-augment / impact)**: epistemic boundary 探测（computeEpistemicBoundary，#1858 interface/indirection 下界标记 exact/lower-bound）：未读其实现，只见调用点（local-backend.ts:4628-4633, 4554-4556）——tk 若要 measurement-honesty 的「这是下界不是精确值」标记，需实现时补读该函数
 - **gitnexus · token-economy levers (precompute / grep-augment / impact)**: BM25/FTS 映射符号那步依赖 gitnexus 的 searchFTSFromLbug（src/core/search/bm25-index.js，未读）；tk 用 FTS5 自己实现，bm25() 排序权重与 name-CONTAINS 回退阈值需实现时补
 - **gitnexus · token-economy levers (precompute / grep-augment / impact)**: isTestFilePath 的真实判定逻辑未读（local-backend.ts 引用）；node:sqlite 适配里我用了占位 `NOT LIKE '%test%'`，tk 需补真实 test-path 规则（__tests__/*.test.*/*.spec.* 等）
@@ -12503,33 +12575,31 @@ def _make_cache_key(repo_info: dict) -> str:
 决策 A9 当前文字「PageRank/personalization Unsupported」是 **2026-06-20 拍板前的陈旧表述**，与顶部矩阵 line 20「PageRank Required, default on」、line 8256「Required, default on」、整个附录 A1 直接矛盾。留着会让实现者跳过整个附录 A1。**A9 应整体改写为**：
 
 > **决策 A9 — PageRank Required, default on；FTS+结构 boost 是其廉价快路径/种子打分器，非替代。**
-> 排序走两段互补信号：(a) FTS 分 + co-location boost(同文件每多一 query 符号 +30，index.ts:820) + dominant-file boost(一文件边数 ≥3× 次高，index.ts:642) + multi-term 乘性 boost(2 词→2×、3 词→2.5×) —— 这一段是廉价快路径，既挑 PageRank 的 personalization 种子，又贡献 `lexicalScore` 分量；(b) personalized PageRank(附录 A1)提供结构中心性。两者经下面的 `finalScore` 融合，不是二选一。无 `--no-rank` 时即走此路径。
+> 排序走分级管线（§1 / D13）：FTS 分 + co-location boost(同文件每多一 query 符号 +30，index.ts:820) + dominant-file boost(一文件边数 ≥3× 次高，index.ts:642) + multi-term 乘性 boost(2 词→2×、3 词→2.5×) 是**廉价快路径**，它**既挑 PageRank 的 personalization 种子、又给最终序当 tie-breaker**；personalized PageRank(附录 A1)对结构邻域做**主排序**。词法不是与 PPR 并列融合的第三通道（那会重复计数），而是 PPR 的上游 + 下游 tie-break——详见 §1 的分级管线。无 `--no-rank` 时即走此路径。
 
 ---
 
-## 1. 候选 rerank 融合公式 finalScore(最大的「融合层」缺口)
+## 1. 排序 = 分级管线(staged cascade)，非加权和、非 RRF 融合〔D13 / [ADR 0025](../adr/0025-staged-ranking-pipeline.md)〕
 
-**增补：附录 A1 §3 末尾 + 重写后的 A9；来自：Token-killer-Research §3.2(line 189-204)。**
+**增补：附录 A1 §3 末尾 + 重写后的 A9；裁决来源：grilling 2026-06-21 round 3（D13）。** 早稿曾从 Token-killer-Research §3.2 搬一个加权和 `finalScore = 0.60·lexical + 0.20·PPR + 0.10·path + 0.10·session`——**已作废**。两个参考实现都不用加权和：codegraph 排序路径里**零 PageRank**（纯 FTS5 BM25 + 整数 bonus），GitNexus 用 RRF `Σ1/(60+rank)` 且白纸黑字「不做统一归一化、没有 PageRank 作主搜索排序」。加权和的硬伤：① 每路信号（开放分 BM25 / [0,1] PPR / 整数 path）必须先归一化到同一尺度；② 权重无任何实测标定。
 
-计划只说 A1 输出 rank Map 喂 G/H，从未说 rank 如何与 lexical/path/session 信号合并。补入：
-
-```ts
-// 候选 rerank 加权融合(源: Token-killer-Research §3.2)
-finalScore =
-    0.35 * lexicalScore         // FTS5 BM25 / exact-name (= A9 的 co-location/multi-term boost)
-  + 0.25 * semanticScore        // embeddings OUT of v1 → v1 置 0
-  + 0.20 * personalizedPageRank // 附录 A1 的 rank Map
-  + 0.10 * pathPrior            // scorePathRelevance(见 §2.2)
-  + 0.10 * sessionProximity;    // 与当前编辑文件/已读符号接近
-```
-
-**关键调整**：embeddings Unsupported → `semanticScore` 项置 0，其 **0.25 权重并入 lexicalScore**，得实际权重：
+**裁决（D13）——分级管线，PPR 为主排序，词法/路径不在末端再融合**：
 
 ```
-lexicalScore 0.60 / personalizedPageRank 0.20 / pathPrior 0.10 / sessionProximity 0.10
+① 词法搜索  : FTS5 BM25 + codegraph name/kind/path/multi-term/test 启发式
+              → 产出有界【候选锚点 candidate anchors】
+② AST 扩展  : 在锚点周围构建有界【结构邻域 structural neighborhood】
+③ 身份解析  : SCIP / 语言类型检查器解析符号身份 + canonical 关系（排序前先做）
+④ 种子分布  : 词法相关性 + 显式 symbols/paths + workspace 局部性 + query.purpose
+              → 归一化的【personalization 种子分布】(seed mass 分级见 §4.1)
+⑤ PPR 排序  : query-local Personalized PageRank 对结构邻域排序
+              最终序【主要由 PPR 决定】；用户显式指定的 symbol/path 保留【确定性优先】；
+              词法 rank + 路径邻近度只作【稳定 tie-breaker】
 ```
 
-这就是把 A9 的 FTS 结构 boost 与 A1 的 PageRank 统一的桥：A9 的 boost 是 `lexicalScore` 分量，不是 PageRank 的替代。
+**为什么不在末端融合（核心理由）**：词法信号**不是**与 PPR 并列的第三打分通道——它是 PPR 种子的**上游**（步骤 ①→④）。在步骤 ⑤ 之后再用权重/RRF 把词法和 PPR 合并 = 对同一份证据**重复计数**。分级管线让词法只出现在上游（选锚点 + 喂种子）与下游（tie-break），PPR 独占结构排序。**RRF 仅保留给真正独立的检索通道**（如 lexical + embedding；embeddings 属 Unsupported，故此路 v1 休眠）。
+
+**与下游绑定**：① = A5 步骤①②③（产出锚点）；④ 的 seed mass 分级 = §4.1（query-hit 100 / stack-trace 80 / changed 70 / edited 60，归一化）；⑤ = 附录 A1 的 `pageRank()`。seed-mass 分级权重为 K harness `recall@k` 的**标定项**，非 magic 常量（[ADR 0025](../adr/0025-staged-ranking-pipeline.md) Consequences）。
 
 ---
 
@@ -12586,17 +12656,20 @@ query 'invalidate authentication state'
                        auth, authentication, credential, session, token]
 ```
 
-**决策 A5b**：静态动作/状态同义词典 —
-(a) 项目无关的小静态表，≤~200 条，覆盖 CRUD 动词族 + auth/session/error/lifecycle 高频领域动作；后续可叠加项目内 README/git-history 术语映射(研究 §11 line 1591-1600 的增强源)；
-(b) 同义词只进候选生成，**不进图边**；
-(c) 这是 NL 召回上限的已知弱点(研究 line 1619 自承)，对 Coding Agent 可由 Agent 主动给 `identifiers[]` 绕过：
+**决策 A5b（D14 / [ADR 0026](../adr/0026-recall-bridge-agent-identifiers-not-synonym-dict.md)）——Core-owned 分层 Query Vocabulary Bridge；这个 gap 单一方案补不了**：
 
-```ts
-// A 的 CodeQuery schema 增入参(对应研究 line 1216-1224)
-searchCode({ query?: string, identifiers?: string[], purpose?: RankingProfile })
-```
+NL→代码召回**不靠任何单一机制**。两个诱人的单点方案都错：① ≤200 条**平铺静态同义表**——通用词表覆盖不了项目 jargon，且 `clear/revoke/delete/invalidate` 是**上下文相关**非全局同义；② **Agent `identifiers[]` 当主召回路径**——一旦召回依赖 Agent 把 NL 转 symbol，Human codeguide + 不配合的 Agent 就**彻底失去 NL 查询能力**。故主路必须 **Core 自有**，Agent hint 只能**附加**。
 
-tk 需自造此词典，**无现成可抄**(研究反复要求但从未给条目/规模/构造法——这是研究文档最大的「说了要做没给怎么做」)。
+**Core-owned 分层桥（让 Human 与 Agent 都保住 NL 召回）**：
+1. **L1 词法归一**：stemming（getStemVariants）+ abbreviation + 少量高精度归一化（`auth↔authentication`、`repo↔repository`、`config↔configuration`…）。
+2. **L2 action family（上下文门控）**：~十几个**低权重** action family（`get/fetch/load`、`delete/remove/revoke/clear`…）。action **只在与对象词联合命中时**才扩（这些动词上下文相关）；**只进候选生成、绝不发图边**。
+3. **L3 带 provenance 的项目词汇表**：从 **docs / tests / API·schema / git rename / Domain Model / 人工确认** 建立，每条带来源（Evidence Graph 事实 + Authority level）——这才是覆盖**项目专属 jargon** 的那一层（通用表做不到）。
+
+**Agent hint（附加，非主路）**：CodeQuery 收 `identifierHints[]`（NL→symbol）+ `conceptHints[]`（NL→domain-concept），权重高但**只附加**于 Core 桥之上。
+
+**本仓共现（可加，但克制）**：可引入，但先用**可解释的 sparse association**（非不透明 RI/embedding），**只产 `RELATED_IN_REPOSITORY` 候选边**——**绝不**发 `SYNONYM_OF`、绝不发可信结构边。故 [A11 embeddings Unsupported](#决策-a11--embeddings-与-lsp-as-core-属-outside-current-product-scope) 保持干净：无预训练向量、无不透明稠密向量相似度。
+
+> 参考核查（round 3，修正）：**无任何参考实现手搓 NL 同义词典**（codegraph/各 clone 的 "alias" 全是 import 路径别名）。**codebase-memory-mcp 不能作"纯本仓 RI 能解决 NL→代码召回"的证据**：它的 0.75 是 TF-IDF+RI+MinHash+API/type signature+AST profile 多信号**融合**阈值（RI 仅占 ~0.25），实现**优先读随包 nomic-embed-code 768 维预训练向量**、词表外才用 sparse RI，且手写了 abbreviation/code-pattern 词表——它证明的是"词汇规则+预训练向量+共现+结构信号→related edges"。早稿 A5b 的 ≤200 条平铺表 + "identifiers[] 当主路"**均作废**，替换为本分层桥。
 
 ---
 
@@ -12703,8 +12776,12 @@ A2(line 9304)只讲解析时**读** `typeBindings`，漏了怎么跨文件**填*
 5. 产出 Community 节点 + MEMBER_OF 边；label 启发式(§12 不可当权威)；cohesion = 内部边/总边。
 ```
 
-**node:sqlite**：Community 落 `nodes(kind='community')`，MEMBER_OF 落 `edges`。解掉 plan:9199(模块划分来源)、plan:9196(moduleCount 数据源)。
-Leiden 是 vendored 非 npm 包，标 `[非分发安全]`；不想引 graphology 可用 label-propagation/连通分量占位，cohesion 退化 callers-count(plan:11230 已是)。建议标 **Optional at runtime / A 专用**，默认不跑避 Leiden CPU 尖峰。
+**裁决（D15 / [ADR 0027](../adr/0027-community-optional-flows-evidence-backed.md)）——Community = Optional-at-runtime / default-off，且必须明标 derived architecture projection**：
+- **不是承重**：Core 默认已有 **package/module 层次 + import SCC + 连通分量 + callers-count/centrality**，故 **Architecture Intelligence 无 Leiden 也完整**；Community 只在**目录结构失真**的仓库给额外功能簇视图。
+- **trust 边界**：Community 是 **derived architecture projection**，**不是 bounded context、不进 Domain truth**（与 A4.8「community≠bounded-context」一致）。
+- **许可**：gitnexus Leiden = vendored + 整仓 PolyForm-NC → **不可复制**；真实现从**独立许可安全来源或从零写**（label-propagation/连通分量即够的廉价形态）。若真建，则 deterministic PRNG seed 是硬需求（否则 reindex 社区号乱跳、human diff 全红）。
+- **fallback**：community 关时 cohesion 继续走 callers-count（plan:11230 已是）。
+- **node:sqlite**：Community 落 `nodes(kind='community')`，MEMBER_OF 落 `edges`；解掉 plan:9199/9196。**修正文档矛盾**：line 12739 旧写「community 属 Outside current product scope」**作废**，统一为本条 Optional-at-runtime。
 
 ---
 
@@ -12723,8 +12800,10 @@ Leiden 是 vendored 非 npm 包，标 `[非分发安全]`；不想引 graphology
             processType ∈ {intra,cross}_community}；STEP_IN_PROCESS{step:N}；Route/Tool 加 ENTRY_POINT_OF。
 ```
 
-**node:sqlite**：`nodes(kind='process')` + `edges(kind='STEP_IN_PROCESS', step=N)`(plan:10446 已预留 step)。让 `Flows:` 字段(plan:11199)有数据。Process 依赖 Community→不做社区则退化纯 entry→terminal 串。标 Optional at runtime / A 专用，与 community 同为后续实现步骤。
-**调参缺口(研究留白)**：§7 抽象掉了各维度权重/入口分阈值——entry-point-scoring.ts 里有实际数值，实现时需读 clone 补。
+**裁决（D15 / [ADR 0027](../adr/0027-community-optional-flows-evidence-backed.md)）——gitnexus 式 `HeuristicCallsBfsProcess` = Outside scope；但出局的是机制、不是 Flow 能力，`Flows:` 仍 Required**：
+- **机制出局**：上面这套（命名/export/caller-callee 数猜入口 + CALLS-BFS）**只能证图上可达**，证不了运行顺序 / guard 可达性 / 异步事件序 / 状态迁移；即便加 heuristic 徽章，也会与 Required 的 Behavior IR 形成**两套"流程真相"**、违反 A4.8。故 **不建** gitnexus 式永久 `nodes(kind='process')` + `edges(kind='STEP_IN_PROCESS')`——**C5 kind 枚举删 `process`，移除 STEP_IN_PROCESS 边与其 `step` 字段**（plan:10446 的 step 预留作废）。
+- **Flows: 仍 Required，改由 `EvidenceBackedFlowProjection` 提供**：从 entrypoint 出发，组合 **resolved call-site + CFG/CDG + guards + state transitions + events + writes + side-effects**（全来自已 Required 的 Behavior IR，D4），**按需投影**，显式返回 **complete / partial / unknown** 覆盖度——**不物化永久 Process 节点**（flows per-query 计算，与 [ADR 0021](../adr/0021-materialized-readmodel-dirty-queue-local-ppr.md) 一致）。让 `Flows:` 字段(plan:11199)有**可验证**数据，而非启发式串。
+- **entry-point 识别**：仍可用命名/export/框架识别**选 entrypoint 候选**（Route/Tool 的 ENTRY_POINT_OF 标注保留），但**流程内容由 Behavior IR 证据填**，不靠 CALLS-BFS 猜路径。
 
 ---
 
@@ -12780,7 +12859,7 @@ literals            -- string literals + route names + test names
 
 **增补：C5/C6(plan:1318/1383) + C 决策汇总(plan:1656)；来自：GitNexus §5(line 305-367)。**
 
-gitnexus 单张 `CodeRelation` 表 + type，边带 `{type, confidence, reason, step?}`——tk edges 已等价。但 LadybugDB/Kuzu 必须显式声明每种 `(起点 kind, 终点 kind)` 组合致 schema 极长；**node:sqlite generic 表无此约束(FK 只认 id)**——这是 committed node:sqlite 相对 graph-DB 的未点出好处，补进 C 决策汇总。另：gitnexus node-kind 含 Route/Tool/Community/Process/Section，C5 kind 枚举若支持 community/process 需预留这些值。
+gitnexus 单张 `CodeRelation` 表 + type，边带 `{type, confidence, reason, step?}`——tk edges 已等价。但 LadybugDB/Kuzu 必须显式声明每种 `(起点 kind, 终点 kind)` 组合致 schema 极长；**node:sqlite generic 表无此约束(FK 只认 id)**——这是 committed node:sqlite 相对 graph-DB 的未点出好处，补进 C 决策汇总。另：gitnexus node-kind 含 Route/Tool/Community/Process/Section；**C5 kind 枚举预留 `community`（Optional，D15）但删 `process`**（gitnexus 式 Process 出局，[ADR 0027](../adr/0027-community-optional-flows-evidence-backed.md)）；Route/Tool/Section 视需求保留。
 
 ---
 
@@ -12890,31 +12969,32 @@ content: |
 
 > **增补需求 G**:G 的 char 预算分层之上,read 工具按 `mode: symbol | slice | edit_window` 三态;`edit_window` 不参与压缩、带 `content_hash`(与 J 的 staleness/`content_hash` 同源)。
 
-## A4.4 CodeQuery 统一查询协议(吸收进需求 F —— 一个协议藏住五段,而非各开一个工具)
+## A4.4 内部 QueryPlan（**非**外部统一工具）—— 三正交维度，profile 降为内部 preset〔D17 / [ADR 0029](../adr/0029-agent-tool-surface-operation-contracts-queryplan.md)〕
 
-来源:研究 §最终组合(line 1633–1667)。比附录 A3 §3 的 `purpose` 枚举更全。
+来源:研究 §最终组合(line 1633–1667)。**修正（D17）**：早稿把它当成一个**外部统一 `CodeQuery` 工具**（purpose 枚举驱动一切）——**作废**。理由：① codegraph 实测 1-tool 门大亏(−43%→+107%)；② 六 profile **混了不同维度**（locate/understand=任务目标，flow/impact=遍历模式，domain=知识层，verify=信任/投影模式），塞进一个 purpose 枚举是把正交维度压平。
+
+**外部表面**（D17 / F.3）= codegraph 实测的 **4 个操作合同工具** `tk_explore / tk_search / tk_node / tk_callers`（4 种职责，非 6 profile、非 1 万能工具）。**每个工具把窄参数编译成完整 `QueryPlan`，重参数协议绝不丢给 Agent。**
+
+**内部协议 = `QueryPlan`，分三正交维度**（替代旧 `CodeQuery` 单体）：
 
 ```ts
-// 源: Token-killer-Research.md 最终组合 (line 1633-1656), verbatim
-interface CodeQuery {
-  query?: string;
-  symbols?: string[];
-  paths?: string[];
-  purpose:
-    | "locate" | "understand" | "edit" | "debug" | "verify" | "architecture";
-  relations?: Array<
-    | "definitions" | "references" | "callers" | "callees"
-    | "implementations" | "tests"
-  >;
-  maxResults?: number;
-  maxGraphDepth?: number;
-  tokenBudget?: number;
+// 内部 QueryPlan（不外暴露）；六 profile = 它的命名 preset
+interface QueryPlan {
+  selection:  { layers: Array<'code'|'behavior'|'domain'|'evidence'>;  // 查哪些知识层
+                query?: string; symbols?: string[]; paths?: string[];
+                identifierHints?: string[]; conceptHints?: string[] };  // D14 召回桥
+  traversal:  { direction: 'callers'|'callees'|'flow'|'impact'|'none';  // 图方向（= A3 §3）
+                maxGraphDepth?: number };
+  projection: { mode: 'understanding'|'editing'|'verification';         // Smart Read 模式（A4.3）
+                shape: Array<'locations'|'outline'|'source'|'evidence'>;
+                tokenBudget?: number; maxResults?: number };
 }
-// 内部执行: symbol/BM25 candidate → AST graph expansion → SCIP/TypeChecker resolution
-//          → Personalized PageRank → AST semantic slice
+// profile preset 例：'flow' = {traversal.direction:'callees'+flow, projection.mode:'understanding'}
+//                    'verify'= {selection.layers:[...,'evidence'], projection.shape:['evidence',...]}
+// 内部执行: 词法候选锚点 → AST 扩展 → SCIP/TypeChecker 解析 → query-local PPR 主排序（D13）→ Smart Read 投影
 ```
 
-> **增补需求 F**:tk 的 search/read 工具收敛到这个统一协议(`purpose` 驱动 PageRank 边权 + BFS 方向 + Smart Read 模式),而非 AST/SCIP/PageRank 各暴露一个工具——契合 F 的"少工具好 steer"决策。
+> **增补需求 F（D17）**：六 profile（locate/understand/flow/impact/domain/verify）是 **QueryPlan 的内部 preset**，**不是**外部工具名、**不是**单个 purpose 枚举。Domain/Evidence 先经 `tk_explore.layers` + `tk_node.include` 暴露；**只有 tk 自有 Domain/Evidence harness 证明独立工具显著改善选中率/调用数/质量，才加一个新默认工具**（不预开 tk_domain/tk_verify）。这样既守 4-tool eval 证据，又不让代码导航工具结构框死完整 Repository Intelligence Core。
 
 ## A4.5 四种可信度 + 知识数据模型(吸收进需求 J,精化 C)
 
