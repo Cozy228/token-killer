@@ -1,0 +1,1101 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Code Graph for token-killer — Design Visualization</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Geist:wght@400;500;600;700&family=Geist+Mono:wght@400;500&display=swap" rel="stylesheet">
+<style>
+  :root {
+    --bg: #ffffff; --bg-sec: #fafafa; --bg-ter: #f2f2f2;
+    --ink: #171717; --ink-2: #4d4d4d; --ink-3: #7d7d7d; --faint: #8f8f8f;
+    --gray-300: #eaeaea; --gray-400: #c9c9c9;
+    --border: rgba(0,0,0,0.08); --border-2: rgba(0,0,0,0.13); --hover: rgba(0,0,0,0.04);
+    --blue: #006bff; --blue-bg: #f0f6ff; --blue-border: #cfe2ff; --blue-ink: #0057d1;
+    --green: #28a948; --green-bg: #e9f8ee; --green-border: #b6e6c4; --green-ink: #157d33;
+    --amber: #ffae00; --amber-bg: #fff7e6; --amber-border: #ffe0a3; --amber-ink: #875300;
+    --red: #fc0035; --red-bg: #fff0f2; --red-border: #ffccd4; --red-ink: #c20029;
+    --purple: #a000f8; --purple-bg: #f8effe;
+    --radius-s: 6px; --radius-m: 12px; --radius-l: 16px;
+    --sans: "Geist", system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+    --mono: "Geist Mono", ui-monospace, "SF Mono", Menlo, Consolas, monospace;
+  }
+  * { box-sizing: border-box; }
+  @media (prefers-reduced-motion: reduce) { * { transition: none !important; } }
+  body { margin: 0; background: var(--bg); color: var(--ink); font-family: var(--sans); font-size: 15px; line-height: 1.55; font-weight: 400; -webkit-font-smoothing: antialiased; text-rendering: optimizeLegibility; }
+  a { color: var(--blue-ink); text-decoration: none; }
+  a:hover { text-decoration: underline; }
+  a:focus-visible, button:focus-visible { outline: none; box-shadow: 0 0 0 2px #fff, 0 0 0 4px var(--blue); border-radius: var(--radius-s); }
+  code { font-family: var(--mono); }
+  .wrap { max-width: 1160px; margin: 0 auto; padding: 0 28px; }
+
+  .hero { background: var(--ink); color: #fff; }
+  .hero .wrap { padding-top: 64px; padding-bottom: 60px; }
+  .hero .eyebrow { font-family: var(--mono); font-size: 12px; letter-spacing: 0.04em; text-transform: uppercase; color: #8f8f8f; }
+  .hero h1 { font-weight: 600; font-size: clamp(34px, 5.4vw, 56px); line-height: 1.02; letter-spacing: -0.035em; margin: 16px 0 0; }
+  .hero h1 b { color: #6aa6ff; }
+  .hero .lead { color: #c9c9c9; font-size: 18px; line-height: 1.55; max-width: 64ch; margin-top: 20px; }
+  .hero .lead strong { color: #fff; font-weight: 500; }
+  .hero .status { display: inline-flex; align-items: center; gap: 9px; margin-top: 24px; font-size: 13px; color: #ffd27a; font-family: var(--mono); }
+  .hero .status .dot { width: 7px; height: 7px; border-radius: 50%; background: var(--amber); box-shadow: 0 0 0 4px rgba(255,174,0,0.16); }
+  .hero .chips { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 26px; }
+  .hero .chip { font-family: var(--mono); font-size: 12px; padding: 5px 11px; border-radius: 9999px; border: 1px solid rgba(255,255,255,0.16); color: #c9c9c9; }
+  .hero .chip.on { background: var(--blue); border-color: var(--blue); color: #fff; }
+
+  section { padding: 56px 0 4px; }
+  .shead { display: flex; align-items: baseline; gap: 12px; margin-bottom: 8px; }
+  .shead .sn { font-family: var(--mono); color: var(--blue); font-weight: 500; font-size: 14px; }
+  .shead h2 { font-weight: 600; font-size: 32px; line-height: 1.1; letter-spacing: -0.028em; margin: 0; }
+  .sdesc { color: var(--ink-2); max-width: 76ch; margin: 0 0 28px; font-size: 15px; line-height: 1.6; }
+  .sdesc strong, .sdesc b { color: var(--ink); font-weight: 600; }
+  .sdesc code, p code, dd code, li code, .v code, td code { font-family: var(--mono); font-size: 0.86em; background: var(--bg-ter); padding: 1px 6px; border-radius: var(--radius-s); color: var(--ink); }
+
+  .grid { display: grid; gap: 16px; }
+  .g2 { grid-template-columns: repeat(2, 1fr); }
+  .g4 { grid-template-columns: repeat(4, 1fr); }
+  @media (max-width: 900px) { .g2,.g4 { grid-template-columns: 1fr; } }
+
+  .card { background: var(--bg); border: 1px solid var(--border); border-radius: var(--radius-m); padding: 22px 24px; }
+  .card.sec { background: var(--bg-sec); }
+  .card .lbl { font-family: var(--mono); font-size: 12px; letter-spacing: 0.02em; text-transform: uppercase; color: var(--faint); }
+
+  .declist { display: grid; grid-template-columns: 150px 1fr; }
+  .declist > div { padding: 13px 2px; border-top: 1px solid var(--border); }
+  .declist > div:nth-child(1), .declist > div:nth-child(2) { border-top: none; }
+  .declist .k { font-family: var(--mono); font-size: 13px; color: var(--ink); font-weight: 500; }
+  .declist .v { color: var(--ink-2); font-size: 14px; line-height: 1.55; }
+  @media (max-width: 640px){ .declist { grid-template-columns: 1fr; } .declist .v { padding-top: 0 !important; border-top: none; } }
+
+  .callout { border-radius: var(--radius-m); padding: 18px 22px; font-size: 15px; line-height: 1.6; }
+  .callout.blue { background: var(--blue-bg); border: 1px solid var(--blue-border); color: #0a2a5e; }
+  .callout.blue b { color: var(--blue-ink); }
+
+  .pipe { display: flex; align-items: stretch; gap: 0; flex-wrap: wrap; }
+  .stage { flex: 1 1 0; min-width: 130px; background: var(--bg-sec); border: 1px solid var(--border); border-radius: var(--radius-m); padding: 14px; }
+  .stage.core { background: var(--blue-bg); border-color: var(--blue-border); }
+  .stage .n { font-family: var(--mono); font-size: 11px; color: var(--faint); text-transform: uppercase; letter-spacing: 0.04em; }
+  .stage .t { font-weight: 600; font-size: 14px; margin-top: 3px; letter-spacing: -0.01em; }
+  .stage .d { font-size: 12px; color: var(--ink-3); margin-top: 5px; line-height: 1.45; }
+  .arrow { align-self: center; color: var(--gray-400); font-size: 18px; padding: 0 5px; }
+  @media (max-width: 760px){ .arrow { transform: rotate(90deg); width: 100%; text-align: center; padding: 2px 0; } .stage { flex-basis: 100%; } }
+  .fanout { display: grid; grid-template-columns: repeat(3,1fr); gap: 14px; margin-top: 14px; }
+  @media (max-width: 760px){ .fanout { grid-template-columns: 1fr; } }
+  .fan { border: 1px dashed var(--gray-400); border-radius: var(--radius-m); padding: 14px; background: var(--bg); }
+  .fan .t { font-weight: 600; font-size: 14px; letter-spacing: -0.01em; }
+  .fan .t .badge { font-family: var(--mono); font-size: 11px; background: var(--blue-bg); color: var(--blue-ink); padding: 2px 7px; border-radius: var(--radius-s); margin-left: 6px; }
+  .fan .d { font-size: 12.5px; color: var(--ink-3); margin-top: 6px; }
+
+  .tablecard { background: var(--bg); border: 1px solid var(--border); border-radius: var(--radius-m); overflow: hidden; }
+  table { width: 100%; border-collapse: collapse; font-size: 14px; }
+  th, td { text-align: left; padding: 11px 14px; border-bottom: 1px solid var(--border); vertical-align: top; }
+  tr:last-child td { border-bottom: none; }
+  th { font-family: var(--mono); font-size: 11px; letter-spacing: 0.04em; text-transform: uppercase; color: var(--faint); font-weight: 500; background: var(--bg-sec); }
+  .cmd { font-family: var(--mono); font-size: 13px; color: var(--blue-ink); }
+  tbody tr:hover { background: var(--bg-sec); }
+
+  .b { font-family: var(--mono); font-size: 11px; font-weight: 500; padding: 2px 8px; border-radius: 9999px; white-space: nowrap; display: inline-block; }
+  .b.yes { background: var(--green-bg); color: var(--green-ink); border: 1px solid var(--green-border); }
+  .b.partial { background: var(--amber-bg); color: var(--amber-ink); border: 1px solid var(--amber-border); }
+  .b.later { background: var(--bg-ter); color: var(--ink-3); border: 1px solid var(--border-2); }
+  .b.reserved { background: var(--blue-bg); color: var(--blue-ink); border: 1px solid var(--blue-border); }
+
+  .tool { background: var(--bg-sec); border: 1px solid var(--border); border-radius: var(--radius-m); padding: 18px 20px; }
+  .tool .name { font-family: var(--mono); font-weight: 500; color: var(--blue); font-size: 15px; }
+  .tool .modes { margin-top: 10px; display: flex; flex-wrap: wrap; gap: 6px; }
+  .tool .modes .m { font-family: var(--mono); font-size: 11px; background: var(--bg); border: 1px solid var(--border-2); border-radius: var(--radius-s); padding: 2px 7px; color: var(--ink-2); }
+  .tool p { font-size: 13.5px; color: var(--ink-2); margin: 10px 0 0; line-height: 1.5; }
+
+  .ladder { display: flex; align-items: center; gap: 0; flex-wrap: wrap; font-family: var(--mono); font-size: 13px; }
+  .ladder .step { background: var(--bg); border: 1px solid var(--border-2); border-radius: var(--radius-s); padding: 7px 11px; }
+  .ladder .step.exact { background: var(--red-bg); border-color: var(--red-border); color: var(--red-ink); }
+  .ladder .sep { color: var(--gray-400); padding: 0 8px; }
+
+  .proj { background: var(--bg); border: 1px solid var(--border); border-radius: var(--radius-l); overflow: hidden; display: flex; flex-direction: column; transition: border-color .15s; }
+  .proj:hover { border-color: var(--border-2); }
+  .proj .shot { aspect-ratio: 1200/600; background: #f2f2f2; position: relative; overflow: hidden; border-bottom: 1px solid var(--border); display: block; }
+  .proj .shot img { width: 100%; height: 100%; object-fit: cover; display: block; }
+  .proj .shot .fallback { position: absolute; inset: 0; display: none; align-items: center; justify-content: center; flex-direction: column; gap: 8px; color: var(--ink-3); font-family: var(--mono); font-size: 13px; text-align: center; padding: 20px; background: linear-gradient(135deg,#fafafa,#f2f2f2); }
+  .proj .shot.noimg img { display: none; }
+  .proj .shot.noimg .fallback { display: flex; }
+  .proj .body { padding: 18px 22px 22px; }
+  .proj .head { display: flex; align-items: center; gap: 12px; }
+  .proj .tagltr { font-family: var(--mono); font-size: 22px; font-weight: 500; color: var(--blue); line-height: 1; }
+  .proj .head h3 { font-weight: 600; font-size: 19px; letter-spacing: -0.02em; margin: 0; flex: 1; }
+  .proj .head h3 small { font-weight: 400; color: var(--faint); font-size: 14px; }
+  .proj .meta { display: flex; flex-wrap: wrap; gap: 6px; margin: 12px 0 6px; }
+  .proj .meta .role { font-size: 12px; font-weight: 500; padding: 3px 9px; border-radius: var(--radius-s); background: var(--blue-bg); color: var(--blue-ink); }
+  .proj .meta .lic { font-family: var(--mono); font-size: 11px; padding: 3px 8px; border-radius: var(--radius-s); background: var(--bg-ter); color: var(--ink-3); border: 1px solid var(--border); }
+  .proj .meta .lic.warn { background: var(--red-bg); color: var(--red-ink); border-color: var(--red-border); }
+  .proj .repo { font-family: var(--mono); font-size: 12.5px; word-break: break-all; margin-top: 2px; }
+  .proj .tagq { margin: 13px 0 0; padding: 7px 0 7px 13px; border-left: 3px solid var(--blue-border); color: var(--ink-2); font-style: italic; font-size: 14px; line-height: 1.5; }
+  .proj dl { margin: 14px 0 0; display: grid; gap: 12px; }
+  .proj dt { font-family: var(--mono); font-size: 11px; letter-spacing: 0.03em; text-transform: uppercase; color: var(--faint); margin-bottom: 4px; }
+  .proj dd { margin: 0; font-size: 13.5px; color: var(--ink-2); line-height: 1.55; }
+  .proj dd code, .proj .repo code { font-family: var(--mono); font-size: 0.84em; background: var(--bg-ter); padding: 1px 5px; border-radius: var(--radius-s); }
+  .proj ul.hl { margin: 0; padding-left: 17px; }
+  .proj ul.hl li { margin: 4px 0; font-size: 13px; color: var(--ink-2); line-height: 1.5; }
+  .proj dd.tk { background: var(--green-bg); border: 1px solid var(--green-border); border-left: 3px solid var(--green); padding: 9px 12px; border-radius: 0 var(--radius-s) var(--radius-s) 0; color: var(--green-ink); }
+  .proj dd.tk code { background: rgba(255,255,255,0.6); }
+  .proj.defer .tagltr { color: var(--faint); }
+  .deferbadge { font-family: var(--mono); font-size: 11px; font-weight: 500; padding: 3px 9px; border-radius: var(--radius-s); background: var(--amber-bg); color: var(--amber-ink); border: 1px solid var(--amber-border); }
+
+  .spectrum { display: grid; grid-template-columns: repeat(3,1fr); gap: 12px; margin-bottom: 24px; }
+  @media (max-width: 800px){ .spectrum { grid-template-columns: 1fr; } }
+  .sp { border-radius: var(--radius-m); padding: 14px 16px; border: 1px solid var(--border); }
+  .sp.det { background: var(--green-bg); border-color: var(--green-border); }
+  .sp.mix { background: var(--bg-sec); }
+  .sp.llm { background: var(--purple-bg); border-color: #e6cffb; }
+  .sp .spt { font-weight: 600; font-size: 13.5px; letter-spacing: -0.01em; }
+  .sp .spd { font-size: 12.5px; color: var(--ink-3); margin-top: 5px; line-height: 1.45; }
+  .sp .spp { margin-top: 8px; display: flex; flex-wrap: wrap; gap: 5px; }
+  .sp .spp span { font-family: var(--mono); font-size: 11px; padding: 2px 7px; border-radius: var(--radius-s); background: rgba(255,255,255,0.65); border: 1px solid var(--border); }
+
+  .legend2 { display: flex; flex-wrap: wrap; gap: 8px 18px; margin-bottom: 18px; font-size: 13px; }
+  .legend2 .lg { display: inline-flex; align-items: center; gap: 7px; color: var(--ink-2); }
+  .legend2 .sw { width: 12px; height: 12px; border-radius: 3px; }
+  .legend2 .sw.det { background: var(--green); }
+  .legend2 .sw.llm { background: var(--purple); }
+
+  .uthgrid { display: grid; grid-template-columns: repeat(2,1fr); gap: 16px; }
+  @media (max-width: 860px){ .uthgrid { grid-template-columns: 1fr; } }
+  .uth { background: var(--bg); border: 1px solid var(--border); border-radius: var(--radius-l); overflow: hidden; display: flex; flex-direction: column; }
+  .uth.anchor { border: 2px solid var(--blue); }
+  .uth-head { padding: 14px 18px; display: flex; align-items: center; gap: 10px; border-bottom: 1px solid var(--border); flex-wrap: wrap; }
+  .uth-head .ltr { font-family: var(--mono); font-size: 18px; font-weight: 500; color: var(--blue); }
+  .uth-head h3 { font-weight: 600; font-size: 16px; letter-spacing: -0.02em; margin: 0; flex: 1; min-width: 120px; }
+  .uth-head h3 a { color: inherit; }
+  .uth-head .ptech { font-family: var(--mono); font-size: 10.5px; padding: 2px 7px; border-radius: 9999px; background: var(--green-bg); color: var(--green-ink); border: 1px solid var(--green-border); }
+  .uth-head .llmtag { font-family: var(--mono); font-size: 10.5px; padding: 2px 7px; border-radius: 9999px; }
+  .uth-head .llmtag.on { background: var(--purple-bg); color: #7a13c0; border: 1px solid #e6cffb; }
+  .uth-head .llmtag.off { background: var(--bg-ter); color: var(--ink-3); border: 1px solid var(--border-2); }
+  .uth-head .llmtag.host { background: var(--blue-bg); color: var(--blue-ink); border: 1px solid var(--blue-border); }
+  .layer { padding: 13px 18px; font-size: 13px; line-height: 1.5; }
+  .layer .ll { font-family: var(--mono); font-size: 10.5px; letter-spacing: 0.03em; text-transform: uppercase; display: inline-flex; align-items: center; gap: 6px; margin-bottom: 6px; }
+  .layer .ll::before { content: ""; width: 9px; height: 9px; border-radius: 2px; }
+  .layer.det { background: linear-gradient(0deg, rgba(40,169,72,0.03), rgba(40,169,72,0.03)); }
+  .layer.det .ll { color: var(--green-ink); }
+  .layer.det .ll::before { background: var(--green); }
+  .layer.llm { border-top: 1px solid var(--border); }
+  .layer.llm .ll { color: #7a13c0; }
+  .layer.llm .ll::before { background: var(--purple); }
+  .layer.host { border-top: 1px solid var(--border); background: var(--blue-bg); }
+  .layer.host .ll { color: var(--blue-ink); }
+  .layer.host .ll::before { background: var(--blue); }
+  .layer.llm.none { background: var(--bg-sec); }
+  .layer.llm.none .ll { color: var(--faint); }
+  .layer.llm.none .ll::before { background: var(--gray-400); }
+  .layer .txt { color: var(--ink-2); }
+  .layer .txt code { font-size: 0.84em; }
+  .uth-foot { margin-top: auto; border-top: 1px solid var(--border); background: var(--bg-sec); }
+  .uth-foot .fr { padding: 8px 18px; font-size: 12px; border-top: 1px solid var(--border); display: flex; gap: 8px; }
+  .uth-foot .fr:first-child { border-top: none; }
+  .uth-foot .fr .fk { font-family: var(--mono); font-size: 10.5px; color: var(--faint); text-transform: uppercase; letter-spacing: 0.03em; flex: none; width: 64px; padding-top: 1px; }
+  .uth-foot .fr .fv { color: var(--ink-2); line-height: 1.4; }
+  .uth-foot .fr .fv code { font-size: 0.84em; }
+
+  .twocol { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; }
+  @media (max-width: 800px){ .twocol { grid-template-columns: 1fr; } }
+  .trackcard { border-radius: var(--radius-m); padding: 20px 22px; }
+  .trackcard.t1 { background: var(--green-bg); border: 1px solid var(--green-border); }
+  .trackcard.t2 { background: var(--blue-bg); border: 1px solid var(--blue-border); }
+  .trackcard h3 { font-weight: 600; margin: 0 0 4px; font-size: 18px; letter-spacing: -0.02em; }
+  .trackcard .tag { font-family: var(--mono); font-size: 12px; }
+  .trackcard.t1 .tag { color: var(--green-ink); }
+  .trackcard.t2 .tag { color: var(--blue-ink); }
+  .trackcard ul { margin: 14px 0 0; padding-left: 18px; font-size: 14px; color: var(--ink-2); line-height: 1.5; }
+  .trackcard li { margin: 6px 0; }
+
+  .bucket { border: 1px solid var(--border); border-radius: var(--radius-m); overflow: hidden; background: var(--bg); }
+  .bucket .bh { padding: 12px 16px; font-weight: 600; font-size: 14px; letter-spacing: -0.01em; }
+  .bucket.a .bh { background: var(--green-bg); color: var(--green-ink); }
+  .bucket.b .bh { background: var(--blue-bg); color: var(--blue-ink); }
+  .bucket.c .bh { background: var(--amber-bg); color: var(--amber-ink); }
+  .bucket.d .bh { background: var(--red-bg); color: var(--red-ink); }
+  .bucket .bb { padding: 2px 16px 10px; }
+  .bucket .row { padding: 9px 0; border-top: 1px solid var(--border); font-size: 13.5px; }
+  .bucket .row:first-child { border-top: none; }
+  .bucket .row .pn { font-weight: 500; display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+  .bucket .row .pn a { font-family: var(--mono); font-size: 13px; }
+  .bucket .row .note { color: var(--ink-3); font-size: 12.5px; margin-top: 3px; line-height: 1.45; }
+  .pill { font-family: var(--mono); font-size: 10.5px; padding: 2px 7px; border-radius: 9999px; }
+  .pill.hi { background: var(--green-bg); color: var(--green-ink); }
+  .pill.med { background: var(--amber-bg); color: var(--amber-ink); }
+  .pill.lo { background: var(--red-bg); color: var(--red-ink); }
+
+  .codeblock { font-family: var(--mono); font-size: 12.5px; line-height: 1.62; background: var(--bg-sec); border: 1px solid var(--border); border-radius: var(--radius-m); padding: 15px 17px; overflow-x: auto; color: var(--ink-2); white-space: pre; margin: 0; }
+  .codeblock .cm { color: var(--faint); }
+  .codeblock .ky { color: var(--blue-ink); }
+  .codeblock .st { color: var(--green-ink); }
+  .srctag { font-family: var(--mono); font-size: 10.5px; font-weight: 500; padding: 2px 8px; border-radius: 9999px; white-space: nowrap; display: inline-block; }
+  .srctag.static { background: var(--green-bg); color: var(--green-ink); border: 1px solid var(--green-border); }
+  .srctag.git { background: #fef3e8; color: #9a4a00; border: 1px solid #f7d4ab; }
+  .srctag.test { background: #eafaf6; color: #0a7d68; border: 1px solid #bfe9df; }
+  .srctag.host { background: var(--blue-bg); color: var(--blue-ink); border: 1px solid var(--blue-border); }
+  .srctag.ext { background: var(--purple-bg); color: #7a13c0; border: 1px solid #e6cffb; }
+  .det-or { font-family: var(--mono); font-size: 10.5px; padding: 2px 7px; border-radius: var(--radius-s); white-space: nowrap; }
+  .det-or.d { background: var(--green-bg); color: var(--green-ink); }
+  .det-or.a { background: var(--purple-bg); color: #7a13c0; }
+  .qa { display: grid; gap: 12px; }
+  .qa .q { background: var(--bg); border: 1px solid var(--border); border-radius: var(--radius-m); padding: 16px 18px; }
+  .qa .q .qh { font-weight: 600; font-size: 14.5px; display: flex; gap: 10px; align-items: baseline; letter-spacing: -0.01em; }
+  .qa .q .qh .id { font-family: var(--mono); color: var(--amber-ink); font-size: 13px; }
+  .qa .q .opt { font-size: 13.5px; color: var(--ink-2); margin-top: 8px; line-height: 1.55; }
+  .qa .q .rec { margin-top: 9px; font-size: 13px; background: var(--green-bg); border: 1px solid var(--green-border); border-left: 3px solid var(--green); border-radius: 0 var(--radius-s) var(--radius-s) 0; padding: 8px 11px; color: var(--green-ink); }
+  .plan { display: grid; gap: 10px; }
+  .plan .sl { display: grid; grid-template-columns: 42px 1fr; gap: 12px; background: var(--bg); border: 1px solid var(--border); border-radius: var(--radius-m); padding: 14px 16px; }
+  .plan .sl.base { background: var(--green-bg); border-color: var(--green-border); }
+  .plan .sl.human { background: var(--blue-bg); border-color: var(--blue-border); }
+  .plan .sl .no { font-family: var(--mono); font-weight: 600; color: var(--blue); font-size: 15px; }
+  .plan .sl .t { font-weight: 600; font-size: 14px; letter-spacing: -0.01em; }
+  .plan .sl .d { font-size: 13px; color: var(--ink-2); margin-top: 3px; line-height: 1.5; }
+  .plan .sl .ac { font-size: 12px; color: var(--ink-3); margin-top: 5px; }
+  .plan .sl .ac b { font-family: var(--mono); font-size: 10px; color: var(--green-ink); text-transform: uppercase; letter-spacing: 0.04em; }
+
+  .facebar { background: var(--ink); color: #fff; border-radius: var(--radius-l); padding: 20px 24px; }
+  .facebar .ft { font-family: var(--mono); font-size: 12px; letter-spacing: 0.06em; text-transform: uppercase; color: #8f8f8f; }
+  .facebar .fb { font-weight: 600; font-size: 18px; margin-top: 4px; letter-spacing: -0.02em; }
+  .facebar .row { display: flex; flex-wrap: wrap; gap: 8px 22px; margin-top: 13px; font-size: 13px; color: #cbd5e1; }
+  .facebar .row .seg b { color: #fff; font-weight: 500; }
+  .facebar .row .seg .tg { font-family: var(--mono); font-size: 10.5px; padding: 1px 7px; border-radius: 9999px; border: 1px solid rgba(255,255,255,0.2); margin-right: 6px; }
+  .facebar .row .seg .tg.d { color: #8ee6a6; border-color: rgba(40,169,72,0.5); }
+  .facebar .row .seg .tg.a { color: #9ec2ff; border-color: rgba(0,107,255,0.5); }
+  .facedown { text-align: center; color: var(--gray-400); font-size: 20px; margin: 6px 0; letter-spacing: 0.5em; }
+  .facecol { border-radius: var(--radius-l); padding: 20px 22px; border: 1px solid var(--border); }
+  .facecol.human { background: var(--blue-bg); border-color: var(--blue-border); }
+  .facecol.agent { background: var(--green-bg); border-color: var(--green-border); }
+  .facecol h3 { font-weight: 600; font-size: 17px; margin: 0; letter-spacing: -0.02em; }
+  .facecol.human h3 { color: #0a2a5e; }
+  .facecol.agent h3 { color: #0c5226; }
+  .facecol .sub { font-size: 12.5px; color: var(--ink-3); margin-top: 3px; }
+  .facecol ul { margin: 13px 0 0; padding-left: 17px; }
+  .facecol li { margin: 6px 0; font-size: 13.5px; color: var(--ink-2); line-height: 1.5; }
+  .facecol li b { color: var(--ink); font-weight: 600; }
+  .facecol .ft2 { margin-top: 13px; padding-top: 11px; border-top: 1px solid var(--border); font-family: var(--mono); font-size: 11px; color: var(--ink-3); }
+
+  footer { margin-top: 60px; padding: 36px 0 64px; border-top: 1px solid var(--border); background: var(--bg-sec); color: var(--ink-3); font-size: 14px; }
+  footer .reflist { display: grid; grid-template-columns: repeat(2,1fr); gap: 7px 24px; margin: 16px 0; }
+  @media (max-width:700px){ footer .reflist { grid-template-columns: 1fr; } }
+  .src { font-size: 12.5px; color: var(--faint); margin-top: 6px; line-height: 1.5; }
+</style>
+</head>
+<body>
+
+<header class="hero"><div class="wrap">
+  <div class="eyebrow">Product Design</div>
+  <h1>One base, two faces:<br><b>code graph</b> for humans &amp; agents</h1>
+  <p class="lead">A product, not a release phase. <strong>One shared knowledge base</strong> — fused from code AST, git/commit history, tests, Confluence docs and Jira stories — projected to <strong>two faces</strong>: a <strong>human face</strong> (a generated Code Wiki + graph explorer for understanding and collaboration) and an <strong>agent face</strong> (a codegraph MCP that locates code and cuts token usage). <strong>tk owns no LLM and spends zero API tokens</strong>: the deterministic structure is tk's; all semantics are produced by the user's own AI agent and fed back in.</p>
+  <div class="status"><span class="dot"></span> design direction · ADRs are the source of truth</div>
+  <div class="chips">
+    <span class="chip on">tk_map</span><span class="chip on">tk_read</span><span class="chip on">tk_search</span><span class="chip on">tk_verify</span>
+    <span class="chip">ADR 0013 surface scope</span><span class="chip">ADR 0014 MCP server</span><span class="chip">ADR 0015 node:sqlite gate</span><span class="chip">ADR 0016 measure-first</span>
+  </div>
+</div></header>
+
+<!-- CORE -->
+<section id="core"><div class="wrap">
+  <div class="shead"><span class="sn">Core</span><h2>One base, two faces</h2></div>
+  <p class="sdesc">The whole product is one shared knowledge base projected to two audiences — never two parallel pipelines. The same graph the agent queries is the graph the human reads. This is the central design commitment; everything else serves it.</p>
+
+  <div class="facebar">
+    <div class="ft">One base — multi-source knowledge graph</div>
+    <div class="fb">graph.db &nbsp;·&nbsp; generic nodes(kind) + edges(kind), provenance-tagged</div>
+    <div class="row">
+      <span class="seg"><span class="tg d">deterministic</span><b>code AST · git/commit history · tests</b> — tk-built, zero LLM</span>
+      <span class="seg"><span class="tg a">agent-fed</span><b>semantic/domain/business · Confluence · Jira</b> — <code>source=host_llm</code></span>
+    </div>
+  </div>
+  <div class="facedown">↓&nbsp;&nbsp;&nbsp;&nbsp;↓</div>
+  <div class="grid g2">
+    <div class="facecol human">
+      <h3>Human face — understand &amp; collaborate</h3>
+      <div class="sub">local HTTP server + page · self-contained HTML export</div>
+      <ul>
+        <li><b>Code Wiki</b> — generated holistic documentation: structured pages, source-anchored, validated diagrams, freshness-aware <span style="color:var(--ink-3)">(CodeWiki / RepoDoc / OpenDeepWiki lineage)</span></li>
+        <li><b>Graph explorer</b> — overview → lazy-expand → focus, guided tours, clickable <code>file:line</code> <span style="color:var(--ink-3)">(Understand-Anything lineage)</span></li>
+      </ul>
+      <div class="ft2">prose is host-agent-fed (source=host_llm) → zero tk API tokens</div>
+    </div>
+    <div class="facecol agent">
+      <h3>Agent face — find code, cut tokens</h3>
+      <div class="sub">per-session stdio MCP server · 4 resident tools</div>
+      <ul>
+        <li><b>codegraph MCP</b> — <code>tk_map</code> / <code>tk_read</code> / <code>tk_search</code> / <code>tk_verify</code></li>
+        <li>Precise location, fewer grep/read loops, lower <b>runtime</b> token usage — the additive retrieval plane</li>
+      </ul>
+      <div class="ft2">source=graph · cannot rewrite host built-ins, offers better tools the agent may choose</div>
+    </div>
+  </div>
+</div></section>
+
+<!-- DECISION -->
+<section id="decision"><div class="wrap">
+  <div class="shead"><span class="sn">§0</span><h2>Decision summary</h2></div>
+  <p class="sdesc">Both faces are additive, probabilistic, and honest. tk still <strong>cannot</strong> rewrite Copilot's built-in <code>read_file</code> / <code>search</code> results — the agent face offers better tools the agent may choose; the human face is a parallel product surface, not a gateway.</p>
+
+  <div class="grid g2" style="align-items:start">
+    <div class="card sec">
+      <div class="declist">
+        <div class="k">Target</div><div class="v">Enterprise VS Code Copilot teams; MCP / admin enablement is a prerequisite for the agent face</div>
+        <div class="k">Shape</div><div class="v"><code>tk graph …</code> CLI + per-session stdio MCP server + local HTTP human surface + instruction guidance</div>
+        <div class="k">Two faces</div><div class="v"><strong>Human</strong>: Code Wiki + graph explorer. <strong>Agent</strong>: codegraph MCP (4 tools). One shared base.</div>
+        <div class="k">Engine</div><div class="v">Static AST / import / PageRank graph for TS/JS · Python · Java; LSP is a later precision enhancement</div>
+        <div class="k">Input</div><div class="v">Multi-source: <strong>deterministic</strong> code AST + git/commit + tests; <strong>agent-fed</strong> semantic/domain/business + Confluence + Jira (<code>source=host_llm</code>)</div>
+      </div>
+    </div>
+    <div class="card sec">
+      <div class="declist">
+        <div class="k">Store</div><div class="v"><code>~/.token-killer/projects/&lt;fingerprint&gt;/graph.db</code> via <code>node:sqlite</code> behind a Node ≥22.13 gate; generic <code>nodes(kind,…)</code> + <code>edges(kind,…)</code></div>
+        <div class="k">Freshness</div><div class="v">Symbol-level incremental: content hash · referencer-set hash · git diff → changed symbols · downstream traversal; annotations go stale on hash change</div>
+        <div class="k">Impact</div><div class="v">T1 facts (static callers · git co-change · CODEOWNERS) live inside existing search/verify/read modes</div>
+        <div class="k">LLM / tokens</div><div class="v"><strong>tk owns no LLM, spends zero API tokens.</strong> All semantics + Code Wiki prose are produced by the user's agent and fed back in (<code>source=host_llm</code>, with citations)</div>
+        <div class="k">Deferred</div><div class="v">VS Code extension · LSP enhancement · <strong>editable</strong> Code Wiki round-trip (Davia-style) · embeddings / vector search · CI policy gates</div>
+      </div>
+    </div>
+  </div>
+
+  <div class="callout blue" style="margin-top:18px">
+    <b>Design discipline.</b> Ship each capability <strong>complete + optimized</strong>, not "design now, refactor later." The base is built once and made future-facing; both faces are first-class consumers of it. Code Wiki is <em>generation + rendering</em> on the human face (in scope); only <em>editable</em> round-trip authoring is deferred.
+  </div>
+</div></section>
+
+<!-- ARCH -->
+<section id="arch"><div class="wrap">
+  <div class="shead"><span class="sn">§3</span><h2>Architecture: one backend, many projections</h2></div>
+  <p class="sdesc">Multi-source input enters the extractors; the resolver builds imports / references / static edges; the incremental layer keeps node hashes and referencer sets fresh; the store persists the generic graph in <code>graph.db</code>; the retrieval core handles rank/map/read/search/verify/projection — and CLI, MCP, and the human Code-Wiki/explorer surface are all thin consumers of the same core (ADR 0014). Primary module: <code>src/retrieval</code>.</p>
+
+  <div class="pipe">
+    <div class="stage"><div class="n">sources</div><div class="t">Multi-source input</div><div class="d">code · git/commits · tests · Confluence · Jira</div></div>
+    <div class="arrow">→</div>
+    <div class="stage"><div class="n">extract</div><div class="t">Extractors</div><div class="d">tree-sitter · git log/blame · test parse · connectors / agent-fed</div></div>
+    <div class="arrow">→</div>
+    <div class="stage"><div class="n">resolve</div><div class="t">Resolver</div><div class="d">imports · references · static edges</div></div>
+    <div class="arrow">→</div>
+    <div class="stage"><div class="n">fresh</div><div class="t">Incremental</div><div class="d">node hash · referencer-set · downstream</div></div>
+    <div class="arrow">→</div>
+    <div class="stage"><div class="n">store</div><div class="t">graph.db</div><div class="d">node:sqlite + FTS · generic nodes/edges</div></div>
+    <div class="arrow">→</div>
+    <div class="stage core"><div class="n">core</div><div class="t">Retrieval Core</div><div class="d">rank · map · read · search · verify · projection</div></div>
+  </div>
+
+  <div class="fanout">
+    <div class="fan"><div class="t">CLI <span class="badge">tk graph …</span></div><div class="d">map / read / search / verify / doctor / index / serve</div></div>
+    <div class="fan"><div class="t">Agent face <span class="badge">MCP stdio</span></div><div class="d">hand-rolled JSON-RPC + 4 tool handlers, minimal resident schema</div></div>
+    <div class="fan"><div class="t">Human face <span class="badge">HTTP / page</span></div><div class="d">Code Wiki + graph explorer, reusing src/report/html.ts; self-contained export</div></div>
+  </div>
+  <p class="src">The command-compression hot path must not import this module eagerly. Suggested internal boundaries: <code>nodeGate.ts · indexer/* · store/* · query/* · project/* · mcp/* · html/* · cli.ts</code>.</p>
+</div></section>
+
+<!-- INPUT LAYER -->
+<section id="input"><div class="wrap">
+  <div class="shead"><span class="sn">§1b</span><h2>Input layer — multi-source ingestion</h2></div>
+  <p class="sdesc">The base is fused from several sources, not just code. The dividing line is <strong>what can be extracted deterministically</strong> (code structure, git history, test wiring, commit→ticket regex — tk builds these locally, zero LLM) versus <strong>what needs semantic mapping</strong> (doc↔code, story↔code intent, business domain — these are <em>agent-fed</em>, tagged <code>source=host_llm</code>). Every node and edge carries a <code>source</code> tag and a <code>confidence</code> so the two are never confused.</p>
+
+  <div class="tablecard" style="margin-bottom:18px">
+    <table>
+      <thead><tr><th>Source</th><th>How</th><th>Det / Agent</th><th>Node kinds</th><th>Edge kinds</th><th><code>source</code></th><th>Freshness</th></tr></thead>
+      <tbody>
+        <tr><td><strong>Code AST</strong></td><td>tree-sitter parse (TS/JS·Py·Java)</td><td><span class="det-or d">deterministic</span></td><td>file · symbol · function · class · interface · type</td><td>contains · imports · exports · calls · extends · implements · references</td><td><span class="srctag static">static</span></td><td>content hash</td></tr>
+        <tr><td><strong>Git / commit history</strong></td><td><code>git log / blame / diff</code></td><td><span class="det-or d">deterministic</span></td><td>commit · author</td><td>changed_by · co_changes_with · authored_by</td><td><span class="srctag git">git</span></td><td>HEAD sha</td></tr>
+        <tr><td><strong>Tests</strong></td><td>test-file AST + optional coverage report</td><td><span class="det-or d">det. (structure)</span> <span class="det-or a">agent (intent)</span></td><td>test · test_suite</td><td>tests / covers (test → symbol) · asserts</td><td><span class="srctag test">test</span></td><td>content hash + coverage run</td></tr>
+        <tr><td><strong>Commit ↔ Jira</strong></td><td>regex <code>[A-Z]+-\d+</code> in commit msgs / branch names</td><td><span class="det-or d">deterministic</span></td><td>(links to story)</td><td>implements_story · traces_to</td><td><span class="srctag git">git</span></td><td>HEAD sha</td></tr>
+        <tr><td><strong>Jira stories</strong></td><td>REST connector <em>or</em> host-agent-fed</td><td><span class="det-or a">agent (mapping)</span></td><td>story · epic · requirement</td><td>traces_to · blocks · relates_to · assigned_to</td><td><span class="srctag ext">jira</span> <span class="srctag host">host_llm</span></td><td>ticket updated-at / re-annotate</td></tr>
+        <tr><td><strong>Confluence docs</strong></td><td>REST connector <em>or</em> host-agent-fed</td><td><span class="det-or a">agent (mapping)</span></td><td>doc_page · wiki_space</td><td>describes · documents · mentions</td><td><span class="srctag ext">confluence</span> <span class="srctag host">host_llm</span></td><td>page version / re-annotate</td></tr>
+        <tr><td><strong>Semantic enrichment</strong></td><td>host agent reads graph + source, writes back</td><td><span class="det-or a">agent</span></td><td>(annotations on existing nodes): summary · tags · domain · layer</td><td>domain_of · summarizes · belongs_to_layer</td><td><span class="srctag host">host_llm</span></td><td>stale when target content_hash changes</td></tr>
+      </tbody>
+    </table>
+  </div>
+
+  <div class="grid g2" style="align-items:start; margin-bottom:18px">
+    <div class="card">
+      <div class="lbl">Two ingestion modes for Confluence / Jira</div>
+      <p style="font-size:13.5px; color:var(--ink-2); margin:10px 0 0; line-height:1.55"><strong>1. Direct connector.</strong> tk pulls text via REST (base URL + token in config/env). The <em>fetch</em> is deterministic, but the doc↔code mapping still needs the agent. Enterprise-gated; opt-in.</p>
+      <p style="font-size:13.5px; color:var(--ink-2); margin:10px 0 0; line-height:1.55"><strong>2. Host-agent-fed (preferred).</strong> The user's agent — which already has Confluence/Jira/MCP access — reads them, computes the doc↔code / story↔code mapping, and writes structured nodes/edges into tk via the <a href="#protocol">annotate API</a>. Keeps tk LLM-free and puts the hard semantic mapping where an LLM belongs.</p>
+    </div>
+    <div class="card sec">
+      <div class="lbl">Why this fits "tk owns no LLM"</div>
+      <p style="font-size:13.5px; color:var(--ink-2); margin:10px 0 0; line-height:1.55">tk deterministically ingests everything a parser or git gives for free. The expensive, judgement-heavy parts — what a doc <em>means</em> for which code, which story a change <em>implements</em>, what business domain a module serves, and the Code Wiki prose — are what the host agent is good at and a parser is not. The agent (the user already pays for it) does that analysis and feeds it back, tagged <code>source=host_llm</code> with citations. tk stores, validates anchors, tracks staleness — and never holds an API key.</p>
+    </div>
+  </div>
+
+  <div class="callout blue">
+    <b>Provenance is the contract.</b> Deterministic facts (<code>source ∈ {static, git, test}</code>) are trusted and reproducible. Agent-asserted facts (<code>source ∈ {host_llm, confluence, jira}</code>) carry <code>confidence</code> + required citations and are visibly marked as such in every projection — so a low-confidence doc↔code guess is never presented as a parser-proven call edge.
+  </div>
+</div></section>
+
+<!-- HUMAN FACE -->
+<section id="human"><div class="wrap">
+  <div class="shead"><span class="sn">§5</span><h2>Human face — Code Wiki + graph explorer</h2></div>
+  <p class="sdesc">The human face turns the shared graph into something a person reads to understand the system and collaborate. It has two complementary products — a generated <strong>Code Wiki</strong> and an interactive <strong>graph explorer</strong> — both served from the same retrieval core, both LLM-free on tk's side (prose comes from the host agent, <code>source=host_llm</code>).</p>
+
+  <div class="grid g2" style="align-items:start">
+    <div class="card">
+      <div class="lbl" style="color:var(--blue-ink)">Code Wiki — generated documentation</div>
+      <p style="font-size:13.5px; color:var(--ink-2); margin:11px 0 0; line-height:1.55">Holistic, hierarchical, repository-level docs — the capability CodeWiki/RepoDoc/OpenDeepWiki demonstrate, rebuilt on tk's deterministic base:</p>
+      <ul class="hl" style="margin-top:10px; padding-left:17px">
+        <li><strong>Structure is graph-derived</strong> (deterministic): page tree from <code>files</code>/<code>contains</code>; module clustering; leaf-first ordering — like CodeWiki's hierarchical decomposition.</li>
+        <li><strong>Prose is host-agent-fed</strong> (<code>source=host_llm</code>): the agent writes section text via <a href="#protocol"><code>tk_annotate</code></a> — CodeWiki's "subscription mode" idea, except the user's own CLI agent does it, so <strong>tk pays no tokens</strong>.</li>
+        <li><strong>Diagrams are graph-derived + validated + fallback</strong> (RepoDoc): mermaid rendered from real edges, syntax-checked, deterministic fallback if invalid — never LLM-hallucinated.</li>
+        <li><strong>Every page cites sources</strong> (OpenDeepWiki <code>SourceFiles</code>): blocks carry <code>file:line</code> anchors + freshness; manual blocks never overwritten; stale blocks shown as stale.</li>
+        <li><strong>Self-contained HTML export</strong> (CodeWiki <code>--github-pages</code> / GitNexus viewer): inline JSON into a template, no CDN, shareable as a CI artifact.</li>
+      </ul>
+    </div>
+    <div class="card">
+      <div class="lbl" style="color:var(--blue-ink)">Graph explorer — navigation</div>
+      <p style="font-size:13.5px; color:var(--ink-2); margin:11px 0 0; line-height:1.55">The interactive view of the same graph — the UX Understand-Anything sets the bar for:</p>
+      <ul class="hl" style="margin-top:10px; padding-left:17px">
+        <li><strong>overview → lazy-expand → focus</strong>: PageRank "key files" + module clusters; expand children on demand via <code>contains</code>/<code>imports</code>; focus = 1-hop over <code>calls</code>.</li>
+        <li><strong>Guided tours</strong>: an ordered walk over PageRank / entry-point nodes — derivable deterministically, no LLM.</li>
+        <li><strong>Detail panels</strong>: signature + clickable <code>file:line</code> (<code>vscode://file/…</code> in the IDE) + a small graph-derived call snippet, plus any agent-fed summary/domain tags.</li>
+        <li><strong>Same anchors as <code>tk_read</code></strong>: human and agent point at identical evidence.</li>
+      </ul>
+    </div>
+  </div>
+
+  <div class="callout blue" style="margin-top:16px">
+    <b>Delivery &amp; cost.</b> <code>tk graph serve</code> exposes both products over localhost HTTP (open in VS Code's Simple Browser); <code>tk graph export --html</code> emits a self-contained snapshot. Measurement: the human face reports <em>navigation</em> facts (nodes shown vs total, expand depth, anchors opened) — it does <strong>not</strong> claim token savings; its value is comprehension. The token story stays on the agent face.
+  </div>
+</div></section>
+
+<!-- AGENT FACE / SURFACE -->
+<section id="surface"><div class="wrap">
+  <div class="shead"><span class="sn">§2</span><h2>Agent face — public surface</h2></div>
+  <p class="sdesc">Indexing is <strong>lazy + explicit</strong>: graph tools refresh changed files by hash, and <code>tk graph index</code> lets a team prewarm or CI-check the store. The agent face is exactly four resident MCP tools.</p>
+
+  <div class="grid g4" style="margin-bottom:24px">
+    <div class="tool"><div class="name">tk_map</div><p>Ranked repo map / orientation answers with <code>file:line</code> anchors and signature snippets.</p></div>
+    <div class="tool"><div class="name">tk_read</div><div class="modes"><span class="m">default</span><span class="m">edit_window</span></div><p>Targeted exact reads; <code>edit_window</code> returns exact slice + anchors + content hash.</p></div>
+    <div class="tool"><div class="name">tk_search</div><div class="modes"><span class="m">text</span><span class="m">symbol</span><span class="m">callers</span><span class="m">impact-lite</span></div><p>Text / symbol / callers search; <code>callers</code> is a mode, not a separate tool.</p></div>
+    <div class="tool"><div class="name">tk_verify</div><p>Local diff and test-failure projection; never claims a patch is correct.</p></div>
+  </div>
+
+  <div class="tablecard">
+    <table>
+      <thead><tr><th>CLI command</th><th>Purpose</th></tr></thead>
+      <tbody>
+        <tr><td><span class="cmd">tk install --graph</span></td><td>Opt in to graph MCP wiring + graph guidance</td></tr>
+        <tr><td><span class="cmd">tk graph doctor</span></td><td>Read-only diagnostics: Node / MCP / host config / index path (reports the policy gap plainly when MCP is disabled)</td></tr>
+        <tr><td><span class="cmd">tk graph index</span></td><td>Explicit prewarm / refresh for the current project</td></tr>
+        <tr><td><span class="cmd">tk graph map [query]</span></td><td>Ranked repo map / orientation view</td></tr>
+        <tr><td><span class="cmd">tk graph read &lt;target&gt;</span></td><td>Targeted read by symbol, file range, or edit-window mode</td></tr>
+        <tr><td><span class="cmd">tk graph search &lt;query&gt;</span></td><td>Text, symbol, and callers modes</td></tr>
+        <tr><td><span class="cmd">tk graph verify</span></td><td>Local diff and test-failure summaries</td></tr>
+        <tr><td><span class="cmd">tk graph serve</span></td><td>localhost HTTP — human face (Code Wiki + explorer) · <code>--mcp</code> for the stdio MCP server</td></tr>
+        <tr><td><span class="cmd">tk graph export --html</span></td><td>Self-contained Code Wiki / explorer snapshot</td></tr>
+      </tbody>
+    </table>
+  </div>
+
+  <h3 style="font-weight:600; font-size:18px; letter-spacing:-0.02em; margin:24px 0 10px">MCP tool I/O contracts</h3>
+  <p class="sdesc" style="margin-bottom:14px">Every response carries model-facing output, resolvable anchors, <code>confidence</code>, <code>source</code> provenance, stale/hash state, and measurement facts (<code>returnedAnchors</code>, <code>returnedChars</code>).</p>
+  <div class="codeblock"><span class="cm">// tk_map — orient; cheapest rung of the ladder</span>
+<span class="ky">in</span>  { cwd, query?, token_budget? }
+<span class="ky">out</span> { answers:[{ file, line, signature, why, source, confidence }],
+      clusters:[{ name, files[] }], next_read?, measurement }
+
+<span class="cm">// tk_read — exact slice; edit_window for editing contexts</span>
+<span class="ky">in</span>  { cwd, target:{ symbol | file:range | node_id },
+      mode:"default"|"edit_window", token_budget? }
+<span class="ky">out</span> { content, anchors:[{file,line}], content_hash, confidence,
+      candidates?[],  <span class="cm">// narrow hand-back when target is ambiguous</span>
+      measurement }
+
+<span class="cm">// tk_search — text / symbol / callers / impact-lite</span>
+<span class="ky">in</span>  { cwd, query, mode:"text"|"symbol"|"callers"|"impact-lite", token_budget? }
+<span class="ky">out</span> { hits:[{ file, line, snippet, confidence, source }],
+      impact?:{ callers[], co_changes_with[], owns[] },  <span class="cm">// T1 facts, labelled</span>
+      measurement }
+
+<span class="cm">// tk_verify — local diff + test-failure projection (never claims correctness)</span>
+<span class="ky">in</span>  { cwd, diff?, test_output?, token_budget? }
+<span class="ky">out</span> { changed_files[], changed_symbols[], failing_tests[],
+      anchors[], raw_pointer?, measurement }</div>
+  <p class="src" style="margin-top:10px">A fifth tool, <code>tk_annotate</code>, is exposed <strong>only in ingest mode</strong> (see <a href="#protocol">§2b</a>) — the host agent writes semantic / cross-source annotations and Code-Wiki prose back into the graph. It is not part of the resident read surface.</p>
+</div></section>
+
+<!-- INGESTION PROTOCOL -->
+<section id="protocol"><div class="wrap">
+  <div class="shead"><span class="sn">§2b</span><h2>Semantic &amp; cross-source ingestion protocol</h2></div>
+  <p class="sdesc">This is the seam that lets tk stay LLM-free while still carrying semantic/domain/business knowledge, Confluence/Jira links, and Code-Wiki prose. The host agent (or the optional connector) writes through one narrow, validated API — <code>tk graph annotate</code> (CLI) / <code>tk_annotate</code> (MCP, ingest mode only). Annotations are <strong>additive</strong>: they attach to existing deterministic nodes, never mutate parser facts, and always carry <code>source</code> + <code>confidence</code> + citations.</p>
+
+  <div class="codeblock"><span class="cm">// tk_annotate — host agent writes semantics / doc-links / wiki prose back in</span>
+<span class="ky">in</span> { annotations: [ {
+       target:   { kind, qualified_name | "file:line-range" | node_id },  <span class="cm">// must resolve</span>
+       kind:     "summary"|"domain"|"tags"|"layer"
+               | "doc_link"|"story_link"|"test_link"|"wiki_block",
+       value:    <span class="st">"…text / enum / string[] / markdown…"</span>,
+       source:   "host_llm"|"confluence"|"jira",
+       citations: [ <span class="st">"src/auth/login.ts:42"</span>, <span class="st">"confluence://SPACE/page/123"</span>, <span class="st">"PROJ-456"</span> ],  <span class="cm">// REQUIRED</span>
+       confidence: "high"|"medium"|"low",
+       content_hash: <span class="st">"&lt;hash of target at annotation time&gt;"</span>   <span class="cm">// for staleness</span>
+     } ] }
+<span class="ky">out</span> { accepted[], rejected:[{ target, reason }], stale_now[] }</div>
+
+  <div class="grid g2" style="align-items:start; margin-top:16px">
+    <div class="card">
+      <div class="lbl">Validation &amp; safety rules</div>
+      <ul class="hl" style="margin-top:10px; padding-left:17px">
+        <li>Every annotation <strong>must cite</strong> a resolvable source (<code>file:line</code>, Confluence page, Jira key); uncited → rejected.</li>
+        <li>The <code>target</code> anchor must resolve to the current graph or it is rejected (no dangling semantics).</li>
+        <li>Stored with <code>source</code> + <code>confidence</code>; <strong>never</strong> overwrites a deterministic fact or a human-authored block.</li>
+        <li>Goes <strong>stale automatically</strong> when the target's <code>content_hash</code> changes — surfaced as stale, not silently trusted.</li>
+        <li>Idempotent by <code>(target, kind, source)</code>: re-annotating updates in place.</li>
+      </ul>
+    </div>
+    <div class="card sec">
+      <div class="lbl">Lifecycle</div>
+      <div class="codeblock" style="margin-top:10px; background:var(--bg); white-space:pre-wrap"><span class="cm"># 1. tk builds the deterministic base (no LLM)</span>
+tk graph index
+
+<span class="cm"># 2. host agent enriches (its own tokens, not tk's)</span>
+agent: read graph via tk_map/tk_read
+agent: map docs/stories ↔ code, infer domain,
+       write Code-Wiki prose
+agent: tk_annotate({ … source:"host_llm" … })
+
+<span class="cm"># 3. both faces read the combined graph</span>
+human:  tk graph serve     <span class="cm"># Code Wiki + explorer</span>
+agent:  tk_search / tk_map  <span class="cm"># cut tokens</span>
+
+<span class="cm"># 4. code changes → annotations go stale → re-enrich</span></div>
+    </div>
+  </div>
+</div></section>
+
+<!-- ENGINE / DATA MODEL -->
+<section id="engine"><div class="wrap">
+  <div class="shead"><span class="sn">§4</span><h2>Data model &amp; static engine</h2></div>
+  <p class="sdesc">One typed node table + one typed edge table (not a table per kind), with migrations from the first slice. The generic <code>nodes(kind, …, source, confidence, content_hash, metadata_json)</code> + <code>edges(kind, …, source, confidence)</code> schema absorbs every input source as new <em>kind</em> + <em>source</em> values — no new tables. v1 avoids LSP (smaller support matrix); <strong>ConceptNode is dropped</strong> — that role is now the agent-fed <code>domain</code>/<code>summary</code> annotation.</p>
+  <div class="codeblock" style="margin-bottom:18px"><span class="cm">// provenance enum — every node & edge carries one source + a confidence</span>
+source     = <span class="st">"static"</span>   <span class="cm">// tree-sitter AST            — deterministic, trusted</span>
+           | <span class="st">"git"</span>      <span class="cm">// git log/blame/diff         — deterministic, trusted</span>
+           | <span class="st">"test"</span>     <span class="cm">// test-file AST / coverage   — deterministic structure</span>
+           | <span class="st">"lsp"</span>      <span class="cm">// later — distinguished, never silently upgrades static</span>
+           | <span class="st">"confluence"</span> | <span class="st">"jira"</span>          <span class="cm">// connector fetch (text deterministic, mapping agent)</span>
+           | <span class="st">"host_llm"</span>                    <span class="cm">// agent-asserted semantics — confidence + citations required</span>
+confidence = <span class="st">"high" | "medium" | "low"</span></div>
+
+  <div class="grid g2" style="align-items:start">
+    <div class="tablecard">
+      <table>
+        <thead><tr><th>Node family</th><th>Status</th><th>Notes</th></tr></thead>
+        <tbody>
+          <tr><td>Repository / module / directory / file</td><td><span class="b yes">yes</span></td><td>From git root + file inventory</td></tr>
+          <tr><td>Symbol / function / class / interface / type</td><td><span class="b yes">yes</span></td><td>From AST; exact ranges + signatures required</td></tr>
+          <tr><td>Package / dependency / config / script</td><td><span class="b partial">partial</span></td><td>Deterministic manifests and scripts only</td></tr>
+          <tr><td>Commit / author</td><td><span class="b yes">yes</span></td><td>From git log/blame; <code>source=git</code></td></tr>
+          <tr><td>Test / test_suite</td><td><span class="b partial">partial</span></td><td>From test-file AST (+ coverage); <code>source=test</code></td></tr>
+          <tr><td>Doc_page / wiki_space (Confluence)</td><td><span class="b reserved">agent</span></td><td>Connector or agent-fed; <code>source=confluence|host_llm</code></td></tr>
+          <tr><td>Story / epic / requirement (Jira)</td><td><span class="b reserved">agent</span></td><td>Connector or agent-fed; <code>source=jira|host_llm</code></td></tr>
+          <tr><td>WikiPage / generated block</td><td><span class="b reserved">agent</span></td><td>Code Wiki: graph-derived structure + host_llm prose</td></tr>
+          <tr><td>ChangeSet</td><td><span class="b yes">yes</span></td><td>From git status/diff; freshness / impact</td></tr>
+        </tbody>
+      </table>
+    </div>
+    <div class="tablecard">
+      <table>
+        <thead><tr><th>Edge family</th><th>Status</th><th>Notes</th></tr></thead>
+        <tbody>
+          <tr><td><code>contains · imports · exports · references · calls · extends · implements</code></td><td><span class="b partial">y/partial</span></td><td>Static, by language, confidence-labelled</td></tr>
+          <tr><td><code>changed_by · co_changes_with · authored_by</code></td><td><span class="b yes">git</span></td><td>From git history; <code>source=git</code></td></tr>
+          <tr><td><code>tests · covers</code></td><td><span class="b partial">test</span></td><td>test → symbol; <code>source=test</code></td></tr>
+          <tr><td><code>owns</code></td><td><span class="b partial">T1</span></td><td>CODEOWNERS heuristic evidence</td></tr>
+          <tr><td><code>describes · mentions · traces_to · implements_story</code></td><td><span class="b reserved">agent</span></td><td>doc/story ↔ code; <code>source=confluence|jira|host_llm</code></td></tr>
+          <tr><td><code>domain_of · summarizes · belongs_to_layer · documents</code></td><td><span class="b reserved">host_llm</span></td><td>Agent-fed semantic + Code-Wiki provenance</td></tr>
+        </tbody>
+      </table>
+    </div>
+  </div>
+
+  <div class="card" style="margin-top:18px">
+    <div class="lbl">Projection safety contract — structure first, candidates second, exact code last, verify by delta</div>
+    <div class="ladder" style="margin-top:14px">
+      <span class="step">metadata</span><span class="sep">→</span>
+      <span class="step">outline</span><span class="sep">→</span>
+      <span class="step">symbol / range</span><span class="sep">→</span>
+      <span class="step exact">edit_window</span><span class="sep">→</span>
+      <span class="step exact">full file</span>
+      <span class="sep" style="padding:0 14px">｜</span>
+      <span class="step">failure projection</span><span class="sep">→</span><span class="step exact">raw log</span>
+    </div>
+    <p style="margin-top:12px; color:var(--ink-2); font-size:13.5px; line-height:1.55">Editing contexts (<code>purpose=edit</code>) must return exact slices with content hash + stable anchors; non-exact projection is rejected or escalated. Generated / lock / minified / giant JSON is suppressed by default with an explicit warning + raw fallback. Retention-first escalation is mandatory.</p>
+  </div>
+</div></section>
+
+<!-- BORROW -->
+<section id="borrow"><div class="wrap">
+  <div class="shead"><span class="sn">§10.2</span><h2>Borrowed projects — README essence</h2></div>
+  <p class="sdesc">All projects were <code>git clone</code>d to <code>/tmp/tk-research/</code> during research; the links below are each repo's actual <strong>remote origin</strong>. Each card distills the README essence — <strong>design · highlights · architecture · implementation</strong> — plus source files and how tk borrows. Preview images are live GitHub social cards (click to open the repo; they degrade to text offline).</p>
+
+  <div class="grid g2">
+
+    <article class="proj">
+      <a class="shot" href="https://github.com/Lum1104/Understand-Anything" target="_blank" rel="noopener">
+        <img src="https://opengraph.githubassets.com/tk4/Lum1104/Understand-Anything" alt="Understand-Anything repo preview" loading="lazy" onerror="this.closest('.shot').classList.add('noimg')">
+        <span class="fallback">github.com/Lum1104/Understand-Anything</span>
+      </a>
+      <div class="body">
+        <div class="head"><span class="tagltr">A</span><h3>Understand-Anything</h3></div>
+        <div class="meta"><span class="role">Human face — explorer UX benchmark</span><span class="lic">MIT</span></div>
+        <div class="repo">🔗 <a href="https://github.com/Lum1104/Understand-Anything" target="_blank" rel="noopener">github.com/Lum1104/Understand-Anything</a></div>
+        <blockquote class="tagq">"Turn any codebase into an interactive knowledge graph you can explore, search, and ask questions about — graphs that teach, not graphs that impress."</blockquote>
+        <dl>
+          <div><dt>Design</dt><dd>Two layers by construction: <strong>tree-sitter</strong> extracts deterministic structural facts, an <strong>LLM</strong> adds semantic intent, business logic, and summaries — reproducible yet meaningful. Works across Claude Code, Cursor, Copilot, Gemini CLI.</dd></div>
+          <div><dt>Highlights</dt><dd><ul class="hl">
+            <li>Two-level <strong>lazy-expand</strong> navigation + <strong>focus mode</strong> (1-hop isolation)</li>
+            <li>Dependency-ordered <strong>guided tours</strong> + 12 in-context language-concept callouts</li>
+            <li>Persona-adaptive detail (junior / PM / power user); color-coded architectural layers</li>
+            <li>Diff impact (ripple) analysis; domain view mapping code → business processes</li>
+          </ul></dd></div>
+          <div><dt>Architecture</dt><dd>pnpm monorepo (core engine + dashboard); multi-agent pipeline scanner → file-analyzer (5 concurrent) → architecture-analyzer → tour-builder → graph-reviewer; React Flow + Dagre/ELK + Zustand + Fuse.js; graph stored as <code>.understand-anything/knowledge-graph.json</code> (Zod-validated).</dd></div>
+          <div><dt>Implementation</dt><dd>web-tree-sitter WASM, 15+ languages; runs as Claude Code slash commands (<code>/understand</code>, <code>/understand-dashboard</code>, <code>/understand-domain</code>, <code>/understand-diff</code>).</dd></div>
+          <div><dt>How tk borrows</dt><dd class="tk">The human face's explorer: <strong>overview → lazy-expand → focus</strong> + aggregate edges + tours (derivable deterministically from PageRank / entry-point nodes).</dd></div>
+        </dl>
+      </div>
+    </article>
+
+    <article class="proj">
+      <a class="shot" href="https://github.com/abhigyanpatwari/GitNexus" target="_blank" rel="noopener">
+        <img src="https://opengraph.githubassets.com/tk4/abhigyanpatwari/GitNexus" alt="GitNexus repo preview" loading="lazy" onerror="this.closest('.shot').classList.add('noimg')">
+        <span class="fallback">github.com/abhigyanpatwari/GitNexus</span>
+      </a>
+      <div class="body">
+        <div class="head"><span class="tagltr">B</span><h3>GitNexus</h3></div>
+        <div class="meta"><span class="role">One-backend / many-frontends spine</span><span class="lic warn">PolyForm Noncommercial</span></div>
+        <div class="repo">🔗 <a href="https://github.com/abhigyanpatwari/GitNexus" target="_blank" rel="noopener">github.com/abhigyanpatwari/GitNexus</a></div>
+        <blockquote class="tagq">"Building the nervous system for agent context — index any codebase into a knowledge graph, expose it so agents never miss code."</blockquote>
+        <dl>
+          <div><dt>Design</dt><dd>Precompute relational intelligence at index time so a tool returns blast-radius answers in <strong>one call instead of a 10-query grep chain</strong>. One KnowledgeGraph backs many frontends.</dd></div>
+          <div><dt>Highlights</dt><dd><ul class="hl">
+            <li><strong>16 MCP tools</strong> — query · context · impact · detect_changes · cypher · trace · pdg_query · explain</li>
+            <li>Cypher over a unified schema (~44 node / 21 relation types); 16 languages</li>
+            <li>Leiden community detection; CFG/PDG/taint (opt-in <code>--pdg</code>)</li>
+            <li>Embedded LadybugDB; hybrid BM25 + HNSW vector search</li>
+          </ul></dd></div>
+          <div><dt>Architecture</dt><dd>One KnowledgeGraph schema → <strong>LocalBackend</strong> (in-memory, powers MCP stdio + HTTP bridge) → MCP / HTTP (<code>gitnexus serve</code>) / CLI; web = React + Sigma.js + graphology.</dd></div>
+          <div><dt>Implementation</dt><dd>tree-sitter native + WASM; worker pool; CSV streaming → LadybugDB <code>COPY</code>; 14-phase DAG orchestrator. ~42K★; "74%/88%" claims are marked unsubstantiated in its own README.</dd></div>
+          <div><dt>How tk borrows</dt><dd class="tk">The one-backend / many-frontends seam and single typed-edge-table schema. <strong>Caveat:</strong> tk makes the human face (Code Wiki + explorer) and agent face co-equal products — not "the browser as the core."</dd></div>
+        </dl>
+      </div>
+    </article>
+
+    <article class="proj">
+      <a class="shot" href="https://github.com/FSoft-AI4Code/CodeWiki" target="_blank" rel="noopener">
+        <img src="https://opengraph.githubassets.com/tk4/FSoft-AI4Code/CodeWiki" alt="CodeWiki repo preview" loading="lazy" onerror="this.closest('.shot').classList.add('noimg')">
+        <span class="fallback">github.com/FSoft-AI4Code/CodeWiki</span>
+      </a>
+      <div class="body">
+        <div class="head"><span class="tagltr">C</span><h3>CodeWiki <small>(FSoft)</small></h3></div>
+        <div class="meta"><span class="role">Code Wiki generation + subscription-mode LLM</span><span class="lic">MIT · ACL 2026</span></div>
+        <div class="repo">🔗 <a href="https://github.com/FSoft-AI4Code/CodeWiki" target="_blank" rel="noopener">github.com/FSoft-AI4Code/CodeWiki</a> · <a href="https://arxiv.org/abs/2510.24428" target="_blank" rel="noopener">arXiv 2510.24428</a></div>
+        <blockquote class="tagq">"Generate holistic, structured documentation for large-scale codebases — cross-module interactions and visual diagrams."</blockquote>
+        <dl>
+          <div><dt>Design</dt><dd>Repository-level documentation via <strong>hierarchical decomposition + recursive multi-agent processing</strong>; DP-inspired module partitioning + LLM semantic analysis, architecture-aware across 8 languages. ACL 2026.</dd></div>
+          <div><dt>Highlights</dt><dd><ul class="hl">
+            <li>8 languages + native Python AST; single untyped <code>depends_on</code> edge</li>
+            <li><strong>Subscription mode (no API key)</strong> — claude/codex CLI via the <code>caw</code> library uses the user's Pro/Max sub</li>
+            <li>Self-contained <code>index.html</code> via <code>--github-pages</code> (marked.js + mermaid)</li>
+            <li>Leaf-first generation; 3 MCP tools; multi-provider LLM</li>
+          </ul></dd></div>
+          <div><dt>Architecture</dt><dd>tree-sitter dependency analyzer → DP module clustering → <strong>leaf-first</strong> doc generation (children before parents, recursive synthesis) → self-contained HTML / FastAPI viewer.</dd></div>
+          <div><dt>Implementation</dt><dd>Python 3.12+, pydantic-ai + litellm, <code>caw</code> CLI bridge; viewer = marked.js + mermaid. CodeWikiBench 68.79% (Sonnet-4) vs 64.06% baseline; tested to 229K LOC.</dd></div>
+          <div><dt>How tk borrows</dt><dd class="tk"><strong>This is tk's Code Wiki blueprint.</strong> Hierarchical decomposition + leaf-first generation + inline-JSON self-contained HTML. Its "subscription mode" maps exactly to tk's host-agent-fed prose — the user's own CLI agent writes it, so tk pays no tokens.</dd></div>
+        </dl>
+      </div>
+    </article>
+
+    <article class="proj">
+      <a class="shot" href="https://github.com/SYSUSELab/RepoDoc" target="_blank" rel="noopener">
+        <img src="https://opengraph.githubassets.com/tk4/SYSUSELab/RepoDoc" alt="RepoDoc repo preview" loading="lazy" onerror="this.closest('.shot').classList.add('noimg')">
+        <span class="fallback">github.com/SYSUSELab/RepoDoc</span>
+      </a>
+      <div class="body">
+        <div class="head"><span class="tagltr">D</span><h3>RepoDoc</h3></div>
+        <div class="meta"><span class="role">Heterogeneous graph + validated diagrams + soundest incremental</span><span class="lic warn">no license file</span></div>
+        <div class="repo">🔗 <a href="https://github.com/SYSUSELab/RepoDoc" target="_blank" rel="noopener">github.com/SYSUSELab/RepoDoc</a> · <a href="https://arxiv.org/abs/2604.26523" target="_blank" rel="noopener">arXiv 2604.26523</a></div>
+        <blockquote class="tagq">"Automated documentation generation and maintenance via a Repository Knowledge Graph (RepoKG)."</blockquote>
+        <dl>
+          <div><dt>Design</dt><dd>RepoKG is the <strong>semantic foundation for the whole documentation lifecycle</strong>. Three stages: RepoKG construction from AST → module clustering → skillful agent-based generation that queries and traverses the graph.</dd></div>
+          <div><dt>Highlights</dt><dd><ul class="hl">
+            <li>Heterogeneous graph: <code>CodeNode</code> / <code>DocNode(version:int)</code> / <code>ConceptNode(confidence:float)</code> + 4 typed weighted edges</li>
+            <li><strong>AST-diff ChangeType</strong> incremental with semantic-impact propagation (drops docstring/comment-only)</li>
+            <li>Deterministic mermaid: <strong>validate → fallback flowchart</strong> if invalid; cross-doc link validation + autofix</li>
+            <li>Per-operation <code>token_usage</code> logged to metadata.json (ready A/B denominator)</li>
+          </ul></dd></div>
+          <div><dt>Architecture</dt><dd>NetworkX DiGraph (~200 LOC) → GraphStoreTool → DocWriterSkill agent; CLI (<code>analyze → cluster → docs → generate → update</code>); no MCP; depth-grouped parallel generation.</dd></div>
+          <div><dt>Implementation</dt><dd>Python 3.12+, NetworkX, <code>ast.get_source_segment</code> (extract only the changed component). Paper: API coverage +32.5%, 85% fewer tokens, incremental −73% time / −77% tokens.</dd></div>
+          <div><dt>How tk borrows</dt><dd class="tk">Code Wiki diagrams must be <strong>graph-derived + validated + fallback</strong>, never LLM-authored. Adopt the AST <code>ChangeType</code> filter for incremental + per-op token logging for measurement.</dd></div>
+        </dl>
+      </div>
+    </article>
+
+    <article class="proj">
+      <a class="shot noimg" href="https://deepwiki.com/" target="_blank" rel="noopener">
+        <span class="fallback">DeepWiki (Cognition)<br>deepwiki.com · closed SaaS, no public repo</span>
+      </a>
+      <div class="body">
+        <div class="head"><span class="tagltr">E</span><h3>DeepWiki <small>(Cognition)</small></h3></div>
+        <div class="meta"><span class="role">Page-control file + grounding ladder</span><span class="lic">closed / SaaS</span></div>
+        <div class="repo">🔗 <a href="https://deepwiki.com/" target="_blank" rel="noopener">deepwiki.com</a> · MCP <code>mcp.deepwiki.com/mcp</code></div>
+        <blockquote class="tagq">Public, auth-free repo-context MCP — the distribution lever that made it the default.</blockquote>
+        <dl>
+          <div><dt>Design</dt><dd>A repo-checked <code>.devin/wiki.json</code> control file: <code>pages:[{title,purpose,parent,page_notes}]</code> is authoritative ("no more, no less"), plus free-text <code>repo_notes</code> and hard caps for predictable scope.</dd></div>
+          <div><dt>Highlights</dt><dd><ul class="hl">
+            <li>Cheap-outline-first ladder: <code>read_wiki_structure → read_wiki_contents → ask_question</code></li>
+            <li>Public auth-free MCP (3 tools); human and agent share one grounding source</li>
+            <li>Scheduled regeneration (hours–days lag)</li>
+          </ul></dd></div>
+          <div><dt>Architecture / Impl</dt><dd>Closed SaaS; web wiki + "Ask Devin" chat. No clone — sourced from the landscape report.</dd></div>
+          <div><dt>How tk borrows</dt><dd class="tk">An optional <code>.tk/graph.json</code> can steer which Code-Wiki pages/clusters the human face foregrounds and pin human notes (still no LLM). The structure → contents ladder already <em>is</em> tk's <code>tk_map → tk_read</code> shape.</dd></div>
+        </dl>
+      </div>
+    </article>
+
+    <article class="proj defer">
+      <a class="shot" href="https://github.com/davialabs/davia" target="_blank" rel="noopener">
+        <img src="https://opengraph.githubassets.com/tk4/davialabs/davia" alt="Davia repo preview" loading="lazy" onerror="this.closest('.shot').classList.add('noimg')">
+        <span class="fallback">github.com/davialabs/davia</span>
+      </a>
+      <div class="body">
+        <div class="head"><span class="tagltr">F</span><h3>Davia</h3><span class="deferbadge">deferred · editable round-trip</span></div>
+        <div class="meta"><span class="role">Editable Code Wiki (future direction)</span><span class="lic">MIT</span></div>
+        <div class="repo">🔗 <a href="https://github.com/davialabs/davia" target="_blank" rel="noopener">github.com/davialabs/davia</a></div>
+        <blockquote class="tagq">"Interactive, editable docs designed for coding agents."</blockquote>
+        <dl>
+          <div><dt>Design</dt><dd>Agent-writes / human-edits <strong>the same on-disk files</strong>; the GUI is a thin view over files the agent owns. One source of truth, no DB — the only project where the human can <em>edit</em> the output.</dd></div>
+          <div><dt>Highlights</dt><dd><ul class="hl">
+            <li><code>--agent</code> supports Cursor / Copilot / Windsurf / Claude Code / Augment</li>
+            <li>Notion-like Tiptap editor; MDX / Database / Excalidraw sidecar node-views</li>
+            <li><strong>Deterministic Mermaid → Excalidraw</strong> conversion via headless Puppeteer (not hallucinated)</li>
+            <li>Debounced write-back; GitHub integration with inline suggestions</li>
+          </ul></dd></div>
+          <div><dt>Architecture</dt><dd>LangChain agent + 5 file tools writing <code>.davia/assets/</code>; Next.js 16 + Tiptap; <code>/api/content</code> read/write. No parser graph — raw file tree.</dd></div>
+          <div><dt>Implementation</dt><dd>TS monorepo (pnpm / Turbo); LangChain; Tiptap + React 19 + @xyflow + Radix.</dd></div>
+          <div><dt>How tk borrows</dt><dd class="tk"><strong>Defer.</strong> tk's Code Wiki is read-only first (graph-derived, not authored); editable round-trip is the future direction. Reusable now: deterministic Mermaid → Excalidraw conversion.</dd></div>
+        </dl>
+      </div>
+    </article>
+
+    <article class="proj" style="grid-column:1 / -1">
+      <div class="body">
+        <div class="head"><span class="tagltr">G</span><h3>OpenDeepWiki &nbsp;＆&nbsp; Google Code Wiki</h3></div>
+        <div class="meta"><span class="role">Provenance + bidirectional deep-links</span><span class="lic">OpenDeepWiki: MIT</span><span class="lic">Google: closed / preview</span></div>
+        <div class="repo">🔗 <a href="https://github.com/AIDotNet/OpenDeepWiki" target="_blank" rel="noopener">github.com/AIDotNet/OpenDeepWiki</a> · Google Code Wiki is product-only (see landscape report)</div>
+        <blockquote class="tagq">"Turn Git repos, ZIP archives, and local directories into searchable knowledge bases — index once, reuse for docs, chat, embed, and MCP."</blockquote>
+        <div class="grid g2" style="margin-top:14px">
+          <div><dl>
+            <div><dt>Design</dt><dd>Index a repo once, then reuse the same structured content for SEO-friendly web docs, chat, an embed widget, and MCP — one source fuels documentation, conversational AI, and dev tools.</dd></div>
+            <div><dt>Highlights</dt><dd><ul class="hl">
+              <li><strong><code>SourceFiles</code> provenance</strong> on every generated <code>DocFile</code> (cite the source)</li>
+              <li>README / overview / catalog / multi-language translation / mindmap / graphify artifacts</li>
+              <li>Per-repo MCP endpoints <code>/api/mcp/{owner}/{repo}</code>; embed widget; <code>/mindmap</code> route</li>
+              <li>Google Code Wiki: deep-link prose ↔ exact code, sidebar + TOC, per-commit regen</li>
+            </ul></dd></div>
+          </dl></div>
+          <div><dl>
+            <div><dt>Architecture</dt><dd>ASP.NET Core .NET 10 backend (Microsoft.Agents.AI, LibGit2Sharp) + Next.js 16 frontend; EF Core SQLite/Postgres; 5 background workers; commit-diff incremental. <strong>Shells out to an external <code>graphify</code> CLI</strong> for the code graph.</dd></div>
+            <div><dt>Implementation</dt><dd>C#/.NET + TS/Next.js; stable prompt-cache keys. Source anchor: <code>OpenDeepWiki.Entities/Repositories/DocFile.cs</code>.</dd></div>
+            <div><dt>How tk borrows</dt><dd class="tk">Make <code>file:line</code> anchors first-class clickable targets (<code>vscode://file/…</code> in the IDE). <code>SourceFiles</code> provenance is the Code Wiki <strong>correctness contract</strong> — every block carries the anchors <code>tk_read</code> returns.</dd></div>
+          </dl></div>
+        </div>
+      </div>
+    </article>
+
+  </div>
+
+  <p class="src" style="margin-top:18px">Two contrast projects: <a href="https://github.com/OpenBMB/RepoAgent" target="_blank" rel="noopener">RepoAgent</a> (most precise incremental — two-snapshot referencer-set diff) and <a href="https://github.com/AsyncFuncAI/deepwiki-open" target="_blank" rel="noopener">deepwiki-open</a> (pure chunk-RAG + hallucinated mermaid — the anti-pattern). <code>/tmp/tk-research/</code> also holds <a href="https://github.com/colbymchenry/codegraph" target="_blank" rel="noopener">codegraph</a> · <a href="https://github.com/safishamsi/graphify" target="_blank" rel="noopener">graphify</a> · <a href="https://github.com/ozyyshr/RepoGraph" target="_blank" rel="noopener">RepoGraph</a> · <a href="https://github.com/CoatiSoftware/Sourcetrail" target="_blank" rel="noopener">Sourcetrail</a>. Full comparison: <code>codegraph-wiki-landscape-20260618.md</code>.</p>
+</div></section>
+
+<!-- UNDER THE HOOD -->
+<section id="uth"><div class="wrap">
+  <div class="shead"><span class="sn">Under the Hood</span><h2>Core principle: deterministic layer vs LLM-semantic layer</h2></div>
+  <p class="sdesc">Extracted from each clone's source. The most explanatory axis is the two-layer split: the <strong>deterministic layer</strong> (tree-sitter / AST → structural facts — same input, same output, fingerprintable) and the <strong>LLM-semantic layer</strong> (summaries, tags, layers, domain, tours). Mapped onto every project, it shows where each one bets its value — and where tk sits.</p>
+
+  <div class="legend2">
+    <span class="lg"><span class="sw det"></span>Deterministic layer (parser / AST — zero token cost, reproducible)</span>
+    <span class="lg"><span class="sw llm"></span>LLM-semantic layer (what a parser can't give — here fed by the host agent)</span>
+  </div>
+
+  <div class="spectrum">
+    <div class="sp det">
+      <div class="spt">① Pure deterministic graph</div>
+      <div class="spd">Graph 100% parser-derived; LLM, if present, only at query/naming time. <strong>Reference.</strong></div>
+      <div class="spp"><span>GitNexus</span></div>
+    </div>
+    <div class="sp mix" style="background:var(--blue-bg); border-color:var(--blue-border)">
+      <div class="spt">② Deterministic + LLM-enhanced &nbsp;←&nbsp; <span style="color:var(--blue-ink)">tk's choice</span></div>
+      <div class="spd">Parser builds the skeleton; LLM adds semantic/domain/business. <strong>tk grows two faces on this base — the LLM is the host agent's, not tk's.</strong></div>
+      <div class="spp"><span style="background:var(--blue);color:#fff;border-color:var(--blue)">tk ★</span><span>Understand-Anything</span><span>RepoDoc</span><span>CodeWiki</span><span>RepoAgent</span><span>OpenDeepWiki*</span></div>
+    </div>
+    <div class="sp llm">
+      <div class="spt">③ No parser graph — pure LLM / RAG</div>
+      <div class="spd">No real parser graph; chunk-RAG or agent writing files directly; mermaid mostly LLM-hallucinated.</div>
+      <div class="spp"><span>Davia</span><span>deepwiki-open</span></div>
+    </div>
+  </div>
+  <p class="src" style="margin:-8px 0 22px">* OpenDeepWiki doesn't build its own graph — it outsources to an external <code>graphify</code> CLI, so its deterministic layer is "borrowed."</p>
+
+  <div class="uthgrid">
+
+    <article class="uth anchor">
+      <div class="uth-head"><span class="ltr">★</span><h3>tk — one base, two faces</h3><span class="ptech">AST · TS/JS·Py·Java</span><span class="llmtag host">semantic: host-agent-fed</span></div>
+      <div class="layer det"><div class="ll">Deterministic layer (tk-built, shared base)</div><div class="txt">web-tree-sitter + git/commit + tests → generic <code>nodes(kind)</code> + <code>edges(kind)</code> in <code>node:sqlite</code> + FTS; PageRank; <code>content_hash</code> + <code>referencer_set_hash</code> incremental.</div></div>
+      <div class="layer host"><div class="ll">Semantic layer (host-agent-fed, shared base)</div><div class="txt"><strong>tk owns no LLM and pays no API tokens.</strong> The user's agent writes semantic/domain/business + Confluence/Jira links + Code-Wiki prose back in via <code>tk_annotate</code>, tagged <code>source=host_llm</code> with citations.</div></div>
+      <div class="uth-foot">
+        <div class="fr"><span class="fk">Human</span><span class="fv">Code Wiki (generated docs) + graph explorer (overview → lazy-expand → focus + tours)</span></div>
+        <div class="fr"><span class="fk">Agent</span><span class="fv">codegraph MCP (4 tools) — locate code precisely, <strong>cut runtime tokens</strong></span></div>
+        <div class="fr"><span class="fk">Base</span><span class="fv">both faces read one multi-source AST + semantic graph (one backend, two first-class products)</span></div>
+      </div>
+    </article>
+
+    <article class="uth">
+      <div class="uth-head"><span class="ltr">A</span><h3><a href="https://github.com/Lum1104/Understand-Anything" target="_blank" rel="noopener">Understand-Anything</a></h3><span class="ptech">web-tree-sitter · 15+ langs</span><span class="llmtag on">LLM: 6-agent</span></div>
+      <div class="layer det"><div class="ll">Deterministic layer</div><div class="txt">imports/exports/defs/call-sites/inheritance → <code>FileFingerprint</code>; <code>importMap</code> pre-resolved during scan; SHA-256 change detection. <span style="color:var(--faint)">core/src/fingerprint.ts</span></div></div>
+      <div class="layer llm"><div class="ll">LLM-semantic layer</div><div class="txt">6-agent pipeline: file-analyzer (summaries/tags) · architecture-analyzer (layers) · tour-builder · domain-analyzer · graph-reviewer. <span style="color:var(--faint)">agents/*.md</span></div></div>
+      <div class="uth-foot">
+        <div class="fr"><span class="fk">Graph</span><span class="fv">21 node / 35 edge types → <code>knowledge-graph.json</code> (Zod + alias normalization)</span></div>
+        <div class="fr"><span class="fk">Incr.</span><span class="fv">fingerprint diff → SKIP / PARTIAL / ARCHITECTURE / FULL</span></div>
+        <div class="fr"><span class="fk">Arch</span><span class="fv">React Flow + ELK + Louvain; Claude Code plugin skills; no MCP</span></div>
+      </div>
+    </article>
+
+    <article class="uth">
+      <div class="uth-head"><span class="ltr">B</span><h3><a href="https://github.com/abhigyanpatwari/GitNexus" target="_blank" rel="noopener">GitNexus</a></h3><span class="ptech">tree-sitter · 16 langs</span><span class="llmtag off">LLM: naming/optional</span></div>
+      <div class="layer det"><div class="ll">Deterministic layer (graph 100% parser-derived)</div><div class="txt">71.8K S-expr queries + worker pool; 28 node tables + a single <code>CodeRelation</code> edge table; LadybugDB (Cypher, native NAPI, HNSW). <span style="color:var(--faint)">tree-sitter-queries.ts · lbug-adapter.ts</span></div></div>
+      <div class="layer llm"><div class="ll">LLM-semantic layer (optional)</div><div class="txt">Graph itself zero-LLM; LLM only names communities + optional wiki prose. Users write Cypher — no LLM query planning. <span style="color:var(--faint)">cluster-enricher.ts</span></div></div>
+      <div class="uth-foot">
+        <div class="fr"><span class="fk">Graph</span><span class="fv">per-element node tables + one typed edge table (WASM-portable answer to ADR-0015)</span></div>
+        <div class="fr"><span class="fk">Incr.</span><span class="fv">git staleness (lastCommit vs HEAD) → hint; snapshot rebuilds fully</span></div>
+        <div class="fr"><span class="fk">Arch</span><span class="fv">one KnowledgeGraph → LocalBackend → MCP-stdio / HTTP bridge / CLI; Sigma.js web via HTTP</span></div>
+      </div>
+    </article>
+
+    <article class="uth">
+      <div class="uth-head"><span class="ltr">·</span><h3><a href="https://github.com/OpenBMB/RepoAgent" target="_blank" rel="noopener">RepoAgent</a></h3><span class="ptech">ast + Jedi · Python</span><span class="llmtag on">LLM: per-object</span></div>
+      <div class="layer det"><div class="ll">Deterministic layer (most precise invalidation)</div><div class="txt"><code>ast.parse</code> + <strong>Jedi reference graph</strong>; DocItem meta-info tree + per-node <code>who_reference_me</code> → <code>project_hierarchy.json</code>. <span style="color:var(--faint)">doc_meta_info.py</span></div></div>
+      <div class="layer llm"><div class="ll">LLM-semantic layer</div><div class="txt">ChatEngine per-object docs (gpt-4o-mini), multi-threaded. <span style="color:var(--faint)">chat_engine.py</span></div></div>
+      <div class="uth-foot">
+        <div class="fr"><span class="fk">Incr.</span><span class="fv">rebuild + align-by-path → ① <code>code_content</code> equality + ② <code>who_reference_me</code> <strong>set-difference</strong></span></div>
+        <div class="fr"><span class="fk">Trick</span><span class="fv"><strong>"fake file"</strong>: swap dirty file, write HEAD blob, parse at commit-state, restore</span></div>
+        <div class="fr"><span class="fk">Arch</span><span class="fv">CLI + git pre-commit hook (no MCP); Gradio RAG chat</span></div>
+      </div>
+    </article>
+
+    <article class="uth">
+      <div class="uth-head"><span class="ltr">D</span><h3><a href="https://github.com/SYSUSELab/RepoDoc" target="_blank" rel="noopener">RepoDoc</a></h3><span class="ptech">multi-lang AST · NetworkX</span><span class="llmtag on">LLM: docs+diagrams</span></div>
+      <div class="layer det"><div class="ll">Deterministic layer (heterogeneous graph)</div><div class="txt">3 node types <code>CodeNode</code>/<code>DocNode(version)</code>/<code>ConceptNode(confidence)</code> + 4 weighted edges, NetworkX ~200 LOC → JSON. <span style="color:var(--faint)">graph/graph.py</span></div></div>
+      <div class="layer llm"><div class="ll">LLM-semantic layer (graph-derived + validated)</div><div class="txt">DocWriterSkill queries graph → overviews + <strong>validated mermaid → deterministic fallback</strong>; token_usage logged. <span style="color:var(--faint)">skills/doc_writer/prompts.py</span></div></div>
+      <div class="uth-foot">
+        <div class="fr"><span class="fk">Incr.</span><span class="fv">AST-diff <code>ChangeType</code>, drop docstring+comment-only, BFS along calls+semantic_impact, topological regen</span></div>
+        <div class="fr"><span class="fk">Arch</span><span class="fv">CLI + internal graph_store tool (no MCP); validate_and_fix_links</span></div>
+      </div>
+    </article>
+
+    <article class="uth">
+      <div class="uth-head"><span class="ltr">C</span><h3><a href="https://github.com/FSoft-AI4Code/CodeWiki" target="_blank" rel="noopener">CodeWiki</a></h3><span class="ptech">tree-sitter 8 + Py AST</span><span class="llmtag on">LLM: subscription</span></div>
+      <div class="layer det"><div class="ll">Deterministic layer</div><div class="txt">8-language tree-sitter + native Python AST; <code>Node</code> + single untyped <code>depends_on</code>; leaf-first topological sort. <span style="color:var(--faint)">dependency_analyzer/ast_parser.py</span></div></div>
+      <div class="layer llm"><div class="ll">LLM-semantic layer</div><div class="txt">Repo/module prose + mermaid; <strong>subscription mode via claude/codex CLI (caw, OAuth, no API key)</strong> — the model tk reuses as host-agent-fed. <span style="color:var(--faint)">backend.py · caw_backend.py</span></div></div>
+      <div class="uth-foot">
+        <div class="fr"><span class="fk">Incr.</span><span class="fv">substring-path / module-tree-ancestor propagation — <strong>coarse / unsound</strong> (anti-reference)</span></div>
+        <div class="fr"><span class="fk">Arch</span><span class="fv">self-contained <code>index.html</code> via --github-pages; FastAPI viewer; 3 MCP tools</span></div>
+      </div>
+    </article>
+
+    <article class="uth">
+      <div class="uth-head"><span class="ltr">G</span><h3><a href="https://github.com/AIDotNet/OpenDeepWiki" target="_blank" rel="noopener">OpenDeepWiki</a></h3><span class="ptech">outsources graphify</span><span class="llmtag on">LLM: heavy</span></div>
+      <div class="layer det"><div class="ll">Deterministic layer (outsourced)</div><div class="txt"><strong>Builds no graph of its own</strong> — shells out to external <code>graphify</code> CLI; RepositoryAnalyzer does clone/diff only. <span style="color:var(--faint)">GraphifyCliRunner.cs</span></div></div>
+      <div class="layer llm"><div class="ll">LLM-semantic layer</div><div class="txt">README/overview/catalog/translation/mindmap; <strong>stable prompt-cache keys</strong>. <span style="color:var(--faint)">WikiGenerator.cs</span></div></div>
+      <div class="uth-foot">
+        <div class="fr"><span class="fk">Data</span><span class="fv">every <code>DocFile</code> carries <strong><code>SourceFiles</code> provenance</strong> — tk borrows this</span></div>
+        <div class="fr"><span class="fk">Incr.</span><span class="fv">commit-diff driven (LastCommitId → diff → incremental-updater prompt)</span></div>
+        <div class="fr"><span class="fk">Arch</span><span class="fv">1 MCP server, per-repo endpoints; Next.js wiki + chat + embed + /mindmap; 5 workers</span></div>
+      </div>
+    </article>
+
+    <article class="uth">
+      <div class="uth-head"><span class="ltr">F</span><h3><a href="https://github.com/davialabs/davia" target="_blank" rel="noopener">Davia</a></h3><span class="ptech">no graph / no AST</span><span class="llmtag on">LLM: agent writes files</span></div>
+      <div class="layer llm none"><div class="ll">Deterministic layer</div><div class="txt"><strong>No parser graph</strong> — raw file-tree walk of <code>.davia/assets/*.html</code>. <span style="color:var(--faint)">lib/tree/server.ts</span></div></div>
+      <div class="layer llm"><div class="ll">LLM-semantic layer (writes files)</div><div class="txt">LangChain agent <strong>writes docs directly</strong>; mermaid → <strong>deterministic</strong> Puppeteer conversion to Excalidraw. <span style="color:var(--faint)">agent/tools.ts</span></div></div>
+      <div class="uth-foot">
+        <div class="fr"><span class="fk">Data</span><span class="fv">same on-disk files (HTML/MDX/JSON/Excalidraw), no DB</span></div>
+        <div class="fr"><span class="fk">Incr.</span><span class="fv">re-reads everything; editor 300ms debounced write-back</span></div>
+        <div class="fr"><span class="fk">Arch</span><span class="fv">Tiptap Notion editor as a thin view over agent-owned files</span></div>
+      </div>
+    </article>
+
+    <article class="uth">
+      <div class="uth-head"><span class="ltr">·</span><h3><a href="https://github.com/AsyncFuncAI/deepwiki-open" target="_blank" rel="noopener">deepwiki-open</a></h3><span class="ptech">no graph · chunk-RAG</span><span class="llmtag on">LLM: hallucinated mermaid</span></div>
+      <div class="layer llm none"><div class="ll">Deterministic layer</div><div class="txt"><strong>No AST / no graph</strong> — pure chunk-RAG: text-splitter (chunk 350) → embeddings → FAISS. <span style="color:var(--faint)">api/data_pipeline.py</span></div></div>
+      <div class="layer llm"><div class="ll">LLM-semantic layer (anti-pattern)</div><div class="txt">RAG top-20 chunks → wiki + <strong>LLM-authored (hallucinated) mermaid</strong>; Deep-Research multi-turn. <span style="color:var(--faint)">api/prompts.py</span></div></div>
+      <div class="uth-foot">
+        <div class="fr"><span class="fk">Data</span><span class="fv">one FAISS index per repo + wiki cache JSON</span></div>
+        <div class="fr"><span class="fk">Incr.</span><span class="fv"><strong>none</strong> — full re-clone + re-chunk; manual cache delete</span></div>
+        <div class="fr"><span class="fk">Arch</span><span class="fv">Next.js + FastAPI WebSocket; embedder OpenAI/Google/Ollama/Bedrock</span></div>
+      </div>
+    </article>
+
+  </div>
+
+  <div class="callout blue" style="margin-top:20px">
+    <b>Synthesis → tk's positioning.</b> ① pure-deterministic (GitNexus) is precise but lacks human-readable semantics; ③ pure-LLM/RAG (deepwiki-open) is rich but hallucinated and token-hungry. tk takes <strong>②: a deterministic AST + git + test skeleton, enriched with semantic/domain/business</strong> — growing two faces on one base: a <strong>human face</strong> (Code Wiki + explorer) and an <strong>agent face</strong> (codegraph MCP).<br><br><strong>How the token-killer identity holds:</strong> tk never runs an LLM or holds an API key. The <strong>user's own AI agent</strong> does the semantic analysis and Code-Wiki prose and writes it back (<code>source=host_llm</code>, like CodeWiki's subscription mode). The agent face then only <strong>cuts</strong> runtime tokens. Deterministic pieces to borrow: RepoAgent's <code>who_reference_me</code> set-diff · RepoDoc's <code>ChangeType</code> filter + validated-mermaid/fallback · OpenDeepWiki's <code>SourceFiles</code> provenance · GitNexus's single-edge-table schema; the human UX from Understand-Anything + the Code-Wiki blueprint from CodeWiki.
+  </div>
+</div></section>
+
+<!-- MEASURE -->
+<section id="measure"><div class="wrap">
+  <div class="shead"><span class="sn">§12</span><h2>Measurement harness: measure before the feature</h2></div>
+  <p class="sdesc">The core question: how do we <strong>honestly</strong> evaluate the agent face's search/read token saving — in tk's "measured ≠ estimate" ledger model — <em>before</em> building the graph (ADR 0016)? (The human face is measured by comprehension, not tokens.)</p>
+
+  <div class="tablecard" style="margin-bottom:18px">
+    <table>
+      <thead><tr><th style="width:130px">Win</th><th>What it is</th><th>Within-call measurable?</th><th>Class</th></tr></thead>
+      <tbody>
+        <tr><td><strong>W1</strong> output projection</td><td>the graph's own response collapses container bodies into signatures</td><td><span class="b yes">yes</span></td><td><code>measured</code>, like an existing handler</td></tr>
+        <tr><td><strong>W2</strong> loop avoidance</td><td>the agent skipped 5×grep + 3×read because one <code>tk_*</code> answered</td><td><span class="b later">no (counterfactual)</span></td><td>online <code>opportunity</code> / offline A/B only</td></tr>
+      </tbody>
+    </table>
+  </div>
+  <div class="callout blue" style="margin-bottom:24px">Headline benchmark figures (e.g. "47% fewer tokens") are <strong>overwhelmingly W2</strong>. So the harness's center of gravity must be <strong>trajectory-level A/B</strong>, not within-call compression ratio. tk's <code>saved_tokens = raw − delivered</code> (a within-call diff) <strong>does not transfer</strong> to a graph query — which is why ADR 0016 forbids the graph writing <code>saved_tokens</code>.</div>
+
+  <div class="twocol" style="margin-bottom:24px">
+    <div class="trackcard t1">
+      <h3>Track 1 — offline A/B eval</h3>
+      <div class="tag">the measured proof · trajectory level</div>
+      <ul>
+        <li>Fixed task set (11 categories), N=5 runs per arm per task, take the median (variance up to 30×).</li>
+        <li>BASELINE = graph MCP OFF; TREATMENT = graph MCP ON; both keep the host's built-in read/grep.</li>
+        <li>Primary metric = <strong><code>uncached_input_tokens</code> delta</strong>, not total-incl-cached (cache-read &gt;97% of usage).</li>
+        <li>Co-measure quality: localization <strong>F1</strong> · AST validity · <code>FAIL_TO_PASS ∧ PASS_TO_PASS</code>.</li>
+        <li>fallback-replay → <strong><code>omission_bug_rate</code></strong> as the safety counterweight.</li>
+      </ul>
+    </div>
+    <div class="trackcard t2">
+      <h3>Track 2 — online opportunity accounting</h3>
+      <div class="tag">live facts · estimate_kind=opportunity · never summed</div>
+      <ul>
+        <li>Per query, record <strong>mechanical facts</strong>: <code>nodes_returned</code> · <code>files_returned</code> · <code>tokens_returned</code>.</li>
+        <li><code>tool_calls_collapsed = 1</code> (the single call standing in for the loop).</li>
+        <li><code>reads_avoided_in_session</code> — cross-referenced with the trajectory analyser.</li>
+        <li>Only savings % shown is the Track-1 reference rate, labelled <code>measured-in-eval, not on your machine</code>.</li>
+        <li>Independently validated by <strong>Serena</strong>, which refuses token benchmarking and reports call counts / payload sizes instead.</li>
+      </ul>
+    </div>
+  </div>
+
+  <h3 style="font-weight:600; font-size:20px; letter-spacing:-0.02em; margin:8px 0 12px">Appendix A — how the surveyed projects measure token saving</h3>
+  <p class="sdesc" style="margin-bottom:16px">Four measurement <strong>philosophies</strong>. Only A (trajectory A/B delta) measures W2; B/C answer a different question; D is unsubstantiated.</p>
+  <div class="grid g2" style="align-items:start">
+    <div class="bucket a">
+      <div class="bh">Bucket A — trajectory A/B delta (the imitable template)</div>
+      <div class="bb">
+        <div class="row"><div class="pn"><a href="https://github.com/colbymchenry/codegraph" target="_blank" rel="noopener">codegraph</a> <span class="pill hi">high</span></div><div class="note">Gold standard; <code>claude -p</code> + <code>--strict-mcp-config</code>, 7 repos, 4 runs/arm, median. tk fixes its total-incl-cached counting.</div></div>
+        <div class="row"><div class="pn"><a href="https://github.com/microsoft/fastcontext" target="_blank" rel="noopener">FastContext</a> (MS) <span class="pill hi">high</span></div><div class="note">Most rigorous: main-agent vs explorer token split; localization F1. <a href="https://arxiv.org/abs/2606.14066" target="_blank" rel="noopener">arXiv 2606.14066</a></div></div>
+        <div class="row"><div class="pn">SWE-ContextBench <span class="pill hi">high</span></div><div class="note">Oracle-ceiling; cache-read &gt;97%, summary 217 vs full 25,634 tok. <a href="https://arxiv.org/abs/2602.08316" target="_blank" rel="noopener">arXiv 2602.08316</a></div></div>
+        <div class="row"><div class="pn">SWE-Pruner <span class="pill med">med-high</span></div><div class="note">Action-category tokenization; AST validity 87.3% vs 0.29%. <a href="https://arxiv.org/abs/2601.16746" target="_blank" rel="noopener">arXiv 2601.16746</a></div></div>
+        <div class="row"><div class="pn"><a href="https://github.com/zilliztech/claude-context" target="_blank" rel="noopener">claude-context</a> <span class="pill med">med</span></div><div class="note">30 SWE-Bench-Verified; 73,373 → 44,449 tok (~39%); method unstated.</div></div>
+      </div>
+    </div>
+    <div class="grid" style="gap:16px; align-content:start">
+      <div class="bucket b">
+        <div class="bh">Bucket B — budget cap (no delta claim)</div>
+        <div class="bb">
+          <div class="row"><div class="pn"><a href="https://aider.chat/docs/repomap.html" target="_blank" rel="noopener">aider repo-map</a></div><div class="note">Binary-search tags to fit <code>--map-tokens</code>; "counts are estimates", "never enforces limits".</div></div>
+          <div class="row"><div class="pn"><a href="https://github.com/probelabs/probe" target="_blank" rel="noopener">Probe</a></div><div class="note"><code>--max-tokens</code> cap; tokenizer undocumented; no measured delta.</div></div>
+        </div>
+      </div>
+      <div class="bucket c">
+        <div class="bh">Bucket C — structural / on-demand (unmeasured)</div>
+        <div class="bb">
+          <div class="row"><div class="pn"><a href="https://github.com/flupkede/codesearch" target="_blank" rel="noopener">codesearch</a></div><div class="note">metadata by default (<code>compact=true</code>), full code via <code>get_chunk</code>. Architectural saving; no measured %.</div></div>
+          <div class="row"><div class="pn"><a href="https://github.com/oraios/serena" target="_blank" rel="noopener">Serena</a> <span class="pill hi">baseline</span></div><div class="note">LSP-precision standard; <em>refuses</em> token benchmarking — Track 2's posture.</div></div>
+        </div>
+      </div>
+      <div class="bucket d">
+        <div class="bh">Bucket D — unsubstantiated headline (avoid)</div>
+        <div class="bb">
+          <div class="row"><div class="pn"><a href="https://github.com/abhigyanpatwari/GitNexus" target="_blank" rel="noopener">GitNexus</a> · <a href="https://repomix.com/guide/code-compress" target="_blank" rel="noopener">Repomix</a> · cocoindex <span class="pill lo">avoid</span></div><div class="note">"74%/88%", "~70%" with no baseline / dataset / method.</div></div>
+        </div>
+      </div>
+    </div>
+  </div>
+  <p class="src" style="margin-top:16px">Rigor ranking: <code>FastContext ≈ SWE-ContextBench ≈ codegraph (high) &gt; SWE-Pruner &gt; claude-context &gt; aider (cap) &gt; Probe / codesearch &gt; Repomix / cocoindex / GitNexus (unsubstantiated)</code>. None report significance tests — tk reporting <strong>medians + spread</strong> already exceeds field norm.</p>
+</div></section>
+
+<!-- PLAN -->
+<section id="plan"><div class="wrap">
+  <div class="shead"><span class="sn">§7</span><h2>Build order — capability slices</h2></div>
+  <p class="sdesc">This is product build order, not release phases. Each slice ships complete + optimized and is independently measurable. <span style="color:var(--green-ink)">Green = deterministic base / agent face</span>; <span style="color:var(--blue-ink)">blue = human face</span>.</p>
+
+  <div class="plan">
+    <div class="sl"><div class="no">−1</div><div><div class="t">Measurement harness first (ADR 0016)</div><div class="d">A/B runner (graph MCP on/off, headless), trajectory analyser, fallback-replay → <code>omission_bug_rate</code>.</div><div class="ac"><b>accept</b> &nbsp;median uncached-token delta + quality F1 on an 11-task set before any feature ships.</div></div></div>
+    <div class="sl base"><div class="no">0</div><div><div class="t">Node gate + doctor/index</div><div class="d">Node ≥22.13 gate + no-warning child re-entry; <code>tk graph doctor</code> / <code>index</code>.</div><div class="ac"><b>accept</b> &nbsp;core tk startup unchanged; doctor reports Node/MCP/host/index path.</div></div></div>
+    <div class="sl base"><div class="no">1</div><div><div class="t">Store + generic schema + migrations</div><div class="d"><code>files</code> / <code>nodes(kind,source,confidence,content_hash,metadata_json)</code> / <code>edges</code> / FTS / measurements.</div><div class="ac"><b>accept</b> &nbsp;migration test; provenance columns present from slice 1.</div></div></div>
+    <div class="sl base"><div class="no">2</div><div><div class="t">Code AST (TS/JS) + <code>tk graph map</code></div><div class="d">tree-sitter extraction, stable node IDs, ranking.</div><div class="ac"><b>accept</b> &nbsp;every returned anchor resolves; map answers orientation queries.</div></div></div>
+    <div class="sl base"><div class="no">3</div><div><div class="t">Symbol-level incremental substrate</div><div class="d"><code>content_hash</code> + <code>referencer_set_hash</code> + git-diff→changed-symbols + AST <code>ChangeType</code> filter + downstream BFS.</div><div class="ac"><b>accept</b> &nbsp;stale-symbol refresh test; comment-only edit forces no downstream recompute.</div></div></div>
+    <div class="sl base"><div class="no">4</div><div><div class="t">Git / commit source</div><div class="d"><code>commit</code>/<code>author</code> nodes; <code>changed_by</code>/<code>co_changes_with</code>/<code>authored_by</code>; commit→Jira-key regex → <code>traces_to</code>.</div><div class="ac"><b>accept</b> &nbsp;co-change + CODEOWNERS feed T1 impact facts.</div></div></div>
+    <div class="sl base"><div class="no">5</div><div><div class="t">Python + Java extraction · tests source</div><div class="d">Per-language grammars; test-file AST → <code>test</code> nodes + <code>tests</code>/<code>covers</code> edges (+ optional coverage).</div><div class="ac"><b>accept</b> &nbsp;per-language fixtures; test→symbol links resolve.</div></div></div>
+    <div class="sl base"><div class="no">6</div><div><div class="t"><code>tk graph read</code> + <code>tk graph search</code></div><div class="d"><code>edit_window</code> w/ hash + anchors; text/symbol/callers modes + T1 impact, confidence-labelled.</div><div class="ac"><b>accept</b> &nbsp;non-exact rejected under <code>purpose=edit</code>; low-confidence hits hand back.</div></div></div>
+    <div class="sl base"><div class="no">7</div><div><div class="t">MCP stdio server — 4 tools + verify</div><div class="d"><code>tk_map</code>/<code>tk_read</code>/<code>tk_search</code>/<code>tk_verify</code>; diff/test-failure projection.</div><div class="ac"><b>accept</b> &nbsp;schema snapshot proves exactly four resident tools; verify never claims correctness.</div></div></div>
+    <div class="sl"><div class="no">8</div><div><div class="t"><code>tk_annotate</code> ingest API + provenance/staleness</div><div class="d">The host_llm seam: validated writeback (cite-or-reject, anchor-or-reject, stale-on-hash-change, manual-block-safe).</div><div class="ac"><b>accept</b> &nbsp;uncited/dangling rejected; annotation goes stale when target hash changes.</div></div></div>
+    <div class="sl"><div class="no">9</div><div><div class="t">Confluence / Jira</div><div class="d">Agent-fed via <code>tk_annotate</code> first; direct REST connector + token opt-in later.</div><div class="ac"><b>accept</b> &nbsp;story_link/doc_link carry source + citations; connector gated behind config.</div></div></div>
+    <div class="sl human"><div class="no">10</div><div><div class="t">Human face — graph explorer</div><div class="d">serve seam (JSON = <code>tk_map</code>) → static tree + clickable <code>file:line</code> → graph view (overview → lazy-expand → focus) → detail panels.</div><div class="ac"><b>accept</b> &nbsp;report navigation facts (nodes shown vs total, expand depth); no token-saving claim.</div></div></div>
+    <div class="sl human"><div class="no">11</div><div><div class="t">Human face — Code Wiki</div><div class="d">graph-derived page structure + leaf-first ordering; host-agent prose via <code>tk_annotate</code> (<code>wiki_block</code>); validated mermaid + fallback; <code>SourceFiles</code> anchors; <code>tk graph export --html</code>.</div><div class="ac"><b>accept</b> &nbsp;every generated block carries source anchors + freshness + <code>source=host_llm|graph</code>; manual blocks preserved; diagrams validated.</div></div></div>
+    <div class="sl base"><div class="no">12</div><div><div class="t"><code>tk install --graph</code> + guidance + measurement fields</div><div class="d">Host wiring; report uncached/anchor/avoided-read facts (never <code>saved_tokens</code>).</div><div class="ac"><b>accept</b> &nbsp;plain <code>tk install</code> does not enable graph.</div></div></div>
+  </div>
+</div></section>
+
+<!-- OPEN DECISIONS -->
+<section id="decisions"><div class="wrap">
+  <div class="shead"><span class="sn">§8</span><h2>Open decisions — needs your call</h2></div>
+  <p class="sdesc">The uncertain areas, made explicit. Each has a recommended default so the plan can proceed; flag any you want to change.</p>
+  <div class="qa">
+    <div class="q"><div class="qh"><span class="id">D1</span>Confluence / Jira ingestion mode</div>
+      <div class="opt">Direct REST connector (tk holds a token) vs host-agent-fed (the agent reads them, writes via <code>tk_annotate</code>) vs both.</div>
+      <div class="rec">Rec: <strong>agent-fed first</strong> — keeps tk LLM-free and credential-free; add the connector as opt-in once the seam is proven.</div></div>
+    <div class="q"><div class="qh"><span class="id">D2</span>Code Wiki prose — who writes it</div>
+      <div class="opt">Host agent via <code>tk_annotate</code> (subscription-mode, tk pays nothing) vs an optional tk-side connector to an API key.</div>
+      <div class="rec">Rec: <strong>host-agent-fed only</strong> — it is the whole reason tk stays a token-killer; never hold an API key.</div></div>
+    <div class="q"><div class="qh"><span class="id">D3</span>Human-surface renderer engine</div>
+      <div class="opt">Vendored graph lib (Sigma/Cytoscape) vs self-built SVG/Canvas vs text/tree-first.</div>
+      <div class="rec">Rec: <strong>ship text/tree + Code Wiki first</strong> (useful immediately, no engine), add a graph engine behind the same data seam later.</div></div>
+    <div class="q"><div class="qh"><span class="id">D4</span>Store: <code>node:sqlite</code> vs graph-DB</div>
+      <div class="opt">The graph is now richer (commit/test/doc/story kinds). Does <code>node:sqlite</code> + FTS still suffice, or move to an embedded graph-DB?</div>
+      <div class="rec">Rec: <strong>node:sqlite holds</strong> at repo scale; recursive CTEs cover 1-hop/BFS. Revisit only if traversal latency fails a measured budget.</div></div>
+    <div class="q"><div class="qh"><span class="id">D5</span>Test → code linking</div>
+      <div class="opt">Import/call resolution (deterministic, partial) vs coverage-report ingest (precise, needs a run) vs agent-inferred intent.</div>
+      <div class="rec">Rec: <strong>deterministic import/call first</strong>, coverage optional, agent only for "what this test means".</div></div>
+    <div class="q"><div class="qh"><span class="id">D6</span>Where annotations live</div>
+      <div class="opt">Same <code>graph.db</code> with a <code>source</code> tag, vs a sidecar <code>.tk/graph.json</code>.</div>
+      <div class="rec">Rec: <strong>graph.db for agent-fed annotations</strong> (one query core); reserve <code>.tk/graph.json</code> for human-authored pins / page steering.</div></div>
+    <div class="q"><div class="qh"><span class="id">D7</span>How the host agent is triggered to enrich</div>
+      <div class="opt">Purely manual vs a guided <code>tk graph enrich</code> that tells the agent exactly what to annotate / which Code-Wiki pages to write.</div>
+      <div class="rec">Rec: provide <strong>guidance + a <code>tk graph enrich</code> prompt</strong> (lists un-annotated / stale high-PageRank nodes &amp; missing pages) so enrichment is repeatable.</div></div>
+    <div class="q"><div class="qh"><span class="id">D8</span>Measurement host runner</div>
+      <div class="opt">Copilot CLI headless (the stated target) vs Claude Code headless (cleaner <code>usage</code>) for Track-1 A/B.</div>
+      <div class="rec">Rec: <strong>Copilot CLI for fidelity</strong>; add Claude Code as a second arm if its usage stream is materially cleaner.</div></div>
+  </div>
+</div></section>
+
+<!-- FOOTER -->
+<footer><div class="wrap">
+  <div class="shead" style="margin-bottom:4px"><span class="sn" id="refs">§13</span><h2 style="font-size:24px">References &amp; ADRs</h2></div>
+  <p style="margin:4px 0 10px; color:var(--ink-2)">Design doc <code>docs/codegraph/code-graph-design-20260618.md</code>; ADRs are the source of truth.</p>
+  <div class="reflist">
+    <a href="../adr/0013-code-graph-surface-scope.md">ADR 0013 · code-graph surface scope</a>
+    <a href="../adr/0014-tk-becomes-mcp-server.md">ADR 0014 · tk becomes MCP server</a>
+    <a href="../adr/0015-node-sqlite-feature-gate.md">ADR 0015 · node:sqlite feature gate</a>
+    <a href="../adr/0016-measurement-before-feature.md">ADR 0016 · measurement before feature</a>
+    <a href="./token-optimization-landscape-20260618.md">landscape companion</a>
+    <a href="./low-token-agent-research-compendium-20260618.md">research compendium</a>
+    <a href="./code-graph-research-20260618.md">research companion (raw survey)</a>
+    <a href="./codegraph-wiki-landscape-20260618.md">code-graph + Wiki landscape (10 projects)</a>
+    <a href="https://aider.chat/docs/repomap.html" target="_blank" rel="noopener">Aider repo map</a>
+    <a href="https://github.com/oraios/serena" target="_blank" rel="noopener">Serena</a>
+    <a href="https://github.com/pdavis68/RepoMapper" target="_blank" rel="noopener">RepoMapper</a>
+  </div>
+  <p class="src">Visualized design · Geist (Vercel) design system · borrowed-project links taken from each clone's <code>git remote origin</code> under <code>/tmp/tk-research/</code> · preview images are live GitHub social cards (degrade to text offline).</p>
+</div></footer>
+
+</body>
+</html>
