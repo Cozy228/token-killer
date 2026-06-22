@@ -80,9 +80,36 @@ The Required, **read-only**, bounded understanding face of the [codemap](#surfac
 human-specific navigation and read models over all four [layers](#codemap-layers) — Repository
 Overview / Symbol Inspector / Flow Inspector / Domain Inspector / Evidence Drawer — but owns no
 separate truth, indexing, arbitration, authored-content lifecycle, arbitrary graph exploration, or
-collaboration workflow. Deep drill-down is on-demand; the capability boundary is closed.
+collaboration workflow. Deep drill-down is on-demand; the capability boundary is closed. It is **one
+Web App over one Core** ([Repository query service](#surfaces)) delivered through two
+[data sources](#surfaces) — a loopback-only live server and a single-file snapshot. Editing is
+deferred; the human edits the `.tk/` files in their own editor.
 _Avoid_: wiki, editor, collaboration surface (those are [outside current product
-scope](#codemap-layers)); generic graph debugger; second indexing/arbitration pipeline.
+scope](#codemap-layers)); generic graph debugger; second indexing/arbitration pipeline; single-file
+HTML as the only form; a second ranking/graph implementation.
+
+**Repository query service**:
+The single Core both codeguide data sources call — search, node drill-down, callers / impact / flow,
+lazy local-graph load. The live server is a **thin HTTP adapter** over it; it carries no ranking or
+graph logic of its own.
+_Avoid_: backend (overloaded), API server, second pipeline.
+
+**Live data source / Snapshot data source**:
+The two adapters of the one codeguide Web App. **Live** = `tk codeguide serve`: foreground,
+on-demand, binds **loopback only** (`127.0.0.1`/`::1`, never `0.0.0.0`/LAN), stops on close (not a
+daemon). **Snapshot** = `tk codeguide export`: the same app + a `CodeguideSnapshot` (carrying
+`commit` / `generation` / scope / omitted-count / completeness) inlined into one portable HTML, with
+no dynamic queries it did not capture. Same components, only the data source swaps.
+_Avoid_: two implementations, second formatter, LAN server, daemon.
+
+**Graph projection**:
+The [Repository query service](#surfaces)'s graph output for the codeguide viewer — nodes, edges,
+containers, aggregated edges, **omissions, completeness, and expansion handles**. The frontend never
+recomputes graph semantics from it: `ELK.js` lays out geometry only, `React Flow` renders and handles
+interaction only. Its omissions/completeness/expansion-handles carry the same honesty contract as
+[Presentation truncation](#freshness). The viewer ships **no** graphology / sigma / mermaid — the Core
+is the single graph authority.
+_Avoid_: client-side graph model, force-directed whole-repo graph, mermaid, second ranking.
 
 ## codemap layers
 
@@ -160,6 +187,50 @@ selects a profile implicitly by choosing a tool + narrow params, not by naming i
 is a hard ceiling, not a fill quota; at the cap it returns omitted counts + expansion handles, never
 a silent truncation.
 _Avoid_: dump, fill-to-budget, profile-as-tool-name.
+
+## Freshness
+
+**Reconciling**:
+The index state after a large HEAD movement: the affected canonical facts are marked pending and
+their recompute is latency-budget-scheduled, while unaffected facts continue to serve. The query is
+never globally blocked to re-parse, and affected-dependent results are graded — never served as
+confident.
+_Avoid_: frozen (that is a different state), rebuilding, blocked.
+
+**Frozen**:
+Reserved exclusively for a sync **failure** — the index could not reconcile. It is **not** used for
+ordinary staleness or for a big-jump in progress (that is [Reconciling](#freshness)).
+_Avoid_: stale, reconciling, out-of-date.
+
+**Result freshness**:
+A **per-result, per-layer** freshness + completeness signal, not a single global `stale` boolean. The
+same answer may be complete-and-fresh on one layer and `partial` / `unknown` on another; a query that
+depends on edges still being rebuilt returns `SYNC_REQUIRED` rather than a confident wrong answer.
+_Avoid_: stale flag, global freshness, one-bit staleness.
+
+**Published generation**:
+The one immutable snapshot a query reads, inside a short-lived read transaction. A generation's
+**identity** is the tuple `(repository revision, worktree digest, schema version, analysis policy
+version)` — not a bare integer. A new generation is built as unpublished staging and becomes visible
+only through an atomic publish transaction.
+_Avoid_: integer generation (that is just the pointer), index version, snapshot id.
+
+**Reconciliation lease**:
+The database-backed lease that coordinates reconciliation across independent adapter processes (MCP,
+codeguide serve) — **not** WAL, **not** a daemon. Only the lease owner runs analysis + staging writes;
+other processes serve safe results, wait within the latency budget, or return
+[Reconciling](#freshness). The Core is loaded in each process as an in-process library; the on-disk
+SQLite is the only shared state.
+_Avoid_: lock, daemon, shared Core process, WAL-as-coordinator.
+
+**Presentation truncation**:
+A result where every relevant edge **participated in computation** but only a subset was **displayed**
+under token budget — reported as `COMPLETE` + `presentationTruncated` (with omitted count + expansion
+handle), orthogonal to `completeness`. It is **not** incompleteness: only a budget-aborted *traversal*
+is `partial` / `unknown`. Confidence may down-weight an edge's rank but never removes a canonical edge
+from computation (`confidence < threshold → remove` is forbidden, except an explicit user
+evidence-policy that discloses what it excluded).
+_Avoid_: truncation = incomplete, confidence filter, silent drop.
 
 ## Delivery
 

@@ -213,11 +213,11 @@ Canonical schema
 2. ~~**Agent Surface 工具映射**：6 profiles ↔ VS Code LM Tool API 贡献点的精确形态、small-repo 降工具策略、`TK_MCP_TOOLS` 消融臂。~~ ✅ **组织原则闭合（D17 / [ADR 0029](../adr/0029-agent-tool-surface-operation-contracts-queryplan.md)）**：表面 = 4 操作合同工具(tk_explore/search/node/callers，tiny-repo 降 3，TK_MCP_TOOLS 消融臂保留 = F.3/F.7)；6 profile 降内部 QueryPlan preset(selection/traversal/projection 三维)；Domain/Evidence 经工具 param 暴露、harness 证明才加新工具。（剩余实现细节：LM Tool API package.json 贡献点的逐字 JSON 形态 = 实现期照 F.6 真实 schema 落地，非 Open。）
 3. ~~**物理 schema / 迁移**：claims + 物化 canonical + decisions + identity-bindings + dependency-index + generations 的具体表切分、FTS5 列、节点/边落表。~~ ✅ **闭合（D18 / [ADR 0030](../adr/0030-physical-schema-claims-serving-tiers.md)）**：两层 + tk 独有仲裁账本——`fact_claims`(Kythe/Wikibase)+物化 `nodes`/`edges`(Kythe serving+codegraph 热路径)+`arbitration_decisions`/`decision_claims`+`identity_bindings`+`dependency_index`+generations；FTS5 列 = C7 + §9.1。（剩余:逐字 DDL/迁移脚本 = 实现期照 C7-C9 + ADR 0030 落地，非 Open。）
 4. ~~**SCIP 摄入依赖**：`index.scip` protobuf 消费（新依赖 vs 手写解析）。~~ ✅ **闭合（D16 / [ADR 0028](../adr/0028-scip-streaming-consumer-official-binding.md)）**：官方 TS binding `@scip-code/scip` + 薄 streaming importer，锁版构建依赖打成 lazy chunk（装后无 runtime dep），逐 Document 流式解码，否决 pbjs 平行 binding 与手写嵌套解码器。
-5. **Distribution / Runtime**：declare-only Node gate（`>=22.5.0 <25.0.0`，上限为"未测保守"非已证 OOM）、FTS5 缺失 LIKE 兜底、npm provenance、vendored-Node bundle 作 Optional-at-runtime 逃生口。
+5. **Distribution / Runtime** ✅ **闭合（D30 L + measurement-gated）**：declare-only Node gate `>=22.5.0 <25.0.0`（D30 确认 + pin 一个 24.x LTS、CVE 节奏、不发 Scoop）、FTS5 缺失 LIKE 兜底（实现期 C7）、npm provenance；**bundled-Node 分发粒度**（依赖用户 Node vs 总 vendored ~50MB）= measurement-gated（需 Windows 安装基 Node 版本实测）。无剩余设计 fork。
 
 ---
 
-## Decision Log（grilling 2026-06-21 + 2026-06-22 round 4，D1–D22）
+## Decision Log（grilling 2026-06-21 + 2026-06-22 round 4，D1–D32）
 
 > 与上文契约一致；此处为可追溯的逐项摘要。每项均已**用 Terminology Law 重述**（无版本语言）。
 
@@ -245,6 +245,16 @@ Canonical schema
 | **D20** | 代码签名 = artifact-gated；AV 税是性能问题 | round 3（global Open #9 / §17 #5 闭合，**修 #9 错误前提**）。现在**无 tk 自有未签 PE 可签**(tk=npm JS 包 `tk→dist/cli.js` 跑用户 Node；bundle 内 node.exe 是**官方已签** Node 重打包)。Authenticode 现在签不到东西、也无证据消 CrowdStrike spawn 税。**artifact-gated**:现用 SHA256SUMS+npm provenance+release attestation **不买证书**；tk 首发**自有 Windows PE**(SEA/daemon-EXE/MSI/MSIX；install.ps1 是脚本不算)时 Authenticode **成硬发布门**，macOS notarize 同理(.app/.pkg/.dmg/native 才启)；现可**预留 CI signing stage+验证合同**不接真证书。**CrowdStrike 400-1100ms = 性能/架构问题非签名**(EDR 拦 process-creation+file-access，tk 多 spawn 一次 Node 多付一次扫描)→ 真解 = D21 的 CommandProxyResident。[ADR 0032](docs/adr/0032-artifact-gated-signing-av-tax-is-perf.md)。 |
 | **D21** | daemon 三拆；codemap 不需跨-session daemon | round 3（global Open #4 闭合）。**重要修正**:codegraph **有** daemon(detached+proxy，跨调用复用内存图，#277/#411 生命周期 bug)，gitnexus 有持久 HTTP server——tk no-daemon 是刻意背离。旧 E11 把三事捆 "daemon"，拆为:① **CrossSessionRepositoryDaemon = Outside scope**(tk on-disk node:sqlite + per-session MCP 已是正式暖路径:每 session 开一次 DB 复用 connection/prepared-stmt/bounded-cache；codegraph daemon 解的是"多独立调用共享内存后端"另一形态，带 election/socket/orphan/idle/crash，对 tk 只省一次 open 不值；**重开闸=实测 hydration p95>250ms + 频繁重开 + 原型砍≥50% first-query**)；② **IndexWatcher = Optional-at-runtime 默认关**(原 E11 代码即此)；③ **CommandProxyResident = 独立 Required capability/Optional-at-runtime**(D20 的 AV spawn 税唯一真解=shim 不再 spawn Node 改连常驻 proxy；缓存 exec 路径/异步 I/O 消不掉 spawn；属命令代理子系统非 codemap)。E11 重写为仅 IndexWatcher。[ADR 0033](docs/adr/0033-daemon-decomposed-three-capabilities.md)。 |
 | **D22** | B LLM 委派 = 宿主借用，零 key 零凭据 | round 4（需求 B Open Decisions 全闭合）。叙事/Domain 生成委派给 tk **不拥有、不付费**的模型：主路径宿主 slash-command；次目标 Claude Code/macOS 在宿主会话与 logged-in CLI **同时**可用时**默认复用 in-session 宿主模型**（省进程），caw 订阅子进程仅真 headless 兜底；**永不构造 api_key LLM 客户端**，**显式 BYO-key 逃生口严格拒绝**（即便 opt-in）——保 CI gate `openai/api_key/faiss/embedding` 命中=0（repodoc `llm.py:43` 反例 + M23 + A4.11 无凭据/无 egress）；无模型可借→ship static-only（B-D7）诚实降级。leaf 阈值沿用 codewiki `16_000`/`depth-2` 作初值，harness 后重标定。[ADR 0034](docs/adr/0034-llm-delegation-host-borrowed-no-byo-key.md)。 |
+| **D23** | 语言集收紧 = tier-1 + 仅 Razor + 仅 C# wasm | round 4（需求 D 框架/wasm Open Decisions 闭合）。**框架/markup 提取器仅 Razor 破例**（抄 codegraph `razor-extractor.ts` 280 LOC，dotnet 家族 regex 抽 `@code{}/@{}` 内嵌 C#，class/type 级优雅降级；服务企业 .NET/Blazor）；**Vue/Svelte 不做**（web 只用 React）；**React=JSX/TSX 已是 tier-1 原生语法、零额外提取器**。**vendored-wasm 仅 C#**（~5.1MB，tier-1 必需）；lua/luau/pascal/scala/r 不 vendor→file-level。语言集 = tier-1 (TS/TSX/JS/JSX/Py/Go/Rust/Java/C/C++/C#) + Razor，舍长尾。**SCIP 仅 CONSUME 不 EMIT**（D16 读已有 index.scip；不导出 tk 索引——无参考 EMIT、个人项目无消费方=YAGNI）。**PHP/Ruby/Swift/Kotlin**（包内零体积）保留 best-effort/test-light 但**非目标覆盖**（不进 CI、无承诺）；**目标覆盖 = tier-1 + Razor**。无 ADR（可逆 scope 决策）。 |
+| **D24** | 个人项目永不发布 → license 完全不相关 | round 4。用户重申：tk 个人自用、**永不发布**。M25 强化——任何源（gitnexus PolyForm-NC / codewiki / repodoc 无 license）代码**可逐字抄、无需重写/署名**；全文 `[非分发安全]` 标记**失效可忽略**（不清除以免 churn），可抄性表一律视 ✅。license 不再作任何决策否决理由；历史上因 license 被否的选项（如 D15 Leiden）license 顾虑消失，但**其它理由若仍成立则不翻**（逐项看 license 是否曾*决定性*）。无 ADR（约束放宽，非架构决策）。 |
+| **D25** | 大跳变新鲜度 = RECONCILING + 延迟预算 + 分层 freshness | round 4（需求 E 首查大跳变 Open Decision；用户自拟第三方案，否决静默阻塞与 freeze-banner）。**E9 FULL_UPDATE 只决定重算哪些层、不决定是否阻塞查询**（解耦）。大跳变后首查先跑**廉价同步 reconciliation**（算 changed files + 反向 calls/imports 失效闭包，标受影响 canonical facts 为 pending/不可见，**不重解析**→无多秒冻结）；再按预计 p95 成本**延迟预算门控**：<1s inline、1–2s 且查询不依赖受影响区→立即服务未受影响结果、>2s 不阻塞由 per-session MCP 在 session 内续算；`tk sync` 留作显式预热/恢复但非唯一路径。**安全约束**：绝不像 banner 方案那样返回受影响的旧 canonical edges——未受影响事实完整返回、变更文件 live-read/file-local parse、依赖待重建边的 callers/flow/impact 标 PARTIAL/UNKNOWN 或返回 SYNC_REQUIRED。**新状态 RECONCILING**（≠ FROZEN，FROZEN 仅留给 sync 失败）；freshness 从 `stale:boolean` 升级为 **per-result/per-layer `resultFreshness` + `completeness`**。[ADR 0035](docs/adr/0035-reconciling-freshness-latency-budget-per-layer.md)。 |
+| **D26** | 置信 = 软排序因子，绝非硬过滤；截断是展示层 | round 4（需求 J suppression Open Decision；用户精化第三规格）。**三阶段分离**：① 所有 raw heuristic claims 保留（ADR 0019）；② Arbitration 决定哪些 claim 物化为 canonical edge；③ 一旦成 publishable canonical edge，**必须**参与 retrieval/flow/impact/callers 计算——confidence 可降 rank、**不得**排除出**计算**。**预算只约束最终投影**：紧时少展示 heuristic 边，但必返 omitted-count + 按 kind/confidence 汇总 + 稳定展开句柄，并区分 **`presentationTruncated`**（全参与计算、只展示子集→仍 `COMPLETE`）与**遍历因预算中止**（→`PARTIAL`/`UNKNOWN`）。**confidence 是软排序因子，`confidence<threshold→remove` 禁止**（否则 callback/event/framework-lifecycle/dynamic-dispatch 系统性消失，agent 把"弱证据存在"误读成"关系不存在"）。**唯一允许硬过滤**：用户显式 evidence-policy（如 compiler-backed-only）——须披露被排除数 + 明确不保证动态运行时路径完整。精化 D25（completeness 加正交 `presentationTruncated` 标）+ 落实 D7/D6。[ADR 0036](docs/adr/0036-confidence-soft-factor-not-hard-filter.md)。 |
+| **D27** | 协作 solo-first：本地 impact、无 GitHub 写、无 team 层 | round 4（需求 I human-human Open Decisions；结合 D24 个人项目）。需求 I 定位为 **solo-first Human Knowledge Workflow**（agent proposal + 人类编辑接受 + git 共享/review + 本地只读 impact），天然兼容未来多人 via git，但 tk **不建 team 产品层/权限层/GitHub 写入层**。① `tk wiki impact <ref>` 保留只读零-egress markdown（粘进 PR 描述）；② **`--comment` 永久 Unsupported**——远端写适配器带 gh-auth/PR-发现/权限/重复评论/更新语义/网络失败/GHE/凭据边界，为省一次复制粘贴不值得破零-egress 合同（要自动化用户自己 CI/脚本组合）；③ **删 `tier:team`**——无 team 身份/权限/语义、仅 honor-system 抬帽 30→60；统一 `CAP_PAGES=30`（技术安全限、与人数无关，不足按数据直接调帽不重引 tier）。[ADR 0037](docs/adr/0037-solo-first-collaboration-no-github-write-no-team-layer.md)。（人类面**交付机制**与**编辑范围** = 另案 D28，见下。） |
+| **D28** | codeguide = 一 Web App + 一 Core + 两数据适配器（Live serve / Snapshot export） | round 4（用户重开 H/I 人类面交付）。人类面 = **单一 Web App**（Vite/React 组件）+ **单一 Core `RepositoryQueryService`** + 两数据适配器，**非两套实现、非"自包含单文件 HTML 为唯一形态"**。① **`tk codeguide serve`（LiveDataSource）**=日常富模式：前台按需、**仅绑 loopback（127.0.0.1/::1，无 0.0.0.0/--lan）**、关即停（**非 daemon**）、薄 HTTP adapter 调同一 `RepositoryQueryService`（search/node 钻取/callers·impact·flow/局部图懒载），**不拥有第二套 ranking/graph 逻辑**。② **`tk codeguide export`（SnapshotDataSource）**=可携带快照：把**同一** Vite/React app 的 JS/CSS + 有限 `CodeguideSnapshot` 内联进单文件 HTML，**复用完全相同组件**只换 `LiveDataSource→SnapshotDataSource`（**非第二个 formatter**）；snapshot 必记 commit/generation/生成时间/included scope/omitted count/completeness，明确不支持未捕获动态查询。**替换**"wiki 塞 `src/report/html.ts`"方案（该 renderer 留给 gain/inspect，正式 Codeguide 独立 Web App）。**无 LAN**（human-human 走 snapshot + git）；**Web 编辑仍 defer**——**推翻 round-3「editor=file-only writeback Required」**，codeguide 暂只读，`.tk/` 文件人类自有编辑器手编。定位：**Live App=日常主视图、Snapshot=离线/审计/分享**。镜像 D19「一 Core + 适配器」于人类面，精化 D9 codeguide（单文件 HTML→Web App 双数据源）。[ADR 0038](docs/adr/0038-codeguide-web-app-two-data-adapters.md)。 |
+| **D29** | codeguide viewer host = 系统浏览器；VS Code = 启动入口非第二 UI 宿主 | round 4（D28 涟漪）。**canonical viewer host = 系统浏览器**；VS Code 是主要**启动入口**非第二 UI 宿主。`tk codeguide serve` 起 loopback server + 浏览器开 Live App；Snapshot 也浏览器开。VS Code 扩展只给**薄命令**（`TK: Open Codeguide`/`Open Current File in Codeguide`/`Show Impact`）经 **URL deep-link** 进同一 Web App。**启动安全+生命周期**：扩展用**随机端口 + session token** 起 server，从 `--startup-format json` stdout envelope 读完整 URL 再 `vscode.env.openExternal`；进程由 **workspace/extension 生命周期持有**（非 detached、非 daemon），重复打开复用同一 workspace server。**不做 Webview**（需全 HTML+CSP+resource URI+消息桥+面板恢复+remote port mapping，只读 codeguide 无 webview 独占需求=无收益）→ **VS Code Webview Host = Outside current product scope**（仅当双向编辑器同步/内嵌确认/高频并排被证核心才重开）。[ADR 0038](docs/adr/0038-codeguide-web-app-two-data-adapters.md#viewer-host-and-launch-d29)。 |
+| **D30** | 次要 leans 批量锁定（用户接受推荐） | round 4。用户接受未细抠的次要项按推荐锁定：① **控制文件 = JSONC**（非 YAML；tk 已解析、可注释、VS Code schema-complete）；② **J(a) 人类 HTML = high/med/low 徽章**（raw 0-1 留 Evidence Drawer）；③ **G kill-switch = 文档化用户配置**（非仅 harness env flag）；④ **L：vendored Node pin 具体 24.x LTS + CVE 刷新节奏；不发 Scoop**（个人项目无分发）；⑤ **C content_hash = sha256**（E4 已定、零依赖 node:crypto）；⑥ round-3 ratified 再确认：**Node gate `>=22.5.0 <25.0.0`** + vendored 24.x、**char 档 13000/18000/24000 现用**（token 重表达 = measurement-gated）、**embeddings=Unsupported / SCIP+PageRank=Required**；⑦ **M18 daemon op-count 阈值 = measurement-gated**（按 D21 reopen 闸）。无 ADR（均确认既有 leans）。 |
+| **D31** | codeguide Web App 技术栈锁定（React Flow + ELK，无 graphology/sigma/mermaid） | round 4（D28 stack，用户调研后锁定）。**React 19 + Vite + TS**（pages/Tree/Inspector/Evidence Drawer）；**React Flow**（node/edge 渲染 + zoom/pan/select/click）；**ELK.js**（几何布局：分层/交叉优化/正交边路由）；**图语义全在 tk Core**（节点/边/分组/聚合/排序/置信/完整性）。**显式 NO**：**无 graphology**（后端是图唯一权威、社区在后端 D15 算，客户端无图算法；graphology 只为 sigma/客户端算法存在；UA 仅用它跑 Louvain，渲染仍是 React Flow+ELK）；**无 sigma/d3-force**（不做全仓 hairball——~25K 力导悬崖 + M21 观感风险，React Flow 只画 5–100 节点有界邻域、守 H1）；**无 mermaid**（M21 禁臆造图）。数据流 **Core → `GraphProjection`{nodes,edges,containers,aggregated-edges,**omissions,completeness,expansion-handles**} → ELK(仅几何) → React Flow(仅渲染+交互)**；GraphProjection 的 omissions/completeness/expansion-handles 实例化 D26（presentationTruncated/completeness）于图视图。[ADR 0039](docs/adr/0039-codeguide-stack-react-flow-elk-no-graphology.md)。 |
+| **D32** | 进程模型 = 独立适配器 + lease 协调 reconcile + generation publish | round 4（D28/D21/D19 进程模型；用户精化）。**MCP 与 Codeguide = 独立薄适配器进程**，各把 Core 当**进程内 TS 库**加载；经同一 on-disk **SQLite WAL** 共享持久态，**不共享 Core 进程/socket/内存图**。**WAL 非 reconcile 协调者**——reconcile 由查询触发、经 **DB-backed lease** 协调：仅 **lease owner** 做分析 + staging 写，余者服务安全结果 / 在延迟预算内等 / 返回 `RECONCILING`（partial/unknown，接 D25）。**generation 原子发布**：每查询在**短读事务**内读**单一 published generation**；新 generation 作**未发布 staging** 建、仅经**原子 publish 事务**可见。**generation identity = (repo revision + worktree digest + schema version + analysis policy version) 元组、非整数**（精化 E2：整数降为 published-generation 指针，identity 是元组）。Codeguide 可进程内长开**连接**但**不得跨请求持读事务**。CommandProxyResident 仍独立子系统、不挂 Core；cross-session daemon 仍 Outside scope（D21 闸）。[ADR 0040](docs/adr/0040-process-model-lease-coordinated-generation-publish.md)。 |
 
 # Part II — Capability Specifications & Implementation Evidence
 
@@ -1774,9 +1784,9 @@ export function refuseDangerousRoot(target: string): void {
 
 ### Open Decisions（C 自身）
 
-1. **embeddings（Outside current product scope）**：是否后加 sqlite-vec（vec0）。现已用 `meta(key,value)` + nullable 列槽预留（无破坏性迁移），但开启需选符合 no-egress/no-API-key 强 lean 的 embedding 源——属当前产品范围之外，开启前再定。
-2. **bundled-Node 分发粒度**：确认 VS Code Copilot/Windows 安装路径能否依赖用户 Node（≥22.5 渐普及）还是必须总是 vendored Node 24（~50MB bundle）——需先测实际 Windows 安装基 Node 版本。
-3. **content_hash 算法**：sha256（零依赖 `node:crypto`，已采为默认）vs blake3（code-graph-mcp 用）——除非大仓实测 hashing 吞吐显著胜，否则不 vendoring blake3。
+1. **embeddings** ✅ **闭合（D30 #8）**：**Unsupported**（确认 Outside current product scope）。`meta(key,value)` + nullable 列槽预留保留（无破坏性迁移），开启需 no-egress/no-API-key embedding 源、且属范围外——开启前再定（设计上已定 out）。
+2. **bundled-Node 分发粒度** ⏳ **measurement-gated（非设计开放）**：VS Code Copilot/Windows 能否依赖用户 Node（≥22.5）vs 必须总 vendored Node 24（~50MB）——需先测真实 Windows 安装基 Node 版本（接 §17 #5 declare-only 闸 + D30 L：pin 一个 24.x LTS）。
+3. **content_hash 算法** ✅ **闭合（D30 #5 / E4）**：**sha256**（零依赖 `node:crypto`），不 vendoring blake3。
 4. **跨需求版本闸确认**：`>=22.5.0 <25.0.0` + vendored Node 24.x 作为单一锚（A/C/D/L 原各自独立 open，现已收口），请确认接受。
 
 ---
@@ -2480,10 +2490,10 @@ const DEFAULT_IGNORE_PATTERNS: string[] = [
 ### 跨节绑定与 Open Decisions
 
 - **Node 闸门统一**：`>=22.5.0 <25.0.0` + vendored Node 24.x + 强制 `--liftoff-only` 已由 D10 收口（A/C/L 原各自为 Open Decision，现已定）—— 请确认接受为单一跨需版本锚。
-- **tier-2/3 CI 预算**：默认 test-light（fix-on-report），换 tier-2/3 ledger 诚实度，是否接受。
-- **框架/markup 提取器**：默认全部归为 file-level-only（Outside current product scope）；Razor 触及企业 .NET primary target，是否破例。
-- **vendored-wasm 集合**：tier-1 仅 C# 强制；lua/luau/pascal/scala/r 是 size-vs-correctness（c_sharp.wasm 约 5MB），是否随 codegraph 一并 vendor。
-- **SCIP emit/consume 互通缝**：是否要 EMIT/CONSUME SCIP（macOS/Claude-Code 已装 toolchain 的项目可升级到 compiler-grade），待 ecosystem-interop 是否为目标的拍板（Outside current product scope）。
+- **tier-2/3 CI 预算 / 语言集尾部** ✅ **闭合（D23，2026-06-22）**：PHP/Ruby/Swift/Kotlin（已在 tree-sitter-wasms 包、**零额外体积**）**保留作 best-effort 注册**，但**明确非目标覆盖**——`test-light`/fix-on-report、**不进 CI 闸门、无支持承诺**。**目标覆盖 = tier-1(11) + Razor**（CI 必过）。niche 的 lua/luau/pascal/scala/r 已舍（D#2，需 vendoring 有体积）。
+- **框架/markup 提取器** ✅ **闭合（D23，grilling 2026-06-22 round 4）**：**仅 Razor 破例**——抄 codegraph `razor-extractor.ts`（280 LOC，dotnet 家族对 `@code{}/@{}` 内嵌 C# 做 regex 抽取，class/type 级、C# 语法缺失时优雅降级），服务企业 .NET/Blazor primary target。**Vue/Svelte 不做**（用户判定 web 只用 React）；**React = JSX/TSX 已是 tier-1 原生 tree-sitter 语法，零额外提取器**。`.vue/.svelte`（若有）→ file-level。
+- **vendored-wasm 集合** ✅ **闭合（D23）**：**仅 vendor C#**（`tree-sitter-c_sharp.wasm` ~5.1MB，tier-1 .NET 必需）。lua/luau/pascal/scala/r **不 vendor**（缺语法→file-level 优雅降级）；语言集收紧为 tier-1 + Razor，舍长尾。
+- **SCIP emit/consume 互通缝** ✅ **闭合（D23，2026-06-22）**：**仅 CONSUME，不 EMIT**。CONSUME = D16（读已有 `index.scip` 升级到 compiler-grade）；**不 EMIT** tk 自己的索引——无参考项目导出 SCIP、个人项目（D24）无外部消费方、纯投机生态互通 = YAGNI。EMIT 纯增量、不影响内部架构，将来真有消费方随时可补。
 
 ---
 
@@ -2491,6 +2501,7 @@ const DEFAULT_IGNORE_PATTERNS: string[] = [
 
 > 本节落实「三层 lazy-first 新鲜度模型」：**触发=按读懒检查、默认无常驻 daemon/watcher**；**失效精度=两级（content-hash 快路 + AST 结构指纹分级）+ 下游 BFS + referencer-set diff**；**新鲜度信号一等公民、A/B 双受众**。所有存储落在 node:sqlite（强倾向），整数 `index_generation` 比较即为陈旧判定，零原生编译、零模型出口。
 >
+> **大跳变调度（D25 / [ADR 0035](../adr/0035-reconciling-freshness-latency-budget-per-layer.md)，2026-06-22）**：HEAD 大跳变后 E9 的 `FULL_UPDATE` **只决定重算哪些层、不决定是否阻塞查询**。首查先跑廉价同步失效闭包（标受影响 facts pending、不重解析），再按预计 p95 成本**延迟预算门控**（<1s inline / 1–2s 服务未受影响 / >2s session 内续算）。此态为 **RECONCILING**（≠ FROZEN，后者仅留给 sync 失败）；新鲜度从 `stale:boolean` 升级为 **per-result/per-layer `resultFreshness`+`completeness`**，受影响依赖结果标 PARTIAL/UNKNOWN/SYNC_REQUIRED，绝不 banner-掩盖旧 edges。
 > 与上游一致性约束（来自 DEP MAP）：
 > - **承接 A**：图节点带 `file:line`、edges 走 `calls`/`imports`，本节的 BFS 下游重算复用这两类边；陈旧通过 `index_generation` 整数比较实现。
 > - **承接 B**：失效分级写回 C 的 `provenance` 列上下文——COSMETIC/comment/docstring-only 变更**不触发** LLM 重生成（B 的 host-paid 生成层），只做廉价的 source-line/lineno 刷新。
@@ -2555,6 +2566,8 @@ export function isStale(projectDir: string, lastCommitHash: string): StalenessRe
 ---
 
 ### E2 — 指纹库 schema（node:sqlite）+ 节点 `index_generation` 整数比较（serves both surfaces）
+
+> ⚠️ **D32 / [ADR 0040](../adr/0040-process-model-lease-coordinated-generation-publish.md) 精化**：整数 `index_generation` **降为 published-generation 指针**；**generation identity = (repo revision + worktree digest + schema version + analysis policy version) 元组**（非仅整数）。查询在**短读事务**内读**单一 published generation**；新 generation 作**未发布 staging** 建、经**原子 publish 事务**可见。跨进程 reconcile 由 **DB-backed lease**（非 WAL、非 daemon）协调：仅 lease owner 写 staging，余者服务安全结果/等预算/返回 `RECONCILING`。下文整数比较仍是单进程内 pending 标记的快路，但跨进程新鲜度/发布以 D32 为准。
 
 **(1) 决策**：在 node:sqlite 建 `file_fingerprint` 表 + `meta` 键值表；每个图节点行带 `index_generation INTEGER`，陈旧 = 一次廉价 `WHERE` 整数比较，可把节点标 pending 而不重写。
 
@@ -4421,15 +4434,17 @@ const DEFAULT_BUILD_OPTIONS: Required<BuildContextOptions> = {
 
 ## 需求 H — Human surface understanding inside VS Code
 
-本节交付 **codeguide (human surface) 的渲染落地面**：把上游 A8 `formatSubgraphTree` 产出的人读子图，渲染成一个**自包含、内联 JSON、零后端、零 CDN、可离线从 `file://` 打开**的单文件 HTML viewer，并由 F 的 VS Code 扩展打开。它服务 A/B 的「两个共同重要的工作」中的 **A（人理解项目 + 协作）**——但它本身是只读的理解面，可编辑往返归 I（在原生 `.tk/wiki/pages/*` 文件上做，viewer 不内嵌编辑器，见冲突 I↔H 的裁决）。
+> ⚠️ **本节交付形态被 D28 / [ADR 0038](../adr/0038-codeguide-web-app-two-data-adapters.md) 重构（2026-06-22）**：codeguide 不再是"`src/report/html.ts` 加第三种 `ReportKind=wiki`"的单文件 HTML，而是**单一 Web App（Vite/React 组件）+ 单一 Core `RepositoryQueryService` + 两数据适配器**：① `tk codeguide serve`（**LiveDataSource**，前台按需、仅绑 loopback、关即停非 daemon、薄 HTTP adapter 活查）；② `tk codeguide export`（**SnapshotDataSource**，同一 app 内联 JS/CSS + 有限 `CodeguideSnapshot` 成单文件 HTML，记 commit/generation/scope/omitted/completeness）。`src/report/html.ts` **仅留给 gain/inspect**，**不再**承载 codeguide。**编辑整体 defer**（codeguide 只读）。下文 H1–H* 的"单文件 viewer / `ReportKind=wiki`"叙述按此重读：单文件路径 = Snapshot 适配器一支，Live 适配器是新增主视图。**技术栈锁定（D31 / [ADR 0039](../adr/0039-codeguide-stack-react-flow-elk-no-graphology.md)）**：React 19 + Vite + TS + **React Flow**（渲染/交互）+ **ELK.js**（布局），**无 graphology/sigma/mermaid**；数据流 Core → `GraphProjection`（含 omissions/completeness/expansion-handles）→ ELK（仅几何）→ React Flow（仅渲染）。viewer host = 系统浏览器（D29）。
 
-复用的核心事实：tk 仓库里 `src/report/html.ts` 已经是一个 791 LOC 的成熟单文件渲染器（gain/inspect 两种 doc），其 `embed()` 转义 + `renderReportHtml()` 内联 `<script>window.__TK_REPORT__ = …</script>` 的范式**正是** H1 需要的全部骨架；`src/report/open.ts` 已经实现「写到 `~/.token-killer/` + 0600 + best-effort 打开浏览器」。我们**新增第三种 `ReportKind = "wiki"`**，而不是另起炉灶。
+本节交付 **codeguide (human surface) 的渲染落地面**：把上游 A8 `formatSubgraphTree` 产出的人读子图，渲染成人读视图，并由 F 的 VS Code 扩展打开。它服务 A/B 的「两个共同重要的工作」中的 **A（人理解项目 + 协作）**——只读理解面，**编辑整体 defer（D28）**。
+
+复用的核心事实（**按 D28 重定**）：tk 仓库里 `src/report/html.ts` 的 791 LOC 单文件渲染器（`embed()` 转义 + `renderReportHtml()` 内联 `<script>window.__TK_REPORT__=…</script>`）**继续服务 gain/inspect**；`src/report/open.ts` 的「写 `~/.token-killer/` + 0600 + 打开浏览器」复用为 Snapshot 落地。但**正式 Codeguide = 独立 Web App**（Live + Snapshot 两适配器复用同组件），**非**在 report 渲染器上加 `ReportKind=wiki`。
 
 ---
 
 ### H1 — 自包含单文件、内联 JSON、零后端的 wiki viewer  〔(serves the codeguide human surface)〕
 
-**(1) 决策**：复用 `src/report/html.ts` 的 `embed()` + `renderReportHtml()` 范式，新增 `ReportKind = "wiki"` 分支与一个 `renderWiki()` 客户端渲染器；产物是单文件 `index.html`，把 A8 子图树 + B 的 narrative（带 `provenance`）作为内联 JSON 注入，零 CDN、零网络、可 `file://` 直开。**覆盖（overrules）** 把 VS Code Simple Browser 当集成路径的方案——viewer 是一个本地文件，由 F 的扩展用 `vscode.env.openExternal` / webview 打开，不依赖任何内嵌浏览器服务。
+**(1) 决策**：复用 `src/report/html.ts` 的 `embed()` + `renderReportHtml()` 范式，新增 `ReportKind = "wiki"` 分支与一个 `renderWiki()` 客户端渲染器；产物是单文件 `index.html`，把 A8 子图树 + B 的 narrative（带 `provenance`）作为内联 JSON 注入，零 CDN、零网络、可 `file://` 直开。**覆盖（overrules）** 把 VS Code Simple Browser 当集成路径的方案——viewer 是一个本地文件，由 F 的扩展用 `vscode.env.openExternal` 打开。**D29 修正**：viewer host = **系统浏览器**（非 webview）；VS Code 扩展只 deep-link 启动；此处「单文件」= **Snapshot 适配器**一支，日常主视图是 `tk codeguide serve` 的 Live 适配器。
 
 **(2) 要动的文件**（tk-repo 路径）：
 
@@ -4617,7 +4632,7 @@ function render() {
 - `renderInspect` 的 `.item/.field/.where/.estbadge` 类与 `esc()`：`src/report/html.ts:533-647`、`:241`（`renderWiki` 复用同类，已 Read 确认）。
 - 写文件 0600 + best-effort 打开 + headless 仅打印：`src/report/open.ts:20-62`（已 Read 确认，verbatim）。
 - dossier H1：`ref src/report/html.ts:26`「`window.__TK_REPORT__ = embed(doc)`」「791 LOC single file, offline」「Output `.tk/wiki/index.html` via `embed()`」。
-- 上游绑定：A8 `formatSubgraphTree`（DEP MAP A.drives.H「human diet (A8 formatSubgraphTree) is what the HTML viewer renders」）；B 的 per-field `provenance`（DEP MAP B.drives.H/I）；冲突裁决 C↔L（DB out-of-tree、`.tk/` 仅人读工件）、F↔H↔I↔L（F 扩展是 H viewer 的打开载体）、I↔H（viewer 只读，编辑走 `.tk/wiki/pages/*` 原生文件）。
+- 上游绑定：A8 `formatSubgraphTree`（DEP MAP A.drives.H「human diet (A8 formatSubgraphTree) is what the HTML viewer renders」）；B 的 per-field `provenance`（DEP MAP B.drives.H/I）；冲突裁决 C↔L（DB out-of-tree、`.tk/` 仅人读工件）、F↔H↔I↔L（F 扩展是 codeguide 的**启动入口**——D29：viewer host = 系统浏览器，非 webview）、I↔H（codeguide 只读，**编辑整体 defer D28**）。
 
 ---
 
@@ -4697,7 +4712,7 @@ export interface ControlPage {
   pin?: boolean;
 }
 export interface ControlFile {
-  tier?: 'solo' | 'team';
+  // D27: `tier` removed — no team layer; CAP_PAGES is a unified technical limit.
   repo_notes?: ControlNote[];
   pages?: ControlPage[];
 }
@@ -4719,22 +4734,22 @@ export const CONTROL_FILE_REL = '.tk/wiki.json';
 
 ### 决策 I-2：硬上限，parse-time fail-loud（serves both surfaces）
 
-**(1) 决策**：解析时强制硬上限，明确报错（非静默截断）：max pages = **30**（`"tier":"team"` 时 **60**）；max 合并 notes（`repo_notes` + 所有 `page_notes`）= **100**；max 每条 note = **10000** 字符；page titles 必须唯一且非空。违例：拒绝生成，打印 `tk: .tk/wiki.json exceeds cap (pages 34 > 30) — split or set tier:team`，**exit 2**。
+**(1) 决策**（D27：删 tier:team，统一帽）：解析时强制硬上限，明确报错（非静默截断）：max pages = **30**（**统一技术安全限，无 team 层**——D27 删 `tier:team`）；max 合并 notes（`repo_notes` + 所有 `page_notes`）= **100**；max 每条 note = **10000** 字符；page titles 必须唯一且非空。违例：拒绝生成，打印 `tk: .tk/wiki.json exceeds cap (pages 34 > 30) — split into multiple wikis`，**exit 2**。帽不足时按真实质量/性能数据直接调 `CAP_PAGES`，不重引 tier。
 
 **(2) 要动的文件**：`src/wiki/control.ts`（`validateCaps()`）；`tests/unit/wiki/control-caps.test.ts`。
 
-**(3) 可抄代码**（tk-adapted，DeepWiki caps 来自 docs.devin.ai：30/80 enterprise→tk 用 30/60，100 notes，10k chars/note）：
+**(3) 可抄代码**（tk-adapted，DeepWiki caps 来自 docs.devin.ai：30/80 enterprise→tk 用统一 30，100 notes，10k chars/note）：
 
 ```typescript
-// src/wiki/control.ts — validateCaps（tk-adapted；caps 源 docs.devin.ai）
-const CAP_PAGES_SOLO = 30, CAP_PAGES_TEAM = 60;
+// src/wiki/control.ts — validateCaps（tk-adapted；caps 源 docs.devin.ai；D27 统一帽无 tier）
+const CAP_PAGES = 30;
 const CAP_NOTES_TOTAL = 100, CAP_NOTE_CHARS = 10000;
 
 export function validateCaps(cf: ControlFile): void {
-  const pageCap = cf.tier === 'team' ? CAP_PAGES_TEAM : CAP_PAGES_SOLO;
+  const pageCap = CAP_PAGES;
   const pages = cf.pages ?? [];
   if (pages.length > pageCap)
-    fail(`pages ${pages.length} > ${pageCap}`, 'split or set tier:team');
+    fail(`pages ${pages.length} > ${pageCap}`, 'split into multiple wikis');
 
   const titles = pages.map(p => p.title?.trim());
   if (titles.some(t => !t)) fail('a page title is empty', 'every title must be non-empty');
@@ -5295,14 +5310,14 @@ export async function safeRm(target: string): Promise<void> {
 
 ### Open Decisions（与全局 Open Decisions 对齐）
 
-1. **编辑面**（I Open Decision #1）：coherent Required 默认 = VS Code 原生文件编辑 + watcher 写回（HTML viewer 保持只读）。确认 files-only，还是授权更重的 Tiptap 式 web 编辑器？
-2. **控制文件格式**：coherent 选 JSONC（tk 已解析、可注释、VS Code 内可 schema-complete）。确认优于 YAML？
-3. **`tk wiki impact --comment`**（发 GitHub PR 评论）因 no-egress 而 Unsupported。`--comment`（显式逐次、用用户 gh auth；作为 Required capability，其运行期依赖在运行期为 Optional）是否可接受，还是永久排除？
-4. **team 层 gating**：60 页 `"tier":"team"` 目前是 wiki.json 内自声明 flag（无 server 无法 gate）。维持 honor-system 旋钮即可？
+1. ~~**编辑面**（I Open Decision #1）~~ ✅ **闭合（D28 / [ADR 0038](../adr/0038-codeguide-web-app-two-data-adapters.md)）**：**编辑整体 defer**（codeguide 暂只读，Web 编辑不做，`.tk/` 文件人类自有编辑器手编）——推翻 round-3「file-only writeback Required」。人类面 = 单一 Web App + 两数据适配器（`tk codeguide serve` Live loopback / `tk codeguide export` Snapshot 单文件）。
+2. ~~**控制文件格式**~~ ✅ **闭合（D30，用户确认）**：**JSONC**（非 YAML；tk 已解析、可注释、VS Code 内可 schema-complete）。
+3. ~~**`tk wiki impact --comment`**~~ ✅ **闭合（D27 / [ADR 0037](../adr/0037-solo-first-collaboration-no-github-write-no-team-layer.md)）**：`--comment` **永久 Unsupported**（不建 GitHub 写适配器、保零-egress；要自动化用户自己 CI/脚本组合）。
+4. ~~**team 层 gating**~~ ✅ **闭合（D27）**：**删 `tier:team`**——无 team 身份/权限/语义；统一 `CAP_PAGES=30`（技术安全限），不足按数据直接调帽。
 
 ### 与其它需求的耦合（coherence）
 
-`file:line on every node`（A2/J1）是 human（H）、agent（F）、provenance（I.3）、trust（J）共用的单一信任原语；`provenance` 列（B1/J2）一列三用（检索过滤 + 边诚实 + 陈旧分类语境）；human content 走文件不进 DB（C 的 DB-out-of-tree）；交付收敛到 F 扩展（同时是 H viewer host + I 往返面，经 L 渠道构建）；staleness 由 E 的 lazy 检查驱动（非常驻 watcher，守住 Windows no-daemon 链）。
+`file:line on every node`（A2/J1）是 human（H）、agent（F）、provenance（I.3）、trust（J）共用的单一信任原语；`provenance` 列（B1/J2）一列三用（检索过滤 + 边诚实 + 陈旧分类语境）；human content 走文件不进 DB（C 的 DB-out-of-tree）；交付：codeguide viewer host = **系统浏览器**（D28/D29），F 扩展是**启动入口**（deep-link 到 Live/Snapshot），**非** webview UI 宿主、**编辑 defer 故无 I 往返面**；staleness 由 E 的 lazy 检查驱动（非常驻 watcher，守住 Windows no-daemon 链）。
 
 ---
 
@@ -8263,11 +8278,11 @@ export function mermaidFromGraph(
 
 ---
 
-### M25 — license 边界（用户 2026-06-20 拍板：自用放宽，分发前重写）  (serves both surfaces)
+### M25 — license 边界（用户 2026-06-22 重申：个人项目、永不发布 → license 完全不相关）  (serves both surfaces)
 
-**决策（推翻原"硬拷贝边界"）**: 本工具为**个人自用、不向外分发**，版权法管的是再分发而非私下自用 → license 拷贝边界**放宽**：任何源（含 **gitnexus** PolyForm-NC、**codewiki / repodoc** 无 license 文件）的代码都**可直接抄用**，不强制重写。"也没全用、只取片段"进一步降低关切（小功能片段多数够不上可版权性）。
-- **唯一保留的保险（书签，非约束）**: 凡逐字抄自**非 permissive 源**（gitnexus (upstream reference) / codewiki (upstream reference) / repodoc (upstream reference)）的片段，在其 `源:` 注后加 `[非分发安全]` 标记 —— 纯当书签，让**万一将来要公开发布 / 发 npm 时**一键定位重写。permissive 源（codegraph (upstream reference) MIT、understand-anything/davia/repoagent/repograph 等 MIT/Apache）**无需任何处理**。
-- tk 自身 license 维持 permissive（MIT，沿用既有轴）。
+**决策（D24，2026-06-22 强化 2026-06-20 的放宽）**: 本工具为**个人自用、永不向外分发/发布**。版权法管的是再分发而非私下自用 → **license 拷贝边界完全消失**：任何源（含 **gitnexus** PolyForm-NC、**codewiki / repodoc** 无 license 文件）的代码都**可逐字直接抄用，无需重写、无需署名、无任何处理**。
+- **`[非分发安全]` 标记 = 失效（vestigial）**: 全文散落的 `[非分发安全]` 注记是 2026-06-20 "分发前重写" 假设的遗留书签；既已确定**永不发布**，这些标记**无约束力、可忽略**，不必逐一清除（清除是无谓 churn）。可抄性表（✅/🟡/❌）一律视作 ✅。
+- license 不再作为任何设计决策的否决理由：凡历史上"因 license 不可复制"而被否的选项（如 **D15** gitnexus Leiden 社区检测的 PolyForm-NC 顾虑），其 license 理由消失——但**其它理由（native Kuzu 绑定/Windows native-build、能力本就 Optional 等）若仍成立则决策不翻**，需逐项看 license 是否曾是*决定性*因素。
 
 **许可实况（2026-06-20 实地核对 LICENSE 文件）**: codegraph (upstream reference) = **MIT**；understand-anything / davia / deepwiki-open / opendeepwiki = MIT；repoagent / repograph = **Apache-2.0**；gitnexus (upstream reference) = **PolyForm Noncommercial**；codewiki / repodoc = **无 LICENSE 文件（默认全保留）**。
 
@@ -8384,7 +8399,7 @@ export function mermaidFromGraph(
 
 1. **Node 版本闸门确认**：Node 25/--liftoff-only 已由 D+A 闭合（WASM 已发布 → 排除 25、强制 --liftoff-only）。请确认接受 `>=22.5.0 <25.0.0` + vendored Node 24.x 作为唯一跨需求版本锚点（原在 A/C/D/L 各自独立开放）。✅ **round-3 ratified**：接受为唯一跨需求版本锚点（上限 `<25` 是"未测保守"，非已证 OOM；实测后可放宽）。
 
-2. **协作往返的编辑器表面**（I Open Decision #1）：连贯的 Required 默认＝VS-Code-native 文件编辑 + file-watcher 回写（HTML 查看器保持只读）。请确认仅文件路线，或授权更重的 Tiptap 式 web 编辑器构建。✅ **round-3 ratified**：**仅文件路线**（VS-Code-native 编辑 + file-watcher 回写，HTML 只读；I-4/I-5 已定，davia file-backed 即此参考），**不建** Tiptap web 编辑器。
+2. **协作往返的编辑器表面**（I Open Decision #1）：~~round-3 ratified 仅文件路线~~ ⚠️ **被 D28 推翻（2026-06-22 / [ADR 0038](../adr/0038-codeguide-web-app-two-data-adapters.md)）**：**编辑整体 defer**——codeguide 暂**只读**（Web 编辑不做、file-native 编辑往返 I-4/I-5 也 defer），`.tk/` 文件人类用自有编辑器手编。人类面改为**单一 Web App + 两数据适配器**（`tk codeguide serve` loopback Live / `tk codeguide export` Snapshot 单文件），非 VS-Code-native 文件编辑、非 Tiptap。
 
 3. **控制文件格式**（I）：JSONC 是连贯选择（tk 已解析 JSONC、可手编、VS Code 内可 schema 补全）。请确认选 JSONC 而非 YAML。✅ **round-3 ratified**：JSONC（非 YAML）。
 
@@ -8402,14 +8417,14 @@ export function mermaidFromGraph(
 
 附次级、可后置但建议一并确认的项（来自各需求 Open Decisions，非阻塞产品起建）。**Round-3 ratified（批量）**：下列各项**按其所述 lean 锁定**为 reference-consistent 默认，均非设计 fork，逐字 impl 细节在实现期照各需求节落地：
 - **B 生成 provider 默认** ✅ **已正式裁定 → D22 / [ADR 0034](../adr/0034-llm-delegation-host-borrowed-no-byo-key.md)**（宿主借用、零 api_key、BYO-key 显式拒绝、无模型可借→static-only 降级；完整理由 + CI 不变量见该 ADR，此处不复述）。
-- **C content_hash 算法**：sha256（零依赖、node:crypto）vs blake3（需 vendor），倾向 sha256 除非大库吞吐实测证明值得。
-- **E 首查大跳变行为**：HEAD 大幅前移时静默 FULL_UPDATE vs 出 frozen banner 要求显式 `tk sync`（成本 vs 惊讶取舍）；Windows/NTFS mtime 粒度是否单靠 mtime_ns 还是必须 size+hash 兜底（倾向 hash 兜底，需 Windows 现场核）；COSMETIC 编辑下人类徽章是否标"doc 可能落后"（A/B 分歧可调）。
-- **D 框架/标记提取器**：当前范围是否发任何（Razor 触及 .NET 企业主目标可能例外，Vue/Svelte 倾向仅文件级）；C# 外的 vendored-wasm 集（tier-2/3 体积 vs 正确性）；SCIP emit/consume 互操作是否纳入当前范围。
-- **G kill-switch 暴露**：作文档化用户配置 vs 仅 harness env flag（产品面决策）。
-- **I `tk wiki impact --comment`**：PR 评论（用 gh auth）作 Required capability、其 gh-auth 运行时依赖 Optional at runtime，是否可接受 vs 永久 Unsupported；team 档帽是否永远纯荣誉制（无 server 无法门控）。
-- **J UX**：raw 0-1 置信数值暴露给人类 HTML vs 折叠为 high/med/low 徽章；heuristic 边是否可在某置信下对 token-minimal Agent 路径 suppress（现承诺 always-keep-but-tag）。
-- **L 细节**：bundled Node 精确 pin（v24.16.0 vs 最新 24 LTS）+ CVE 刷新节奏；是否也发 Scoop（Windows 企业友好，codegraph (upstream reference) 留 TODO）。
-- **M 缺省**：M18 daemon 分支的 op-count 阈值数字；M13 控制文件帽（30/80 页、100 notes、10k 字/note）是否适合项目本地规模或设 tk 专属帽。
+- **C content_hash 算法** ✅ **闭合（D30 / E4）**：**sha256**（零依赖、node:crypto），不 vendor blake3。
+- **E 首查大跳变行为** ✅ **闭合（D25 / [ADR 0035](../adr/0035-reconciling-freshness-latency-budget-per-layer.md)）**：用户自拟第三方案——**RECONCILING 状态 + 廉价同步失效闭包 + 延迟预算门控（<1s inline / 1–2s 服务未受影响 / >2s session 内续算）+ per-layer `resultFreshness`/`completeness`**；受影响依赖结果标 PARTIAL/UNKNOWN/SYNC_REQUIRED，绝不 banner-掩盖旧 edges。否决静默阻塞与 freeze-banner。**mtime 粒度**已由 E3（mtime_ns+size 仅作 pre-filter）+ E4（sha256 确认）+ E14（git diff）解决=从不单信 mtime（Windows 现场仍需核实，属验证非设计）。**COSMETIC 徽章**被 per-layer freshness 吸收（每层各自标新鲜度/完整度）。
+- **D 框架/标记提取器** ✅ **闭合（D23）**：仅 Razor 破例（抄 codegraph razor-extractor），Vue/Svelte 不做（web 只用 React=JSX/TSX 原生），vendored-wasm 仅 C#。SCIP 仅 CONSUME 不 EMIT。
+- **G kill-switch 暴露** ✅ **闭合（D30）**：**文档化用户配置**（非仅 harness env flag）——用户可见可关。
+- **I `tk wiki impact --comment` / team 层** ✅ **闭合（D27 / [ADR 0037](../adr/0037-solo-first-collaboration-no-github-write-no-team-layer.md)）**：`--comment` **永久 Unsupported**（不建 GitHub 写适配器、保零-egress）；**删 `tier:team`** → 统一 `CAP_PAGES=30`；需求 I = solo-first，无 team/权限/写入层。（人类面交付机制 + 编辑范围 = D28 另案。）
+- **J 置信 suppression** ✅ **闭合（D26 / [ADR 0036](../adr/0036-confidence-soft-factor-not-hard-filter.md)）**：confidence = **软排序因子绝非硬过滤**；canonical edge 一律参与计算，预算只截**展示**（`presentationTruncated`≠不完整，须 omitted-count + by-kind/confidence 汇总 + 展开句柄）；唯一硬过滤 = 用户显式 evidence-policy（compiler-backed-only，须披露排除数 + 不保证动态路径完整）。✅ **J(a) 残留闭合（D30）**：人类 HTML 折成 **high/med/low 徽章**，raw 0-1 留 **Evidence Drawer**。
+- **L 细节** ✅ **闭合（D30）**：vendored Node **pin 一个具体 24.x LTS + CVE 刷新节奏**；**不发 Scoop**（个人项目无分发，D24）。
+- **M 缺省** ✅ **闭合（D30 + D27）**：M18 daemon op-count 阈值 = **measurement-gated**（按 D21 reopen 闸，不预设数字）；M13 控制文件帽 = **统一 `CAP_PAGES=30`**（D27 删 tier:team；100 notes / 10k 字/note 保留）。
 
 # 附录 A1：PageRank / SCIP / gitnexus 可抄实现(2026-06-20 追加)
 
