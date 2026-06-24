@@ -15,3 +15,6 @@ ztk/
 .DS_Store
 Thumbs.db
 *.swp
+
+# Reference clones for verbatim citation (D24: personal, license-irrelevant; kept local, never committed)
+.research/
