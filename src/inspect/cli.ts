@@ -46,6 +46,7 @@ import {
 import { inspectSinglePass } from "./passes.js";
 import { discoverHost, discoverHosts, hostFound, mergeHosts, type InputType } from "./sources.js";
 import { persistScopeBuckets, runStaticContext } from "./staticContext.js";
+import { readOptimizeActions } from "./optimizeActions.js";
 import { buildInspectAggregates } from "./telemetry.js";
 import { runtimeFindings, type Finding } from "./unified.js";
 
@@ -447,6 +448,10 @@ export function runInspect(
       process.stdout.write(`Wrote advice artifacts:\n${written.map((p) => `  ${p}`).join("\n")}\n`);
     }
 
+    // Optimizer deltas (ledger ②) for the inspect telemetry block — always the user
+    // bucket (telemetry is user-level), matching loadLedgers' user-scope convention.
+    const optimizeActions = readOptimizeActions({ scope: "user" });
+
     // Telemetry export: allow-listed aggregates only (config-gated, no CLI flag). No
     // endpoint in the generic package → write locally + warn; never fail the run.
     if (telemetryExport && result) {
@@ -460,7 +465,7 @@ export function runInspect(
         firstSeenAt: state.firstSeenAt,
         now: new Date(nowMs),
         runId: randomUUID(),
-        inspect: buildInspectAggregates(result, findings),
+        inspect: buildInspectAggregates(result, findings, optimizeActions),
       });
       const path = writeTelemetryExport(`${JSON.stringify(telemetry, null, 2)}\n`);
       process.stderr.write(
@@ -534,7 +539,7 @@ export function runInspect(
       records: listProjectHistoriesSync(),
       now: new Date(nowMs),
       runId: randomUUID(),
-      inspect: result ? buildInspectAggregates(result, findings) : undefined,
+      inspect: result ? buildInspectAggregates(result, findings, optimizeActions) : undefined,
     });
 
     // --fail-on: opt-in non-zero exit (4, never reuses 2) when any finding is at

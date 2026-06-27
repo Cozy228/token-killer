@@ -8,10 +8,11 @@
 // timestamps-as-evidence can never leak. A test
 // asserts this even when rows carry sensitive strings (ADR 0004 §0.6).
 
-import { byDay, fallbackCount, summarize } from "../core/aggregate.js";
+import { byDay, fallbackCount, lastNDays, summarize, type TimeBucket } from "../core/aggregate.js";
 import type { HistoryRecord } from "../core/history.js";
 import { tokensToCredits, tokensToUsd } from "../core/pricing.js";
 import {
+  dailyBucketsFromRollup,
   last24hFromRollup,
   rollupToGainSummary,
   savedTokens30dFromRollup,
@@ -29,7 +30,53 @@ export type InspectAggregates = {
   tool_category_counts: Record<string, number>;
   recommendation_type_counts: Record<string, number>;
   source_coverage: { session_inventory: number; transcript_coverage: number; tool_events: number };
+  // Input/output SIZES (chars) per tool category. Tool-call COUNTS already ship as
+  // tool_category_counts; this adds the volume each category moved. Numbers only, keyed by
+  // category (never raw tool names) — same privacy shape as tool_category_counts. Input has
+  // chars only (no token field on Opportunity), so both legs are chars for symmetry.
+  io_chars_by_category: Record<string, { input: number; output: number }>;
+  // Optimize before/after token totals grouped by exposure class (always-on / path-scoped
+  // / on-invocation) — the MEASURED context-footprint reduction `tk optimize` achieved
+  // (ledger ②, user bucket). Token counts only, keyed by exposure category — never a
+  // surface name, path, or hash. Empty {} when no optimize actions have been applied.
+  optimize_tokens_by_exposure: Record<string, { before: number; after: number }>;
 };
+
+// One day of the usage trend, keyed by a RELATIVE day_offset only (0 = most recent active
+// day, then -1 … -29). NEVER an absolute date/timestamp (ADR 0004: timestamps are not
+// evidence), so a server can plot the trend without ever learning a calendar date.
+export type TrendDay = {
+  day_offset: number;
+  commands: number;
+  tokens_saved: number;
+  savings_pct: number;
+};
+
+// Collapse a daily bucket series (oldest-first, ending "today") into the relative-offset
+// trend. day_offset 0 anchors on the MOST RECENT ACTIVE day; earlier days are -1 … -29.
+// Trailing empty days (after the last active day) are dropped so every offset is ≤ 0 and no
+// absolute date ever reaches the wire. Returns [] when the window holds no activity.
+function trendByDay(buckets: TimeBucket[]): TrendDay[] {
+  let anchor = -1;
+  for (let i = buckets.length - 1; i >= 0; i -= 1) {
+    if (buckets[i]!.commands > 0) {
+      anchor = i;
+      break;
+    }
+  }
+  if (anchor < 0) return [];
+  const out: TrendDay[] = [];
+  for (let i = anchor; i >= 0; i -= 1) {
+    const b = buckets[i]!;
+    out.push({
+      day_offset: i - anchor,
+      commands: b.commands,
+      tokens_saved: b.saved,
+      savings_pct: b.pct,
+    });
+  }
+  return out;
+}
 
 export type TelemetryPayload = {
   schema: "1";
@@ -58,6 +105,9 @@ export type TelemetryPayload = {
   // headline value unit (1 credit = $0.01); USD retained alongside.
   estimated_savings_usd_30d: number;
   estimated_savings_ai_credits_30d: number;
+  // server-side usage trend over the last 30 days, keyed by RELATIVE day_offset only
+  // (0 = most recent active day, -1 … -29); never an absolute date/timestamp (ADR 0004).
+  trend_by_day: TrendDay[];
   // optional inspect aggregates
   inspect?: InspectAggregates;
   // per-POST message id for endpoint-side dedup (NOT a stable correlator)
@@ -128,6 +178,7 @@ export function buildTelemetry(params: BuildTelemetryParams): TelemetryPayload {
     // surfaced once the excluded telemetry tests were wired into the gate).
     estimated_savings_usd_30d: Math.round(tokensToUsd(tokensSaved30d) * 1e6) / 1e6,
     estimated_savings_ai_credits_30d: Math.round(tokensToCredits(tokensSaved30d) * 1e4) / 1e4,
+    trend_by_day: trendByDay(lastNDays(records, 30, now)),
     runId: params.runId,
   };
   if (params.inspect) payload.inspect = params.inspect;
@@ -193,6 +244,7 @@ export function buildTelemetryFromRollup(params: BuildTelemetryRollupParams): Te
     source_adapter_mix: { ...rollup.source_adapter_mix },
     estimated_savings_usd_30d: Math.round(tokensToUsd(tokensSaved30d) * 1e6) / 1e6,
     estimated_savings_ai_credits_30d: Math.round(tokensToCredits(tokensSaved30d) * 1e4) / 1e4,
+    trend_by_day: trendByDay(dailyBucketsFromRollup(rollup, 30, now)),
     runId: params.runId,
   };
   if (params.inspect) payload.inspect = params.inspect;

@@ -572,6 +572,27 @@ export async function ensureProjectRollup(cwd: string): Promise<ProjectRollup> {
   return rebuilt;
 }
 
+// Read-only sibling of listProjectRollups: loads ONLY already-built rollup.json caches and
+// NEVER opens history.jsonl or rebuilds. The opportunistic hot-path telemetry flush uses this so
+// it stays cheap and does no cold-path work — a project with history but no built rollup yet is
+// skipped, so telemetry never flows until a cold path (`tk gain` / `tk inspect`) has built one.
+export async function loadCachedProjectRollups(): Promise<ProjectRollup[]> {
+  const projectsDir = path.join(tokenKillerHome(), "projects");
+  let entries: string[];
+  try {
+    const { readdir } = await import("node:fs/promises");
+    entries = await readdir(projectsDir);
+  } catch {
+    return [];
+  }
+  const rollups: ProjectRollup[] = [];
+  for (const entry of entries) {
+    const rollup = await loadRollupFile(path.join(projectsDir, entry, "rollup.json"));
+    if (rollup) rollups.push(rollup);
+  }
+  return rollups;
+}
+
 export async function listProjectRollups(): Promise<ProjectRollup[]> {
   const projectsDir = path.join(tokenKillerHome(), "projects");
   let entries: string[];

@@ -187,3 +187,29 @@ above; they sharpen ones that were under-specified.
 Also: the prerequisite config infrastructure (`config.jsonc` reader, `tk config init`, closed-set
 shape validation, exit-1) was specified in `inspect-v1-design.md` but never implemented — it is
 built first in this initiative (goal Slice 3a), not merely "extended".
+
+## Amendment (2026-06, opportunistic hot-path flush)
+
+Decision 6 keeps the telemetry send **cold-path only** (`tk inspect` / `tk gain`) and never on the
+`tk <cmd>` hot path — that remains the default. This amendment adds one narrow, guarded exception
+so installs that rarely run the cold path still report. A hot-path send is permitted ONLY when
+**all** of these hold:
+
+1. **The endpoint is non-empty.** A generic/dev build bakes `""`, so the entire branch — including
+   loading the telemetry module — is skipped at ~zero cost; only an enterprise build reaches it.
+2. **The 23h staleness window has elapsed.** It shares the SAME `lastSentAt` marker as the cold
+   path, so the combined hot+cold cadence is still at most one send per 23h; in the steady state
+   the gate is a single timestamp read.
+3. **It is asynchronous, unref'd, and fired AFTER the user-visible result is already on stdout.**
+   The socket is `unref()`'d (transport contract), so it can neither block process exit nor delay
+   the command. It merges the already-CACHED per-project rollups (user-level) and NEVER reads raw
+   history or rebuilds a rollup on the hot path; an empty cache simply sends nothing.
+
+Rationale: the load-bearing hot-path guarantee is preserved — the added cost on an enabled
+enterprise build is two small reads (consent flag + last-sent timestamp) plus a non-blocking
+beacon, and on every generic build it is a single constant check. The trade is a best-effort daily
+backstop for users who never open `tk gain` / `tk inspect`, at no risk to the command's latency,
+exit code, or fail-open behavior. This hot-path send is USER-LEVEL — it merges the already-built
+per-project cached rollups (a READ-ONLY load that, unlike the cold path, never reads history or
+rebuilds), so a device never mixes project-scoped and user-level points under one `device_hash`,
+and a project with history but no built rollup yet contributes nothing until a cold path seeds it.

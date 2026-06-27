@@ -62,6 +62,22 @@ export function deviceHash(state: TelemetryState): string {
   return createHash("sha256").update(state.deviceSalt).digest("hex");
 }
 
+// Read lastSentAt WITHOUT creating (or mutating) the state file. The hot-path flush uses
+// this to check the 23h window cheaply: a missing / corrupt / never-sent state reads as null.
+// Unlike loadOrCreateState it has NO side effect — it must never mint a device salt on the
+// hot path for an opted-in user who has nothing to send yet (keeps the telemetry dir pristine
+// and preserves the "tk <cmd> doesn't touch telemetry state" invariant when no rollup exists).
+export function peekLastSentAt(): string | null {
+  try {
+    const file = stateFile();
+    if (!existsSync(file)) return null;
+    const parsed = JSON.parse(readFileSync(file, "utf8")) as Partial<TelemetryState>;
+    return typeof parsed.lastSentAt === "string" ? parsed.lastSentAt : null;
+  } catch {
+    return null;
+  }
+}
+
 // Stamp lastSentAt = now. Called BEFORE dispatching a send (Slice 4) so a down
 // endpoint is never hammered — at most one attempt per window, even on failure.
 export function setLastSentAt(now: Date): void {

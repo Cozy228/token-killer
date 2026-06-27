@@ -59,6 +59,7 @@ const ALLOWED_KEYS = new Set([
   "source_adapter_mix",
   "estimated_savings_usd_30d",
   "estimated_savings_ai_credits_30d",
+  "trend_by_day",
   "inspect",
   "runId",
 ]);
@@ -107,9 +108,35 @@ describe("buildTelemetry — schema v1 shape", () => {
         tool_category_counts: { read: 3 },
         recommendation_type_counts: { delivery: 1 },
         source_coverage: { session_inventory: 1, transcript_coverage: 1, tool_events: 1 },
+        io_chars_by_category: { read: { input: 12, output: 34 } },
+        optimize_tokens_by_exposure: { "always-on": { before: 800, after: 500 } },
       },
     });
     expect(withInspect.inspect?.tool_category_counts).toEqual({ read: 3 });
+    expect(withInspect.inspect?.io_chars_by_category).toEqual({ read: { input: 12, output: 34 } });
+    expect(withInspect.inspect?.optimize_tokens_by_exposure).toEqual({
+      "always-on": { before: 800, after: 500 },
+    });
+  });
+
+  test("trend_by_day carries RELATIVE day offsets only (0 = most recent active day)", () => {
+    const t = build([
+      record({ timestamp: "2026-06-09T08:00:00.000Z", saved_tokens: 75, raw_tokens: 100 }),
+      record({ timestamp: "2026-06-09T20:00:00.000Z", saved_tokens: 25, raw_tokens: 100 }),
+    ]);
+    expect(t.trend_by_day.length).toBeGreaterThan(0);
+    const head = t.trend_by_day[0]!;
+    // The anchor is the most recent ACTIVE day (2026-06-09), folded to offset 0.
+    expect(head.day_offset).toBe(0);
+    expect(head.commands).toBe(2);
+    expect(head.tokens_saved).toBe(100);
+    // Every offset is a small non-positive int; no absolute date/timestamp leaks.
+    for (const d of t.trend_by_day) {
+      expect(Number.isInteger(d.day_offset)).toBe(true);
+      expect(d.day_offset).toBeLessThanOrEqual(0);
+      expect(d.day_offset).toBeGreaterThan(-30);
+    }
+    expect(JSON.stringify(t.trend_by_day)).not.toMatch(/\d{4}-\d{2}-\d{2}/);
   });
 });
 
@@ -138,6 +165,9 @@ describe("buildTelemetry — allow-list is physically enforced (§8)", () => {
     expect(json).not.toContain("/Users/alice");
     expect(json).not.toContain("secret-project");
     expect(json).not.toContain("beadfacefeed");
+    // No absolute date/timestamp may surface either (ADR 0004: timestamps are not evidence);
+    // the trend carries relative day offsets only.
+    expect(json).not.toMatch(/\d{4}-\d{2}-\d{2}/);
     // `deploy` is not a member of the closed program vocabulary (issue #10), so the
     // program slot degrades it to "other" — the safe direction; no user content reaches
     // the wire either way.

@@ -22,6 +22,9 @@ try {
 
 import { parseArgv } from "./parse.js";
 import { VERSION } from "./version.js";
+// Tiny build-time constant (a single string, no heavy deps) — imported statically so the
+// hot path can decide WITHOUT any I/O whether to even load the telemetry module (F2).
+import { TELEMETRY_ENDPOINT } from "./telemetry/endpoint.js";
 import type {
   CommandHandler,
   FilteredResult,
@@ -399,7 +402,21 @@ async function main(): Promise<number> {
   // the real tool. If even that is impossible (genuine recursion), print a clear
   // one-line error and exit non-zero. Never crash, never block the command.
   try {
-    return await runCompress(handler, command, parsed.options);
+    const exitCode = await runCompress(handler, command, parsed.options);
+    // Opportunistic hot-path telemetry flush (ADR 0004 Decision 6 amendment). Generic/dev
+    // builds bake an empty endpoint, so this whole branch — including loading the telemetry
+    // module — is skipped at ~zero hot-path cost. On an enterprise build it fires AFTER the
+    // compressed result is already on stdout: best-effort, unref'd, never blocks process exit,
+    // merges the CACHED per-project rollups (user-level, never rebuilds), and shares the 23h throttle.
+    if (TELEMETRY_ENDPOINT) {
+      try {
+        const { runHotPathTelemetryFlush } = await import("./telemetry/dispatch.js");
+        void runHotPathTelemetryFlush().catch(() => {});
+      } catch {
+        // Loading or firing telemetry must never affect the command outcome.
+      }
+    }
+    return exitCode;
   } catch (error) {
     // The fail-open is silent by design (never surface compression noise to the
     // agent). TK_DEBUG opens a window into WHY a command fell back to passthrough
