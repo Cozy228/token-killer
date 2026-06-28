@@ -222,7 +222,11 @@ export const searchLikeHandler: CommandHandler = {
       original: [command.program, ...args],
       displayCommand: `${command.program} ${args.join(" ")}`.trim(),
     };
-    return executeCommand(rewritten);
+    // Do NOT forward tk's stdin: ripgrep with no path operand reads a readable-pipe
+    // stdin instead of recursing the cwd, so the empty pipe tk would hand it makes
+    // `tk rg PATTERN` (and `-g`/`--glob` forms) report a false "0 matches". A
+    // /dev/null stdin makes rg/grep recurse the cwd like a direct invocation.
+    return executeCommand(rewritten, undefined, { forwardStdin: false });
   },
 
   async filter(raw, command, options) {

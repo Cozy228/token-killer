@@ -487,8 +487,18 @@ export function executeCommand(
   // some commands with a stable locale (e.g. ls runs under LC_ALL=C so English
   // month names parse) — handlers pass that through here.
   extraEnv?: Record<string, string>,
+  // forwardStdin (default true) wires the parent's stdin into the child via the
+  // pipe below. Search-like handlers set it FALSE: ripgrep with no path operand
+  // searches the cwd UNLESS its stdin is a readable pipe/file, and the pipe we'd
+  // otherwise hand it is empty in every non-interactive run — so rg read EOF and
+  // reported a false "0 matches" for any pathless `tk rg PATTERN` (the dogfood
+  // "glob bug": `-g`/`--glob` is passed INSTEAD of a path). 'ignore' gives the
+  // child a /dev/null stdin (a char device, not a pipe), so it recurses the cwd
+  // exactly as a direct invocation would.
+  options?: { forwardStdin?: boolean },
 ): Promise<RawResult> {
   const started = Date.now();
+  const forwardStdin = options?.forwardStdin ?? true;
   const env = buildChildEnv(command.program, extraEnv);
   const target = buildSpawnTarget(command.program, command.args, env?.PATH ?? process.env.PATH);
   const spawnEnv = mergeSpawnEnv(env, target.extraEnv);
@@ -499,6 +509,9 @@ export function executeCommand(
       shell: false,
       windowsHide: true,
       windowsVerbatimArguments: target.windowsVerbatimArguments,
+      // stdout/stderr are always piped (tk captures + compresses them). stdin is
+      // forwarded only when forwardStdin; otherwise the child gets /dev/null.
+      stdio: forwardStdin ? ["pipe", "pipe", "pipe"] : ["ignore", "pipe", "pipe"],
       ...(spawnEnv ? { env: spawnEnv } : {}),
     });
 

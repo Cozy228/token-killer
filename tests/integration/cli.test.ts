@@ -577,6 +577,50 @@ describe("Grep / Search", () => {
       await rm(dir, { recursive: true, force: true });
     }
   });
+
+  // Regression: `tk rg PATTERN` with NO path operand reported a false "0 matches".
+  // Root cause: the executor gave the spawned child a PIPE for stdin
+  // (executor.ts `process.stdin.pipe(child.stdin)`). ripgrep, given no path operand,
+  // searches the cwd UNLESS its stdin is a readable pipe/file — so the empty pipe
+  // flipped rg into "search stdin", it read EOF, and reported nothing. Native rg with
+  // a tty or /dev/null stdin (every real agent context) recurses the cwd and finds the
+  // match; tk manufactured the one stdin shape that defeats it. Surfaced in dogfood as a
+  // "tk rg glob bug / 假 0-match" because `-g`/`--glob` is what users pass INSTEAD of a
+  // path, so the glob was incidental. rg is the ONLY wrapped tool with this cwd-fallback
+  // heuristic — grep/cat/wc read stdin natively too, so tk mirrors them (verified). The
+  // existing tests above all pass an explicit "." and never exercised this path.
+  test("tk rg with no path operand searches the cwd (not empty stdin)", async () => {
+    const dir = await mkdtemp(path.join(tmpdir(), "tk-rg-nopath-"));
+    try {
+      await writeFile(path.join(dir, "a.ts"), 'import "github.com/acme/foo";\n');
+
+      // No path argument — the user relies on rg's default "recurse the cwd".
+      const result = runTk(["rg", "acme"], dir);
+
+      expect(result.stdout).not.toContain("0 matches");
+      expect(result.stdout).toContain("acme");
+      expect(result.status).toBe(0);
+    } finally {
+      await rm(dir, { recursive: true, force: true });
+    }
+  });
+
+  // The exact dogfood symptom: a glob (`-g`) scoping the search with no path operand.
+  test("tk rg -g <glob> with no path operand finds matches (reported glob bug)", async () => {
+    const dir = await mkdtemp(path.join(tmpdir(), "tk-rg-glob-"));
+    try {
+      await mkdir(path.join(dir, "src"));
+      await writeFile(path.join(dir, "src", "a.ts"), 'import "github.com/acme/foo";\n');
+
+      const result = runTk(["rg", "-g", "*.ts", "acme"], dir);
+
+      expect(result.stdout).not.toContain("0 matches");
+      expect(result.stdout).toContain("acme");
+      expect(result.status).toBe(0);
+    } finally {
+      await rm(dir, { recursive: true, force: true });
+    }
+  });
 });
 
 // ============================================================================
