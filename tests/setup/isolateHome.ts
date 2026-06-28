@@ -26,4 +26,9 @@ beforeEach(() => {
     workerFallback ??= mkdtempSync(path.join(tmpdir(), "tk-test-home-fallback-"));
     process.env.TOKEN_KILLER_HOME = workerFallback;
   }
+  // Neutralize an ambient COPILOT_HOME: it relocates the Copilot CLI config ROOT
+  // (discoverCopilotCli honors it), so a value set on the dev/CI machine would shift
+  // source discovery off each test's sandboxed `home`. Tests that exercise COPILOT_HOME
+  // set it in their own body (after this hook) and clean up.
+  delete process.env.COPILOT_HOME;
 });

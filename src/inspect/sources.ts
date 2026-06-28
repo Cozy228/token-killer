@@ -78,9 +78,13 @@ function listSubdirs(dir: string): string[] {
   }
 }
 
-// Stable VS Code storage only (Insiders/Codium out of scope). Sessions live in
-// `chatSessions/`, analyzable events in the Copilot chat `transcripts/` — kept as
-// two distinct counts (coverage semantics: never collapse them).
+// Stable VS Code storage only (Insiders/Codium out of scope). The user-data ROOT
+// (vscodeUserDir) is OFFICIALLY documented per-OS (Win %APPDATA%\Code, macOS
+// ~/Library/Application Support/Code, Linux ~/.config/Code). The SUBPATHS below —
+// `globalStorage`/`workspaceStorage/*/chatSessions/` and the Copilot-chat
+// `transcripts/` — are the extension's INTERNAL storage, NOT an official contract:
+// discovered empirically and version-coupled, so probe tolerantly. Sessions vs
+// transcripts are kept as two distinct counts (coverage semantics: never collapse).
 function discoverVscode(home: string, platform: NodeJS.Platform): HostDiscovery {
   const userDir = vscodeUserDir(platform, home);
   const sessionFiles: string[] = [];
@@ -96,8 +100,11 @@ function discoverVscode(home: string, platform: NodeJS.Platform): HostDiscovery 
   return { inputType: "vscode", dir: userDir, sessionFiles, transcriptFiles };
 }
 
-// Copilot CLI session-state stores under ~/.copilot. Layout varies by version;
-// probe the common locations tolerantly.
+// Copilot CLI session-state stores under its config root — OFFICIALLY `~/.copilot`,
+// or `$COPILOT_HOME` when set (GitHub's config-dir reference defines COPILOT_HOME as a
+// replacement for the ENTIRE `~/.copilot` path). We honor it so a relocated root is
+// still found, matching detect.ts / preflight.ts / hook/install.ts which already do.
+// Layout varies by version; probe the common locations tolerantly.
 //
 // Modern layout (copilot ≥1.0, verified against 1.0.63): ONE directory per session
 // under `session-state/`, each holding the append-only event log:
@@ -110,7 +117,8 @@ function discoverVscode(home: string, platform: NodeJS.Platform): HostDiscovery 
 // Older / alternate flat layouts kept loose `*.jsonl` directly under a few subdirs;
 // probe those too so a downgraded or differently-versioned CLI still resolves.
 function discoverCopilotCli(home: string): HostDiscovery {
-  const base = join(home, ".copilot");
+  // $COPILOT_HOME wins (official: it IS the config root), else the documented ~/.copilot.
+  const base = process.env.COPILOT_HOME ?? join(home, ".copilot");
   const sessionFiles: string[] = [];
   const transcriptFiles: string[] = [];
 
@@ -122,7 +130,9 @@ function discoverCopilotCli(home: string): HostDiscovery {
   // Some builds drop a loose `*.jsonl` directly under session-state (no per-id dir).
   sessionFiles.push(...listJsonl(sessionStateRoot));
 
-  // Flat fallbacks for older / alternate layouts.
+  // Flat fallbacks: `logs/` is in the official current layout ("Session log files");
+  // `history`/`sessions` are older-build back-compat (not in the documented set, kept
+  // tolerantly so a downgraded CLI still resolves — covered by sources.test.ts).
   for (const sub of ["history", "sessions", "logs"]) {
     transcriptFiles.push(...listJsonl(join(base, sub)));
   }

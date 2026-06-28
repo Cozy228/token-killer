@@ -86,6 +86,29 @@ describe("discoverSources — copilot-cli", () => {
     const d = discoverSources("copilot-cli", home);
     expect(d.sessionFiles.filter((f) => f.endsWith("events.jsonl"))).toHaveLength(3);
   });
+
+  // Official: COPILOT_HOME replaces the ENTIRE ~/.copilot path. A decoy under the
+  // default ~/.copilot must be ignored when COPILOT_HOME points elsewhere.
+  test("honors COPILOT_HOME as the config root (official override of ~/.copilot)", () => {
+    const copilotHome = mkdtempSync(join(tmpdir(), "tk-copilot-home-"));
+    mkdirSync(join(home, ".copilot", "session-state", "decoy"), { recursive: true });
+    writeFileSync(join(home, ".copilot", "session-state", "decoy", "events.jsonl"), "{}\n");
+    mkdirSync(join(copilotHome, "session-state", "real"), { recursive: true });
+    writeFileSync(join(copilotHome, "session-state", "real", "events.jsonl"), "{}\n");
+
+    process.env.COPILOT_HOME = copilotHome;
+    try {
+      const d = discoverSources("copilot-cli", home);
+      expect(d.found).toBe(true);
+      expect(d.sessionFiles).toHaveLength(1); // only the COPILOT_HOME one, not the decoy
+      expect(d.sessionFiles[0]).toContain(copilotHome);
+      expect(d.sessionFiles[0]).not.toContain(join(home, ".copilot"));
+      expect(discoverHosts(home, "linux")[1]!.dir).toBe(copilotHome);
+    } finally {
+      delete process.env.COPILOT_HOME;
+      rmSync(copilotHome, { recursive: true, force: true });
+    }
+  });
 });
 
 describe("discoverHosts / mergeHosts — multi-host (default, no --input-type)", () => {
