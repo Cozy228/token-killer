@@ -7,6 +7,8 @@
 // Read-only by default (it prints "would fix …"); `--fix` applies repairs. This verb
 // replaced `tk status` (cli.ts prints a rename hint for the old name).
 
+import { existsSync } from "node:fs";
+
 import { ensureProjectMeta } from "../core/history.js";
 import {
   archiveUnresolvedOrphans,
@@ -18,6 +20,7 @@ import {
   recoverOrphanNames,
   type RecordsReport,
 } from "../core/recordsHealth.js";
+import { discoverHosts, hostFound, type HostDiscovery } from "../inspect/sources.js";
 import { installedTierIds } from "./capability.js";
 import { gatherStatus, renderStatusReport, runInstall, type StatusGather } from "./init.js";
 
@@ -60,6 +63,35 @@ function missingTiers(status: StatusGather): string[] {
 
 function shortHash(fingerprint: string): string {
   return fingerprint.replace(/^repo:/, "").slice(0, 8);
+}
+
+const HOST_LABEL: Record<HostDiscovery["inputType"], string> = {
+  vscode: "VS Code (Copilot)",
+  "copilot-cli": "Copilot CLI",
+};
+
+// Diagnose each agent host's SESSION-DATA ROOT — the directory `tk inspect` reads to
+// find missed token-saving opportunities (VS Code's user-storage chatSessions, Copilot
+// CLI's ~/.copilot/session-state). tk cannot repair a host's own data, so this is
+// REPORT-ONLY: it surfaces WHERE tk looks and whether anything is there, so a "no
+// opportunities" inspect result can be told apart from "the root is missing/empty/wrong"
+// (the actual misconfiguration). Reuses inspect's discovery so doctor and inspect can
+// never disagree about which roots are scanned.
+function renderSessionData(hosts: HostDiscovery[]): void {
+  out();
+  out("  Session data roots (read by `tk inspect`):");
+  for (const h of hosts) {
+    const label = HOST_LABEL[h.inputType];
+    if (hostFound(h)) {
+      out(
+        `    [found  ] ${label}: ${h.dir} — ${h.sessionFiles.length} session(s), ${h.transcriptFiles.length} transcript(s)`,
+      );
+    } else if (existsSync(h.dir)) {
+      out(`    [empty  ] ${label}: ${h.dir} — root present, no sessions found`);
+    } else {
+      out(`    [absent ] ${label}: ${h.dir} — root absent (host not installed, or data elsewhere)`);
+    }
+  }
 }
 
 // Print the records section. `fix=false` marks each fixable finding "would fix"; in fix
@@ -194,7 +226,10 @@ export async function runDoctor(argv: string[] = []): Promise<number> {
   const status = await gatherStatus();
   renderStatusReport(status);
 
-  // 2. Records section.
+  // 2. Host session-data roots — the inputs `tk inspect` reads (report-only).
+  renderSessionData(discoverHosts());
+
+  // 3. Records section.
   const report = recordsStoreExists() ? diagnoseRecords() : undefined;
   renderRecordsReport(report, fix, args.scanRoot);
 

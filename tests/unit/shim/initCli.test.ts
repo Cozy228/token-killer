@@ -672,6 +672,39 @@ describe("tk doctor", () => {
     expect(result.stdout).toContain("re-installing copilot-cli");
     expect(existsSync(hookFile)).toBe(true); // tier repaired
   });
+
+  // FOCUS: the SESSION-DATA roots `tk inspect` reads — VS Code's user storage and the
+  // Copilot CLI's ~/.copilot/session-state. Doctor checks (report-only) that they exist
+  // and hold sessions, so a "no opportunities" inspect can be told from a missing root.
+  test("session-data check finds a Copilot CLI session root", async () => {
+    const sess = join(home, ".copilot", "session-state", "sess1");
+    mkdirSync(sess, { recursive: true });
+    writeFileSync(join(sess, "events.jsonl"), '{"type":"x"}\n');
+    const result = await doctor();
+    expect(result.status).toBe(0);
+    expect(result.stdout).toContain("Session data roots");
+    expect(result.stdout).toMatch(/\[found\s*\] Copilot CLI:/);
+  });
+
+  test("session-data check finds a VS Code session root", async () => {
+    const chatSessions = join(
+      vscodeUserDir(process.platform, home),
+      "globalStorage",
+      "chatSessions",
+    );
+    mkdirSync(chatSessions, { recursive: true });
+    writeFileSync(join(chatSessions, "s.json"), "{}");
+    const result = await doctor();
+    expect(result.status).toBe(0);
+    expect(result.stdout).toMatch(/\[found\s*\] VS Code \(Copilot\):/);
+  });
+
+  test("session-data check reports an absent root (host not installed / data elsewhere)", async () => {
+    const result = await doctor();
+    expect(result.status).toBe(0);
+    expect(result.stdout).toMatch(/\[absent\s*\] Copilot CLI:/);
+    expect(result.stdout).toMatch(/\[absent\s*\] VS Code \(Copilot\):/);
+  });
 });
 
 describe("tk init (removed)", () => {
