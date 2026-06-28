@@ -162,7 +162,7 @@ export function coerceHistorySizes(record: HistoryRecord): HistoryRecord {
 // or a stale label (basename of an old cwd) is rewritten with the correct name.
 // Best-effort: any read/write error is swallowed — the label is display-only and must
 // never affect the command's outcome.
-async function ensureProjectMeta(cwd: string): Promise<void> {
+export async function ensureProjectMeta(cwd: string): Promise<void> {
   try {
     const label = projectLabel(cwd);
     const current = await readProjectMeta(projectFingerprint(cwd));

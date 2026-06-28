@@ -45,7 +45,7 @@ function help(): string {
     "Commands:",
     "  install     Install tk delivery into your agent host (hook / shim / injection)",
     "  uninstall   Remove everything tk installed (optionally purge measured data)",
-    "  status      Show install status and refresh the delivery verification timestamp",
+    "  doctor      Diagnose install + metrics health; --fix repairs and normalizes them",
     "  hook        Agent-host hook runtime: decide command rewrites & governance",
     "  inspect     Scan your AI setup for token-saving opportunities (opens an HTML report)",
     "  debug       Bundle tk's own diagnostics into one self-contained markdown report",
@@ -74,9 +74,17 @@ function help(): string {
     "  --project      Remove only the current repo's artifacts (not the user install)",
     "  --dry-run      Report what would be removed without deleting",
     "",
-    "tk status",
-    "  Show the current install: detected host, claude/copilot hook config, shim status,",
-    "  injection file, usage guidance. Does not change hook or shim installation.",
+    "tk doctor [--fix] [scan-root]",
+    "  Diagnose tk's health and (with --fix) repair it. Read-only by default — it prints",
+    "  the install matrix (detected host, hook/shim/injection/guidance) AND the metrics",
+    "  store health (rollup freshness, duplicate/empty/orphan project buckets), marking",
+    "  each fixable item as 'would fix'.",
+    "  --fix          Repair: re-install broken delivery tiers, rebuild stale rollup caches,",
+    "                 merge duplicate buckets, heal the current repo's project name, and",
+    "                 normalize project identities so reports never show a bare hash.",
+    "  scan-root      Optional dir to scan for .git repos; recovers real names for orphan",
+    "                 buckets by fingerprint match. Unmatched orphans are folded into one",
+    "                 'archived' bucket (token totals preserved, hash-named dirs removed).",
     "",
     "tk hook <copilot|claude|check <command...>>",
     "  copilot                Hook runtime: read a tool event on stdin, emit a rewrite/governance decision",
@@ -227,8 +235,10 @@ async function main(): Promise<number> {
   if (parsed.mode === "uninstall") {
     return (await import("./shim/init.js")).runUninstall(parsed.subArgs ?? []);
   }
-  if (parsed.mode === "status") {
-    return (await import("./shim/init.js")).runStatus(parsed.subArgs ?? []);
+  // `doctor` diagnoses (and with --fix repairs) both the install and the metrics
+  // store. It replaced `tk status` (now a rename hint in the passthrough block below).
+  if (parsed.mode === "doctor") {
+    return (await import("./shim/doctor.js")).runDoctor(parsed.subArgs ?? []);
   }
   if (parsed.mode === "shim") {
     return (await import("./shim/cli.js")).runShim(parsed.subArgs ?? []);
@@ -365,6 +375,8 @@ async function main(): Promise<number> {
   if (!shimInvoked && !handler && !isShimmableProgram(command.program)) {
     if (command.program === "init") {
       process.stderr.write("tk: `tk init` was renamed to `tk install` (see `tk --help`).\n");
+    } else if (command.program === "status") {
+      process.stderr.write("tk: `tk status` was renamed to `tk doctor` (see `tk --help`).\n");
     } else {
       process.stderr.write(
         `tk: unknown command "${command.program}" — tk wraps known dev tools; ` +

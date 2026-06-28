@@ -75,7 +75,8 @@ supports (a hook where possible, a PATH shim otherwise). Restart your agent afte
 
 ```bash
 tk install            # auto-detect host, wire everything in
-tk status             # show what's wired
+tk doctor             # diagnose install + metrics health (read-only)
+tk doctor --fix       # repair broken tiers + normalize the metrics store
 tk uninstall          # remove it all (add --purge-data to also wipe metrics)
 ```
 

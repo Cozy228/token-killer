@@ -70,7 +70,9 @@ const RESERVED_SUBCOMMANDS = new Set<ParsedArgv["mode"]>([
   "version",
   "install",
   "uninstall",
-  "status",
+  // `doctor` is the diagnose+repair verb (it replaced `tk status`, which is gone —
+  // cli.ts prints a rename hint for the old name, like it does for `tk init`).
+  "doctor",
   "shim",
   "hook",
   "inspect",

@@ -36,7 +36,7 @@ tk --version
 ### Wire into your agent host
 
 ```bash
-tk status                              # inspect current delivery tier
+tk doctor                              # inspect delivery + metrics health (--fix to repair)
 tk install --host copilot-cli                  # Copilot CLI → hook tier
 tk install                                     # VS Code → shim tier (PATH wrappers)
 tk install --project                           # optional: project-level instruction injection

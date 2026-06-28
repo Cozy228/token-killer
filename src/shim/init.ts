@@ -11,10 +11,16 @@ import { installShim, runShim } from "./cli.js";
 import { copilotHookConfigStatus, uninstallCopilotHookConfig } from "../hook/install.js";
 import { claudeHookStatus, uninstallClaudeHook } from "../hook/claudeInstall.js";
 import { guidanceFilePath, guidanceLoader, unwriteGuidance, writeGuidance } from "./guidance.js";
-import { gatherPreflightConcurrent, probeHostVersion, renderPreflight } from "./preflight.js";
-import { runInterceptionProbe } from "./probe.js";
+import {
+  gatherPreflightConcurrent,
+  type PreflightCheck,
+  probeHostVersion,
+  renderPreflight,
+} from "./preflight.js";
+import { runInterceptionProbe, type ProbeResult } from "./probe.js";
 import { shimDir } from "./install.js";
 import {
+  type DeliveryMatrix,
   gatherDeliveryMatrix,
   installedTierIds,
   recordInstall,
@@ -70,54 +76,56 @@ function injectionTarget(host: Host): string {
 }
 
 // ---------------------------------------------------------------------------
-// tk status — installation-safe. Reports host / tier signals without installing
-// or repairing hooks/shims, then refreshes the delivery verification timestamp.
+// tk doctor (install section) — installation-safe. Reports host / tier signals
+// without installing or repairing hooks/shims, then refreshes the delivery
+// verification timestamp. Split into gather (returns the live matrix so
+// `tk doctor --fix` can decide which tiers to re-install) + render (prints it).
+// Consumed by src/shim/doctor.ts.
 // ---------------------------------------------------------------------------
 
-export async function runStatus(_argv: string[] = []): Promise<number> {
+export type StatusGather = {
+  host: Host;
+  preflight: PreflightCheck[];
+  shimProbe: ProbeResult;
+  matrix: DeliveryMatrix;
+};
+
+// Gather the live install signals (NO printing). Persists lastVerified as a side
+// effect — running status/doctor IS the verification (issue #26).
+export async function gatherStatus(): Promise<StatusGather> {
   const host = detectHost(gatherDetectEnv());
-  out(`Detected host: ${host}`);
 
   // Gather preflight ONCE (issue #23 Windows section) and REUSE it for the matrix's
   // host-version line, so `copilot --version` is not spawned twice (ADR 0012 #7).
   // Concurrent: the copilot/pwsh `--version` probes overlap rather than run serially,
-  // which dominates `tk status` wall-clock on Windows/EDR (each is a multi-second
-  // cold-start). No probe is skipped — only parallelized.
+  // which dominates wall-clock on Windows/EDR (each is a multi-second cold-start).
   const preflight = await gatherPreflightConcurrent();
 
-  // Timestamp truth (issue #26): `tk status` IS the verification, so persist
-  // lastVerified to NOW *before* gathering the matrix — gatherDeliveryMatrix reads the
-  // state file, so the rendered "last verified" reflects THIS run, not the previous
-  // run's stale value (the old order rendered first, wrote after, and only the next
-  // status run saw the prior timestamp). Best-effort: a write failure never breaks
-  // status, and the matrix then simply shows the last successfully-written
-  // value.
+  // Timestamp truth (issue #26): this run IS the verification, so persist lastVerified
+  // to NOW *before* gathering the matrix — gatherDeliveryMatrix reads the state file,
+  // so the rendered "last verified" reflects THIS run. Best-effort: a write failure
+  // never breaks status/doctor.
   updateDeliveryState({ lastVerified: new Date().toISOString() });
   const shimProbe = runInterceptionProbe(shimDir());
 
-  // ADR 0012 #7: render the per-host capability MATRIX (a host can hold several
-  // live tiers at once, so a single "active tier" is no longer faithful). Everything
-  // here is LIVE-DERIVED by the existing status helpers (copilot/claude hook status,
-  // shim manifest + probe, injection/guidance file presence, TTY opt-in) plus the
-  // persisted install-time facts. `runShim(["status"])` still prints its detailed
-  // shim panel below the matrix for the baked-path / PATH-position diagnostics the
-  // matrix summarizes in one line.
+  // ADR 0012 #7: the per-host capability MATRIX (a host can hold several live tiers at
+  // once). Everything is LIVE-DERIVED by the existing status helpers plus the persisted
+  // install-time facts.
   const matrix = gatherDeliveryMatrix({ host, preflight, shimProbe });
-  renderDeliveryMatrix(matrix).forEach(out);
+  return { host, preflight, shimProbe, matrix };
+}
 
+// Print the gathered install report. `runShim(["status"])` prints its detailed shim
+// panel for the baked-path / PATH-position diagnostics the matrix summarizes in one
+// line; renderPreflight prints the Windows-focused requirement checks (issue #23) —
+// each probe degrades to a "not found / unavailable" line and never throws.
+export function renderStatusReport(s: StatusGather): void {
+  out(`Detected host: ${s.host}`);
+  renderDeliveryMatrix(s.matrix).forEach(out);
   out(`  Shim detail:`);
-  runShim(["status"], { statusProbe: shimProbe });
-
-  // Windows preflight (issue #23): the documented Copilot-CLI hook requirements
-  // (PowerShell 7+, an absolute hook command, a loaded hooks dir, the
-  // `powershell` shell-tool name). Runs on all platforms — each probe degrades
-  // to a "not found / unavailable" line and never throws, so status stays total.
+  runShim(["status"], { statusProbe: s.shimProbe });
   out(`  Windows preflight:`);
-  renderPreflight(preflight).forEach(out);
-
-  // lastVerified was already persisted above (before the matrix was gathered) so the
-  // rendered value reflects THIS run — no second write here (issue #26 timestamp truth).
-  return 0;
+  renderPreflight(s.preflight).forEach(out);
 }
 
 // ---------------------------------------------------------------------------

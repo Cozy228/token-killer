@@ -811,7 +811,7 @@ describe("Error Handling", () => {
     expect(result.status).toBe(0);
     expect(result.stdout).toContain("tk — Token Killer");
     expect(result.stdout).toContain("Commands:");
-    expect(result.stdout).toContain("refresh the delivery verification timestamp");
+    expect(result.stdout).toContain("Diagnose install + metrics health");
     expect(result.stdout).not.toContain("Read-only — writes nothing");
   });
 

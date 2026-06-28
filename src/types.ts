@@ -78,7 +78,7 @@ export type ParseMode =
   | "version"
   | "install"
   | "uninstall"
-  | "status"
+  | "doctor"
   | "shim"
   | "hook"
   | "inspect"

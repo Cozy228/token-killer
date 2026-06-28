@@ -412,7 +412,7 @@ tk hook check <cmd> # dry-run：查看某条命令会被如何改写（仿 rtk h
 ```bash
 tk install                      # 自动探测 host（vscode → 装 shim，命令压缩主交付层）
 tk install --host copilot-cli   # 把 tk hook copilot 写进 ~/.copilot/hooks/（仿 rtk init --copilot）
-tk status                       # 查看当前 host / hook / shim / injection 安装状态（只读）
+tk doctor                       # 诊断 host/hook/shim/injection + 度量存储健康（只读；--fix 修复+归一化）
 tk install --dry-run            # 预览改动，不写盘
 tk uninstall                    # 移除 tk 安装的一切（可选 --purge-data 清除度量数据）
 ```

@@ -6,17 +6,18 @@ import { fileURLToPath, pathToFileURL } from "node:url";
 import { spawnSync } from "node:child_process";
 
 import { vscodeSettingsPath, vscodeUserDir } from "../../../src/shim/hostConfig.js";
-import { runInstall, runStatus, runUninstall } from "../../../src/shim/init.js";
+import { runInstall, runUninstall } from "../../../src/shim/init.js";
+import { runDoctor } from "../../../src/shim/doctor.js";
 
-// Sandboxed coverage for `tk install` / `tk uninstall` / `tk status` (the CLI
-// surface that replaced `tk init`, U1+U2). HOME points at a temp dir so every
-// write (shim dir, RC, VS Code settings, injection file) lands inside the sandbox.
+// Sandboxed coverage for `tk install` / `tk uninstall` / `tk doctor` (the CLI
+// surface that replaced `tk init` and `tk status`, U1+U2). HOME points at a temp dir
+// so every write (shim dir, RC, VS Code settings, injection file) lands in the sandbox.
 //
 // Two altitudes, by design:
 //   • A handful of BOUNDARY tests (`runTg`) spawn the real `tk` binary to prove
-//     the cli.ts dispatch — verb → runInstall/runUninstall/runStatus, exit-code
-//     propagation, and the removed-`init` stderr path — actually wires up.
-//   • Every BEHAVIOR test calls runInstall/runUninstall/runStatus IN-PROCESS
+//     the cli.ts dispatch — verb → runInstall/runUninstall/runDoctor, exit-code
+//     propagation, and the removed-`init`/`status` stderr paths — actually wire up.
+//   • Every BEHAVIOR test calls runInstall/runUninstall/runDoctor IN-PROCESS
 //     (`callDirect`). The functions read HOME / TOKEN_KILLER_HOME / detect-env /
 //     cwd at call time and write via process.stdout.write, so an in-process call
 //     with a sandboxed env + captured streams exercises the identical code path
@@ -147,10 +148,10 @@ const install = (argv: string[], env?: NodeJS.ProcessEnv, cwd?: string) =>
 const uninstall = (argv: string[], env?: NodeJS.ProcessEnv, cwd?: string) =>
   callDirect(runUninstall, argv, env, cwd);
 
-// runStatus is async (it overlaps the copilot/pwsh `--version` probes), so its direct
-// call must AWAIT fn inside the sandbox — the env/stdout overrides have to stay in
-// place until the spawns settle and all output is captured. Same restore contract as
-// the sync callDirect, just across an await.
+// runDoctor is async (its install section overlaps the copilot/pwsh `--version`
+// probes), so its direct call must AWAIT fn inside the sandbox — the env/stdout
+// overrides have to stay in place until the spawns settle and all output is captured.
+// Same restore contract as the sync callDirect, just across an await.
 async function callDirectAsync(
   fn: (argv: string[]) => Promise<number>,
   argv: string[],
@@ -206,7 +207,7 @@ async function callDirectAsync(
 
   return { status, stdout: outChunks.join(""), stderr: errChunks.join("") };
 }
-const status = (env?: NodeJS.ProcessEnv) => callDirectAsync(runStatus, [], env);
+const doctor = (env?: NodeJS.ProcessEnv) => callDirectAsync(runDoctor, [], env);
 
 const savedInitEnv: Record<string, string | undefined> = {};
 beforeEach(() => {
@@ -601,14 +602,14 @@ describe("tk uninstall", () => {
   });
 });
 
-describe("tk status", () => {
-  // BOUNDARY: proves the real `tk status` binary dispatches to runStatus, exits 0,
+describe("tk doctor", () => {
+  // BOUNDARY: proves the real `tk doctor` binary dispatches to runDoctor, exits 0,
   // and writes no install artifact while refreshing delivery-state bookkeeping.
-  // ADR 0012 #7: status renders a per-host capability MATRIX (replacing the old
+  // ADR 0012 #7: doctor renders a per-host capability MATRIX (replacing the old
   // ad-hoc per-tier lines). Assert on the matrix's stable labels plus the shim
   // detail panel, tolerant of the new layout.
   test("reports the detected host and matrix without changing installation (CLI boundary)", () => {
-    const result = runTg(["status"], { PATH: "/usr/bin:/bin", TERM_PROGRAM: "" });
+    const result = runTg(["doctor"], { PATH: "/usr/bin:/bin", TERM_PROGRAM: "" });
     expect(result.status).toBe(0);
     expect(result.stdout).toContain("Detected host:");
     // The matrix and its per-tier rows.
@@ -627,17 +628,49 @@ describe("tk status", () => {
     expect(existsSync(join(home, ".token-killer", "shim"))).toBe(false);
   });
 
-  // The persisted delivery state lets status report what `tk install` chose even
-  // for tiers a live probe can't fully confirm. Install records it; status reads it
-  // back and refreshes lastVerified (best-effort, never breaking status).
-  test("status reflects the persisted delivery state written by install", async () => {
+  // The persisted delivery state lets doctor report what `tk install` chose even
+  // for tiers a live probe can't fully confirm. Install records it; doctor reads it
+  // back and refreshes lastVerified (best-effort, never breaking doctor).
+  test("doctor reflects the persisted delivery state written by install", async () => {
     install(["--host", "copilot-cli"]);
     expect(existsSync(join(home, ".token-killer", "delivery-state.json"))).toBe(true);
-    const result = await status();
+    const result = await doctor();
     expect(result.status).toBe(0);
     expect(result.stdout).toContain("installed host:");
     expect(result.stdout).toMatch(/installed host:\s+copilot-cli/);
     expect(result.stdout).toContain("last verified:");
+  });
+
+  // FOCUS: the production delivery hosts are Copilot CLI and VS Code (Copilot). Doctor
+  // must detect their tiers as installed, and --fix must repair one that goes missing.
+  test("detects an installed Copilot CLI hook tier", async () => {
+    mkdirSync(join(home, ".copilot"), { recursive: true });
+    install(["--host", "copilot-cli"]);
+    const result = await doctor();
+    expect(result.status).toBe(0);
+    expect(result.stdout).toMatch(/\[installed\] Copilot CLI hook/);
+  });
+
+  test("detects an installed VS Code shim + hook tier", async () => {
+    mkdirSync(vscodeUserDir(process.platform, home), { recursive: true });
+    install(["--host", "vscode"]);
+    const result = await doctor();
+    expect(result.status).toBe(0);
+    expect(result.stdout).toMatch(/\[installed\] Shim \(PATH\)/);
+    expect(result.stdout).toContain("VS Code hook:");
+  });
+
+  test("--fix re-installs a removed Copilot CLI hook (targets the recorded host)", async () => {
+    mkdirSync(join(home, ".copilot"), { recursive: true });
+    install(["--host", "copilot-cli"]);
+    const hookFile = join(home, ".copilot", "hooks", "tk-rewrite.json");
+    expect(existsSync(hookFile)).toBe(true);
+    rmSync(hookFile, { force: true });
+
+    const result = await callDirectAsync(runDoctor, ["--fix"], {});
+    expect(result.status).toBe(0);
+    expect(result.stdout).toContain("re-installing copilot-cli");
+    expect(existsSync(hookFile)).toBe(true); // tier repaired
   });
 });
 
