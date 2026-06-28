@@ -10,7 +10,13 @@ import { projectInjectionPath, unwriteInjection, writeInjection } from "./inject
 import { installShim, runShim } from "./cli.js";
 import { copilotHookConfigStatus, uninstallCopilotHookConfig } from "../hook/install.js";
 import { claudeHookStatus, uninstallClaudeHook } from "../hook/claudeInstall.js";
-import { guidanceFilePath, guidanceLoader, unwriteGuidance, writeGuidance } from "./guidance.js";
+import {
+  guidanceFilePath,
+  guidanceLoader,
+  lazyFilePath,
+  unwriteGuidance,
+  writeGuidance,
+} from "./guidance.js";
 import {
   gatherPreflightConcurrent,
   type PreflightCheck,
@@ -56,17 +62,21 @@ const guidanceHosts: Host[] = (Object.keys(adapters) as Host[]).filter(
 
 // Drop the tk usage guidance (TK.md) and wire it into the host's auto-loaded
 // instructions so the agent reads it. Hosts without a guidance home are a no-op.
-function writeGuidanceStep(host: Host, dryRun: boolean): void {
+function writeGuidanceStep(host: Host, dryRun: boolean, ponytail: boolean): void {
   if (dryRun) {
     const file = guidanceFilePath(host);
-    const loader = guidanceLoader(host);
+    const loader = guidanceLoader(host, homedir(), { ponytail });
     if (file) out(`[dry-run] would write usage guidance: ${file}`);
+    if (ponytail) {
+      const ponytailFile = lazyFilePath(host);
+      if (ponytailFile) out(`[dry-run] would write coding doctrine: ${ponytailFile}`);
+    }
     if (loader) out(`[dry-run] would reference it from: ${loader.path}`);
     return;
   }
-  const written = writeGuidance(host);
+  const written = writeGuidance(host, homedir(), { ponytail });
   if (written.guidance) out(`Wrote usage guidance: ${written.guidance}`);
-  if (written.lazy) out(`Wrote lazy-dev guidance: ${written.lazy}`);
+  if (written.ponytail) out(`Wrote coding doctrine: ${written.ponytail}`);
   if (written.loader) out(`Referenced it from: ${written.loader}`);
 }
 
@@ -304,21 +314,29 @@ type InstallArgs = {
   host: Host | "auto";
   project: boolean;
   dryRun: boolean;
+  ponytail: boolean;
   help: boolean;
   error?: string;
 };
 
 const INSTALL_USAGE = [
-  "tk install [--host auto|claude-code|copilot-cli|vscode] [--project] [--dry-run]",
+  "tk install [--host auto|claude-code|copilot-cli|vscode] [--project] [--ponytail] [--dry-run]",
   "",
   "  --host <h>     Force the host instead of auto-detecting",
   "  --project      Wire this repo only (project-level injection), not the user level",
+  "  --ponytail     Also install the PONYTAIL.md lazy-senior-dev coding doctrine (opt-in)",
   "  --dry-run      Preview what would change without writing",
   "  --help         Show this usage",
 ].join("\n");
 
 function parseInstallArgs(argv: string[]): InstallArgs {
-  const args: InstallArgs = { host: "auto", project: false, dryRun: false, help: false };
+  const args: InstallArgs = {
+    host: "auto",
+    project: false,
+    dryRun: false,
+    ponytail: false,
+    help: false,
+  };
   for (let i = 0; i < argv.length; i += 1) {
     const token = argv[i];
     if (token === "--host") {
@@ -339,6 +357,8 @@ function parseInstallArgs(argv: string[]): InstallArgs {
       i += 1;
     } else if (token === "--project") {
       args.project = true;
+    } else if (token === "--ponytail") {
+      args.ponytail = true;
     } else if (token === "--dry-run") {
       args.dryRun = true;
     } else if (token === "--help" || token === "-h") {
@@ -443,7 +463,7 @@ export function runInstall(argv: string[]): number {
   if (selectTier(adapter.supportedTiers, hookForLadder, false) === "hook") {
     const step = opts.dryRun ? adapter.planHook!(loc) : adapter.installHook!(loc);
     step.headerLines.forEach(out);
-    writeGuidanceStep(host, opts.dryRun);
+    writeGuidanceStep(host, opts.dryRun, opts.ponytail);
     out(`Active tier: hook`);
     step.trailerLines.forEach(out);
     if (!opts.dryRun) recordInstallState(host);
@@ -467,7 +487,7 @@ export function runInstall(argv: string[]): number {
   // installs the shim.
   if (opts.dryRun) {
     out(`[dry-run] would install shim / injection for host: ${host}`);
-    writeGuidanceStep(host, true);
+    writeGuidanceStep(host, true, opts.ponytail);
     if (hookIsAdditive) out(`Active tier: shim (primary) + hook (additive)`);
     return 0;
   }
@@ -482,7 +502,7 @@ export function runInstall(argv: string[]): number {
       // The usage guide is delivery-tier-independent — it teaches how to use tk
       // well, not how commands are routed. VS Code's tier is the shim, so without
       // this its users (who have a user-level guidance home) got no guide at all.
-      writeGuidanceStep(host, false);
+      writeGuidanceStep(host, false, opts.ponytail);
       out(hookIsAdditive ? `Active tier: shim (primary) + hook (additive)` : `Active tier: shim`);
       out(`Restart your terminal (or VS Code) for PATH changes to take effect.`);
       recordInstallState(host);
@@ -498,7 +518,7 @@ export function runInstall(argv: string[]): number {
   // injection is the primary floor — but the additive hook installed above remains.
   const target = injectionTarget(host);
   writeInjection(target);
-  writeGuidanceStep(host, false);
+  writeGuidanceStep(host, false, opts.ponytail);
   out(
     hookIsAdditive
       ? `Active tier: injection (primary, shim probe failed) + hook (additive)`

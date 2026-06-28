@@ -12,7 +12,8 @@ import { applyInjectionBlock, removeInjectionBlock } from "./injection.js";
 // the agent's own bounded tools instead of shelling out (orientation is where most
 // tokens leak). This file is the INPUT-side lever (tokens the agent reads); the
 // output-side lever (writing less code, billed ~4×) lives in the separate PONYTAIL.md
-// so the two can be kept or dropped independently and don't repeat each other.
+// so the two can be kept or dropped independently and don't repeat each other. TK.md
+// always ships; PONYTAIL.md is OPT-IN (`tk install --ponytail`) — see below.
 // This file is AGENT-facing — every line is a habit the model can act on. Human-only
 // surfaces (the `tk gain`/`tk inspect` analytics) are NOT here; they belong on the
 // CLI, not in always-on resident context. Written as a dedicated, tk-owned `TK.md`
@@ -25,6 +26,14 @@ const GUIDANCE_FILENAME = "TK.md";
 // PONYTAIL.md cuts the tokens the agent WRITES (over-built code, billed ~4×).
 // Verbatim from ponytail (github.com/DietrichGebert/ponytail, MIT). Kept as its
 // own file so a user can delete one lever without losing the other.
+//
+// OPT-IN, not default: the coding doctrine is an opinionated behavior change
+// (YAGNI/deletion-over-addition/`ponytail:` comments), heavier than the neutral
+// terse-form habits in TK.md. So `tk install` ships TK.md alone; PONYTAIL.md is
+// written + imported ONLY with `tk install --ponytail`. Toggle off (a plain re-install)
+// removes any PONYTAIL.md a prior --ponytail install left, so on-disk state and the
+// loader's @imports never drift apart. The flag flows in as GuidanceOptions.ponytail.
+export type GuidanceOptions = { ponytail?: boolean };
 const LAZY_FILENAME = "PONYTAIL.md";
 const VSCODE_LAZY_FILENAME = "token-killer-lazy.instructions.md";
 
@@ -148,17 +157,25 @@ export function lazyFileContent(host: Host): string {
 export function guidanceLoader(
   host: Host,
   home = homedir(),
+  opts: GuidanceOptions = {},
 ): { path: string; body: string } | undefined {
   if (host === "claude-code") {
+    const imports = opts.ponytail
+      ? [`@${GUIDANCE_FILENAME}`, `@${LAZY_FILENAME}`]
+      : [`@${GUIDANCE_FILENAME}`];
     return {
       path: join(home, ".claude", "CLAUDE.md"),
-      body: ["## Token Killer", "", `@${GUIDANCE_FILENAME}`, `@${LAZY_FILENAME}`].join("\n"),
+      body: ["## Token Killer", "", ...imports].join("\n"),
     };
   }
   if (host === "copilot-cli") {
+    // No import syntax → inline. Append the doctrine only when opted in.
+    const parts = opts.ponytail
+      ? [guidanceDoc().trimEnd(), "", ponytailDoc().trimEnd()]
+      : [guidanceDoc().trimEnd()];
     return {
       path: join(home, ".copilot", "copilot-instructions.md"),
-      body: [guidanceDoc().trimEnd(), "", ponytailDoc().trimEnd()].join("\n"),
+      body: parts.join("\n"),
     };
   }
   return undefined;
@@ -170,8 +187,9 @@ export function guidanceLoader(
 export function writeGuidance(
   host: Host,
   home = homedir(),
-): { guidance?: string; lazy?: string; loader?: string } {
-  const result: { guidance?: string; lazy?: string; loader?: string } = {};
+  opts: GuidanceOptions = {},
+): { guidance?: string; ponytail?: string; loader?: string } {
+  const result: { guidance?: string; ponytail?: string; loader?: string } = {};
 
   const guidancePath = guidanceFilePath(host, home);
   if (guidancePath) {
@@ -180,14 +198,21 @@ export function writeGuidance(
     result.guidance = guidancePath;
   }
 
+  // PONYTAIL.md is opt-in (--ponytail). When NOT opted in, actively remove any file a
+  // prior --ponytail install wrote so on-disk state matches the loader's @imports
+  // (which guidanceLoader is dropping this run). The whole file is tk-owned.
   const lazyPath = lazyFilePath(host, home);
   if (lazyPath) {
-    mkdirSync(dirname(lazyPath), { recursive: true });
-    writeFileSync(lazyPath, lazyFileContent(host));
-    result.lazy = lazyPath;
+    if (opts.ponytail) {
+      mkdirSync(dirname(lazyPath), { recursive: true });
+      writeFileSync(lazyPath, lazyFileContent(host));
+      result.ponytail = lazyPath;
+    } else if (existsSync(lazyPath)) {
+      rmSync(lazyPath, { force: true });
+    }
   }
 
-  const loader = guidanceLoader(host, home);
+  const loader = guidanceLoader(host, home, opts);
   if (loader) {
     mkdirSync(dirname(loader.path), { recursive: true });
     const existing = existsSync(loader.path) ? readFileSync(loader.path, "utf8") : "";

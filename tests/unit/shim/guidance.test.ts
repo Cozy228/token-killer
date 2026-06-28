@@ -61,6 +61,10 @@ describe("writeGuidance — claude-code", () => {
     const claudeMd = readFileSync(path.join(home, ".claude", "CLAUDE.md"), "utf8");
     expect(claudeMd).toContain("@TK.md");
     expect(claudeMd).toContain("<!-- >>> token-killer >>> -->");
+    // PONYTAIL.md is opt-in: a default install must NOT write it or import it.
+    expect(result.ponytail).toBeUndefined();
+    expect(existsSync(lazyFilePath("claude-code", home)!)).toBe(false);
+    expect(claudeMd).not.toContain("@PONYTAIL.md");
   });
 
   test("preserves existing CLAUDE.md content and is idempotent", () => {
@@ -87,6 +91,8 @@ describe("writeGuidance — copilot-cli (no @import, inline instead)", () => {
     // Inlined (copilot has no import syntax), under tk's guarded markers.
     expect(instr).toContain("git status --short");
     expect(instr).toContain("<!-- >>> token-killer >>> -->");
+    // PONYTAIL.md doctrine is opt-in: not inlined on a default install.
+    expect(instr).not.toContain("lazy senior developer");
   });
 
   // I4: the standalone ~/.copilot/TK.md was dead weight — copilot has no import
@@ -136,7 +142,7 @@ describe("writeGuidance — vscode (user-level .instructions.md, inlined)", () =
   });
 });
 
-describe("PONYTAIL.md — the lazy-dev doctrine, a second standalone file", () => {
+describe("PONYTAIL.md — opt-in lazy-dev doctrine (--ponytail)", () => {
   test("ponytailDoc is the verbatim lazy-senior-dev instruction", () => {
     const doc = ponytailDoc();
     expect(doc).toContain("lazy senior developer");
@@ -145,9 +151,9 @@ describe("PONYTAIL.md — the lazy-dev doctrine, a second standalone file", () =
     expect(doc).toContain("github.com/DietrichGebert/ponytail");
   });
 
-  test("claude-code writes PONYTAIL.md and adds a second @import to the same block", () => {
-    const written = writeGuidance("claude-code", home);
-    expect(written.lazy).toBe(path.join(home, ".claude", "PONYTAIL.md"));
+  test("claude-code with {ponytail:true} writes PONYTAIL.md and adds a second @import", () => {
+    const written = writeGuidance("claude-code", home, { ponytail: true });
+    expect(written.ponytail).toBe(path.join(home, ".claude", "PONYTAIL.md"));
     expect(readFileSync(lazyFilePath("claude-code", home)!, "utf8")).toContain(
       "lazy senior developer",
     );
@@ -159,8 +165,8 @@ describe("PONYTAIL.md — the lazy-dev doctrine, a second standalone file", () =
     expect(claudeMd.match(/token-killer >>>/g)?.length).toBe(1);
   });
 
-  test("vscode writes a second always-on .instructions.md for the doctrine", () => {
-    writeGuidance("vscode", home);
+  test("vscode with {ponytail:true} writes a second always-on .instructions.md", () => {
+    writeGuidance("vscode", home, { ponytail: true });
     const file = path.join(home, ".copilot", "instructions", "token-killer-lazy.instructions.md");
     expect(lazyFilePath("vscode", home)).toBe(file);
     const instr = readFileSync(file, "utf8");
@@ -168,17 +174,38 @@ describe("PONYTAIL.md — the lazy-dev doctrine, a second standalone file", () =
     expect(instr).toContain("lazy senior developer");
   });
 
-  test("copilot-cli inlines the doctrine (no import syntax) and writes no standalone file", () => {
-    const written = writeGuidance("copilot-cli", home);
-    expect(written.lazy).toBeUndefined();
+  test("copilot-cli with {ponytail:true} inlines the doctrine (no import syntax)", () => {
+    const written = writeGuidance("copilot-cli", home, { ponytail: true });
+    expect(written.ponytail).toBeUndefined();
     expect(lazyFilePath("copilot-cli", home)).toBeUndefined();
     const instr = readFileSync(path.join(home, ".copilot", "copilot-instructions.md"), "utf8");
     expect(instr).toContain("git status --short"); // TK.md guidance
     expect(instr).toContain("lazy senior developer"); // ponytail doctrine
   });
 
-  test("unwriteGuidance removes PONYTAIL.md too", () => {
-    writeGuidance("claude-code", home);
+  // Default install (no --ponytail) leaves the lazy lever entirely out.
+  test("vscode default writes no lazy .instructions.md", () => {
+    writeGuidance("vscode", home);
+    expect(existsSync(lazyFilePath("vscode", home)!)).toBe(false);
+  });
+
+  // Toggle off: a --ponytail install followed by a plain re-install must remove the
+  // PONYTAIL.md it wrote AND drop the @PONYTAIL.md import, so disk and loader agree.
+  test("re-install without --ponytail removes a previously opted-in PONYTAIL.md", () => {
+    writeGuidance("claude-code", home, { ponytail: true });
+    const lazy = lazyFilePath("claude-code", home)!;
+    expect(existsSync(lazy)).toBe(true);
+
+    const written = writeGuidance("claude-code", home); // default: opt out
+    expect(written.ponytail).toBeUndefined();
+    expect(existsSync(lazy)).toBe(false);
+    const claudeMd = readFileSync(path.join(home, ".claude", "CLAUDE.md"), "utf8");
+    expect(claudeMd).toContain("@TK.md");
+    expect(claudeMd).not.toContain("@PONYTAIL.md");
+  });
+
+  test("unwriteGuidance removes an opted-in PONYTAIL.md too", () => {
+    writeGuidance("claude-code", home, { ponytail: true });
     const file = lazyFilePath("claude-code", home)!;
     expect(existsSync(file)).toBe(true);
     unwriteGuidance("claude-code", home);

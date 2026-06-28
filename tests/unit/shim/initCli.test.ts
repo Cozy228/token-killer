@@ -447,6 +447,19 @@ describe("tk install", () => {
     // the agent reads it. -g (stray rtk muscle memory) changes nothing.
     expect(existsSync(join(home, ".claude", "TK.md"))).toBe(true);
     expect(readFileSync(join(home, ".claude", "CLAUDE.md"), "utf8")).toContain("@TK.md");
+    // PONYTAIL.md (lazy-dev doctrine) is opt-in — a default install omits it.
+    expect(existsSync(join(home, ".claude", "PONYTAIL.md"))).toBe(false);
+    expect(readFileSync(join(home, ".claude", "CLAUDE.md"), "utf8")).not.toContain("@PONYTAIL.md");
+  });
+
+  test("claude-code --ponytail also writes PONYTAIL.md + wires @PONYTAIL.md", () => {
+    const result = install(["--host", "claude-code", "--ponytail"]);
+    expect(result.status).toBe(0);
+    expect(result.stdout).toContain("Wrote coding doctrine:");
+    expect(existsSync(join(home, ".claude", "PONYTAIL.md"))).toBe(true);
+    const claudeMd = readFileSync(join(home, ".claude", "CLAUDE.md"), "utf8");
+    expect(claudeMd).toContain("@TK.md");
+    expect(claudeMd).toContain("@PONYTAIL.md");
   });
 
   test("claude-code --dry-run writes nothing", () => {
