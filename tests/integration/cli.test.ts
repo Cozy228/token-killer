@@ -815,6 +815,17 @@ describe("Error Handling", () => {
     expect(result.stdout).not.toContain("Read-only — writes nothing");
   });
 
+  test("tk with flags but no command (piped misuse) prints a one-line hint, not the banner", () => {
+    // `cmd | tk --max-lines N` — an agent piped output expecting compression. tk does
+    // not read stdin (ADR 0007); it must NOT answer with the ~20-line usage banner.
+    const result = runTk(["--max-lines", "2"], repoRoot, "l1\nl2\nl3\nl4\n");
+    expect(result.status).toBe(0);
+    expect(result.stdout).not.toContain("tk — Token Killer");
+    expect(result.stdout).not.toContain("Commands:");
+    expect(result.stderr).toContain("tk <command>");
+    expect(result.stderr).toContain("piping");
+  });
+
   test("preserves original command exit code", () => {
     const result = runTk(
       [process.execPath, "-e", "process.exit(7)"],

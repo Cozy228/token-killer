@@ -216,7 +216,8 @@ async function recordRawPassthrough(raw: RawResult, options: TkOptions): Promise
 }
 
 async function main(): Promise<number> {
-  const parsed = parseArgv(process.argv.slice(2));
+  const argv = process.argv.slice(2);
+  const parsed = parseArgv(argv);
   parsed.options.cwd = process.cwd();
 
   if (parsed.mode === "help") {
@@ -268,9 +269,22 @@ async function main(): Promise<number> {
     return (await import("./support/cli.js")).runSupport(parsed.subArgs ?? []);
   }
   if (!parsed.command) {
-    // Bare `tk` (or flags with no command to run) has nothing to execute — print
-    // the usage summary like `--help` rather than a bare error, so a curious user
-    // who just types `tk` lands on the command list.
+    // Bare `tk` typed by a curious user → the full command list (like `--help`),
+    // so someone who just types `tk` lands on the command list.
+    //
+    // But `tk <flags>` with no command to run — overwhelmingly `cmd | tk --max-lines N`,
+    // where an agent expected tk to compress piped input (it does not; ADR 0007) — must
+    // NOT dump the ~20-line banner. A token saver that answers a misuse with a wall of
+    // help text is self-defeating (seen 66× across the atlas dogfooding sessions): the
+    // banner is pure wasted context and the piped command's output is already gone.
+    // Emit one diagnostic line (stderr, like the rg -r advisory) and stop.
+    if (argv.length > 0) {
+      process.stderr.write(
+        "tk: no command given — run `tk <command>` (e.g. `tk rg foo src/`); " +
+          "piping `… | tk` is not supported (tk wraps a command, it does not read stdin).\n",
+      );
+      return 0;
+    }
     process.stdout.write(help());
     return 0;
   }
