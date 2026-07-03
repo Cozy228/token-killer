@@ -282,6 +282,15 @@ continue. `RUNBOOK.md`'s per-slice workflow discipline (green-before-next; prior
 correctness > completeness > verifiability > token) is carried as the M1–M5 method template —
 only the #59–#84 ordering is retired. P28 ⑦ banners re-worded to match.
 
+**P30 — M1 execution model = single-track foundation + dual-track slices with comparative
+review.** `[2026-07-04]` Foundation (1a→1b) is built once (Opus subagent, `m1/foundation`) — it
+pins the shared Store/SourceAdapter contract. Every subsequent M1 slice is implemented TWICE,
+independently: Opus subagent (`m1/<slice>-opus`) and Codex CLI (GPT-5.5-codex medium,
+`m1/<slice>-codex`), both off latest `feat/1.0.0`, with a strict no-cross-reading independence
+rule. Reviewer (Fable) compares both against `docs/build/M1-ACCEPTANCE.md` + code quality,
+merges the winner, may graft runner-up pieces (attributed); runner-up branch kept until the
+slice closes. Supersedes the P28-era split-assignment ledger in `docs/build/M1-GOAL-PROMPT.md`.
+
 ## Open
 
 - **O1 / O2** (pack §9) — value metric & joint story: partially reshaped by P15 (measurement is

@@ -36,27 +36,42 @@ green against a reviewer-owned acceptance bar. You do not change the design; you
 - Priorities: **correctness > completeness > verifiability > token economy**.
 - Small commits, each leaving the tree green.
 
-## Slice assignment ledger (maintainer edits; do ONLY your row)
+## Execution model (P30): single-track foundation, dual-track slices
 
-| Owner | Branch | Slices | Notes |
-|---|---|---|---|
-| Opus subagent | `m1/foundation` | 1a → 1b | 1a includes the acceptance `test.todo` skeleton; 1b pins `Store` + `SourceAdapter` interfaces — these become the shared contract |
-| Codex | `m1/git-source` | 1d | Code against the §2 DDL directly (own sqlite fixture harness); do NOT invent a Store interface — emit claims/entities as rows; adapter wiring reconciled after `m1/foundation` merges |
-| (next) | — | 1c / 1e after 1b merges; 1f/1g after {1c,1d,1e}; 1h/1i last | |
+The **foundation (1a → 1b)** is built ONCE (Opus subagent, branch `m1/foundation`) — it pins the
+shared `Store`/`SourceAdapter` contract, so competing versions of it would fragment everything
+downstream.
 
-## Coordination (two implementers, one repo)
-- Each implementer works in an **own git worktree** on an **own branch** off `feat/1.0.0`.
-- The only shared contract is 1b's `Store`/`SourceAdapter` types. Until they merge, code toward
-  the DDL (§2) and record every assumption in your final report.
+**Every slice after the foundation is implemented TWICE, independently**: an Opus subagent on
+`m1/<slice>-opus` and Codex CLI (GPT-5.5-codex, medium reasoning) on `m1/<slice>-codex`, both
+branched off the latest `feat/1.0.0`. The reviewer compares both against the acceptance bar and
+code quality, merges the winner, and may graft superior pieces from the runner-up (attributed in
+the merge commit). The runner-up branch is kept until the slice closes.
+
+| Round | Branches | Gate |
+|---|---|---|
+| Foundation 1a → 1b (single) | `m1/foundation` | starts now |
+| 1d (dual) | `m1/1d-opus` · `m1/1d-codex` | after foundation merges |
+| 1c, 1e (dual; may run parallel to 1d round) | `m1/1c-*` · `m1/1e-*` | after foundation merges |
+| 1f, then 1g (dual) | `m1/1f-*` · `m1/1g-*` | after {1c,1d,1e} merge |
+| 1h, 1i (dual) | `m1/1h-*` · `m1/1i-*` | last |
+
+## Coordination
+- Each implementer works in an **own git worktree** on an **own branch** off latest `feat/1.0.0`.
+- **Independence rule (dual rounds)**: NEVER read, diff against, or reference the sibling
+  implementation's branch. Same spec, same acceptance bar, zero cross-contamination — the value
+  of the dual track is two independent derivations.
+- The only shared contract is the merged foundation's `Store`/`SourceAdapter` types.
 - Before requesting review: rebase onto latest `feat/1.0.0`, re-run the full suite.
 - Never commit to `feat/1.0.0` directly; never merge your own branch.
 
 ## Review protocol (reviewer = Fable 5, main session)
-Deliver per slice, as your final report:
+Deliver per slice, as your final report (BOTH implementers deliver the same package):
 1. Branch + commit list (`git log --oneline feat/1.0.0..HEAD`).
 2. What landed vs the slice's §9 row (deviations called out, each with why).
 3. Acceptance scenarios flipped (names) + full test-run output tail.
 4. Assumptions made where spec was silent (each: assumption, where recorded).
 5. ⚠ verify-at-wiring values you confirmed (assertion + observed evidence).
-Review gate: correctness findings fixed before merge; merge into `feat/1.0.0` is done by the
-maintainer/reviewer, never the implementer.
+Review gates: **comparative review** on dual rounds — winner merged (possibly with grafts),
+runner-up findings recorded; correctness findings fixed before merge; merge into `feat/1.0.0` is
+done by the maintainer/reviewer, never an implementer.
