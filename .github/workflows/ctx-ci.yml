@@ -1,0 +1,42 @@
+name: ctx CI
+
+# Scoped to the ctx greenfield packages so it never disturbs the legacy tk `CI`
+# workflow (.github/workflows/ci.yml). Path filters keep it quiet for tk-only
+# changes; the two workflows are independent.
+on:
+  push:
+    branches: [main]
+    paths:
+      - "packages/**"
+      - "pnpm-workspace.yaml"
+      - ".github/workflows/ctx-ci.yml"
+  pull_request:
+    paths:
+      - "packages/**"
+      - "pnpm-workspace.yaml"
+      - ".github/workflows/ctx-ci.yml"
+
+jobs:
+  test:
+    runs-on: ${{ matrix.os }}
+    # Hard ceiling so a wedged spawn test can never pin a runner.
+    timeout-minutes: 20
+    strategy:
+      # Keep every platform's result in one run, not just the first failure.
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, macos-latest, windows-latest]
+        # ctx targets Node >=22.5 (SQLite >=3.43 semantics). Pin the floor so
+        # accidental use of a newer-Node API is caught.
+        node-version: ["22.5"]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4 # reads packageManager from package.json
+      - uses: actions/setup-node@v4
+        with:
+          node-version: ${{ matrix.node-version }}
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm -r --filter "./packages/*" typecheck
+      # `vitest run` bounds itself; the step-level timeout-minutes is the backstop.
+      - run: pnpm -r --filter "./packages/*" test
