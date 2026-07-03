@@ -500,7 +500,8 @@ checklist, not CI — hosts aren't installable in CI), "why was X changed & what
 about it" resolves in ONE `context()` call with citations; push adapters write correct content
 to correct paths in a fixture project dir for all three hosts; `dirtyCheck` <20ms and
 `context()` <150ms warm on the §10 fixture repo. Dependency: 1b → {1c,1d,1e} parallel →
-1f/1g → 1h/1i.
+1f/1g → 1h/1i. **Executable acceptance bar: `docs/build/M1-ACCEPTANCE.md`** (reviewer-owned;
+this repo = living acceptance fixture); implementer goal prompt: `docs/build/M1-GOAL-PROMPT.md`.
 
 **M1 spec addenda (P28, 2026-07-04 buildability review — conventions pinned so parallel slices
 share one contract; each lands with its slice):**
