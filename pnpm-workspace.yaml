@@ -1,5 +1,8 @@
 packages:
   - .
+  # ctx greenfield packages (M1). Kept separate from the legacy tk root package
+  # ('.') so tk keeps shipping untouched while ctx is built out (CTX-IMPL §1, P28).
+  - packages/*
 
 allowBuilds:
   esbuild: true

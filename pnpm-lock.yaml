@@ -42,6 +42,40 @@ importers:
         specifier: ^4.1.9
         version: 4.1.9(@types/node@25.9.3)(vite@6.4.2(@types/node@25.9.3)(jiti@2.6.1)(tsx@4.22.4)(yaml@2.9.0))
 
+  packages/cli:
+    dependencies:
+      '@ctx/core':
+        specifier: workspace:*
+        version: link:../core
+    devDependencies:
+      '@types/node':
+        specifier: ^25.9.3
+        version: 25.9.3
+      tsdown:
+        specifier: ^0.22.3
+        version: 0.22.3(tsx@4.22.4)(typescript@7.0.1-rc)
+      typescript:
+        specifier: rc
+        version: 7.0.1-rc
+      vitest:
+        specifier: ^4.1.9
+        version: 4.1.9(@types/node@25.9.3)(vite@6.4.2(@types/node@25.9.3)(jiti@2.6.1)(tsx@4.22.4)(yaml@2.9.0))
+
+  packages/core:
+    devDependencies:
+      '@types/node':
+        specifier: ^25.9.3
+        version: 25.9.3
+      tsdown:
+        specifier: ^0.22.3
+        version: 0.22.3(tsx@4.22.4)(typescript@7.0.1-rc)
+      typescript:
+        specifier: rc
+        version: 7.0.1-rc
+      vitest:
+        specifier: ^4.1.9
+        version: 4.1.9(@types/node@25.9.3)(vite@6.4.2(@types/node@25.9.3)(jiti@2.6.1)(tsx@4.22.4)(yaml@2.9.0))
+
 packages:
 
   '@babel/code-frame@7.29.7':
