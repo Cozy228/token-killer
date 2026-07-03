@@ -1,6 +1,6 @@
 # Token-Optimization Landscape — strategies & representative projects (2026-06-18)
 
-> Companion to [`token-optimization-best-practices-20260611.md`](../reports/token-optimization-best-practices-20260611.md).
+> Companion to [`token-optimization-best-practices-20260611.md`](../../../reports/token-optimization-best-practices-20260611.md).
 > That file ranks *detectable practices*; this file maps the *full technique space*
 > (without limiting to tk's current command-wrapper form) and pins each direction to
 > **real, verified GitHub projects** to study.

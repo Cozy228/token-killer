@@ -1,6 +1,6 @@
-## 需求 H — Human surface understanding inside VS Code
+## 需求 H — codeguide human surface
 
-> ⚠️ **本节交付形态被 D28 / [ADR 0038](../adr/0038-codeguide-web-app-two-data-adapters.md) 重构（2026-06-22）**：codeguide 不再是"`src/report/html.ts` 加第三种 `ReportKind=wiki`"的单文件 HTML，而是**单一 Web App（Vite/React 组件）+ 单一 Core `RepositoryQueryService` + 两数据适配器**：① `tk codeguide serve`（**LiveDataSource**，前台按需、仅绑 loopback、关即停非 daemon、薄 HTTP adapter 活查）；② `tk codeguide export`（**SnapshotDataSource**，同一 app 内联 JS/CSS + 有限 `CodeguideSnapshot` 成单文件 HTML，记 commit/generation/scope/omitted/completeness）。`src/report/html.ts` **仅留给 gain/inspect**，**不再**承载 codeguide。**编辑整体 defer**（codeguide 只读）。下文 H1–H* 的"单文件 viewer / `ReportKind=wiki`"叙述按此重读：单文件路径 = Snapshot 适配器一支，Live 适配器是新增主视图。**技术栈锁定（D31 / [ADR 0039](../adr/0039-codeguide-stack-react-flow-elk-no-graphology.md)）**：React 19 + Vite + TS + **React Flow**（渲染/交互）+ **ELK.js**（布局），**无 graphology/sigma/mermaid**；数据流 Core → `GraphProjection`（含 omissions/completeness/expansion-handles）→ ELK（仅几何）→ React Flow（仅渲染）。viewer host = 系统浏览器（D29）。
+> ⚠️ **本节交付形态被 D28 / [ADR 0038](../../adr/0038-codeguide-web-app-two-data-adapters.md) 重构（2026-06-22）**：codeguide 不再是"`src/report/html.ts` 加第三种 `ReportKind=wiki`"的单文件 HTML，而是**单一 Web App（Vite/React 组件）+ 单一 Core `RepositoryQueryService` + 两数据适配器**：① `tk codeguide serve`（**LiveDataSource**，前台按需、仅绑 loopback、关即停非 daemon、薄 HTTP adapter 活查）；② `tk codeguide export`（**SnapshotDataSource**，同一 app 内联 JS/CSS + 有限 `CodeguideSnapshot` 成单文件 HTML，记 commit/generation/scope/omitted/completeness）。`src/report/html.ts` **仅留给 gain/inspect**，**不再**承载 codeguide。**编辑整体 defer**（codeguide 只读）。下文 H1–H* 的"单文件 viewer / `ReportKind=wiki`"叙述按此重读：单文件路径 = Snapshot 适配器一支，Live 适配器是新增主视图。**技术栈锁定（D31 / [ADR 0039](../../adr/0039-codeguide-stack-react-flow-elk-no-graphology.md)）**：React 19 + Vite + TS + **React Flow**（渲染/交互）+ **ELK.js**（布局），**无 graphology/sigma/mermaid**；数据流 Core → `GraphProjection`（含 omissions/completeness/expansion-handles）→ ELK（仅几何）→ React Flow（仅渲染）。viewer host = 系统浏览器（D29）。
 
 本节交付 **codeguide (human surface) 的渲染落地面**：把上游 A8 `formatSubgraphTree` 产出的人读子图，渲染成人读视图，并由 F 的 VS Code 扩展打开。它服务 A/B 的「两个共同重要的工作」中的 **A（人理解项目 + 协作）**——只读理解面，**编辑整体 defer（D28）**。
 
@@ -209,4 +209,3 @@ function render() {
 - **零 model 花费**：narrative 字段由 B 的 host-borrowed/订阅 CLI 生成，viewer 只渲染 + 打 provenance 标，绝不内嵌模型、不发 API key（符合强 lean）。
 
 ---
-

@@ -1,6 +1,8 @@
+> **[2026-07-04 P28/P29] PARTIALLY SUPERSEDED** — the #72–#84 slice DAG and its paste-commands are retired (P26); do NOT execute those. Carried: the per-slice workflow discipline (one slice → green → next; priorities correctness > completeness > verifiability > token; paste-command format) is the method template for the M1–M5 slices (`CTX-IMPL.md` §9).
+
 # codemap — build runbook（切片执行手册）
 
-> 来源：契约 [`codemap-contract.md`](codemap-contract.md)（D1–D33）、执行票 #72–#84（纵向切片）、能力地图 #59–#71（横向 epic，查阅）。
+> 来源：契约 [`DESIGN.md`](DESIGN.md)（D1–D33）、执行票 #72–#84（纵向切片）、能力地图 #59–#71（横向 epic，查阅）。
 > 用法：每条 paste-command 是粘进 Claude Code 让我跑 ultracode workflow 的 prompt；前一条报绿了再粘下一条。
 
 ---

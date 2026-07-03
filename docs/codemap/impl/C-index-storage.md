@@ -1,3 +1,5 @@
+> **[2026-07-04 P28] PARTIALLY SUPERSEDED** — the D18 DDL/table naming here (nodes/edges/fact_claims/…) is replaced by `CTX-IMPL.md` §2 (entities/claims/links/conflicts/memory/handles). Carried facts that survive: sha256 content_hash; embeddings = Unsupported. The engines band is amended to ≥22.5 no-ceiling (P28).
+
 ## 需求 C — Index base & storage（索引底座与存储）
 
 本节是 A「one structural codemap store」的物理实现。A 决定了「单一结构化 codemap 存储 = node:sqlite + FTS5，每个 node 带 file:line span，两套同等渲染 surface（codemap = agent，codeguide = human）」；B 决定了「字段级 provenance（static|llm|template），检索只过 static」。C 把这两条落成可建表的 DDL、可粘贴的连接代码、迁移脚手架与存储位置。所有代码块已逐一对照 `/tmp/tk-research/` clone 与 tk 仓库源文件确认存在后再粘贴。
@@ -545,7 +547,7 @@ export function refuseDangerousRoot(target: string): void {
 - **覆写 ADR-0015**（graph-DB / WASM 替代仍开）→ 判给 node:sqlite：gitnexus 的 WASM 路径只浏览器可用，其 CLI/MCP 路径（我们的真实目标面）仍要原生 `lbugjs.node`，并带 PolyForm-NC 许可。Cypher graph-DB 作为默认被拒。
 - **覆写 prior「per-type tables for richness」**→ 用 generic 单 `nodes(kind)`/`edges(kind)`，让 code+doc+concept（需求 A）共享一个 FTS 索引、加 kind 是值而非 DDL 迁移。Ladybug 的 31 张 per-type 表作为 Outside-current-product-scope 的 view 保留。
 - **确认并固化 prior「index out-of-tree」**→ 永久 + 具体化为 `~/.token-killer/projects/<fingerprint>/index.db`，复用 tk 既有 0700/0600 存储，非过渡态、非 in-repo。
-- **D18 / [ADR 0030](../adr/0030-physical-schema-claims-serving-tiers.md) 扩展**：上面的 generic `nodes(kind)`/`edges(kind)` 是**物化 serving 层**（ranking/behavior/projection 只读它，借 Kythe serving table + codegraph 热路径）。其上游加 **raw 层 `fact_claims`**（append-only，借 Kythe `Entry`/Wikibase Statement）+ **tk 独有 `arbitration_decisions`/`decision_claims`** 仲裁账本 + `identity_bindings` + `dependency_index`（claim→decision→edge 反向索引）+ generations。即"generic 单表"只管 serving 层，claim/arbitration 分离层叠在其上（ADR 0019 要求，非单 provenance tag）。
+- **D18 / [ADR 0030](../../adr/0030-physical-schema-claims-serving-tiers.md) 扩展**：上面的 generic `nodes(kind)`/`edges(kind)` 是**物化 serving 层**（ranking/behavior/projection 只读它，借 Kythe serving table + codegraph 热路径）。其上游加 **raw 层 `fact_claims`**（append-only，借 Kythe `Entry`/Wikibase Statement）+ **tk 独有 `arbitration_decisions`/`decision_claims`** 仲裁账本 + `identity_bindings` + `dependency_index`（claim→decision→edge 反向索引）+ generations。即"generic 单表"只管 serving 层，claim/arbitration 分离层叠在其上（ADR 0019 要求，非单 provenance tag）。
 
 ### Open Decisions（C 自身）
 

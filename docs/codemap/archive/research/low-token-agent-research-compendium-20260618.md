@@ -11,7 +11,7 @@
 > [`code-graph-research-20260618.md`](./code-graph-research-20260618.md) (the five-family evidence base)
 > and [`deep-research-report-low-token.md`](./deep-research-report-low-token.md) (the token-cost-model +
 > SmartRead material). The *design* content of the latter has been moved to
-> [`code-graph-design-20260618.md`](./code-graph-design-20260618.md); this report keeps **evidence and
+> [`code-graph-design-20260618.md`](../legacy/code-graph-design-20260618.md); this report keeps **evidence and
 > extracted technique only — no recommendation, no design, no ranking.** Companion:
 > [`token-optimization-landscape-20260618.md`](./token-optimization-landscape-20260618.md).
 > **Verification.** Paper figures are as-extracted this pass; treat magnitudes as directional (see §12).
@@ -597,6 +597,6 @@ https://arxiv.org/abs/2602.08316 · CodeSearchNet Challenge https://arxiv.org/ab
 https://arxiv.org/abs/2303.12570.
 
 **Companions** — [`token-optimization-landscape-20260618.md`](./token-optimization-landscape-20260618.md) ·
-design: [`code-graph-design-20260618.md`](./code-graph-design-20260618.md). **Superseded sources merged into
+design: [`code-graph-design-20260618.md`](../legacy/code-graph-design-20260618.md). **Superseded sources merged into
 this report:** [`code-graph-research-20260618.md`](./code-graph-research-20260618.md) ·
 [`deep-research-report-low-token.md`](./deep-research-report-low-token.md).

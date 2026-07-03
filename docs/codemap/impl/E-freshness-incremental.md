@@ -1,8 +1,10 @@
+> **[2026-07-04 P28] PARTIALLY SUPERSEDED** — graduated 1s/2s catch-up bands → `CTX-IMPL.md` §4 flat 3s gate; PARTIAL/UNKNOWN/SYNC_REQUIRED vocabulary → structured envelope fields. Still carried: fingerprint DDL, scan-cost numbers, and the D32/ADR-0040 generation-identity tuple (~line 73).
+
 ## 需求 E — Freshness / incremental（新鲜度 / 增量）
 
 > 本节落实「三层 lazy-first 新鲜度模型」：**触发=按读懒检查、默认无常驻 daemon/watcher**；**失效精度=两级（content-hash 快路 + AST 结构指纹分级）+ 下游 BFS + referencer-set diff**；**新鲜度信号一等公民、A/B 双受众**。所有存储落在 node:sqlite（强倾向），整数 `index_generation` 比较即为陈旧判定，零原生编译、零模型出口。
 >
-> **大跳变调度（D25 / [ADR 0035](../adr/0035-reconciling-freshness-latency-budget-per-layer.md)，2026-06-22）**：HEAD 大跳变后 E9 的 `FULL_UPDATE` **只决定重算哪些层、不决定是否阻塞查询**。首查先跑廉价同步失效闭包（标受影响 facts pending、不重解析），再按预计 p95 成本**延迟预算门控**（<1s inline / 1–2s 服务未受影响 / >2s session 内续算）。此态为 **RECONCILING**（≠ FROZEN，后者仅留给 sync 失败）；新鲜度从 `stale:boolean` 升级为 **per-result/per-layer `resultFreshness`+`completeness`**，受影响依赖结果标 PARTIAL/UNKNOWN/SYNC_REQUIRED，绝不 banner-掩盖旧 edges。
+> **大跳变调度（D25 / [ADR 0035](../../adr/0035-reconciling-freshness-latency-budget-per-layer.md)，2026-06-22）**：HEAD 大跳变后 E9 的 `FULL_UPDATE` **只决定重算哪些层、不决定是否阻塞查询**。首查先跑廉价同步失效闭包（标受影响 facts pending、不重解析），再按预计 p95 成本**延迟预算门控**（<1s inline / 1–2s 服务未受影响 / >2s session 内续算）。此态为 **RECONCILING**（≠ FROZEN，后者仅留给 sync 失败）；新鲜度从 `stale:boolean` 升级为 **per-result/per-layer `resultFreshness`+`completeness`**，受影响依赖结果标 PARTIAL/UNKNOWN/SYNC_REQUIRED，绝不 banner-掩盖旧 edges。
 > 与上游一致性约束（来自 DEP MAP）：
 > - **承接 A**：图节点带 `file:line`、edges 走 `calls`/`imports`，本节的 BFS 下游重算复用这两类边；陈旧通过 `index_generation` 整数比较实现。
 > - **承接 B**：失效分级写回 C 的 `provenance` 列上下文——COSMETIC/comment/docstring-only 变更**不触发** LLM 重生成（B 的 host-paid 生成层），只做廉价的 source-line/lineno 刷新。
@@ -68,7 +70,7 @@ export function isStale(projectDir: string, lastCommitHash: string): StalenessRe
 
 ### E2 — 指纹库 schema（node:sqlite）+ 节点 `index_generation` 整数比较（serves both surfaces）
 
-> ⚠️ **D32 / [ADR 0040](../adr/0040-process-model-lease-coordinated-generation-publish.md) 精化**：整数 `index_generation` **降为 published-generation 指针**；**generation identity = (repo revision + worktree digest + schema version + analysis policy version) 元组**（非仅整数）。查询在**短读事务**内读**单一 published generation**；新 generation 作**未发布 staging** 建、经**原子 publish 事务**可见。跨进程 reconcile 由 **DB-backed lease**（非 WAL、非 daemon）协调：仅 lease owner 写 staging，余者服务安全结果/等预算/返回 `RECONCILING`。下文整数比较仍是单进程内 pending 标记的快路，但跨进程新鲜度/发布以 D32 为准。
+> ⚠️ **D32 / [ADR 0040](../../adr/0040-process-model-lease-coordinated-generation-publish.md) 精化**：整数 `index_generation` **降为 published-generation 指针**；**generation identity = (repo revision + worktree digest + schema version + analysis policy version) 元组**（非仅整数）。查询在**短读事务**内读**单一 published generation**；新 generation 作**未发布 staging** 建、经**原子 publish 事务**可见。跨进程 reconcile 由 **DB-backed lease**（非 WAL、非 daemon）协调：仅 lease owner 写 staging，余者服务安全结果/等预算/返回 `RECONCILING`。下文整数比较仍是单进程内 pending 标记的快路，但跨进程新鲜度/发布以 D32 为准。
 
 **(1) 决策**：在 node:sqlite 建 `file_fingerprint` 表 + `meta` 键值表；每个图节点行带 `index_generation INTEGER`，陈旧 = 一次廉价 `WHERE` 整数比较，可把节点标 pending 而不重写。
 
@@ -471,7 +473,7 @@ function markerBlock(): string {
 
 ### E11 — IndexWatcher（native watcher，Optional-at-runtime 默认关），WSL2 /mnt 硬禁（serves the codemap agent surface）
 
-> **D21 / [ADR 0033](../adr/0033-daemon-decomposed-three-capabilities.md) 三拆**：旧 E11 标题"daemon + native watcher"把三件事捆一起——已拆：① **CrossSessionRepositoryDaemon = Outside current product scope**（codemap 不需要 codegraph 式跨 session 内存图 daemon；tk on-disk node:sqlite + per-session MCP 已是正式暖路径，每 session 开一次 DB 复用 connection/prepared-stmt/bounded-cache；codegraph daemon 带 election/socket/orphan/idle/crash 生命周期 #277/#411，对 tk 只省一次 session 级 open，不值；**重开闸 = 实测 hydration p95>250ms + 频繁重开 + 原型砍 ≥50% first-query**）；② **IndexWatcher = 本节**（Optional-at-runtime 默认关）；③ **CommandProxyResident = 独立 Required capability/Optional-at-runtime**（D20 的 AV spawn 税唯一真解 = shim 不再 spawn Node 改连常驻 proxy runtime；属命令代理子系统、非 codemap）。本节 E11 仅保留 ② IndexWatcher 语义。
+> **D21 / [ADR 0033](../../adr/0033-daemon-decomposed-three-capabilities.md) 三拆**：旧 E11 标题"daemon + native watcher"把三件事捆一起——已拆：① **CrossSessionRepositoryDaemon = Outside current product scope**（codemap 不需要 codegraph 式跨 session 内存图 daemon；tk on-disk node:sqlite + per-session MCP 已是正式暖路径，每 session 开一次 DB 复用 connection/prepared-stmt/bounded-cache；codegraph daemon 带 election/socket/orphan/idle/crash 生命周期 #277/#411，对 tk 只省一次 session 级 open，不值；**重开闸 = 实测 hydration p95>250ms + 频繁重开 + 原型砍 ≥50% first-query**）；② **IndexWatcher = 本节**（Optional-at-runtime 默认关）；③ **CommandProxyResident = 独立 Required capability/Optional-at-runtime**（D20 的 AV spawn 税唯一真解 = shim 不再 spawn Node 改连常驻 proxy runtime；属命令代理子系统、非 codemap）。本节 E11 仅保留 ② IndexWatcher 语义。
 
 **(1) 决策**：native watcher 作显式逃生舱（`TK_WATCH=1` / `tk watch`）——Optional at runtime（默认关），debounce **2000ms**，在 WSL2 `/mnt/<drive>` 挂载与超 fd 上限时**硬禁**。把所有常驻进程 Windows 风险局限在显式接受的用户。**不含** cross-session daemon（Outside-scope，见上 D21）。
 

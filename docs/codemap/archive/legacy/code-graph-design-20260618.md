@@ -1,6 +1,6 @@
 # Code Graph for token-killer — enterprise pilot design (2026-06-18)
 
-> Companion to [`token-optimization-landscape-20260618.md`](./token-optimization-landscape-20260618.md).
+> Companion to [`token-optimization-landscape-20260618.md`](../research/token-optimization-landscape-20260618.md).
 > The landscape report is a research map; this document is the committed design direction after grilling.
 >
 > **This is the single canonical code-graph design.** It incorporates the former absorption notes
@@ -8,10 +8,10 @@
 > both merged here on 2026-06-19.
 
 Status: **accepted design, not implemented**. ADRs are the source of truth:
-[ADR 0013](../adr/0013-code-graph-surface-scope.md),
-[ADR 0014](../adr/0014-tk-becomes-mcp-server.md),
-[ADR 0015](../adr/0015-node-sqlite-feature-gate.md),
-[ADR 0016](../adr/0016-measurement-before-feature.md).
+[ADR 0013](../../../adr/0013-code-graph-surface-scope.md),
+[ADR 0014](../../../adr/0014-tk-becomes-mcp-server.md),
+[ADR 0015](../../../adr/0015-node-sqlite-feature-gate.md),
+[ADR 0016](../../../adr/0016-measurement-before-feature.md).
 
 ---
 
@@ -427,7 +427,7 @@ This is not a product failure to hide. It is the host ceiling documented in the 
 
 > **Status:** accepted human-surface design for the same codegraph plane. This section captures *design intent
 > and what to borrow* from the studied projects (see
-> [`codegraph-wiki-landscape-20260618.md`](./codegraph-wiki-landscape-20260618.md)). It is **structural and
+> [`codegraph-wiki-landscape-20260618.md`](../research/codegraph-wiki-landscape-20260618.md)). It is **structural and
 > LLM-free**: the human reads the *same `graph.db`* the agent queries; any chat is the host's Copilot via
 > tk's MCP/Language-Model-Tool surface, never a tk-owned LLM. **Renderer tech is deliberately NOT fixed
 > here**: only the UX contract and the data seam are fixed. Engine choice (vendored graph lib vs self-built
@@ -511,7 +511,7 @@ Each entry: **亮点 / 源码位置 / 设计方向与思考 / 如何借鉴 / tk 
   cheap-outline-first **`read_wiki_structure → read_wiki_contents → ask_question`** ladder where the wiki is
   the grounding context for chat.
 - **源码位置:** product (no repo) — schema documented in
-  [`codegraph-wiki-landscape-20260618.md`](./codegraph-wiki-landscape-20260618.md) §DeepWiki.
+  [`codegraph-wiki-landscape-20260618.md`](../research/codegraph-wiki-landscape-20260618.md) §DeepWiki.
 - **设计方向与思考:** let the repo author steer *which* pages exist via a checked-in declarative file; let the
   agent fetch a cheap outline before full content. Human and agent share one grounding source → consistent
   answers.
@@ -658,9 +658,9 @@ token cost.** Two drivers to pin down: number of page types, and vendor-vs-self-
 ## 12. Measurement harness (Slice −1)
 
 > Merged from the former `measurement-harness-design-20260618.md` (2026-06-19). Implementation companion to
-> **[ADR 0016](../adr/0016-measurement-before-feature.md)** ("measurement precedes the feature") and the
+> **[ADR 0016](../../../adr/0016-measurement-before-feature.md)** ("measurement precedes the feature") and the
 > implementation slices in §7. Grounds the telemetry methodology of
-> [`low-token-agent-research-compendium-20260618.md`](./low-token-agent-research-compendium-20260618.md) §11
+> [`low-token-agent-research-compendium-20260618.md`](../research/low-token-agent-research-compendium-20260618.md) §11
 > against how the surveyed projects *actually* measure token saving (live-source audit, Appendix A below).
 > **Question answered:** how do we evaluate the search/read token saving of tk's code graph — honestly,
 > in tk's measured-≠-estimate ledger model — *before* building the graph?
@@ -829,8 +829,8 @@ Four measurement *philosophies*. Only **A (trajectory A/B delta)** measures W2 (
 
 ### 12.B Appendix — measurement provenance
 
-- Compendium §11 (telemetry set, operational defs, fallback-replay, eval principle): [`low-token-agent-research-compendium-20260618.md`](./low-token-agent-research-compendium-20260618.md).
-- ADR: [0016 measurement-before-feature](../adr/0016-measurement-before-feature.md) · scope [0013](../adr/0013-code-graph-surface-scope.md).
+- Compendium §11 (telemetry set, operational defs, fallback-replay, eval principle): [`low-token-agent-research-compendium-20260618.md`](../research/low-token-agent-research-compendium-20260618.md).
+- ADR: [0016 measurement-before-feature](../../../adr/0016-measurement-before-feature.md) · scope [0013](../../../adr/0013-code-graph-surface-scope.md).
 - tk infra reused by the harness: `src/core/tokens.ts` (estimator), `src/core/savings.ts` (within-call diff), `src/core/history.ts` (`HistoryRecord`), `src/core/ledger.ts` (four-ledger `estimate_kind` separation), `src/inspect/vscodeReader.ts` + `src/inspect/scan.ts` + `src/inspect/habits.ts` (trajectory source). The prior RTK-era `scripts/benchmark/` scaffold was removed; the A/B runner is built fresh.
 - Sources audited live 2026-06-18: codegraph (github.com/colbymchenry/codegraph), FastContext (arxiv 2606.14066 + github.com/microsoft/fastcontext), SWE-Pruner (arxiv 2601.16746), SWE-ContextBench (arxiv 2602.08316), claude-context (github.com/zilliztech/claude-context), aider (aider.chat/docs/repomap.html), Probe (github.com/probelabs/probe), codesearch (github.com/flupkede/codesearch), Serena (github.com/oraios/serena), Repomix (repomix.com/guide/code-compress), GitNexus (github.com/abhigyanpatwari/GitNexus), cocoindex-code.
 
@@ -838,12 +838,12 @@ Four measurement *philosophies*. Only **A (trajectory A/B delta)** measures W2 (
 
 ## 13. References
 
-- Landscape companion: [`token-optimization-landscape-20260618.md`](./token-optimization-landscape-20260618.md).
-- Research compendium (five-family evidence base + telemetry §11): [`low-token-agent-research-compendium-20260618.md`](./low-token-agent-research-compendium-20260618.md).
-- Research companion (raw survey): [`code-graph-research-20260618.md`](./code-graph-research-20260618.md).
-- Code-graph + Wiki landscape (10 projects): [`codegraph-wiki-landscape-20260618.md`](./codegraph-wiki-landscape-20260618.md).
+- Landscape companion: [`token-optimization-landscape-20260618.md`](../research/token-optimization-landscape-20260618.md).
+- Research compendium (five-family evidence base + telemetry §11): [`low-token-agent-research-compendium-20260618.md`](../research/low-token-agent-research-compendium-20260618.md).
+- Research companion (raw survey): [`code-graph-research-20260618.md`](../research/code-graph-research-20260618.md).
+- Code-graph + Wiki landscape (10 projects): [`codegraph-wiki-landscape-20260618.md`](../research/codegraph-wiki-landscape-20260618.md).
 - Absorbed next-stage architecture synthesis: see §11 absorption ledger.
-- ADRs (source of truth): [0013](../adr/0013-code-graph-surface-scope.md) · [0014](../adr/0014-tk-becomes-mcp-server.md) · [0015](../adr/0015-node-sqlite-feature-gate.md) · [0016](../adr/0016-measurement-before-feature.md).
+- ADRs (source of truth): [0013](../../../adr/0013-code-graph-surface-scope.md) · [0014](../../../adr/0014-tk-becomes-mcp-server.md) · [0015](../../../adr/0015-node-sqlite-feature-gate.md) · [0016](../../../adr/0016-measurement-before-feature.md).
 - Aider repo map: https://aider.chat/docs/repomap.html.
 - Serena: https://github.com/oraios/serena.
 - RepoMapper: https://github.com/pdavis68/RepoMapper.

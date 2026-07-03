@@ -1,6 +1,8 @@
+> **[2026-07-04 P28] PARTIALLY SUPERSEDED** — the ranking stance (staged cascade, anti-RRF, ~lines 22–40) is overridden by `CTX-IMPL.md` §6 (RRF K=60 fusion). Still carried: `EvidenceBackedFlowProjection` (~219–249) as D4 reference.
+
 # 附录 A3：对照 GitNexus 技术细节 / Token-killer-Research 的补充(2026-06-21)
 
-> 本附录把两份新研究文档(`docs/codemap/Token-killer-Research.md`、`docs/codemap/GitNexus 技术细节.md`)相对行动计划主体的真实增量，整理成**可直接粘贴的补充内容**(中文叙述 + English code)。每条注明「增补计划哪一节」与「来自新文档哪一节」。算法/可抄代码层(附录 A1 的 PageRank TS、附录 A2 的调用解析引擎、A5 符号抽取正则、impact SQL)已强，本附录不重复。
+> 本附录把两份新研究文档(`docs/codemap/archive/research/token-killer-research.md`、`docs/codemap/archive/research/gitnexus-technical-details.md`)相对行动计划主体的真实增量，整理成**可直接粘贴的补充内容**(中文叙述 + English code)。每条注明「增补计划哪一节」与「来自新文档哪一节」。算法/可抄代码层(附录 A1 的 PageRank TS、附录 A2 的调用解析引擎、A5 符号抽取正则、impact SQL)已强，本附录不重复。
 >
 > **诚实说明**：本次 5 份 gap 报告中 topic=`test`、`architecture-3tier` 两份为占位空内容，未提供任何增量，故本附录不含其条目——不凑数。
 
@@ -17,7 +19,7 @@
 
 ---
 
-## 1. 排序 = 分级管线(staged cascade)，非加权和、非 RRF 融合〔D13 / [ADR 0025](../adr/0025-staged-ranking-pipeline.md)〕
+## 1. 排序 = 分级管线(staged cascade)，非加权和、非 RRF 融合〔D13 / [ADR 0025](../../adr/0025-staged-ranking-pipeline.md)〕
 
 **增补：附录 A1 §3 末尾 + 重写后的 A9；裁决来源：grilling 2026-06-21 round 3（D13）。** 早稿曾从 Token-killer-Research §3.2 搬一个加权和 `finalScore = 0.60·lexical + 0.20·PPR + 0.10·path + 0.10·session`——**已作废**。两个参考实现都不用加权和：codegraph 排序路径里**零 PageRank**（纯 FTS5 BM25 + 整数 bonus），GitNexus 用 RRF `Σ1/(60+rank)` 且白纸黑字「不做统一归一化、没有 PageRank 作主搜索排序」。加权和的硬伤：① 每路信号（开放分 BM25 / [0,1] PPR / 整数 path）必须先归一化到同一尺度；② 权重无任何实测标定。
 
@@ -37,7 +39,7 @@
 
 **为什么不在末端融合（核心理由）**：词法信号**不是**与 PPR 并列的第三打分通道——它是 PPR 种子的**上游**（步骤 ①→④）。在步骤 ⑤ 之后再用权重/RRF 把词法和 PPR 合并 = 对同一份证据**重复计数**。分级管线让词法只出现在上游（选锚点 + 喂种子）与下游（tie-break），PPR 独占结构排序。**RRF 仅保留给真正独立的检索通道**（如 lexical + embedding；embeddings 属 Unsupported，故此路 v1 休眠）。
 
-**与下游绑定**：① = A5 步骤①②③（产出锚点）；④ 的 seed mass 分级 = §4.1（query-hit 100 / stack-trace 80 / changed 70 / edited 60，归一化）；⑤ = 附录 A1 的 `pageRank()`。seed-mass 分级权重为 K harness `recall@k` 的**标定项**，非 magic 常量（[ADR 0025](../adr/0025-staged-ranking-pipeline.md) Consequences）。
+**与下游绑定**：① = A5 步骤①②③（产出锚点）；④ 的 seed mass 分级 = §4.1（query-hit 100 / stack-trace 80 / changed 70 / edited 60，归一化）；⑤ = 附录 A1 的 `pageRank()`。seed-mass 分级权重为 K harness `recall@k` 的**标定项**，非 magic 常量（[ADR 0025](../../adr/0025-staged-ranking-pipeline.md) Consequences）。
 
 ---
 
@@ -94,7 +96,7 @@ query 'invalidate authentication state'
                        auth, authentication, credential, session, token]
 ```
 
-**决策 A5b（D14 / [ADR 0026](../adr/0026-recall-bridge-agent-identifiers-not-synonym-dict.md)）——Core-owned 分层 Query Vocabulary Bridge；这个 gap 单一方案补不了**：
+**决策 A5b（D14 / [ADR 0026](../../adr/0026-recall-bridge-agent-identifiers-not-synonym-dict.md)）——Core-owned 分层 Query Vocabulary Bridge；这个 gap 单一方案补不了**：
 
 NL→代码召回**不靠任何单一机制**。两个诱人的单点方案都错：① ≤200 条**平铺静态同义表**——通用词表覆盖不了项目 jargon，且 `clear/revoke/delete/invalidate` 是**上下文相关**非全局同义；② **Agent `identifiers[]` 当主召回路径**——一旦召回依赖 Agent 把 NL 转 symbol，Human codeguide + 不配合的 Agent 就**彻底失去 NL 查询能力**。故主路必须 **Core 自有**，Agent hint 只能**附加**。
 
@@ -214,7 +216,7 @@ A2(line 9304)只讲解析时**读** `typeBindings`，漏了怎么跨文件**填*
 5. 产出 Community 节点 + MEMBER_OF 边；label 启发式(§12 不可当权威)；cohesion = 内部边/总边。
 ```
 
-**裁决（D15 / [ADR 0027](../adr/0027-community-optional-flows-evidence-backed.md)）——Community = Optional-at-runtime / default-off，且必须明标 derived architecture projection**：
+**裁决（D15 / [ADR 0027](../../adr/0027-community-optional-flows-evidence-backed.md)）——Community = Optional-at-runtime / default-off，且必须明标 derived architecture projection**：
 - **不是承重**：Core 默认已有 **package/module 层次 + import SCC + 连通分量 + callers-count/centrality**，故 **Architecture Intelligence 无 Leiden 也完整**；Community 只在**目录结构失真**的仓库给额外功能簇视图。
 - **trust 边界**：Community 是 **derived architecture projection**，**不是 bounded context、不进 Domain truth**（与 A4.8「community≠bounded-context」一致）。
 - **许可**：gitnexus Leiden = vendored + 整仓 PolyForm-NC → **不可复制**；真实现从**独立许可安全来源或从零写**（label-propagation/连通分量即够的廉价形态）。若真建，则 deterministic PRNG seed 是硬需求（否则 reindex 社区号乱跳、human diff 全红）。
@@ -238,9 +240,9 @@ A2(line 9304)只讲解析时**读** `typeBindings`，漏了怎么跨文件**填*
             processType ∈ {intra,cross}_community}；STEP_IN_PROCESS{step:N}；Route/Tool 加 ENTRY_POINT_OF。
 ```
 
-**裁决（D15 / [ADR 0027](../adr/0027-community-optional-flows-evidence-backed.md)）——gitnexus 式 `HeuristicCallsBfsProcess` = Outside scope；但出局的是机制、不是 Flow 能力，`Flows:` 仍 Required**：
+**裁决（D15 / [ADR 0027](../../adr/0027-community-optional-flows-evidence-backed.md)）——gitnexus 式 `HeuristicCallsBfsProcess` = Outside scope；但出局的是机制、不是 Flow 能力，`Flows:` 仍 Required**：
 - **机制出局**：上面这套（命名/export/caller-callee 数猜入口 + CALLS-BFS）**只能证图上可达**，证不了运行顺序 / guard 可达性 / 异步事件序 / 状态迁移；即便加 heuristic 徽章，也会与 Required 的 Behavior IR 形成**两套"流程真相"**、违反 A4.8。故 **不建** gitnexus 式永久 `nodes(kind='process')` + `edges(kind='STEP_IN_PROCESS')`——**C5 kind 枚举删 `process`，移除 STEP_IN_PROCESS 边与其 `step` 字段**（plan:10446 的 step 预留作废）。
-- **Flows: 仍 Required，改由 `EvidenceBackedFlowProjection` 提供**：从 entrypoint 出发，组合 **resolved call-site + CFG/CDG + guards + state transitions + events + writes + side-effects**（全来自已 Required 的 Behavior IR，D4），**按需投影**，显式返回 **complete / partial / unknown** 覆盖度——**不物化永久 Process 节点**（flows per-query 计算，与 [ADR 0021](../adr/0021-materialized-readmodel-dirty-queue-local-ppr.md) 一致）。让 `Flows:` 字段(plan:11199)有**可验证**数据，而非启发式串。
+- **Flows: 仍 Required，改由 `EvidenceBackedFlowProjection` 提供**：从 entrypoint 出发，组合 **resolved call-site + CFG/CDG + guards + state transitions + events + writes + side-effects**（全来自已 Required 的 Behavior IR，D4），**按需投影**，显式返回 **complete / partial / unknown** 覆盖度——**不物化永久 Process 节点**（flows per-query 计算，与 [ADR 0021](../../adr/0021-materialized-readmodel-dirty-queue-local-ppr.md) 一致）。让 `Flows:` 字段(plan:11199)有**可验证**数据，而非启发式串。
 - **entry-point 识别**：仍可用命名/export/框架识别**选 entrypoint 候选**（Route/Tool 的 ENTRY_POINT_OF 标注保留），但**流程内容由 Behavior IR 证据填**，不靠 CALLS-BFS 猜路径。
 
 ---
@@ -297,7 +299,7 @@ literals            -- string literals + route names + test names
 
 **增补：C5/C6(plan:1318/1383) + C 决策汇总(plan:1656)；来自：GitNexus §5(line 305-367)。**
 
-gitnexus 单张 `CodeRelation` 表 + type，边带 `{type, confidence, reason, step?}`——tk edges 已等价。但 LadybugDB/Kuzu 必须显式声明每种 `(起点 kind, 终点 kind)` 组合致 schema 极长；**node:sqlite generic 表无此约束(FK 只认 id)**——这是 committed node:sqlite 相对 graph-DB 的未点出好处，补进 C 决策汇总。另：gitnexus node-kind 含 Route/Tool/Community/Process/Section；**C5 kind 枚举预留 `community`（Optional，D15）但删 `process`**（gitnexus 式 Process 出局，[ADR 0027](../adr/0027-community-optional-flows-evidence-backed.md)）；Route/Tool/Section 视需求保留。
+gitnexus 单张 `CodeRelation` 表 + type，边带 `{type, confidence, reason, step?}`——tk edges 已等价。但 LadybugDB/Kuzu 必须显式声明每种 `(起点 kind, 终点 kind)` 组合致 schema 极长；**node:sqlite generic 表无此约束(FK 只认 id)**——这是 committed node:sqlite 相对 graph-DB 的未点出好处，补进 C 决策汇总。另：gitnexus node-kind 含 Route/Tool/Community/Process/Section；**C5 kind 枚举预留 `community`（Optional，D15）但删 `process`**（gitnexus 式 Process 出局，[ADR 0027](../../adr/0027-community-optional-flows-evidence-backed.md)）；Route/Tool/Section 视需求保留。
 
 ---
 

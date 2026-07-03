@@ -690,7 +690,7 @@ const DEFAULT_IGNORE_PATTERNS: string[] = [
 
 **(6) 测试**：当前无；回归断言 = grep 确认无 `vscode-languageserver` / `scip` 运行时依赖混入 deps。
 
-**(7) 证据回指**：`docs/codemap/low-token-agent-research-compendium-20260618.md:293-325`（Serena ~4k vs ~38k token rename / SCIP per-language indexer 成本，dossier 引述）。
+**(7) 证据回指**：`docs/codemap/archive/research/low-token-agent-research-compendium-20260618.md:293-325`（Serena ~4k vs ~38k token rename / SCIP per-language indexer 成本，dossier 引述）。
 
 ---
 

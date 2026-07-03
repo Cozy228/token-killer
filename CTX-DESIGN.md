@@ -1,6 +1,6 @@
 # ctx — Design Document
 
-> **Status: design-step output** per `FABLE-DESIGN-BRIEF.md` (v2). Decisions P9–P22 live in
+> **Status: design-step output** per `docs/design/FABLE-DESIGN-BRIEF.md` (v2). Decisions P9–P22 live in
 > `FABLE-DECISION-LOG.md`; the June codemap contract (`feat/1.0.0`, D1–D33 / ADR 0017–0040) is
 > amended per §9 and otherwise carried. Terminology Law applies throughout: every capability has
 > exactly one capability state; fact-authority tiers (Observed/Derived/Inferred/Confirmed) are
@@ -34,7 +34,7 @@ is a **derived view**, never an ingested source; the moat: **context belongs to 
 the assistant vendor** — all agents share one base.
 
 **Identity**: product/CLI/MCP name = `ctx` (P20). Core = a TypeScript library + on-disk store;
-CLI is installer/bootstrap/fallback, not the product (P16). Node ≥22, `node:sqlite` (P10).
+CLI is installer/bootstrap/fallback, not the product (P16). Node ≥22.5, `node:sqlite` (P10/P28).
 
 ## 2. Source Model (P22): Content Types × Carriers
 
@@ -214,7 +214,7 @@ extension (Copilot-managed, LM Tool API) (D19); guide = loopback web app in the 
 `ctx install · doctor · guide · mcp · run <cmd> · recall <handle> · import <carrier> ·
 sync (explicit warm-up, D25) · memory confirm|retire <id> · push pin|veto <id>` (the last two
 per FORK-1/P23 — guide surfaces them, CLI executes).
-Distribution: private npm registry (P13); engines ≥22 (P10); signing stays artifact-gated (D20).
+Distribution: private npm registry (P13); engines ≥22.5 (P10/P28); signing stays artifact-gated (D20).
 Solo-first collaboration stance unchanged (D27): sharing via git (`.ctx/` project files, snapshot
 exports); no team/permission layer.
 

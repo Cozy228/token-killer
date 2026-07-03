@@ -1,3 +1,5 @@
+> **[2026-07-04 P28] SUPERSEDED** — execution-loop prompt bound to the retired slice DAG. Do NOT run; build route = `CTX-IMPL.md` §9 M1–M5.
+
 # Build-Loop Goal — implement codemap-action-plan-20260620.md to completion
 
 > This is a **looping execution** prompt. Every fire: read progress → pick the next unfinished step →
@@ -10,7 +12,7 @@
 
 ## 0. Fixed anchors (non-negotiable)
 
-1. **Spec source = `docs/codemap/codemap-action-plan-20260620.md`**. It already breaks the 13 needs
+1. **Spec source = `docs/codemap/IMPLEMENTATION.md`**. It already breaks the 13 needs
    A–M into an ordered, dependency-aware sequence of phases 0–9, where **each step is independently
    shippable + testable** (every step carries its own "可测:" acceptance check). This loop only
    **executes** that spec; it does not redesign. On an internal contradiction or gap → log it under

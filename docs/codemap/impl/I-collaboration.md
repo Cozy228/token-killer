@@ -1,3 +1,5 @@
+> **[2026-07-04 P28] PARTIALLY SUPERSEDED** — the `.tk/wiki.json` page-authoring control file (I-1/I-2/I-9) belongs to the retired wiki feature; the only JSONC control file now is `.ctx/push.jsonc` (`CTX-IMPL.md` §7). Still carried: I.0 solo-first rationale (D27), I-10 zero-egress impact brief, I-11 path-fencing + EBUSY-safe rm.
+
 ## 需求 I — Collaboration（协作：知识沉淀、控制文件、agent 写/人编辑往返、来源与陈旧度）
 
 本节服务 Goal A（人类理解 + 协作），与 B 共线（agent 路径）的部分明确标注。所有决策遵守上游约束：节点/边/来源都来自 A 的单一 graph store（file:line on every node），B 的 per-field `provenance` 列（`static|llm|template`）；human 内容走文件不进 DB（与 C 的 DB-out-of-tree 一致）；交付面统一收敛到 F 的 VS Code 扩展（H 的只读 HTML viewer + I 的 native 文件往返都挂在它上面），CLI 为 secondary host（Claude Code）后端。冲突已按 DEP MAP 解析：DB 走 out-of-tree `~/.token-killer/projects/<fp>/index.db`，`.tk/` 只放 human 共享物 + gitignored staging；编辑面 Required（default on）= VS Code 原生文件 + watcher 写回（HTML viewer 保持只读）。
@@ -523,7 +525,7 @@ export function computeStaleness(projectRoot: string, page: WikiPageMeta): Stale
 
 **(6) 测试**：构造 git fixture，改动某页 filePath 内文件 → 断言 STALE + changed 列表；改动无关文件 → not stale；`sourceCommit` 不存在 → fail-open not stale；regen 后 version+1。
 
-**(7) 证据回指**：RepoDoc `DocNode.version:int`（`docs/codemap/codegraph-wiki-landscape-20260618.md:33`）；understand-anything `project.gitCommitHash`。
+**(7) 证据回指**：RepoDoc `DocNode.version:int`（`docs/codemap/archive/research/codegraph-wiki-landscape-20260618.md:33`）；understand-anything `project.gitCommitHash`。
 
 ---
 
@@ -664,9 +666,9 @@ export async function safeRm(target: string): Promise<void> {
 
 ### Open Decisions（与全局 Open Decisions 对齐）
 
-1. ~~**编辑面**（I Open Decision #1）~~ ✅ **闭合（D28 / [ADR 0038](../adr/0038-codeguide-web-app-two-data-adapters.md)）**：**编辑整体 defer**（codeguide 暂只读，Web 编辑不做，`.tk/` 文件人类自有编辑器手编）——推翻 round-3「file-only writeback Required」。人类面 = 单一 Web App + 两数据适配器（`tk codeguide serve` Live loopback / `tk codeguide export` Snapshot 单文件）。
+1. ~~**编辑面**（I Open Decision #1）~~ ✅ **闭合（D28 / [ADR 0038](../../adr/0038-codeguide-web-app-two-data-adapters.md)）**：**编辑整体 defer**（codeguide 暂只读，Web 编辑不做，`.tk/` 文件人类自有编辑器手编）——推翻 round-3「file-only writeback Required」。人类面 = 单一 Web App + 两数据适配器（`tk codeguide serve` Live loopback / `tk codeguide export` Snapshot 单文件）。
 2. ~~**控制文件格式**~~ ✅ **闭合（D30，用户确认）**：**JSONC**（非 YAML；tk 已解析、可注释、VS Code 内可 schema-complete）。
-3. ~~**`tk wiki impact --comment`**~~ ✅ **闭合（D27 / [ADR 0037](../adr/0037-solo-first-collaboration-no-github-write-no-team-layer.md)）**：`--comment` **永久 Unsupported**（不建 GitHub 写适配器、保零-egress；要自动化用户自己 CI/脚本组合）。
+3. ~~**`tk wiki impact --comment`**~~ ✅ **闭合（D27 / [ADR 0037](../../adr/0037-solo-first-collaboration-no-github-write-no-team-layer.md)）**：`--comment` **永久 Unsupported**（不建 GitHub 写适配器、保零-egress；要自动化用户自己 CI/脚本组合）。
 4. ~~**team 层 gating**~~ ✅ **闭合（D27）**：**删 `tier:team`**——无 team 身份/权限/语义；统一 `CAP_PAGES=30`（技术安全限），不足按数据直接调帽。
 
 ### 与其它需求的耦合（coherence）

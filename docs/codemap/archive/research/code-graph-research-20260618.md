@@ -437,4 +437,4 @@ https://arxiv.org/abs/2602.08316 · CodeSearchNet Challenge https://arxiv.org/ab
 https://arxiv.org/abs/2303.12570.
 
 **Companion** — [`token-optimization-landscape-20260618.md`](./token-optimization-landscape-20260618.md) ·
-design (separate, pending) [`code-graph-design-20260618.md`](./code-graph-design-20260618.md).
+design (separate, pending) [`code-graph-design-20260618.md`](../legacy/code-graph-design-20260618.md).

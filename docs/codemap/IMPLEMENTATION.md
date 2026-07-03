@@ -1,15 +1,18 @@
-# codemap — Action Plan Index
+> **[2026-07-04 P28/P29] SUPERSEDED as build order, LIVE as index** — the #59–#84 slice DAG was excluded as a route input (P26); build route = `CTX-IMPL.md` §9 M1–M5. Everything else stands: this file remains the navigation index into the `impl/` dossier, which is the product's detail layer (P29 reference-not-copy; read-back map: `CTX-IMPL.md` §12).
+
+# codemap — Implementation Index
 
 > **2026-06-23：本文件已拆分。** 原 13127 行单文件（绑定契约 + A–M 实现 dossier + 附录）拆成下列文件，
 > 内容零删除（git 历史保留原文）。本文件现为导航索引 + 各 issue 的回指锚点。
 
 ## 入口
 
-- **[产品契约 + 决策日志 D1–D32](codemap-contract.md)** — §1–17 绑定契约（Terminology Law、Product Contract、Canonical Data Model、Freshness、Ranking、Agent Surface、codeguide、Evaluation Gates、Implementation Dependency Order、Open Decisions）+ D1–D32 / ADR 0017–0040 逐项摘要。**这是常读的"宪法"，动手前先读它。**
+- **[产品契约 + 决策日志 D1–D32](DESIGN.md)** — §1–17 绑定契约（Terminology Law、Product Contract、Canonical Data Model、Freshness、Ranking、Agent Surface、codeguide、Evaluation Gates、Implementation Dependency Order、Open Decisions）+ D1–D32 / ADR 0017–0040 逐项摘要。**这是常读的"宪法"，动手前先读它。**
 
 ## 实现 dossier（`impl/`，每需求一个文件 = 一个 epic issue）
 
 > 每个文件含该需求的：决策 / 要动的文件 / 可抄代码（verbatim + `源:` 引用）/ 具体数值 / 有序步骤 / 测试 / 证据回指。
+> 这些是实现依赖顺序，不是产品阶段；目标仍是 [`DESIGN.md`](DESIGN.md) 定义的完整有界产品。
 
 - [00-sources](impl/00-sources.md) — 源指南索引（可抄性表）+ 官方文档复核清单（动手前逐条核）
 - [A — Core method](impl/A-core-method.md) [#59](../../issues/59) — typed property graph、检索管线、PageRank、置信兜底
@@ -19,7 +22,7 @@
 - [E — Freshness / incremental](impl/E-freshness-incremental.md) [#63](../../issues/63) — lazy 检查、指纹、AST-diff、失效闭包、git hooks、RECONCILING
 - [F — Agent delivery surface](impl/F-agent-surface.md) [#64](../../issues/64) — 双前端单后端、JSON-RPC、4 工具、NO-INDEX、server-instructions
 - [G — Output token economy](impl/G-output-economy.md) [#65](../../issues/65) — signature-collapse、Smart Read 三模式、char 档、kill-switch
-- [H — Human surface](impl/H-human-surface.md) [#66](../../issues/66) — codeguide Web App、live HTML、子图渲染
+- [H — codeguide surface](impl/H-codeguide-surface.md) [#66](../../issues/66) — codeguide Web App、live HTML、子图渲染
 - [I — Collaboration](impl/I-collaboration.md) [#67](../../issues/67) — solo-first、控制文件 JSONC、写/编辑往返、impact、来源/陈旧
 - [J — Correctness / trust](impl/J-correctness-trust.md) [#68](../../issues/68) — file:line 信任原语、边 provenance、置信软因子、诚实兜底
 - [K — Proof](impl/K-proof.md) [#69](../../issues/69) — 测量 harness、SWE-bench 端到端、per-language 能力集、消融协议

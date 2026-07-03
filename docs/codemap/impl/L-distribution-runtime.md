@@ -772,7 +772,7 @@ db.exec("PRAGMA journal_mode = WAL;");
 ### Open Decisions（本节相关）
 
 - **Node 25 / `--liftoff-only`**：已被 A+D 关闭（ship WASM → 25 排除、两 flag 必带）。请确认接受单一 gate `>=22.5.0 <25.0.0` + vendored Node 24.x（L5/L6/L7）。
-- **Code-signing ✅ 定（D20 / [ADR 0032](../adr/0032-artifact-gated-signing-av-tax-is-perf.md)）= artifact-gated**：现在**无 tk 自有未签 PE 可签**（tk = npm JS 包 `tk→dist/cli.js` 跑用户 Node；bundle 里的 node.exe 是**官方已签** Node 重打包）。故现在**不买证书**，继续 SHA256SUMS(L15)+npm provenance(决策#9)+release attestation；**当 tk 首发自有 Windows PE**（SEA / daemon-EXE / MSI/MSIX；PowerShell `install.ps1` 是脚本不算 PE）时 Authenticode **成硬发布门**，macOS notarization 同理（.app/.pkg/.dmg/bundled native 才启）。现在可**预留 CI signing stage + 验证合同**（不接真证书）。
+- **Code-signing ✅ 定（D20 / [ADR 0032](../../adr/0032-artifact-gated-signing-av-tax-is-perf.md)）= artifact-gated**：现在**无 tk 自有未签 PE 可签**（tk = npm JS 包 `tk→dist/cli.js` 跑用户 Node；bundle 里的 node.exe 是**官方已签** Node 重打包）。故现在**不买证书**，继续 SHA256SUMS(L15)+npm provenance(决策#9)+release attestation；**当 tk 首发自有 Windows PE**（SEA / daemon-EXE / MSI/MSIX；PowerShell `install.ps1` 是脚本不算 PE）时 Authenticode **成硬发布门**，macOS notarization 同理（.app/.pkg/.dmg/bundled native 才启）。现在可**预留 CI signing stage + 验证合同**（不接真证书）。
 - **CrowdStrike/AV 冷启动税 = 性能问题非签名问题（D20）**：EDR 拦 process-creation+file-access（`git --version`/`node -e 0` 皆慢），tk 多 spawn 一次 Node 即结构性多付一次扫描。**由 daemon / 减 spawn / 缓存 exec 路径 / 减热路径 I/O 解**（接 daemon Open Decision + Windows startup-perf 工作），**签名替代不了**。是否另申请 IT 排除路径 = 部署文档项，非产品闸。
 - **Node pin 刷新节奏** ✅ **闭合（D30④）**：**pin 一个具体 24.x LTS**（可复现）+ tk 自担 CVE 刷新节奏（非 floating 24 LTS）。
 - ~~**Scoop**：是否也发 Scoop？~~ ✅ **闭合（D30④）**：**不发 Scoop**（D24 个人项目永不发布、无分发面）。

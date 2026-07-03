@@ -1,9 +1,11 @@
+> **[2026-07-04 P28] PARTIALLY SUPERSEDED** — the 4-tool `tk_*` surface (F.3–F.5) is replaced by the 3-tool `context/search/remember` surface (P25②, `CTX-IMPL.md` §7). F.1/F.2 stdio/JSON-RPC transport detail remains carried reference.
+
 ## 需求 F — Agent delivery surface（agent 如何触达工具 / 工具形态与引导）
 
 本需求服务 **B（agent find-code / token 优化）**，但其交付载体（VS Code 扩展）同时是 H（人类 HTML viewer）和 I（协作 round-trip）的宿主 —— 即 DEP MAP 的「ONE BACKEND, TWO SURFACES (codemap = agent, codeguide = human), TWO FRONT-ENDS」收敛点。所有工具仅暴露 A 的 retrieval 面（B1 静态层），LLM 生成层（B 叙事 tier）不进入任何被列出的工具。
 
 锚点绑定：
-- **传输 = stdio**（DEP MAP `E/F/J/M` 冲突已裁定：单进程 per-session，无 daemon；per-session MCP 即正式暖路径。cross-session daemon = **Outside current product scope**（D21 / [ADR 0033](../adr/0033-daemon-decomposed-three-capabilities.md)，重开闸 hydration p95>250ms 等），非泛"M18 测量门控条件分支"）。
+- **传输 = stdio**（DEP MAP `E/F/J/M` 冲突已裁定：单进程 per-session，无 daemon；per-session MCP 即正式暖路径。cross-session daemon = **Outside current product scope**（D21 / [ADR 0033](../../adr/0033-daemon-decomposed-three-capabilities.md)，重开闸 hydration p95>250ms 等），非泛"M18 测量门控条件分支"）。
 - **输出预算单位 = char**，数值 `13000/18000/24000` 由 G1 拥有，F **import** 不重定义（DEP MAP `G/F` 冲突裁定；G1 为事实归属层级，非阶段）。
 - **DB 路径 = 库外** `~/.token-killer/projects/<fp>/index.db`（POSIX）/ `%LOCALAPPDATA%\token-killer\...`（Win）；`.tk/` 仅放人类工件（DEP MAP `C/L` 冲突裁定）。本需求所有「indexed?」探测以「能否解析到该库外 fingerprint dir」为准，不依赖 `.codegraph/`（upstream reference）。
 - **Node gate** `>=22.5.0 <25.0.0`（跨需求统一）。
@@ -12,7 +14,7 @@
 
 ### F.1 决策：双前端 / 单后端交付形态（serves the codemap agent surface）
 
-**(1) 决策（D19 / [ADR 0031](../adr/0031-asymmetric-dual-adapter-delivery.md)，修正旧 "extension-为主" 前提）**：一个 **Repository Intelligence Core 唯一实现**（一套 QueryPlan + result contract，绝不两套 retrieval），其上两个**不对等适配器**：`tk mcp` = **host-neutral 参考适配器**；VS Code 扩展 = **Copilot 专用 managed 适配器**（价值 = 能调 VS Code API + 更好的安装/编辑器集成）。两适配器共享同一 QueryPlan + result contract。**入口由组织 policy 决定**（非固定 PRIMARY）：扩展工具获批→文档推荐扩展；只允许 MCP→`tk mcp`；MCP 禁但扩展工具允→扩展是唯一 Agent 通道；两者皆禁→只剩 CLI/codeguide(Human) 面；Claude Code/Codex CLI 等终端→直接 MCP。
+**(1) 决策（D19 / [ADR 0031](../../adr/0031-asymmetric-dual-adapter-delivery.md)，修正旧 "extension-为主" 前提）**：一个 **Repository Intelligence Core 唯一实现**（一套 QueryPlan + result contract，绝不两套 retrieval），其上两个**不对等适配器**：`tk mcp` = **host-neutral 参考适配器**；VS Code 扩展 = **Copilot 专用 managed 适配器**（价值 = 能调 VS Code API + 更好的安装/编辑器集成）。两适配器共享同一 QueryPlan + result contract。**入口由组织 policy 决定**（非固定 PRIMARY）：扩展工具获批→文档推荐扩展；只允许 MCP→`tk mcp`；MCP 禁但扩展工具允→扩展是唯一 Agent 通道；两者皆禁→只剩 CLI/codeguide(Human) 面；Claude Code/Codex CLI 等终端→直接 MCP。
 
 > ⚠️ **作废旧前提**：F.1 旧文称 "enterprise MCP 默认锁闭、LM-Tool API 是唯一触达 built-in read/search 的通道"——**错**。事实（per user，已入官方复核清单）：`chat.mcp.access` 默认 **`all`**（非锁闭）；扩展 LM Tool 有**独立**治理（`chat.extensionTools.enabled` 可中央关、安装受 `extensions.allowed` allowlist 限），**不是绕过 MCP 治理的 robust 通道**；VS Code 把 built-in/extension/MCP 定义为**三种并列工具类型**，扩展**不接管** built-in read/search。故无哪个通道是"保证 robust 的全局 PRIMARY"——改为 Core + 两不对等适配器 + policy 决定入口 + 优雅降级到 CLI/Human。
 
@@ -213,7 +215,7 @@ protected idPrefix(): string {
 
 **(1) 决策**：默认工具面 = 4 个 `tk_` 前缀工具 —— `tk_explore`(PRIMARY) / `tk_node` / `tk_search` / `tk_callers`。`callees/impact/files/status` 的 handler 保留但默认不列出；环境变量 `TK_MCP_TOOLS`（逗号分隔短名）重新启用任意工具，被 ablate 的工具从 `tools/list` 真正缺席（非 call 时拒绝）—— 这同时是 A/B harness 的基线臂（F.7）。**500 索引文件以下**降到 3 工具三件套（`tk_explore/tk_search/tk_node`，丢 `tk_callers`）。理由（codegraph（upstream reference）实测）：1-tool 门 express 从 -43%WIN→+107%LOSS；`impact` 在零 eval 出现（blast-radius 已内联在 explore 和 node）；`callees` 冗余（body 即 callee list）。gitnexus（upstream reference）无条件列 17（已核实 `tools.ts` 26 个 `name:` 含别名/重载）= 文档化的「navigation-tool ceiling」反模式。
 
-> **组织原则（D17 / [ADR 0029](../adr/0029-agent-tool-surface-operation-contracts-queryplan.md)）**：这 4 个是**操作合同**（4 种职责：主探索 / 廉价搜索 / 精确节点读 / 反向调用），**不是** 6 个 profile 工具、**不是** 1 个 purpose 万能工具。六 profile 降为**内部 QueryPlan preset**（见 A4.4，QueryPlan = selection/traversal/projection 三正交维度）；每个工具把窄参编译成 QueryPlan，不外暴露重参协议。Domain/Evidence 先经 `tk_explore.layers` + `tk_node.include` 暴露，**harness 证明前不加** tk_domain/tk_verify。
+> **组织原则（D17 / [ADR 0029](../../adr/0029-agent-tool-surface-operation-contracts-queryplan.md)）**：这 4 个是**操作合同**（4 种职责：主探索 / 廉价搜索 / 精确节点读 / 反向调用），**不是** 6 个 profile 工具、**不是** 1 个 purpose 万能工具。六 profile 降为**内部 QueryPlan preset**（见 A4.4，QueryPlan = selection/traversal/projection 三正交维度）；每个工具把窄参编译成 QueryPlan，不外暴露重参协议。Domain/Evidence 先经 `tk_explore.layers` + `tk_node.include` 暴露，**harness 证明前不加** tk_domain/tk_verify。
 
 **(2) 要动的文件**：`src/mcp/tools.ts`（`DEFAULT_MCP_TOOLS` + `getStaticTools` + `ToolHandler.getTools` + tiny-repo 门 + `toolAllowlist/isToolAllowed`）。
 
@@ -511,7 +513,7 @@ export const tools: ToolDefinition[] = [
 
 **(6) 测试**：(a) `getExploreBudget(400)=1`、`(4999)=2`、`(20000)=4`、`(30000)=5`；(b) `exploreMaxOutputChars(100)=13000`、`(300)=18000`、`(800)=24000`；(c) `tools` 数组断言 4 条且 `tk_node.inputSchema.required` 为 `[]`、`tk_search.required=['query']`；(d) A-B harness 字段记录每次 explore 实际输出字节 ≤ 对应 tier cap。
 
-**(7) 证据回指**：codegraph `tools.ts:102-108,54/63/70,172-257,401-572`；DeepWiki 3-tool ladder（docs/codemap/codegraph-wiki-landscape-20260618.md:44）；G1 char tier 绑定（DEP MAP G/F 冲突裁定）。
+**(7) 证据回指**：codegraph `tools.ts:102-108,54/63/70,172-257,401-572`；DeepWiki 3-tool ladder（docs/codemap/archive/research/codegraph-wiki-landscape-20260618.md:44）；G1 char tier 绑定（DEP MAP G/F 冲突裁定）。
 
 ---
 
@@ -644,7 +646,7 @@ private async initFromRoots(): Promise<void> {
 | F.8 | root 解析顺序 + Windows file:// | roots/list 5000ms 一次性；win32 盘符剥斜杠 | codegraph session.ts:42,183,304 |
 | F.9 | 引导 = additive/概率性；shim 仅管命令输出 | 引导面 3 处；MCP∩shell=0 | landscape TL;DR/§Conclusion |
 
-**跨需求绑定备忘**：F8 的 `maxOutputChars` **import** G1（`src/budget.ts`）不重定义；传输 = stdio（无 daemon，per-session MCP 即暖路径；cross-session daemon = Outside-scope，D21/[ADR 0033](../adr/0033-daemon-decomposed-three-capabilities.md)）；DB 库外、`.tk/` 仅人类工件；扩展是 H(viewer)/I(round-trip) 的宿主，经 L 渠道发布；measured A/B 跑在 Claude Code headless（SECONDARY），PRIMARY 走 Track-2 opportunity facts。
+**跨需求绑定备忘**：F8 的 `maxOutputChars` **import** G1（`src/budget.ts`）不重定义；传输 = stdio（无 daemon，per-session MCP 即暖路径；cross-session daemon = Outside-scope，D21/[ADR 0033](../../adr/0033-daemon-decomposed-three-capabilities.md)）；DB 库外、`.tk/` 仅人类工件；扩展是 H(viewer)/I(round-trip) 的宿主，经 L 渠道发布；measured A/B 跑在 Claude Code headless（SECONDARY），PRIMARY 走 Track-2 opportunity facts。
 
 
 ---

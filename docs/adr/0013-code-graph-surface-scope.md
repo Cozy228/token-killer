@@ -4,7 +4,7 @@
 The *scope* here (search/read lane only; extension, SCIP, and richer analysis deferred; version
 slicing) is reversed by the four-layer bounded product. The *not-a-gateway / additive, no
 direct-tool-projection* stance survives. Original: accepted (grilling 2026-06-18; design
-`docs/codemap/code-graph-design-20260618.md`).
+`docs/codemap/archive/legacy/code-graph-design-20260618.md`).
 
 tk grows a new **[Code graph](../../CONTEXT.md)** surface: an additive retrieval plane for
 orientation, targeted reads, callers-style search, and local verification. It is **not** an

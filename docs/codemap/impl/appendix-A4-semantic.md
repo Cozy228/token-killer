@@ -1,3 +1,5 @@
+> **[2026-07-04 P28] SUPERSEDED** — the 4-tool + QueryPlan external surface is replaced by the 3-tool surface (P25②); QueryPlan internals survive inside `context()`'s code section. Rest distilled into `CTX-IMPL.md` §12.
+
 # 附录 A4:语义 / 领域 / 业务逻辑层的吸收(2026-06-21,来自 `Token-killer-Research.md` Part 3–4)
 
 > **为什么补这节**:行动计划主体(及附录 A1–A3)偏"结构图 + 找代码"(强偏 codemap 智能体面);而 `Token-killer-Research.md` 后半 ~2100 行(line 1718–3808)是一整套**语义 / 领域 / 业务逻辑理解层**,服务 **需求 A(人理解上半,codeguide 人类面)、B(智能来源的静态↔LLM 边界,codemap 智能体面)、I(协作:领域词汇/用例追溯/人工确认)、J(信任:四种可信度)**。之前 gap 分析的 `architecture-3tier` agent 失败 + 只扫了前 1200 行,故这块漏吸收。
@@ -86,7 +88,7 @@ content: |
 
 > **增补需求 G**:G 的 char 预算分层之上,read 工具按 `mode: symbol | slice | edit_window` 三态;`edit_window` 不参与压缩、带 `content_hash`(与 J 的 staleness/`content_hash` 同源)。
 
-## A4.4 内部 QueryPlan（**非**外部统一工具）—— 三正交维度，profile 降为内部 preset〔D17 / [ADR 0029](../adr/0029-agent-tool-surface-operation-contracts-queryplan.md)〕
+## A4.4 内部 QueryPlan（**非**外部统一工具）—— 三正交维度，profile 降为内部 preset〔D17 / [ADR 0029](../../adr/0029-agent-tool-surface-operation-contracts-queryplan.md)〕
 
 来源:研究 §最终组合(line 1633–1667)。**修正（D17）**：早稿把它当成一个**外部统一 `CodeQuery` 工具**（purpose 枚举驱动一切）——**作废**。理由：① codegraph 实测 1-tool 门大亏(−43%→+107%)；② 六 profile **混了不同维度**（locate/understand=任务目标，flow/impact=遍历模式，domain=知识层，verify=信任/投影模式），塞进一个 purpose 枚举是把正交维度压平。
 

@@ -211,7 +211,7 @@ scripts/eval/
 **(3) 可抄代码**：compendium §11 的方法原文（确认存在，VERBATIM），作为流程权威定义：
 
 ```text
-源: /Users/ziyu/Workspace/token-killer/docs/codemap/low-token-agent-research-compendium-20260618.md:478 （VERBATIM）
+源: /Users/ziyu/Workspace/token-killer/docs/codemap/archive/research/low-token-agent-research-compendium-20260618.md:478 （VERBATIM）
 **Safety via fallback replay (the cleanest documented method).** (1) Run the task
 with the projection layer enabled. (2) If the run fails — or succeeds with suspicious
 retries — identify the projected evidence the layer introduced. (3) Re-run from the
@@ -270,7 +270,7 @@ scripts/eval/
 **(3) 可抄代码**：FastContext 方法依据（确认存在，VERBATIM）+ tk 计算实现：
 
 ```text
-源: /Users/ziyu/Workspace/token-killer/docs/codemap/low-token-agent-research-compendium-20260618.md:355 （VERBATIM）
+源: /Users/ziyu/Workspace/token-killer/docs/codemap/archive/research/low-token-agent-research-compendium-20260618.md:355 （VERBATIM）
 - **FastContext (Microsoft, arXiv 2606.14066).** **Repo exploration = 56.2% of tool-use
   turns.** A dedicated **4B–30B exploration subagent** (SFT on Sonnet trajectories + **RL
   with patch-derived location rewards**, file/line F1) separated from the solver, returns
@@ -309,7 +309,7 @@ export function localizationF1(pred: Span[], oracle: Span[]) {
 
 ### K6 任务正确性 = FAIL_TO_PASS + PASS_TO_PASS — (serves the codemap agent surface)
 
-**(1) 决策**：带 patch 的任务用 SWE-bench 式 `FAIL_TO_PASS`（修前失败/修后通过）+ `PASS_TO_PASS`（修前通过/修后仍通过）。任务记为 solved 当且仅当 **所有 FAIL_TO_PASS 通过 且 所有 PASS_TO_PASS 仍通过**。**语料源（grilling D11 / Q10，全文 [ADR 0023](../adr/0023-benchmark-architecture.md)）= 复用两 harness、拆分证明责任**：Job-B 端到端用 **SWE-bench 官方切片**（GitNexus 3 臂 baseline/tk-native/tk-projection）+ 同记 whole-task uncached/cost/tool-calls/reads/searches/projection；**语言/图能力另由 K16 的 per-language 问题集证明**，SWE-bench 语言分布须披露但不背全语言覆盖责任。**tk 自有 repo = regression only**（CI 回归/筛选/快消融，永不作主对外基准）。
+**(1) 决策**：带 patch 的任务用 SWE-bench 式 `FAIL_TO_PASS`（修前失败/修后通过）+ `PASS_TO_PASS`（修前通过/修后仍通过）。任务记为 solved 当且仅当 **所有 FAIL_TO_PASS 通过 且 所有 PASS_TO_PASS 仍通过**。**语料源（grilling D11 / Q10，全文 [ADR 0023](../../adr/0023-benchmark-architecture.md)）= 复用两 harness、拆分证明责任**：Job-B 端到端用 **SWE-bench 官方切片**（GitNexus 3 臂 baseline/tk-native/tk-projection）+ 同记 whole-task uncached/cost/tool-calls/reads/searches/projection；**语言/图能力另由 K16 的 per-language 问题集证明**，SWE-bench 语言分布须披露但不背全语言覆盖责任。**tk 自有 repo = regression only**（CI 回归/筛选/快消融，永不作主对外基准）。
 
 **(2) 要动的文件**：
 ```
@@ -473,7 +473,7 @@ export function incrementalRatio(full: { total_tokens: number }, inc: { total_to
 
 **(1) 决策**：Job A 走独立 small-N 协议（非 token）。两项度量：(a) find-correct-file rate——给人一个问题 + 仅人类 surface，记 hit@1 + time-to-correct-file；(b) comprehension——固定问题集对照 oracle answer key，`score = correct/total`。一律打印 N + 「small-N indicative, not benchmark-grade」标注。**采用 Serena 拒绝伪造 comprehension % 的诚实立场。**
 
-**(1b) grader/corpus**（grilling D11 / Q10，全文 [ADR 0023](../adr/0023-benchmark-architecture.md)）：无分档品牌。两样——自动 **regression tasks**（内部手写 tk-repo + host-agent，防导航/查询退化，**不作人类理解 claim**）+ 小规模 **blind human study**（外部 corpus + 评审者**非**功能作者、**不知**实验分组，baseline vs Human Inspector 比 hit@1/time-to-file/answer correctness，存分歧记录）。人类价值**只能**由盲测证明,永报 `N / repos / tasks`,**绝不**输出泛化 "comprehension +X%"。host-agent 不能证明人类理解。
+**(1b) grader/corpus**（grilling D11 / Q10，全文 [ADR 0023](../../adr/0023-benchmark-architecture.md)）：无分档品牌。两样——自动 **regression tasks**（内部手写 tk-repo + host-agent，防导航/查询退化，**不作人类理解 claim**）+ 小规模 **blind human study**（外部 corpus + 评审者**非**功能作者、**不知**实验分组，baseline vs Human Inspector 比 hit@1/time-to-file/answer correctness，存分歧记录）。人类价值**只能**由盲测证明,永报 `N / repos / tasks`,**绝不**输出泛化 "comprehension +X%"。host-agent 不能证明人类理解。
 
 **(2) 要动的文件**：
 ```
@@ -639,7 +639,7 @@ export function searchUsefulness(
 
 ### K12 transfer footer = 对象①（proxy-only token 数字）的披露单位 — (serves both surfaces)
 
-**(1) 决策**（refined by Q10 / [ADR 0022](../adr/0022-measurement-and-claim-boundaries.md)）：transfer footer 盖 **对外报的 uncached token 数字**——它 target 永远测不了,只能明文声明。footer 内容 5 条:measurement host=Claude Code headless;primary target=VS Code Copilot/Windows;compatible task-level target token telemetry=unavailable;target-host token effect=unknown;**no equivalent Copilot token reduction is claimed**。W2 loop-avoidance 仅作 **mechanism hypothesis**(非已验证 target token 声称)。产品默认 config 的转移不靠 footer,而由 K15 的**周期性 Copilot 复核**(portable 信号 target 可观测)处理——无运行时自动反证/状态机。
+**(1) 决策**（refined by Q10 / [ADR 0022](../../adr/0022-measurement-and-claim-boundaries.md)）：transfer footer 盖 **对外报的 uncached token 数字**——它 target 永远测不了,只能明文声明。footer 内容 5 条:measurement host=Claude Code headless;primary target=VS Code Copilot/Windows;compatible task-level target token telemetry=unavailable;target-host token effect=unknown;**no equivalent Copilot token reduction is claimed**。W2 loop-avoidance 仅作 **mechanism hypothesis**(非已验证 target token 声称)。产品默认 config 的转移不靠 footer,而由 K15 的**周期性 Copilot 复核**(portable 信号 target 可观测)处理——无运行时自动反证/状态机。
 
 **(2) 要动的文件**：
 ```
@@ -678,13 +678,13 @@ export function renderHeadline(delta: number, withMed: number, withoutMed: numbe
 
 **(6) 测试**：断言 `renderHeadline(...)` 输出必含 `TRANSFER_FOOTER` 全 5 条；断言无 footer 的 token-数字渲染路径不存在（grep 测试）。
 
-**(7) 证据回指**：[ADR 0022](../adr/0022-measurement-and-claim-boundaries.md)（host 边界 + footer）；MEMORY measurement-harness-design（W2 = A/B-only，transfer 是假设）。
+**(7) 证据回指**：[ADR 0022](../../adr/0022-measurement-and-claim-boundaries.md)（host 边界 + footer）；MEMORY measurement-harness-design（W2 = A/B-only，transfer 是假设）。
 
 ---
 
 ### K13 系统变体消融阶梯 — (serves the codemap agent surface)
 
-**(1) 决策**：对比变体（OUTER ladder）= `S0 baseline · S1 +output-compression · S2 +smart-read · S3 +repo-map/graph · S4 +symbol-index`。每变体一个独立 WITH config，隔离每检索技术贡献；无 embeddings/gateway 变体（leans 范围外）。**所有 K13 cell 用同一把锁定的 projection config**（cell 间绝不变更 = 保守 Code-only graph projection 或上次 validated 生产配置）——K13 只测**检索技术**增量，不把 graph 建设与 projection 策略混淆。D7 四路 profile 消融是 `+graph` 臂的 **INNER 消融**，二者嵌套不平铺，组合方式见 K17 / [ADR 0024](../adr/0024-ablation-protocol.md)。
+**(1) 决策**：对比变体（OUTER ladder）= `S0 baseline · S1 +output-compression · S2 +smart-read · S3 +repo-map/graph · S4 +symbol-index`。每变体一个独立 WITH config，隔离每检索技术贡献；无 embeddings/gateway 变体（leans 范围外）。**所有 K13 cell 用同一把锁定的 projection config**（cell 间绝不变更 = 保守 Code-only graph projection 或上次 validated 生产配置）——K13 只测**检索技术**增量，不把 graph 建设与 projection 策略混淆。D7 四路 profile 消融是 `+graph` 臂的 **INNER 消融**，二者嵌套不平铺，组合方式见 K17 / [ADR 0024](../../adr/0024-ablation-protocol.md)。
 
 **(2) 要动的文件**：
 ```
@@ -771,17 +771,17 @@ export function scorerFor(category: string): "A" | "B" | "both" {
 
 ### K15 measurement & claim boundaries — (serves both surfaces)
 
-**(1) 决策**（grilling D10 / Q10，全文 [ADR 0022](../adr/0022-measurement-and-claim-boundaries.md)）：每个 host 只证它能证的，**绝不让一个 host 的数字冒充另一 host**。Claude Code = token proxy（唯一干净 whole-task uncached，附 footer 声明非 Copilot 数）；VS Code Copilot = target observational facts（tool_calls/avoided_reads/payload，`estimate_kind:"opportunity"`，永不汇入 `saved_tokens`）；human = portable task metrics（hit@1/time-to-file/answer correctness）。
+**(1) 决策**（grilling D10 / Q10，全文 [ADR 0022](../../adr/0022-measurement-and-claim-boundaries.md)）：每个 host 只证它能证的，**绝不让一个 host 的数字冒充另一 host**。Claude Code = token proxy（唯一干净 whole-task uncached，附 footer 声明非 Copilot 数）；VS Code Copilot = target observational facts（tool_calls/avoided_reads/payload，`estimate_kind:"opportunity"`，永不汇入 `saved_tokens`）；human = portable task metrics（hit@1/time-to-file/answer correctness）。
 
 **(2) 默认配置闸**（D10 产品形状部分）：层挣得某 profile 默认输出预算 = (1) correctness 非回归（硬闸）+ (2) portable utility（Copilot/人类可观测）决定默认 + (3) proxy whole-task uncached 仅作**成本约束 + 辅助 tie-breaker**，绝不单独定默认。配置选定后**周期性在 Copilot 用 observational facts 复核**——无运行时自动反证引擎、无 validation-status 状态机、无自动 demotion（target 数据是观察性的、易受任务分布扰动，供周期复核，不驱动实时行为）。
 
-**(3) 证据回指**：[ADR 0022](../adr/0022-measurement-and-claim-boundaries.md)；[ADR 0020](../adr/0020-selection-vs-projection.md)（earning-budget by ablation）；[ADR 0016](../adr/0016-measurement-before-feature.md)（uncached 口径）。
+**(3) 证据回指**：[ADR 0022](../../adr/0022-measurement-and-claim-boundaries.md)；[ADR 0020](../../adr/0020-selection-vs-projection.md)（earning-budget by ablation）；[ADR 0016](../../adr/0016-measurement-before-feature.md)（uncached 口径）。
 
 ---
 
 ### K16 benchmark architecture — (serves both surfaces; K 的主体)
 
-**(1) 决策**（grilling D11 / Q10，全文 [ADR 0023](../adr/0023-benchmark-architecture.md)）：复用两套已验证参考 harness，每套只做**一个可证伪声称**，不自建 benchmark 分级：
+**(1) 决策**（grilling D11 / Q10，全文 [ADR 0023](../../adr/0023-benchmark-architecture.md)）：复用两套已验证参考 harness，每套只做**一个可证伪声称**，不自建 benchmark 分级：
 - **Agent 端到端 = GitNexus 式 SWE-bench harness**：3 臂 `baseline / tk-native / tk-projection`，SWE-bench 官方 F2P/P2P 判 resolve，同记 whole-task uncached / cost / tool·API calls。证'agent 是否更易完成真实修复任务 + token 是否降'。**SWE-bench 的 Python 偏向只须在报告披露，不得用于声明 TS/JS 端到端收益。**
 - **Backend 能力 = Codebase-Memory 式多仓问题集**：TS/TSX/JS、Python、Go 各代表性真实 OSS repo，固定可机械验证问题（symbol location / callers·callees / flow / impact / Domain candidates / Evidence arbitration），记 PASS/PARTIAL/FAIL。证'声明语言上 Code/Behavior/Domain/Evidence 是否正确'，**不与** SWE-bench 混成一个指标。
 
@@ -791,17 +791,17 @@ export function scorerFor(category: string): "A" | "B" | "both" {
 
 **(4) 要动的文件**：`scripts/eval/harness-swebench.ts`（GitNexus 3 臂）；`scripts/eval/harness-langsuite.ts`（per-language runner）；`scripts/eval/human-study.ts`（盲测记录）；复用 K6 oracle + K10 schema。
 
-**(5) 证据回指**：[ADR 0023](../adr/0023-benchmark-architecture.md)；GitNexus SWE-bench 评测模式；Codebase Memory repository question suite。
+**(5) 证据回指**：[ADR 0023](../../adr/0023-benchmark-architecture.md)；GitNexus SWE-bench 评测模式；Codebase Memory repository question suite。
 
 ---
 
 ### K17 ablation protocol — (serves the codemap agent surface)
 
-**(1) 决策**（grilling D12 / Q10，全文 [ADR 0024](../adr/0024-ablation-protocol.md)）：K13 与 D7 **不是笛卡尔矩阵**——D7 的投影臂活在 K13 的 `+graph` 臂内。K13 测**检索技术**（baseline/+compression/+smart-read/+graph/+symbol，全 cell 锁同一 projection control，隔离技术 vs 投影）；D7 在 graph 臂内测**投影**（Code-only vs 四层，per profile）。**不跑全矩阵**：K13 winner 与 D7 winner 各自独立选出后，对 baseline 做**一次组合确认**（correctness 非回归、预期收益仍在、token 不实质反向）。ablation 嵌入 K16 两 harness（K13 在 SWE-bench 对照臂、D7 在固定 task slice）。
+**(1) 决策**（grilling D12 / Q10，全文 [ADR 0024](../../adr/0024-ablation-protocol.md)）：K13 与 D7 **不是笛卡尔矩阵**——D7 的投影臂活在 K13 的 `+graph` 臂内。K13 测**检索技术**（baseline/+compression/+smart-read/+graph/+symbol，全 cell 锁同一 projection control，隔离技术 vs 投影）；D7 在 graph 臂内测**投影**（Code-only vs 四层，per profile）。**不跑全矩阵**：K13 winner 与 D7 winner 各自独立选出后，对 baseline 做**一次组合确认**（correctness 非回归、预期收益仍在、token 不实质反向）。ablation 嵌入 K16 两 harness（K13 在 SWE-bench 对照臂、D7 在固定 task slice）。
 
 **(2) 要动的文件**：`scripts/eval/ablation.ts`（K13 锁投影阶梯 → D7 graph 臂内 → 一次组合确认）；复用 K16 harness。
 
-**(3) 证据回指**：[ADR 0024](../adr/0024-ablation-protocol.md)；[ADR 0020](../adr/0020-selection-vs-projection.md)。
+**(3) 证据回指**：[ADR 0024](../../adr/0024-ablation-protocol.md)；[ADR 0020](../../adr/0020-selection-vs-projection.md)。
 
 ---
 
@@ -810,15 +810,15 @@ export function scorerFor(category: string): "A" | "B" | "both" {
 1. **never report a number we cannot mechanically derive**——measured（K1-K6, K8, K10-K11）走 Claude Code 实测；opportunity（K7）打不同 `estimate_kind` 永不汇总；Job-A 自动任务只作 regression（不作人类理解 claim），人类价值仅小规模盲测、永报 N/repos/tasks。
 2. **uncached not total**（K1）——OVERRULES codegraph total 头条；统一 = whole-task uncached（total 仅审计列）。
 3. **每个 token 增量必与非回归 success_rate 配对**（K6 Pareto），绝不单报 token。
-4. **host boundary**（K15 / [ADR 0022](../adr/0022-measurement-and-claim-boundaries.md)）——Claude=token proxy(footer 标注，不冒充 Copilot) / Copilot=observational facts(`estimate_kind:"opportunity"`，永不汇入 saved) / human=portable task metrics；一个 host 的数字绝不冒充另一 host。
+4. **host boundary**（K15 / [ADR 0022](../../adr/0022-measurement-and-claim-boundaries.md)）——Claude=token proxy(footer 标注，不冒充 Copilot) / Copilot=observational facts(`estimate_kind:"opportunity"`，永不汇入 saved) / human=portable task metrics；一个 host 的数字绝不冒充另一 host。
 5. 全工坊只写 JSONL/sqlite ledger，**自身不跑任何模型**（无 API key、无 model egress）；Job-A 评分由 host-agent（regression）或盲测人类（study），永不用 tool-embedded model。
-6. **default by correctness + portable utility**（K15 / [ADR 0022](../adr/0022-measurement-and-claim-boundaries.md)）——层挣默认预算须 correctness 非回归(硬闸) + portable utility(Copilot/人类可观测)；proxy uncached 仅成本约束/tie-breaker，绝不单独定默认；配置周期性在 Copilot 复核（无运行时自动反证/降级状态机）。
-7. **claim boundary = 两类结论**（K16 / [ADR 0023](../adr/0023-benchmark-architecture.md)）——K 对外只声称 ① 真实任务上 tk 提高成功率/降低 agent 成本 ② 声明的语言与图能力真工作；通用 comprehension %、单一 blended score、跨语言/跨 host 外推一律 out of bounds。
-8. **ablation embeds, no matrix**（K17 / [ADR 0024](../adr/0024-ablation-protocol.md)）——K13 测技术(锁投影)、D7 graph 臂内测投影；不跑全矩阵，final config 对 baseline 确认一次；tk 自有 repo = regression only。
+6. **default by correctness + portable utility**（K15 / [ADR 0022](../../adr/0022-measurement-and-claim-boundaries.md)）——层挣默认预算须 correctness 非回归(硬闸) + portable utility(Copilot/人类可观测)；proxy uncached 仅成本约束/tie-breaker，绝不单独定默认；配置周期性在 Copilot 复核（无运行时自动反证/降级状态机）。
+7. **claim boundary = 两类结论**（K16 / [ADR 0023](../../adr/0023-benchmark-architecture.md)）——K 对外只声称 ① 真实任务上 tk 提高成功率/降低 agent 成本 ② 声明的语言与图能力真工作；通用 comprehension %、单一 blended score、跨语言/跨 host 外推一律 out of bounds。
+8. **ablation embeds, no matrix**（K17 / [ADR 0024](../../adr/0024-ablation-protocol.md)）——K13 测技术(锁投影)、D7 graph 臂内测投影；不跑全矩阵，final config 对 baseline 确认一次；tk 自有 repo = regression only。
 
 ### Open Decisions
 
-> **✅ Need-K 全部闭合 → Q10 完成（D10–D12 / [ADR 0022](../adr/0022-measurement-and-claim-boundaries.md)–[0024](../adr/0024-ablation-protocol.md)）。** K 收敛为三件事:**在哪个 host 能证什么**(K15)、**用哪两套现成 benchmark**(K16)、**少量消融如何嵌入**(K17)。对外结论只两类:① 真实任务上 tk 提高成功率/降低 agent 成本;② 声明的语言与图能力真工作。其余(通用 comprehension %、单一 blended score、跨语言/跨 host 外推)一律 out of bounds。
+> **✅ Need-K 全部闭合 → Q10 完成（D10–D12 / [ADR 0022](../../adr/0022-measurement-and-claim-boundaries.md)–[0024](../../adr/0024-ablation-protocol.md)）。** K 收敛为三件事:**在哪个 host 能证什么**(K15)、**用哪两套现成 benchmark**(K16)、**少量消融如何嵌入**(K17)。对外结论只两类:① 真实任务上 tk 提高成功率/降低 agent 成本;② 声明的语言与图能力真工作。其余(通用 comprehension %、单一 blended score、跨语言/跨 host 外推)一律 out of bounds。
 > 已降为评估协议细节(非产品架构):token 口径计算、run 预算(4/臂+自适应)、premiumRequests 丢弃、Job-A host-agent vs 盲测人类、SWE-bench 语言披露。
 
 

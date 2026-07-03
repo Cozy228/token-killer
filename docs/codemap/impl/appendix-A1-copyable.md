@@ -488,7 +488,7 @@ enum SymbolRole { Definition = 0x1; Import = 0x2; WriteAccess = 0x4; ReadAccess 
 > **关键事实**:与 graphify 简化版不同,**官方 occurrences 挂在 Document 上,不挂在每个 symbol 上**(源: graphify/scip_ingest.py:27-30 自己点明这个分歧)。`symbol_roles` 是**位掩码**,按 `role & 0x1` 判 Definition——**绝不**用枚举相等判定。
 > **range 消费修正(D16）**:当前协议已**优先 typed `single_line_range` / `multi_line_range`**，旧的 packed 3 元 `[startLine,startChar,endChar]` / 4 元 `[startLine,startChar,endLine,endChar]`（0-based）**已 deprecated**。consumer 必须 **typed-first、packed fallback**，并保留每个 Document 的 **position encoding（UTF-8 / UTF-16 / UTF-32）**（char offset 的码元口径随之不同，落库前须按 Document 编码归一）。
 
-**解码方案（D16 / [ADR 0028](../adr/0028-scip-streaming-consumer-official-binding.md)）——官方 TS binding + 薄顶层 streaming importer；pbjs 平行 binding 与手写嵌套解码器均 Rejected**：
+**解码方案（D16 / [ADR 0028](../../adr/0028-scip-streaming-consumer-official-binding.md)）——官方 TS binding + 薄顶层 streaming importer；pbjs 平行 binding 与手写嵌套解码器均 Rejected**：
 
 官方 SCIP 现已提供 **Apache-2.0 的 TS binding `@scip-code/scip`**（由 `protoc-gen-es` 生成；已核对 v0.8.1 / Apache-2.0 / 依赖 `@bufbuild/protobuf ^2.11.0`，后者 Apache-2.0 AND BSD-3-Clause）。标准消费 = `fromBinary(IndexSchema, bytes)`。故：
 - **不再** pbjs/pbts 自生成平行 binding（旧 A，**Rejected**）；**不**手写完整嵌套 protobuf 解码器（旧 C，**Rejected**）；运行时 `protobufjs` 反射（旧 B）本就否决。

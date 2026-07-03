@@ -561,7 +561,7 @@ src/codemap/store/retrieve.ts   # 检索：FTS5 + 边遍历，强制 provenance=
 
 ### Open Decisions（交用户确认）
 
-✅ **全部闭合（D22 / [ADR 0034](../adr/0034-llm-delegation-host-borrowed-no-byo-key.md)，grilling 2026-06-22 round 4）**：
+✅ **全部闭合（D22 / [ADR 0034](../../adr/0034-llm-delegation-host-borrowed-no-byo-key.md)，grilling 2026-06-22 round 4）**：
 
 1. ✅ **默认 provider = 复用宿主 in-session 模型**（Claude Code/macOS 次目标，宿主会话与 logged-in CLI 同时存在时）。caw 订阅子进程仅在真正 headless（无宿主会话可借）时兜底。
 2. ✅ **严格禁止显式 BYO-key 逃生口**——永不 ship 构造 LLM 客户端的代码路径，保持 CI gate `grep -E 'openai|AsyncOpenAI|api_key|faiss|embedding'` 命中=0（repodoc `llm.py:43` 反例 + M23 + A4.11 无凭据原则）。无模型可借时 ship static-only（B-D7）诚实降级。

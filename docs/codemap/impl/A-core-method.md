@@ -1,3 +1,5 @@
+> **[2026-07-04 P28] SUPERSEDED** — the retrieval pipeline and constants here are replaced by `CTX-IMPL.md` §6 (seeds → expansion depth ≤2/cap 512 → PPR α=0.25/25 iters → RRF K=60 → sections/projection); the ONE-BACKEND-CLI-hub framing is amended by P16/P10. On conflict CTX-IMPL wins.
+
 ## 需求 A — Core method（这份"智能"是什么形态）
 
 **总纲（与 DEP MAP coherence 一致）：ONE BACKEND, TWO SURFACES (codemap = agent, codeguide = human)。** 唯一存储 = node:sqlite + FTS5 单文件里的一张 typed property graph（nodes + edges + nodes_fts），每个 node 携带可解析的 `file:line` span。两套渲染 surface 共享同一张子图：codemap (agent surface)（(serves the codemap agent surface)，确定性混合检索）与 codeguide (human surface)（(serves the codeguide human surface)，ASCII/HTML 树）。embeddings 与 LSP-as-core 属 Outside current product scope;**PageRank Required, default on**（决策 #8 / 附录 A1）、SCIP 为 Required capability; its runtime dependency is Optional at runtime。packing（signature-collapse）不是底座，是 codemap (agent surface) 内部的压缩函数。下游 C 是这张图的物理落地、D 是填图的 WASM tree-sitter 抽取器、F 是把 codemap (agent surface) 暴露成 MCP 工具、H 渲染 codeguide (human surface)、G/J 塑形与背书输出。
@@ -153,7 +155,7 @@ END;
 
 ### 决策 A5 — codemap (agent surface) 检索管线（6 步确定性混合检索）   (serves the codemap agent surface)
 
-(1) **决策**：固定为 ① query 符号抽取（CamelCase/snake/SCREAMING/acronym/dotted/lowercase 正则 − ~130 词 stoplist）→ ② 3 通道（exact-name +co-location、definition-prefix +brevity、FTS multi-term）按 **MAX** 合并 → ③ re-rank（multi-term 共现、test-file ×0.3、dominant-file boost）**产出有界候选锚点**（非最终序）→ ④ BFS expansion over contains/calls 构建结构邻域（BFS 方向随 query.purpose 翻转，见 §3；direction 默认 both 仅在 purpose 缺省时）→ ⑤ **query-local PPR 对邻域做主排序**（锚点的 ③-分作 personalization 种子 + tie-breaker，见 §1 / D13 / [ADR 0025](../adr/0025-staged-ranking-pipeline.md)）→ ⑥ 自适应 code-block 抽取 → ⑦ 低置信诚实兜底。**注**：①–③ 是分级管线的「词法选锚点」段，⑤ 是「PPR 主排序」段；词法分**不在 ⑤ 之后与 PPR 加权融合**（重复计数）。
+(1) **决策**：固定为 ① query 符号抽取（CamelCase/snake/SCREAMING/acronym/dotted/lowercase 正则 − ~130 词 stoplist）→ ② 3 通道（exact-name +co-location、definition-prefix +brevity、FTS multi-term）按 **MAX** 合并 → ③ re-rank（multi-term 共现、test-file ×0.3、dominant-file boost）**产出有界候选锚点**（非最终序）→ ④ BFS expansion over contains/calls 构建结构邻域（BFS 方向随 query.purpose 翻转，见 §3；direction 默认 both 仅在 purpose 缺省时）→ ⑤ **query-local PPR 对邻域做主排序**（锚点的 ③-分作 personalization 种子 + tie-breaker，见 §1 / D13 / [ADR 0025](../../adr/0025-staged-ranking-pipeline.md)）→ ⑥ 自适应 code-block 抽取 → ⑦ 低置信诚实兜底。**注**：①–③ 是分级管线的「词法选锚点」段，⑤ 是「PPR 主排序」段；词法分**不在 ⑤ 之后与 PPR 加权融合**（重复计数）。
 
 (3) **可抄代码**（源: `/tmp/tk-research/codegraph/src/context/index.ts:44`，符号抽取正则，verbatim）：
 ```ts
@@ -276,7 +278,7 @@ export function formatSubgraphTree(subgraph: Subgraph, entryPoints: Node[]): str
 
 > ⚠️ **已按 2026-06-20 拍板(决策 #8)更新**:PageRank **Required, default on**;原"Unsupported"措辞作废。实现见 **附录 A1**(PageRank 纯 TS)+ **附录 A3 §0/§1**(与 FTS boost 的 `finalScore` 融合)。
 
-(1) **决策**：排序 = **分级管线**（见附录 A3 §1 / D13 / [ADR 0025](../adr/0025-staged-ranking-pipeline.md)），非加权和：(a) **FTS 分 + exact-name co-location boost（同文件每多一个 query 符号 +30）+ dominant-file boost（一文件边数 ≥3× 次高）+ multi-term 乘性 boost（2 词→2×，3 词→2.5×）** —— 廉价快路径，**职责是为 PageRank 选 personalization 种子 + 给最终序当 tie-breaker**，不是与 PPR 并列融合的打分通道（并列会重复计数）；(b) **personalized PageRank(附录 A1)Required, default on** —— 对结构邻域做**主排序**，最终序主要由 PPR 决定；用户显式 symbol/path 保留确定性优先。无 `--no-rank` 时即走此路径。
+(1) **决策**：排序 = **分级管线**（见附录 A3 §1 / D13 / [ADR 0025](../../adr/0025-staged-ranking-pipeline.md)），非加权和：(a) **FTS 分 + exact-name co-location boost（同文件每多一个 query 符号 +30）+ dominant-file boost（一文件边数 ≥3× 次高）+ multi-term 乘性 boost（2 词→2×，3 词→2.5×）** —— 廉价快路径，**职责是为 PageRank 选 personalization 种子 + 给最终序当 tie-breaker**，不是与 PPR 并列融合的打分通道（并列会重复计数）；(b) **personalized PageRank(附录 A1)Required, default on** —— 对结构邻域做**主排序**，最终序主要由 PPR 决定；用户显式 symbol/path 保留确定性优先。无 `--no-rank` 时即走此路径。
 
 (4) **具体数值**：co-location +20/extra symbol；dominant 阈 ≥3×；multi-term ×2 / ×2.5。
 

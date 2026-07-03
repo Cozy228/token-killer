@@ -33,7 +33,7 @@ four Required, capability-bounded knowledge layers — [Code Graph layer](#codem
 [Behavior Graph](#codemap-layers), [Domain Graph](#codemap-layers), [Evidence
 Graph](#codemap-layers) — each with real producers, `file:line` anchors, and an authority
 level. It is not an API gateway and does not intercept Copilot's built-in `read_file` / `search`.
-The full binding spec is `docs/codemap/codemap-action-plan-20260620.md` (Product Contract).
+The full binding spec is `docs/codemap/DESIGN.md` (Product Contract).
 _Avoid_: context gateway (the broad "wrap every tool output" framing — deliberately rejected),
 direct tool projection (hook-time rewriting of host-owned tool results); **"codegraph" (lowercase,
 `@colbymchenry/codegraph`) = the MIT reference assimilated into the backend, not tk's product**

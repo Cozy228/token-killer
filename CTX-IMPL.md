@@ -6,7 +6,8 @@
 > this document wins unless the maintainer says otherwise. `.research/` mining results feed the
 > **Absorption Register** (§12) — slots marked `⛏` await those reports.
 >
-> Language: TypeScript, Node ≥22 (`node:sqlite`), pnpm. All techniques adopted directly (P25④);
+> Language: TypeScript, Node ≥22.5 (`node:sqlite` stable; no upper bound — the old <25 WASM
+> ceiling is re-verified at M2 start; P28), pnpm. All techniques adopted directly (P25④);
 > ordering below is Implementation dependency only.
 >
 > **Route principle (maintainer, 2026-07-03)**: the build route is the OPTIMAL PATH from the
@@ -31,7 +32,7 @@ packages/
     src/select/      # seeds -> subgraph -> PPR -> sections -> projection
     src/serve/       # context()/search()/remember() as library calls + envelope + renderers
     src/push/        # digest builder + host adapters
-  cli/         # `ctx` bin: init/doctor/mcp/guide/import/remember/recall/memory/push/sync
+  cli/         # `ctx` bin: install/doctor/mcp/guide/import/remember/recall/memory/push/sync
   guide/       # React + Vite web app; served by cli via loopback Hono server
 ```
 
@@ -137,6 +138,9 @@ Notes:
   excerpts from `locator` spans itself (we control excerpt shape anyway — token economy).
 - Migrations: `meta.schema_version` + forward-only SQL files in `core/src/store/migrations/`;
   `ctx doctor` runs them.
+- **Generation identity (D32/ADR 0040 carried)**: a published generation is identified by the
+  tuple (source cursor position, `extractor_version`, `schema_version`, analysis-policy rev in
+  `meta`) — never a bare counter; any element changing ⇒ new generation.
 
 ## 3. Identity, Locators, Handles
 
@@ -204,7 +208,9 @@ interface SourceAdapter {
    remaining sources serve previous `published_gen` with `RECONCILING` in the envelope.
    Staleness is reported three-tier (codegraph's model, as structured envelope fields, not
    prose): entities-in-this-answer pending · other-things pending · whole-source frozen.
-4. Cold paths (`ctx init/doctor/sync`, guide launch) run with a large budget (full catch-up).
+4. Cold paths (`ctx install/doctor/sync`, guide launch) run with a large budget (full catch-up).
+   File scans honor the carried D13 default ignore-set (~50 build/cache dir names; `docs/` is
+   explicitly NOT excluded) — seed list at `docs/codemap/impl/D-language-coverage.md:618`.
 5. Single-writer lease: `meta['lease'] = {holder, expiresAt}` (compare-and-set transaction,
    30s TTL, stealable on expiry). Readers never block (WAL + `published_gen` snapshot reads).
 
@@ -283,8 +289,17 @@ frontmatter/glossaries at all — this extractor is unclaimed territory, same as
 drawer.)
 
 **5.6 Memory**: `remember(note, anchors?, supersedes?)` → mem entity (gist cap enforced; anchors
-resolved to entity ids; supersede = explicit link, old entry kept). Host importers: Claude Code
-(`~/.claude/projects/<shard>/memory/`), Codex, Copilot locations (⛏ verify exact paths per host);
+resolved to entity ids; supersede = explicit link, old entry kept). Host importers (⛏ RESOLVED
+— P28 official-docs verification 2026-07-04): **Claude Code** `~/.claude/projects/<shard>/memory/`
+(MEMORY.md index + per-topic .md; confirmed official) — M1. **VS Code Copilot** memory tool
+(PREVIEW): user scope `<globalStorage>/github.copilot-chat/memory-tool/memories/*.md`, repo scope
+`<workspaceStorage>/<hash>/…/memories/repo/*.md` (reverse-map the hash via that dir's
+`workspace.json`; SKIP when the `chat.copilotMemory.enabled` cloud experiment routes repo
+memories to CAPI — nothing lands locally); session scope has a 14-day TTL — importer =
+follow-on with a preview-path guard. **Copilot CLI**: NO local memory store (verified negative —
+nothing to import; `~/.copilot/session-state/` is replay JSONL, not memory). **Codex CLI**:
+`~/.codex/memories/` markdown workspace (feature off by default; contains its own `.git`) +
+sessions JSONL with embedded cwd — follow-on;
 echo exclusion = skip ctx-managed sentinel blocks; scope filter = project-path match; imports are
 always Inferred with `host-import:<host>` origin; cross-host near-dupes → `sameAsCandidate`.
 Dedup identity rules (absorbed: graphify `dedup.py` — port the rules, simplify the
@@ -369,6 +384,9 @@ convention):
   renderers blow ATX headings up to H1).
 - **Response shape is stable call-over-call** (sections appear in fixed order, only content
   varies) — tool results sit in the client's cacheable context.
+- **`assertNoEgress()` (D22 carried)**: core actively refuses egress — serve/ingest paths assert
+  that no egress-capable API-key env is consumed; mechanism spec at
+  `docs/codemap/impl/M-cross-cutting.md` (M14).
 
 Response = ONE markdown text block (never JSON envelopes — token economy), format:
 
@@ -399,9 +417,12 @@ Gotchas: <top-N auto-ranked gists, one line each, [handle]>
 <!-- ctx:managed:end -->
 ```
 
-Host adapters own placement: Claude Code → managed block in project `CLAUDE.md`; Codex →
-`AGENTS.md`; Copilot → `.github/copilot-instructions.md` (⛏ verify current per-host auto-load
-surfaces at build time). Rendered on cold paths + optional git post-commit hook. Pin/veto =
+Host adapters own placement (⛏ RESOLVED — P28 verification 2026-07-04): root `AGENTS.md` is
+natively auto-loaded by Codex CLI, Copilot CLI (primary) AND VS Code Copilot (default-on since
+1.104); root `CLAUDE.md` is Claude Code's surface and is ALSO auto-read by both Copilot hosts;
+`.github/copilot-instructions.md` stays always-on for Copilot. **Two managed files
+(`AGENTS.md` + `CLAUDE.md`) cover all four hosts** — per-host adapters may still choose the
+host-canonical file, but the two-file default is the floor. Rendered on cold paths + optional git post-commit hook. Pin/veto =
 `.ctx/push.jsonc` in the project (git-shareable, D27/D30).
 
 **Guide** (`ctx guide`): Hono loopback server (random port + bearer token) exposing `core` query
@@ -423,10 +444,18 @@ artifact we request (decision-node proposals, business-logic view sections, diag
 the Mermaid, resolve the cited entity ids, check the claimed anchors exist) — self-correction at
 zero extra orchestration. Derived "business logic view" section vocabulary seeds from
 deepwiki-open's convergent list (overview/architecture/features/data-flow/deployment) but is
-grounded in OUR entities with real handles, never free-floating prose.
+grounded in OUR entities with real handles, never free-floating prose. The generation prompt
+itself seeds from openwiki's `src/agent/prompt.ts` (§12) — its documentation-discipline clauses
+are near-liftable as our on-demand spec: ground every claim in source/git evidence, explain WHY
+not WHAT, flag doc↔source conflicts, one canonical home per concept, surgical
+docs-impact-plan updates (source change → affected → edit → why), no-op when nothing changed.
 
-**CLI**: `ctx init · doctor · mcp · guide · import <carrier> · sync ·
+**CLI**: `ctx install · doctor · mcp · guide · import <carrier> · sync ·
 remember "<note>" · recall <handle> · memory confirm|retire <id> · push pin|veto <id>`.
+**`ctx install` owns host integration (P28)**: managed writes of the MCP-server registration
+into each host's MCP config AND push-block placement; `ctx doctor` verifies both (read-only) —
+reuse the shipping tree's host path-resolution (`src/hook/copilot.ts`, `src/shim/hostAdapter.ts`)
+as reference for per-host locations.
 Env `CTX_HOME`, data `~/.ctx/`. (`ctx run <cmd>` and tk-era compat arrive with the adjacent
 absorption track, §8 — not before.)
 
@@ -457,19 +486,53 @@ shippable; slices within a milestone are independently mergeable.
 | # | Slice | Lands |
 |---|---|---|
 | 1a | Scaffolding | pnpm workspace, packages/{core,cli}, tsdown/vitest, copy-assets (.sql/.scm/.wasm), 3-OS CI |
-| 1b | Store spine | DDL, migrations, generations+lease, handles, read-through resolvers (+hardening), worktree-aware shard placement |
-| 1c | Memory source | remember/recall, host importers (Claude Code/Codex/Copilot), echo exclusion, dedup rules, lifecycle CLI |
+| 1b | Store spine | DDL, migrations, generations+lease, handles, read-through resolvers (+hardening), worktree-aware shard placement, **`Store` TS interface + `SourceAdapter` registry + §4 refresh-orchestration engine** (pinned here so 1c/1d/1e build against one contract) |
+| 1c | Memory source | remember/recall, importer framework + Claude Code importer; VS Code Copilot / Copilot CLI / Codex importers gated on the P28 official-docs verification pass (each an independently mergeable follow-on), echo exclusion, dedup rules, lifecycle CLI |
 | 1d | Git source | cursors, commit entities, file-level `touches`, rename chains, trailers/issue keys, co-change; `ctx sync` |
 | 1e | Docs/decisions source | markdown/frontmatter/ADR/glossary extractors, two-tier mention resolution, link layer v1 (explicit-key + path-match), conflicts + reason-classified stale-suspects |
 | 1f | Selection engine | FULL pipeline in one build (P25④): seeds → expansion → PPR → sections+borrowing → projection with render tiers |
 | 1g | MCP serve | 3 tools + envelope + serving rules (§7), golden transcripts |
 | 1h | Push | digest builder + host adapters + pin/veto; ≤1KB property test |
-| 1i | init/doctor | cold-path full catch-up, store assertions, push placement checks |
+| 1i | install/doctor | **host MCP registration (managed per-host config writes; P28)**, cold-path full catch-up, store assertions, push placement checks |
 
-M1 acceptance: on a fixture repo, any MCP host resolves "why was X changed & what do we know
-about it" in ONE `context()` call with citations; push block present in all three hosts;
-`dirtyCheck` <20ms warm; `context()` <150ms warm. Dependency: 1b → {1c,1d,1e} parallel →
+M1 acceptance: against a **generic MCP stdio client fixture** (real-host integration is a manual
+checklist, not CI — hosts aren't installable in CI), "why was X changed & what do we know
+about it" resolves in ONE `context()` call with citations; push adapters write correct content
+to correct paths in a fixture project dir for all three hosts; `dirtyCheck` <20ms and
+`context()` <150ms warm on the §10 fixture repo. Dependency: 1b → {1c,1d,1e} parallel →
 1f/1g → 1h/1i.
+
+**M1 spec addenda (P28, 2026-07-04 buildability review — conventions pinned so parallel slices
+share one contract; each lands with its slice):**
+- Envelope is an internal typed struct; markdown is the final render step (§10's
+  omission-reconciliation property tests target the struct, never the rendered string).
+- Error taxonomy: success-shaped guidance for ALL recoverable conditions (§7 rule); real
+  `isError` only for malformed arguments and store corruption.
+- `budget:'wide'` = 3× lean caps, same percentages, until measurement says otherwise (FORK-3).
+- Handle collision bump = extend the blake2b prefix 5→6→7 chars. Facet applicability: code kinds
+  `callers·callees·diff·history·full`; commit `diff·text`; doc/decision/story `text·history`;
+  memory `detail·history`; no facet = default brief.
+- `.ctx/push.jsonc` = `{ "pin": [ids], "veto": [ids] }`; comments allowed; unknown keys rejected
+  with guidance.
+- Docs classification: frontmatter `type:` wins → path convention (`docs/adr|decisions/`,
+  `*.adr.md`) → heading heuristic; the applied rule is disclosed in provenance.
+- Stale reason-classes reachable in M1 = `target-removed · referencer-changed · never-resolved`
+  (`signature/body-changed` need M2 symbol hashes — do not attempt earlier).
+- Shard key = 12 hex of blake2b over realpath(`git rev-parse --git-common-dir`); fallback
+  realpath(project root) for non-git dirs.
+- Migrations = `NNN-<name>.sql`, forward-only, one transaction each; `schema_version` = highest
+  applied NNN.
+- `remember()` validation: gist hard-capped at 240 chars (longer note → success-shaped guidance
+  to split note/detail); unresolved anchors → success-shaped response listing candidate entities
+  (entry not written until anchors resolve or are dropped by the caller).
+- `ctx import`/`ctx guide` before their milestone → success-shaped "lands at M4/M3" notice,
+  never unknown-command.
+- Echo-exclusion acceptance bar (1c): exact sentinel-block match only; paraphrase echo is
+  explicitly out of M1 scope.
+- `ctx sync` = all-sources orchestration entry point (not git-only, despite landing with 1d).
+- Package names: placeholder scoped names + `"private": true` until P13 naming lands;
+  `pnpm-workspace.yaml` gains `packages/*`; per-package tsdown `.ts` configs (Node ≥22.5 allows
+  it) — root legacy tk configs untouched.
 
 **M2 — Code joins the graph** (symbol precision + full 鉴真)
 tree-sitter WASM scaffold + tier-1 queries · symbol entities/spans/hashes · `touches` upgraded
@@ -515,7 +578,7 @@ Everything is additive and local: bad store → `rm -r ~/.ctx/projects/<shard>` 
 sentinel-wrapped → removable by `ctx doctor --remove-push`. Importer snapshots are dated dirs —
 delete = revert. No migration ever rewrites a source file outside managed blocks.
 
-## 12. Absorption Register (mining round 2026-07-03, 5 reports, 12 repos — COMPLETE)
+## 12. Absorption Register (mining round 2026-07-03, 5 reports, 12 repos — COMPLETE; + openwiki added post-round 2026-07-03)
 
 > **Stance (maintainer, 2026-07-03): all reference code is REFERENCE, not gold standard.**
 > License flags are ignored entirely. Every entry below is a starting point that saves
@@ -545,6 +608,7 @@ technique, rewrite the code):
 | deepwiki-open | `Mermaid.tsx`; `WikiTreeView.tsx`; excluded-dirs seed (docs-exclusion REVERSED); Mermaid prompt cheat-sheet | lift |
 | repomaster (Python) | composite importance weights; AST-skeleton tier; greedy budget-fill; 5K-token search degradation | port |
 | davia | `web.ts` port-detect/open/graceful-shutdown for guide server | lift |
+| openwiki (langchain-ai) | `src/agent/prompt.ts` documentation-discipline clauses (→ our on-demand Inferred generation prompt, §7); content-snapshot no-op guard (SHA of output dir → don't republish when unchanged; for push digest + guide snapshot regeneration); `.last-update.json` gitHead-cursor+timestamp-fallback (confirms our `cursors` git-source pattern) | lift (prompt); port (no-op guard) |
 | codewiki, repodoc (Python) | invalidation cascade shape; validator-feedback loop; two-tier link resolution; change-type classification | port |
 
 **Validation-by-absence** (things NO reference project has — our differentiators, greenfield):
@@ -558,3 +622,21 @@ wrong — ours is designed in §3); MCP token-budget/handle/envelope surface.
 multi-host attach — documented as the future reference architecture if that need ever
 materializes, stays out of scope (P24); UA fled native tree-sitter bindings on darwin/arm64 →
 WASM decision confirmed from two independent directions.
+
+**Legacy read-back map (P28 — carried items whose implementation-grade spec lives ONLY in the
+June corpus; SUPERSEDED banners applied 2026-07-04, mechanism chapters kept as reference):**
+
+| Carried item | Read back at | Location |
+|---|---|---|
+| D4 CFG/def-use bounded IR + flow projection | post-M2 | `docs/codemap/impl/appendix-A2-gitnexus.md:308–520`, `appendix-A3-reconciliation.md:219–249` |
+| D16 SCIP consumer (streaming, position encodings, fail-open rollback) | M2 | `docs/codemap/impl/appendix-A1-copyable.md:480–500` |
+| D23 parse-worker lifecycle numerics (recycle/timeout/OOM) | M2 | `docs/codemap/impl/D-language-coverage.md` |
+| D13 default ignore-set (~50 dirs) | 1d/1e | `docs/codemap/impl/D-language-coverage.md:618` |
+| D32 generation-identity tuple (ADR 0040) | 1b (restated §2 notes) | `docs/codemap/impl/E-freshness-incremental.md:73` |
+| D22 `assertNoEgress()` mechanism | 1g (restated §7) | `docs/codemap/impl/M-cross-cutting.md` M14 |
+| Output-economy budget bands + skeletonize mechanics | 1f/1g | `docs/codemap/impl/G-output-economy.md` |
+| J5 confidence grading + honest-handoff/keep-but-tag rules | 1e | `docs/codemap/impl/J-correctness-trust.md` |
+| D20 signing gate mechanics (no self-shipped PE → SHA256SUMS+provenance) | release | `docs/codemap/impl/L-distribution-runtime.md:775` |
+| D19 VS Code policy-entry ladder (`chat.mcp.access` etc.) | VS Code adapter | `docs/codemap/impl/00-sources.md` |
+| A/B measurement harness (uncached metric, headless runner) | M5 | `docs/codemap/impl/K-proof.md` |
+| Host path-resolution precedent (`~/.copilot`, `~/.claude`) | 1h/1i | shipping tree `src/hook/copilot.ts`, `src/shim/hostAdapter.ts` |

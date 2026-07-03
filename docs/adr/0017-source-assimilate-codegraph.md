@@ -1,6 +1,6 @@
 # Backend = source assimilation of codegraph, not build / dependency / mergeable fork
 
-**Status:** accepted (grilling 2026-06-21 D2; Product Contract `docs/codemap/codemap-action-plan-20260620.md` §16)
+**Status:** accepted (grilling 2026-06-21 D2; Product Contract `docs/codemap/DESIGN.md` §16)
 
 The [codemap](../../CONTEXT.md#surfaces) backend is built by **assimilating** the MIT reference
 `codegraph` (`@colbymchenry/codegraph`) as a source starting point, then fully owning and reshaping
