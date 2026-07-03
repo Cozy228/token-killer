@@ -5,7 +5,10 @@ name: ctx CI
 # changes; the two workflows are independent.
 on:
   push:
-    branches: [main]
+    # feat/1.0.0 is the M1 integration branch: the reviewer merges slice branches
+    # locally and pushes, so integration pushes must run 3-OS CI (M1 exit item 2).
+    # m1/** covers direct pushes to slice branches without an open PR.
+    branches: [main, "feat/1.0.0", "m1/**"]
     paths:
       - "packages/**"
       - "pnpm-workspace.yaml"
