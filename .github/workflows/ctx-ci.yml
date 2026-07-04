@@ -34,9 +34,12 @@ jobs:
       fail-fast: false
       matrix:
         os: [ubuntu-latest, macos-latest, windows-latest]
-        # ctx targets Node >=22.5 (SQLite >=3.43 semantics). Pin the floor so
-        # accidental use of a newer-Node API is caught.
-        node-version: ["22.5"]
+        # ctx targets Node >=22.13: 22.5's initial node:sqlite build lacks
+        # FTS5 ("no such module: fts5", observed on all 3 OSes in run
+        # 28700997273) — 22.13 is the first 22.x with the full SQLite build
+        # AND unflagged node:sqlite. Pin the floor so accidental use of a
+        # newer-Node API is caught.
+        node-version: ["22.13"]
     steps:
       - uses: actions/checkout@v4
       - uses: pnpm/action-setup@v4 # reads packageManager from package.json
