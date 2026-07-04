@@ -34,6 +34,7 @@ import type {
   Cursor,
   Entity,
   EntityInput,
+  EntityKind,
   Facet,
   FtsHit,
   LeaseResult,
@@ -70,6 +71,12 @@ export interface Store {
   getEntity(id: string): Entity | undefined;
   entityCount(maxGen?: number): number;
   /**
+   * Count entities of one kind (optionally at or below `maxGen`) — the code
+   * source's shrink guard (2c) compares the published symbol graph size across
+   * generations. Additive read-only view over the same rows as `entityCount`.
+   */
+  countByKind(kind: EntityKind, maxGen?: number): number;
+  /**
    * Direct name index, case-insensitive exact match (additive, read-only;
    * slice 1f named-seed injection — CTX-IMPL §6.1: identifier-shaped query
    * tokens resolve via the name index and are force-included).
@@ -86,6 +93,14 @@ export interface Store {
   linksFrom(src: string, predicate?: string): Link[];
   linksTo(dst: string, predicate?: string): Link[];
   flagLinksStale(entityId: string): number;
+  /**
+   * Delete the resolved links from `src` (optionally one predicate) — links are
+   * a mutable current view (unlike append-only claims), so a re-ingest that
+   * re-resolves a file's edges clears the stale ones first (2c incremental
+   * re-resolution: a shadowed import must not leave its old target linked).
+   * Returns the number of links removed.
+   */
+  clearLinks(src: string, predicate?: string): number;
 
   // conflicts
   addConflict(a: number, b: number, kind: ConflictKind): void;
@@ -230,6 +245,17 @@ class SqliteStore implements Store {
     return rows.map((row) => entityFromRow(row));
   }
 
+  countByKind(kind: string, maxGen?: number): number {
+    const row = (
+      maxGen === undefined
+        ? this.#db.prepare("SELECT COUNT(*) AS n FROM entities WHERE kind = ?").get(kind)
+        : this.#db
+            .prepare("SELECT COUNT(*) AS n FROM entities WHERE kind = ? AND gen <= ?")
+            .get(kind, maxGen)
+    ) as { n: number };
+    return row.n;
+  }
+
   // ---- claims (append-only) ----
 
   addClaim(input: ClaimInput): number {
@@ -310,6 +336,14 @@ class SqliteStore implements Store {
     const result = this.#db
       .prepare("UPDATE links SET stale = 1 WHERE src = ? OR dst = ?")
       .run(entityId, entityId);
+    return Number(result.changes);
+  }
+
+  clearLinks(src: string, predicate?: string): number {
+    const result =
+      predicate === undefined
+        ? this.#db.prepare("DELETE FROM links WHERE src = ?").run(src)
+        : this.#db.prepare("DELETE FROM links WHERE src = ? AND predicate = ?").run(src, predicate);
     return Number(result.changes);
   }
 

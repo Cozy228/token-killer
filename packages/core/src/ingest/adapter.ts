@@ -30,6 +30,17 @@ export interface IngestResult {
   complete: boolean;
   entities: number;
   claims: number;
+  /**
+   * Optional 2c disclosures (code source). SUCCESS-shaped envelope fields — a
+   * refusal is `complete: true, refused: true`, never an error (§4 / G-3).
+   */
+  cosmetic?: number; // changed files classified COSMETIC (hash updated, no re-extract)
+  reingested?: number; // files actually re-parsed (structural + boundary + shadow expansion)
+  boundaryExpanded?: number; // unchanged-side files pulled in by 1-hop boundary
+  shadowExpanded?: number; // pre-existing files re-resolved because a shadow was added
+  driftFlagged?: number; // anchored memories flagged needs-review by drift
+  refused?: boolean; // shrink guard refused to publish (generation held at previous gen)
+  refusal?: { reason: string; prevSymbols: number; projectedSymbols: number };
 }
 
 export interface SourceAdapter {
