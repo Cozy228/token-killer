@@ -220,5 +220,35 @@ export type { RenderOut } from "./serve/render.ts";
 export { MAX_RESPONSE_CHARS, OMITTED_HANDLES_PER_SECTION } from "./serve/types.ts";
 export type { ServeResponse, ServeDeps, ServeDiag, ServeKind } from "./serve/types.ts";
 
+// install/doctor (slice 1i): managed host writes + read-only verification.
+// Push-block placement REUSES slice 1h's push surface (placePushBlock /
+// buildPushBlock / extractManagedBlock / PUSH_MAX_BYTES); 1i adds only MCP
+// registration, the doctor checks, and byte-exact removal (removePush).
+export {
+  installProject,
+  installMcpRegistration,
+  removePush,
+  MCP_CONFIG_FILE,
+} from "./install/install.ts";
+export type { InstallOptions, InstallResult, FileWrite, WriteAction } from "./install/install.ts";
+export { runDoctor, formatDoctorReport } from "./install/doctor.ts";
+export type { DoctorCheck, DoctorReport, DoctorOptions } from "./install/doctor.ts";
+export {
+  CTX_MCP_SERVER_NAME,
+  ctxServerEntry,
+  upsertMcpServer,
+  readMcpServer,
+  isCtxMcpEntry,
+  McpConfigParseError,
+} from "./install/mcpConfig.ts";
+export type { McpServerEntry } from "./install/mcpConfig.ts";
+export {
+  compareVersion,
+  nodeVersion,
+  sqliteVersion,
+  MIN_NODE,
+  MIN_SQLITE,
+} from "./install/versions.ts";
+
 /** Milestone marker kept from slice 1a; the CLI stub prints it until 1i. */
 export const CTX_CORE_SCAFFOLD = "m1-1a" as const;
