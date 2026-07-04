@@ -18,11 +18,13 @@ import { realpathSync } from "node:fs";
 import { pathToFileURL } from "node:url";
 import {
   createDefaultRegistry,
+  editPinVeto,
   listMemories,
   openStore,
   recall,
   RefreshEngine,
   remember,
+  runPush,
   setMemoryLifecycle,
   type MemoryStatus,
   type Store,
@@ -182,6 +184,50 @@ function cmdMemory(io: RunIo, args: ParsedArgs): number {
   });
 }
 
+function cmdPush(io: RunIo, args: ParsedArgs): number {
+  const sub = args.positionals[0];
+  if (sub === "pin" || sub === "veto") {
+    const id = args.positionals[1];
+    if (id === undefined) {
+      io.out(`usage: ctx push ${sub} <id|handle> [--remove]`);
+      return 2;
+    }
+    const remove = args.flags.remove !== undefined;
+    return withStore(io, (store) => {
+      const res = editPinVeto(store.projectRoot, sub, id, remove ? "remove" : "add");
+      if (!res.ok) {
+        io.out(res.guidance ?? "could not update .ctx/push.jsonc"); // success-shaped
+        return 0;
+      }
+      io.out(`${remove ? "un-" : ""}${sub} ${id} → ${res.path}`);
+      return 0;
+    });
+  }
+
+  // Render + place the push block (cold-path use; --if-changed = hook mode).
+  const dryRun = args.flags["dry-run"] !== undefined;
+  const ifChanged = args.flags["if-changed"] !== undefined;
+  return withStore(io, (store) => {
+    const res = runPush(store, store.projectRoot, { dryRun, ifChanged });
+    for (const w of res.warnings) io.out(`note: ${w}`);
+    if (res.skipped) {
+      io.out("ctx push: block unchanged — nothing to write.");
+      return 0;
+    }
+    io.out(res.block.text);
+    const verb = dryRun ? "would write" : "wrote";
+    for (const p of res.placements) {
+      const status = p.changed ? (p.created ? "created" : "updated") : "unchanged";
+      io.out(`  ${verb} ${p.path} (${status}, ${p.bytes} bytes)`);
+    }
+    io.out(
+      `block: ${res.block.bytes} bytes, ${res.block.rendered.length} gotcha(s)` +
+        (res.block.truncated ? " (budget-trimmed)" : ""),
+    );
+    return 0;
+  });
+}
+
 function cmdImport(io: RunIo, args: ParsedArgs): number {
   const carrier = args.positionals[0] ?? "";
   // P28: `ctx import` (network carriers) lands at M4 — success-shaped notice.
@@ -202,8 +248,10 @@ Commands (available now):
   remember        Write a memory entry (gist ≤240 chars, optional anchors)
   recall          Expand a handle or entity id
   memory          List memory entries / lifecycle (confirm|retire|review)
+  push            Render + place the ≤1KB context block (AGENTS.md + CLAUDE.md);
+                  push pin|veto <id> edits .ctx/push.jsonc; --dry-run / --if-changed
 
-More commands (install/doctor/guide/import/push) land in later M1 slices.
+More commands (install/doctor/guide/import) land in later M1 slices.
 `;
 
 export function run(argv: string[], io: RunIo): number | Promise<number> {
@@ -236,6 +284,8 @@ export function run(argv: string[], io: RunIo): number | Promise<number> {
         ...(io.home !== undefined ? { home: io.home } : {}),
       });
     }
+    case "push":
+      return cmdPush(io, args);
     case "import":
       return cmdImport(io, args);
     case undefined:
@@ -247,7 +297,7 @@ export function run(argv: string[], io: RunIo): number | Promise<number> {
       // Success-shaped notice, never an unknown-command error (§7 serving rule).
       io.out(
         `ctx: '${command}' lands in a later M1 slice. ` +
-          "Available now: sync, remember, recall, memory.",
+          "Available now: sync, remember, recall, memory, push.",
       );
       return 0;
   }
