@@ -158,14 +158,14 @@ describe("acceptance: 1i install/doctor", () => {
   });
 
   test("A10-node", () => {
-    // doctor asserts Node ≥22.13 and SQLite ≥3.43 (both bundled with the runtime
+    // doctor asserts Node ≥22.16 and SQLite ≥3.43 (both bundled with the runtime
     // that runs this suite — the CI floor). We assert the CHECKS pass and report
     // the observed versions, not a hard-coded number.
     const report = runDoctor({ projectRoot, home, env: {} });
     const node = report.checks.find((c) => c.name === "node")!;
     const sqlite = report.checks.find((c) => c.name === "sqlite")!;
     expect(node.ok, node.detail).toBe(true);
-    expect(node.detail).toMatch(/≥22\.13/);
+    expect(node.detail).toMatch(/≥22\.16/);
     expect(sqlite.ok, sqlite.detail).toBe(true);
     expect(sqlite.detail).toMatch(/≥3\.43/);
   });

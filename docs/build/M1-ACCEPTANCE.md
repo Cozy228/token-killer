@@ -104,10 +104,11 @@
 - **A10-install** *(sandbox HOME)*: `ctx install` writes MCP registration + push placement for
   Claude Code (+ AGENTS.md floor) in the sandbox; `ctx doctor` verifies and reports each check;
   `doctor --remove-push` restores the files byte-exact minus the managed block.
-- **A10-node**: doctor asserts Node ≥22.13 and SQLite ≥3.43. *(Reviewer amendment 2026-07-04:
-  floor raised from 22.5 — the first 3-OS CI run proved 22.5.0's node:sqlite build lacks FTS5
-  ("no such module: fts5"); 22.13 is the first 22.x with the full SQLite build and unflagged
-  node:sqlite. This was 1b's recorded verify-at-wiring fallback, now confirmed by evidence.)*
+- **A10-node**: doctor asserts Node ≥22.16 and SQLite ≥3.43. *(Reviewer amendment 2026-07-04:
+  floor raised from 22.5 — 3-OS CI proved 22.5's node:sqlite lacks FTS5 ("no such module:
+  fts5"), and 1b's guessed 22.13 fallback failed identically; verified against
+  nodejs/node `deps/sqlite/unofficial.gni` per tag that v22.16.0 is the first 22.x compiled
+  with SQLITE_ENABLE_FTS5.)*
 
 ### Perf gates (this repo, M-series; record numbers, fail on regression)
 - **A11-dirty**: warm `dirtyCheck` all-sources <20ms.
