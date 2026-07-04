@@ -47,5 +47,48 @@ export type {
   RefreshEngineOptions,
 } from "./ingest/refresh.ts";
 
+// memory source (slice 1c): remember/recall + host import + lifecycle
+export { MemorySourceAdapter } from "./memory/adapter.ts";
+export {
+  importClaudeCodeMemory,
+  resolveClaudeMemoryDir,
+  claudeProjectSlug,
+  parseFrontmatter,
+  parseMemoryIndex,
+  toGist,
+} from "./memory/claudeImporter.ts";
+export type { ImportOptions, ImportReport } from "./memory/claudeImporter.ts";
+export {
+  remember,
+  recall,
+  listMemories,
+  setMemoryLifecycle,
+  LIFECYCLE_STATUS,
+} from "./memory/remember.ts";
+export type {
+  RememberInput,
+  RememberResult,
+  RecallResult,
+  MemoryListItem,
+  LifecycleResult,
+  EntityCandidate,
+} from "./memory/remember.ts";
+export { ulid, deterministicUlid, memoryId } from "./memory/ulid.ts";
+export {
+  SENTINEL_BEGIN,
+  SENTINEL_END,
+  hasSentinel,
+  stripSentinelBlocks,
+} from "./memory/sentinel.ts";
+export {
+  fuzzyDuplicate,
+  shannonEntropy,
+  embeddedNumbers,
+  MIN_GIST_CHARS,
+  MIN_ENTROPY_BITS,
+  JACCARD_THRESHOLD,
+} from "./memory/dedup.ts";
+export type { DedupVerdict } from "./memory/dedup.ts";
+
 /** Milestone marker kept from slice 1a; the CLI stub prints it until 1i. */
 export const CTX_CORE_SCAFFOLD = "m1-1a" as const;
