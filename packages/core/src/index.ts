@@ -165,5 +165,21 @@ export { sectionBudgets, totalBudgetTokens, sectionOf } from "./select/sections.
 export { estimateTokens } from "./select/project.ts";
 export { snapshotVisibility } from "./select/visibility.ts";
 
+// serving surface (slice 1g): the 3 MCP tools as library calls + §7 render
+export { serveContext, serveSearch, serveRemember, SERVE_BUDGET_MS } from "./serve/serve.ts";
+export type { ContextArgs, SearchArgs, RememberArgs } from "./serve/serve.ts";
+export { assertNoEgress, EGRESS_ENV_KEYS } from "./serve/egress.ts";
+export {
+  renderContext,
+  renderSearch,
+  renderFacet,
+  renderMiss,
+  renderAmbiguous,
+  freshnessLabel,
+} from "./serve/render.ts";
+export type { RenderOut } from "./serve/render.ts";
+export { MAX_RESPONSE_CHARS, OMITTED_HANDLES_PER_SECTION } from "./serve/types.ts";
+export type { ServeResponse, ServeDeps, ServeDiag, ServeKind } from "./serve/types.ts";
+
 /** Milestone marker kept from slice 1a; the CLI stub prints it until 1i. */
 export const CTX_CORE_SCAFFOLD = "m1-1a" as const;
