@@ -83,7 +83,7 @@ export type SelectMode = "task" | "ref" | "handle" | "facet";
 
 export interface SelectResult {
   ok: true;
-  mode: SelectMode;
+  mode: Exclude<SelectMode, "facet">; // facet drill-downs return FacetResult
   /** The subject entity (ref/handle target, or the task's top-ranked hit). */
   subject: RenderedItem | undefined;
   sections: SectionResult[];
