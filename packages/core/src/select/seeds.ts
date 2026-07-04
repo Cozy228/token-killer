@@ -11,6 +11,8 @@
 import type { Store } from "../store/store.ts";
 import type { Entity } from "../store/types.ts";
 import {
+  ARCHIVE_PATH_DEMOTION,
+  DEFINITION_SITE_BOOST,
   FTS_SEED_LIMIT,
   KIND_BONUS,
   MAX_SEEDS_PER_FILE,
@@ -22,9 +24,14 @@ import type { Visibility } from "./visibility.ts";
 import type { Seed } from "./types.ts";
 
 const TEST_PATH_RE = /(^|\/)(tests?|__tests__|spec|specs)\/|\.(test|spec)\.[a-z]+$/i;
+const ARCHIVE_PATH_RE = /(^|\/)(archive|archived|attic|deprecated|superseded)\//i;
 
 export function isTestPath(path: string | undefined): boolean {
   return path !== undefined && TEST_PATH_RE.test(path);
+}
+
+export function isArchivePath(path: string | undefined): boolean {
+  return path !== undefined && ARCHIVE_PATH_RE.test(path);
 }
 
 export function entityPath(entity: Entity): string | undefined {
@@ -56,8 +63,14 @@ export function gatherSeeds(store: Store, query: string, visibility: Visibility)
     return entityCache.get(id);
   };
 
-  const demotion = (entity: Entity): number =>
-    !aboutTests && isTestPath(entityPath(entity)) ? TEST_FILE_DEMOTION : 1;
+  const aboutArchive = tokens.some((t) => /^(archives?|archived|history|historical)$/.test(t.text));
+  const demotion = (entity: Entity): number => {
+    const path = entityPath(entity);
+    let d = 1;
+    if (!aboutTests && isTestPath(path)) d *= TEST_FILE_DEMOTION;
+    if (!aboutArchive && isArchivePath(path)) d *= ARCHIVE_PATH_DEMOTION;
+    return d;
+  };
 
   // --- FTS5 bm25 candidates (top-64, top-3 scored matches per file) ---
   const match = toFtsMatch(tokens);
@@ -111,6 +124,23 @@ export function gatherSeeds(store: Store, query: string, visibility: Visibility)
         if (existing.lexicalScore < weight) existing.lexicalScore = weight;
       } else {
         seeds.set(id, { entityId: id, weight, lexicalScore: weight, named: true });
+      }
+    }
+  }
+
+  // --- acronym definition-site boost (§6.1 one-sharp-hit principle) ---
+  // For an acronym-shaped query token (RRF, PPR, SCIP…), the section that
+  // DEFINES it carries the `…Full Phrase (ACRONYM…` pattern; a mention does
+  // not. Read through the (≤64+named) candidates and boost definition sites —
+  // deterministic, zero-LLM, disclosed via DEFINITION_SITE_BOOST.
+  const acronyms = tokens.filter((t) => !t.derived && /^[A-Z]{2,6}$/.test(t.raw)).map((t) => t.raw);
+  if (acronyms.length > 0) {
+    for (const seed of seeds.values()) {
+      const rt = store.readThrough(seed.entityId);
+      if (!rt.ok) continue;
+      if (acronyms.some((a) => rt.text.includes(`(${a}`))) {
+        seed.weight *= DEFINITION_SITE_BOOST;
+        seed.lexicalScore *= DEFINITION_SITE_BOOST;
       }
     }
   }

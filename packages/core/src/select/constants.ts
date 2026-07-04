@@ -23,6 +23,20 @@ export const SUBTOKEN_WEIGHT = 0.6;
 export const STEM_VARIANT_WEIGHT = 0.5;
 /** Test-file demotion factor, applied unless the query is about tests (§6.1). */
 export const TEST_FILE_DEMOTION = 0.3;
+/**
+ * Definition-site boost for acronym-shaped query tokens (§6.1 "one sharp hit
+ * beats many mediocre hits", A3-§2.3 L1 lexical normalization family): a
+ * candidate whose text contains the classic `Full Phrase (ACRONYM…` definition
+ * pattern is the acronym's defining section, not a mere mention.
+ */
+export const DEFINITION_SITE_BOOST = 3;
+/**
+ * Archived-doc demotion: docs under an `archive`-family path segment are
+ * retired by convention (this repo: P28⑦ moved superseded docs to archive/) —
+ * same negative-path-prior shape as §6.1's test-file demotion; suspended when
+ * the query itself asks about archived material.
+ */
+export const ARCHIVE_PATH_DEMOTION = 0.3;
 /** Kind bonuses (§6.1: class/function/method small boost — meaningful at M2). */
 export const KIND_BONUS: Readonly<Record<string, number>> = {
   symbol: 1.15,
@@ -32,8 +46,6 @@ export const KIND_BONUS: Readonly<Record<string, number>> = {
 // ---- subgraph expansion (stage 2) ----
 export const EXPANSION_MAX_DEPTH = 2;
 export const EXPANSION_NODE_CAP = 512;
-/** Score damp applied per hop for search()'s flat ranking of expanded nodes. */
-export const EXPANSION_HOP_DAMP = 0.5;
 
 // ---- PPR (stage 3) ----
 /** Restart probability α (§6.3, codegraph's production-tuned constant). */
@@ -110,6 +122,8 @@ export function disclosedConstants(): Record<string, number | string> {
     maxSeedsPerFile: MAX_SEEDS_PER_FILE,
     namedSeedWeight: NAMED_SEED_WEIGHT,
     testFileDemotion: TEST_FILE_DEMOTION,
+    definitionSiteBoost: DEFINITION_SITE_BOOST,
+    archivePathDemotion: ARCHIVE_PATH_DEMOTION,
     expansionMaxDepth: EXPANSION_MAX_DEPTH,
     expansionNodeCap: EXPANSION_NODE_CAP,
     pprAlpha: PPR_ALPHA,
