@@ -14,12 +14,15 @@ const REV_TIMEOUT_MS = 10_000;
 const LOG_TIMEOUT_MS = 120_000;
 
 export class GitError extends Error {
-  constructor(
-    message: string,
-    readonly code: "not-a-repo" | "bad-revision" | "spawn-failed",
-  ) {
+  // Explicit field (not a constructor parameter property): core is consumed
+  // from source via Node's native type stripping, which rejects non-erasable
+  // TS syntax (tsconfig enforces erasableSyntaxOnly).
+  readonly code: "not-a-repo" | "bad-revision" | "spawn-failed";
+
+  constructor(message: string, code: "not-a-repo" | "bad-revision" | "spawn-failed") {
     super(message);
     this.name = "GitError";
+    this.code = code;
   }
 }
 
