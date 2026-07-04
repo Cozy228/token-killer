@@ -127,5 +127,43 @@ export {
 } from "./memory/dedup.ts";
 export type { DedupVerdict } from "./memory/dedup.ts";
 
+// selection engine (slice 1f): select()/search() library calls, typed structs
+export { select, search } from "./select/engine.ts";
+export { SECTION_ORDER } from "./select/types.ts";
+export type {
+  BudgetTier,
+  SectionName,
+  RenderTier,
+  RenderedItem,
+  OmittedItem,
+  SectionResult,
+  SelectionEnvelope,
+  SelectMode,
+  SelectResult,
+  SelectMiss,
+  SelectInput,
+  SearchInput,
+  SearchItem,
+  SearchResult,
+  FacetResult,
+} from "./select/types.ts";
+export { disclosedConstants } from "./select/constants.ts";
+export {
+  tokenizeQuery,
+  getStemVariants,
+  splitIdentifier,
+  isIdentifierShaped,
+  isDistinctiveIdentifier,
+  toFtsMatch,
+  STOPWORDS,
+} from "./select/tokenize.ts";
+export type { QueryToken } from "./select/tokenize.ts";
+export { personalizedPageRank } from "./select/ppr.ts";
+export type { PprEdge, PprOptions } from "./select/ppr.ts";
+export { rrfFuse, rankOf, timeDecay, confidenceFactor, historyHeat } from "./select/rank.ts";
+export { sectionBudgets, totalBudgetTokens, sectionOf } from "./select/sections.ts";
+export { estimateTokens } from "./select/project.ts";
+export { snapshotVisibility } from "./select/visibility.ts";
+
 /** Milestone marker kept from slice 1a; the CLI stub prints it until 1i. */
 export const CTX_CORE_SCAFFOLD = "m1-1a" as const;
