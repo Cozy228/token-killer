@@ -165,6 +165,45 @@ export { sectionBudgets, totalBudgetTokens, sectionOf } from "./select/sections.
 export { estimateTokens } from "./select/project.ts";
 export { snapshotVisibility } from "./select/visibility.ts";
 
+// push surface (slice 1h): ≤1KB digest builder + host adapters + pin/veto
+export {
+  buildPushBlock,
+  renderPushBlock,
+  PUSH_MAX_BYTES,
+  PUSH_MAX_GOTCHAS,
+  BLOCK_BEGIN,
+  BLOCK_END,
+  HEADER_LINES,
+} from "./push/block.ts";
+export type { PushBlock, BuildBlockOptions } from "./push/block.ts";
+export { rankGotchas } from "./push/rank.ts";
+export type { GotchaCandidate } from "./push/rank.ts";
+export { parsePushConfig, stripJsonComments, emptyPushConfig } from "./push/config.ts";
+export type { PushConfig } from "./push/config.ts";
+export {
+  applyManagedBlock,
+  extractManagedBlock,
+  writeManagedBlock,
+  placePushBlock,
+  DEFAULT_PUSH_TARGETS,
+} from "./push/hosts.ts";
+export type { PlacementResult, PlacePushOptions, WriteOptions } from "./push/hosts.ts";
+export {
+  runPush,
+  editPinVeto,
+  readPushConfig,
+  pushConfigPath,
+  PUSH_CONFIG_REL,
+  PUSH_SHA_META,
+} from "./push/push.ts";
+export type {
+  RunPushOptions,
+  RunPushResult,
+  PinVetoResult,
+  PinVetoList,
+  PinVetoAction,
+} from "./push/push.ts";
+
 // serving surface (slice 1g): the 3 MCP tools as library calls + §7 render
 export { serveContext, serveSearch, serveRemember, SERVE_BUDGET_MS } from "./serve/serve.ts";
 export type { ContextArgs, SearchArgs, RememberArgs } from "./serve/serve.ts";
