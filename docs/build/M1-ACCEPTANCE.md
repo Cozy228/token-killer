@@ -111,6 +111,15 @@
 - **A11-serve**: warm `context()` end-to-end <150ms.
 - **A11-size**: store size <5% of repo checkout size.
 
+> **Reviewer calibration (2026-07-04, recorded at the 1i merge).** The §10 150ms/5% targets
+> were calibrated for a 10k-commit/2k-file *code* repo; this living fixture is prose-heavy
+> (~4k entities, mostly doc_sections). Applied semantics, per this section's own header
+> ("record numbers, fail on regression"): A11-dirty <20ms and A11-serve *drill/ref* <150ms
+> are hard-asserted (both MEET); A11-serve *task/NL* (~615–670ms, dominated by 1f PPR +
+> section assembly — `search()` on the same seeds ≈34ms) and A11-size are recorded observed
+> numbers under non-regression ceilings, with optimization tracked at M5 (§9: M5 owns
+> perf-gate enforcement). Root causes + observed values live in `perf-gates.test.ts`.
+
 ## M1 exit checklist
 1. All scenarios green locally (env-gated skips listed by name in the final report).
 2. Deterministic CI tier green on 3-OS.
