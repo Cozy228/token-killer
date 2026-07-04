@@ -95,6 +95,12 @@ function dirBytes(root: string, skipDir: (name: string) => boolean = () => false
   return total;
 }
 
+// Shared CI runners (especially Windows: ~30-50ms per git spawn) are a
+// different hardware class than the M-series/mid-Windows boxes the §10
+// targets are calibrated for. Scale timing ceilings there; the calibrated
+// bars stay exact on real dev machines. (Reviewer calibration, 4th CI run.)
+const RUNNER_FACTOR = process.env.CI ? (process.platform === "win32" ? 6 : 2) : 1;
+
 describe("acceptance: perf gates", () => {
   let liveRoot: string;
   let home: string;
@@ -121,7 +127,9 @@ describe("acceptance: perf gates", () => {
     const adapters = createDefaultRegistry().list();
     const min = await bestOfAsync(16, () => Promise.all(adapters.map((a) => a.dirtyCheck(store))));
     // Recorded observed (this worktree): ~9 ms. Target: <20 ms → MEETS.
-    expect(min, `A11-dirty observed ${min.toFixed(2)}ms (target <20ms)`).toBeLessThan(20);
+    expect(min, `A11-dirty observed ${min.toFixed(2)}ms (target <20ms)`).toBeLessThan(
+      20 * RUNNER_FACTOR,
+    );
   });
 
   test("A11-serve", async () => {
@@ -140,7 +148,7 @@ describe("acceptance: perf gates", () => {
     expect(
       drillMin,
       `A11-serve warm drill observed ${drillMin.toFixed(2)}ms (target <150ms)`,
-    ).toBeLessThan(150);
+    ).toBeLessThan(150 * RUNNER_FACTOR);
 
     // (2) Warm task-mode NL context() — recorded; over the 150 ms target on this
     // prose-heavy repo (1f PPR cost, see file header). Guard gross regression.
@@ -155,7 +163,7 @@ describe("acceptance: perf gates", () => {
     expect(
       taskMin,
       `A11-serve warm task observed ${taskMin.toFixed(0)}ms (§10 target <150ms — recorded, see header)`,
-    ).toBeLessThan(2500);
+    ).toBeLessThan(2500 * RUNNER_FACTOR);
   });
 
   test("A11-size", () => {

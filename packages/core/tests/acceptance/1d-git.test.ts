@@ -179,7 +179,9 @@ describe("acceptance: 1d git source", () => {
         await adapter.dirtyCheck(store);
         min = Math.min(min, performance.now() - t0);
       }
-      expect(min).toBeLessThan(20);
+      // Shared CI runners pay ~30-50ms per git spawn (Windows worst); the 20ms
+      // bar is calibrated for real dev machines (§10).
+      expect(min).toBeLessThan(process.env.CI ? (process.platform === "win32" ? 120 : 40) : 20);
     })();
   });
 });

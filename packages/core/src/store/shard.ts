@@ -16,6 +16,22 @@ import { homedir } from "node:os";
 import { basename, dirname, join, resolve } from "node:path";
 import { blake2bHex } from "./hash.ts";
 
+/**
+ * Canonical path for identity hashing. `realpathSync.native` (the OS call)
+ * expands Windows 8.3 short names (`RUNNER~1` → `runneradmin`), which the JS
+ * implementation does not — without it, a repo reached via a short-name TEMP
+ * path hashes to a DIFFERENT shard than the same repo via its long path
+ * (git's `--show-toplevel` always reports the long form). Falls back to the
+ * JS implementation on platforms/paths where the native call errors.
+ */
+function realPath(p: string): string {
+  try {
+    return realpathSync.native(p);
+  } catch {
+    return realpathSync(p);
+  }
+}
+
 export const SHARD_HEX_LEN = 12;
 
 export interface ShardResolution {
@@ -35,11 +51,11 @@ function git(args: string[], cwd: string): string {
 }
 
 export function resolveShard(dir: string): ShardResolution {
-  const start = realpathSync(resolve(dir));
+  const start = realPath(resolve(dir));
   try {
     // May print a relative path (e.g. ".git") — resolve against the query dir.
-    const commonDir = realpathSync(resolve(start, git(["rev-parse", "--git-common-dir"], start)));
-    const toplevel = realpathSync(git(["rev-parse", "--show-toplevel"], start));
+    const commonDir = realPath(resolve(start, git(["rev-parse", "--git-common-dir"], start)));
+    const toplevel = realPath(git(["rev-parse", "--show-toplevel"], start));
     // Main checkout root: the common dir is <mainRoot>/.git for normal repos;
     // bare repos have no worktree root — fall back to the common dir itself.
     const mainRoot = basename(commonDir) === ".git" ? dirname(commonDir) : commonDir;
