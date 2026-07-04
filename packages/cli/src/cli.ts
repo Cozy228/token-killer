@@ -9,21 +9,29 @@
  *
  * Slice 1c wires the memory lifecycle surface (remember/recall/memory) to the
  * `@ctx/core` library calls. `ctx import` (network carriers) lands at M4 — a
- * stub returns the P28 success-shaped "lands at M4" notice. The remaining
- * subcommands (install/doctor/mcp/guide/push) land in later M1 slices; until
- * then they return a success-shaped notice rather than an unknown-command
- * error (§9 addenda).
+ * stub returns the P28 success-shaped "lands at M4" notice.
+ *
+ * Slice 1i wires `ctx install` (managed MCP registration into project
+ * `.mcp.json` + push-block placement into AGENTS.md/CLAUDE.md, then a cold-path
+ * full catch-up) and `ctx doctor` (read-only runtime/store/registration/push
+ * verification; `--remove-push` strips the managed blocks byte-exact). The
+ * remaining subcommands (guide/push) land in later M1 slices; until then they
+ * return a success-shaped notice rather than an unknown-command error (§9).
  */
 import { realpathSync } from "node:fs";
 import { pathToFileURL } from "node:url";
 import {
   createDefaultRegistry,
   editPinVeto,
+  formatDoctorReport,
+  installMcpRegistration,
   listMemories,
   openStore,
   recall,
   RefreshEngine,
   remember,
+  removePush,
+  runDoctor,
   runPush,
   setMemoryLifecycle,
   type MemoryStatus,
@@ -238,11 +246,71 @@ function cmdImport(io: RunIo, args: ParsedArgs): number {
   return 0;
 }
 
+/**
+ * `ctx install` (slice 1i) — managed host integration then cold-path catch-up.
+ * (1) writes the `ctx mcp` registration into project `.mcp.json` (additive JSON
+ * merge); (2) drives the refresh engine with a large budget for a full first
+ * sync — exactly like `ctx sync` (§4.4 / §9 row); (3) places the ≤1KB push block
+ * via slice 1h's `runPush` AFTER the sync, so the digest reflects freshly
+ * ingested memory. All writes are additive/idempotent; `doctor --remove-push`
+ * reverses the placement (§11).
+ */
+async function runInstall(io: RunIo): Promise<number> {
+  const store = openStore({ home: io.home, projectDir: io.projectDir });
+  try {
+    const projectRoot = io.projectDir ?? store.projectRoot;
+    const mcp = installMcpRegistration({ projectRoot });
+    io.out(`  ${mcp.action}: ${mcp.path}`);
+    // Cold-path full catch-up: same large budget as `ctx sync` (§4.4 / §9 row).
+    const engine = new RefreshEngine(store, createDefaultRegistry(), {
+      catchupGateMs: SYNC_BUDGET_MS,
+    });
+    const report = await engine.refresh(SYNC_BUDGET_MS);
+    await engine.background;
+    // Place the push block reflecting the now-ingested context base (1h builder).
+    const push = runPush(store, projectRoot);
+    for (const p of push.placements) {
+      const status = p.changed ? (p.created ? "created" : "updated") : "unchanged";
+      io.out(`  ${status}: ${p.path} (${p.bytes} bytes)`);
+    }
+    io.out(`ctx install: registered + placed; context base ${report.status}`);
+    return 0;
+  } finally {
+    store.close();
+  }
+}
+
+/**
+ * `ctx doctor` (slice 1i) — READ-ONLY verification, or `--remove-push` to strip
+ * the managed push blocks byte-exact (§11 rollback). Doctor reports; it exits
+ * non-zero only when a check fails (so scripts can gate on it).
+ */
+function cmdDoctor(io: RunIo, args: ParsedArgs): number {
+  const store = openStore({ home: io.home, projectDir: io.projectDir });
+  const projectRoot = io.projectDir ?? store.projectRoot;
+  store.close();
+  if (args.flags["remove-push"] !== undefined) {
+    const writes = removePush(projectRoot);
+    if (writes.length === 0) io.out("ctx doctor: no managed push blocks to remove");
+    for (const w of writes) io.out(`  ${w.action}: ${w.path}`);
+    return 0;
+  }
+  const report = runDoctor({
+    projectRoot,
+    ...(io.home !== undefined ? { home: io.home } : {}),
+    ...(io.projectDir !== undefined ? { projectDir: io.projectDir } : {}),
+  });
+  for (const line of formatDoctorReport(report)) io.out(line);
+  return report.ok ? 0 : 1;
+}
+
 const HELP = `ctx — developer-local context engineering
 
 Usage: ctx <command>
 
 Commands (available now):
+  install         Register the ctx MCP server + place push blocks, then sync
+  doctor          Verify runtime/store/registration/push (--remove-push to strip)
   sync            Ingest all registered sources into the project context base
   mcp             Run the MCP stdio server (context/search/remember tools)
   remember        Write a memory entry (gist ≤240 chars, optional anchors)
@@ -251,13 +319,17 @@ Commands (available now):
   push            Render + place the ≤1KB context block (AGENTS.md + CLAUDE.md);
                   push pin|veto <id> edits .ctx/push.jsonc; --dry-run / --if-changed
 
-More commands (install/doctor/guide/import) land in later M1 slices.
+More commands (guide/import) land in later M1 slices.
 `;
 
 export function run(argv: string[], io: RunIo): number | Promise<number> {
   const [command, ...rest] = argv;
   const args = parseArgs(rest);
   switch (command) {
+    case "install":
+      return runInstall(io);
+    case "doctor":
+      return cmdDoctor(io, args);
     case "sync":
       return runSync(
         rest,
