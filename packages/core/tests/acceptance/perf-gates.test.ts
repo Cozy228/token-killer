@@ -55,16 +55,7 @@ delete process.env.OPENAI_API_KEY;
 const PKG_DIR = resolve(fileURLToPath(new URL(".", import.meta.url)), "../..");
 const REPO_ROOT = resolve(PKG_DIR, "../..");
 
-/** best-of-N warm min for a sync closure (drops cold/JIT tax, 1d convention). */
-function bestOfSync(iters: number, fn: () => void): number {
-  let min = Number.POSITIVE_INFINITY;
-  for (let i = 0; i < iters; i++) {
-    const t0 = performance.now();
-    fn();
-    min = Math.min(min, performance.now() - t0);
-  }
-  return min;
-}
+/** best-of-N warm min (drops cold-spawn / JIT tax, 1d convention). */
 async function bestOfAsync(iters: number, fn: () => Promise<unknown>): Promise<number> {
   let min = Number.POSITIVE_INFINITY;
   for (let i = 0; i < iters; i++) {
