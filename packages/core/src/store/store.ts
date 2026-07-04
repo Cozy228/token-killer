@@ -69,6 +69,12 @@ export interface Store {
   upsertEntity(input: EntityInput): void;
   getEntity(id: string): Entity | undefined;
   entityCount(maxGen?: number): number;
+  /**
+   * Direct name index, case-insensitive exact match (additive, read-only;
+   * slice 1f named-seed injection — CTX-IMPL §6.1: identifier-shaped query
+   * tokens resolve via the name index and are force-included).
+   */
+  entitiesByName(name: string, limit?: number): Entity[];
 
   // claims — append-only (no mutation API, by design)
   addClaim(input: ClaimInput): number;
@@ -205,18 +211,7 @@ class SqliteStore implements Store {
       | EntityRow
       | undefined;
     if (!row) return undefined;
-    return {
-      id: row.id,
-      kind: row.kind as Entity["kind"],
-      name: row.name,
-      locator: JSON.parse(row.locator) as Locator,
-      contentHash: row.content_hash ?? undefined,
-      sourceRev: row.source_rev ?? undefined,
-      attrs: JSON.parse(row.attrs) as Record<string, unknown>,
-      firstSeen: row.first_seen,
-      lastVerified: row.last_verified,
-      gen: row.gen,
-    };
+    return entityFromRow(row);
   }
 
   entityCount(maxGen?: number): number {
@@ -226,6 +221,13 @@ class SqliteStore implements Store {
         : this.#db.prepare("SELECT COUNT(*) AS n FROM entities WHERE gen <= ?").get(maxGen)
     ) as { n: number };
     return row.n;
+  }
+
+  entitiesByName(name: string, limit = 32): Entity[] {
+    const rows = this.#db
+      .prepare("SELECT * FROM entities WHERE name = ? COLLATE NOCASE ORDER BY id LIMIT ?")
+      .all(name, limit) as unknown as EntityRow[];
+    return rows.map((row) => entityFromRow(row));
   }
 
   // ---- claims (append-only) ----
@@ -669,6 +671,21 @@ export function openStore(opts: OpenStoreOptions = {}): Store {
   const store = new SqliteStore(db, dbPath, res, opts.now ?? Date.now);
   if (store.getMeta("project_root") === undefined) store.setMeta("project_root", res.mainRoot);
   return store;
+}
+
+function entityFromRow(row: EntityRow): Entity {
+  return {
+    id: row.id,
+    kind: row.kind as Entity["kind"],
+    name: row.name,
+    locator: JSON.parse(row.locator) as Locator,
+    contentHash: row.content_hash ?? undefined,
+    sourceRev: row.source_rev ?? undefined,
+    attrs: JSON.parse(row.attrs) as Record<string, unknown>,
+    firstSeen: row.first_seen,
+    lastVerified: row.last_verified,
+    gen: row.gen,
+  };
 }
 
 function claimFromRow(row: Record<string, unknown>): Claim {
