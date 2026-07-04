@@ -37,6 +37,12 @@ import {
   assertServeInvariants,
 } from "../helpers/serveInvariants.ts";
 
+// The egress guard (M14) is ACTIVE on every serve call; scrub any model key
+// from the runner so the SCENARIO calls exercise real serving (the dedicated
+// G-6 test proves the refusal by injecting a key into the deps env).
+delete process.env.ANTHROPIC_API_KEY;
+delete process.env.OPENAI_API_KEY;
+
 const PKG_DIR = resolve(dirname(fileURLToPath(import.meta.url)), "../..");
 const REPO_ROOT = resolve(PKG_DIR, "../..");
 const P20_ID = "concept:FABLE-DECISION-LOG.md#p20";

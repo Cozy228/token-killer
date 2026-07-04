@@ -18,6 +18,10 @@ import { serveContext, serveRemember, serveSearch } from "../../src/serve/serve.
 import { openStore, type Store } from "../../src/store/store.ts";
 import { cleanupTempDir, makeTempDir } from "../helpers/sandbox.ts";
 
+// Scrub any runner model key so the serve calls run (egress guard stays active).
+delete process.env.ANTHROPIC_API_KEY;
+delete process.env.OPENAI_API_KEY;
+
 const GOLDEN_DIR = join(dirname(fileURLToPath(import.meta.url)), "..", "golden");
 const CLOCK = () => Date.UTC(2026, 6, 4);
 const UPDATE = process.env.CTX_UPDATE_GOLDEN === "1";

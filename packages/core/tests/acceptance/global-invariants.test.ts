@@ -23,6 +23,11 @@ import {
   assertG7Sandbox,
 } from "../helpers/serveInvariants.ts";
 
+// Scrub any runner model key so the scenario serve calls run (the guard stays
+// active; the dedicated G-6 assertion proves refusal via an injected key).
+delete process.env.ANTHROPIC_API_KEY;
+delete process.env.OPENAI_API_KEY;
+
 const CLOCK = () => Date.UTC(2026, 6, 4);
 const TASK = "why must retry be idempotent for config validation";
 
