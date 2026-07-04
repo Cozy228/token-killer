@@ -170,4 +170,17 @@ describe("DocsAdapter (fixture tree)", () => {
     expect(dirty.dirty).toBe(true);
     expect(dirty.magnitude).toBe(1);
   });
+
+  test("scan honors .gitignore: ignored local material is not indexed", async () => {
+    put(repo, ".gitignore", "junk/\n");
+    put(repo, "junk/secret.md", "# Local research dump\n");
+    put(repo, "docs/kept.md", "# Kept\n");
+
+    await ingestOnce(store);
+
+    expect(store.getEntity("file:docs/kept.md")).toBeDefined();
+    // Untracked but NOT ignored → indexed (a fresh doc counts before its first commit).
+    expect(store.getEntity("file:.gitignore")).toBeUndefined(); // not markdown, sanity
+    expect(store.getEntity("file:junk/secret.md")).toBeUndefined();
+  });
 });

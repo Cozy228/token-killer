@@ -12,6 +12,7 @@
  * is disclosed in provenance (entity `attrs.classifiedBy` + a `classified-as`
  * claim).
  */
+import { execFileSync } from "node:child_process";
 import { existsSync, readFileSync, readdirSync, realpathSync, statSync } from "node:fs";
 import { basename, isAbsolute, join, normalize, relative, resolve, sep } from "node:path";
 import type { Store } from "../store/store.ts";
@@ -159,7 +160,7 @@ export function classifyDoc(
   const type = frontmatter.fields.type?.trim().toLowerCase();
   if (type === "decision" || type === "adr") return { kind: "decision", rule: "frontmatter-type" };
   if (type) return { kind: "doc", rule: "frontmatter-type" };
-  if (/(^|\/)docs\/(adr|decisions)\//.test(relPath) || relPath.endsWith('.adr.md')) {
+  if (/(^|\/)docs\/(adr|decisions)\//.test(relPath) || relPath.endsWith(".adr.md")) {
     return { kind: "decision", rule: "path-convention" };
   }
   const h1 = headings.find((h) => h.level === 1);
@@ -452,8 +453,64 @@ function safeHash(abs: string): string {
   }
 }
 
-/** Recursive markdown scan honoring the D13 ignore-set; yields every 1000 entries. */
+/**
+ * Tracked + untracked-but-not-ignored paths from git (`ls-files -co
+ * --exclude-standard`), forward-slashed and relative to `root`. Returns
+ * `undefined` when `root` is not a git work tree or git is unavailable —
+ * callers then skip .gitignore filtering (the D13 name-set still applies).
+ *
+ * Why: the docs scan is a filesystem walk, so without this a dev checkout's
+ * git-ignored local material (research dumps, scratch plans) gets indexed —
+ * observed on the living fixture as a 3.4× store bloat and 7× dirtyCheck
+ * slowdown. Sources index the PROJECT, and .gitignore is the project's own
+ * definition of "not the project".
+ */
+function gitVisibleSet(root: string): Set<string> | undefined {
+  try {
+    const out = execFileSync("git", ["ls-files", "-co", "--exclude-standard"], {
+      cwd: root,
+      encoding: "utf8",
+      timeout: 15_000,
+      maxBuffer: 64 * 1024 * 1024,
+      stdio: ["ignore", "pipe", "ignore"],
+    });
+    return new Set(out.split("\n").filter(Boolean));
+  } catch {
+    return undefined;
+  }
+}
+
+/** Fast path for git work trees: the visible list IS the file list — stat the
+ *  markdown entries directly instead of walking every directory. The D13
+ *  name-set still applies per path segment (a repo that tracks a vendored
+ *  build dir keeps it out of the index either way). */
+async function scanFromGitList(root: string, visible: Set<string>): Promise<ScannedFile[]> {
+  const out: ScannedFile[] = [];
+  let seen = 0;
+  for (const rel of visible) {
+    if (++seen % YIELD_EVERY === 0) await new Promise<void>((r) => setImmediate(r));
+    const ext = rel.slice(rel.lastIndexOf(".")).toLowerCase();
+    if (!MD_EXTS.has(ext)) continue;
+    if (rel.split("/").some((seg) => isIgnoredDir(seg))) continue;
+    const abs = join(root, rel);
+    let st: import("node:fs").Stats;
+    try {
+      st = statSync(abs);
+    } catch {
+      continue; // listed but deleted from the working tree
+    }
+    if (!st.isFile() || st.size > MAX_FILE_SIZE) continue;
+    out.push({ path: rel, abs, size: st.size, mtimeMs: st.mtimeMs });
+  }
+  out.sort((a, b) => a.path.localeCompare(b.path));
+  return out;
+}
+
+/** Recursive markdown scan honoring the D13 ignore-set + .gitignore (in git
+ *  work trees); yields every 1000 entries. */
 export async function scanMarkdown(root: string): Promise<ScannedFile[]> {
+  const visible = gitVisibleSet(root);
+  if (visible !== undefined) return scanFromGitList(root, visible);
   const out: ScannedFile[] = [];
   let seen = 0;
   const stack: string[] = [root];
