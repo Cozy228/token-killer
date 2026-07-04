@@ -12,26 +12,17 @@
  * is disclosed in provenance (entity `attrs.classifiedBy` + a `classified-as`
  * claim).
  */
-import { execFileSync } from "node:child_process";
-import { existsSync, readFileSync, readdirSync, realpathSync, statSync } from "node:fs";
-import { basename, isAbsolute, join, normalize, relative, resolve, sep } from "node:path";
+import { existsSync, readFileSync, realpathSync } from "node:fs";
+import { basename, isAbsolute, normalize, resolve, sep } from "node:path";
 import type { Store } from "../store/store.ts";
 import { blake2bHex } from "../store/hash.ts";
 import type { EntityKind } from "../store/types.ts";
 import type { Budget, DirtyReport, IngestResult, SourceAdapter } from "./adapter.ts";
-import { MAX_FILE_SIZE, isIgnoredDir } from "./ignore.ts";
+import { scanSourceFiles, type ScannedFile } from "./scan.ts";
 import { DOC_EXTS, parseMarkdown, slugify, type ParsedMarkdown } from "../extract/markdown.ts";
 
 const SOURCE = "docs" as const;
 const MD_EXTS: ReadonlySet<string> = new Set([".md", ".markdown", ".mdx"]);
-const YIELD_EVERY = 1000; // scans yield to the event loop every N dir entries (§4.2)
-
-interface ScannedFile {
-  path: string; // project-relative, forward-slashed
-  abs: string;
-  size: number;
-  mtimeMs: number;
-}
 
 interface FileState {
   size: number;
@@ -453,99 +444,10 @@ function safeHash(abs: string): string {
   }
 }
 
-/**
- * Tracked + untracked-but-not-ignored paths from git (`ls-files -co
- * --exclude-standard`), forward-slashed and relative to `root`. Returns
- * `undefined` when `root` is not a git work tree or git is unavailable —
- * callers then skip .gitignore filtering (the D13 name-set still applies).
- *
- * Why: the docs scan is a filesystem walk, so without this a dev checkout's
- * git-ignored local material (research dumps, scratch plans) gets indexed —
- * observed on the living fixture as a 3.4× store bloat and 7× dirtyCheck
- * slowdown. Sources index the PROJECT, and .gitignore is the project's own
- * definition of "not the project".
- */
-function gitVisibleSet(root: string): Set<string> | undefined {
-  try {
-    const out = execFileSync("git", ["ls-files", "-co", "--exclude-standard"], {
-      cwd: root,
-      encoding: "utf8",
-      timeout: 15_000,
-      maxBuffer: 64 * 1024 * 1024,
-      stdio: ["ignore", "pipe", "ignore"],
-    });
-    return new Set(out.split("\n").filter(Boolean));
-  } catch {
-    return undefined;
-  }
-}
-
-/** Fast path for git work trees: the visible list IS the file list — stat the
- *  markdown entries directly instead of walking every directory. The D13
- *  name-set still applies per path segment (a repo that tracks a vendored
- *  build dir keeps it out of the index either way). */
-async function scanFromGitList(root: string, visible: Set<string>): Promise<ScannedFile[]> {
-  const out: ScannedFile[] = [];
-  let seen = 0;
-  for (const rel of visible) {
-    if (++seen % YIELD_EVERY === 0) await new Promise<void>((r) => setImmediate(r));
-    const ext = rel.slice(rel.lastIndexOf(".")).toLowerCase();
-    if (!MD_EXTS.has(ext)) continue;
-    if (rel.split("/").some((seg) => isIgnoredDir(seg))) continue;
-    const abs = join(root, rel);
-    let st: import("node:fs").Stats;
-    try {
-      st = statSync(abs);
-    } catch {
-      continue; // listed but deleted from the working tree
-    }
-    if (!st.isFile() || st.size > MAX_FILE_SIZE) continue;
-    out.push({ path: rel, abs, size: st.size, mtimeMs: st.mtimeMs });
-  }
-  out.sort((a, b) => a.path.localeCompare(b.path));
-  return out;
-}
-
-/** Recursive markdown scan honoring the D13 ignore-set + .gitignore (in git
- *  work trees); yields every 1000 entries. */
+/** Markdown scan (§4.4) — the shared source scan filtered to doc extensions.
+ *  Honors .gitignore (git ls-files fast path) + the D13 ignore-set. */
 export async function scanMarkdown(root: string): Promise<ScannedFile[]> {
-  const visible = gitVisibleSet(root);
-  if (visible !== undefined) return scanFromGitList(root, visible);
-  const out: ScannedFile[] = [];
-  let seen = 0;
-  const stack: string[] = [root];
-  while (stack.length > 0) {
-    const dir = stack.pop()!;
-    let entries: import("node:fs").Dirent[];
-    try {
-      entries = readdirSync(dir, { withFileTypes: true });
-    } catch {
-      continue;
-    }
-    for (const entry of entries) {
-      if (++seen % YIELD_EVERY === 0) await new Promise<void>((r) => setImmediate(r));
-      const abs = join(dir, entry.name);
-      if (entry.isDirectory()) {
-        if (entry.name === ".git" || isIgnoredDir(entry.name)) continue;
-        stack.push(abs);
-        continue;
-      }
-      if (!entry.isFile()) continue;
-      const ext = entry.name.slice(entry.name.lastIndexOf(".")).toLowerCase();
-      if (!MD_EXTS.has(ext)) continue;
-      let st: import("node:fs").Stats;
-      try {
-        st = statSync(abs);
-      } catch {
-        continue;
-      }
-      if (st.size > MAX_FILE_SIZE) continue; // D4 size ceiling
-      const rel = relative(root, abs).split(sep).join("/");
-      out.push({ path: rel, abs, size: st.size, mtimeMs: st.mtimeMs });
-    }
-  }
-  out.sort((a, b) => a.path.localeCompare(b.path)); // deterministic order
-  return out;
+  return scanSourceFiles(root, MD_EXTS);
 }
 
 /** Does `token` resolve to an existing file inside the project root? Safe by construction. */
