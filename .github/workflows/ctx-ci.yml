@@ -43,6 +43,11 @@ jobs:
         node-version: ["22.16"]
     steps:
       - uses: actions/checkout@v4
+        with:
+          # The living-repo acceptance tier ingests THIS repo's real git
+          # history (A3 rename/commit, A4 co-change, A11 size denominator) —
+          # the default shallow clone breaks all of it.
+          fetch-depth: 0
       - uses: pnpm/action-setup@v4 # reads packageManager from package.json
       - uses: actions/setup-node@v4
         with:
