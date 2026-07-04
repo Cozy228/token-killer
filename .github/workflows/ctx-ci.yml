@@ -22,6 +22,11 @@ on:
 jobs:
   test:
     runs-on: ${{ matrix.os }}
+    env:
+      # node:sqlite is flag-gated on Node 22.5–22.12 (unflagged from 22.13);
+      # the flag is an accepted no-op on later versions, and NODE_OPTIONS
+      # propagates it to vitest workers and spawned child processes alike.
+      NODE_OPTIONS: --experimental-sqlite
     # Hard ceiling so a wedged spawn test can never pin a runner.
     timeout-minutes: 20
     strategy:
