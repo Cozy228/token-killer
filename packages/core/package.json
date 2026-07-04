@@ -1,0 +1,33 @@
+{
+  "name": "@ctx/core",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "description": "ctx core: store + ingest + extract + select + serve (pure library, no I/O CLI). Placeholder name until P13 naming lands.",
+  "exports": {
+    ".": {
+      "types": "./src/index.ts",
+      "default": "./src/index.ts"
+    }
+  },
+  "main": "./src/index.ts",
+  "types": "./src/index.ts",
+  "files": [
+    "dist"
+  ],
+  "scripts": {
+    "build": "tsdown && node scripts/copy-assets.mjs",
+    "typecheck": "tsc --noEmit -p tsconfig.json",
+    "test": "vitest run --config vitest.config.ts"
+  },
+  "engines": {
+    "node": ">=22.5"
+  },
+  "devDependencies": {
+    "@types/node": "^25.9.3",
+    "tsdown": "^0.22.3",
+    "tsx": "^4.22.4",
+    "typescript": "rc",
+    "vitest": "^4.1.9"
+  }
+}

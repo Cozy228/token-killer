@@ -1,0 +1,700 @@
+/**
+ * The `Store` contract (CTX-IMPL §2/§3/§4) — pinned in slice 1b so 1c/1d/1e
+ * build against ONE interface. SQLite-backed via node:sqlite; one DB per
+ * project shard at $CTX_HOME/projects/<shard>/store.sqlite.
+ *
+ * Invariants owned here:
+ * - claims are append-only (no update/delete API exists, by design);
+ * - file paths are persisted project-relative, never absolute (one scrub
+ *   function at the store writer — §3 write-boundary rule);
+ * - readers see only published generations (`gen <= published_gen`);
+ * - single-writer lease is compare-and-set in meta, 30s TTL, stealable on
+ *   expiry (§4.5); readers never block (WAL + snapshot reads).
+ */
+import { mkdirSync } from "node:fs";
+import { relative, isAbsolute, sep } from "node:path";
+import type { DatabaseSync } from "node:sqlite";
+import { openDatabase, transaction, iterateRows } from "./sqlite.ts";
+import { runMigrations } from "./migrate.ts";
+import { resolveShard, ctxHome, shardDir, storePath, type ShardResolution } from "./shard.ts";
+import { HANDLE_MIN_LEN, parseHandle, shortHandleCandidate } from "./handles.ts";
+import { blake2bHex } from "./hash.ts";
+import {
+  readFileLocator,
+  readGitLocator,
+  readSnapshotLocator,
+  type ReadThroughHost,
+} from "./readthrough.ts";
+import type {
+  Claim,
+  ClaimInput,
+  Conflict,
+  ConflictKind,
+  ConflictStatus,
+  Cursor,
+  Entity,
+  EntityInput,
+  Facet,
+  FtsHit,
+  LeaseResult,
+  LeaseState,
+  Link,
+  LinkInput,
+  Locator,
+  MemoryInput,
+  MemoryRow,
+  ReadThroughResult,
+} from "./types.ts";
+
+export const LEASE_TTL_MS = 30_000;
+export const MEMORY_GIST_MAX_CHARS = 240;
+
+export interface OpenStoreOptions {
+  /** Directory to resolve the project shard from (default: process.cwd()). */
+  projectDir?: string;
+  /** Data home override (default: $CTX_HOME or ~/.ctx). Tests MUST set this (G-7). */
+  home?: string;
+  /** Injectable clock (lease TTL, timestamps) — fixed-clock tests (§10). */
+  now?: () => number;
+}
+
+export interface Store {
+  readonly shard: string;
+  readonly projectRoot: string;
+  readonly mainRoot: string;
+  readonly dbPath: string;
+  close(): void;
+
+  // entities
+  upsertEntity(input: EntityInput): void;
+  getEntity(id: string): Entity | undefined;
+  entityCount(maxGen?: number): number;
+
+  // claims — append-only (no mutation API, by design)
+  addClaim(input: ClaimInput): number;
+  claimsFor(subject: string, predicate?: string): Claim[];
+  getClaim(id: number): Claim | undefined;
+
+  // links (resolved current view)
+  setLink(input: LinkInput): void;
+  linksFrom(src: string, predicate?: string): Link[];
+  linksTo(dst: string, predicate?: string): Link[];
+  flagLinksStale(entityId: string): number;
+
+  // conflicts
+  addConflict(a: number, b: number, kind: ConflictKind): void;
+  conflicts(status?: ConflictStatus): Conflict[];
+  setConflictStatus(a: number, b: number, status: ConflictStatus): void;
+
+  // memory + anchors (store IS the source of truth here — §2 notes exception)
+  writeMemory(input: MemoryInput): void;
+  getMemory(entityId: string): MemoryRow | undefined;
+  setMemoryStatus(entityId: string, status: MemoryRow["status"]): void;
+  setAnchors(memoryId: string, entityIds: string[]): void;
+  anchorsOf(memoryId: string): string[];
+
+  // full-text (contentless — index only, rowid keyed to entities.rowid)
+  ftsIndex(entityId: string, doc: { name: string; text: string; kind: string }): void;
+  ftsRemove(entityId: string): void;
+  ftsSearch(match: string, limit?: number): FtsHit[];
+
+  // cursors
+  getCursor(source: string): Cursor | undefined;
+  setCursor(source: string, position: string, freshness: number, gen: number): void;
+
+  // generations (§4 publish protocol)
+  beginGeneration(source: string): number;
+  publishGeneration(source: string): void;
+  publishedGen(source: string): number;
+
+  // single-writer lease (§4.5)
+  acquireLease(holder: string, ttlMs?: number): LeaseResult;
+  releaseLease(holder: string): void;
+  currentLease(): LeaseState | undefined;
+
+  // handles (§3)
+  internHandle(entityId: string, facet?: Facet): string;
+  resolveHandle(input: string): { entityId: string; facet: Facet | undefined } | undefined;
+
+  // meta
+  getMeta(key: string): string | undefined;
+  setMeta(key: string, value: string): void;
+
+  // read-through (§3) — recoverable failures are values, never throws
+  readThrough(entityId: string): ReadThroughResult;
+  resolveLocator(locator: Locator, contentHash?: string, entityId?: string): ReadThroughResult;
+}
+
+/** §3 write-boundary rule: ONE scrub function; paths persist project-relative. */
+export function scrubToProjectRelative(path: string, projectRoot: string): string {
+  if (!isAbsolute(path)) return path.split("\\").join("/");
+  const rel = relative(projectRoot, path);
+  if (rel.startsWith("..") || isAbsolute(rel)) {
+    throw new Error(`refusing to persist a path outside the project root: ${path}`);
+  }
+  return rel.split(sep).join("/");
+}
+
+interface EntityRow {
+  id: string;
+  kind: string;
+  name: string;
+  locator: string;
+  content_hash: string | null;
+  source_rev: string | null;
+  attrs: string;
+  first_seen: number;
+  last_verified: number;
+  gen: number;
+}
+
+class SqliteStore implements Store {
+  readonly shard: string;
+  readonly projectRoot: string;
+  readonly mainRoot: string;
+  readonly dbPath: string;
+  readonly #db: DatabaseSync;
+  readonly #now: () => number;
+
+  constructor(db: DatabaseSync, dbPath: string, res: ShardResolution, now: () => number) {
+    this.#db = db;
+    this.dbPath = dbPath;
+    this.shard = res.shard;
+    this.projectRoot = res.projectRoot;
+    this.mainRoot = res.mainRoot;
+    this.#now = now;
+  }
+
+  close(): void {
+    this.#db.close();
+  }
+
+  // ---- entities ----
+
+  upsertEntity(input: EntityInput): void {
+    const locator: Locator =
+      input.locator.t === "file"
+        ? { ...input.locator, path: scrubToProjectRelative(input.locator.path, this.projectRoot) }
+        : input.locator;
+    const now = this.#now();
+    this.#db
+      .prepare(
+        `INSERT INTO entities (id, kind, name, locator, content_hash, source_rev, attrs, first_seen, last_verified, gen)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+         ON CONFLICT(id) DO UPDATE SET
+           kind = excluded.kind, name = excluded.name, locator = excluded.locator,
+           content_hash = excluded.content_hash, source_rev = excluded.source_rev,
+           attrs = excluded.attrs, last_verified = excluded.last_verified, gen = excluded.gen`,
+      )
+      .run(
+        input.id,
+        input.kind,
+        input.name,
+        JSON.stringify(locator),
+        input.contentHash ?? null,
+        input.sourceRev ?? null,
+        JSON.stringify(input.attrs ?? {}),
+        now,
+        now,
+        input.gen,
+      );
+  }
+
+  getEntity(id: string): Entity | undefined {
+    const row = this.#db.prepare("SELECT * FROM entities WHERE id = ?").get(id) as
+      | EntityRow
+      | undefined;
+    if (!row) return undefined;
+    return {
+      id: row.id,
+      kind: row.kind as Entity["kind"],
+      name: row.name,
+      locator: JSON.parse(row.locator) as Locator,
+      contentHash: row.content_hash ?? undefined,
+      sourceRev: row.source_rev ?? undefined,
+      attrs: JSON.parse(row.attrs) as Record<string, unknown>,
+      firstSeen: row.first_seen,
+      lastVerified: row.last_verified,
+      gen: row.gen,
+    };
+  }
+
+  entityCount(maxGen?: number): number {
+    const row = (
+      maxGen === undefined
+        ? this.#db.prepare("SELECT COUNT(*) AS n FROM entities").get()
+        : this.#db.prepare("SELECT COUNT(*) AS n FROM entities WHERE gen <= ?").get(maxGen)
+    ) as { n: number };
+    return row.n;
+  }
+
+  // ---- claims (append-only) ----
+
+  addClaim(input: ClaimInput): number {
+    const result = this.#db
+      .prepare(
+        `INSERT INTO claims (subject, predicate, object, carrier, locus, method, authority, at, gen)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+      )
+      .run(
+        input.subject,
+        input.predicate,
+        input.object ?? null,
+        input.carrier,
+        input.locus ?? null,
+        input.method,
+        input.authority,
+        this.#now(),
+        input.gen,
+      );
+    return Number(result.lastInsertRowid);
+  }
+
+  claimsFor(subject: string, predicate?: string): Claim[] {
+    const stmt =
+      predicate === undefined
+        ? this.#db.prepare("SELECT * FROM claims WHERE subject = ? ORDER BY id")
+        : this.#db.prepare("SELECT * FROM claims WHERE subject = ? AND predicate = ? ORDER BY id");
+    const params = predicate === undefined ? [subject] : [subject, predicate];
+    return [...iterateRows(stmt, ...params)].map((r) => claimFromRow(r as Record<string, unknown>));
+  }
+
+  getClaim(id: number): Claim | undefined {
+    const row = this.#db.prepare("SELECT * FROM claims WHERE id = ?").get(id);
+    return row ? claimFromRow(row as Record<string, unknown>) : undefined;
+  }
+
+  // ---- links ----
+
+  setLink(input: LinkInput): void {
+    this.#db
+      .prepare(
+        `INSERT INTO links (src, dst, predicate, method, confidence, claim_id, verified_at, stale)
+         VALUES (?, ?, ?, ?, ?, ?, ?, 0)
+         ON CONFLICT(src, predicate, dst) DO UPDATE SET
+           method = excluded.method, confidence = excluded.confidence,
+           claim_id = excluded.claim_id, verified_at = excluded.verified_at, stale = 0`,
+      )
+      .run(
+        input.src,
+        input.dst,
+        input.predicate,
+        input.method,
+        input.confidence ?? 1.0,
+        input.claimId ?? null,
+        this.#now(),
+      );
+  }
+
+  linksFrom(src: string, predicate?: string): Link[] {
+    const stmt =
+      predicate === undefined
+        ? this.#db.prepare("SELECT * FROM links WHERE src = ?")
+        : this.#db.prepare("SELECT * FROM links WHERE src = ? AND predicate = ?");
+    const params = predicate === undefined ? [src] : [src, predicate];
+    return [...iterateRows(stmt, ...params)].map((r) => linkFromRow(r as Record<string, unknown>));
+  }
+
+  linksTo(dst: string, predicate?: string): Link[] {
+    const stmt =
+      predicate === undefined
+        ? this.#db.prepare("SELECT * FROM links WHERE dst = ?")
+        : this.#db.prepare("SELECT * FROM links WHERE dst = ? AND predicate = ?");
+    const params = predicate === undefined ? [dst] : [dst, predicate];
+    return [...iterateRows(stmt, ...params)].map((r) => linkFromRow(r as Record<string, unknown>));
+  }
+
+  flagLinksStale(entityId: string): number {
+    const result = this.#db
+      .prepare("UPDATE links SET stale = 1 WHERE src = ? OR dst = ?")
+      .run(entityId, entityId);
+    return Number(result.changes);
+  }
+
+  // ---- conflicts ----
+
+  addConflict(a: number, b: number, kind: ConflictKind): void {
+    this.#db
+      .prepare("INSERT OR IGNORE INTO conflicts (a, b, kind, status) VALUES (?, ?, ?, 'open')")
+      .run(a, b, kind);
+  }
+
+  conflicts(status: ConflictStatus = "open"): Conflict[] {
+    return this.#db
+      .prepare("SELECT * FROM conflicts WHERE status = ?")
+      .all(status) as unknown as Conflict[];
+  }
+
+  setConflictStatus(a: number, b: number, status: ConflictStatus): void {
+    this.#db.prepare("UPDATE conflicts SET status = ? WHERE a = ? AND b = ?").run(status, a, b);
+  }
+
+  // ---- memory ----
+
+  writeMemory(input: MemoryInput): void {
+    if (input.gist.length > MEMORY_GIST_MAX_CHARS) {
+      // Serve/remember (1c) catches this and answers with success-shaped
+      // guidance to split note/detail; the STORE enforces the invariant (§2).
+      throw new RangeError(
+        `memory gist exceeds ${MEMORY_GIST_MAX_CHARS} chars (${input.gist.length})`,
+      );
+    }
+    this.#db
+      .prepare(
+        `INSERT INTO memory (entity_id, gist, detail, origin, session_ref, authority, status)
+         VALUES (?, ?, ?, ?, ?, ?, ?)
+         ON CONFLICT(entity_id) DO UPDATE SET
+           gist = excluded.gist, detail = excluded.detail, origin = excluded.origin,
+           session_ref = excluded.session_ref, authority = excluded.authority,
+           status = excluded.status`,
+      )
+      .run(
+        input.entityId,
+        input.gist,
+        input.detail ?? null,
+        input.origin,
+        input.sessionRef ?? null,
+        input.authority,
+        input.status ?? "active",
+      );
+  }
+
+  getMemory(entityId: string): MemoryRow | undefined {
+    const row = this.#db.prepare("SELECT * FROM memory WHERE entity_id = ?").get(entityId) as
+      | Record<string, unknown>
+      | undefined;
+    if (!row) return undefined;
+    return {
+      entityId: row.entity_id as string,
+      gist: row.gist as string,
+      detail: (row.detail as string | null) ?? undefined,
+      origin: row.origin as MemoryRow["origin"],
+      sessionRef: (row.session_ref as string | null) ?? undefined,
+      authority: row.authority as MemoryRow["authority"],
+      status: row.status as MemoryRow["status"],
+      servedCount: row.served_count as number,
+      lastServed: (row.last_served as number | null) ?? undefined,
+    };
+  }
+
+  setMemoryStatus(entityId: string, status: MemoryRow["status"]): void {
+    this.#db.prepare("UPDATE memory SET status = ? WHERE entity_id = ?").run(status, entityId);
+  }
+
+  setAnchors(memoryId: string, entityIds: string[]): void {
+    transaction(this.#db, () => {
+      this.#db.prepare("DELETE FROM anchors WHERE memory_id = ?").run(memoryId);
+      const ins = this.#db.prepare("INSERT INTO anchors (memory_id, entity_id) VALUES (?, ?)");
+      for (const id of entityIds) ins.run(memoryId, id);
+    });
+  }
+
+  anchorsOf(memoryId: string): string[] {
+    return (
+      this.#db
+        .prepare("SELECT entity_id FROM anchors WHERE memory_id = ? ORDER BY entity_id")
+        .all(memoryId) as unknown as Array<{ entity_id: string }>
+    ).map((r) => r.entity_id);
+  }
+
+  // ---- fts (contentless; rowid keyed to entities.rowid) ----
+
+  #entityRowid(entityId: string): number | undefined {
+    const row = this.#db.prepare("SELECT rowid FROM entities WHERE id = ?").get(entityId) as
+      | { rowid: number }
+      | undefined;
+    return row?.rowid;
+  }
+
+  ftsIndex(entityId: string, doc: { name: string; text: string; kind: string }): void {
+    const rowid = this.#entityRowid(entityId);
+    if (rowid === undefined) throw new Error(`fts index before entity upsert: ${entityId}`);
+    transaction(this.#db, () => {
+      this.#db.prepare("DELETE FROM fts WHERE rowid = ?").run(rowid);
+      this.#db
+        .prepare("INSERT INTO fts (rowid, name, text, kind, entity_id) VALUES (?, ?, ?, ?, ?)")
+        .run(rowid, doc.name, doc.text, doc.kind, entityId);
+    });
+  }
+
+  ftsRemove(entityId: string): void {
+    const rowid = this.#entityRowid(entityId);
+    if (rowid !== undefined) this.#db.prepare("DELETE FROM fts WHERE rowid = ?").run(rowid);
+  }
+
+  ftsSearch(match: string, limit = 20): FtsHit[] {
+    try {
+      const rows = this.#db
+        .prepare(
+          `SELECT e.id AS entity_id, f.rank AS rank
+           FROM fts f JOIN entities e ON e.rowid = f.rowid
+           WHERE fts MATCH ? ORDER BY f.rank LIMIT ?`,
+        )
+        .all(match, limit) as unknown as Array<{ entity_id: string; rank: number }>;
+      return rows.map((r) => ({ entityId: r.entity_id, rank: r.rank }));
+    } catch {
+      return []; // malformed FTS5 query syntax — recoverable, selection owns query building
+    }
+  }
+
+  // ---- cursors ----
+
+  getCursor(source: string): Cursor | undefined {
+    const row = this.#db.prepare("SELECT * FROM cursors WHERE source = ?").get(source) as
+      | Record<string, unknown>
+      | undefined;
+    if (!row) return undefined;
+    return {
+      source: row.source as string,
+      position: (row.position as string | null) ?? undefined,
+      freshness: (row.freshness as number | null) ?? undefined,
+      gen: (row.gen as number | null) ?? undefined,
+    };
+  }
+
+  setCursor(source: string, position: string, freshness: number, gen: number): void {
+    this.#db
+      .prepare(
+        `INSERT INTO cursors (source, position, freshness, gen) VALUES (?, ?, ?, ?)
+         ON CONFLICT(source) DO UPDATE SET
+           position = excluded.position, freshness = excluded.freshness, gen = excluded.gen`,
+      )
+      .run(source, position, freshness, gen);
+  }
+
+  // ---- generations (§4 publish protocol) ----
+
+  beginGeneration(source: string): number {
+    return transaction(this.#db, () => {
+      this.#db
+        .prepare("INSERT OR IGNORE INTO generations (source, published_gen) VALUES (?, 0)")
+        .run(source);
+      const row = this.#db
+        .prepare("SELECT published_gen, building_gen FROM generations WHERE source = ?")
+        .get(source) as { published_gen: number; building_gen: number | null };
+      // Resuming an interrupted build reuses its gen (resumable ingest, §4).
+      const building = row.building_gen ?? row.published_gen + 1;
+      this.#db
+        .prepare("UPDATE generations SET building_gen = ? WHERE source = ?")
+        .run(building, source);
+      return building;
+    });
+  }
+
+  publishGeneration(source: string): void {
+    transaction(this.#db, () => {
+      const row = this.#db
+        .prepare("SELECT building_gen FROM generations WHERE source = ?")
+        .get(source) as { building_gen: number | null } | undefined;
+      if (!row || row.building_gen === null) {
+        throw new Error(`publishGeneration without beginGeneration for source: ${source}`);
+      }
+      this.#db
+        .prepare("UPDATE generations SET published_gen = ?, building_gen = NULL WHERE source = ?")
+        .run(row.building_gen, source);
+    });
+  }
+
+  publishedGen(source: string): number {
+    const row = this.#db
+      .prepare("SELECT published_gen FROM generations WHERE source = ?")
+      .get(source) as { published_gen: number } | undefined;
+    return row?.published_gen ?? 0;
+  }
+
+  // ---- lease (§4.5: CAS in meta, TTL, stealable on expiry) ----
+
+  acquireLease(holder: string, ttlMs = LEASE_TTL_MS): LeaseResult {
+    return transaction(this.#db, () => {
+      const now = this.#now();
+      const current = this.#leaseUnlocked();
+      if (current && current.holder !== holder && current.expiresAt > now) {
+        return { acquired: false, lease: current };
+      }
+      const lease: LeaseState = { holder, expiresAt: now + ttlMs };
+      this.#db
+        .prepare(
+          "INSERT INTO meta (key, value) VALUES ('lease', ?) " +
+            "ON CONFLICT(key) DO UPDATE SET value = excluded.value",
+        )
+        .run(JSON.stringify(lease));
+      return { acquired: true, lease };
+    });
+  }
+
+  releaseLease(holder: string): void {
+    transaction(this.#db, () => {
+      const current = this.#leaseUnlocked();
+      if (current && current.holder === holder) {
+        this.#db.prepare("DELETE FROM meta WHERE key = 'lease'").run();
+      }
+    });
+  }
+
+  currentLease(): LeaseState | undefined {
+    return this.#leaseUnlocked();
+  }
+
+  #leaseUnlocked(): LeaseState | undefined {
+    const row = this.#db.prepare("SELECT value FROM meta WHERE key = 'lease'").get() as
+      | { value: string }
+      | undefined;
+    return row ? (JSON.parse(row.value) as LeaseState) : undefined;
+  }
+
+  // ---- handles ----
+
+  internHandle(entityId: string, facet?: Facet): string {
+    for (let len = HANDLE_MIN_LEN; len <= 128; len++) {
+      const candidate = shortHandleCandidate(entityId, facet, len);
+      const existing = this.#db
+        .prepare("SELECT entity_id, facet FROM handles WHERE short = ?")
+        .get(candidate) as { entity_id: string; facet: string | null } | undefined;
+      if (!existing) {
+        this.#db
+          .prepare("INSERT INTO handles (short, entity_id, facet) VALUES (?, ?, ?)")
+          .run(candidate, entityId, facet ?? null);
+        return candidate;
+      }
+      if (existing.entity_id === entityId && (existing.facet ?? undefined) === facet) {
+        return candidate;
+      }
+      // collision: bump prefix length 5→6→7… (P28 addenda)
+    }
+    throw new Error(`handle space exhausted for ${entityId}`); // unreachable in practice
+  }
+
+  resolveHandle(input: string): { entityId: string; facet: Facet | undefined } | undefined {
+    const parsed = parseHandle(input);
+    if (!parsed) return undefined;
+    if (parsed.form === "verbatim") {
+      return this.getEntity(parsed.key) ? { entityId: parsed.key, facet: parsed.facet } : undefined;
+    }
+    const row = this.#db
+      .prepare("SELECT entity_id, facet FROM handles WHERE short = ?")
+      .get(parsed.key) as { entity_id: string; facet: string | null } | undefined;
+    return row
+      ? { entityId: row.entity_id, facet: (row.facet ?? undefined) as Facet | undefined }
+      : undefined;
+  }
+
+  // ---- meta ----
+
+  getMeta(key: string): string | undefined {
+    const row = this.#db.prepare("SELECT value FROM meta WHERE key = ?").get(key) as
+      | { value: string }
+      | undefined;
+    return row?.value;
+  }
+
+  setMeta(key: string, value: string): void {
+    this.#db
+      .prepare(
+        "INSERT INTO meta (key, value) VALUES (?, ?) " +
+          "ON CONFLICT(key) DO UPDATE SET value = excluded.value",
+      )
+      .run(key, value);
+  }
+
+  // ---- read-through ----
+
+  readThrough(entityId: string): ReadThroughResult {
+    const entity = this.getEntity(entityId);
+    if (!entity) return { ok: false, reason: "no-entity", message: `unknown entity: ${entityId}` };
+    return this.resolveLocator(entity.locator, entity.contentHash, entityId);
+  }
+
+  resolveLocator(locator: Locator, contentHash?: string, entityId?: string): ReadThroughResult {
+    switch (locator.t) {
+      case "file": {
+        const host: ReadThroughHost = {
+          projectRoot: this.projectRoot,
+          isKnownEntityPath: (path) => this.#isKnownEntityPath(path),
+        };
+        const result = readFileLocator(host, locator);
+        if (!result.ok) return result;
+        // Staleness check (§3): every resolver re-checks content_hash; drift →
+        // entity's links flagged, serve discloses.
+        let drift = false;
+        if (contentHash !== undefined && result.fullText !== undefined) {
+          drift = blake2bHex(result.fullText) !== contentHash;
+          if (drift && entityId !== undefined) this.flagLinksStale(entityId);
+        }
+        return { ok: true, text: result.text, drift, via: "file" };
+      }
+      case "git":
+        return readGitLocator(this.projectRoot, locator);
+      case "store": {
+        if (entityId === undefined) {
+          return { ok: false, reason: "no-entity", message: "store locator needs an entity id" };
+        }
+        const mem = this.getMemory(entityId);
+        if (!mem) {
+          return { ok: false, reason: "not-found", message: `no memory row for ${entityId}` };
+        }
+        return {
+          ok: true,
+          text: mem.detail ? `${mem.gist}\n\n${mem.detail}` : mem.gist,
+          drift: false,
+          via: "store",
+        };
+      }
+      case "snapshot":
+        return readSnapshotLocator();
+    }
+  }
+
+  #isKnownEntityPath(path: string): boolean {
+    const row = this.#db
+      .prepare(
+        "SELECT 1 AS hit FROM entities WHERE json_extract(locator, '$.t') = 'file' AND json_extract(locator, '$.path') = ? LIMIT 1",
+      )
+      .get(path.split("\\").join("/"));
+    return row !== undefined;
+  }
+}
+
+/**
+ * Open (creating + migrating if needed) the store for a project directory.
+ * Shard resolution is worktree-aware (§3); the DB lives under `home`, so store
+ * data survives worktree deletion.
+ */
+export function openStore(opts: OpenStoreOptions = {}): Store {
+  const res = resolveShard(opts.projectDir ?? process.cwd());
+  const home = opts.home ?? ctxHome();
+  mkdirSync(shardDir(res.shard, home), { recursive: true });
+  const dbPath = storePath(res.shard, home);
+  const db = openDatabase(dbPath);
+  runMigrations(db);
+  const store = new SqliteStore(db, dbPath, res, opts.now ?? Date.now);
+  if (store.getMeta("project_root") === undefined) store.setMeta("project_root", res.mainRoot);
+  return store;
+}
+
+function claimFromRow(row: Record<string, unknown>): Claim {
+  return {
+    id: row.id as number,
+    subject: row.subject as string,
+    predicate: row.predicate as string,
+    object: (row.object as string | null) ?? undefined,
+    carrier: row.carrier as string,
+    locus: (row.locus as string | null) ?? undefined,
+    method: row.method as Claim["method"],
+    authority: row.authority as Claim["authority"],
+    at: row.at as number,
+    gen: row.gen as number,
+  };
+}
+
+function linkFromRow(row: Record<string, unknown>): Link {
+  return {
+    src: row.src as string,
+    dst: row.dst as string,
+    predicate: row.predicate as string,
+    method: row.method as Link["method"],
+    confidence: row.confidence as number,
+    claimId: (row.claim_id as number | null) ?? undefined,
+    verifiedAt: row.verified_at as number,
+    stale: (row.stale as number) === 1,
+  };
+}
