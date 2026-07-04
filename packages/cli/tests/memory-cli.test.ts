@@ -1,0 +1,80 @@
+import { execFileSync } from "node:child_process";
+import { mkdtempSync, rmSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
+import { afterEach, beforeEach, describe, expect, test } from "vitest";
+import { run, type RunIo } from "../src/cli.ts";
+
+// The CLI `run()` is exercised in-process against a temp git repo + sandboxed
+// CTX_HOME (G-7); no host config is touched, no subprocess spawn needed.
+function makeRepo(root: string): string {
+  const repo = join(root, "repo");
+  const g = (args: string[]) =>
+    execFileSync("git", args, {
+      cwd: args[0] === "init" ? root : repo,
+      stdio: "ignore",
+      env: {
+        ...process.env,
+        GIT_CONFIG_GLOBAL: join(tmpdir(), "ctx-cli-no-gitconfig"),
+        GIT_CONFIG_SYSTEM: join(tmpdir(), "ctx-cli-no-gitconfig"),
+      },
+    });
+  g(["init", "-q", "-b", "main", repo]);
+  g(["config", "user.email", "ctx@example.invalid"]);
+  g(["config", "user.name", "ctx"]);
+  return repo;
+}
+
+describe("ctx CLI: memory lifecycle", () => {
+  let root: string;
+  let repo: string;
+  let lines: string[];
+  let io: RunIo;
+
+  beforeEach(() => {
+    root = mkdtempSync(join(tmpdir(), "ctx-cli-"));
+    repo = makeRepo(root);
+    lines = [];
+    io = { out: (l) => lines.push(l), home: join(root, "ctx-home"), projectDir: repo };
+  });
+  afterEach(() => {
+    rmSync(root, { recursive: true, force: true, maxRetries: 5, retryDelay: 100 });
+  });
+
+  test("remember → recall → memory list → lifecycle", () => {
+    expect(run(["remember", "a durable fact about the store"], io)).toBe(0);
+    const handle = (lines[0]?.match(/\[([^\]]+)\]/) ?? [])[1];
+    expect(handle).toBeDefined();
+
+    lines = [];
+    expect(run(["recall", `[${handle}]`], io)).toBe(0);
+    expect(lines.join("\n")).toContain("durable fact");
+
+    lines = [];
+    expect(run(["memory", "list"], io)).toBe(0);
+    expect(lines.join("\n")).toContain("active");
+
+    lines = [];
+    expect(run(["memory", "retire", `[${handle}]`], io)).toBe(0);
+    expect(lines.join("\n")).toContain("retired");
+
+    lines = [];
+    run(["memory", "list", "--status", "active"], io);
+    expect(lines.join("\n")).toContain("(no memory entries)");
+  });
+
+  test("over-long note prints success-shaped guidance (exit 0, nothing crashes)", () => {
+    expect(run(["remember", "x".repeat(300)], io)).toBe(0);
+    expect(lines.join("\n")).toMatch(/split/i);
+  });
+
+  test("ctx import returns the P28 'lands at M4' notice", () => {
+    expect(run(["import", "github"], io)).toBe(0);
+    expect(lines.join("\n")).toContain("M4");
+  });
+
+  test("unknown command falls back to the scaffold notice", () => {
+    expect(run(["frobnicate"], io)).toBe(0);
+    expect(lines.join("\n")).toContain("lands in a later M1 slice");
+  });
+});
