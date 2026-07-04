@@ -125,7 +125,8 @@ describe("acceptance: global invariants (G-1..G-7)", () => {
 
   test("G-2 envelope omission counts reconcile (typed struct level, per §9 addenda)", () => {
     assertG2Reconcile(resp);
-    // Non-trivial: with 8 decisions in a 180-token section, the struct DID omit.
+    // Non-trivial: 30 decision docs overflow the decisions section cap, so the
+    // typed struct DID omit — reconciliation is exercised, not vacuous.
     expect(resp.diag.envelope!.omittedTotal, "fixture should exercise omissions").toBeGreaterThan(
       0,
     );
