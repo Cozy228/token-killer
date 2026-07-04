@@ -47,5 +47,24 @@ export type {
   RefreshEngineOptions,
 } from "./ingest/refresh.ts";
 
+// docs/decisions source (slice 1e)
+export { DocsAdapter, classifyDoc, scanMarkdown } from "./ingest/docs.ts";
+export { DEFAULT_IGNORE_DIRS, MAX_FILE_SIZE, isIgnoredDir } from "./ingest/ignore.ts";
+export {
+  parseMarkdown,
+  matchGlossary,
+  classifyMention,
+  slugify,
+  DOC_EXTS,
+} from "./extract/markdown.ts";
+export type {
+  ParsedMarkdown,
+  Frontmatter,
+  HeadingNode,
+  GlossaryEntry,
+  Mention,
+  MentionKind,
+} from "./extract/markdown.ts";
+
 /** Milestone marker kept from slice 1a; the CLI stub prints it until 1i. */
 export const CTX_CORE_SCAFFOLD = "m1-1a" as const;
