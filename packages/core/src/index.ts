@@ -220,29 +220,19 @@ export type { RenderOut } from "./serve/render.ts";
 export { MAX_RESPONSE_CHARS, OMITTED_HANDLES_PER_SECTION } from "./serve/types.ts";
 export type { ServeResponse, ServeDeps, ServeDiag, ServeKind } from "./serve/types.ts";
 
-// install/doctor (slice 1i): managed host writes + read-only verification
+// install/doctor (slice 1i): managed host writes + read-only verification.
+// Push-block placement REUSES slice 1h's push surface (placePushBlock /
+// buildPushBlock / extractManagedBlock / PUSH_MAX_BYTES); 1i adds only MCP
+// registration, the doctor checks, and byte-exact removal (removePush).
 export {
   installProject,
   installMcpRegistration,
-  installPushPlacement,
   removePush,
-  PUSH_PLACEMENT_FILES,
   MCP_CONFIG_FILE,
-  PUSH_HEADER_BODY,
 } from "./install/install.ts";
 export type { InstallOptions, InstallResult, FileWrite, WriteAction } from "./install/install.ts";
 export { runDoctor, formatDoctorReport } from "./install/doctor.ts";
 export type { DoctorCheck, DoctorReport, DoctorOptions } from "./install/doctor.ts";
-export {
-  upsertManagedBlock,
-  removeManagedBlock,
-  renderManagedBlock,
-  extractManagedBlock,
-  hasManagedBlock,
-  MANAGED_BEGIN_LINE,
-  MANAGED_END_LINE,
-  PUSH_BLOCK_MAX_BYTES,
-} from "./install/managedBlock.ts";
 export {
   CTX_MCP_SERVER_NAME,
   ctxServerEntry,

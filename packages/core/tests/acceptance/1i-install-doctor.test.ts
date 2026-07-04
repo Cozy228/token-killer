@@ -1,6 +1,10 @@
 /**
  * Slice 1i — install/doctor. M1-ACCEPTANCE A10-install / A10-node, flipped green.
  *
+ * 1i reuses slice 1h's push surface for placement (placePushBlock / buildPushBlock
+ * / extractManagedBlock) and adds only the MCP registration, the doctor checks,
+ * and byte-exact removal (removePush = `ctx doctor --remove-push`).
+ *
  * G-7 is structural here (this repo's own history: a dev `doctor --fix` once
  * corrupted the real hook config). Every write lands under a temp `projectRoot`
  * inside a `mkdtemp` sandbox, and the store opens under a temp `home`; NOTHING
@@ -13,17 +17,18 @@ import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, test } from "vitest";
 import {
   CTX_MCP_SERVER_NAME,
+  DEFAULT_PUSH_TARGETS,
   extractManagedBlock,
+  installMcpRegistration,
   installProject,
   isCtxMcpEntry,
   MCP_CONFIG_FILE,
-  PUSH_BLOCK_MAX_BYTES,
-  PUSH_PLACEMENT_FILES,
+  placePushBlock,
+  PUSH_MAX_BYTES,
   readMcpServer,
   removePush,
+  renderPushBlock,
   runDoctor,
-  upsertManagedBlock,
-  removeManagedBlock,
 } from "../../src/index.ts";
 import { cleanupTempDir, makeTempDir } from "../helpers/sandbox.ts";
 
@@ -51,8 +56,9 @@ describe("acceptance: 1i install/doctor", () => {
     writeFileSync(join(projectRoot, "CLAUDE.md"), claudeOriginal);
 
     // ---- ctx install: MCP registration + push placement (all managed writes) ----
-    const result = installProject({ projectRoot });
-    expect(result.writes.map((w) => w.action)).toEqual(["created", "updated", "updated"]);
+    const result = installProject({ projectRoot }); // no store → header-only block
+    expect(result.mcp.action).toBe("created");
+    expect(result.placements.map((p) => p.changed)).toEqual([true, true]);
 
     // (a) MCP registration → project `.mcp.json`, command `ctx mcp`.
     const mcpRaw = readFileSync(join(projectRoot, MCP_CONFIG_FILE), "utf8");
@@ -60,8 +66,8 @@ describe("acceptance: 1i install/doctor", () => {
     expect(isCtxMcpEntry(entry)).toBe(true);
     expect(entry).toMatchObject({ command: "ctx", args: ["mcp"] });
 
-    // (b) push placement → AGENTS.md floor + CLAUDE.md, additive managed blocks
-    //     that preserve the user's original content ahead of the block.
+    // (b) push placement → AGENTS.md floor + CLAUDE.md (1h two-file floor), the
+    //     managed block appended additively, preserving the user's content.
     for (const [name, original] of [
       ["AGENTS.md", agentsOriginal],
       ["CLAUDE.md", claudeOriginal],
@@ -70,7 +76,7 @@ describe("acceptance: 1i install/doctor", () => {
       expect(content.startsWith(original)).toBe(true); // user content untouched
       const block = extractManagedBlock(content);
       expect(block, `${name} carries a managed block`).toBeDefined();
-      expect(Buffer.byteLength(block!, "utf8")).toBeLessThanOrEqual(PUSH_BLOCK_MAX_BYTES);
+      expect(Buffer.byteLength(block!, "utf8")).toBeLessThanOrEqual(PUSH_MAX_BYTES);
       expect(block).toContain("context"); // the §7 fixed header mentions the tool
     }
 
@@ -105,26 +111,31 @@ describe("acceptance: 1i install/doctor", () => {
   test("A10-install: fresh AGENTS.md floor is created then fully removed", () => {
     // No pre-existing files: install CREATES the AGENTS.md floor + CLAUDE.md.
     const result = installProject({ projectRoot });
-    expect(result.writes.map((w) => w.action)).toEqual(["created", "created", "created"]);
-    for (const name of PUSH_PLACEMENT_FILES) {
+    expect(result.placements.every((p) => p.created)).toBe(true);
+    for (const name of DEFAULT_PUSH_TARGETS) {
       expect(existsSync(join(projectRoot, name))).toBe(true);
     }
     // --remove-push restores "as if never installed": ctx-created files are deleted.
     removePush(projectRoot);
-    for (const name of PUSH_PLACEMENT_FILES) {
+    for (const name of DEFAULT_PUSH_TARGETS) {
       expect(existsSync(join(projectRoot, name)), `${name} deleted on removal`).toBe(false);
     }
   });
 
-  test("A10-install: managed block is byte-exact reversible + idempotent", () => {
-    // Property-ish: over representative base shapes, remove(upsert(base)) === base
-    // and re-install is byte-identical (the §11 rollback + no-op guarantee).
-    const bases = ["", "# Title\n", "a\nb\n", "line without trailing newline\n", "x\n\n\n"];
-    for (const base of bases) {
-      const once = upsertManagedBlock(base === "" ? null : base, "hello world");
-      const twice = upsertManagedBlock(once, "hello world");
-      expect(twice, `idempotent for ${JSON.stringify(base)}`).toBe(once);
-      expect(removeManagedBlock(once), `reversible for ${JSON.stringify(base)}`).toBe(base);
+  test("A10-install: place → remove is byte-exact reversible (1h placement)", () => {
+    // Over representative base shapes, remove(place(base)) === base for the
+    // single-trailing-newline shapes (real AGENTS.md/CLAUDE.md) — the §11
+    // rollback guarantee for `doctor --remove-push`.
+    const block = renderPushBlock([]).text;
+    const file = join(projectRoot, "AGENTS.md");
+    for (const original of ["# seed\n", "# Title\n", "a\nb\n"]) {
+      writeFileSync(file, original);
+      placePushBlock(projectRoot, block, { targets: ["AGENTS.md"] });
+      expect(extractManagedBlock(readFileSync(file, "utf8"))).toBeDefined();
+      removePush(projectRoot, ["AGENTS.md"]);
+      expect(readFileSync(file, "utf8"), `reversible for ${JSON.stringify(original)}`).toBe(
+        original,
+      );
     }
   });
 
@@ -133,18 +144,16 @@ describe("acceptance: 1i install/doctor", () => {
       join(projectRoot, MCP_CONFIG_FILE),
       JSON.stringify({ mcpServers: { other: { command: "other-srv" } }, someKey: 1 }, null, 2),
     );
-    installProject({ projectRoot });
+    installMcpRegistration({ projectRoot });
     const raw = readFileSync(join(projectRoot, MCP_CONFIG_FILE), "utf8");
-    const parsed = JSON.parse(raw) as {
-      mcpServers: Record<string, unknown>;
-      someKey: number;
-    };
+    const parsed = JSON.parse(raw) as { mcpServers: Record<string, unknown>; someKey: number };
     expect(parsed.mcpServers.other).toEqual({ command: "other-srv" }); // preserved
     expect(parsed.someKey).toBe(1); // unrelated top-level key preserved
     expect(isCtxMcpEntry(readMcpServer(raw, CTX_MCP_SERVER_NAME))).toBe(true);
-    // Re-install is byte-idempotent.
+    // Re-register is byte-idempotent.
     const before = raw;
-    installProject({ projectRoot });
+    const again = installMcpRegistration({ projectRoot });
+    expect(again.action).toBe("unchanged");
     expect(readFileSync(join(projectRoot, MCP_CONFIG_FILE), "utf8")).toBe(before);
   });
 

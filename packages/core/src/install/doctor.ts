@@ -15,10 +15,11 @@ import { existsSync, readFileSync } from "node:fs";
 import { join } from "node:path";
 import { DatabaseSync } from "node:sqlite";
 import { openStore } from "../store/store.ts";
-import { runMigrations, schemaVersionOf } from "../store/migrate.ts";
+import { runMigrations } from "../store/migrate.ts";
 import { EGRESS_ENV_KEYS } from "../serve/egress.ts";
-import { extractManagedBlock, PUSH_BLOCK_MAX_BYTES } from "./managedBlock.ts";
-import { MCP_CONFIG_FILE, PUSH_PLACEMENT_FILES } from "./install.ts";
+import { PUSH_MAX_BYTES } from "../push/block.ts";
+import { DEFAULT_PUSH_TARGETS, extractManagedBlock } from "../push/hosts.ts";
+import { MCP_CONFIG_FILE } from "./install.ts";
 import { CTX_MCP_SERVER_NAME, isCtxMcpEntry, readMcpServer } from "./mcpConfig.ts";
 import { compareVersion, MIN_NODE, MIN_SQLITE, nodeVersion, sqliteVersion } from "./versions.ts";
 
@@ -158,7 +159,7 @@ function checkPush(opts: DoctorOptions): DoctorCheck {
   const missing: string[] = [];
   const oversized: string[] = [];
   let maxBytes = 0;
-  for (const name of PUSH_PLACEMENT_FILES) {
+  for (const name of DEFAULT_PUSH_TARGETS) {
     const raw = readOrNull(join(opts.projectRoot, name));
     const block = raw === null ? undefined : extractManagedBlock(raw);
     if (block === undefined) {
@@ -167,7 +168,7 @@ function checkPush(opts: DoctorOptions): DoctorCheck {
     }
     const bytes = Buffer.byteLength(block, "utf8");
     maxBytes = Math.max(maxBytes, bytes);
-    if (bytes > PUSH_BLOCK_MAX_BYTES) oversized.push(`${name} (${bytes}B)`);
+    if (bytes > PUSH_MAX_BYTES) oversized.push(`${name} (${bytes}B)`);
   }
   if (missing.length > 0) {
     return {
@@ -181,14 +182,14 @@ function checkPush(opts: DoctorOptions): DoctorCheck {
     return {
       name: "push",
       ok: false,
-      detail: `push block over ${PUSH_BLOCK_MAX_BYTES}B: ${oversized.join(", ")}`,
+      detail: `push block over ${PUSH_MAX_BYTES}B: ${oversized.join(", ")}`,
       fix: "The push digest exceeds the 1KB budget — reduce pinned gotchas in `.ctx/push.jsonc`.",
     };
   }
   return {
     name: "push",
     ok: true,
-    detail: `push block present + in-budget (≤${PUSH_BLOCK_MAX_BYTES}B; max ${maxBytes}B) in ${PUSH_PLACEMENT_FILES.join(", ")}`,
+    detail: `push block present + in-budget (≤${PUSH_MAX_BYTES}B; max ${maxBytes}B) in ${DEFAULT_PUSH_TARGETS.join(", ")}`,
   };
 }
 
