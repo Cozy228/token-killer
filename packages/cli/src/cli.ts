@@ -27,6 +27,7 @@ import {
   type MemoryStatus,
   type Store,
 } from "@ctx/core";
+import { runMcp } from "./mcp.ts";
 
 /** Cold-path budget: large enough for a full first-call catch-up (§4.4). The
  *  engine's first-call gate uses `catchupGateMs`, so raise both together. */
@@ -197,11 +198,12 @@ Usage: ctx <command>
 
 Commands (available now):
   sync            Ingest all registered sources into the project context base
+  mcp             Run the MCP stdio server (context/search/remember tools)
   remember        Write a memory entry (gist ≤240 chars, optional anchors)
   recall          Expand a handle or entity id
   memory          List memory entries / lifecycle (confirm|retire|review)
 
-More commands (install/doctor/mcp/guide/import/push) land in later M1 slices.
+More commands (install/doctor/guide/import/push) land in later M1 slices.
 `;
 
 export function run(argv: string[], io: RunIo): number | Promise<number> {
@@ -223,6 +225,17 @@ export function run(argv: string[], io: RunIo): number | Promise<number> {
       return cmdRecall(io, args);
     case "memory":
       return cmdMemory(io, args);
+    case "mcp": {
+      // The MCP server owns stdout (JSON-RPC only) — do not route via io.out.
+      // `--project <dir>` overrides the project (cwd default); used by the CI
+      // stdio fixture, which must spawn from the workspace for module resolution
+      // while pointing the store at a fixture repo elsewhere.
+      const projectDir = args.flags.project?.[0] ?? io.projectDir;
+      return runMcp({
+        ...(projectDir !== undefined ? { projectDir } : {}),
+        ...(io.home !== undefined ? { home: io.home } : {}),
+      });
+    }
     case "import":
       return cmdImport(io, args);
     case undefined:
