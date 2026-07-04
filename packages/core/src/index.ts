@@ -69,6 +69,48 @@ export { headOid, revListCount, rawLog, GitError, GIT_MAX_BUFFER } from "./inges
 export { DocsAdapter, classifyDoc, scanMarkdown } from "./ingest/docs.ts";
 export { DEFAULT_IGNORE_DIRS, MAX_FILE_SIZE, isIgnoredDir } from "./ingest/ignore.ts";
 export {
+  scanSourceFiles,
+  gitVisibleSet,
+  clearScanCache,
+  SCAN_CACHE_TTL_MS,
+} from "./ingest/scan.ts";
+export type { ScannedFile } from "./ingest/scan.ts";
+
+// code source (slice 2a): tree-sitter WASM scaffold + symbol entities
+export { CodeSourceAdapter, createCodeAdapter } from "./ingest/code/adapter.ts";
+export type { CodeAdapterOptions } from "./ingest/code/adapter.ts";
+export {
+  LANGUAGES,
+  TIER1_LANGUAGE_IDS,
+  CODE_EXTENSIONS,
+  languageForPath,
+} from "./extract/code/languages.ts";
+export type { LanguageId, LanguageDef } from "./extract/code/languages.ts";
+export { extractFromTree } from "./extract/code/extract.ts";
+export { symbolId, KIND_PRIORITY } from "./extract/code/symbol.ts";
+export type {
+  SymbolRecord,
+  SymbolKind,
+  ImportRecord,
+  CallRecord,
+  ExtractResult,
+  LineSpan,
+} from "./extract/code/symbol.ts";
+// NOTE: the in-process engine (CodeParserCore, PARSER_RESET_INTERVAL) is
+// deliberately NOT re-exported here — that keeps `web-tree-sitter` out of the
+// main-thread bundle so it loads lazily only inside the parse worker (or the
+// dynamic-import fallback). Tests import it directly from extract/code/runtime.ts.
+export {
+  CodeParser,
+  WORKER_RECYCLE_INTERVAL,
+  PARSE_TIMEOUT_BASE_MS,
+  PARSE_TIMEOUT_STEP_BYTES,
+  PARSE_TIMEOUT_STEP_MS,
+} from "./extract/code/codeParser.ts";
+export type { CodeParserOptions } from "./extract/code/codeParser.ts";
+export { grammarWasmPath, readQuerySource } from "./extract/code/assets.ts";
+export { POISON_CONTENT, HANG_CONTENT } from "./extract/code/protocol.ts";
+export {
   parseMarkdown,
   matchGlossary,
   classifyMention,
