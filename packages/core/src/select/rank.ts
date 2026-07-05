@@ -21,6 +21,7 @@ import {
   HEAT_RECENCY_WEIGHT,
   MEMORY_CONFIRMED_BOOST,
   RRF_K,
+  STALE_MEMORY_PENALTY,
 } from "./constants.ts";
 
 const HISTORY_KINDS: ReadonlySet<EntityKind> = new Set([
@@ -79,6 +80,22 @@ export function authorityBoost(store: Store, entity: Entity): number {
   return row?.authority === "confirmed" ? MEMORY_CONFIRMED_BOOST : 1;
 }
 
+/**
+ * Freshness/status penalty for a memory that is not a clean current fact
+ * (A1/A5): superseded / needs-review, or an active entry with an open
+ * `stale-reason` claim (a `body-changed` anchor drift, A5 down-rank-only). It is
+ * still served — just below clean active facts. `retired` never reaches here
+ * (visibility.ts excludes it from default pull).
+ */
+export function memoryFreshnessPenalty(store: Store, entity: Entity): number {
+  if (entity.kind !== "memory") return 1;
+  const row = store.getMemory(entity.id);
+  if (!row) return 1;
+  if (row.status === "superseded" || row.status === "needs-review") return STALE_MEMORY_PENALTY;
+  if (store.claimsFor(entity.id, "stale-reason").length > 0) return STALE_MEMORY_PENALTY;
+  return 1;
+}
+
 /** Compose the §6.3 post-multipliers for one entity. */
 export function postMultiplier(
   store: Store,
@@ -90,6 +107,7 @@ export function postMultiplier(
   const basis = decayBasis(store, entity);
   if (basis !== undefined) m *= timeDecay(basis, nowMs);
   m *= authorityBoost(store, entity);
+  m *= memoryFreshnessPenalty(store, entity);
   return m;
 }
 

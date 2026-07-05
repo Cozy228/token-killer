@@ -83,6 +83,13 @@ export const PREDICATE_CONFIDENCE_FLOOR: Readonly<Record<string, number>> = {
 export const DEFAULT_CONFIDENCE_FLOOR = 0.5;
 /** Memory authority boost: confirmed entries ×1.3 (§6.3). */
 export const MEMORY_CONFIRMED_BOOST = 1.3;
+/**
+ * Down-rank factor for a memory that is not a clean current fact (A1/A5): a
+ * `superseded` / `needs-review` entry, or an `active` entry carrying an open
+ * `stale-reason` claim (a `body-changed` anchor drift). It stays reachable but
+ * ranks below clean active facts — never hidden, never presented as current.
+ */
+export const STALE_MEMORY_PENALTY = 0.35;
 /** Reciprocal Rank Fusion constant (§6.3, gitnexus hybrid-search). */
 export const RRF_K = 60;
 /** History-heat boost: score × (1 + HEAT_BOOST · heat) for code kinds (§6.3). */

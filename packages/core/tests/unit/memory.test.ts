@@ -10,6 +10,7 @@ import {
 } from "../../src/memory/claudeImporter.ts";
 import { embeddedNumbers, fuzzyDuplicate, shannonEntropy } from "../../src/memory/dedup.ts";
 import { listMemories, recall, remember, setMemoryLifecycle } from "../../src/memory/remember.ts";
+import { search } from "../../src/select/engine.ts";
 import { hasSentinel, stripSentinelBlocks } from "../../src/memory/sentinel.ts";
 import { deterministicUlid, memoryId, ulid } from "../../src/memory/ulid.ts";
 import { openStore, type Store } from "../../src/store/store.ts";
@@ -262,5 +263,24 @@ describe("memory: remember / recall / lifecycle", () => {
     // Unknown handle → guidance, not a throw.
     const bad = setMemoryLifecycle(store, "nope", "active");
     expect(bad.ok).toBe(false);
+  });
+
+  test("A1: a retired memory is excluded from default pull (search), recall still works", () => {
+    const keep = remember(store, { note: "the retry queue redelivers on failure under load" });
+    const gone = remember(store, {
+      note: "the retry queue drops metadata on redelivery when busy",
+    });
+    expect(keep.ok && gone.ok).toBe(true);
+    if (!keep.ok || !gone.ok) throw new Error("setup failed");
+
+    // Both active → both reachable by search.
+    const before = search(store, { query: "retry queue redelivery" });
+    expect(before.items.map((i) => i.entityId)).toContain(gone.entityId);
+
+    setMemoryLifecycle(store, gone.handle, "retired");
+    const after = search(store, { query: "retry queue redelivery" });
+    expect(after.items.map((i) => i.entityId)).not.toContain(gone.entityId); // hard-excluded
+    expect(after.items.map((i) => i.entityId)).toContain(keep.entityId); // sibling unaffected
+    expect(recall(store, gone.handle).ok).toBe(true); // still recoverable by handle
   });
 });

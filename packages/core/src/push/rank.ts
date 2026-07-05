@@ -13,7 +13,7 @@
  * from either a full id or a short [handle].
  */
 import type { Store } from "../store/store.ts";
-import { authorityBoost, decayBasis, timeDecay } from "../select/rank.ts";
+import { authorityBoost, decayBasis, memoryFreshnessPenalty, timeDecay } from "../select/rank.ts";
 import { listMemories } from "../memory/remember.ts";
 import type { PushConfig } from "./config.ts";
 
@@ -36,13 +36,14 @@ function resolveEntityId(store: Store, idOrHandle: string): string | undefined {
   return undefined;
 }
 
-/** Composite memory score = authority boost × recency time-decay (§6.3). */
+/** Composite memory score = authority boost × recency time-decay × freshness (§6.3). */
 function scoreOf(store: Store, entityId: string, now: number): number {
   const entity = store.getEntity(entityId);
   if (!entity) return 0;
   const basis = decayBasis(store, entity);
   const decay = basis !== undefined ? timeDecay(basis, now) : 1;
-  return authorityBoost(store, entity) * decay;
+  // A5: a `body-changed`-drifted active gotcha stays pushable but sinks.
+  return authorityBoost(store, entity) * decay * memoryFreshnessPenalty(store, entity);
 }
 
 /**

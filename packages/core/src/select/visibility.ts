@@ -43,12 +43,25 @@ export function snapshotVisibility(store: Store): Visibility {
   };
   return {
     isVisible(entity: Entity): boolean {
-      if (entity.kind === "file") {
-        return entity.gen <= Math.max(published("git"), published("docs"), published("memory"));
+      // Generation gate (CTX-IMPL §2).
+      const genOk =
+        entity.kind === "file"
+          ? entity.gen <= Math.max(published("git"), published("docs"), published("memory"))
+          : (() => {
+              const source = KIND_SOURCE[entity.kind];
+              if (source === undefined) return true; // unmapped kind: fail open (M1 has none)
+              return entity.gen <= published(source);
+            })();
+      if (!genOk) return false;
+      // A1 status gate: `retired` memory is hard-excluded from default pull.
+      // superseded / needs-review stay VISIBLE (down-ranked in rank.ts + flagged
+      // in project.ts) so "what did we believe before" and drifted-but-relevant
+      // gotchas remain answerable; only `retired` disappears. recall() bypasses
+      // visibility entirely, so a retired entry stays recoverable by handle.
+      if (entity.kind === "memory" && store.getMemory(entity.id)?.status === "retired") {
+        return false;
       }
-      const source = KIND_SOURCE[entity.kind];
-      if (source === undefined) return true; // unmapped kind: fail open (M1 has none)
-      return entity.gen <= published(source);
+      return true;
     },
   };
 }
