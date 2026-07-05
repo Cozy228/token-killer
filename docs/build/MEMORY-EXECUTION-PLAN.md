@@ -52,7 +52,8 @@ storage move** so the storage swap is mechanical: (1) docs + decision record; (2
 derived status **on current storage** (closes status-gate-pull); (3) storage-locus swap to committed
 `.ctx/` files + migration; (4) memory-as-dirty-source + import→overlay→confirm pipeline (closes
 import-unreachable + false CLI text); (5) personal overlay + three-tier scope; (6) collaboration eval
-(incl. the merge-clean-but-contradictory case). Slice 3 is the only dual-track candidate.
+(incl. the merge-clean-but-contradictory case). All slices are single-track Opus; review = Fable +
+Codex jointly, Opus applies fix rounds (maintainer-ratified 2026-07-05 — no dual-track).
 
 **What Phase 2 REUSES from Phase 1** (the additive mapping — so Phase 1 is not wasted):
 

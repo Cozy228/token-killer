@@ -219,7 +219,7 @@ Ordered so the **event log lands before the storage move** — the storage swap 
    (`select/visibility.ts:44-52`). Independently revertible; no storage-locus change yet.
 3. **Storage locus swap.** Memory + the event log move to committed `.ctx/` files; the store becomes an
    index; migration (S3). **Mechanical, because the event model already exists** — this slice only
-   changes *where the events live*. Highest risk → the only dual-track candidate (see Execution model).
+   changes *where the events live*. Highest risk → gets the deepest joint-review round (see Execution model).
 4. **Memory as a real dirty source + import→overlay→confirm pipeline.** `memory/adapter.ts` `dirtyCheck`
    = mtime/checksum over `.ctx/memory/`; refresh ingests it. Host imports land in the **personal
    overlay** as `needs-review` (E3); confirmation promotes them to a committed Mainline event. **Subsumes/
@@ -240,10 +240,11 @@ Ordered so the **event log lands before the storage move** — the storage swap 
 
 - **Subagent-driven.** Each slice is executed by **one implementer subagent (Opus)** with a tight
   per-slice goal prompt that **REFERENCES this doc + `MEMORY-DECISIONS.md`** rather than restating them.
-- **Dual-track only on opt-in.** Single-track by default. Dual-track (Opus vs Codex) is offered to the
-  maintainer **only for slice 3** (the storage swap, highest risk).
-- **Fable (the session model) is the reviewer** — verifies tests green, checks the invariants (egress,
-  non-destruction, determinism), and reads the diff. Fable does not implement.
+- **No dual-track (maintainer-ratified 2026-07-05).** Opus implements every slice single-track.
+- **Review = Fable + Codex jointly.** Fable (the session model) verifies tests green, checks the
+  invariants (egress, non-destruction, determinism), and reads the diff; Codex reviews the same diff
+  as an adversarial second opinion. Opus applies fix rounds until **both** reviewers pass. Reviewers
+  do not implement.
 - **Token discipline.** An implementer reads **only the files its slice names**. Acceptance = the
   **E-series tests**, not prose review. **Each slice's tests are green before the next starts.**
 
