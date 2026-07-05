@@ -14,6 +14,8 @@
 import type { Store } from "../store/store.ts";
 import type { Entity, Facet } from "../store/types.ts";
 import {
+  AUTHORITY_KINDS,
+  AUTHORITY_KIND_BOOST,
   CHARS_PER_TOKEN,
   FACET_BUDGET_TOKENS,
   SEARCH_MAX_RESULTS,
@@ -103,12 +105,14 @@ function rankSelection(ctx: Ctx, stage: SeedStage): RankedCandidate[] {
     .filter((id) => subgraph.nodes.has(id));
   const fused = rrfFuse([rankOf(graphScores), lexicalRank]);
 
-  // History-heat boost for code kinds; composite always.
+  // History-heat boost for code kinds; authority-kind boost for decision-log
+  // kinds (select-only — search() never calls this path). Composite always.
   const out: RankedCandidate[] = [];
   for (const [id, score] of fused) {
     const entity = entityOf(ctx, id);
     if (!entity) continue;
-    out.push({ entity, score: score * heatBoost(store, entity, ctx.now) });
+    const authority = AUTHORITY_KINDS.has(entity.kind) ? AUTHORITY_KIND_BOOST : 1;
+    out.push({ entity, score: score * heatBoost(store, entity, ctx.now) * authority });
   }
   out.sort((a, b) => b.score - a.score || (a.entity.id < b.entity.id ? -1 : 1));
   return out;

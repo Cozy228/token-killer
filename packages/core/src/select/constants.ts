@@ -42,6 +42,16 @@ export const KIND_BONUS: Readonly<Record<string, number>> = {
   symbol: 1.15,
   module: 1.05,
 };
+/**
+ * Authority-kind boost applied ONLY in select() task/ref ranking (never flat
+ * search): `decision`/`concept` are the curated authority-log kinds (ADRs +
+ * decision-log entries). For a "why …" task the human-authored decision that
+ * settled the question is higher-signal than an auto-extracted `doc_section`
+ * heading that merely mentions the same term. Flat `search()` (a lexical lookup)
+ * is deliberately left unweighted so a bare keyword still ranks by relevance.
+ */
+export const AUTHORITY_KIND_BOOST = 1.3;
+export const AUTHORITY_KINDS: ReadonlySet<string> = new Set(["decision", "concept"]);
 
 // ---- subgraph expansion (stage 2) ----
 export const EXPANSION_MAX_DEPTH = 2;
