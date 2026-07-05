@@ -96,15 +96,25 @@ CREATE TABLE conflicts (
   status TEXT NOT NULL DEFAULT 'open',         -- open|resolved|dismissed
   PRIMARY KEY (a, b)
 );
+-- `unresolved-here` is NOT a conflict row: it is a derived, per-machine/per-branch anchor
+-- annotation (target not resolvable here — un-imported ③ snapshot or branch-absent symbol),
+-- kept strictly disjoint from `stale-suspect` (which requires a prior content_hash in this
+-- index lineage). See MEMORY-SYNC-SETTLEMENTS.md S4/S9.
 
+-- DERIVED INDEX over committed .ctx/memory/ files (B1/C3) — regenerable, never source of truth.
+-- gist/detail read through to committed files; `status` is the deterministic fold over the
+-- append-only decision log (order (timestamp, ULID), E2/E5), cached here for fast reads, never
+-- hand-mutated. `origin` distinguishes the landing zone (E3: host-import lands overlay/needs-review).
 CREATE TABLE memory (
   entity_id    TEXT PRIMARY KEY REFERENCES entities(id),
   gist         TEXT NOT NULL,                  -- hard cap 240 chars, enforced at write
-  detail       TEXT,
+  detail       TEXT,                           -- read-through to .ctx/memory/details/<ulid>.md (S1)
   origin       TEXT NOT NULL,                  -- remember|host-import:<host>|human-note
   session_ref  TEXT,
   authority    TEXT NOT NULL,                  -- inferred|confirmed
-  status       TEXT NOT NULL DEFAULT 'active', -- active|needs-review|superseded|retired
+  status       TEXT NOT NULL DEFAULT 'active', -- active|needs-review|superseded|retired (folded)
+  valid_from   INTEGER,                        -- C5 bitemporal; explicit args / supersede-time only
+  valid_to     INTEGER,                        -- C5; never inferred
   served_count INTEGER NOT NULL DEFAULT 0,
   last_served  INTEGER
 );
@@ -132,8 +142,10 @@ Notes:
   (before `journal_mode`), then `foreign_keys=ON, journal_mode=WAL, synchronous=NORMAL,
   cache_size=-64000, temp_store=MEMORY, mmap_size=256MB`. Large scans use `.iterate()`, never
   `.all()` (documented OOM class).
-- **Exception to index-not-copy**: `memory` gist/detail and derived `concept` text live in the
-  store — the store IS their source of truth. Everything else reads back via `locator`.
+- **Index-not-copy is now total (B1/C3)**: the former exception is retired. `memory` and `concept`
+  read back through committed `.ctx/memory/` and `.ctx/concepts/` files via `locator` like every
+  other local carrier; the store rows are a rebuildable index. Determinism target = canonical
+  logical equality across machines (E6), not byte-identical SQLite; `store.sqlite` is gitignored.
 - Snippets/highlights: contentless FTS cannot render snippets; the projection layer builds
   excerpts from `locator` spans itself (we control excerpt shape anyway — token economy).
 - Migrations: `meta.schema_version` + forward-only SQL files in `core/src/store/migrations/`;
@@ -288,8 +300,21 @@ never-resolved` — the review queue treats each differently. (Note: no referenc
 frontmatter/glossaries at all — this extractor is unclaimed territory, same as the evidence
 drawer.)
 
-**5.6 Memory**: `remember(note, anchors?, supersedes?)` → mem entity (gist cap enforced; anchors
-resolved to entity ids; supersede = explicit link, old entry kept). Host importers (⛏ RESOLVED
+**5.6 Memory** (file-backed event model — B1/C1/C2/E2/E3/E4): every write is an **immutable event**
+appended to a committed (or overlay) markdown log, never an in-place row mutation. `remember(note,
+anchors?, supersedes?)` appends one entry line (gist cap enforced; anchors resolved to entity ids;
+multi-line detail → a write-once `.ctx/memory/details/<ulid>.md` sidecar, S1) plus, for a supersede,
+a **decision-log** event in `.ctx/memory/decisions.md` (append-only, C2: who / when / verdict /
+reason / refs); the old entry is kept, status is **derived** from the fold over the decision log
+(E2/E5), not overwritten. Lifecycle verbs (`confirm/retire/supersede/dismiss`) and conflict
+resolutions are the same shape — an appended, provenance-carrying decision event (C4; resolutions
+themselves supersedable) — never a hidden DB mutation. **Write scope + landing zone:** `remember()`
+defaults to the committed Mainline; `--local` writes the personal overlay; **host imports land in the
+personal overlay / local index only, as `needs-review` (E3)** — human confirmation is the act that
+appends a committed Mainline event. **Secret guard (E4):** a deterministic secret-shaped regex guard
+(`sk-` keys, tokens, passwords, credentials) runs **before** anything enters the committed zone → a
+success-shaped refusal with guidance (never a hard error, no LLM/network); a per-repo opt-out
+disables committing memory entirely. Host importers (⛏ RESOLVED
 — P28 official-docs verification 2026-07-04): **Claude Code** `~/.claude/projects/<shard>/memory/`
 (MEMORY.md index + per-topic .md; confirmed official) — M1. **VS Code Copilot** memory tool
 (PREVIEW): user scope `<globalStorage>/github.copilot-chat/memory-tool/memories/*.md`, repo scope
@@ -301,7 +326,9 @@ nothing to import; `~/.copilot/session-state/` is replay JSONL, not memory). **C
 `~/.codex/memories/` markdown workspace (feature off by default; contains its own `.git`) +
 sessions JSONL with embedded cwd — follow-on;
 echo exclusion = skip ctx-managed sentinel blocks; scope filter = project-path match; imports are
-always Inferred with `host-import:<host>` origin; cross-host near-dupes → `sameAsCandidate`.
+always Inferred with `host-import:<host>` origin and **land in the personal overlay as
+`needs-review` (E3)** — never a committed Mainline event until a human confirms; cross-host
+near-dupes → `sameAsCandidate`.
 Dedup identity rules (absorbed: graphify `dedup.py` — port the rules, simplify the
 machinery): code-kind entities are identity-keyed by ID, NEVER fuzzy-merged by name; fuzzy
 matching applies to memory/concept kinds only, gated by an entropy floor (short/low-entropy
@@ -387,6 +414,19 @@ convention):
 - **`assertNoEgress()` (D22 carried)**: core actively refuses egress — serve/ingest paths assert
   that no egress-capable API-key env is consumed; mechanism spec at
   `docs/codemap/impl/M-cross-cutting.md` (M14).
+- **Push ranking reads shared **merged with** personal** (three-tier scope, D27/E3): the shared
+  `.ctx/push.jsonc` (pin/veto — project presentation) merged with the gitignored personal overlay
+  (`.ctx/*.local.*` — my-view mute/pin). Personal attention never mutates the shared config and is
+  never forced on the team; a pin only orders already-eligible items (A2), veto always wins.
+- **Two disjoint anchor states on served memory** (never conflated): `stale-suspect` = drift, a
+  reason-classed conflict (needs-review for `target-removed`/`signature-changed`, down-rank for
+  `body-changed`, A5/E7) — requires a prior `content_hash` in this index lineage; `unresolved-here`
+  = a derived, per-machine/per-branch annotation for an anchor **not resolvable here** (un-imported
+  ③ snapshot or branch-absent symbol), rendered with an import hint (`run \`ctx import <carrier>\``),
+  **never** treated as stale and never flipped to needs-review by drift. Settled: `docs/build/MEMORY-SYNC-SETTLEMENTS.md` (S4/S9).
+- **Secret guard on the `remember` write path (E4)**: a deterministic secret-shaped regex guard
+  (`sk-` keys, tokens, passwords, credentials) runs before anything enters the committed zone → a
+  success-shaped refusal with guidance, never an `isError`; there is no LLM/network to lean on.
 
 Response = ONE markdown text block (never JSON envelopes — token economy), format:
 
