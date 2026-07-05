@@ -38,15 +38,16 @@ function resolveEntityId(store: Store, idOrHandle: string): string | undefined {
 
 /**
  * A2/E5: a memory may be PINNED into push only if it is push-eligible — `active`
- * and not stale-flagged (no open `stale-reason` claim, i.e. not a `body-changed`
- * drift). A pin may order/force among eligible items; it may NOT force in a
- * needs-review / superseded / retired / drifted entry. Veto always wins (applied
- * separately, before this).
+ * and not stale-flagged (no OPEN `stale-suspect` conflict, i.e. not a currently
+ * drifted entry). A pin may order/force among eligible items; it may NOT force
+ * in a needs-review / superseded / retired / drifted entry. Veto always wins
+ * (applied separately, before this). Current-state is the resolvable CONFLICT,
+ * not the append-only stale-reason claims — `confirm` restores eligibility.
  */
 function isPushEligible(store: Store, entityId: string): boolean {
   const row = store.getMemory(entityId);
   if (!row || row.status !== "active") return false;
-  if (store.claimsFor(entityId, "stale-reason").length > 0) return false;
+  if (store.openStaleSuspects(entityId).length > 0) return false;
   return true;
 }
 

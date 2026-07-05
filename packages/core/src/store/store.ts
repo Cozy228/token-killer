@@ -116,6 +116,14 @@ export interface Store {
   addConflict(a: number, b: number, kind: ConflictKind): void;
   conflicts(status?: ConflictStatus): Conflict[];
   setConflictStatus(a: number, b: number, status: ConflictStatus): void;
+  /**
+   * OPEN `stale-suspect` conflicts whose `a` claim's subject is this memory —
+   * the CURRENT-STATE staleness signal (E7): rank/push read it, the lifecycle
+   * `confirm` verb resolves it. The append-only `stale-reason` claims stay as
+   * the permanent audit trail; only the conflict carries current state.
+   * Indexed lookup via claims(subject) — rank calls this per candidate.
+   */
+  openStaleSuspects(memoryId: string): Conflict[];
 
   // memory + anchors (store IS the source of truth here — §2 notes exception)
   writeMemory(input: MemoryInput): void;
@@ -400,6 +408,15 @@ class SqliteStore implements Store {
 
   setConflictStatus(a: number, b: number, status: ConflictStatus): void {
     this.#db.prepare("UPDATE conflicts SET status = ? WHERE a = ? AND b = ?").run(status, a, b);
+  }
+
+  openStaleSuspects(memoryId: string): Conflict[] {
+    return this.#db
+      .prepare(
+        `SELECT c.* FROM conflicts c JOIN claims ca ON ca.id = c.a
+         WHERE c.kind = 'stale-suspect' AND c.status = 'open' AND ca.subject = ?`,
+      )
+      .all(memoryId) as unknown as Conflict[];
   }
 
   // ---- memory ----

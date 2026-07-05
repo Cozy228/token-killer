@@ -85,9 +85,10 @@ export const DEFAULT_CONFIDENCE_FLOOR = 0.5;
 export const MEMORY_CONFIRMED_BOOST = 1.3;
 /**
  * Down-rank factor for a memory that is not a clean current fact (A1/A5): a
- * `superseded` / `needs-review` entry, or an `active` entry carrying an open
- * `stale-reason` claim (a `body-changed` anchor drift). It stays reachable but
- * ranks below clean active facts — never hidden, never presented as current.
+ * `superseded` / `needs-review` entry, or an `active` entry with an OPEN
+ * `stale-suspect` conflict (a `body-changed` anchor drift). It stays reachable
+ * but ranks below clean active facts — never hidden, never presented as
+ * current. The lifecycle `confirm` verb resolves the conflict and lifts it.
  */
 export const STALE_MEMORY_PENALTY = 0.35;
 /** Reciprocal Rank Fusion constant (§6.3, gitnexus hybrid-search). */

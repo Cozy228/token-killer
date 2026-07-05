@@ -473,6 +473,17 @@ export function setMemoryLifecycle(
     };
   }
   store.setMemoryStatus(resolved.entityId, status);
+  // `confirm` (→ active) is the recovery verb: the human re-affirms the note, so
+  // its open stale-suspect conflicts resolve and rank/push standing is restored.
+  // Idempotent for an already-active row (exactly the body-changed drift case:
+  // no status flip happened, the confirm just clears the flag). The stale-reason
+  // claims are untouched — they are the permanent audit trail. `retire` leaves
+  // conflicts as-is (the status gate already excludes retired everywhere).
+  if (status === "active") {
+    for (const c of store.openStaleSuspects(resolved.entityId)) {
+      store.setConflictStatus(c.a, c.b, "resolved");
+    }
+  }
   return { ok: true, entityId: resolved.entityId, status };
 }
 

@@ -82,17 +82,20 @@ export function authorityBoost(store: Store, entity: Entity): number {
 
 /**
  * Freshness/status penalty for a memory that is not a clean current fact
- * (A1/A5): superseded / needs-review, or an active entry with an open
- * `stale-reason` claim (a `body-changed` anchor drift, A5 down-rank-only). It is
- * still served — just below clean active facts. `retired` never reaches here
- * (visibility.ts excludes it from default pull).
+ * (A1/A5): superseded / needs-review, or an active entry with an OPEN
+ * `stale-suspect` conflict (a `body-changed` anchor drift, A5 down-rank-only).
+ * It is still served — just below clean active facts. Current-state lives on
+ * the CONFLICT (resolvable by the lifecycle `confirm` verb), never on the
+ * append-only `stale-reason` claims (the permanent audit trail) — a human
+ * confirm restores full standing. `retired` never reaches here (visibility.ts
+ * excludes it from default pull).
  */
 export function memoryFreshnessPenalty(store: Store, entity: Entity): number {
   if (entity.kind !== "memory") return 1;
   const row = store.getMemory(entity.id);
   if (!row) return 1;
   if (row.status === "superseded" || row.status === "needs-review") return STALE_MEMORY_PENALTY;
-  if (store.claimsFor(entity.id, "stale-reason").length > 0) return STALE_MEMORY_PENALTY;
+  if (store.openStaleSuspects(entity.id).length > 0) return STALE_MEMORY_PENALTY;
   return 1;
 }
 

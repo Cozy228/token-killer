@@ -21,6 +21,8 @@ import {
 } from "../../src/memory/remember.ts";
 import { buildPushBlock, PUSH_MAX_BYTES } from "../../src/push/block.ts";
 import { readPushConfig } from "../../src/push/push.ts";
+import { memoryFreshnessPenalty } from "../../src/select/rank.ts";
+import { STALE_MEMORY_PENALTY } from "../../src/select/constants.ts";
 import { serveContext, serveSearch } from "../../src/serve/serve.ts";
 import { openStore, type Store } from "../../src/store/store.ts";
 import { assertG6EgressActive, assertG7Sandbox } from "../helpers/serveInvariants.ts";
@@ -302,6 +304,86 @@ describe("acceptance: E memory-quality", () => {
     const importedRow = store.getMemory(imp.written[0]!);
     expect(importedRow?.origin).toBe("host-import:claude-code");
     expect(importedRow?.authority).toBe("inferred");
+  });
+
+  // ---- E7-recovery — confirm restores standing · label: stale ----
+  test("E7-recovery body-changed: drift down-ranks + pin-ineligible; confirm lifts both (claim kept, conflict resolved); re-drift re-flags", async () => {
+    await ingestSources(store);
+    const symId = redeliverSymbolId(store)!;
+    const note = "redeliver must persist the idempotency key before dispatch";
+    const mem = remb(note, { note, anchors: [symId] });
+    writeFileSync(
+      join(repo, ".ctx", "push.jsonc"),
+      `{ "pin": ["${mem.handle}"], "veto": [] }\n`,
+      "utf8",
+    );
+    const cfg = (): ReturnType<typeof readPushConfig> => readPushConfig(repo);
+    const pinnedFlag = (): boolean | undefined =>
+      buildPushBlock(store, { config: cfg(), now: clock }).rendered.find(
+        (g) => g.entityId === mem.entityId,
+      )?.pinned;
+    const entity = (): NonNullable<ReturnType<typeof store.getEntity>> =>
+      store.getEntity(mem.entityId)!;
+
+    // Baseline: clean → full standing, pin honored.
+    expect(memoryFreshnessPenalty(store, entity())).toBe(1);
+    expect(pinnedFlag()).toBe(true);
+
+    // (a) body-only drift → status stays active (A5), but penalized + pin-refused.
+    writeFileSync(
+      join(repo, "src", "retry.ts"),
+      `/** Redelivery queue. */\nexport class RetryQueue {\n  enqueue(id: string): void { void id; }\n  redeliver(id: string): void { void id; /* drift 1 */ return; }\n}\n`,
+      "utf8",
+    );
+    await reingestGitCode(store);
+    expect(store.getMemory(mem.entityId)?.status).toBe("active");
+    expect(store.openStaleSuspects(mem.entityId).length).toBeGreaterThanOrEqual(1);
+    expect(memoryFreshnessPenalty(store, entity())).toBe(STALE_MEMORY_PENALTY);
+    expect(
+      pinnedFlag(),
+      "pin refused while drifted (auto listing may still carry it, down-ranked)",
+    ).not.toBe(true);
+
+    // (b) human confirm → conflict resolved, audit claim KEPT, standing restored.
+    const confirm = setMemoryLifecycle(store, mem.handle, "active");
+    expect(confirm.ok).toBe(true);
+    expect(store.openStaleSuspects(mem.entityId)).toHaveLength(0);
+    expect(store.claimsFor(mem.entityId, "stale-reason").length).toBeGreaterThanOrEqual(1); // audit trail intact
+    expect(memoryFreshnessPenalty(store, entity())).toBe(1);
+    expect(pinnedFlag()).toBe(true); // push-eligible again
+
+    // (c) a SECOND drift after the confirm re-files a FRESH open conflict —
+    // no one-shot immunity; new claims get new ids, so the (a,b) PK never collides.
+    writeFileSync(
+      join(repo, "src", "retry.ts"),
+      `/** Redelivery queue. */\nexport class RetryQueue {\n  enqueue(id: string): void { void id; }\n  redeliver(id: string): void { void id; /* drift 2, different body */ }\n}\n`,
+      "utf8",
+    );
+    await reingestGitCode(store);
+    expect(store.openStaleSuspects(mem.entityId).length).toBeGreaterThanOrEqual(1); // fresh OPEN conflict
+    expect(store.claimsFor(mem.entityId, "stale-reason").length).toBeGreaterThanOrEqual(2); // both audits kept
+    expect(memoryFreshnessPenalty(store, entity())).toBe(STALE_MEMORY_PENALTY);
+    expect(pinnedFlag()).not.toBe(true); // re-excluded from the pin path
+  });
+
+  test("E7-recovery signature-changed: needs-review + push-ineligible; confirm → active + eligible", async () => {
+    await ingestSources(store);
+    const symId = redeliverSymbolId(store)!;
+    const note = "redeliver keeps its single-argument contract";
+    const mem = remb(note, { note, anchors: [symId] });
+
+    changeRedeliverSignature(repo);
+    await reingestGitCode(store);
+    expect(store.getMemory(mem.entityId)?.status).toBe("needs-review");
+    expect(store.openStaleSuspects(mem.entityId).length).toBeGreaterThanOrEqual(1);
+    expect(buildPushBlock(store, { now: clock }).handles).not.toContain(mem.handle); // out of push
+
+    const confirm = setMemoryLifecycle(store, mem.handle, "active");
+    expect(confirm.ok).toBe(true);
+    expect(store.getMemory(mem.entityId)?.status).toBe("active");
+    expect(store.openStaleSuspects(mem.entityId)).toHaveLength(0);
+    expect(store.claimsFor(mem.entityId, "stale-reason").length).toBeGreaterThanOrEqual(1); // audit kept
+    expect(buildPushBlock(store, { now: clock }).handles).toContain(mem.handle); // eligible again
   });
 
   // ---- EG-review — the review queue · label: unreviewed-import ----
