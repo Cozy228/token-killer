@@ -14,6 +14,8 @@ import { join, dirname } from "node:path";
 import { fileURLToPath } from "node:url";
 import { afterAll, beforeAll, describe, expect, test } from "vitest";
 import { DocsAdapter } from "../../src/ingest/docs.ts";
+import { CodeSourceAdapter } from "../../src/ingest/code/adapter.ts";
+import { clearScanCache } from "../../src/ingest/scan.ts";
 import { serveContext, serveRemember, serveSearch } from "../../src/serve/serve.ts";
 import { openStore, type Store } from "../../src/store/store.ts";
 import { cleanupTempDir, makeTempDir } from "../helpers/sandbox.ts";
@@ -128,5 +130,61 @@ describe("acceptance: 1g golden transcripts", () => {
     goldenMatch("remember", masked);
     memStore.close();
     cleanupTempDir(memRoot);
+  });
+});
+
+/**
+ * Symbol-bearing golden transcripts (M2 exit checklist item 3): the facet
+ * (`!callers`) and biography (`context(ref:sym)`) render surfaces added by
+ * 2c/2d must also be reviewed diffs, never silent drift. Deterministic: a fixed
+ * TS fixture → stable `sym:` ids → content-derived (clock-independent) handles,
+ * parsed in-process under a temp CTX_HOME (G-7). No git/memory → no volatile
+ * commit/ULID data in the output.
+ */
+describe("acceptance: 2d symbol-bearing golden transcripts", () => {
+  let root: string;
+  let store: Store;
+
+  beforeAll(async () => {
+    root = makeTempDir("ctx-golden-sym-");
+    const project = join(root, "proj");
+    mkdirSync(project, { recursive: true });
+    // greet [1,3] is called by main [4,6] → a biography with a callers preview.
+    writeFileSync(
+      join(project, "lib.ts"),
+      [
+        "export function greet(name: string): string {",
+        '  return "hi " + name;',
+        "}",
+        "export function main(): string {",
+        '  return greet("world");',
+        "}",
+        "",
+      ].join("\n"),
+    );
+    store = openStore({ projectDir: project, home: join(root, "home"), now: CLOCK });
+    clearScanCache();
+    const code = new CodeSourceAdapter({ inProcess: true });
+    await code.ingest(store, await code.dirtyCheck(store), {
+      deadline: Number.MAX_SAFE_INTEGER,
+      now: CLOCK,
+    });
+  }, 60_000);
+
+  afterAll(() => {
+    store.close();
+    cleanupTempDir(root);
+  });
+
+  test("facet transcript (context(ref:sym!callers))", async () => {
+    const resp = await serveContext({ store, now: CLOCK }, { ref: "sym:lib.ts#greet!callers" });
+    expect(resp.isError).toBe(false);
+    goldenMatch("facet", resp.text);
+  });
+
+  test("biography transcript (context(ref:sym) — definition + callers preview)", async () => {
+    const resp = await serveContext({ store, now: CLOCK }, { ref: "sym:lib.ts#greet" });
+    expect(resp.isError).toBe(false);
+    goldenMatch("biography", resp.text);
   });
 });
