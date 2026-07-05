@@ -31,8 +31,17 @@ import type {
 import { OMITTED_HANDLES_PER_SECTION } from "./types.ts";
 
 /** Sections whose full-tier body is verbatim FILE source → gets `N⇥` numbering.
- *  (commit = git object, memory = store text: not file:line, never numbered.) */
-const FILE_BACKED_KINDS = new Set(["file", "doc_section", "decision", "concept", "module"]);
+ *  (commit = git object, memory = store text: not file:line, never numbered.)
+ *  `symbol` (2d) is file-backed by its span locator — a symbol biography's
+ *  definition renders N⇥ numbered exactly like the host Read tool. */
+const FILE_BACKED_KINDS = new Set([
+  "file",
+  "doc_section",
+  "decision",
+  "concept",
+  "module",
+  "symbol",
+]);
 
 const SECTION_LABELS: Record<Exclude<SectionName, "subject">, string> = {
   code: "code",
@@ -118,6 +127,27 @@ export function renderContext(result: SelectResult, freshness: string): RenderOu
     for (const item of subject.items) {
       parts.push(renderItem(item));
       handles.push(item.handle);
+    }
+  }
+
+  // Call preview (2d): compact caller (`←`) / callee (`→`) lines under a symbol
+  // subject, each a drill handle; `+N more` drills the `!callers`/`!callees`
+  // facet (§7 template). Only emitted when the subject resolved call edges.
+  const cp = result.callPreview;
+  if (cp) {
+    if (cp.callers.length > 0) {
+      const refs = cp.callers.map((r) => `${r.name} [${r.handle}]`);
+      if (cp.moreCallers > 0) refs.push(`+${cp.moreCallers} more [${cp.callersHandle}]`);
+      parts.push(`← ${refs.join(" · ")}`);
+      for (const r of cp.callers) handles.push(r.handle);
+      if (cp.moreCallers > 0) handles.push(cp.callersHandle);
+    }
+    if (cp.callees.length > 0) {
+      const refs = cp.callees.map((r) => `${r.name} [${r.handle}]`);
+      if (cp.moreCallees > 0) refs.push(`+${cp.moreCallees} more [${cp.calleesHandle}]`);
+      parts.push(`→ ${refs.join(" · ")}`);
+      for (const r of cp.callees) handles.push(r.handle);
+      if (cp.moreCallees > 0) handles.push(cp.calleesHandle);
     }
   }
 

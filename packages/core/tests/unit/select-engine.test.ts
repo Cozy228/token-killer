@@ -155,11 +155,14 @@ describe("select/engine", () => {
     expect(r.tokens).toBeLessThanOrEqual(r.budgetTokens);
   });
 
-  test("callers facet before M2: success-shaped note, never a throw (G-3)", () => {
+  test("callers facet on a non-symbol: success-shaped note, never a throw (G-3)", () => {
+    // 2d: callers/callees are the code call graph; on a doc_section there is
+    // nothing to resolve → success-shaped guidance (no throw, no M1 notice).
     const r = select(store, { handle: "doc:orders.md#orders!callers", now: () => NOW });
     if (!r.ok || r.mode !== "facet") throw new Error("expected a FacetResult");
     expect(r.text).toBe("");
-    expect(r.notes.join(" ")).toContain("M2");
+    expect(r.notes.join(" ")).toContain("symbols");
+    expect(r.notes.join(" ")).not.toContain("lands at M2");
   });
 
   test("unknown ref: SelectMiss with candidate guidance, not an exception", () => {

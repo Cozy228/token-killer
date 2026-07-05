@@ -28,6 +28,8 @@ import { expandSubgraph } from "./subgraph.ts";
 import { snapshotVisibility, type Visibility } from "./visibility.ts";
 import { tokenizeQuery } from "./tokenize.ts";
 import type {
+  CallPreview,
+  CallPreviewRef,
   FacetResult,
   SearchInput,
   SearchItem,
@@ -37,6 +39,9 @@ import type {
   SelectResult,
   OmittedItem,
 } from "./types.ts";
+
+/** Callers/callees previewed inline under a symbol subject before overflow. */
+const CALL_PREVIEW_MAX = 3;
 
 interface Ctx {
   store: Store;
@@ -187,7 +192,15 @@ export function select(store: Store, input: SelectInput): SelectResult | SelectM
       return renderFacet(ctx, entity, resolved.facet); // skips PPR (§6)
     }
     const stage = refSeed(entity.id);
-    const ranked = rankSelection(ctx, stage);
+    // A symbol biography's history is THE SYMBOL's own change history (B2): the
+    // `calls` graph legitimately widens the subgraph (§6.2 traverses all
+    // predicates → callers/callees surface as related code), but a commit that
+    // touched a callee is NOT the subject's history. Anchor history commits to
+    // the subject's own `touches` (+ rename chain); other kinds are untouched.
+    const ranked =
+      entity.kind === "symbol"
+        ? anchorHistory(store, entity, rankSelection(ctx, stage))
+        : rankSelection(ctx, stage);
     const { sections, envelope } = assembleSections(
       store,
       entity,
@@ -196,13 +209,16 @@ export function select(store: Store, input: SelectInput): SelectResult | SelectM
       tier,
     );
     const subjectItem = sections.find((s) => s.name === "subject")?.items[0];
-    return {
+    const result: SelectResult = {
       ok: true,
       mode: input.handle !== undefined ? "handle" : "ref",
       subject: subjectItem,
       sections,
       envelope,
     };
+    const preview = buildCallPreview(ctx, entity);
+    if (preview) result.callPreview = preview;
+    return result;
   }
 
   // ---- task mode ----
@@ -323,6 +339,76 @@ export function search(store: Store, input: SearchInput): SearchResult {
   };
 }
 
+/**
+ * Restrict a symbol biography's COMMIT candidates to the subject's own change
+ * history (B2 precision): commits that `touches` the subject directly, or a
+ * symbol in its `renamed-to` chain (F1 — pre-rename history stays reachable).
+ * Non-commit candidates (callers/callees, the file, memories) pass through, so
+ * the `calls` graph still surfaces related code — only history stays the
+ * symbol's own. A commit reached only through a callee never pollutes it.
+ */
+function anchorHistory(
+  store: Store,
+  subject: Entity,
+  ranked: RankedCandidate[],
+): RankedCandidate[] {
+  // The subject's rename chain (both directions, transitive).
+  const chain = new Set<string>([subject.id]);
+  const queue = [subject.id];
+  while (queue.length > 0) {
+    const id = queue.pop() as string;
+    for (const l of store.linksFrom(id, "renamed-to"))
+      if (!chain.has(l.dst)) (chain.add(l.dst), queue.push(l.dst));
+    for (const l of store.linksTo(id, "renamed-to"))
+      if (!chain.has(l.src)) (chain.add(l.src), queue.push(l.src));
+  }
+  // Commits that touched any symbol in the chain = the subject's history.
+  const ownCommits = new Set<string>();
+  for (const id of chain) for (const l of store.linksTo(id, "touches")) ownCommits.add(l.src);
+  return ranked.filter((c) => c.entity.kind !== "commit" || ownCommits.has(c.entity.id));
+}
+
+/**
+ * Compact call preview for a symbol subject (§7 template, B6): the top few
+ * callers (`←`) and callees (`→`) with drill handles + a facet handle for the
+ * rest. Returns undefined for a non-symbol or a symbol with no call edges.
+ */
+function buildCallPreview(ctx: Ctx, entity: Entity): CallPreview | undefined {
+  if (entity.kind !== "symbol") return undefined;
+  const { store } = ctx;
+
+  const neighbors = (ids: string[]): { refs: CallPreviewRef[]; total: number } => {
+    const seen = new Set<string>();
+    const resolved: Entity[] = [];
+    for (const id of ids) {
+      if (seen.has(id)) continue;
+      seen.add(id);
+      const e = entityOf(ctx, id);
+      if (e && ctx.visibility.isVisible(e)) resolved.push(e);
+    }
+    resolved.sort((a, b) => (a.name < b.name ? -1 : a.name > b.name ? 1 : a.id < b.id ? -1 : 1));
+    const refs = resolved.slice(0, CALL_PREVIEW_MAX).map((e) => ({
+      entityId: e.id,
+      name: e.name,
+      handle: store.internHandle(e.id),
+    }));
+    return { refs, total: resolved.length };
+  };
+
+  const callers = neighbors(store.linksTo(entity.id, "calls").map((l) => l.src));
+  const callees = neighbors(store.linksFrom(entity.id, "calls").map((l) => l.dst));
+  if (callers.total === 0 && callees.total === 0) return undefined;
+
+  return {
+    callers: callers.refs,
+    callees: callees.refs,
+    moreCallers: callers.total - callers.refs.length,
+    moreCallees: callees.total - callees.refs.length,
+    callersHandle: store.internHandle(entity.id, "callers"),
+    calleesHandle: store.internHandle(entity.id, "callees"),
+  };
+}
+
 /** Facet drill-down: skip PPR, render the facet directly (~800-token budget, §6). */
 function renderFacet(ctx: Ctx, entity: Entity, facet: Facet): FacetResult {
   const { store } = ctx;
@@ -382,9 +468,47 @@ function renderFacet(ctx: Ctx, entity: Entity, facet: Facet): FacetResult {
       break;
     }
     case "callers":
-    case "callees":
-      notes.push(`${facet} needs the code source — it lands at M2; try !history or !text`);
+    case "callees": {
+      // 2d: the `calls` graph (structural, Derived). callers = who calls this
+      // symbol (`linksTo`); callees = what it calls (`linksFrom`).
+      const links =
+        facet === "callers"
+          ? store.linksTo(entity.id, "calls")
+          : store.linksFrom(entity.id, "calls");
+      const neighborIds = facet === "callers" ? links.map((l) => l.src) : links.map((l) => l.dst);
+      const seen = new Set<string>();
+      const neighbors: Entity[] = [];
+      for (const id of neighborIds) {
+        if (seen.has(id)) continue;
+        seen.add(id);
+        const e = entityOf(ctx, id);
+        if (e) neighbors.push(e);
+      }
+      neighbors.sort((a, b) => (a.name < b.name ? -1 : a.name > b.name ? 1 : a.id < b.id ? -1 : 1));
+      if (neighbors.length === 0) {
+        notes.push(
+          entity.kind === "symbol"
+            ? `no ${facet} for ${entity.name} — tree-sitter resolves conservatively (ambiguous / cross-language callees stay unresolved)`
+            : `${facet} apply to code symbols; ${entity.id} is a ${entity.kind}`,
+        );
+        break;
+      }
+      const lines: string[] = [];
+      let used = 0;
+      for (const e of neighbors) {
+        const line = renderLineText(e, store.internHandle(e.id));
+        const t = estimateTokens(line);
+        if (lines.length > 0 && used + t > FACET_BUDGET_TOKENS) {
+          truncated = true;
+          break;
+        }
+        lines.push(line);
+        used += t;
+      }
+      if (lines.length < neighbors.length) truncated = true;
+      text = lines.join("\n");
       break;
+    }
   }
 
   return {

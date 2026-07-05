@@ -83,11 +83,15 @@ export function renderAtTier(
   if (entity.kind === "memory") {
     const mem = store.getMemory(entity.id);
     const gist = mem?.gist ?? entity.name;
+    // Drift-honest surfacing (2c/B6): a memory that isn't `active` (e.g. an
+    // anchor whose symbol drifted → `needs-review`) is flagged so the served
+    // answer never presents stale guidance as clean.
+    const flag = mem && mem.status !== "active" ? `⚠ ${mem.status}: ` : "";
     if (tier === "skeleton" || !mem?.detail) {
-      const text = `${gist} [${handle}]`;
+      const text = `${flag}${gist} [${handle}]`;
       return { tier: "skeleton", text, tokens: estimateTokens(text) };
     }
-    const text = `${gist} [${handle}]\n${mem.detail}`;
+    const text = `${flag}${gist} [${handle}]\n${mem.detail}`;
     return { tier: "full", text, tokens: estimateTokens(text) };
   }
 

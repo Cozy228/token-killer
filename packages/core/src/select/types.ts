@@ -81,6 +81,30 @@ export interface SelectionEnvelope {
 
 export type SelectMode = "task" | "ref" | "handle" | "facet";
 
+/** One end of a symbol's call preview (2d biography): a drillable neighbor. */
+export interface CallPreviewRef {
+  entityId: string;
+  name: string;
+  handle: string;
+}
+
+/**
+ * The compact call-graph preview under a symbol subject (§7 template + B6): a
+ * few callers (`←`) and callees (`→`) with drill handles, plus a `!callers` /
+ * `!callees` facet handle for the overflow. Present only when the subject is a
+ * symbol with at least one resolved call edge.
+ */
+export interface CallPreview {
+  callers: CallPreviewRef[];
+  callees: CallPreviewRef[];
+  /** Callers/callees beyond the previewed few (drill the facet handle). */
+  moreCallers: number;
+  moreCallees: number;
+  /** `<sym>!callers` / `<sym>!callees` short facet handles. */
+  callersHandle: string;
+  calleesHandle: string;
+}
+
 export interface SelectResult {
   ok: true;
   mode: Exclude<SelectMode, "facet">; // facet drill-downs return FacetResult
@@ -88,6 +112,8 @@ export interface SelectResult {
   subject: RenderedItem | undefined;
   sections: SectionResult[];
   envelope: SelectionEnvelope;
+  /** Symbol subjects (2d): compact caller/callee preview with drill handles. */
+  callPreview?: CallPreview;
 }
 
 /** Recoverable conditions are values (G-3); 1g turns them into success-shaped guidance. */
