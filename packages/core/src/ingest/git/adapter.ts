@@ -30,6 +30,11 @@ import {
   type CochangeOptions,
 } from "./cochange.ts";
 import { parseReferences } from "./trailers.ts";
+import { emitSymbolTouches } from "./symbolTouches.ts";
+// Type-only: the tree-sitter runtime (web-tree-sitter WASM) is dynamically
+// imported inside ingest ONLY when symbol-level touches are on, so the bare
+// git-only path never eagerly loads a grammar engine it will not use.
+import type { CodeParserCore } from "../../extract/code/runtime.ts";
 
 const SOURCE = "git" as const;
 /** Commit subject stored as the entity `name` (a label, like a file's path);
@@ -47,6 +52,14 @@ export interface GitAdapterOptions {
   cost?: number;
   /** Cursor-advance + budget-check cadence (default 200, §5.1). Test seam. */
   batchSize?: number;
+  /**
+   * Emit SYMBOL-level `touches` by re-parsing each commit×code-file post-image
+   * and joining `--unified=0` hunks against its symbol spans (slice 2b). When
+   * off (default), `touches` stay file-level (1d behaviour) — the bare adapter
+   * is code-source-free. The default registry turns this on so real serve gets
+   * symbol biography; M1 unit fixtures keep it off.
+   */
+  symbolTouches?: boolean;
 }
 
 function commitId(oid12: string): string {
@@ -62,12 +75,14 @@ export class GitAdapter implements SourceAdapter {
   readonly #cochangeWindow: number;
   readonly #cochangeMinSupport: number;
   readonly #batchSize: number;
+  readonly #symbolTouches: boolean;
 
   constructor(opts: GitAdapterOptions = {}) {
     this.cost = opts.cost ?? 2; // git walk is heavier than a memory scan, lighter than a full doc scan
     this.#cochangeWindow = opts.cochangeWindow ?? DEFAULT_COCHANGE_WINDOW;
     this.#cochangeMinSupport = opts.cochangeMinSupport ?? COCHANGE_MIN_SUPPORT;
     this.#batchSize = Math.max(1, opts.batchSize ?? BATCH);
+    this.#symbolTouches = opts.symbolTouches ?? false;
   }
 
   /**
@@ -125,21 +140,41 @@ export class GitAdapter implements SourceAdapter {
     let complete = true;
     let processedTip = since;
 
-    for (let start = 0; start < commits.length; start += this.#batchSize) {
-      if (budget.now() >= budget.deadline) {
-        complete = false;
-        break;
+    // Symbol-level touches re-parse each post-image with the 2a extractor; a
+    // single in-process core is reused across batches (bulk historical parsing,
+    // not the live worker-isolated path) and always disposed. The runtime loads
+    // lazily so the file-level-only path never pulls in the WASM engine.
+    let core: CodeParserCore | null = null;
+    if (this.#symbolTouches) {
+      const { CodeParserCore: Core } = await import("../../extract/code/runtime.ts");
+      core = new Core();
+    }
+    try {
+      for (let start = 0; start < commits.length; start += this.#batchSize) {
+        if (budget.now() >= budget.deadline) {
+          complete = false;
+          break;
+        }
+        const batch = commits.slice(start, start + this.#batchSize);
+        for (const commit of batch) {
+          const counts = this.#writeCommit(store, commit, gen, fileSeen);
+          entities += counts.entities;
+          claims += counts.claims;
+        }
+        // Symbol-level touches for the batch (phase 2): runs before the cursor
+        // advances so a completed batch always has its touches (§2b resumability).
+        if (core) {
+          claims += await emitSymbolTouches(store, root, batch, gen, (p, c, l) =>
+            core.parse(p, c, l),
+          );
+        }
+        processedTip = batch[batch.length - 1]!.oid;
+        // Advance the cursor so a resume re-walks only the remainder; the
+        // per-commit guard makes any overlap a no-op regardless.
+        store.setCursor(SOURCE, processedTip, budget.now(), gen);
       }
-      const batch = commits.slice(start, start + this.#batchSize);
-      for (const commit of batch) {
-        const counts = this.#writeCommit(store, commit, gen, fileSeen);
-        entities += counts.entities;
-        claims += counts.claims;
-      }
-      processedTip = batch[batch.length - 1]!.oid;
-      // Advance the cursor so a resume re-walks only the remainder; the
-      // per-commit guard makes any overlap a no-op regardless.
-      store.setCursor(SOURCE, processedTip, budget.now(), gen);
+    } finally {
+      core?.dispose();
     }
 
     if (!complete) {
@@ -190,26 +225,31 @@ export class GitAdapter implements SourceAdapter {
     for (const f of commit.files) {
       const fid = fileId(f.path);
       entities += this.#ensureFileEntity(store, f.path, gen, fileSeen);
-      // touches: commit → post-image file (Observed direct from the diff).
-      const touchClaim = store.addClaim({
-        subject: cid,
-        predicate: "touches",
-        object: fid,
-        carrier: "git",
-        locus: `${commit.oid}:${f.status}`,
-        method: "structural",
-        authority: "observed",
-        gen,
-      });
-      claims++;
-      store.setLink({
-        src: cid,
-        dst: fid,
-        predicate: "touches",
-        method: "structural",
-        confidence: 1.0,
-        claimId: touchClaim,
-      });
+      // touches: commit → post-image file (Observed direct from the diff). When
+      // symbol-level touches are on, the touch is emitted by the phase-2 pass
+      // (symbol-level for symbol-bearing files, file-level fallback otherwise) —
+      // so it is deferred here to avoid a double-counted file+symbol touch.
+      if (!this.#symbolTouches) {
+        const touchClaim = store.addClaim({
+          subject: cid,
+          predicate: "touches",
+          object: fid,
+          carrier: "git",
+          locus: `${commit.oid}:${f.status}`,
+          method: "structural",
+          authority: "observed",
+          gen,
+        });
+        claims++;
+        store.setLink({
+          src: cid,
+          dst: fid,
+          predicate: "touches",
+          method: "structural",
+          confidence: 1.0,
+          claimId: touchClaim,
+        });
+      }
 
       if ((f.status === "R" || f.status === "C") && f.oldPath !== undefined) {
         const oldFid = fileId(f.oldPath);
