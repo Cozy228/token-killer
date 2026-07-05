@@ -50,6 +50,14 @@ interface PendingMention {
   line: number;
 }
 
+/** A backticked non-path identifier awaiting symbol resolution (§5.5, 2d). */
+interface PendingSymbolMention {
+  src: string; // referencing file entity id
+  refPath: string;
+  token: string;
+  line: number;
+}
+
 /** An `amends`/`supersedes` frontmatter reference awaiting ADR-number resolution. */
 interface PendingKeyLink {
   src: string; // referencing decision entity id
@@ -64,8 +72,13 @@ interface PathIndex {
 
 export class DocsAdapter implements SourceAdapter {
   readonly id = SOURCE;
-  /** Docs are cheap relative to code; a touch more than git's cursor count. */
-  readonly cost = 3;
+  /**
+   * Ordered AFTER code (cost > the code source's 5): docs mention→symbol
+   * resolution (§5.5, 2d) resolves backticked identifiers against the project's
+   * PUBLISHED symbols, so on a cold full sync the code source must ingest first.
+   * The scan itself is cheap — this is a dependency order, not a work estimate.
+   */
+  readonly cost = 6;
 
   async dirtyCheck(store: Store): Promise<DirtyReport> {
     const files = await scanMarkdown(store.projectRoot);
@@ -103,6 +116,7 @@ export class DocsAdapter implements SourceAdapter {
 
     const index: PathIndex = { exact: new Map(), basename: new Map() };
     const mentions: PendingMention[] = [];
+    const symbolMentions: PendingSymbolMention[] = [];
     const keyLinks: PendingKeyLink[] = [];
     const adrByNumber = new Map<string, string>();
     const counts = { entities: 0, claims: 0 };
@@ -116,7 +130,19 @@ export class DocsAdapter implements SourceAdapter {
         continue; // vanished between dirtyCheck and ingest — a later refresh re-checks
       }
       const parsed = parseMarkdown(content);
-      extractFile(store, f, content, parsed, gen, index, mentions, keyLinks, adrByNumber, counts);
+      extractFile(
+        store,
+        f,
+        content,
+        parsed,
+        gen,
+        index,
+        mentions,
+        symbolMentions,
+        keyLinks,
+        adrByNumber,
+        counts,
+      );
       if (budget.now() >= budget.deadline) {
         // M1 docs corpora are small; a pass is atomic (resolution needs the full
         // entity set). We finish the pass rather than publish a torn generation.
@@ -125,6 +151,8 @@ export class DocsAdapter implements SourceAdapter {
 
     // Phase 2: two-tier mention resolution → references links / stale-suspects.
     resolveMentions(store, mentions, index, gen, counts);
+    // Phase 2b (2d): backticked identifiers → symbol-match `references` links.
+    resolveSymbolMentions(store, symbolMentions, gen, counts);
     // Phase 3: explicit-key links (supersedes/amends) once all ADR ids are known.
     resolveKeyLinks(store, keyLinks, adrByNumber, gen, counts);
 
@@ -172,6 +200,7 @@ function extractFile(
   gen: number,
   index: PathIndex,
   mentions: PendingMention[],
+  symbolMentions: PendingSymbolMention[],
   keyLinks: PendingKeyLink[],
   adrByNumber: Map<string, string>,
   counts: { entities: number; claims: number },
@@ -290,6 +319,9 @@ function extractFile(
   for (const m of parsed.mentions) {
     if (m.kind === "path") {
       mentions.push({ src: fileId, refPath: relPath, token: m.token, ext: m.ext, line: m.line });
+    } else {
+      // A backticked non-path identifier — a candidate symbol reference (2d).
+      symbolMentions.push({ src: fileId, refPath: relPath, token: m.token, line: m.line });
     }
   }
 }
@@ -370,6 +402,87 @@ function resolveMentions(
     counts.claims += 2;
     store.addConflict(mentionClaim, reasonClaim, "stale-suspect");
   }
+}
+
+/**
+ * Resolve backticked identifiers to symbol entities → `references` links,
+ * `symbol-match` method, Derived (§5.5, 2d). Two-tier confidence, the same shape
+ * as the path resolver: an exact QUALIFIED-name match (1.0) → a unique
+ * unqualified basename match (0.6). Ambiguous matches at either tier resolve to
+ * nothing — a docs source never guesses which of several same-named symbols a
+ * prose mention meant. Resolves against the project's PUBLISHED symbols; on a
+ * cold sync the code source ingests first (its higher cost, §4.3) so symbols
+ * exist by the time docs resolves.
+ */
+function resolveSymbolMentions(
+  store: Store,
+  mentions: PendingSymbolMention[],
+  gen: number,
+  counts: { entities: number; claims: number },
+): void {
+  if (mentions.length === 0) return;
+  const byQualified = new Map<string, string[]>();
+  const byName = new Map<string, string[]>();
+  for (const e of store.entitiesByKind("symbol", store.publishedGen("code"))) {
+    const qualified = typeof e.attrs.qualified === "string" ? e.attrs.qualified : e.name;
+    pushId(byQualified, qualified, e.id);
+    pushId(byName, e.name, e.id);
+  }
+
+  // (src, dst) → best confidence emitted so far; the HIGHEST-confidence mention
+  // wins (an exact qualified spelling beats a bare-basename mention of the same
+  // symbol). `setLink` upserts, so a later stronger match overwrites the link.
+  const best = new Map<string, number>();
+  for (const m of mentions) {
+    const resolved = resolveSymbol(byQualified, byName, m.token);
+    if (!resolved || resolved.dst === m.src) continue;
+    const key = `${m.src} ${resolved.dst}`;
+    const prev = best.get(key);
+    if (prev !== undefined && prev >= resolved.confidence) continue;
+    best.set(key, resolved.confidence);
+    const claimId = store.addClaim({
+      subject: m.src,
+      predicate: "references",
+      object: resolved.dst,
+      carrier: "files",
+      locus: `${m.refPath}#L${m.line}`,
+      method: "symbol-match",
+      authority: "derived",
+      gen,
+    });
+    counts.claims++;
+    store.setLink({
+      src: m.src,
+      dst: resolved.dst,
+      predicate: "references",
+      method: "symbol-match",
+      confidence: resolved.confidence,
+      claimId,
+    });
+  }
+}
+
+/** Two-tier symbol resolution: exact qualified name (1.0) → unique unqualified
+ *  basename (0.6). A tie (2+ candidates) at either tier resolves to nothing. */
+function resolveSymbol(
+  byQualified: ReadonlyMap<string, string[]>,
+  byName: ReadonlyMap<string, string[]>,
+  token: string,
+): { dst: string; confidence: number } | undefined {
+  const exact = byQualified.get(token);
+  if (exact && exact.length === 1) return { dst: exact[0]!, confidence: 1.0 };
+  const base = token.split(/[.#/]/).filter(Boolean).pop();
+  if (base) {
+    const named = byName.get(base);
+    if (named && named.length === 1) return { dst: named[0]!, confidence: 0.6 };
+  }
+  return undefined;
+}
+
+function pushId(index: Map<string, string[]>, key: string, id: string): void {
+  const bucket = index.get(key);
+  if (bucket) bucket.push(id);
+  else index.set(key, [id]);
 }
 
 /** Two-tier resolution: exact relative path (1.0) → unique basename (0.6). */
