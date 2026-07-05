@@ -291,6 +291,25 @@ rule. Reviewer (Fable) compares both against `docs/build/M1-ACCEPTANCE.md` + cod
 merges the winner, may graft runner-up pieces (attributed); runner-up branch kept until the
 slice closes. Supersedes the P28-era split-assignment ledger in `docs/build/M1-GOAL-PROMPT.md`.
 
+**P31 — memory ownership/sync = file-backed, git-as-sync, unified event model.** `[2026-07-05]`
+Maintainer adopts **B1**: durable memory (and concepts, C3) leave the store as source of truth and
+move into committed `.ctx/` files; `store.sqlite` becomes a rebuildable, gitignored index; **git is
+the sync/collaboration layer**. The load-bearing frame is a **unified event model** — every write
+(`remember`, host import, a lifecycle verb, a conflict resolution) is an immutable event landing in
+exactly one of three zones (① committed Mainline log · ② personal overlay · ③ external snapshot);
+status is a deterministic fold over events in total order `(timestamp, ULID)`, never a mutable
+column. Conflicts follow the **three-layer model (E1)**: textual = git (bytes only, `merge=union`);
+identity = dedup at reindex; semantic = contradiction filed at the post-merge reindex reconcile,
+human-resolved via the committed decision log — git is never the semantic surface. Two new
+invariants: **E3** committed = human-authored **or** human-confirmed (auto-generated content lands in
+the overlay as `needs-review` until a human confirms); **E4** a deterministic secret-shaped guard
+runs before the committed zone (success-shaped refusal, no LLM/network). Execution: **no dual-track
+(supersedes P30 for this line)** — Opus implements every slice single-track, reviewed jointly by
+Fable + Codex. Full E-group (E1–E8) + the A/B/C/D rulings live in
+`docs/build/MEMORY-DECISIONS.md` (SoT); settled mechanics in `docs/build/MEMORY-SYNC-SETTLEMENTS.md`;
+work order in `docs/build/MEMORY-SYNC-GOAL-PROMPT.md`. Reconciled across VISION invariant 3,
+CTX-DESIGN §2/§3/§6/§8/§9, CTX-IMPL §2/§5.6/§7, REPORT-canonical Decision 11.
+
 ## Open
 
 - **O1 / O2** (pack §9) — value metric & joint story: partially reshaped by P15 (measurement is
