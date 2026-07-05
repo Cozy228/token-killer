@@ -11,6 +11,7 @@ import {
   remember,
   renderPushBlock,
   resolveClaudeMemoryDir,
+  setMemoryLifecycle,
   type GotchaCandidate,
 } from "@ctx/core";
 import { resolveShard } from "../../src/store/shard.ts";
@@ -77,9 +78,11 @@ describe("acceptance: 1h push", () => {
 
   describe("A9-budget", () => {
     describe.skipIf(MEMORY_DIR === undefined)("living-repo tier (env-gated: live memory)", () => {
-      test("the push block for THIS repo is ≤1KB and carries the fixed header", () => {
+      test("the push block for THIS repo is ≤1KB, fixed header, imports gated until confirmed", () => {
         const store = openStore({ projectDir: REPO_ROOT, home });
-        importClaudeCodeMemory(store, { projectRoots: [here.projectRoot, here.mainRoot] });
+        const report = importClaudeCodeMemory(store, {
+          projectRoots: [here.projectRoot, here.mainRoot],
+        });
 
         const block = buildPushBlock(store);
         expect(block.bytes).toBeLessThanOrEqual(PUSH_MAX_BYTES);
@@ -89,10 +92,18 @@ describe("acceptance: 1h push", () => {
         expect(block.text).toContain("<!-- ctx:managed:end -->");
         expect(block.text).toContain("This project has a ctx context base");
         expect(block.text).toContain("Start tasks with the `context` MCP tool");
-        // Real repo has 80+ memories → at least one gotcha surfaces.
-        expect(block.rendered.length).toBeGreaterThan(0);
-        // Every rendered handle round-trips (G-5 spirit).
-        for (const g of block.rendered) {
+        // A3/D8: host imports land `needs-review` → NONE surface in push until a
+        // human confirms them (push filters status=active). The block is header-only.
+        expect(block.rendered.length).toBe(0);
+
+        // Confirm one imported entry → it now surfaces, and its handle round-trips.
+        const first = report.written[0];
+        expect(first, "the live repo has ≥1 importable host memory").toBeDefined();
+        setMemoryLifecycle(store, first!, "active");
+        const afterConfirm = buildPushBlock(store);
+        expect(afterConfirm.bytes).toBeLessThanOrEqual(PUSH_MAX_BYTES);
+        expect(afterConfirm.rendered.length).toBeGreaterThan(0);
+        for (const g of afterConfirm.rendered) {
           expect(store.resolveHandle(g.handle)?.entityId).toBe(g.entityId);
         }
         store.close();

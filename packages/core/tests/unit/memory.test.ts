@@ -1,4 +1,4 @@
-import { mkdirSync, writeFileSync } from "node:fs";
+import { mkdirSync, utimesSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, test } from "vitest";
 import {
@@ -9,6 +9,7 @@ import {
   toGist,
 } from "../../src/memory/claudeImporter.ts";
 import { embeddedNumbers, fuzzyDuplicate, shannonEntropy } from "../../src/memory/dedup.ts";
+import { MemorySourceAdapter } from "../../src/memory/adapter.ts";
 import { listMemories, recall, remember, setMemoryLifecycle } from "../../src/memory/remember.ts";
 import { search } from "../../src/select/engine.ts";
 import { hasSentinel, stripSentinelBlocks } from "../../src/memory/sentinel.ts";
@@ -196,6 +197,53 @@ describe("memory: Claude importer (synthetic dir — deterministic tier)", () =>
   test("no memory dir → clean no-op report (never throws)", () => {
     const r = importClaudeCodeMemory(store, { projectRoots: ["/nonexistent/path"], claudeHome });
     expect(r).toMatchObject({ memoryDir: undefined, entities: 0, skipped: 0 });
+  });
+
+  test("A3: imports land needs-review (not active), drained via the review queue", () => {
+    const r = importClaudeCodeMemory(store, { projectRoots: [store.projectRoot], claudeHome });
+    for (const id of r.written) expect(store.getMemory(id)?.status).toBe("needs-review");
+    expect(listMemories(store, { status: "needs-review" }).length).toBe(r.entities);
+    expect(listMemories(store, { status: "active" }).length).toBe(0);
+  });
+
+  test("D8: MemorySourceAdapter dirtyCheck is mtime-aware; ingest wires + is idempotent", async () => {
+    const adapter = new MemorySourceAdapter({
+      claudeHome,
+      projectRoots: [store.projectRoot],
+    });
+    const budget = { deadline: Number.MAX_SAFE_INTEGER, now: () => 1_700_000_000_000 };
+
+    // Seeded host dir with an unseen watermark → dirty.
+    const first = await adapter.dirtyCheck(store);
+    expect(first.dirty).toBe(true);
+    const ing = await adapter.ingest(store, first, budget);
+    expect(ing.entities).toBeGreaterThan(0);
+    const importedCount = listMemories(store).length;
+
+    // Re-check with an unchanged dir → clean (watermark advanced by ingest).
+    const second = await adapter.dirtyCheck(store);
+    expect(second.dirty).toBe(false);
+    // Re-ingest anyway → deterministic upsert, no new entities (idempotent).
+    await adapter.ingest(store, { source: "memory", dirty: true, magnitude: 1 }, budget);
+    expect(listMemories(store).length).toBe(importedCount);
+
+    // Touch a topic file PAST the stored watermark → dirty again (content edits
+    // are caught, not just add/remove).
+    const dir = join(
+      claudeHome,
+      ".claude",
+      "projects",
+      claudeProjectSlug(store.projectRoot),
+      "memory",
+    );
+    const watermark = Number(store.getCursor("memory")?.position ?? 0);
+    const future = new Date(watermark + 60_000);
+    utimesSync(join(dir, "beta.md"), future, future);
+    expect((await adapter.dirtyCheck(store)).dirty).toBe(true);
+
+    // Absent dir → always-clean fast path.
+    const noDir = new MemorySourceAdapter({ claudeHome, projectRoots: ["/nonexistent/path"] });
+    expect((await noDir.dirtyCheck(store)).dirty).toBe(false);
   });
 });
 

@@ -6,7 +6,7 @@
  * memory (1c — always-clean dirtyCheck, so it only ingests on explicit cold
  * paths); M2 adds code (2a — tree-sitter symbols). Network carriers join at M4.
  */
-import { MemorySourceAdapter } from "../memory/adapter.ts";
+import { MemorySourceAdapter, type MemoryAdapterOptions } from "../memory/adapter.ts";
 import { createGitAdapter, type GitAdapterOptions } from "./git/adapter.ts";
 import { createCodeAdapter, type CodeAdapterOptions } from "./code/adapter.ts";
 import { DocsAdapter } from "./docs.ts";
@@ -15,7 +15,7 @@ import { SourceRegistry } from "./adapter.ts";
 export interface RegistryOptions {
   git?: GitAdapterOptions | false;
   docs?: false;
-  memory?: false;
+  memory?: MemoryAdapterOptions | false;
   code?: CodeAdapterOptions | false;
 }
 
@@ -23,7 +23,7 @@ export function createDefaultRegistry(opts: RegistryOptions = {}): SourceRegistr
   const registry = new SourceRegistry();
   if (opts.git !== false) registry.register(createGitAdapter(opts.git));
   if (opts.docs !== false) registry.register(new DocsAdapter());
-  if (opts.memory !== false) registry.register(new MemorySourceAdapter());
+  if (opts.memory !== false) registry.register(new MemorySourceAdapter(opts.memory));
   if (opts.code !== false) registry.register(createCodeAdapter(opts.code));
   return registry;
 }

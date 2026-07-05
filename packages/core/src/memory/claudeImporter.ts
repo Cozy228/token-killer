@@ -221,7 +221,10 @@ export function importClaudeCodeMemory(store: Store, opts: ImportOptions = {}): 
       origin: `host-import:${HOST}`,
       sessionRef: frontmatter.originSessionId,
       authority: "inferred",
-      status: "active",
+      // A3/D8: host auto-memory is unreviewed by construction — it lands as
+      // `needs-review` and is drained via the review queue, never served as a
+      // clean current fact or pushed until a human confirms it.
+      status: "needs-review",
     });
     store.ftsIndex(id, {
       name: deriveName(frontmatter, body, file),
