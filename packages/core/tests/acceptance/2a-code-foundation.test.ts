@@ -70,7 +70,7 @@ describe("acceptance: 2a B1-symbols + B1-dirty (living repo)", () => {
     const engine = new RefreshEngine(store, createDefaultRegistry(), { catchupGateMs: 600_000 });
     await engine.refresh(600_000);
     await engine.background;
-  }, 120_000);
+  }, 300_000);
 
   afterAll(() => {
     store.close();

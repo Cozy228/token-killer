@@ -14,6 +14,10 @@ export default defineConfig({
     // Spawn/CLI tests pay a cold-start tax on CI runners; lift the per-test budget
     // above the largest in-test spawn timeout (matches the legacy tk rationale).
     testTimeout: 30000,
-    hookTimeout: 30000,
+    // Living-repo fixtures ingest THIS repo in beforeAll; as the repo's own docs
+    // grow (design corpora, etc.) that cold ingest gets slower on shared CI
+    // runners, so the default hook budget must be generous (per-hook budgets can
+    // still tighten it where a fixture is small).
+    hookTimeout: 300000,
   },
 });

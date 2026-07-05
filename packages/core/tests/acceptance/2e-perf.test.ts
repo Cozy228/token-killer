@@ -193,7 +193,7 @@ describe("acceptance: 2e perf gates (M2 re-record)", () => {
       parseStore.close();
       cleanupTempDir(parseRoot);
     }
-  }, 120_000);
+  }, 300_000);
 
   test("B7-parse: incremental re-parse after a 1-file edit touches only that file's symbols (+1-hop boundary)", async () => {
     const incRoot = makeTempDir("ctx-b7-inc-");

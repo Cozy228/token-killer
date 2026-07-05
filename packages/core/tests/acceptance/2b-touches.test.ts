@@ -67,7 +67,7 @@ describe("acceptance: 2b symbol-level touches + history (living repo)", () => {
     if (git0?.state !== "complete") {
       throw new Error(`2b living ingest git not complete: ${JSON.stringify(report.sources)}`);
     }
-  }, 120_000);
+  }, 300_000);
 
   afterAll(() => {
     store.close();
