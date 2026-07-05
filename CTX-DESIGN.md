@@ -69,8 +69,11 @@ extractors emit typed facts with `provenance{carrier, locus}`. One carrier feeds
 (git → history + decisions; Jira → decisions + stories).
 
 **Network boundary (invariant)**: ctx never sends project context out. Network carriers are
-**ingress-only**: user-credentialed, explicitly triggered (`ctx import <carrier>`), stored as
-dated local snapshots; snapshot age = that carrier's freshness.
+**ingress-only** and are the **S8 category ③** (external system-of-record): user-credentialed,
+explicitly triggered (`ctx import <carrier>`), stored as dated local snapshots that are
+**re-imported per person and never committed or mirrored into the repo**; snapshot age = that
+carrier's freshness (invariant 4; the external system stays the source of truth). Full carrier
+assignment: the per-carrier matrix in §3.
 
 ## 3. Store & Schema
 
@@ -80,12 +83,38 @@ authoritative bytes stay in git/files and are read back at serve time (kills the
 stale" failure class; shrinks the store an order of magnitude). Network carriers keep dated
 snapshots — the snapshot IS their local source.
 
+**Memory + concepts now leave the index-not-copy *exception* (B1 / C3).** Durable memory and
+concepts used to be the one class the store held as source of truth. Under the ratified file-backed
+re-architecture they become authored-local (**S8 category ②**): their source of truth is committed
+repo files under `.ctx/memory/` (and `.ctx/concepts/`), and the store's `memory`/`concept` rows
+become a **rebuildable index** over those files — so they now obey index-not-copy like every other
+local carrier. `store.sqlite` is therefore a rebuildable cache and is **gitignored** (commit the
+sources, gitignore the index — `src/` vs `dist/`); a peer who `git clone`s gets the memory from the
+committed files and rebuilds the index locally. Determinism target = canonical logical equality, not
+byte-identical SQLite (E6). Rulings + mechanics: `docs/build/MEMORY-DECISIONS.md`,
+`docs/build/MEMORY-SYNC-SETTLEMENTS.md`.
+
+**Committed (git) vs local (cache/overlay/snapshots).** Sync policy is a property of the **carrier**,
+not the content type (per-carrier matrix below):
+
+- **Committed in the repo, git-synced (② authored-local + project presentation):**
+  `.ctx/memory/*.md` (append-only entry log), `.ctx/memory/details/<ulid>.md` (multi-line detail
+  sidecars, S1), `.ctx/memory/decisions.md` (append-only decision log — lifecycle + resolutions,
+  C2/C4), `.ctx/concepts/` (C3), `.ctx/push.jsonc` (pin/veto, shared presentation),
+  `.gitattributes` with `merge=union` on the logs (E2).
+- **In the repo but gitignored — personal overlay (zone 2):** `.ctx/*.local.*` — my-view
+  attention (mute/pin) and host imports awaiting confirmation (E3); deliberately divergent, never
+  synced.
+- **Outside the repo, local cache (① derived) + external snapshots (③):** the shard home below —
+  `store.sqlite` (rebuildable index), ledgers, `raw/`, and `snapshots/` (dated external SoR caches,
+  re-imported per person, never committed).
+
 ```
-~/.ctx/projects/<repo-shard>/
-  store.sqlite     # the context base (all six content types + links + claims + memory)
+~/.ctx/projects/<repo-shard>/   # local cache home — outside the repo, never committed
+  store.sqlite     # rebuildable index over committed sources + snapshots (① derived; regenerated locally)
   ledgers.sqlite   # compressor ledgers (hot-path isolation; §7)
   raw/             # recovery snapshots (unchanged)
-  snapshots/       # dated carrier imports (jira/confluence/github)
+  snapshots/       # dated carrier imports (jira/confluence/github) — ③, re-imported per person
 ```
 
 `store.sqlite` tables — contract D18's tiers aligned to the two-axis model:
@@ -95,8 +124,9 @@ snapshots — the snapshot IS their local source.
   meeting · memory_entry · concept(derived)`. All six content types materialize as node kinds in
   **one table** — cross-source joins and FTS come free. **No `text` payload column (P25①)**:
   `locator` (path+span / git oid / snapshot ref) is how serve-time read-through fetches the
-  authoritative bytes; `content_hash` is the staleness check. (Exception: `memory_entry` gist
-  and derived `concept` text live in the store — the store IS their source of truth.)
+  authoritative bytes; `content_hash` is the staleness check. (`memory_entry` and `concept` now
+  read through to committed `.ctx/memory/` and `.ctx/concepts/` files like every other local
+  carrier — they no longer live in the store as source of truth; B1/C3 retired that exception.)
 - **`edges`** `(from, to, predicate, method?, confidence, provenance, freshness, decision_id?)`
   — structural predicates (Observed, from data itself: `calls · imports · contains · touches ·
   authored · supersedes-by-frontmatter`) and **link predicates** (the link layer: `references ·
@@ -109,8 +139,13 @@ snapshots — the snapshot IS their local source.
 - **`identity_bindings`**, **`dependency_index`** — the reverse index now spans **cross-source
   links**: when either endpoint of a link changes, the link is flagged for re-verification (this
   is how memory anchoring and stale-doc detection ride the code source's invalidation machinery).
-- **`memory_meta`** `(node_id, gist, detail?, authority, status, origin, session_ref?, usage…)` —
-  memory entries are nodes (`kind=memory_entry`) plus this lifecycle table (P21 fields).
+- **`memory_meta`** `(node_id, gist, detail?, authority, status, origin, session_ref?,
+  valid_from?, valid_to?, usage…)` — memory entries are nodes (`kind=memory_entry`) plus this
+  lifecycle table (P21 fields). It is now a **derived index** rebuilt from the committed
+  `.ctx/memory/` files: `status` is the deterministic fold over the append-only decision log
+  (order `(timestamp, ULID)`, E2/E5), cached here for fast reads, never a hand-mutated column.
+  Bitemporal `valid_from`/`valid_to` (C5) are populated only from explicit args / supersede-time,
+  never inferred.
 - **`generations`** — per-source generation counters + one published-generation pointer; atomic
   publish, short read transactions (D32 unchanged).
 - **FTS5** — one **contentless (external-content) virtual table** over node names + text across
@@ -127,6 +162,30 @@ within the refresh budget; over budget → serve the previous generation marked 
 paths (`ctx install/doctor`, guide launch) do full catch-up. Network-carrier snapshots refresh
 only on explicit `ctx import`. No resident process; coordination = the D32 lease + per-source
 generation counters.
+
+**Per-carrier ownership & sync matrix (S8).** Ownership/sync is a property of the **carrier** (where
+the authoritative bytes live), not of the content type — three categories: **①** derived-from-
+committed-source (SoT = git; store = deterministic cache; never synced, regenerated locally,
+`store.sqlite` gitignored), **②** authored-local (SoT = committed `.ctx/` files; git + PR; conflicts
+per the E1 three-layer model), **③** external system-of-record (SoT = the external system; dated
+local snapshot, re-imported per person, never committed). Plus two non-category rows: **overlay** =
+zone 2 (gitignored, per-person, never synced) and **push target** (an output surface, not a source).
+
+| Carrier | Category | Sync policy | Reason |
+|---|---|---|---|
+| tree-sitter · `index.scip` · local git · ADR/design docs · requirement docs · local docs/glossaries | **①** | never synced; regenerated locally (gitignored index) | derived from committed source; no divergence by construction |
+| meeting recap **imported as a committed local file** | **①** | never synced; regenerated locally | carrier is a committed file — *same content, different carrier from the Confluence row* |
+| `remember()` durable memory · human notes | **②** | git + PR; E1 three-layer conflict | authored-local; SoT = committed `.ctx/memory/` |
+| concepts | **②** | git + PR | C3: concepts follow memory into committed `.ctx/concepts/` |
+| `.ctx/push.jsonc` (pin/veto) | **②** | git-synced shared config | project presentation (three-tier b); shared, committed |
+| GitHub PR/issue · Jira · Confluence (incl. **recap fetched from Confluence**) | **③** | re-import per person (credentialed); never committed | external SoR; staleness + credential-leak risk; *same recap content, ③ because the carrier is network* |
+| host auto-memory dirs (Claude/Codex/Copilot `memories/`) | **overlay → ② on confirm** | imports land per-person in the overlay as `needs-review`; confirmation produces a committed ② event | E3: committed = human-authored **or human-confirmed** |
+| personal overlay (`.ctx/*.local.*`) | **overlay** | gitignored; never synced | three-tier (c) personal attention + E3 import landing |
+| host instruction files (AGENTS.md/CLAUDE.md) | **push TARGET** | ctx *writes* a managed block; excluded from ingest | output surface, not a source (echo prevention) |
+
+The driver: a meeting recap **imported as a committed file is ①/② (git-synced)**; the **same recap
+fetched from Confluence is ③ (per-person snapshot, never committed)**. Same content, different
+carrier, different policy. Full matrix with zones + every content type: `docs/build/MEMORY-SYNC-SETTLEMENTS.md` (S8).
 
 ## 4. Ranking & Serving
 
@@ -194,10 +253,14 @@ the four-inspector composition, which served the retired layer model):
 | **Knowledge** | Memory browser + **review queue** (needs-review entries, displayed with their `ctx memory confirm|retire <id>` commands) + push pin/veto state + **stale references list** (unresolved mentions = dead doc links, the free 鉴真 win). |
 | **Search** | Cross-source, kind-filtered. |
 
-Evidence drawer retained (per-fact provenance/authority/freshness on demand). **Guide is strictly
-read-only** (D9/D28 stance unchanged; P23): memory lifecycle actions and push curation are CLI
-operations (`ctx memory confirm|retire <id>`, `ctx push pin|veto <id>`) plus JSONC control-file
-edits — the guide displays state and surfaces the commands, it never writes.
+Evidence drawer retained (per-fact provenance/authority/freshness on demand). **Guide is a live
+interactive serve surface** (Hono loopback serving dynamic projections — Entity Biography, Search,
+graph exploration; D9/D28 stack unchanged; P23) — not a static read-only export. **"Read-only" is
+narrow = *non-mutating*, and bites specifically on memory curation:** the Knowledge page *surfaces*
+the review queue / conflicts / stale list (and the `needs-review` ops signal — queue size +
+oldest-item age, E8) and *displays* remediation commands, but the mutation happens via CLI/git —
+`ctx memory confirm|retire <id>`, `ctx push pin|veto <id>`, plus JSONC control-file edits. Everything
+else (browse, search, project, drill down) is active serve, not a passive dump.
 
 ## 7. Compressor Integration
 
@@ -228,8 +291,25 @@ extension (Copilot-managed, LM Tool API) (D19); guide = loopback web app in the 
 sync (explicit warm-up, D25) · memory confirm|retire <id> · push pin|veto <id>` (the last two
 per FORK-1/P23 — guide surfaces them, CLI executes).
 Distribution: private npm registry (P13); engines ≥22.5 (P10/P28); signing stays artifact-gated (D20).
-Solo-first collaboration stance unchanged (D27): sharing via git (`.ctx/` project files, snapshot
-exports); no team/permission layer.
+
+**Collaboration = git as the sync/conflict layer (D27 sharpened by B1/E1).** No team/permission
+server; sync is per-carrier (§3 matrix):
+- **① derived** — never synced; each peer regenerates the store from committed sources (gitignored
+  index).
+- **② authored-local** (memory, concepts, `push.jsonc`) — committed `.ctx/` files, git + PR. Git
+  handles the **textual** layer only: concurrent appends auto-merge under `merge=union` (E2), so a
+  git conflict signals a byte collision, not a contradiction. **Identity** (duplicates →
+  `sameAsCandidate`) is filed at reindex; **semantic** contradictions are filed at the **post-merge
+  reindex reconcile** and resolved by a human as a committed decision fact (C4) — a clean git merge
+  can still carry a semantic contradiction, so git is never the semantic surface (E1).
+- **③ external SoR** — re-imported per person, dated snapshots under `~/.ctx/…/snapshots/`, never
+  committed/mirrored; teammates reconcile with the external system, not with each other via git.
+
+**Three-tier visibility/scope:** (a) **project truth** (confirm/retire/supersede/dismiss) → shared,
+committed; (b) **project presentation** (push pin/veto, `.ctx/push.jsonc`) → shared (D27/D30);
+(c) **personal attention** (my-view mute/pin) → gitignored personal overlay (`.ctx/*.local.*`),
+never forced on the team. Push ranking reads the shared config **merged with** the personal overlay.
+Mechanics: `docs/build/MEMORY-DECISIONS.md`, `docs/build/MEMORY-SYNC-SETTLEMENTS.md`.
 
 ## 9. Contract Amendments Register (June contract → this design)
 
@@ -247,6 +327,28 @@ exports); no team/permission layer.
 
 **New sections with no June counterpart**: link layer (§3 edges + three-tier rules), memory
 source (P21, §5), push channel (P16/P17, §4), ingress-only importer boundary (§2, §5).
+
+**Memory ownership/sync re-architecture (B1 + E-group, 2026-07-05).** Registered amendment:
+durable memory (and concepts, C3) move out of the store as source of truth into committed
+`.ctx/` files; the store becomes a rebuildable, gitignored index; git is the sync/conflict layer
+(§3, §8). This retires the memory/concept index-not-copy *exception*. SoT for the rulings:
+`docs/build/MEMORY-DECISIONS.md`; settled mechanics: `docs/build/MEMORY-SYNC-SETTLEMENTS.md`.
+
+- **E1 three-layer conflict model** (amends the "conflicts surface as git merge conflicts"
+  phrasing): *textual* = git (bytes only; `merge=union` auto-merges concurrent appends);
+  *identity* = dedup at reindex (`sameAsCandidate`); *semantic* = contradiction filed at the
+  **post-merge reindex reconcile**, human-resolved via the committed decision log. Git handles the
+  textual layer only — a clean merge can still hide a semantic contradiction.
+
+**New invariants (E3, E4):**
+- **E3 — committed = human-authored or human-confirmed.** Auto-generated content (host imports,
+  agent `remember`) enters git only after a human confirms it; until then it lives in the personal
+  overlay as `needs-review`. Closes the echo loop and the privacy hole in one rule.
+- **E4 — a deterministic secret-shaped guard runs before anything enters the committed zone.**
+  Regex classes (`sk-` keys, tokens, passwords, credentials) → success-shaped refusal with
+  guidance, never a hard error (no LLM/network to lean on). `remember()` defaults to Mainline
+  (committed); `--local` writes the personal overlay; a per-repo opt-out disables committing
+  memory entirely.
 
 ## 10. Forks — RESOLVED (P23, 2026-07-03)
 

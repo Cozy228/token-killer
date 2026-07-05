@@ -74,7 +74,13 @@ same projection feeds both surfaces:
 2. **Static is local, live is server.** Anything derivable from the repo's
    source is local and offline; any runtime status — even of your own project —
    is live, and lives server-side.
-3. **Memory is always local.** There is no org-level server memory.
+3. **Memory is local, meaning never egressed — not un-shared.** There is no org-level server
+   memory; "local" is the egress boundary (no org server, no vendor store), not a sharing
+   boundary. Durable **project** memory is committed into the project's own git repo and shared
+   with the team through it: it lives in the committed **Mainline** (git-synced), while session/
+   task memory — *true right now and only for me* — lives in the personal **Overlay** (gitignored,
+   never synced). **Git is the memory sync layer, textual only:** it merges bytes (concurrent
+   appends auto-merge); semantic contradictions are caught at post-merge reindex, never by git.
 4. **Provenance first.** Every fact carries its source, scope, and confidence.
    The product never fabricates; the server layer never durably mirrors a system
    of record; the local layer never leaves the machine.
