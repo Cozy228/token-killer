@@ -189,7 +189,7 @@ describe("acceptance: 1h push", () => {
     clock = 1_000_000_100_000;
     const ok = must(remember(store, { note: "echo: a clean active gotcha" }));
     // Flip the first to needs-review (as a host import or anchor drift would).
-    setMemoryLifecycle(store, review.handle, "review");
+    setMemoryLifecycle(store, review.handle, "needs-review");
 
     // Pin the needs-review entry — A2: the pin may NOT force it in.
     const cfgPath = join(repo, ".ctx", "push.jsonc");
