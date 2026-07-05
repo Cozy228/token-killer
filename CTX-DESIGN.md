@@ -33,6 +33,19 @@ discipline; features before measurement (P15②); non-code context is first-clas
 is a **derived view**, never an ingested source; the moat: **context belongs to the project, not
 the assistant vendor** — all agents share one base.
 
+**Project context, not assistant memory (the moat, sharpened).** Every AI coding tool builds a
+memory; almost all build the *assistant's* memory — private, adaptive, vendor-owned, left behind when
+you switch tools. ctx builds the *project's* context, owned by the project: a project fact (why we
+chose this, what bit us, a decision, the code map) is a property of the project, not of whichever
+assistant happened to observe it, so it belongs with the code — committed, reviewable, surviving tool
+and staff changes, read by every agent and human from one base. This single choice forks the design
+downstream: because the base is authoritative and shared (not a disposable per-agent scratchpad) it
+must be **trustworthy, not merely adaptive** — deterministic over probabilistic, provenance over
+recall, conflicts surfaced over silently merged, local over egressed. Assistant-memory products can be
+lossy, model-rewritten, and vendor-locked precisely because their memory is low-stakes and private;
+ctx cannot, because it is the project's system of record for context. (Consequence for memory storage
++ multi-user sync: `docs/build/MEMORY-DECISIONS.md`, §3/§8 below.)
+
 **Identity**: product/CLI/MCP name = `ctx` (P20). Core = a TypeScript library + on-disk store;
 CLI is installer/bootstrap/fallback, not the product (P16). Node ≥22.5, `node:sqlite` (P10/P28).
 
