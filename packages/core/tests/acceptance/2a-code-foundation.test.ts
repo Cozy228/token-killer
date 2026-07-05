@@ -452,11 +452,18 @@ describe("acceptance: 2a B1-worker (isolation + respawn + D23)", () => {
   }, 30_000);
 
   test("a hung parse rejects at the timeout, then the worker is replaced (D23 reject-first)", async () => {
-    const cp = new CodeParser({ parseTimeoutMs: 200 });
+    // A fresh CI runner pays a cold WASM re-init after the respawn, so a 200ms
+    // parse timeout that is fine on dev hardware makes the post-respawn `ok.ts`
+    // parse flake there. Keep it tight locally, generous on CI (still far under
+    // the 30s budget); HANG_CONTENT never returns, so it times out regardless.
+    const parseTimeoutMs = process.env.CI ? 3000 : 200;
+    const cp = new CodeParser({ parseTimeoutMs });
     try {
       const t0 = performance.now();
       await expect(cp.parse("hang.ts", HANG_CONTENT, "typescript")).rejects.toThrow(/timed out/);
-      expect(performance.now() - t0, "rejected near the timeout").toBeLessThan(2000);
+      expect(performance.now() - t0, "rejected near the timeout").toBeLessThan(
+        parseTimeoutMs + 2000,
+      );
       // Worker replaced → a normal parse succeeds afterwards.
       const ok = await cp.parse("ok.ts", "export function z() {}", "typescript");
       expect(ok.symbols.map((s) => s.name)).toContain("z");
