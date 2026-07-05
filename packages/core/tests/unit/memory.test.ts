@@ -199,6 +199,27 @@ describe("memory: Claude importer (synthetic dir — deterministic tier)", () =>
     expect(r).toMatchObject({ memoryDir: undefined, entities: 0, skipped: 0 });
   });
 
+  test("D4: within-host near-dups surface as a sameAsCandidate conflict (not just a link)", () => {
+    // Two near-dup gists (same numbers, Jaccard ≥ 0.6) → candidate; kept separate.
+    seedClaudeMemory(claudeHome, store.projectRoot, {
+      "dup-a.md": "the retry queue drops request metadata on redelivery under load",
+      "dup-b.md": "the retry queue drops request metadata on redelivery when overloaded",
+    });
+    const r = importClaudeCodeMemory(store, { projectRoots: [store.projectRoot], claudeHome });
+    expect(r.candidates).toBeGreaterThanOrEqual(1);
+    const dupConflicts = store.conflicts("open").filter((c) => c.kind === "sameAsCandidate");
+    expect(dupConflicts.length).toBeGreaterThanOrEqual(1);
+    // The conflict's claims resolve to two DISTINCT memory entities (never merged).
+    const c = dupConflicts[0]!;
+    const subA = store.getClaim(c.a)?.subject;
+    const subB = store.getClaim(c.b)?.subject;
+    expect(subA).toBeDefined();
+    expect(subB).toBeDefined();
+    expect(subA).not.toBe(subB);
+    expect(store.getMemory(subA!)).toBeDefined();
+    expect(store.getMemory(subB!)).toBeDefined();
+  });
+
   test("A3: imports land needs-review (not active), drained via the review queue", () => {
     const r = importClaudeCodeMemory(store, { projectRoots: [store.projectRoot], claudeHome });
     for (const id of r.written) expect(store.getMemory(id)?.status).toBe("needs-review");

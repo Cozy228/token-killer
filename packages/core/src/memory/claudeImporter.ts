@@ -261,6 +261,19 @@ export function importClaudeCodeMemory(store: Store, opts: ImportOptions = {}): 
         confidence: 0.5,
         claimId,
       });
+      // D4/D2: also file the dedup as a `sameAsCandidate` CONFLICT so it is
+      // visible in the conflicts channel, not just as a low-confidence link. The
+      // reciprocal claim lets the conflict surface whether a OR b is selected.
+      const reverseClaimId = store.addClaim({
+        subject: b,
+        predicate: "sameAsCandidate",
+        object: a,
+        carrier: `host:${HOST}`,
+        method: "semantic-proposal",
+        authority: "inferred",
+        gen,
+      });
+      store.addConflict(claimId, reverseClaimId, "sameAsCandidate");
       candidates++;
     }
   }
