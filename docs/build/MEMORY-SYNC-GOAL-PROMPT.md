@@ -123,6 +123,11 @@ guidance, never a hard error. There is no LLM/network to lean on, so the guard i
 Still genuinely open (enumerate options, pick one, say why — constrained only by the invariants +
 ratified decisions):
 
+> **Settled (slice-1 deliverable): `docs/build/MEMORY-SYNC-SETTLEMENTS.md`** — S1-residual, S3, S4,
+> S8 (per-carrier matrix), S9, S10 each carry enumerated options, a chosen option with reason, and
+> recorded rejected alternatives, all cited to the ruling(s) they operate under. The bullets below
+> state each item; the settlement doc records the mechanics.
+
 - **S1 (residual).** Only the multi-line `detail` attachment for a one-line memory entry — inline
   pointer to a sidecar block vs a fenced continuation — without breaking append/merge-friendliness.
 - **S3. Migration.** Existing store-only memories (M1) → committed files: one-shot export + reindex;
