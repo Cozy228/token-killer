@@ -151,8 +151,18 @@ describe("acceptance: 2c fingerprint invalidation + incremental trio", () => {
     write("drift.ts", `export function target(a: number): number {\n  return a + 999;\n}\n`);
     const bodyResult = await ingest(adapter);
     expect(bodyResult.driftFlagged).toBeGreaterThanOrEqual(1);
-    expect(store.getMemory(memBody.entityId)?.status).toBe("needs-review");
+    // A5 (E7): a body-only change is NOISE-controlled → down-rank only, NOT a
+    // status flip. The reason claim is still recorded (it powers the rank
+    // freshness penalty) and a stale-suspect conflict is filed, but the memory
+    // stays whatever it was (here: active) rather than flipping to needs-review.
+    expect(store.getMemory(memBody.entityId)?.status).toBe("active");
     expect(reasonClasses(memBody.entityId)).toContain("body-changed");
+    const bodyConflict = store
+      .conflicts("open")
+      .filter((c) => c.kind === "stale-suspect")
+      .find((c) => store.getClaim(c.a)?.subject === memBody.entityId);
+    expect(bodyConflict, "body drift files a stale-suspect conflict").toBeDefined();
+    expect(store.getClaim(bodyConflict!.b)?.object).toBe("body-changed");
 
     // (b) SIGNATURE change (arity): same id, arity 1→2 → signature-changed.
     write("drift.ts", `export function target(a: number): number {\n  return a + 999;\n}\n`);

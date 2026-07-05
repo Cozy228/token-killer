@@ -39,6 +39,7 @@ import {
   expandShadow,
   fileEntityId,
   flagAnchorDrift,
+  flagAnchored,
   readPrevSymbols,
   resolveImport,
   shrinkGuard,
@@ -240,12 +241,16 @@ export class CodeSourceAdapter implements SourceAdapter {
       prevByFile.set(path, readPrevSymbols(store, fileEntityId(path), prevPublishedGen));
     }
     let prevDeletedSymbols = 0;
+    let driftFlagged = 0; // accumulates across deleted-file (Phase A) + re-parse (Phase D) drift
     const deletedSymbolIds: string[] = [];
     for (const path of detail.deleted) {
       const prevSyms = readPrevSymbols(store, fileEntityId(path), prevPublishedGen);
       prevDeletedSymbols += prevSyms.size;
       deletedSymbolIds.push(...prevSyms.keys());
-      flagAnchorDrift(store, prevSyms, [], gen); // gone → target-removed for anchors
+      flagAnchorDrift(store, prevSyms, [], gen); // gone → target-removed (symbol anchors)
+      // E7(c): a memory anchored directly to the FILE entity (`file:<path>`) is
+      // just as stale when that file is deleted — flag it target-removed too.
+      driftFlagged += flagAnchored(store, fileEntityId(path), "target-removed", gen);
       store.clearLinks(fileEntityId(path), "contains");
       store.clearLinks(fileEntityId(path), "imports");
     }
@@ -312,7 +317,6 @@ export class CodeSourceAdapter implements SourceAdapter {
     }
 
     // ---- Phase D: commit the buffered results (re-link + drift), then publish.
-    let driftFlagged = 0;
     for (const [path, { file, result }] of buffer) {
       store.clearLinks(fileEntityId(path), "contains");
       store.clearLinks(fileEntityId(path), "imports");

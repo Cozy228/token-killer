@@ -269,24 +269,53 @@ export function flagAnchorDrift(
   return flagged;
 }
 
-/** Flag every memory anchored to `symId` for review, recording the reason class
- *  as a `stale-reason` claim (the docs source's taxonomy, extended not forked). */
-function flagAnchored(store: Store, symId: string, reason: StaleReasonClass, gen: number): number {
+/**
+ * Flag every memory anchored to `targetId` (a symbol OR a file entity), recording
+ * the reason class as a `stale-reason` claim AND filing a reason-classed
+ * `stale-suspect` conflict (E7/A5), so drift surfaces in `conflictCandidates()`
+ * and the guide stale-list — mirroring how docs mentions file stale-suspects.
+ *
+ * A5 reason-class action split: `signature-changed` / `target-removed` flip the
+ * memory to `needs-review`; `body-changed` does NOT flip status (noise control)
+ * — it is down-ranked only, via the `stale-reason` claim the rank freshness
+ * penalty reads. All three still file the conflict + claim (visible, not hidden).
+ */
+export function flagAnchored(
+  store: Store,
+  targetId: string,
+  reason: StaleReasonClass,
+  gen: number,
+): number {
   let count = 0;
-  for (const link of store.linksTo(symId, "anchoredTo")) {
+  for (const link of store.linksTo(targetId, "anchoredTo")) {
     const memId = link.src;
     if (!store.getMemory(memId)) continue;
-    store.setMemoryStatus(memId, "needs-review");
-    store.addClaim({
+    if (reason !== "body-changed") store.setMemoryStatus(memId, "needs-review");
+    // `stale-reason` powers the rank down-rank; keep it for all reason classes.
+    const reasonClaim = store.addClaim({
       subject: memId,
       predicate: "stale-reason",
       object: reason,
       carrier: "tree-sitter",
-      locus: symId,
+      locus: targetId,
       method: "structural",
       authority: "derived",
       gen,
     });
+    // A subject-carrying claim so the conflict's `a` resolves to the memory
+    // (a distinct predicate — NOT `anchoredTo`, which would move the memory's
+    // recency decay basis and make a stale entry look freshly anchored).
+    const anchorClaim = store.addClaim({
+      subject: memId,
+      predicate: "stale-anchor",
+      object: targetId,
+      carrier: "tree-sitter",
+      locus: targetId,
+      method: "structural",
+      authority: "derived",
+      gen,
+    });
+    store.addConflict(anchorClaim, reasonClaim, "stale-suspect");
     count++;
   }
   return count;

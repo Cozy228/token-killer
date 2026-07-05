@@ -84,14 +84,15 @@ describe("acceptance: 2d flagship biography (deterministic, drift-honest)", () =
     expect(before.text).toContain("target adds one to its argument");
     expect(before.text).not.toContain("⚠ needs-review");
 
-    // ---- Structural edit to target's body → 2c drift → memory needs-review.
+    // ---- SIGNATURE edit to target (arity 1→2) → 2c drift → memory needs-review.
+    // (A5: a body-only edit is down-rank-only; a signature change still flips to
+    // needs-review, which is what the drift-honest served flag demonstrates.)
     write(
-      `export function target(x: number): number {\n` +
-        `  const doubled = (x + 1) * 2;\n` +
-        `  return doubled;\n` +
+      `export function target(x: number, loud: boolean): number {\n` +
+        `  return loud ? x + 1 : x;\n` +
         `}\n` +
         `export function usesTarget(): number {\n` +
-        `  return target(1);\n` +
+        `  return target(1, true);\n` +
         `}\n`,
     );
     await ingest();
@@ -102,9 +103,9 @@ describe("acceptance: 2d flagship biography (deterministic, drift-honest)", () =
     expect(after.isError).toBe(false);
     expect(after.text).toContain("⚠ needs-review");
     expect(after.text).toContain("target adds one to its argument");
-    // The reason class is recorded (2c): a body edit → body-changed.
+    // The reason class is recorded (2c): an arity change → signature-changed.
     expect(store.claimsFor(mem.entityId, "stale-reason").map((c) => c.object)).toContain(
-      "body-changed",
+      "signature-changed",
     );
   });
 });
