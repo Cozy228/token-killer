@@ -36,6 +36,20 @@ function resolveEntityId(store: Store, idOrHandle: string): string | undefined {
   return undefined;
 }
 
+/**
+ * A2/E5: a memory may be PINNED into push only if it is push-eligible — `active`
+ * and not stale-flagged (no open `stale-reason` claim, i.e. not a `body-changed`
+ * drift). A pin may order/force among eligible items; it may NOT force in a
+ * needs-review / superseded / retired / drifted entry. Veto always wins (applied
+ * separately, before this).
+ */
+function isPushEligible(store: Store, entityId: string): boolean {
+  const row = store.getMemory(entityId);
+  if (!row || row.status !== "active") return false;
+  if (store.claimsFor(entityId, "stale-reason").length > 0) return false;
+  return true;
+}
+
 /** Composite memory score = authority boost × recency time-decay × freshness (§6.3). */
 function scoreOf(store: Store, entityId: string, now: number): number {
   const entity = store.getEntity(entityId);
@@ -65,24 +79,24 @@ export function rankGotchas(
   const pinned = new Set<string>();
   for (const id of config.pin) {
     const resolved = resolveEntityId(store, id);
-    if (resolved && !pinned.has(resolved) && !veto.has(resolved)) {
+    // A2: veto wins, and a pin only orders among ELIGIBLE items — it may not
+    // force in a needs-review / superseded / retired / stale-flagged memory.
+    if (
+      resolved &&
+      !pinned.has(resolved) &&
+      !veto.has(resolved) &&
+      isPushEligible(store, resolved)
+    ) {
       pinned.add(resolved);
       pinOrder.push(resolved);
     }
   }
 
-  // Enumerate active memories; index by entity id so pins can promote members
-  // and reference gists uniformly.
+  // Enumerate active memories; index by entity id so pins (all eligible → active)
+  // promote members and reference gists uniformly.
   const byId = new Map<string, { gist: string; authority: "inferred" | "confirmed" }>();
   for (const m of listMemories(store, { status: "active" })) {
     byId.set(m.entityId, { gist: m.gist, authority: m.authority });
-  }
-  // A pin may reference a memory outside the active listing (e.g. needs-review):
-  // force-include it if it is a readable memory entry.
-  for (const id of pinOrder) {
-    if (byId.has(id)) continue;
-    const row = store.getMemory(id);
-    if (row) byId.set(id, { gist: row.gist, authority: row.authority });
   }
 
   const build = (entityId: string, isPinned: boolean): GotchaCandidate => {

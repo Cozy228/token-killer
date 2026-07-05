@@ -13,7 +13,6 @@
  */
 import { existsSync } from "node:fs";
 import { isAbsolute, join } from "node:path";
-import { DatabaseSync } from "node:sqlite";
 import { shortHandleCandidate } from "../store/handles.ts";
 import type { Store } from "../store/store.ts";
 import type { EntityKind, Facet, MemoryStatus } from "../store/types.ts";
@@ -478,41 +477,17 @@ export function setMemoryLifecycle(
 }
 
 /**
- * Enumerate memory entries (lifecycle CLI + tests). Read-only: opens a second
- * read-only connection on the store's WAL db (the store owns the writer), so it
- * needs no enumeration method on the pinned foundation `Store` interface.
+ * Enumerate memory entries (lifecycle CLI + tests). A6: reads through the
+ * store's own `listMemoryEntries` seam — no second read-only SQLite connection.
  */
 export function listMemories(store: Store, opts: { status?: MemoryStatus } = {}): MemoryListItem[] {
-  // A second connection on the store's WAL db (readers never block writers);
-  // this function only ever SELECTs, matching the 1b test's reader pattern.
-  const db = new DatabaseSync(store.dbPath);
-  db.exec("PRAGMA busy_timeout=5000");
-  try {
-    const publishedGen =
-      (
-        db
-          .prepare("SELECT COALESCE(published_gen, 0) AS g FROM generations WHERE source = ?")
-          .get(MEMORY_SOURCE) as { g: number } | undefined
-      )?.g ?? 0;
-    const sql =
-      `SELECT m.entity_id AS entityId, e.name AS name, m.gist AS gist, m.origin AS origin,
-              m.authority AS authority, m.status AS status,
-              (SELECT short FROM handles h WHERE h.entity_id = m.entity_id AND h.facet IS NULL LIMIT 1) AS handle
-       FROM memory m JOIN entities e ON e.id = m.entity_id
-       WHERE e.gen <= ?` +
-      (opts.status ? " AND m.status = ?" : "") +
-      " ORDER BY e.last_verified DESC, m.entity_id";
-    const params: Array<string | number> = opts.status
-      ? [publishedGen, opts.status]
-      : [publishedGen];
-    const rows = db.prepare(sql).all(...params) as Array<
-      Omit<MemoryListItem, "handle"> & { handle: string | null }
-    >;
-    return rows.map((r) => ({
-      ...r,
-      handle: r.handle ?? shortHandleCandidate(r.entityId, undefined, 5),
-    }));
-  } finally {
-    db.close();
-  }
+  return store.listMemoryEntries(opts.status).map((r) => ({
+    entityId: r.entityId,
+    name: r.name,
+    gist: r.gist,
+    origin: r.origin,
+    authority: r.authority,
+    status: r.status,
+    handle: r.handle ?? shortHandleCandidate(r.entityId, undefined, 5),
+  }));
 }

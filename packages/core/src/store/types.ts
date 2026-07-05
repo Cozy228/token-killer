@@ -147,6 +147,18 @@ export interface MemoryRow {
   lastServed: number | undefined;
 }
 
+/** One row of the memory enumeration (A6): the lifecycle-listing view joining a
+ *  memory to its entity name + interned handle, `gen`-visibility filtered. */
+export interface MemoryListRow {
+  entityId: string;
+  name: string;
+  gist: string;
+  origin: MemoryOrigin;
+  authority: "inferred" | "confirmed";
+  status: MemoryStatus;
+  handle: string | null;
+}
+
 export interface Cursor {
   source: string;
   position: string | undefined;

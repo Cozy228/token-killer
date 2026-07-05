@@ -181,6 +181,27 @@ describe("acceptance: 1h push", () => {
     store.close();
   });
 
+  test("A2-pin-gate: a pin cannot force a needs-review memory into push (eligibility wins)", () => {
+    const repo = makeRepo(root);
+    let clock = 1_000_000_000_000;
+    const store = openStore({ projectDir: repo, home, now: () => clock });
+    const review = must(remember(store, { note: "delta: unreviewed gotcha pending confirmation" }));
+    clock = 1_000_000_100_000;
+    const ok = must(remember(store, { note: "echo: a clean active gotcha" }));
+    // Flip the first to needs-review (as a host import or anchor drift would).
+    setMemoryLifecycle(store, review.handle, "review");
+
+    // Pin the needs-review entry — A2: the pin may NOT force it in.
+    const cfgPath = join(repo, ".ctx", "push.jsonc");
+    mkdirSync(dirname(cfgPath), { recursive: true });
+    writeFileSync(cfgPath, `{ "pin": ["${review.handle}"], "veto": [] }\n`);
+    const cfg = readPushConfig(repo);
+    const block = buildPushBlock(store, { config: cfg, now: 1_000_000_200_000 });
+    expect(block.handles).not.toContain(review.handle); // pin vetoed by eligibility
+    expect(block.handles).toContain(ok.handle); // the eligible active one still shows
+    store.close();
+  });
+
   test("A9-idempotent: unchanged inputs → byte-identical block; placement is a no-op with surrounds preserved", () => {
     const repo = makeRepo(root);
     let clock = 1_700_000_000_000;

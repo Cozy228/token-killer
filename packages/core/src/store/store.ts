@@ -43,12 +43,15 @@ import type {
   LinkInput,
   Locator,
   MemoryInput,
+  MemoryListRow,
   MemoryRow,
+  MemoryStatus,
   ReadThroughResult,
 } from "./types.ts";
 
 export const LEASE_TTL_MS = 30_000;
 export const MEMORY_GIST_MAX_CHARS = 240;
+const MEMORY_SOURCE = "memory";
 
 export interface OpenStoreOptions {
   /** Directory to resolve the project shard from (default: process.cwd()). */
@@ -120,6 +123,13 @@ export interface Store {
   setMemoryStatus(entityId: string, status: MemoryRow["status"]): void;
   setAnchors(memoryId: string, entityIds: string[]): void;
   anchorsOf(memoryId: string): string[];
+  /**
+   * Enumerate memory entries (lifecycle listing), optionally status-filtered,
+   * `gen<=published_gen` visibility filtered, ordered last_verified desc then id.
+   * A6: closes the enumeration seam so `listMemories` reads through the store's
+   * own connection instead of opening a second read-only SQLite connection.
+   */
+  listMemoryEntries(status?: MemoryStatus): MemoryListRow[];
 
   // full-text (contentless — index only, rowid keyed to entities.rowid)
   ftsIndex(entityId: string, doc: { name: string; text: string; kind: string }): void;
@@ -458,6 +468,25 @@ class SqliteStore implements Store {
         .prepare("SELECT entity_id FROM anchors WHERE memory_id = ? ORDER BY entity_id")
         .all(memoryId) as unknown as Array<{ entity_id: string }>
     ).map((r) => r.entity_id);
+  }
+
+  listMemoryEntries(status?: MemoryStatus): MemoryListRow[] {
+    const publishedGen =
+      (
+        this.#db
+          .prepare("SELECT COALESCE(published_gen, 0) AS g FROM generations WHERE source = ?")
+          .get(MEMORY_SOURCE) as { g: number } | undefined
+      )?.g ?? 0;
+    const sql =
+      `SELECT m.entity_id AS entityId, e.name AS name, m.gist AS gist, m.origin AS origin,
+              m.authority AS authority, m.status AS status,
+              (SELECT short FROM handles h WHERE h.entity_id = m.entity_id AND h.facet IS NULL LIMIT 1) AS handle
+       FROM memory m JOIN entities e ON e.id = m.entity_id
+       WHERE e.gen <= ?` +
+      (status ? " AND m.status = ?" : "") +
+      " ORDER BY e.last_verified DESC, m.entity_id";
+    const params: Array<string | number> = status ? [publishedGen, status] : [publishedGen];
+    return this.#db.prepare(sql).all(...params) as unknown as MemoryListRow[];
   }
 
   // ---- fts (contentless; rowid keyed to entities.rowid) ----

@@ -1,5 +1,6 @@
-import { join } from "node:path";
-import { mkdirSync, writeFileSync } from "node:fs";
+import { dirname, join, resolve } from "node:path";
+import { mkdirSync, readFileSync, writeFileSync } from "node:fs";
+import { fileURLToPath } from "node:url";
 import { afterAll, beforeAll, describe, expect, test } from "vitest";
 import { openStore, type Store } from "../../src/store/store.ts";
 import {
@@ -184,5 +185,28 @@ describe("select/rank: store-backed multipliers", () => {
     expect(heat).toBeCloseTo(expected, 9);
     expect(heatBoost(store, file, T0)).toBeCloseTo(1 + 0.5 * expected, 9);
     expect(historyHeat(store, store.getEntity("mem:confirmed")!, T0)).toBe(0);
+  });
+});
+
+describe("A7: served_count / last_served are telemetry-only, never a ranking input", () => {
+  const RANK_SOURCES = [
+    "src/select/rank.ts",
+    "src/select/engine.ts",
+    "src/select/seeds.ts",
+    "src/select/subgraph.ts",
+    "src/select/ppr.ts",
+    "src/select/sections.ts",
+    "src/push/rank.ts",
+    "src/push/block.ts",
+  ];
+
+  test("no ranking source references the usage columns", () => {
+    const pkgDir = resolve(dirname(fileURLToPath(import.meta.url)), "..", "..");
+    for (const rel of RANK_SOURCES) {
+      const src = readFileSync(join(pkgDir, rel), "utf8");
+      expect(src, `${rel} must not read usage counters`).not.toMatch(
+        /served_count|servedCount|last_served|lastServed/,
+      );
+    }
   });
 });
