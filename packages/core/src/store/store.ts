@@ -77,6 +77,13 @@ export interface Store {
    */
   countByKind(kind: EntityKind, maxGen?: number): number;
   /**
+   * All entities of one kind (optionally at or below `maxGen`) — the code
+   * source's 2d call-graph resolution and docs→symbol mention resolution both
+   * need the project-wide symbol universe. Additive, read-only; the
+   * `entities(kind, name)` index makes the kind scan cheap.
+   */
+  entitiesByKind(kind: EntityKind, maxGen?: number): Entity[];
+  /**
    * Direct name index, case-insensitive exact match (additive, read-only;
    * slice 1f named-seed injection — CTX-IMPL §6.1: identifier-shaped query
    * tokens resolve via the name index and are force-included).
@@ -236,6 +243,14 @@ class SqliteStore implements Store {
         : this.#db.prepare("SELECT COUNT(*) AS n FROM entities WHERE gen <= ?").get(maxGen)
     ) as { n: number };
     return row.n;
+  }
+
+  entitiesByKind(kind: string, maxGen?: number): Entity[] {
+    const rows = (maxGen === undefined
+      ? this.#db.prepare("SELECT * FROM entities WHERE kind = ? ORDER BY id")
+      : this.#db.prepare("SELECT * FROM entities WHERE kind = ? AND gen <= ? ORDER BY id")
+    ).all(...(maxGen === undefined ? [kind] : [kind, maxGen])) as unknown as EntityRow[];
+    return rows.map((row) => entityFromRow(row));
   }
 
   entitiesByName(name: string, limit = 32): Entity[] {

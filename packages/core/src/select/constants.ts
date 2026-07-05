@@ -64,6 +64,7 @@ export const PREDICATE_CONFIDENCE_FLOOR: Readonly<Record<string, number>> = {
   touches: 1.0,
   "renamed-to": 0.9,
   references: 0.6,
+  calls: 0.85,
   "co-changed": 0.4,
   anchoredTo: 1.0,
   supersedes: 1.0,

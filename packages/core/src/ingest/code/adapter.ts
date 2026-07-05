@@ -44,6 +44,12 @@ import {
   shrinkGuard,
   type PrevSymbol,
 } from "./incremental.ts";
+import {
+  buildCalleeIndex,
+  enclosingSymbol,
+  resolveCallee,
+  type IndexedSymbol,
+} from "./callGraph.ts";
 
 const SOURCE = "code" as const;
 
@@ -223,9 +229,11 @@ export class CodeSourceAdapter implements SourceAdapter {
       prevByFile.set(path, readPrevSymbols(store, fileEntityId(path), prevPublishedGen));
     }
     let prevDeletedSymbols = 0;
+    const deletedSymbolIds: string[] = [];
     for (const path of detail.deleted) {
       const prevSyms = readPrevSymbols(store, fileEntityId(path), prevPublishedGen);
       prevDeletedSymbols += prevSyms.size;
+      deletedSymbolIds.push(...prevSyms.keys());
       flagAnchorDrift(store, prevSyms, [], gen); // gone → target-removed for anchors
       store.clearLinks(fileEntityId(path), "contains");
       store.clearLinks(fileEntityId(path), "imports");
@@ -306,6 +314,11 @@ export class CodeSourceAdapter implements SourceAdapter {
       );
     }
 
+    // ---- Phase E: resolve call sites → `calls` edges (2d). Runs AFTER every
+    // buffered file's symbols are written, so cross-file `project` callees are
+    // resolvable against the full current symbol universe (§5.2).
+    const callEdges = writeCallEdges(store, buffer, deletedSymbolIds, gen, counts);
+
     if (!complete) {
       // Partial pass: persist progress (parsed files done, the rest stay dirty),
       // do not publish. Next refresh resumes the remainder.
@@ -329,6 +342,7 @@ export class CodeSourceAdapter implements SourceAdapter {
         boundaryExpanded: boundary.size,
         shadowExpanded: shadow.size,
         driftFlagged,
+        callEdges,
       };
     }
 
@@ -344,6 +358,7 @@ export class CodeSourceAdapter implements SourceAdapter {
       boundaryExpanded: boundary.size,
       shadowExpanded: shadow.size,
       driftFlagged,
+      callEdges,
     };
   }
 }
@@ -474,6 +489,76 @@ function writeSymbol(
     confidence: 1.0,
     claimId,
   });
+}
+
+/**
+ * Resolve every buffered file's call sites to `caller-sym --calls--> callee-sym`
+ * links (structural claims, Derived — §5.2). The callee-resolution registry is
+ * conservative: only `local` / `project` outcomes create an edge; `builtin` /
+ * `unknown` (incl. ambiguous and cross-language) create nothing. Returns the
+ * number of edges emitted.
+ */
+function writeCallEdges(
+  store: Store,
+  buffer: Map<string, { file: EffectiveFile; result: ExtractResult }>,
+  deletedSymbolIds: readonly string[],
+  gen: number,
+  counts: { entities: number; claims: number },
+): number {
+  // The project-wide symbol universe (freshly-written buffer symbols included).
+  const indexed: IndexedSymbol[] = [];
+  for (const e of store.entitiesByKind("symbol")) {
+    const lang = e.attrs.lang;
+    if (e.locator.t !== "file" || typeof lang !== "string") continue;
+    indexed.push({ id: e.id, name: e.name, lang: lang as LanguageId, path: e.locator.path });
+  }
+  const index = buildCalleeIndex(indexed);
+
+  // Clear stale outgoing calls for every symbol being (re)considered this pass:
+  // the re-parsed files' symbols + any deleted files' lingering symbols. Links
+  // are a mutable current view (unlike append-only claims), so a re-resolution
+  // must not leave a redirected/removed callee edge behind.
+  for (const { result } of buffer.values()) {
+    for (const s of result.symbols) store.clearLinks(s.id, "calls");
+  }
+  for (const id of deletedSymbolIds) store.clearLinks(id, "calls");
+
+  let edges = 0;
+  for (const { file, result } of buffer.values()) {
+    const seen = new Set<string>(); // one edge per (caller, callee) per file
+    for (const call of result.calls) {
+      const callerId = enclosingSymbol(result.symbols, call.line);
+      if (!callerId) continue; // a top-level call outside every symbol → unattributed
+      const res = resolveCallee(index, file.lang, file.path, call.name);
+      if (res.outcome !== "local" && res.outcome !== "project") continue; // builtin/unknown: no edge
+      const targetId = res.targetId as string;
+      if (targetId === callerId) continue; // self-recursion adds no navigational value
+      const key = `${callerId} ${targetId}`;
+      if (seen.has(key)) continue;
+      seen.add(key);
+      const claimId = store.addClaim({
+        subject: callerId,
+        predicate: "calls",
+        object: targetId,
+        carrier: "tree-sitter",
+        locus: `${file.path}#L${call.line}`,
+        method: "structural",
+        authority: "derived",
+        gen,
+      });
+      counts.claims++;
+      store.setLink({
+        src: callerId,
+        dst: targetId,
+        predicate: "calls",
+        method: "structural",
+        confidence: res.outcome === "local" ? 1.0 : 0.85,
+        claimId,
+      });
+      edges++;
+    }
+  }
+  return edges;
 }
 
 function readState(store: Store): Record<string, FileState> {

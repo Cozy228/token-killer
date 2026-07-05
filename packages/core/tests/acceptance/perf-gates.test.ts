@@ -217,10 +217,14 @@ describe("acceptance: perf gates", () => {
     // Recorded: store ~8MB is ~22% of repo CONTENT and ~5% of the full checkout —
     // the §10 <5%-of-content target is NOT met on this prose-heavy repo (fts index
     // over ~7MB of docs; index-not-copy holds for code repos with large history).
-    // Non-regression ceiling: fail if the store balloons past 3× the content it
+    // ⚠ 2d re-record (B7-size preliminary; 2e finalizes): the call graph adds
+    // ~2877 `calls` + ~537 symbol-match `references` claims+links (~1.4MB) →
+    // store ~14MB, pctContent ~59%→~66% (still well under the 25MB absolute cap
+    // and under 100% of content — index-not-copy holds). Bar raised 60→72%.
+    // Non-regression ceiling: fail if the store balloons past the content it
     // indexes, or past 25MB absolute.
     expect(storeBytes, record).toBeLessThan(25 * 1048576);
-    expect(pctContent, record).toBeLessThan(60);
+    expect(pctContent, record).toBeLessThan(72);
     expect(contentBytes, "repo content measured").toBeGreaterThan(0);
   });
 });

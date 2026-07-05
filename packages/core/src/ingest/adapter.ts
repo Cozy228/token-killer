@@ -39,6 +39,7 @@ export interface IngestResult {
   boundaryExpanded?: number; // unchanged-side files pulled in by 1-hop boundary
   shadowExpanded?: number; // pre-existing files re-resolved because a shadow was added
   driftFlagged?: number; // anchored memories flagged needs-review by drift
+  callEdges?: number; // caller→callee `calls` edges resolved this pass (2d)
   refused?: boolean; // shrink guard refused to publish (generation held at previous gen)
   refusal?: { reason: string; prevSymbols: number; projectedSymbols: number };
 }
