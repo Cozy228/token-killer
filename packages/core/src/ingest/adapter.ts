@@ -42,6 +42,12 @@ export interface IngestResult {
   callEdges?: number; // caller→callee `calls` edges resolved this pass (2d)
   refused?: boolean; // shrink guard refused to publish (generation held at previous gen)
   refusal?: { reason: string; prevSymbols: number; projectedSymbols: number };
+  /**
+   * 2e SCIP pass disclosure (code source). SUCCESS-shaped: `applied:false`
+   * (absent / malformed `index.scip`) means the ingest completed on tree-sitter
+   * alone with nothing half-applied — a fail-open, never an error (D16 / G-3).
+   */
+  scip?: import("./code/scip/consume.ts").ScipPassResult;
 }
 
 export interface SourceAdapter {

@@ -148,6 +148,18 @@ export interface Store {
   getMeta(key: string): string | undefined;
   setMeta(key: string, value: string): void;
 
+  /**
+   * Run `fn` inside ONE write-locking transaction (§4 / §11). The whole body
+   * commits together or rolls back together — the SCIP pass (2e) buffers its
+   * decoded claims + arbitrated link upgrades and applies them here so a
+   * malformed `index.scip` leaves the store EXACTLY as tree-sitter left it (D16
+   * fail-open: no half-applied SCIP generation). Do NOT nest: `fn` must call
+   * only the autocommit writers (upsertEntity/addClaim/setLink/clearLinks), not
+   * the self-transacting ops (beginGeneration/publishGeneration/ftsIndex/
+   * setAnchors) — SQLite rejects a nested BEGIN.
+   */
+  transaction<T>(fn: () => T): T;
+
   // read-through (§3) — recoverable failures are values, never throws
   readThrough(entityId: string): ReadThroughResult;
   resolveLocator(locator: Locator, contentHash?: string, entityId?: string): ReadThroughResult;
@@ -645,6 +657,10 @@ class SqliteStore implements Store {
           "ON CONFLICT(key) DO UPDATE SET value = excluded.value",
       )
       .run(key, value);
+  }
+
+  transaction<T>(fn: () => T): T {
+    return transaction(this.#db, fn);
   }
 
   // ---- read-through ----

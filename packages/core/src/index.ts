@@ -110,6 +110,21 @@ export {
 export type { CodeParserOptions } from "./extract/code/codeParser.ts";
 export { grammarWasmPath, readQuerySource } from "./extract/code/assets.ts";
 export { POISON_CONTENT, HANG_CONTENT } from "./extract/code/protocol.ts";
+// code source SCIP arbitration (slice 2e): index.scip consumer + fail-open pass
+export { runScipPass } from "./ingest/code/scip/consume.ts";
+export type {
+  ScipPassResult,
+  ScipPassOptions,
+  ScipPassReason,
+} from "./ingest/code/scip/consume.ts";
+export {
+  decodeScipIndex,
+  isLocalScipSymbol,
+  isCallableScipSymbol,
+  ScipDecodeError,
+  SCIP_ROLE_DEFINITION,
+} from "./ingest/code/scip/reader.ts";
+export type { ScipIndex, ScipDocument, ScipOccurrence } from "./ingest/code/scip/reader.ts";
 export {
   parseMarkdown,
   matchGlossary,

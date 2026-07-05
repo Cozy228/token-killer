@@ -50,6 +50,7 @@ import {
   resolveCallee,
   type IndexedSymbol,
 } from "./callGraph.ts";
+import { runScipPass, type ScipPassResult } from "./scip/consume.ts";
 
 const SOURCE = "code" as const;
 
@@ -106,6 +107,14 @@ export interface CodeAdapterOptions {
   inProcess?: boolean;
   /** Parser factory override (shrink-guard test seam; default = real worker). */
   parserFactory?: () => CodeParserLike;
+  /**
+   * Consume a root-level `index.scip` (2e): SCIP upgrades covered identity /
+   * reference claims to Observed and arbitrates tree-sitter × SCIP overlap
+   * (Observed beats Derived). Default ON — a no-op existsSync when no `index.scip`
+   * is present (zero cost on the common path), fail-open when it is malformed.
+   * Set false to force tree-sitter-only.
+   */
+  scip?: boolean;
 }
 
 export class CodeSourceAdapter implements SourceAdapter {
@@ -113,12 +122,14 @@ export class CodeSourceAdapter implements SourceAdapter {
   readonly cost: number;
   readonly #inProcess: boolean;
   readonly #parserFactory: () => CodeParserLike;
+  readonly #scip: boolean;
 
   constructor(opts: CodeAdapterOptions = {}) {
     this.cost = opts.cost ?? 5; // parsing is heavier than a git walk (2) or doc scan (3)
     this.#inProcess = opts.inProcess ?? false;
     this.#parserFactory =
       opts.parserFactory ?? (() => new CodeParser({ inProcess: this.#inProcess }));
+    this.#scip = opts.scip ?? true;
   }
 
   async dirtyCheck(store: Store): Promise<DirtyReport> {
@@ -346,6 +357,19 @@ export class CodeSourceAdapter implements SourceAdapter {
       };
     }
 
+    // ---- Phase F: SCIP arbitration (2e). Upgrade covered identity/reference
+    // claims to Observed and arbitrate tree-sitter × SCIP overlap → one link.
+    // COMPLETE path only (a partial pass has an incomplete symbol universe) and
+    // BEFORE publish, so the SCIP claims share this generation and go live
+    // atomically; fail-open leaves the tree-sitter generation exactly as it is.
+    const scip: ScipPassResult | undefined = this.#scip
+      ? runScipPass(store, {
+          repoRoot: store.projectRoot,
+          gen,
+          effectivePaths: new Set(buffer.keys()),
+        })
+      : undefined;
+
     store.setCursor(SOURCE, JSON.stringify(detail.next), budget.now(), gen);
     store.publishGeneration(SOURCE);
     return {
@@ -359,6 +383,7 @@ export class CodeSourceAdapter implements SourceAdapter {
       shadowExpanded: shadow.size,
       driftFlagged,
       callEdges,
+      ...(scip !== undefined ? { scip } : {}),
     };
   }
 }
