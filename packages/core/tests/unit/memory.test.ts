@@ -17,6 +17,12 @@ import { deterministicUlid, memoryId, ulid } from "../../src/memory/ulid.ts";
 import { openStore, type Store } from "../../src/store/store.ts";
 import { cleanupTempDir, makeGitFixture, makeTempDir } from "../helpers/sandbox.ts";
 
+/** Unwrap a success-shaped result or fail loudly (test helper). */
+function must<T extends { ok: boolean }>(r: T): Extract<T, { ok: true }> {
+  if (!r.ok) throw new Error(`expected ok result, got ${JSON.stringify(r)}`);
+  return r as Extract<T, { ok: true }>;
+}
+
 /** Build a synthetic Claude Code memory dir under a temp `claudeHome`. */
 function seedClaudeMemory(
   claudeHome: string,
@@ -311,6 +317,43 @@ describe("memory: remember / recall / lifecycle", () => {
     const r = recall(store, "z9999999");
     expect(r.ok).toBe(false);
     if (!r.ok) expect(r.reason).toBe("unknown-handle");
+  });
+
+  test("D3: prewrite reconcile — near-dup write links + advises, never blocks", () => {
+    const a = must(
+      remember(store, { note: "the retry queue drops request metadata on redelivery under load" }),
+    );
+    // A near-duplicate (same numbers, high word overlap) → success, linked + advised.
+    const b = remember(store, {
+      note: "the retry queue drops request metadata on redelivery when overloaded",
+    });
+    expect(b.ok).toBe(true); // never gated
+    if (!b.ok) throw new Error("write must succeed");
+    // sameAsCandidate link between the two, and a conflict in the channel.
+    const link = store.linksFrom(b.entityId, "sameAsCandidate").find((l) => l.dst === a.entityId);
+    expect(link?.method).toBe("semantic-proposal");
+    expect(store.conflicts("open").some((c) => c.kind === "sameAsCandidate")).toBe(true);
+    // supersede-candidate advisory names the existing entry (no auto-apply).
+    expect(b.advisory?.kind).toBe("supersede-candidate");
+    expect(b.advisory?.candidates.map((c) => c.entityId)).toContain(a.entityId);
+    // Both kept, both active — never a destructive merge, never a supersede.
+    expect(store.getMemory(a.entityId)?.status).toBe("active");
+    expect(store.getMemory(b.entityId)?.status).toBe("active");
+  });
+
+  test("D3: differing embedded numbers → no candidate, no link, no advisory", () => {
+    const a = must(
+      remember(store, { note: "ADR 0011 records the evidence ladder decision for the store" }),
+    );
+    const b = remember(store, {
+      note: "ADR 0013 records the evidence ladder decision for the store",
+    });
+    expect(b.ok).toBe(true);
+    if (!b.ok) throw new Error("write must succeed");
+    expect(b.advisory).toBeUndefined();
+    expect(store.linksFrom(b.entityId, "sameAsCandidate")).toHaveLength(0);
+    expect(store.conflicts("open").filter((c) => c.kind === "sameAsCandidate")).toHaveLength(0);
+    void a;
   });
 
   test("lifecycle: list + status transitions (confirm/retire), status filter", () => {

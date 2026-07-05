@@ -18,6 +18,7 @@ import { shortHandleCandidate } from "../store/handles.ts";
 import type { Store } from "../store/store.ts";
 import type { EntityKind, Facet, MemoryStatus } from "../store/types.ts";
 import { MEMORY_GIST_MAX_CHARS } from "./claudeImporter.ts";
+import { fuzzyDuplicate } from "./dedup.ts";
 import { ulid, memoryId } from "./ulid.ts";
 
 const MEMORY_SOURCE = "memory";
@@ -40,6 +41,20 @@ export interface EntityCandidate {
   handle: string;
 }
 
+/**
+ * Deterministic pre-write advisory (P28/D3): the write ALWAYS succeeds — this
+ * only surfaces a near-duplicate the caller may want to reconcile. `dup-candidate`
+ * = a near-dup was found and linked (sameAsCandidate claim+link+conflict), both
+ * kept; when the caller passed no `supersedes`, the advisory also names the
+ * candidate as a `supersede-candidate` so a human/agent can choose to replace it.
+ * ctx never auto-applies a supersede.
+ */
+export interface WriteAdvisory {
+  kind: "supersede-candidate";
+  guidance: string;
+  candidates: EntityCandidate[];
+}
+
 export type RememberResult =
   | {
       ok: true;
@@ -48,6 +63,8 @@ export type RememberResult =
       gist: string;
       anchors: string[];
       supersededId?: string;
+      /** Present only when a near-duplicate was found + linked (never blocks). */
+      advisory?: WriteAdvisory;
     }
   | {
       ok: false;
@@ -129,6 +146,79 @@ function planAnchors(store: Store, anchors: string[]): AnchorPlan {
     plan.unresolved.push(anchor);
   }
   return plan;
+}
+
+/**
+ * Deterministic near-duplicate search over EXISTING memories, scoped cheaply to
+ * FTS candidates on the gist + shared-anchor overlap (per the research). Precision
+ * is the entropy/number-guarded `fuzzyDuplicate` — FTS/anchors only widen recall.
+ * Excludes `self` and retired entries. Returns candidate memory ids (deduped).
+ */
+function findDuplicateCandidates(
+  store: Store,
+  self: string,
+  gist: string,
+  anchorIds: string[],
+): string[] {
+  const seen = new Set<string>([self]);
+  const out: string[] = [];
+  const consider = (candId: string): void => {
+    if (seen.has(candId)) return;
+    seen.add(candId);
+    const row = store.getMemory(candId); // memory-kind gate
+    if (!row || row.status === "retired") return;
+    if (fuzzyDuplicate(gist, row.gist).candidate) out.push(candId);
+  };
+  // (1) FTS recall: OR the gist's word tokens (fuzzyDuplicate is the real gate).
+  const tokens = [...new Set(gist.toLowerCase().match(/[a-z0-9]{3,}/g) ?? [])];
+  if (tokens.length > 0) {
+    const match = tokens.map((t) => `"${t}"`).join(" OR ");
+    for (const hit of store.ftsSearch(match, 20)) consider(hit.entityId);
+  }
+  // (2) shared-anchor overlap: memories anchored to any of the new anchors.
+  for (const anchorId of anchorIds) {
+    for (const l of store.linksTo(anchorId, "anchoredTo")) consider(l.src);
+  }
+  return out;
+}
+
+/** Emit the non-destructive sameAsCandidate claim+link+conflict between two
+ *  memories (mirrors the host importer / Task 4 — dedup stays visible in BOTH
+ *  the link view and the conflicts channel; never a merge). */
+function fileSameAsCandidate(
+  store: Store,
+  a: string,
+  b: string,
+  gen: number,
+  authority: "inferred" | "confirmed",
+): void {
+  const claimId = store.addClaim({
+    subject: a,
+    predicate: "sameAsCandidate",
+    object: b,
+    carrier: "remember",
+    method: "semantic-proposal",
+    authority,
+    gen,
+  });
+  store.setLink({
+    src: a,
+    dst: b,
+    predicate: "sameAsCandidate",
+    method: "semantic-proposal",
+    confidence: 0.5,
+    claimId,
+  });
+  const reverseClaimId = store.addClaim({
+    subject: b,
+    predicate: "sameAsCandidate",
+    object: a,
+    carrier: "remember",
+    method: "semantic-proposal",
+    authority,
+    gen,
+  });
+  store.addConflict(claimId, reverseClaimId, "sameAsCandidate");
 }
 
 export function remember(store: Store, input: RememberInput): RememberResult {
@@ -252,6 +342,40 @@ export function remember(store: Store, input: RememberInput): RememberResult {
     });
   }
 
+  // Deterministic prewrite reconcile (D3): the write already succeeded; surface
+  // (never gate) near-duplicates. A hit is linked as sameAsCandidate (both kept)
+  // and — when the caller did NOT already resolve the relationship via
+  // `supersedes` — returned as a supersede-candidate advisory. Never auto-applies.
+  let advisory: WriteAdvisory | undefined;
+  const dupCandidates = findDuplicateCandidates(store, id, gist, plan.resolved).filter(
+    (candId) => candId !== supersededId,
+  );
+  if (dupCandidates.length > 0) {
+    const authority = input.authority ?? "confirmed";
+    const linked: EntityCandidate[] = [];
+    for (const candId of dupCandidates) {
+      fileSameAsCandidate(store, id, candId, gen, authority);
+      const e = store.getEntity(candId);
+      linked.push({
+        entityId: candId,
+        name: e?.name ?? candId,
+        kind: "memory",
+        handle: store.internHandle(candId),
+      });
+    }
+    if (supersededId === undefined) {
+      advisory = {
+        kind: "supersede-candidate",
+        guidance:
+          `This note near-duplicates ${linked.length} existing ${
+            linked.length === 1 ? "memory" : "memories"
+          } (${linked.map((c) => `[${c.handle}]`).join(", ")}); both were kept and linked. ` +
+          `If this REPLACES one, re-run with \`supersedes: <handle>\`; otherwise ignore.`,
+        candidates: linked,
+      };
+    }
+  }
+
   store.publishGeneration(MEMORY_SOURCE);
   const handle = displayHandle(store, id);
   return {
@@ -261,6 +385,7 @@ export function remember(store: Store, input: RememberInput): RememberResult {
     gist,
     anchors: plan.resolved,
     ...(supersededId ? { supersededId } : {}),
+    ...(advisory ? { advisory } : {}),
   };
 }
 
