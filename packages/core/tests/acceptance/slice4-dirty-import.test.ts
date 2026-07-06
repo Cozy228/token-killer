@@ -203,6 +203,84 @@ describe("acceptance: slice 4 — memory dirty source + import→overlay→confi
     store.close();
   });
 
+  test("F1: drift WINS over unresolved-here for a mixed-anchor memory, regardless of anchor order", () => {
+    const { repo, store } = setup(root);
+    const files = MemoryFiles.forStore(store);
+    // The initial commit (HEAD on main) is an ancestor of itself → an absent local
+    // anchor with this anchored-at classifies as `target-removed` (genuinely stale).
+    const headOid = git(["rev-parse", "HEAD"], repo).trim();
+    const REMOVED = "sym:src/gone.ts#fn"; // absent local target, ancestry-proven removed
+    const EXTERNAL = "jira:PROJ-1"; // category-③ target → unresolved-here class
+
+    // Two memories with the SAME two anchors in OPPOSITE order: `anchorsOf` order is
+    // unspecified, so both must reach the SAME verdict — `target-removed` drift.
+    const write = (memId: string, anchors: string[]): void => {
+      const stamp = store.nextEventStamp();
+      files.appendMemory("mainline", {
+        eventId: stamp.id,
+        at: stamp.at,
+        memoryId: memId,
+        actor: "cli",
+        carrier: "memory",
+        method: "explicit-key",
+        authority: "confirmed",
+        status: "active",
+        gist: `mixed-anchor memory ${memId}`,
+        origin: "remember",
+        anchors,
+        anchoredAt: headOid,
+      });
+    };
+    write("mem:0000000000000000000000MIXA", [EXTERNAL, REMOVED]); // external first
+    write("mem:0000000000000000000000MIXB", [REMOVED, EXTERNAL]); // removed first
+    store.beginGeneration("code");
+    store.publishGeneration("code");
+
+    reindexMemoryFromFiles(store, files, {});
+    for (const id of ["mem:0000000000000000000000MIXA", "mem:0000000000000000000000MIXB"]) {
+      const mem = store.getMemory(id);
+      // Drift wins: target-removed → effective needs-review, NOT unresolved-here.
+      expect(mem?.driftReason, `${id} must be stale`).toBe("target-removed");
+      expect(mem?.status, `${id} composed status`).toBe("needs-review");
+      expect(mem?.unresolvedHere, `${id} must NOT be unresolved-here`).toBe(false);
+      // Down-ranked as stale + push-excluded (an open stale-suspect conflict).
+      expect(store.openStaleSuspects(id).length).toBeGreaterThan(0);
+    }
+    expect(rankGotchas(store).map((g) => g.entityId)).toEqual([]);
+    store.close();
+  });
+
+  test("F2: confirm on a create-less memory routes the dec to the overlay (no dangling mainline dec)", () => {
+    const { store } = setup(root);
+    const files = MemoryFiles.forStore(store);
+    files.ensureScaffold();
+    // Abnormal state unreachable by construction (migration backfill + the importer
+    // guarantee every memory has exactly one create event): a memory ROW with NO
+    // create event. Directly exercise the promotion guard so the D3-safety does not
+    // depend on that unreachability.
+    const id = "mem:0000000000000000000000NOCR";
+    const gen = store.beginGeneration("memory");
+    store.upsertEntity({ id, kind: "memory", name: "x", locator: { t: "store" }, gen });
+    store.writeMemory({
+      entityId: id,
+      gist: "no create event here",
+      origin: "remember",
+      authority: "confirmed",
+      status: "active",
+    });
+    store.publishGeneration("memory");
+
+    const res = setMemoryLifecycle(store, id, "active", files);
+    expect(res.ok).toBe(true);
+    if (res.ok) expect(res.promoted).toBeFalsy(); // promotion NOT reported
+    // No committed mainline mem line AND no committed mainline dec line → no D3 dangle.
+    expect(files.readMemories("mainline")).toHaveLength(0);
+    expect(files.readDecisions("mainline")).toHaveLength(0);
+    // The confirm decision was routed to the gitignored overlay instead.
+    expect(files.readDecisions("overlay").some((d) => d.memoryId === id)).toBe(true);
+    store.close();
+  });
+
   test("migration cold-path trigger is idempotent (adapter run twice sweeps once, no churn)", async () => {
     const { store, emptyHome } = setup(root);
     // Legacy store-only rows (M1 shape: written WITHOUT a files writer).
