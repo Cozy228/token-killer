@@ -22,6 +22,8 @@
  * No LLM / no network — a pure deterministic function of the local event log.
  */
 import type { Store } from "../store/store.ts";
+import type { MemoryFiles } from "./fileStore.ts";
+import { recordDecision } from "./writeThrough.ts";
 import type {
   MemoryDriftReason,
   MemoryEvent,
@@ -176,8 +178,10 @@ export function resolveConflictViaEvent(
   b: number,
   verb: "resolve-conflict" | "dismiss",
   actor = "cli",
+  files?: MemoryFiles,
 ): void {
-  store.appendMemoryEvent({
+  // Human/CLI resolution → the committed MAINLINE decision log (write-through).
+  recordDecision(store, files, "mainline", {
     memoryId,
     verb,
     actor,
