@@ -186,14 +186,21 @@ export class MemorySourceAdapter implements SourceAdapter {
     for (const rel of WATCHED_RELS) {
       const path = join(ctxRoot, rel);
       let mtime: number;
+      let size: number;
       try {
-        mtime = Math.floor(statSync(path).mtimeMs);
+        const st = statSync(path);
+        mtime = Math.floor(st.mtimeMs);
+        size = st.size;
       } catch {
         if (manifest.files[rel] !== undefined) fileDirty = true; // file removed
         continue;
       }
       const prev = manifest.files[rel];
-      if (prev !== undefined && prev.mtime === mtime) continue; // unchanged — no read
+      // Skip the read only when mtime AND size both match (F3 — closes most of the
+      // same-millisecond in-place rewrite window; the stat is already in hand). A
+      // touched-but-identical file re-hashes on every dirtyCheck until the next
+      // ingest re-stamps the manifest — accepted as bounded (see slice-4 notes).
+      if (prev !== undefined && prev.mtime === mtime && prev.size === size) continue;
       const buf = readBytes(path);
       const sha = buf ? blake2bHex(buf) : "";
       if (prev === undefined || prev.sha !== sha) fileDirty = true;

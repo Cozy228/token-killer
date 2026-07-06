@@ -232,27 +232,39 @@ export function recomputeDriftAtReindex(store: Store, gen: number): void {
       // (slice-4 branch switches) re-undoes the confirm forever.
       if (confirmSuppressesTargetRemoved(store, m.entityId, projectRoot)) continue;
       const anchoredAt = readAnchoredAt(store, m.entityId);
+      // F1 (review): scan ALL anchors before deciding, and let DRIFT WIN. A memory
+      // with both a branch-absent/external anchor AND an ancestry-proven-removed
+      // local anchor is genuinely STALE — it must render as `target-removed` drift,
+      // never as merely `unresolved-here`. `store.anchorsOf` order is unspecified,
+      // so a break-on-first-match made the outcome order-dependent (a stale memory
+      // could hide behind an external anchor seen first). Collect the classes, then
+      // file drift if ANY absent local anchor is `target-removed`; only otherwise
+      // (external present, or branch-absent local) mark `unresolved-here`.
+      let removedAnchor: string | undefined;
+      let unresolved = false;
       for (const anchorId of store.anchorsOf(m.entityId)) {
         if (store.getEntity(anchorId)) continue; // present target — not removed
         if (!/^(sym|file):/.test(anchorId)) {
           // External SoR target (category-③, e.g. a Jira/PR id): no local snapshot
           // to resolve against → `unresolved-here` (S9), never stale.
-          store.setMemoryUnresolvedHere(m.entityId, true);
-          break;
+          unresolved = true;
+          continue;
         }
         // Absent local (symbol/file) target: the committed anchored-at ancestry
         // splits `target-removed` (drift → stale-suspect) from branch-absent
         // (`unresolved-here`, S9 — never stale, never down-ranked).
         const cls = classifyAbsentAnchor(projectRoot, anchoredAt);
         if (cls === "target-removed") {
-          fileTargetRemoved(store, m.entityId, anchorId, gen);
-          break; // one drift annotation per memory is enough
+          removedAnchor ??= anchorId; // first removed anchor names the drift
+        } else if (cls === "unresolved-here") {
+          unresolved = true;
         }
-        if (cls === "unresolved-here") {
-          store.setMemoryUnresolvedHere(m.entityId, true);
-          break;
-        }
-        // `skip` (no anchored-at): conservative — leave both annotations clear.
+        // `skip` (no anchored-at): conservative — contributes neither class.
+      }
+      if (removedAnchor !== undefined) {
+        fileTargetRemoved(store, m.entityId, removedAnchor, gen); // drift wins
+      } else if (unresolved) {
+        store.setMemoryUnresolvedHere(m.entityId, true);
       }
     }
   }

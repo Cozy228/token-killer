@@ -167,3 +167,43 @@ id has TWO create lines: one committed (mainline), one local (overlay). This is 
   instead of a full reindex) — a perf refinement if a huge `.ctx/memory` ever makes the additive full
   reindex a cold-path cost.
 - **shallow-clone doctor check** (slice-3 D2) — still a note only.
+- **`RememberInput.surface` defaults to `"cli"` — fail-OPEN for future agent-side callers (slice-5
+  advisory).** Today the only two callers are the CLI (`surface:"cli"`) and MCP serve (`surface:"mcp"`),
+  both explicit, so the default is never exercised in production. But a future agent-side caller that
+  forgets to set `surface` would silently land in the committed Mainline as `active` (E3 bypass by
+  omission). When `--local` / the three-tier scope lands (slice 5), consider making `surface`
+  **required** (no default), so a missing surface is a type error, not a silent commit.
+
+## Fable review round 1 (fixes — new commits)
+
+Review of `b3b4b14..c413936` PASSED overall (both logged deviations ACCEPTED as ruled). Three findings
+fixed on the same branch.
+
+- **F1 (MEDIUM, latent until M4) — drift must WIN over `unresolved-here` on a mixed-anchor memory.**
+  `recomputeDriftAtReindex`'s anchor loop `break`-ed on the first match, so a memory with `[external
+  anchor + ancestry-proven-removed local anchor]` could render as `unresolved-here` (active,
+  push-excluded) instead of `target-removed` drift — a genuinely stale memory shown as merely
+  unresolved, and order-dependent (`store.anchorsOf` order is unspecified). Fix: scan ALL anchors first;
+  file `target-removed` if ANY absent local anchor classifies removed (drift wins); set
+  `unresolved-here` only when no drift was filed. Test: two memories with the same two anchors in
+  OPPOSITE order both resolve to `target-removed` (needs-review, not unresolved-here).
+- **F2 (MINOR, robustness) — the promotion guard must not depend on its own unreachability.**
+  `promoteCreateToMainline` now returns a boolean; on `false` (mem/create missing — unreachable today
+  via the 002 backfill + importer guard) the caller routes the confirm `dec` line to the OVERLAY (same
+  shape as the E4 divert) and does NOT set `promoted`, so a create-less memory can never leave a
+  dangling committed `dec` line (the exact D3 defect this slice closes). Test: a directly-constructed
+  create-less memory → confirm → no mainline mem/dec line, the dec lands in the overlay.
+- **F3 (MINOR, hardening) — dirtyCheck short-circuits on mtime AND size.** `dirtyCheck` now skips the
+  re-hash only when both mtime and size match the manifest (the `statSync` result was already in hand),
+  closing most of the same-millisecond in-place-rewrite window. Accepted bounded cost (noted per the
+  reviewer): a touched-but-identical file re-hashes on every subsequent `dirtyCheck` until the next
+  `ingest` re-stamps the manifest with the new mtime — a `git pull` that rewrites `.ctx/memory` bumps
+  mtime once, so the re-hash is a single extra read per changed file per warm cycle, not a hot-loop cost.
+
+### Reviewer rulings recorded
+
+- **`files?` kept optional — ACCEPTED.** The reviewer ruled the conservative reading (production
+  surfaces always carry a writer; the param remains the sandbox-injection seam the hard constraint
+  requires; no living-repo test dodges by omitting it) is fine as-is. Not to be "fixed" to non-optional.
+- **Wider test re-pointing — ACCEPTED.** Sandboxing the memory writer in `perf-gates` / `2a` / `2e`
+  (beyond the two named tests) via `MemoryAdapterOptions.ctxRoot` is the correct equivalent isolation.

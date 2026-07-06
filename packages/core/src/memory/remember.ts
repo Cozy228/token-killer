@@ -572,10 +572,15 @@ export type LifecycleResult =
  * (append-only) but is deterministically shadowed. E3 is satisfied: a human
  * `confirm` is the act that authorizes the committed zone.
  */
-function promoteCreateToMainline(store: Store, files: MemoryFiles, memId: string): void {
+function promoteCreateToMainline(store: Store, files: MemoryFiles, memId: string): boolean {
   const mem = store.getMemory(memId);
   const create = store.memoryEvents(memId).find((e) => e.verb === "create");
-  if (!mem || !create) return;
+  // Unreachable by construction today (migration 002 F1 backfill + the claudeImporter
+  // guard guarantee every memory has exactly one create event). If it ever were
+  // reachable, we MUST NOT report a promotion — the caller routes the confirm dec
+  // to the overlay instead, so no committed `dec` line dangles on an unpromoted id
+  // (the exact D3 defect this slice closes).
+  if (!mem || !create) return false;
   const anchoredAtRaw = store.getEntity(memId)?.attrs.anchoredAt;
   const anchoredAt = typeof anchoredAtRaw === "string" ? anchoredAtRaw : undefined;
   const status =
@@ -603,6 +608,7 @@ function promoteCreateToMainline(store: Store, files: MemoryFiles, memId: string
     },
     mem.detail,
   );
+  return true;
 }
 
 export function setMemoryLifecycle(
@@ -648,9 +654,13 @@ export function setMemoryLifecycle(
       if (finding.secret) {
         zone = "overlay"; // E4: keep the secret out of the committed zone
         remediation = secretRemediationNote(finding.cls as string);
-      } else {
-        promoteCreateToMainline(store, files, memId);
+      } else if (promoteCreateToMainline(store, files, memId)) {
         promoted = true;
+      } else {
+        // Promotion could not reconstruct the create body (unreachable today).
+        // Route the confirm dec to the overlay so no committed `dec` line dangles
+        // on an unpromoted overlay-only id (the D3 defect this slice closes).
+        zone = "overlay";
       }
     }
   }
