@@ -538,7 +538,11 @@ class SqliteStore implements Store {
     // ms-level skew on same-ms bursts is accepted (and harmless: order is what
     // matters). An EXPLICIT `input.at` (backfill / tests) is stored VERBATIM but
     // still advances the base so later default events stay strictly above it.
-    const at = input.at ?? (this.#now() > this.#lastEventAt ? this.#now() : this.#lastEventAt + 1);
+    // Sample the clock ONCE — a rollback between two `this.#now()` reads could
+    // otherwise still yield `at <= #lastEventAt`, which a fresh ULID factory
+    // cannot compensate for across a restart (SQL orders by `at` first).
+    const nowMs = this.#now();
+    const at = input.at ?? (nowMs > this.#lastEventAt ? nowMs : this.#lastEventAt + 1);
     if (at > this.#lastEventAt) this.#lastEventAt = at;
     const id = input.id ?? this.#eventUlid(at);
     this.#db
