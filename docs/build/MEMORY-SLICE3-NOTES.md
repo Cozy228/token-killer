@@ -182,6 +182,48 @@ Codex was quota-blocked; this Fable round was the deep one. 7 findings, all addr
   pattern it does not list; it notes the index lives under `~/.ctx` (outside the repo) and where to add
   a pattern if a future index moves in-repo.
 
+## Fable review round 2 (fixes — new commits)
+
+Deep-read of `fold.ts` against the acceptance bar surfaced 2 MAJOR cross-machine defects + 1 MEDIUM
+ordering bug introduced by the R2 fix. All three fixed.
+
+- **R8 (MAJOR — committed resolution refs must be content-addressed).** `resolveConflictViaEvent`
+  previously wrote per-store autoincrement claim ids (`refs.conflictA/B`) into the committed decision
+  log; on a fresh clone those ids differ, so the replay matched nothing (conflict never clears for the
+  team) or an UNRELATED pair (silent wrong resolution). Fix: new resolution events write stable claim
+  KEYS `refs: { a: "<subject|predicate|object|locus>", b: "…" }`; `rebuildConflictStatuses` resolves a
+  string ref to the LOCAL claim id by content (`claimsFor` + object/locus match) → `cacheConflictStatus`.
+  The numeric path is kept as a legacy same-store read (slice-2 events + the 002 backfill still carry
+  numbers, valid locally). The key builder is now ONE shared `claimKeyOf` in `fold.ts`; `dump.ts` uses
+  it too (single definition). Test: A files + dismisses a stale-suspect (committed), fresh peer B
+  reindexes the same files → B's own-numbered conflict resolves by content.
+- **R9 (MAJOR — full-reindex re-derivation must not undo a human confirm).** A `confirm` clears drift +
+  resolves the stale-suspect (E7-recovery), but the anchor stays in the committed bytes, so the next
+  full reindex re-derived `target-removed` and flipped the confirmed memory back to needs-review —
+  every reindex (slice-4 branch switches) re-undid the confirm. Fix (deterministic from committed
+  bytes): a `confirm` that clears a drift now records `clearedDrift: "<reason-class>"` and
+  `confirmedAt: "<HEAD oid at confirm time>"` in its committed refs (grammar addition — refs is JSON,
+  no line-format change). `recomputeDriftAtReindex` skips `target-removed` for a memory whose fold
+  status is active via a confirm carrying `clearedDrift: "target-removed"` AND whose `confirmedAt` is
+  an ancestor of HEAD (the human judged this absence on this line of history). A confirm made while the
+  target was PRESENT carries no `clearedDrift`, so a later real removal still flags on every machine.
+  Tests: confirm-clears-drift → full reindex → stays active + no stale-suspect (same machine AND a
+  fresh clone from the same committed bytes); counter-case: confirm predates the removal (no
+  `clearedDrift`) → reindex DOES flag `target-removed`.
+  - **Documented edge (accepted):** if the target REAPPEARS and is then REMOVED AGAIN after such a
+    confirm, the full reindex still skips it (it trusts the stale `clearedDrift` confirm). The
+    within-branch incremental `flagAnchorDrift` (landed 2c) still catches that live removal, so the
+    memory is not silently lost — only the from-scratch reindex path defers to the confirm. A fully
+    deterministic forward path (a committed content-hash baseline in the anchor bytes) is the same
+    named follow-up as R2 — not slice 3.
+- **R10 (MEDIUM — resolution re-application must run AFTER the stale-suspect re-file).** The R2 fix put
+  `recomputeDriftAtReindex` (which re-files stale-suspects as `open`) AFTER `rebuildConflictStatuses`,
+  so a locally dismissed-but-still-derivable conflict reopened at every reindex. Fix:
+  `recomputeDriftAtReindex` now re-runs `rebuildConflictStatuses` as its LAST step, so re-filed
+  conflicts immediately re-absorb their committed resolution. Composes with R9 (a confirmed memory does
+  not even re-file); R10 covers non-confirm resolutions (`dismiss`). Test: dismiss a stale-suspect →
+  full reindex with the target still absent+ancestor → the conflict is `dismissed`, not `open`.
+
 ## Open questions
 
 - None blocking. Slice-4 handoffs: (1) wire `MemoryFiles` always-on + the migration trigger into the

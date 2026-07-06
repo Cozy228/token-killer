@@ -29,6 +29,7 @@ import {
 import { dumpJson } from "../../src/memory/dump.ts";
 import { classifyAbsentAnchor, currentHeadCommit } from "../../src/memory/anchoredAt.ts";
 import { flagAnchored } from "../../src/ingest/code/incremental.ts";
+import { resolveConflictViaEvent } from "../../src/memory/fold.ts";
 import type { SerializedMemory } from "../../src/memory/serialize.ts";
 import type { MemoryOrigin, MemoryStatus } from "../../src/store/types.ts";
 import { cleanupTempDir, git, makeGitFixture, makeTempDir } from "../helpers/sandbox.ts";
@@ -763,6 +764,176 @@ describe("slice 3 — review round 1 fixes", () => {
       expect(
         dump.memories.find((m) => m.entityId === "mem:01AUTHOBSERVED00000000AA")?.authority,
       ).toBe("observed");
+    } finally {
+      store.close();
+    }
+  });
+});
+
+describe("slice 3 — review round 2 fixes (cross-machine)", () => {
+  let root: string;
+  let repo: string;
+
+  beforeEach(() => {
+    root = makeTempDir("ctx-s3-r2f-");
+    repo = makeGitFixture(root);
+  });
+  afterEach(() => cleanupTempDir(root));
+
+  test("R8: a committed resolution replays cross-machine by content, not numeric id", () => {
+    const head = currentHeadCommit(repo)!;
+    const MEM = "mem:01R8MEMORY0000000000000A";
+    const files = new MemoryFiles(join(repo, ".ctx"));
+    files.appendMemory(
+      "mainline",
+      memEntry({
+        memoryId: MEM,
+        gist: "anchored to a ghost, dismissed by a human",
+        anchors: ["sym:src/x.ts#r8ghost"],
+        anchoredAt: head,
+      }),
+    );
+
+    const a = openStore({ projectDir: repo, home: join(root, "a"), now });
+    const b = openStore({ projectDir: repo, home: join(root, "b"), now });
+    try {
+      a.beginGeneration("code");
+      a.publishGeneration("code");
+      reindexMemoryFromFiles(a, new MemoryFiles(join(repo, ".ctx")));
+      const conf = a.openStaleSuspects(MEM)[0]!;
+      // A human DISMISSES the stale-suspect → a committed decision. Its refs are
+      // A's claim ids (17,18-style); the committed bytes must be content-addressed.
+      resolveConflictViaEvent(
+        a,
+        MEM,
+        conf.a,
+        conf.b,
+        "dismiss",
+        "cli",
+        new MemoryFiles(join(repo, ".ctx")),
+      );
+
+      // Peer B (fresh store, its OWN claim numbering) reindexes the same files.
+      b.beginGeneration("code");
+      b.publishGeneration("code");
+      reindexMemoryFromFiles(b, new MemoryFiles(join(repo, ".ctx")));
+      // The dismissal resolves B's conflict by content — not by A's numeric ids.
+      expect(b.openStaleSuspects(MEM)).toHaveLength(0);
+      expect(b.conflicts("dismissed").some((c) => c.kind === "stale-suspect")).toBe(true);
+    } finally {
+      a.close();
+      b.close();
+    }
+  });
+
+  test("R9: a confirm that cleared target-removed survives full reindex (same machine + fresh clone)", () => {
+    const head = currentHeadCommit(repo)!;
+    const MEM = "mem:01R9CONFIRM0000000000AAA";
+    const files = new MemoryFiles(join(repo, ".ctx"));
+    files.appendMemory(
+      "mainline",
+      memEntry({
+        memoryId: MEM,
+        gist: "anchored to a ghost, human-confirmed fresh",
+        anchors: ["sym:src/x.ts#r9ghost"],
+        anchoredAt: head,
+      }),
+    );
+
+    const a = openStore({ projectDir: repo, home: join(root, "a"), now });
+    try {
+      a.beginGeneration("code");
+      a.publishGeneration("code");
+      reindexMemoryFromFiles(a, new MemoryFiles(join(repo, ".ctx")));
+      expect(a.getMemory(MEM)?.status).toBe("needs-review"); // target-removed drift
+      // Human confirm (E7-recovery) → committed, carrying clearedDrift + confirmedAt.
+      setMemoryLifecycle(a, MEM, "active", new MemoryFiles(join(repo, ".ctx")));
+      expect(a.getMemory(MEM)?.status).toBe("active");
+      // A later full reindex (a branch switch, slice 4) must NOT re-undo the confirm.
+      reindexMemoryFromFiles(a, new MemoryFiles(join(repo, ".ctx")));
+      expect(a.getMemory(MEM)?.status).toBe("active");
+      expect(a.openStaleSuspects(MEM)).toHaveLength(0);
+
+      // A fresh clone reads the SAME committed confirm bytes → same suppression.
+      const b = openStore({ projectDir: repo, home: join(root, "b"), now });
+      try {
+        b.beginGeneration("code");
+        b.publishGeneration("code");
+        reindexMemoryFromFiles(b, new MemoryFiles(join(repo, ".ctx")));
+        expect(b.getMemory(MEM)?.status).toBe("active");
+        expect(b.openStaleSuspects(MEM)).toHaveLength(0);
+      } finally {
+        b.close();
+      }
+    } finally {
+      a.close();
+    }
+  });
+
+  test("R9 counter-case: a confirm that PREDATES the removal still flags target-removed", () => {
+    const head = currentHeadCommit(repo)!;
+    const MEM = "mem:01R9PREDATE0000000000AAA";
+    const files = new MemoryFiles(join(repo, ".ctx"));
+    files.appendMemory(
+      "mainline",
+      memEntry({
+        memoryId: MEM,
+        gist: "confirmed while the target was still present",
+        anchors: ["sym:src/x.ts#r9present"],
+        anchoredAt: head,
+      }),
+    );
+
+    const store = openStore({ projectDir: repo, home: join(root, "home"), now });
+    try {
+      // No code gen yet → reindex does not flag drift; confirm carries NO clearedDrift.
+      reindexMemoryFromFiles(store, new MemoryFiles(join(repo, ".ctx")));
+      setMemoryLifecycle(store, MEM, "active", new MemoryFiles(join(repo, ".ctx")));
+      // Now the target is (still) absent AND a code index exists → a REAL removal.
+      store.beginGeneration("code");
+      store.publishGeneration("code");
+      reindexMemoryFromFiles(store, new MemoryFiles(join(repo, ".ctx")));
+      expect(store.getMemory(MEM)?.status).toBe("needs-review");
+      expect(store.openStaleSuspects(MEM).length).toBeGreaterThan(0);
+    } finally {
+      store.close();
+    }
+  });
+
+  test("R10: a dismissed stale-suspect stays dismissed across a full reindex", () => {
+    const head = currentHeadCommit(repo)!;
+    const MEM = "mem:01R10DISMISS000000000AAA";
+    const files = new MemoryFiles(join(repo, ".ctx"));
+    files.appendMemory(
+      "mainline",
+      memEntry({
+        memoryId: MEM,
+        gist: "dismissed and it must stay dismissed",
+        anchors: ["sym:src/x.ts#r10ghost"],
+        anchoredAt: head,
+      }),
+    );
+
+    const store = openStore({ projectDir: repo, home: join(root, "home"), now });
+    try {
+      store.beginGeneration("code");
+      store.publishGeneration("code");
+      reindexMemoryFromFiles(store, new MemoryFiles(join(repo, ".ctx")));
+      const conf = store.openStaleSuspects(MEM)[0]!;
+      resolveConflictViaEvent(
+        store,
+        MEM,
+        conf.a,
+        conf.b,
+        "dismiss",
+        "cli",
+        new MemoryFiles(join(repo, ".ctx")),
+      );
+      // Full reindex: the stale-suspect is still derivable (target absent+ancestor),
+      // so it re-files — but the committed dismiss re-applies AFTER the re-file.
+      reindexMemoryFromFiles(store, new MemoryFiles(join(repo, ".ctx")));
+      expect(store.openStaleSuspects(MEM)).toHaveLength(0);
+      expect(store.conflicts("dismissed").some((c) => c.kind === "stale-suspect")).toBe(true);
     } finally {
       store.close();
     }
