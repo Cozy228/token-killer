@@ -1,0 +1,126 @@
+# Slice 2 — Event/decision log + derived status fold (implementation notes)
+
+<!-- Deviation-log build artifact (no YAML frontmatter: this repo ingests itself,
+and a `status:` frontmatter field would be classified as a decision entity and
+trip the 1e-docs living-repo assertion — see "Living-repo tests fragile to
+doc-churn"). Absorb the surviving verdict into a REGISTER at slice close, then
+archive, per the slice-1 precedent (MEMORY-SYNC-SETTLEMENTS.md appendix). -->
+
+
+Work order: `MEMORY-SYNC-GOAL-PROMPT.md` "Implementation slices" item 2, under the
+E2/E5 rulings of `MEMORY-DECISIONS.md` and the S4/S10 contracts of
+`MEMORY-SYNC-SETTLEMENTS.md`. Event log lands on the CURRENT storage (SQLite); the
+locus move to committed `.ctx/` files is slice 3. Independently revertible: no
+storage-locus, file-layout, or `.gitignore` change.
+
+## Decisions (mechanics the docs left open — I settled these)
+
+- **Event table final shape** (`migration 002-memory-events.sql`): `memory_events(
+  id TEXT PK ULID, memory_id, verb, actor, reason, refs JSON, carrier, locus,
+  method, authority, at INTEGER)`. Maps 1:1 to the C2 committed-log grammar
+  (who=`actor`, when=`at`, verdict=`verb`, reason, refs) plus the claims table's
+  carrier/locus/method/authority provenance vocabulary, so slice 3's move to a
+  markdown decision log is mechanical. Append-only is enforced at the DB level by
+  two `BEFORE UPDATE`/`BEFORE DELETE` triggers (`RAISE(ABORT,'append-only')`) — not
+  just by API omission.
+- **Verb set**: `create | confirm | retire | review | supersede | resolve-conflict
+  | dismiss`. `create` is the fold baseline and carries the landing status in
+  `refs.status` (so host-import → `needs-review` is reproduced by the fold, not a
+  direct column write; the E3 CLI/MCP overlay split is slice 4, untouched here).
+- **Fold** (`memory/fold.ts`): status = last status-asserting event in total order
+  `(at, then ULID)`. Order-independent (sorts, never reads insertion/line order).
+  `resolve-conflict`/`dismiss` are not memory-status verbs (they fold
+  `conflicts.status`).
+- **E5 collision predicate**: a memory whose event log contains **both** a `retire`
+  and a `supersede` event — two mutually-exclusive terminal dispositions taken as
+  independent decisions. Later-by-total-order wins the derived status; a
+  `contradiction` conflict is filed between the two competing decisions; both events
+  are retained; nothing auto-merged. Chosen because it exactly matches E5's stated
+  example ("A retires X, B supersedes X") and never false-fires on any normal
+  single-track flow (create→review→confirm, create→retire, create→supersede never
+  hold both). Recorded alternative rejected: "any two differing status assertions
+  collide" — would spam contradictions on the legitimate needs-review→confirm
+  recovery flow (E7-recovery), so rejected.
+- **Contradiction wiring**: the `conflicts` table is claim-id-keyed. A collision
+  find-or-creates one stable provenance claim per colliding event (`predicate=
+  lifecycle-decision`, `locus=event.id`) and files `addConflict(a,b,'contradiction')`.
+  Stable claim ids + `INSERT OR IGNORE` make refold idempotent (no duplicate
+  contradictions).
+- **Drift annotation mechanics (S4)**: added one nullable column `memory.drift_reason`
+  (`target-removed|signature-changed|body-changed`). Drift is derived per-checkout
+  index state — recorded via `setMemoryDrift`, **never** an event, never committed.
+  The served `memory.status` column = `composeStatus(fold, drift)`: `target-removed`/
+  `signature-changed` → effective `needs-review`; `body-changed` → down-rank only
+  (status unchanged, A5); terminal fold states (`retired`/`superseded`) win so drift
+  can never resurrect them. Invariants held: (a) event log untouched by drift;
+  (b) refold/rebuild recomposes with the drift column, never erasing it;
+  (c) `confirm` clears `drift_reason` (freshness affirmed) + resolves the conflicts;
+  (d) served status/rank/push/`⚠` projection read the same composed column, so
+  behavior is byte-identical to before (all pre-existing E2/E7 drift tests pass
+  unmodified).
+- **`memory.status` is the cache; the log is the source (S10 #4)**: `getMemory`/
+  visibility/rank/push read the single indexed `status` column. The fold runs only
+  at event append / drift / rebuild (change-set-bounded per memory), never per
+  query — asserted by a test that appends an event WITHOUT refold and shows the
+  served status unchanged until `refoldMemory` runs.
+- **Monotonic ULID for events** (`memory/ulid.ts::monotonicUlidFactory`, one per
+  store): a `create` and a same-millisecond `retire` must total-order by causal
+  order. Pure-random ULID low bits do NOT preserve that, which caused a real fold
+  inversion (a retired memory folded back to active). The factory increments the
+  previous random part within the same/ non-advancing ms, so a later event always
+  gets a strictly larger ULID. This realizes the E2 assumption that ULID is a
+  meaningful tiebreaker.
+- **Event timestamp source**: all events (`create`/lifecycle/supersede/import) are
+  stamped by the **store clock** (`appendMemoryEvent` default `at = store.now()`),
+  not `remember()`'s separate `input.now`. Mixing an injected store clock with
+  `remember`'s wall-clock `now` diverged the two time bases and broke ordering
+  (surfaced by the 1h-push A2 test). One clock → correct total order.
+- **`setMemoryStatus` / `setConflictStatus` retained as internal cache-writes**
+  (documented as such on the interface): the three production write paths no longer
+  call `setMemoryStatus` directly — they append an event and refold. The primitives
+  stay because the fold + rebuild materialize through them and store-primitive unit
+  tests exercise them. Seam narrowed (nothing in production bypasses the log) without
+  removing the cache-write the fold needs.
+- **`actor` granularity**: lifecycle events use `actor="cli"` (A4: human/CLI),
+  `remember()` uses `actor="agent"`, imports use `actor="host:<h>"`. The finer
+  CLI-human-vs-MCP-agent split (S8a) is slice 4 and deliberately NOT implemented.
+- **Rebuild scope**: `rebuildMemoryStatuses` (refold every memory from events,
+  preserving drift) + `rebuildConflictStatuses` (reset conflicts to open, re-apply
+  resolution events) prove "store = rebuildable view". Exercised by tests; not wired
+  into any cold path here (that is the slice-3 reindex path).
+
+## Deviations (departures from the plan, with reason)
+
+- **Two migrate.test.ts assertions updated** (the only pre-existing tests touched).
+  They asserted `runMigrations` applies exactly `[1]` / schema_version `1`; slice 2
+  adds `002-memory-events`, so they now assert `[1,2]` / `2` and include
+  `memory_events` in the required-tables list. This is a test asserting the
+  migration *set*, which changed by design — permitted by the work order's "unless a
+  test asserts the old direct-mutation mechanics" clause.
+- **No other existing test modified.** All prior E-series / store / memory / push /
+  select tests pass unmodified, including the ones that call `setMemoryLifecycle`
+  with a status argument and read `getMemory().status` after drift — because the
+  served `status` column remains the composed value.
+- **`composeStatus` terminal-precedence choice** (retired/superseded win over drift)
+  is stricter than the pre-slice code, where `flagAnchored` unconditionally wrote
+  `needs-review` even over a superseded row. No test drives drift onto a
+  retired/superseded memory, so behavior is observably identical; the stricter rule
+  is the conservative, defensible one (drift must not resurrect a terminal memory).
+
+## Adjacent-found (untouched)
+
+- `store.ts` now imports `monotonicUlidFactory` from `../memory/ulid.ts` — a minor
+  layering inversion (store → memory util). No cycle (`ulid.ts` only depends on
+  `store/hash.ts`). Left as-is; the ULID generator is a leaf util. Slice 3 may
+  relocate it to `store/` if the layering matters.
+- Pre-existing oxlint warnings in untouched test files (conditional-expect,
+  extra-arg expects, `.todo` warnings) — not touched (out of scope).
+- `docs/reference/` is untracked at the repo root (pre-existing) — left untouched.
+
+## Open questions
+
+- None blocking. Slice-3 owns: moving `memory_events` into a committed markdown
+  decision log (the shape is already C2-aligned), the `.gitattributes merge=union`
+  cross-writer story, and whether `drift_reason` should become a first-class
+  `MemoryDriftReason` shared type in `store/` vs the code-ingest `StaleReasonClass`
+  (kept structurally identical strings for now).

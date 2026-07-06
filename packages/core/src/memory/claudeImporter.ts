@@ -226,6 +226,19 @@ export function importClaudeCodeMemory(store: Store, opts: ImportOptions = {}): 
       // clean current fact or pushed until a human confirms it.
       status: "needs-review",
     });
+    // The `create` event carries the landing status so the fold reproduces
+    // `needs-review` on any rebuild (A3/E3). E3's overlay landing zone is slice 4.
+    store.appendMemoryEvent({
+      memoryId: id,
+      verb: "create",
+      actor: `host:${HOST}`,
+      refs: { status: "needs-review" },
+      carrier: `host:${HOST}`,
+      method: "structural",
+      authority: "inferred",
+      // `at` omitted → store clock, consistent with lifecycle events so a later
+      // human confirm always total-orders after this create.
+    });
     store.ftsIndex(id, {
       name: deriveName(frontmatter, body, file),
       text: `${safeGist} ${safeDetail ?? ""}`.trim(),

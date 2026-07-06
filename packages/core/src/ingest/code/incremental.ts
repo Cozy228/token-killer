@@ -11,6 +11,7 @@
  * the code adapter writes so the boundary/shadow graph has edges to walk.
  */
 import { posix } from "node:path";
+import { refoldMemory } from "../../memory/fold.ts";
 import type { Store } from "../../store/store.ts";
 import type { SymbolRecord } from "../../extract/code/symbol.ts";
 
@@ -279,6 +280,12 @@ export function flagAnchorDrift(
  * memory to `needs-review`; `body-changed` does NOT flip status (noise control)
  * — it is down-ranked only, via the `stale-reason` claim the rank freshness
  * penalty reads. All three still file the conflict + claim (visible, not hidden).
+ *
+ * S4: drift is DERIVED, per-checkout INDEX state — recorded as the memory's
+ * `drift_reason` annotation (NOT an event, NEVER committed) and composed into
+ * the served status by the fold (`composeStatus`). This keeps the append-only
+ * event log untouched by a branch checkout, and a refold/rebuild never erases an
+ * active drift annotation. The A5 status effect is applied by `composeStatus`.
  */
 export function flagAnchored(
   store: Store,
@@ -290,7 +297,8 @@ export function flagAnchored(
   for (const link of store.linksTo(targetId, "anchoredTo")) {
     const memId = link.src;
     if (!store.getMemory(memId)) continue;
-    if (reason !== "body-changed") store.setMemoryStatus(memId, "needs-review");
+    store.setMemoryDrift(memId, reason);
+    refoldMemory(store, memId, gen); // recompose served status = fold ∘ drift (A5)
     // `stale-reason` powers the rank down-rank; keep it for all reason classes.
     const reasonClaim = store.addClaim({
       subject: memId,

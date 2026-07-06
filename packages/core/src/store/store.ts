@@ -42,12 +42,16 @@ import type {
   Link,
   LinkInput,
   Locator,
+  MemoryDriftReason,
+  MemoryEvent,
+  MemoryEventInput,
   MemoryInput,
   MemoryListRow,
   MemoryRow,
   MemoryStatus,
   ReadThroughResult,
 } from "./types.ts";
+import { monotonicUlidFactory } from "../memory/ulid.ts";
 
 export const LEASE_TTL_MS = 30_000;
 export const MEMORY_GIST_MAX_CHARS = 240;
@@ -115,6 +119,15 @@ export interface Store {
   // conflicts
   addConflict(a: number, b: number, kind: ConflictKind): void;
   conflicts(status?: ConflictStatus): Conflict[];
+  /** Every conflict regardless of status — the rebuild path re-derives their
+   *  cached `status` from resolution events (conflicts.status = folded state). */
+  allConflicts(): Conflict[];
+  /**
+   * Set a conflict's CACHED status. Slice 2: this is an internal cache-write —
+   * conflict resolve/dismiss go through `appendMemoryEvent` first (C4/Decision 5),
+   * this only materializes the folded state. Left on the interface because the
+   * fold + rebuild call it and a store-primitive unit test exercises it directly.
+   */
   setConflictStatus(a: number, b: number, status: ConflictStatus): void;
   /**
    * OPEN `stale-suspect` conflicts whose `a` claim's subject is this memory —
@@ -128,7 +141,24 @@ export interface Store {
   // memory + anchors (store IS the source of truth here — §2 notes exception)
   writeMemory(input: MemoryInput): void;
   getMemory(entityId: string): MemoryRow | undefined;
+  /**
+   * Set a memory's CACHED status. Slice 2: this is an INTERNAL cache-write used
+   * only by the status fold (`memory/fold.ts`) to materialize the E2/E5 fold
+   * composed with the drift annotation (A5). Lifecycle verbs no longer call it
+   * directly — they append an immutable event and refold. Kept on the interface
+   * because the fold + rebuild call it and a store-primitive unit test uses it.
+   */
   setMemoryStatus(entityId: string, status: MemoryRow["status"]): void;
+  /** Set the derived anchor-drift annotation (S4) — per-checkout index state,
+   *  never an event. `null` clears it (a human confirm affirms freshness). */
+  setMemoryDrift(entityId: string, reason: MemoryDriftReason | null): void;
+  /** Append an immutable lifecycle/decision event (append-only; the fold source).
+   *  Returns the event ULID. Never updates/deletes (DB triggers enforce it). */
+  appendMemoryEvent(input: MemoryEventInput): string;
+  /** A memory's events in total order `(at, then ULID)` (E2) — the fold input. */
+  memoryEvents(memoryId: string): MemoryEvent[];
+  /** Every lifecycle/decision event, total-ordered — the rebuild path input. */
+  allMemoryEvents(): MemoryEvent[];
   setAnchors(memoryId: string, entityIds: string[]): void;
   anchorsOf(memoryId: string): string[];
   /**
@@ -213,6 +243,9 @@ class SqliteStore implements Store {
   readonly dbPath: string;
   readonly #db: DatabaseSync;
   readonly #now: () => number;
+  /** Monotonic ULID source for event ids — the E2 total-order tiebreaker must
+   *  reflect causal order even for two events sharing a millisecond. */
+  readonly #eventUlid = monotonicUlidFactory();
 
   constructor(db: DatabaseSync, dbPath: string, res: ShardResolution, now: () => number) {
     this.#db = db;
@@ -406,6 +439,10 @@ class SqliteStore implements Store {
       .all(status) as unknown as Conflict[];
   }
 
+  allConflicts(): Conflict[] {
+    return this.#db.prepare("SELECT * FROM conflicts").all() as unknown as Conflict[];
+  }
+
   setConflictStatus(a: number, b: number, status: ConflictStatus): void {
     this.#db.prepare("UPDATE conflicts SET status = ? WHERE a = ? AND b = ?").run(status, a, b);
   }
@@ -464,11 +501,56 @@ class SqliteStore implements Store {
       status: row.status as MemoryRow["status"],
       servedCount: row.served_count as number,
       lastServed: (row.last_served as number | null) ?? undefined,
+      driftReason: (row.drift_reason as MemoryDriftReason | null) ?? undefined,
     };
   }
 
   setMemoryStatus(entityId: string, status: MemoryRow["status"]): void {
     this.#db.prepare("UPDATE memory SET status = ? WHERE entity_id = ?").run(status, entityId);
+  }
+
+  setMemoryDrift(entityId: string, reason: MemoryDriftReason | null): void {
+    this.#db
+      .prepare("UPDATE memory SET drift_reason = ? WHERE entity_id = ?")
+      .run(reason, entityId);
+  }
+
+  appendMemoryEvent(input: MemoryEventInput): string {
+    const at = input.at ?? this.#now();
+    const id = input.id ?? this.#eventUlid(at);
+    this.#db
+      .prepare(
+        `INSERT INTO memory_events (id, memory_id, verb, actor, reason, refs, carrier, locus, method, authority, at)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+      )
+      .run(
+        id,
+        input.memoryId,
+        input.verb,
+        input.actor,
+        input.reason ?? null,
+        JSON.stringify(input.refs ?? {}),
+        input.carrier,
+        input.locus ?? null,
+        input.method,
+        input.authority,
+        at,
+      );
+    return id;
+  }
+
+  memoryEvents(memoryId: string): MemoryEvent[] {
+    const rows = this.#db
+      .prepare("SELECT * FROM memory_events WHERE memory_id = ? ORDER BY at, id")
+      .all(memoryId) as unknown as Array<Record<string, unknown>>;
+    return rows.map((r) => memoryEventFromRow(r));
+  }
+
+  allMemoryEvents(): MemoryEvent[] {
+    const rows = this.#db
+      .prepare("SELECT * FROM memory_events ORDER BY at, id")
+      .all() as unknown as Array<Record<string, unknown>>;
+    return rows.map((r) => memoryEventFromRow(r));
   }
 
   setAnchors(memoryId: string, entityIds: string[]): void {
@@ -811,6 +893,22 @@ function claimFromRow(row: Record<string, unknown>): Claim {
     authority: row.authority as Claim["authority"],
     at: row.at as number,
     gen: row.gen as number,
+  };
+}
+
+function memoryEventFromRow(row: Record<string, unknown>): MemoryEvent {
+  return {
+    id: row.id as string,
+    memoryId: row.memory_id as string,
+    verb: row.verb as MemoryEvent["verb"],
+    actor: row.actor as string,
+    reason: (row.reason as string | null) ?? undefined,
+    refs: JSON.parse((row.refs as string) ?? "{}") as Record<string, unknown>,
+    carrier: row.carrier as string,
+    locus: (row.locus as string | null) ?? undefined,
+    method: row.method as MemoryEvent["method"],
+    authority: row.authority as MemoryEvent["authority"],
+    at: row.at as number,
   };
 }
 

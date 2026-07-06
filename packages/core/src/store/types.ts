@@ -125,6 +125,58 @@ export interface Conflict {
 export type MemoryOrigin = `host-import:${string}` | "remember" | "human-note";
 export type MemoryStatus = "active" | "needs-review" | "superseded" | "retired";
 
+/**
+ * Anchor-drift reason class (A5). Stored as the memory index row's
+ * `drift_reason` annotation — derived, per-checkout state recomputed at
+ * reindex, NEVER an event (S4). Kept structurally identical to the code
+ * ingest's `StaleReasonClass`.
+ */
+export type MemoryDriftReason = "target-removed" | "signature-changed" | "body-changed";
+
+/**
+ * Memory lifecycle / decision event verb (slice 2 event log). `create` is the
+ * fold baseline; `confirm/retire/review/supersede` assert a memory status;
+ * `resolve-conflict/dismiss` fold the cached `conflicts.status` (C4/Decision 5).
+ */
+export type MemoryEventVerb =
+  | "create"
+  | "confirm"
+  | "retire"
+  | "review"
+  | "supersede"
+  | "resolve-conflict"
+  | "dismiss";
+
+export interface MemoryEventInput {
+  /** ULID (E2 tiebreaker). Defaults to a fresh time-ordered ULID at `at`. */
+  id?: string;
+  memoryId: string;
+  verb: MemoryEventVerb;
+  actor: string;
+  reason?: string;
+  refs?: Record<string, unknown>;
+  carrier: string;
+  locus?: string;
+  method: ClaimMethod;
+  authority: Authority;
+  /** Event timestamp (epoch-ms) — E2 primary sort key. Defaults to store clock. */
+  at?: number;
+}
+
+export interface MemoryEvent {
+  id: string;
+  memoryId: string;
+  verb: MemoryEventVerb;
+  actor: string;
+  reason: string | undefined;
+  refs: Record<string, unknown>;
+  carrier: string;
+  locus: string | undefined;
+  method: ClaimMethod;
+  authority: Authority;
+  at: number;
+}
+
 export interface MemoryInput {
   entityId: string; // mem:<ulid> entity, created via upsertEntity first
   gist: string; // hard cap 240 chars, enforced at write (§2)
@@ -145,6 +197,12 @@ export interface MemoryRow {
   status: MemoryStatus;
   servedCount: number;
   lastServed: number | undefined;
+  /**
+   * Anchor-drift annotation (S4): derived per-checkout index state, NOT an
+   * event. The served `status` above is already the composition of the E2/E5
+   * fold with this annotation (A5); exposed for rebuild + diagnostics.
+   */
+  driftReason: MemoryDriftReason | undefined;
 }
 
 /** One row of the memory enumeration (A6): the lifecycle-listing view joining a
