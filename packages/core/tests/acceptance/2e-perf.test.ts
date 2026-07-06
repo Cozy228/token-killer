@@ -96,6 +96,8 @@ describe("acceptance: 2e perf gates (M2 re-record)", () => {
     const registry = createDefaultRegistry({
       code: { inProcess: true },
       git: { symbolTouches: true },
+      // Slice 4: sandbox memory's `.ctx` writer off the real repo (hard constraint).
+      memory: { ctxRoot: join(liveRoot, "ctx-mem") },
     });
     const engine = new RefreshEngine(store, registry, { catchupGateMs: 600_000 });
     await engine.refresh(600_000);
@@ -113,6 +115,7 @@ describe("acceptance: 2e perf gates (M2 re-record)", () => {
     const adapters = createDefaultRegistry({
       code: { inProcess: true },
       git: { symbolTouches: true },
+      memory: { ctxRoot: join(liveRoot, "ctx-mem") },
     }).list();
     clearScanCache();
     const min = await bestOfAsync(16, () => Promise.all(adapters.map((a) => a.dirtyCheck(store))));

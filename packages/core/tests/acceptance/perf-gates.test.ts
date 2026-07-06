@@ -111,7 +111,14 @@ describe("acceptance: perf gates", () => {
     liveRoot = makeTempDir("ctx-a11-");
     home = join(liveRoot, "ctx-home");
     store = openStore({ projectDir: REPO_ROOT, home });
-    engine = new RefreshEngine(store, createDefaultRegistry(), { catchupGateMs: 600_000 });
+    // Memory write-through is always-on (slice 4). Redirect its `.ctx` writer to a
+    // sandbox so the cold-path host-import + reindex never create `.ctx/` in the
+    // real repo (the hard constraint). Same ctxRoot in the warm A11-dirty check.
+    engine = new RefreshEngine(
+      store,
+      createDefaultRegistry({ memory: { ctxRoot: join(liveRoot, "ctx-mem") } }),
+      { catchupGateMs: 600_000 },
+    );
     await engine.refresh(600_000); // cold-path full catch-up over this repo
     await engine.background;
     expect(store.entityCount()).toBeGreaterThan(0);
@@ -124,7 +131,10 @@ describe("acceptance: perf gates", () => {
 
   test("A11-dirty", async () => {
     // Warm all-source dirtyCheck: cursors are set, so every adapter short-circuits.
-    const adapters = createDefaultRegistry().list();
+    // Same sandbox ctxRoot as the cold-path build so the memory manifest matches.
+    const adapters = createDefaultRegistry({
+      memory: { ctxRoot: join(liveRoot, "ctx-mem") },
+    }).list();
     const min = await bestOfAsync(16, () => Promise.all(adapters.map((a) => a.dirtyCheck(store))));
     // Recorded observed (this worktree): ~9 ms. Target: <20 ms → MEETS.
     expect(min, `A11-dirty observed ${min.toFixed(2)}ms (target <20ms)`).toBeLessThan(

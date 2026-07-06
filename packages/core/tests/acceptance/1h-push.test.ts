@@ -5,6 +5,7 @@ import { afterEach, beforeEach, describe, expect, test } from "vitest";
 import {
   buildPushBlock,
   importClaudeCodeMemory,
+  MemoryFiles,
   PUSH_MAX_BYTES,
   placePushBlock,
   readPushConfig,
@@ -80,8 +81,13 @@ describe("acceptance: 1h push", () => {
     describe.skipIf(MEMORY_DIR === undefined)("living-repo tier (env-gated: live memory)", () => {
       test("the push block for THIS repo is ≤1KB, fixed header, imports gated until confirmed", () => {
         const store = openStore({ projectDir: REPO_ROOT, home });
+        // Slice 4: write-through is always-on; redirect the `.ctx` writer to a
+        // sandbox so importing THIS repo's live host memory never creates `.ctx/`
+        // in the real repo (the hard constraint).
+        const files = new MemoryFiles(join(root, "mem-ctx"));
         const report = importClaudeCodeMemory(store, {
           projectRoots: [here.projectRoot, here.mainRoot],
+          files,
         });
 
         const block = buildPushBlock(store);
@@ -99,7 +105,7 @@ describe("acceptance: 1h push", () => {
         // Confirm one imported entry → it now surfaces, and its handle round-trips.
         const first = report.written[0];
         expect(first, "the live repo has ≥1 importable host memory").toBeDefined();
-        setMemoryLifecycle(store, first!, "active");
+        setMemoryLifecycle(store, first!, "active", files);
         const afterConfirm = buildPushBlock(store);
         expect(afterConfirm.bytes).toBeLessThanOrEqual(PUSH_MAX_BYTES);
         expect(afterConfirm.rendered.length).toBeGreaterThan(0);
