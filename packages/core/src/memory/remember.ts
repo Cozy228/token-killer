@@ -18,7 +18,7 @@ import type { Store } from "../store/store.ts";
 import type { EntityKind, Facet, MemoryEventVerb, MemoryStatus } from "../store/types.ts";
 import { MEMORY_GIST_MAX_CHARS } from "./claudeImporter.ts";
 import { fuzzyDuplicate } from "./dedup.ts";
-import { refoldMemory } from "./fold.ts";
+import { refoldMemory, resolveConflictViaEvent } from "./fold.ts";
 import { ulid, memoryId } from "./ulid.ts";
 
 const MEMORY_SOURCE = "memory";
@@ -529,16 +529,7 @@ export function setMemoryLifecycle(
   if (status === "active") {
     store.setMemoryDrift(memId, null);
     for (const c of store.openStaleSuspects(memId)) {
-      store.appendMemoryEvent({
-        memoryId: memId,
-        verb: "resolve-conflict",
-        actor: "cli",
-        refs: { conflictA: c.a, conflictB: c.b },
-        carrier: "cli",
-        method: "explicit-key",
-        authority: "confirmed",
-      });
-      store.setConflictStatus(c.a, c.b, "resolved");
+      resolveConflictViaEvent(store, memId, c.a, c.b, "resolve-conflict");
     }
   }
   const effective = refoldMemory(store, memId, gen);

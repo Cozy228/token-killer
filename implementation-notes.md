@@ -7,6 +7,64 @@ doc-churn"). Absorb the surviving verdict into a REGISTER at slice close, then
 archive, per the slice-1 precedent (MEMORY-SYNC-SETTLEMENTS.md appendix). -->
 
 
+## Joint-review fix round (commit 2 on this branch — F1–F6)
+
+Fables + Codex review of commit `915cf6a` raised 6 findings; all fixed here (a new
+commit, `915cf6a` untouched). Per-finding:
+
+- **F1 (MAJOR) — migration backfill.** `002-memory-events.sql` now backfills one
+  synthetic `create` event per pre-slice-2 memory row (`refs.status` = the row's
+  current status, `actor`/`carrier` = `migration`, `authority` = `derived`,
+  `at` = the entity's `first_seen`, event id = the memory's own ULID via
+  `substr(entity_id, 5)`). Without it `foldStatus([]) = active` would let the drift
+  path resurrect a legacy `superseded`/`needs-review` memory. Idempotent (migration
+  gate + unique ULID ids); a fresh install has no memory rows → inserts nothing.
+  Test: `memory-fold.test.ts` "F1: legacy memory rows are backfilled …" (001-only DB
+  → seed legacy rows → apply 002 → one status-carrying create each, fold reproduces
+  status, drift never resurrects a terminal state, re-run is a no-op).
+- **F2 (MAJOR) — re-import clobbers a confirm.** Two layers: (a) `claudeImporter`
+  appends the `create` event only when the memory has none yet (`memoryEvents(id)`
+  guard) and refolds to materialize; (b) `writeMemory`'s `ON CONFLICT` no longer sets
+  `status = excluded.status` — status applies on INSERT only, so a re-write/re-import
+  never resets the cached fold. Test: `e-memory` "S2-F2: re-import … preserves a human
+  confirm" (import → confirm → re-import same mtime → stays `active`, one create event).
+- **F3 (MAJOR) — fold robustness to duplicate creates.** `foldStatus` now takes the
+  FIRST `create` in total order as the baseline and ignores later creates (slice 3's
+  union-merged files can replay one). Test: `memory-fold` "F3: a duplicate later
+  `create` is inert" (`create(needs-review)→confirm→create(needs-review)` folds to
+  `active`).
+- **F4 (MEDIUM) — backwards clock.** `appendMemoryEvent` keeps a monotonic
+  `#lastEventAt` (seeded from `MAX(at)` at open); the DEFAULT-clock path stores
+  `max(now, #lastEventAt)` (same base the ULID factory clamps to). An EXPLICIT
+  `input.at` (backfill/tests) is stored verbatim but still advances the base. Test:
+  `memory-fold` "F4: a backwards clock does not regress the total order" (retire@2000,
+  roll clock back, confirm → folds `active`).
+- **F5 (MEDIUM) — drift downgrade.** `flagAnchored` is now escalate-only: a
+  `driftSeverity` ladder (`target-removed` ≥ `signature-changed` > `body-changed` >
+  none) gates `setMemoryDrift` so a lower class never overwrites a higher one within a
+  reingest; equal-or-higher replaces; `confirm` still clears to null. Test:
+  `memory-fold` "F5: drift escalates only" (two anchors: signature-changed then
+  body-changed → stays `needs-review`, `driftReason` stays `signature-changed`).
+- **F6 (structural hygiene, lighter version).** (a) `setMemoryStatus`/
+  `setConflictStatus` renamed to `cacheMemoryStatus`/`cacheConflictStatus` so every
+  call site reads as a cache write. (b) Conflict resolution unified through one
+  fold-module seam `resolveConflictViaEvent(store, memoryId, a, b, verb)` (appends the
+  event AND materializes the cache); `remember.ts` confirm uses it, nothing else
+  dual-writes. (c) Guard test walks `packages/core/src` and asserts the ONLY modules
+  referencing the cache-write methods are `memory/fold.ts` + `store/store.ts`. The
+  Store interface itself is NOT redesigned (slice 3 owns that). Pre-slice-2
+  RESOLVED/DISMISSED conflicts are handled by a second backfill block in `002` (synthetic
+  `resolve-conflict`/`dismiss` events keyed by the conflict pair) so
+  `rebuildConflictStatuses` never reopens them — chosen over the "slice-3 obligation +
+  test.todo" alternative. Test: `memory-fold` "F6-backfill: a pre-existing resolved
+  conflict gets a synthetic resolution event".
+
+Fix-round deviations: `store.test.ts` / `memory-fold.test.ts` / `e-memory-quality.test.ts`
+call sites updated for the `cache…` rename (they exercise the cache primitive directly —
+allowed, tests are excluded from the F6 guard). No other behavior change to existing tests.
+
+---
+
 Work order: `MEMORY-SYNC-GOAL-PROMPT.md` "Implementation slices" item 2, under the
 E2/E5 rulings of `MEMORY-DECISIONS.md` and the S4/S10 contracts of
 `MEMORY-SYNC-SETTLEMENTS.md`. Event log lands on the CURRENT storage (SQLite); the

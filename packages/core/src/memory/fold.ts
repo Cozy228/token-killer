@@ -59,15 +59,22 @@ export function totalOrder(events: readonly MemoryEvent[]): MemoryEvent[] {
 
 /**
  * Pure fold: derive `active|needs-review|superseded|retired` from a memory's
- * events. `create` sets the baseline (its `refs.status` landing status, else
- * `active`); each later status-asserting verb overrides. Order-independent.
+ * events. The FIRST `create` in total order sets the baseline (its `refs.status`
+ * landing status, else `active`); any LATER `create` is ignored (F3 — slice 3's
+ * union-merged files can replay a create, and a duplicate must never reset the
+ * baseline over an intervening confirm/retire). Each status-asserting verb after
+ * the baseline overrides. Order-independent.
  */
 export function foldStatus(events: readonly MemoryEvent[]): MemoryStatus {
   let status: MemoryStatus = "active";
+  let seenCreate = false;
   for (const e of totalOrder(events)) {
     if (e.verb === "create") {
-      status = isMemoryStatus(e.refs.status) ? e.refs.status : "active";
-      continue;
+      if (!seenCreate) {
+        status = isMemoryStatus(e.refs.status) ? e.refs.status : "active";
+        seenCreate = true;
+      }
+      continue; // later creates are inert
     }
     const s = VERB_STATUS[e.verb];
     if (s !== undefined) status = s;
@@ -152,8 +159,34 @@ export function refoldMemory(store: Store, memoryId: string, gen: number): Memor
   }
   const drift = store.getMemory(memoryId)?.driftReason ?? null;
   const effective = composeStatus(fold, drift);
-  store.setMemoryStatus(memoryId, effective);
+  store.cacheMemoryStatus(memoryId, effective);
   return effective;
+}
+
+/**
+ * Resolve or dismiss a conflict through the event log (C4/Decision 5): append the
+ * immutable decision event carrying the conflict reference, THEN materialize the
+ * cached `conflicts.status`. The single seam for conflict-status writes — no
+ * caller dual-writes `cacheConflictStatus` directly (F6).
+ */
+export function resolveConflictViaEvent(
+  store: Store,
+  memoryId: string,
+  a: number,
+  b: number,
+  verb: "resolve-conflict" | "dismiss",
+  actor = "cli",
+): void {
+  store.appendMemoryEvent({
+    memoryId,
+    verb,
+    actor,
+    refs: { conflictA: a, conflictB: b },
+    carrier: actor,
+    method: "explicit-key",
+    authority: "confirmed",
+  });
+  store.cacheConflictStatus(a, b, verb === "dismiss" ? "dismissed" : "resolved");
 }
 
 /**
@@ -174,13 +207,13 @@ export function rebuildMemoryStatuses(store: Store, gen: number): void {
  * referenced pair's status.
  */
 export function rebuildConflictStatuses(store: Store): void {
-  for (const c of store.allConflicts()) store.setConflictStatus(c.a, c.b, "open");
+  for (const c of store.allConflicts()) store.cacheConflictStatus(c.a, c.b, "open");
   for (const e of store.allMemoryEvents()) {
     if (e.verb !== "resolve-conflict" && e.verb !== "dismiss") continue;
     const a = e.refs.conflictA;
     const b = e.refs.conflictB;
     if (typeof a === "number" && typeof b === "number") {
-      store.setConflictStatus(a, b, e.verb === "dismiss" ? "dismissed" : "resolved");
+      store.cacheConflictStatus(a, b, e.verb === "dismiss" ? "dismissed" : "resolved");
     }
   }
 }

@@ -514,7 +514,7 @@ describe("acceptance: E memory-quality", () => {
     expect(store.getMemory(mem.entityId)?.status).toBe("needs-review");
 
     // Corrupt the cached status, then rebuild purely from events + drift column.
-    store.setMemoryStatus(mem.entityId, "active");
+    store.cacheMemoryStatus(mem.entityId, "active");
     rebuildMemoryStatuses(store, store.publishedGen("memory"));
     expect(store.getMemory(mem.entityId)?.status).toBe("needs-review"); // drift recomposed, not erased
     expect(store.getMemory(mem.entityId)?.driftReason).toBe("signature-changed");
@@ -534,6 +534,31 @@ describe("acceptance: E memory-quality", () => {
     expect(ids).not.toContain(gone.entityId); // retired excluded from pull
     expect(recall(store, gone.handle).ok).toBe(true); // but recoverable by handle
     void keep;
+  });
+
+  // F2: re-import must not clobber a human confirm (no duplicate create event).
+  test("S2-F2: re-import of an unchanged file preserves a human confirm", () => {
+    seedHostMemory(claudeHome, store.projectRoot);
+    const r1 = importClaudeCodeMemory(store, {
+      projectRoots: [store.projectRoot],
+      claudeHome,
+      now,
+    });
+    const id = r1.written[0]!;
+    expect(store.getMemory(id)?.status).toBe("needs-review");
+
+    // Human confirms the imported memory → active.
+    setMemoryLifecycle(store, store.internHandle(id), "active");
+    expect(store.getMemory(id)?.status).toBe("active");
+    expect(store.memoryEvents(id).filter((e) => e.verb === "create")).toHaveLength(1);
+
+    // Re-import the SAME files (same mtime → same id): must be inert on status.
+    importClaudeCodeMemory(store, { projectRoots: [store.projectRoot], claudeHome, now });
+    expect(store.getMemory(id)?.status, "confirm not clobbered").toBe("active");
+    expect(
+      store.memoryEvents(id).filter((e) => e.verb === "create"),
+      "no duplicate create event",
+    ).toHaveLength(1);
   });
 
   // A7: served_count is telemetry-only — untouched by lifecycle / fold / drift.

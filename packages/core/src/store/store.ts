@@ -123,12 +123,13 @@ export interface Store {
    *  cached `status` from resolution events (conflicts.status = folded state). */
   allConflicts(): Conflict[];
   /**
-   * Set a conflict's CACHED status. Slice 2: this is an internal cache-write —
-   * conflict resolve/dismiss go through `appendMemoryEvent` first (C4/Decision 5),
-   * this only materializes the folded state. Left on the interface because the
-   * fold + rebuild call it and a store-primitive unit test exercises it directly.
+   * Write a conflict's CACHED status. Internal cache-write — conflict
+   * resolve/dismiss go through the fold module's `resolveConflictViaEvent`
+   * (append event, then materialize) (C4/Decision 5). Named `cache…` so any call
+   * site reads as a cache write; production callers are `memory/fold.ts` + this
+   * file only (guarded by a test). A store-primitive unit test exercises it.
    */
-  setConflictStatus(a: number, b: number, status: ConflictStatus): void;
+  cacheConflictStatus(a: number, b: number, status: ConflictStatus): void;
   /**
    * OPEN `stale-suspect` conflicts whose `a` claim's subject is this memory —
    * the CURRENT-STATE staleness signal (E7): rank/push read it, the lifecycle
@@ -142,13 +143,13 @@ export interface Store {
   writeMemory(input: MemoryInput): void;
   getMemory(entityId: string): MemoryRow | undefined;
   /**
-   * Set a memory's CACHED status. Slice 2: this is an INTERNAL cache-write used
-   * only by the status fold (`memory/fold.ts`) to materialize the E2/E5 fold
-   * composed with the drift annotation (A5). Lifecycle verbs no longer call it
-   * directly — they append an immutable event and refold. Kept on the interface
-   * because the fold + rebuild call it and a store-primitive unit test uses it.
+   * Write a memory's CACHED status. INTERNAL cache-write used only by the status
+   * fold (`memory/fold.ts`) to materialize the E2/E5 fold composed with the drift
+   * annotation (A5). Lifecycle verbs append an immutable event and refold — they
+   * never call this. Named `cache…` so any call site reads as a cache write;
+   * production callers are `memory/fold.ts` + this file only (guarded by a test).
    */
-  setMemoryStatus(entityId: string, status: MemoryRow["status"]): void;
+  cacheMemoryStatus(entityId: string, status: MemoryRow["status"]): void;
   /** Set the derived anchor-drift annotation (S4) — per-checkout index state,
    *  never an event. `null` clears it (a human confirm affirms freshness). */
   setMemoryDrift(entityId: string, reason: MemoryDriftReason | null): void;
@@ -246,6 +247,10 @@ class SqliteStore implements Store {
   /** Monotonic ULID source for event ids — the E2 total-order tiebreaker must
    *  reflect causal order even for two events sharing a millisecond. */
   readonly #eventUlid = monotonicUlidFactory();
+  /** Monotonic base for default-clock event `at` (F4): a backwards clock must not
+   *  regress the total order. Seeded from the max existing event `at` at open, so
+   *  it survives process restarts. */
+  #lastEventAt = -1;
 
   constructor(db: DatabaseSync, dbPath: string, res: ShardResolution, now: () => number) {
     this.#db = db;
@@ -254,6 +259,10 @@ class SqliteStore implements Store {
     this.projectRoot = res.projectRoot;
     this.mainRoot = res.mainRoot;
     this.#now = now;
+    const maxAt = this.#db.prepare("SELECT MAX(at) AS m FROM memory_events").get() as {
+      m: number | null;
+    };
+    this.#lastEventAt = maxAt.m ?? -1;
   }
 
   close(): void {
@@ -443,7 +452,7 @@ class SqliteStore implements Store {
     return this.#db.prepare("SELECT * FROM conflicts").all() as unknown as Conflict[];
   }
 
-  setConflictStatus(a: number, b: number, status: ConflictStatus): void {
+  cacheConflictStatus(a: number, b: number, status: ConflictStatus): void {
     this.#db.prepare("UPDATE conflicts SET status = ? WHERE a = ? AND b = ?").run(status, a, b);
   }
 
@@ -468,12 +477,15 @@ class SqliteStore implements Store {
     }
     this.#db
       .prepare(
+        // `status` applies on INSERT only; on CONFLICT it is PRESERVED (F2): the
+        // cached status is the fold output, so a re-import/re-write must NOT reset
+        // it — that would clobber a human confirm. The fold (memory/fold.ts) is the
+        // only writer of `status` after creation, via `cacheMemoryStatus`.
         `INSERT INTO memory (entity_id, gist, detail, origin, session_ref, authority, status)
          VALUES (?, ?, ?, ?, ?, ?, ?)
          ON CONFLICT(entity_id) DO UPDATE SET
            gist = excluded.gist, detail = excluded.detail, origin = excluded.origin,
-           session_ref = excluded.session_ref, authority = excluded.authority,
-           status = excluded.status`,
+           session_ref = excluded.session_ref, authority = excluded.authority`,
       )
       .run(
         input.entityId,
@@ -505,7 +517,7 @@ class SqliteStore implements Store {
     };
   }
 
-  setMemoryStatus(entityId: string, status: MemoryRow["status"]): void {
+  cacheMemoryStatus(entityId: string, status: MemoryRow["status"]): void {
     this.#db.prepare("UPDATE memory SET status = ? WHERE entity_id = ?").run(status, entityId);
   }
 
@@ -516,7 +528,13 @@ class SqliteStore implements Store {
   }
 
   appendMemoryEvent(input: MemoryEventInput): string {
-    const at = input.at ?? this.#now();
+    // F4: the default-clock path clamps `at` to be monotonic within this writer
+    // (a backwards system/injected clock must not regress the total order). An
+    // EXPLICIT `input.at` (backfill / tests) is stored verbatim, never clamped —
+    // but still advances the monotonic base so later default events don't dip
+    // below it. The ULID (the tiebreaker) is generated from the SAME clamped ms.
+    const at = input.at ?? Math.max(this.#now(), this.#lastEventAt);
+    if (at > this.#lastEventAt) this.#lastEventAt = at;
     const id = input.id ?? this.#eventUlid(at);
     this.#db
       .prepare(

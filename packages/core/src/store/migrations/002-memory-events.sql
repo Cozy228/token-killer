@@ -44,3 +44,32 @@ END;
 -- served `memory.status` is the composition of the fold-status with this
 -- annotation (A5); a refold/rebuild recomposes but never erases the annotation.
 ALTER TABLE memory ADD COLUMN drift_reason TEXT;  -- null|target-removed|signature-changed|body-changed
+
+-- F1 backfill (S3 "status is replayed"): pre-slice-2 memory rows have NO events,
+-- so `foldStatus([])` would default to `active` and the drift path could resurrect
+-- a legacy `superseded`/`needs-review` memory (human-decision loss). Synthesize one
+-- `create` event per existing memory carrying its CURRENT status as the fold
+-- baseline. The event id is the memory's own ULID (`substr('mem:<ulid>', 5)` — unique
+-- per memory + time-ordered); `at` = the entity's `first_seen`. Runs once (migration
+-- gate); a fresh install has no memory rows so it inserts nothing.
+INSERT INTO memory_events (id, memory_id, verb, actor, refs, carrier, method, authority, at)
+SELECT substr(m.entity_id, 5), m.entity_id, 'create', 'migration',
+       json_object('status', m.status), 'migration', 'structural', 'derived',
+       COALESCE(e.first_seen, 0)
+FROM memory m
+LEFT JOIN entities e ON e.id = m.entity_id;
+
+-- F6 backfill: pre-slice-2 RESOLVED/DISMISSED conflicts have no resolution events,
+-- so a rebuild of `conflicts.status` (fold of resolution events) would reopen them.
+-- Synthesize a `resolve-conflict`/`dismiss` event per already-closed conflict,
+-- keyed by the conflict pair (memory_id = subject of claim `a`; `at` = that claim's
+-- time). `open` conflicts need no event (open is the fold default).
+INSERT INTO memory_events (id, memory_id, verb, actor, refs, carrier, method, authority, at)
+SELECT 'migc:' || c.a || ':' || c.b, ca.subject,
+       CASE c.status WHEN 'dismissed' THEN 'dismiss' ELSE 'resolve-conflict' END,
+       'migration',
+       json_object('conflictA', c.a, 'conflictB', c.b),
+       'migration', 'structural', 'derived', COALESCE(ca.at, 0)
+FROM conflicts c
+JOIN claims ca ON ca.id = c.a
+WHERE c.status IN ('resolved', 'dismissed');

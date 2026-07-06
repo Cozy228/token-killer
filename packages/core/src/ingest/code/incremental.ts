@@ -287,6 +287,21 @@ export function flagAnchorDrift(
  * event log untouched by a branch checkout, and a refold/rebuild never erases an
  * active drift annotation. The A5 status effect is applied by `composeStatus`.
  */
+/** Drift severity ladder (F5): target-removed ≥ signature-changed > body-changed
+ *  > no-drift. Escalate-only writes never downgrade the annotation. */
+function driftSeverity(reason: StaleReasonClass | null): number {
+  switch (reason) {
+    case "target-removed":
+      return 3;
+    case "signature-changed":
+      return 2;
+    case "body-changed":
+      return 1;
+    default:
+      return 0;
+  }
+}
+
 export function flagAnchored(
   store: Store,
   targetId: string,
@@ -297,7 +312,13 @@ export function flagAnchored(
   for (const link of store.linksTo(targetId, "anchoredTo")) {
     const memId = link.src;
     if (!store.getMemory(memId)) continue;
-    store.setMemoryDrift(memId, reason);
+    // F5: escalate-only within a reingest. A memory anchored to two symbols may
+    // be flagged twice; a lower-severity class (body-changed) must NOT overwrite
+    // a higher one (signature-changed/target-removed) and drop the needs-review
+    // effect. Equal-or-higher severity replaces; lower is ignored. `confirm`
+    // (a human decision) is the only path that clears drift back to null.
+    const current = store.getMemory(memId)?.driftReason ?? null;
+    if (driftSeverity(reason) >= driftSeverity(current)) store.setMemoryDrift(memId, reason);
     refoldMemory(store, memId, gen); // recompose served status = fold ∘ drift (A5)
     // `stale-reason` powers the rank down-rank; keep it for all reason classes.
     const reasonClaim = store.addClaim({

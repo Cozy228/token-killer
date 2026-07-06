@@ -6,8 +6,11 @@
  * append-only guarantee on `memory_events`, and the "store is a rebuildable
  * materialized view" rebuild path. Deterministic, local, zero egress.
  */
+import { copyFileSync, mkdirSync, readFileSync, readdirSync } from "node:fs";
 import { join } from "node:path";
+import { fileURLToPath } from "node:url";
 import { afterEach, beforeEach, describe, expect, test } from "vitest";
+import { flagAnchored } from "../../src/ingest/code/incremental.ts";
 import {
   composeStatus,
   detectCollision,
@@ -85,6 +88,18 @@ describe("memory fold (slice 2 event log)", () => {
       foldStatus([ev({ verb: "create", at: 1, id: "a", refs: { status: "needs-review" } })]),
     ).toBe("needs-review");
     expect(foldStatus([ev({ verb: "create", at: 1, id: "a" })])).toBe("active"); // absent → active
+  });
+
+  test("F3: a duplicate later `create` is inert — the FIRST create is the baseline", () => {
+    // create(needs-review) → confirm(active) → create(needs-review): the second
+    // create must NOT reset the baseline over the intervening confirm.
+    const events = [
+      ev({ verb: "create", at: 1, id: "a", refs: { status: "needs-review" } }),
+      ev({ verb: "confirm", at: 2, id: "b" }),
+      ev({ verb: "create", at: 3, id: "c", refs: { status: "needs-review" } }),
+    ];
+    expect(foldStatus(events)).toBe("active");
+    expect(new Set(shuffles(events).map((s) => foldStatus(s))).size).toBe(1); // order-free
   });
 
   // ---- E5: decision collision ----
@@ -194,7 +209,7 @@ describe("store is a rebuildable view (slice 2)", () => {
     );
 
     // Corrupt every cached status, then rebuild purely from the event log.
-    for (const id of before.keys()) store.setMemoryStatus(id, "active");
+    for (const id of before.keys()) store.cacheMemoryStatus(id, "active");
     rebuildMemoryStatuses(store, store.publishedGen("memory"));
 
     const after = new Map(listMemories(store).map((m) => [m.entityId, m.status]));
@@ -221,5 +236,173 @@ describe("store is a rebuildable view (slice 2)", () => {
     // Only an explicit refold (the write-time materializer) moves it.
     refoldMemory(store, id, store.publishedGen("memory"));
     expect(store.getMemory(id)?.status).toBe("retired");
+  });
+
+  test("F4: a backwards clock does not regress the total order (clamped `at`)", () => {
+    const id = store.resolveHandle(remb("clock rollback probe"))!.entityId;
+    const evt = (verb: MemoryEvent["verb"]): void =>
+      void store.appendMemoryEvent({
+        memoryId: id,
+        verb,
+        actor: "test",
+        carrier: "test",
+        method: "explicit-key",
+        authority: "confirmed",
+      });
+    clock = 2_000_000;
+    evt("retire"); // at → 2_000_000
+    clock = 1_500_000; // ROLL BACK the clock
+    evt("confirm"); // default `at` clamped to ≥ 2_000_000, monotonic ULID later
+    expect(refoldMemory(store, id, store.publishedGen("memory"))).toBe("active"); // later append wins
+  });
+
+  test("F5: drift escalates only — a lower class never downgrades a higher one", () => {
+    const id = store.resolveHandle(remb("two-anchor drift probe"))!.entityId;
+    const gen = store.publishedGen("memory");
+    store.setLink({ src: id, dst: "sym:one", predicate: "anchoredTo", method: "explicit-key" });
+    store.setLink({ src: id, dst: "sym:two", predicate: "anchoredTo", method: "explicit-key" });
+    // signature-changed lands first, then body-changed on the second anchor.
+    flagAnchored(store, "sym:one", "signature-changed", gen);
+    flagAnchored(store, "sym:two", "body-changed", gen);
+    expect(store.getMemory(id)?.driftReason).toBe("signature-changed"); // not downgraded
+    expect(store.getMemory(id)?.status).toBe("needs-review"); // needs-review effect preserved
+  });
+});
+
+// ---- F1 migration backfill: pre-slice-2 rows get a status-carrying create event ----
+describe("migration 002 backfill (slice 2)", () => {
+  const REAL_MIGRATIONS = fileURLToPath(new URL("../../src/store/migrations/", import.meta.url));
+
+  test("F1: legacy memory rows are backfilled (status replayed, idempotent, no resurrection)", () => {
+    const dir = makeTempDir("ctx-backfill-");
+    try {
+      // Apply 001 ONLY (a pre-slice-2 DB), then seed legacy rows with NO events.
+      const only001 = join(dir, "m1");
+      mkdirSync(only001);
+      copyFileSync(join(REAL_MIGRATIONS, "001-init.sql"), join(only001, "001-init.sql"));
+      const db = openDatabase(join(dir, "store.sqlite"));
+      runMigrations(db, only001);
+
+      const legacy: Array<[string, MemoryStatus]> = [
+        ["mem:01LEGACYRETIRE0000000000", "retired"],
+        ["mem:01LEGACYSUPER00000000000", "superseded"],
+        ["mem:01LEGACYREVIEW0000000000", "needs-review"],
+        ["mem:01LEGACYACTIVE0000000000", "active"],
+      ];
+      for (const [id, status] of legacy) {
+        db.prepare(
+          "INSERT INTO entities (id,kind,name,locator,attrs,first_seen,last_verified,gen) VALUES (?,?,?,?,?,?,?,?)",
+        ).run(id, "memory", id, '{"t":"store"}', "{}", 111, 111, 1);
+        db.prepare(
+          "INSERT INTO memory (entity_id,gist,origin,authority,status) VALUES (?,?,?,?,?)",
+        ).run(id, "legacy gist", "remember", "confirmed", status);
+      }
+
+      // Apply 002 → backfill.
+      expect(runMigrations(db).applied).toEqual([2]);
+
+      // (a) exactly one create event per row, carrying its status, at = first_seen.
+      const evOf = (id: string): MemoryEvent[] =>
+        (
+          db
+            .prepare("SELECT * FROM memory_events WHERE memory_id=? ORDER BY at,id")
+            .all(id) as Array<Record<string, unknown>>
+        ).map((r) =>
+          ev({
+            verb: r.verb as MemoryEvent["verb"],
+            at: r.at as number,
+            id: r.id as string,
+            refs: JSON.parse(r.refs as string) as Record<string, unknown>,
+          }),
+        );
+      for (const [id, status] of legacy) {
+        const evs = evOf(id);
+        expect(evs).toHaveLength(1);
+        expect(evs[0]!.verb).toBe("create");
+        expect(evs[0]!.refs.status).toBe(status);
+        expect(evs[0]!.at).toBe(111);
+        // (b) fold reproduces the status; drift never resurrects a terminal state.
+        expect(foldStatus(evs)).toBe(status);
+        expect(composeStatus(foldStatus(evs), "signature-changed")).toBe(
+          status === "retired" || status === "superseded" ? status : "needs-review",
+        );
+      }
+
+      // (c) re-running the migration is a no-op — no duplicate events.
+      const countBefore = (
+        db.prepare("SELECT COUNT(*) n FROM memory_events").get() as { n: number }
+      ).n;
+      expect(runMigrations(db).applied).toEqual([]);
+      expect((db.prepare("SELECT COUNT(*) n FROM memory_events").get() as { n: number }).n).toBe(
+        countBefore,
+      );
+      db.close();
+    } finally {
+      cleanupTempDir(dir);
+    }
+  });
+
+  test("F6-backfill: a pre-existing resolved conflict gets a synthetic resolution event", () => {
+    const dir = makeTempDir("ctx-cbackfill-");
+    try {
+      const only001 = join(dir, "m1");
+      mkdirSync(only001);
+      copyFileSync(join(REAL_MIGRATIONS, "001-init.sql"), join(only001, "001-init.sql"));
+      const db = openDatabase(join(dir, "store.sqlite"));
+      runMigrations(db, only001);
+      // A claim (a=1) whose subject is a memory, and a RESOLVED conflict over it.
+      db.prepare(
+        "INSERT INTO claims (subject,predicate,object,carrier,method,authority,at,gen) VALUES (?,?,?,?,?,?,?,?)",
+      ).run("mem:01X", "stale-anchor", "sym:y", "tree-sitter", "structural", "derived", 222, 1);
+      db.prepare(
+        "INSERT INTO claims (subject,predicate,object,carrier,method,authority,at,gen) VALUES (?,?,?,?,?,?,?,?)",
+      ).run(
+        "mem:01X",
+        "stale-reason",
+        "body-changed",
+        "tree-sitter",
+        "structural",
+        "derived",
+        222,
+        1,
+      );
+      db.prepare(
+        "INSERT INTO conflicts (a,b,kind,status) VALUES (1,2,'stale-suspect','resolved')",
+      ).run();
+
+      runMigrations(db); // apply 002 → conflict-resolution backfill
+      const evs = db
+        .prepare("SELECT verb, refs FROM memory_events WHERE memory_id='mem:01X'")
+        .all() as Array<{ verb: string; refs: string }>;
+      const resolve = evs.find((e) => e.verb === "resolve-conflict");
+      expect(resolve, "synthetic resolve-conflict event filed").toBeDefined();
+      expect(JSON.parse(resolve!.refs)).toMatchObject({ conflictA: 1, conflictB: 2 });
+      db.close();
+    } finally {
+      cleanupTempDir(dir);
+    }
+  });
+});
+
+// ---- F6(c) structural guard: cache-write seam is not bypassed in production ----
+describe("cache-write seam is narrowed to fold + store (F6)", () => {
+  test("only memory/fold.ts and store/store.ts reference the cache-write methods", () => {
+    const srcRoot = fileURLToPath(new URL("../../src/", import.meta.url));
+    const offenders: string[] = [];
+    const walk = (dir: string, rel: string): void => {
+      for (const name of readdirSync(dir, { withFileTypes: true })) {
+        const abs = join(dir, name.name);
+        const r = rel ? `${rel}/${name.name}` : name.name;
+        if (name.isDirectory()) walk(abs, r);
+        else if (
+          name.name.endsWith(".ts") &&
+          /cacheMemoryStatus|cacheConflictStatus/.test(readFileSync(abs, "utf8"))
+        ) {
+          offenders.push(r);
+        }
+      }
+    };
+    walk(srcRoot, "");
+    expect(offenders.sort()).toEqual(["memory/fold.ts", "store/store.ts"]);
   });
 });
