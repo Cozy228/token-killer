@@ -46,11 +46,16 @@ truth; the SQLite store is a rebuildable index over them. The event model (slice
   index is never committed (it lives outside the repo) and is always rebuildable. The `.ctx/.gitignore`
   additionally covers the overlay so no auto-generated file can reach git even if a future index moved
   in-repo.
-- **DB `memory_events` append-only triggers KEPT; reindex is purely additive (`INSERT OR IGNORE` by
-  id).** The work order allowed dropping them "if they fight rebuild". They do not: because the *files*
-  are append-only too, the DB event set is monotonic, so reindex reconciles by inserting missing rows
-  (never deleting). This keeps the slice-2 DB-level append-only guarantee + its test green while still
-  making the store a rebuildable cache. Added `store.ingestMemoryEvent` (INSERT OR IGNORE) for replay.
+- **DB `memory_events` append-only triggers KEPT for normal ops + ONE sanctioned reset seam (amended by
+  round-3 F5).** Round 1 kept the triggers and made reindex purely additive. Round 3's second reviewer
+  showed that stance is obsolete now that FILES are the source: the cache needs a way to SHED rows (a
+  redaction/removal, a migration that must re-derive exactly like a fresh clone). Resolution:
+  `store.resetMemoryCache()` is the ONE bypass — inside a transaction it drops the append-only triggers,
+  clears the memory domain (events + memory rows + memory entities/FTS/anchors/links + memory-provenance
+  claims + their conflicts), then recreates the triggers. The triggers stay AUTHORITATIVE for normal
+  operation (the slice-2 append-only test is unchanged and green); reset is files→store only, wired into
+  `reindexMemoryFromFiles(…, {mode:"reset"})` and used at migration end + the non-append pull-delta
+  fallback. Additive `INSERT OR IGNORE` (`store.ingestMemoryEvent`) remains the default for plain appends.
 - **`store.nextEventStamp(at?)`** — allocate the next monotonic `(id, at)` WITHOUT inserting, so the
   write-through can serialize the committed line with the SAME stamp it then hands to the DB insert
   (true file-first ordering). Same monotonic discipline as `appendMemoryEvent` (F4/R2-1).
@@ -223,6 +228,73 @@ ordering bug introduced by the R2 fix. All three fixed.
   conflicts immediately re-absorb their committed resolution. Composes with R9 (a confirmed memory does
   not even re-file); R10 covers non-confirm resolutions (`dismiss`). Test: dismiss a stale-suspect →
   full reindex with the target still absent+ancestor → the conflict is `dismissed`, not `open`.
+
+## Fable review round 3 (fixes — new commits; arbitrating an independent 2nd reviewer)
+
+Root cause threading the MAJORs: the slice-2 "DB events append-only" stance is obsolete now that FILES
+are the source — the cache needed ONE sanctioned reset-rebuild seam (F5). 7 code fixes + 3 rulings.
+
+- **F1 (MAJOR — crash-resume loses the status line).** Migration is now id-keyed per EVENT (not per
+  memory): `catchUpStoreOnlyEvents` builds the present-set from every mem+dec line and exports exactly
+  the event lines absent from the files. A crash between a create line and its lifecycle line is
+  completed on the next run. Test: a memory with a create+retire history, only the create line
+  pre-flushed → resume writes the retire line, no duplicate create, fresh reindex → retired.
+- **F2 (MAJOR — export event history verbatim + end with a reset).** Non-diverted rows now export their
+  FULL `memory_events` history VERBATIM (create → mem line carrying its own `refs.status`; lifecycle →
+  dec lines; ids/at preserved) — no synthesized status replay. Secret-diverted rows keep the landing
+  rewrite (overlay `needs-review`) + the R5 terminal replay. Migration ENDS with the reset rebuild (F5)
+  so the migrating machine re-derives from the files EXACTLY like a fresh clone. Test: a machine with a
+  legacy create+supersede+retire contradiction history + a secret row → after migration `dumpJson` ===
+  a fresh clone's. **Amends the S3 settlement's "status replayed" mechanics** (the settlement predates
+  the slice-2 event log): status is now derived from the verbatim events, never a mutable copy — the
+  ruling (status derived, never copied) is unchanged and satisfied more strictly.
+- **F3 (MAJOR — distribution: `git diff` external drivers).** `pullDeltaReindex`'s diff now runs with
+  `--no-ext-diff --no-textconv` (+ `--no-pager`), so a user's `diff.external` (delta/difftastic —
+  widespread) or a textconv filter can no longer make the delta path see zero content and silently
+  index nothing. Test: a fixture with `diff.external` set → the delta path still parses real lines.
+- **F4 (MAJOR — post-migration store-only writes stranded).** The marker is now a last-run STAMP, not a
+  gate: `isMigrationDue(store, files)` = "any store memory event absent from the files" (O(events)
+  catch-up scan). Every cold-path check sweeps new store-only rows into their zone. The MCP `remember`
+  surface + refresh-path import stay store-only BY DESIGN (slice 4 wires the live writers; `serve.ts` /
+  `adapter.ts` untouched here — the living-repo suites drive them on the real repo); this catch-up is
+  the safety net. Test: a store-only row written after migration → next due-check sweeps it into
+  mainline + the index.
+- **F5 (structural — the one sanctioned reset seam; fixes the #2/#8 shed-rows gap).** `store.resetMemoryCache()`
+  (see the amended decision above) wired into `reindexMemoryFromFiles(…, {mode:"reset"})`, used at
+  migration end (F2c) and the pull-delta NON-APPEND fallback (a rewrite/redaction that must SHED rows —
+  the purge path a peer previously lacked). ORDERING GUARD: reset runs the catch-up export FIRST so
+  genuine store-only rows are committed before the cache clears. To keep the guard from RE-EXPORTING a
+  committed-then-removed row (which would undo a redaction), the pull-delta fallback passes the OLD
+  commit's event ids (`git show <oldTip>:.ctx/memory/…`) as `resetExcludeIds`: a row whose create was
+  committed and is now gone is purged, a genuinely store-only row (never committed) is preserved. Test:
+  a redaction removes a committed secret line + a store-only local row exists → after the fallback the
+  secret is purged AND the local row survives.
+- **F6 (MEDIUM — overlay clobbers mainline).** Reindex processes mainline first and tracks its ids; an
+  overlay mem entry whose id is already owned by mainline is SKIPPED (mainline wins deterministically)
+  and counted in `ReindexReport.shadowedOverlay` (doctor-surfaceable). Closes the privacy inversion
+  where a leftover unredacted overlay line shadowed a redacted committed line. Test: same id in both
+  zones → mainline text served, `shadowedOverlay === 1`.
+- **F7 (MINOR — pull-delta routing + rename).** Added lines are routed by the file they came from
+  (tracking the `+++` header), not by tag alone: a `mem` line in `decisions.md` fails its file's parser
+  and is skipped, never misapplied. `--no-renames` makes a log rename degrade to delete+add → the `-`
+  entry line triggers the non-append fallback. Tests: a misplaced line is skipped (not indexed) + a
+  deleted log → full-fallback.
+
+### Documented rulings (no code)
+
+- **D1 — the E1 identity layer (dedup → `sameAsCandidate` at reindex) is NOT in slice 3.** Named
+  slice-4/6 handoff. Corollary: write-time `sameAs` conflicts are author-local until then (a known E6
+  scope limit — the E6 acceptance instrument covers committed-DERIVED state, and the reset rebuild makes
+  the committed-derived dump identical across peers; author-local dedup links are outside that set).
+- **D2 — shallow / partial clones.** `git merge-base --is-ancestor` cannot see a truncated graph, so an
+  absent anchor degrades CONSERVATIVELY to `unresolved-here` (never false-`stale`), and the R9
+  confirm-suppression fails safe (a missing `confirmedAt` ancestor check → not suppressed → the memory
+  simply isn't force-cleared). Determinism precondition: a FULL-HISTORY clone. A `ctx doctor` check for
+  shallow clones is future work.
+- **D3 — a confirm/dismiss on an overlay-only memory writes a mainline `dec` line whose `mem:` id no
+  peer has** → a fold-inert dangling decision line that accumulates until slice-4 promotion of the
+  overlay create to mainline. Recorded so slice 4 owns the promotion (and a doctor sweep of dangling
+  mainline decisions).
 
 ## Open questions
 

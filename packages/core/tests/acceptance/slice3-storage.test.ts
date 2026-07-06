@@ -328,7 +328,7 @@ describe("slice 3 — migration (S3)", () => {
   });
 
   test("routes by zone, replays status, diverts secrets, writes the marker last", () => {
-    expect(isMigrationDue(store)).toBe(true);
+    expect(isMigrationDue(store, files)).toBe(true);
     const report = migrateStoreMemoryToFiles(store, files);
     expect(report.migrated).toBe(true);
     expect(report.exported).toBe(5);
@@ -349,11 +349,11 @@ describe("slice 3 — migration (S3)", () => {
       .find((m) => m.memoryId === "mem:01MIGSECRET0000000000000A");
     expect(secret?.status).toBe("needs-review");
     expect(secret?.reason?.toLowerCase()).toContain("secret");
-    // Marker set → migration no longer due.
+    // Marker set (a last-run stamp) + every store event now committed → not due.
     expect(store.getMeta(MIGRATION_MARKER)).toBeDefined();
-    expect(isMigrationDue(store)).toBe(false);
+    expect(isMigrationDue(store, files)).toBe(false);
 
-    // Status is replayed via decision events → a FRESH reindex reproduces it.
+    // Status is derived from the verbatim events → a FRESH reindex reproduces it.
     const fresh = openStore({ projectDir: repo, home: join(root, "fresh"), now });
     try {
       reindexMemoryFromFiles(fresh, new MemoryFiles(join(repo, ".ctx")));
@@ -387,35 +387,123 @@ describe("slice 3 — migration (S3)", () => {
     }
   });
 
-  test("re-running after the marker is a no-op", () => {
+  test("re-running is an idempotent no-op (marker is a stamp, not a gate)", () => {
     migrateStoreMemoryToFiles(store, files);
     const mainlineBefore = files.memoryLines("mainline").length;
+    const overlayBefore = files.memoryLines("overlay").length;
     const again = migrateStoreMemoryToFiles(store, files);
-    expect(again.migrated).toBe(false);
-    expect(again.exported).toBe(0);
-    expect(files.memoryLines("mainline").length).toBe(mainlineBefore); // no new lines
+    expect(again.exported).toBe(0); // nothing new to export
+    expect(files.memoryLines("mainline").length).toBe(mainlineBefore);
+    expect(files.memoryLines("overlay").length).toBe(overlayBefore);
   });
 
-  test("resumable: a partially-flushed entry (marker unset) is skipped, no duplicates", () => {
-    // Simulate a crash after flushing ONE entry but before the marker: pre-write
-    // the active memory's line, leave the marker unset, then migrate.
+  test("F1: crash between the create line and its lifecycle line resumes cleanly", () => {
+    // A memory with a real create + retire history.
+    const gen = store.beginGeneration("memory");
+    const MEM = "mem:01F1RESUME00000000000AAA";
+    store.upsertEntity({
+      id: MEM,
+      kind: "memory",
+      name: "resumable",
+      locator: { t: "store" },
+      attrs: { origin: "remember" },
+      gen,
+    });
+    store.writeMemory({
+      entityId: MEM,
+      gist: "created then retired",
+      origin: "remember",
+      authority: "confirmed",
+      status: "retired",
+    });
+    store.appendMemoryEvent({
+      memoryId: MEM,
+      verb: "create",
+      actor: "agent",
+      refs: { status: "active" },
+      carrier: "memory",
+      method: "explicit-key",
+      authority: "confirmed",
+    });
+    store.appendMemoryEvent({
+      memoryId: MEM,
+      verb: "retire",
+      actor: "cli",
+      carrier: "cli",
+      method: "explicit-key",
+      authority: "confirmed",
+    });
+    store.publishGeneration("memory");
+
+    // Simulate a crash: the create line was flushed to the files, the retire dec
+    // line was NOT (and the marker is unset).
+    const createEv = store.memoryEvents(MEM).find((e) => e.verb === "create")!;
     files.appendMemory(
       "mainline",
       memEntry({
-        memoryId: "mem:01MIGACTIVE0000000000000A",
-        gist: "authored active memory",
+        memoryId: MEM,
+        eventId: createEv.id,
+        at: createEv.at,
+        gist: "created then retired",
         origin: "remember",
+        actor: "agent",
+        carrier: "memory",
+        status: "active",
       }),
     );
-    expect(store.getMeta(MIGRATION_MARKER)).toBeUndefined();
-    const report = migrateStoreMemoryToFiles(store, files);
-    expect(report.migrated).toBe(true);
-    expect(report.skipped).toBe(1); // the already-present ULID
-    // The pre-flushed ULID appears exactly once (id-keyed skip = no duplicate).
-    const active = files
-      .readMemories("mainline")
-      .filter((m) => m.memoryId === "mem:01MIGACTIVE0000000000000A");
-    expect(active).toHaveLength(1);
+
+    // Resume: the id-keyed catch-up skips the present create + writes the retire.
+    migrateStoreMemoryToFiles(store, files);
+    const memLines = files.readMemories("mainline").filter((m) => m.memoryId === MEM);
+    expect(memLines).toHaveLength(1); // no duplicate create
+    const fresh = openStore({ projectDir: repo, home: join(root, "fresh-f1"), now });
+    try {
+      reindexMemoryFromFiles(fresh, new MemoryFiles(join(repo, ".ctx")));
+      expect(fresh.getMemory(MEM)?.status).toBe("retired"); // the retire line was completed
+    } finally {
+      fresh.close();
+    }
+  });
+
+  test("F4: a post-migration store-only row is swept on the next due-check", () => {
+    migrateStoreMemoryToFiles(store, files);
+    expect(isMigrationDue(store, files)).toBe(false);
+    // A store-only write lands after migration (the slice-4 live paths do this).
+    const gen = store.beginGeneration("memory");
+    const MEM = "mem:01F4STRANDED0000000000AA";
+    store.upsertEntity({
+      id: MEM,
+      kind: "memory",
+      name: "stranded",
+      locator: { t: "store" },
+      attrs: { origin: "remember" },
+      gen,
+    });
+    store.writeMemory({
+      entityId: MEM,
+      gist: "written store-only after migration",
+      origin: "remember",
+      authority: "confirmed",
+      status: "active",
+    });
+    store.appendMemoryEvent({
+      memoryId: MEM,
+      verb: "create",
+      actor: "agent",
+      refs: { status: "active" },
+      carrier: "memory",
+      method: "explicit-key",
+      authority: "confirmed",
+    });
+    store.publishGeneration("memory");
+
+    // The catch-up net catches it: due again → sweep → committed + indexed.
+    expect(isMigrationDue(store, files)).toBe(true);
+    const again = migrateStoreMemoryToFiles(store, files);
+    expect(again.exported).toBe(1);
+    expect(files.readMemories("mainline").map((m) => m.memoryId)).toContain(MEM);
+    expect(store.getMemory(MEM)?.gist).toBe("written store-only after migration");
+    expect(isMigrationDue(store, files)).toBe(false);
   });
 });
 
@@ -934,6 +1022,238 @@ describe("slice 3 — review round 2 fixes (cross-machine)", () => {
       reindexMemoryFromFiles(store, new MemoryFiles(join(repo, ".ctx")));
       expect(store.openStaleSuspects(MEM)).toHaveLength(0);
       expect(store.conflicts("dismissed").some((c) => c.kind === "stale-suspect")).toBe(true);
+    } finally {
+      store.close();
+    }
+  });
+});
+
+describe("slice 3 — review round 3 fixes (cache reset seam + distribution)", () => {
+  let root: string;
+  let repo: string;
+
+  beforeEach(() => {
+    root = makeTempDir("ctx-s3-r3-");
+    repo = makeGitFixture(root);
+  });
+  afterEach(() => cleanupTempDir(root));
+
+  function commit(msg: string): string {
+    git(["add", "-A"], repo);
+    git(["commit", "-q", "-m", msg], repo);
+    return git(["rev-parse", "HEAD"], repo);
+  }
+
+  /** Seed a store-only memory row + arbitrary event history. */
+  function seed(
+    store: Store,
+    gen: number,
+    id: string,
+    gist: string,
+    status: MemoryStatus,
+    verbs: MemoryStatus[] = [],
+  ): void {
+    store.upsertEntity({
+      id,
+      kind: "memory",
+      name: gist.slice(0, 40),
+      locator: { t: "store" },
+      attrs: { origin: "remember" },
+      gen,
+    });
+    store.writeMemory({ entityId: id, gist, origin: "remember", authority: "confirmed", status });
+    store.appendMemoryEvent({
+      memoryId: id,
+      verb: "create",
+      actor: "agent",
+      refs: { status: "active" },
+      carrier: "memory",
+      method: "explicit-key",
+      authority: "confirmed",
+    });
+    const V: Record<MemoryStatus, "confirm" | "review" | "retire" | "supersede"> = {
+      active: "confirm",
+      "needs-review": "review",
+      retired: "retire",
+      superseded: "supersede",
+    };
+    for (const s of verbs) {
+      store.appendMemoryEvent({
+        memoryId: id,
+        verb: V[s],
+        actor: "cli",
+        carrier: "cli",
+        method: "explicit-key",
+        authority: "confirmed",
+      });
+    }
+  }
+
+  test("F2: post-migration the machine dumps identically to a fresh clone (verbatim history + secret)", () => {
+    const files = new MemoryFiles(join(repo, ".ctx"));
+    const store = openStore({ projectDir: repo, home: join(root, "src"), now });
+    const gen = store.beginGeneration("memory");
+    // A real lifecycle history: create → supersede → retire (an E5 contradiction).
+    seed(store, gen, "mem:01F2HISTORY000000000000A", "has a lifecycle history", "retired", [
+      "superseded",
+      "retired",
+    ]);
+    // A secret row (diverted to the overlay).
+    seed(store, gen, "mem:01F2SECRET0000000000000A", "leak sk-ABCDEFGH1234567890secret", "active");
+    store.publishGeneration("memory");
+
+    migrateStoreMemoryToFiles(store, files); // ends with the reset rebuild
+
+    const clone = openStore({ projectDir: repo, home: join(root, "clone"), now });
+    try {
+      reindexMemoryFromFiles(clone, new MemoryFiles(join(repo, ".ctx")));
+      // The migrating machine re-derived from the files exactly like a fresh clone.
+      expect(dumpJson(store)).toBe(dumpJson(clone));
+      // The legacy history folded to a terminal state + filed a contradiction.
+      const h = store.getMemory("mem:01F2HISTORY000000000000A")?.status;
+      expect(h === "retired" || h === "superseded").toBe(true);
+      expect(store.conflicts("open").some((c) => c.kind === "contradiction")).toBe(true);
+    } finally {
+      clone.close();
+      store.close();
+    }
+  });
+
+  test("F3: pull-delta survives a user diff.external (delta / difftastic)", () => {
+    // An external diff driver that emits NOTHING (like `true`) — without
+    // --no-ext-diff the delta path would see zero content and index nothing.
+    git(["config", "diff.external", "true"], repo);
+    const files = new MemoryFiles(join(repo, ".ctx"));
+    files.appendMemory(
+      "mainline",
+      memEntry({ memoryId: "mem:01F3EXTERNAL00000000000A", gist: "pulled under diff.external" }),
+    );
+    const oldTip = commit("ctx: before");
+    files.appendMemory(
+      "mainline",
+      memEntry({ memoryId: "mem:01F3PULLED0000000000000A", gist: "must still be indexed" }),
+    );
+    const newTip = commit("ctx: appended");
+
+    const store = openStore({ projectDir: repo, home: join(root, "home"), now });
+    try {
+      const res = pullDeltaReindex(store, files, { projectRoot: repo, oldTip, newTip });
+      expect(res.mode).toBe("delta");
+      expect(res.added).toBe(1);
+      expect(store.getMemory("mem:01F3PULLED0000000000000A")?.gist).toBe("must still be indexed");
+    } finally {
+      store.close();
+    }
+  });
+
+  test("F5: a non-append redaction PURGES the row; the reset preserves store-only rows", () => {
+    const files = new MemoryFiles(join(repo, ".ctx"));
+    files.appendMemory(
+      "mainline",
+      memEntry({ memoryId: "mem:01F5KEEP00000000000000A", gist: "a keeper" }),
+    );
+    files.appendMemory(
+      "mainline",
+      memEntry({
+        memoryId: "mem:01F5SECRET0000000000000A",
+        gist: "oops committed sk-ABCDEFGH1234567890x",
+      }),
+    );
+    const oldTip = commit("ctx: two memories");
+
+    const store = openStore({ projectDir: repo, home: join(root, "home"), now });
+    try {
+      reindexMemoryFromFiles(store, files); // store has KEEP + SECRET
+      // A store-only row lands AFTER (the ordering guard must preserve it).
+      const gen = store.beginGeneration("memory");
+      seed(store, gen, "mem:01F5LOCAL00000000000000A", "store-only local row", "active");
+      store.publishGeneration("memory");
+
+      // The human REDACTS: removes the secret line from the committed log.
+      const logPath = join(repo, ".ctx", "memory", "log.md");
+      const kept = readFileSync(logPath, "utf8")
+        .split("\n")
+        .filter((l) => l.includes("01F5KEEP00000000000000A"))
+        .join("\n");
+      writeFileSync(logPath, `${kept}\n`, "utf8");
+      const newTip = commit("ctx: redact the secret");
+
+      const res = pullDeltaReindex(store, files, { projectRoot: repo, oldTip, newTip });
+      expect(res.mode).toBe("full-fallback");
+      // Purge path: the redacted secret is no longer served.
+      expect(store.getMemory("mem:01F5SECRET0000000000000A")).toBeUndefined();
+      expect(store.getMemory("mem:01F5KEEP00000000000000A")?.gist).toBe("a keeper");
+      // Ordering guard: the store-only row was exported before the reset → preserved.
+      expect(store.getMemory("mem:01F5LOCAL00000000000000A")?.gist).toBe("store-only local row");
+    } finally {
+      store.close();
+    }
+  });
+
+  test("F6: same id in both zones — MAINLINE wins, overlay shadow counted", () => {
+    const files = new MemoryFiles(join(repo, ".ctx"));
+    const ID = "mem:01F6SHADOW0000000000000A";
+    files.appendMemory("mainline", memEntry({ memoryId: ID, gist: "committed redacted text" }));
+    files.appendMemory("overlay", memEntry({ memoryId: ID, gist: "unredacted overlay text" }));
+
+    const store = openStore({ projectDir: repo, home: join(root, "home"), now });
+    try {
+      const report = reindexMemoryFromFiles(store, new MemoryFiles(join(repo, ".ctx")));
+      expect(store.getMemory(ID)?.gist).toBe("committed redacted text"); // mainline wins
+      expect(report.shadowedOverlay).toBe(1);
+    } finally {
+      store.close();
+    }
+  });
+
+  test("F7: a mem line in the wrong file is skipped, not misapplied; deletion → full-fallback", () => {
+    const files = new MemoryFiles(join(repo, ".ctx"));
+    files.ensureScaffold();
+    files.appendMemory(
+      "mainline",
+      memEntry({ memoryId: "mem:01F7GOOD00000000000000A", gist: "a proper memory" }),
+    );
+    const oldTip = commit("ctx: one memory");
+
+    // Append a valid memory AND (wrongly) a mem line into decisions.md.
+    files.appendMemory(
+      "mainline",
+      memEntry({ memoryId: "mem:01F7NEW000000000000000A", gist: "a new memory" }),
+    );
+    const misplaced =
+      "- mem id=01WRONG at=9 mid=mem:01F7MISPLACED000000000A verb=create actor=cli carrier=cli method=explicit-key authority=confirmed status=active origin=human-note gist=misplaced";
+    writeFileSync(join(repo, ".ctx", "memory", "decisions.md"), `${misplaced}\n`, "utf8");
+    const newTip = commit("ctx: append + a misplaced line");
+
+    const store = openStore({ projectDir: repo, home: join(root, "home"), now });
+    try {
+      const res = pullDeltaReindex(store, files, { projectRoot: repo, oldTip, newTip });
+      expect(res.mode).toBe("delta");
+      // The mem line in decisions.md is routed by file → parsed as a decision →
+      // fails → skipped, NEVER indexed as a memory.
+      expect(store.getMemory("mem:01F7MISPLACED000000000A")).toBeUndefined();
+      expect(res.skipped).toBeGreaterThan(0);
+      expect(store.getMemory("mem:01F7NEW000000000000000A")?.gist).toBe("a new memory");
+    } finally {
+      store.close();
+    }
+  });
+
+  test("F7: deleting the committed log (rename half) → non-append full-fallback", () => {
+    const files = new MemoryFiles(join(repo, ".ctx"));
+    files.appendMemory(
+      "mainline",
+      memEntry({ memoryId: "mem:01F7DEL000000000000000A", gist: "will be removed by a rename" }),
+    );
+    const oldTip = commit("ctx: has a log");
+    rmSync(join(repo, ".ctx", "memory", "log.md"), { force: true });
+    const newTip = commit("ctx: log renamed away");
+
+    const store = openStore({ projectDir: repo, home: join(root, "home"), now });
+    try {
+      const res = pullDeltaReindex(store, files, { projectRoot: repo, oldTip, newTip });
+      expect(res.mode).toBe("full-fallback"); // --no-renames → delete → non-append
+      expect(store.getMemory("mem:01F7DEL000000000000000A")).toBeUndefined();
     } finally {
       store.close();
     }
