@@ -68,9 +68,20 @@ describe("ctx CLI: memory lifecycle", () => {
     expect(lines.join("\n")).toMatch(/split/i);
   });
 
-  test("ctx import returns the P28 'lands at M4' notice", () => {
+  test("ctx import returns the P28 'lands at M4' notice + honest host-memory text (O-06)", () => {
     expect(run(["import", "github"], io)).toBe(0);
-    expect(lines.join("\n")).toContain("M4");
+    const out = lines.join("\n");
+    expect(out).toContain("M4");
+    // O-06: the host-memory line is now accurate — it lands as needs-review.
+    expect(out).toContain("needs-review");
+  });
+
+  test("ctx remember diverts a secret-shaped note to the overlay (E4, success-shaped)", () => {
+    // S8a: the CLI is the human surface → committed intent → the E4 guard fires.
+    expect(run(["remember", "prod token is sk-ant-api03-ABCDEF0123456789abcdef"], io)).toBe(0);
+    const out = lines.join("\n");
+    expect(out).toContain("status: needs-review"); // diverted, not committed active
+    expect(out.toLowerCase()).toContain("overlay"); // remediation note surfaced
   });
 
   test("unknown command falls back to the scaffold notice", () => {

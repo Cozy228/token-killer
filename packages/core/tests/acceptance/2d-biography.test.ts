@@ -21,6 +21,7 @@ import { createDefaultRegistry } from "../../src/ingest/registry.ts";
 import { RefreshEngine } from "../../src/ingest/refresh.ts";
 import { clearScanCache } from "../../src/ingest/scan.ts";
 import { remember } from "../../src/memory/remember.ts";
+import { MemoryFiles } from "../../src/memory/fileStore.ts";
 import { serveContext } from "../../src/serve/serve.ts";
 import { openStore, type Store } from "../../src/store/store.ts";
 import type { Budget } from "../../src/ingest/adapter.ts";
@@ -69,6 +70,9 @@ describe("acceptance: 2d flagship biography (deterministic, drift-honest)", () =
     const mem = remember(store, {
       note: "target adds one to its argument",
       anchors: [TARGET],
+      // Slice 4: write-through is always-on; redirect the `.ctx` writer to a
+      // sandbox so this living-repo test never creates `.ctx/` in the real repo.
+      files: new MemoryFiles(join(root, "mem-ctx")),
     });
     expect(mem.ok).toBe(true);
     if (!mem.ok) throw new Error("anchor setup failed");
@@ -146,7 +150,11 @@ describe("acceptance: 2d flagship biography (living repo — openStore)", () => 
         );
       }
     }
-    const mem = remember(store, { note: NOTE, anchors: [OPEN_STORE] });
+    const mem = remember(store, {
+      note: NOTE,
+      anchors: [OPEN_STORE],
+      files: new MemoryFiles(join(root, "mem-ctx")),
+    });
     if (!mem.ok) throw new Error(`anchor setup failed: ${JSON.stringify(mem)}`);
     memId = mem.entityId;
     const res = await serveContext({ store }, { ref: OPEN_STORE });

@@ -16,6 +16,8 @@ import { join } from "node:path";
 import { DatabaseSync } from "node:sqlite";
 import { openStore } from "../store/store.ts";
 import { runMigrations } from "../store/migrate.ts";
+import { MemoryFiles } from "../memory/fileStore.ts";
+import { memoryOpsReport } from "../memory/ops.ts";
 import { EGRESS_ENV_KEYS } from "../serve/egress.ts";
 import { PUSH_MAX_BYTES } from "../push/block.ts";
 import { DEFAULT_PUSH_TARGETS, extractManagedBlock } from "../push/hosts.ts";
@@ -218,6 +220,59 @@ function checkEgressGuard(opts: DoctorOptions): DoctorCheck {
   };
 }
 
+/**
+ * E8 memory ops surface: review queue size + oldest-item age, last-reindex
+ * skipped + shadowedOverlay counts, sidecar dangling/orphan warnings, external
+ * snapshot ages. ADVISORY — the check stays `ok` (aging items are expected and
+ * never auto-expired, E8); only sidecar integrity problems flag a warning fix.
+ * Read-only: opens the store, reads the `.ctx` layout, never writes / creates it.
+ */
+function checkMemoryOps(opts: DoctorOptions): DoctorCheck {
+  try {
+    const store = openStore({
+      projectDir: opts.projectDir ?? opts.projectRoot,
+      ...(opts.home !== undefined ? { home: opts.home } : {}),
+    });
+    try {
+      const files = new MemoryFiles(join(opts.projectRoot, ".ctx"));
+      const r = memoryOpsReport(store, files);
+      const oldest =
+        r.oldestReviewAgeMs !== undefined
+          ? `${Math.floor(r.oldestReviewAgeMs / 86_400_000)}d`
+          : "n/a";
+      const snapshots =
+        r.snapshotAges.length > 0
+          ? r.snapshotAges
+              .map((s) => `${s.carrier} ${Math.floor(s.ageMs / 86_400_000)}d`)
+              .join(", ")
+          : "none";
+      const detail =
+        `review-queue ${r.reviewQueue} (oldest ${oldest}); reindex skipped ${r.reindexSkipped}, ` +
+        `shadowedOverlay ${r.shadowedOverlay}; sidecars dangling ${r.danglingSidecars}, ` +
+        `orphan ${r.orphanSidecars}; snapshots ${snapshots}`;
+      const integrityBad = r.danglingSidecars > 0 || r.orphanSidecars > 0;
+      return {
+        name: "memory",
+        ok: !integrityBad,
+        detail,
+        ...(integrityBad
+          ? {
+              fix: "Sidecar integrity drift — run `ctx sync` to rebuild; a persistent dangling/orphan sidecar means a hand-edited `.ctx/memory` log (review it).",
+            }
+          : {}),
+      };
+    } finally {
+      store.close();
+    }
+  } catch (err) {
+    return {
+      name: "memory",
+      ok: true, // advisory — a missing/unopenable store is reported by `store` above
+      detail: `memory ops unavailable (${err instanceof Error ? err.message : String(err)})`,
+    };
+  }
+}
+
 /** Run every read-only check and roll up an overall pass/fail. */
 export function runDoctor(opts: DoctorOptions): DoctorReport {
   const checks = [
@@ -227,6 +282,7 @@ export function runDoctor(opts: DoctorOptions): DoctorReport {
     checkMcp(opts),
     checkPush(opts),
     checkEgressGuard(opts),
+    checkMemoryOps(opts),
   ];
   return { checks, ok: checks.every((c) => c.ok) };
 }

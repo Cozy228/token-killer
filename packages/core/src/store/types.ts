@@ -208,6 +208,13 @@ export interface MemoryRow {
    * fold with this annotation (A5); exposed for rebuild + diagnostics.
    */
   driftReason: MemoryDriftReason | undefined;
+  /**
+   * S9 `unresolved-here` — a DERIVED, per-machine / per-branch annotation: the
+   * committed anchor points at an entity not resolvable on this checkout. Disjoint
+   * from drift (never flips status, never down-ranks as stale); surfaced with a
+   * hint and locally excluded from the push digest. Rebuildable index state.
+   */
+  unresolvedHere: boolean;
   /** C5 bitemporal validity (explicit only) — null columns = "valid now". */
   validFrom: number | undefined;
   validTo: number | undefined;

@@ -49,6 +49,10 @@ function isPushEligible(store: Store, entityId: string): boolean {
   const row = store.getMemory(entityId);
   if (!row || row.status !== "active") return false;
   if (store.openStaleSuspects(entityId).length > 0) return false;
+  // S9 / Decision 7: an `unresolved-here` anchor cannot be freshness-verified on
+  // this machine, so the memory is LOCALLY excluded from the ≤1KB push digest
+  // (a local eligibility exclusion, never a global status change).
+  if (row.unresolvedHere) return false;
   return true;
 }
 
@@ -98,6 +102,10 @@ export function rankGotchas(
   // promote members and reference gists uniformly.
   const byId = new Map<string, { gist: string; authority: Authority }>();
   for (const m of listMemories(store, { status: "active" })) {
+    // S9 / Decision 7: `unresolved-here` memories are locally excluded from the
+    // digest (freshness unverifiable on this checkout) — dropped from BOTH the
+    // auto-ranked set and pin resolution (a pin can only force an eligible item).
+    if (store.getMemory(m.entityId)?.unresolvedHere) continue;
     byId.set(m.entityId, { gist: m.gist, authority: m.authority });
   }
 

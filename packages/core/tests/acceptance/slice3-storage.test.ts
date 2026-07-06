@@ -106,7 +106,13 @@ describe("slice 3 — write-through zone routing (E3)", () => {
   });
 
   test("agent remember() lands ONLY in the gitignored overlay, never committed", () => {
-    const r = remember(store, { note: "an agent gotcha to keep local", now, files });
+    // S8a (slice 4): the AGENT surface is `surface: "mcp"` → overlay needs-review.
+    const r = remember(store, {
+      note: "an agent gotcha to keep local",
+      surface: "mcp",
+      now,
+      files,
+    });
     expect(r.ok).toBe(true);
     expect(files.readMemories("overlay").map((m) => m.gist)).toEqual([
       "an agent gotcha to keep local",
@@ -136,13 +142,18 @@ describe("slice 3 — write-through zone routing (E3)", () => {
   });
 
   test("CLI/human confirm writes a committed MAINLINE decision (E3 confirmation path)", () => {
-    const r = remember(store, { note: "confirm this one", now, files });
+    // An agent (overlay) note, then a human confirm: the confirm decision is
+    // committed to Mainline AND (slice-4 item 4) the create body is PROMOTED to
+    // Mainline, so no committed `dec` line dangles on an overlay-only id (D3).
+    const r = remember(store, { note: "confirm this one", surface: "mcp", now, files });
     if (!r.ok) throw new Error("remember failed");
-    setMemoryLifecycle(store, r.entityId, "active", files);
+    const res = setMemoryLifecycle(store, r.entityId, "active", files);
+    if (!res.ok) throw new Error("confirm failed");
+    expect(res.promoted).toBe(true);
     const decisions = files.readDecisions("mainline");
     expect(decisions.some((d) => d.verb === "confirm" && d.memoryId === r.entityId)).toBe(true);
-    // The overlay create stays local; only the decision is committed.
-    expect(files.readMemories("mainline")).toHaveLength(0);
+    // The promoted create now lives in Mainline (its overlay line stays, shadowed).
+    expect(files.readMemories("mainline").map((m) => m.memoryId)).toContain(r.entityId);
   });
 
   test("without a files writer the write path stays store-only (slice-2 behaviour)", () => {

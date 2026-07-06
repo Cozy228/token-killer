@@ -140,13 +140,18 @@ function cmdRemember(io: RunIo, args: ParsedArgs): number {
       detail: args.flags.detail?.[0],
       anchors: args.flags.anchor,
       supersedes: args.flags.supersedes?.[0],
-      // Slice 3: write-through to committed `.ctx/` files (agent → overlay).
+      // S8a: the CLI is the HUMAN surface → committed Mainline as `active` (the E4
+      // secret guard diverts a secret-shaped note to the overlay as needs-review).
+      // Write-through is always-on (slice 4).
+      surface: "cli",
       files: MemoryFiles.forStore(store),
     });
     if (result.ok) {
       io.out(`remembered [${result.handle}] — ${result.gist}`);
       if (result.anchors.length > 0) io.out(`  anchors: ${result.anchors.join(", ")}`);
       if (result.supersededId) io.out(`  supersedes: ${result.supersededId}`);
+      if (result.status !== "active") io.out(`  status: ${result.status}`);
+      if (result.remediation) io.out(`  ${result.remediation}`);
       return 0;
     }
     io.out(result.guidance); // success-shaped guidance (§7 / G-3), not an error
@@ -192,10 +197,17 @@ function cmdMemory(io: RunIo, args: ParsedArgs): number {
     return 2;
   }
   return withStore(io, (store) => {
-    // Slice 3: CLI/human lifecycle decisions write-through to the committed
-    // MAINLINE decision log (E3).
+    // CLI/human lifecycle decisions write-through to the committed MAINLINE
+    // decision log (E3). A `confirm` on an overlay-only note also PROMOTES its
+    // create body to Mainline (slice-4 item 4), unless the E4 guard diverts it.
     const result = setMemoryLifecycle(store, id, target, MemoryFiles.forStore(store));
-    io.out(result.ok ? `${result.entityId} → ${result.status}` : result.guidance);
+    if (!result.ok) {
+      io.out(result.guidance);
+      return 0;
+    }
+    io.out(`${result.entityId} → ${result.status}`);
+    if (result.promoted) io.out("  promoted to the shared committed memory log");
+    if (result.remediation) io.out(`  ${result.remediation}`);
     return 0;
   });
 }
@@ -249,7 +261,8 @@ function cmdImport(io: RunIo, args: ParsedArgs): number {
   // P28: `ctx import` (network carriers) lands at M4 — success-shaped notice.
   io.out(
     `ctx import${carrier ? ` ${carrier}` : ""}: network-carrier import (GitHub/Jira/Confluence) ` +
-      "lands at M4. Local host memory (Claude Code) is imported automatically on cold-path sync.",
+      "lands at M4. Local host memory (Claude Code) is imported into your personal overlay as " +
+      "needs-review on cold-path `ctx sync`; run `ctx memory list --status needs-review` to review it.",
   );
   return 0;
 }

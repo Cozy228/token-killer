@@ -19,6 +19,7 @@ import { search, select } from "../select/engine.ts";
 import type { BudgetTier, FacetResult, SelectMiss, SelectResult } from "../select/types.ts";
 import type { Entity, EntityKind } from "../store/types.ts";
 import { remember, type RememberResult } from "../memory/remember.ts";
+import { MemoryFiles } from "../memory/fileStore.ts";
 import { assertNoEgress } from "./egress.ts";
 import {
   freshnessLabel,
@@ -122,7 +123,11 @@ function finishSelect(
     });
   }
   if (result.mode === "facet") {
-    return build("context", renderFacet(result, freshLabel), (freshness !== undefined ? { freshness } : {}));
+    return build(
+      "context",
+      renderFacet(result, freshLabel),
+      freshness !== undefined ? { freshness } : {},
+    );
   }
   return build("context", renderContext(result, freshLabel), {
     envelope: result.envelope,
@@ -273,9 +278,21 @@ export async function serveSearch(deps: ServeDeps, args: SearchArgs): Promise<Se
 
 function renderRemember(result: RememberResult): RenderOut {
   if (result.ok) {
-    const parts = [`# ctx · remember — saved`, `remembered [${result.handle}] — ${result.gist}`];
+    // S8a: an MCP (agent) note lands in the personal overlay as `needs-review`
+    // (a human confirms it into the shared committed log). Disclose the landing.
+    const heading = result.status === "active" ? "saved" : `saved · ${result.status}`;
+    const parts = [
+      `# ctx · remember — ${heading}`,
+      `remembered [${result.handle}] — ${result.gist}`,
+    ];
     if (result.anchors.length > 0) parts.push(`anchors: ${result.anchors.join(", ")}`);
     if (result.supersededId) parts.push(`supersedes: ${result.supersededId}`);
+    if (result.status === "needs-review") {
+      parts.push(
+        "landed as needs-review in your local overlay — `ctx memory confirm` to share it.",
+      );
+    }
+    if (result.remediation) parts.push(result.remediation);
     return { text: parts.join("\n"), handles: [result.handle], sectionOrder: [] };
   }
   const handles: string[] = [];
@@ -323,6 +340,11 @@ export function serveRemember(deps: ServeDeps, args: RememberArgs): ServeRespons
       ...(args.detail !== undefined ? { detail: args.detail } : {}),
       ...(args.anchors !== undefined ? { anchors: args.anchors } : {}),
       ...(args.supersedes !== undefined ? { supersedes: args.supersedes } : {}),
+      // S8a: the MCP tool is the AGENT surface → overlay `needs-review`. Write-
+      // through is always-on (slice 4): the note lands in the personal overlay
+      // file + the index. E4 secret guard runs before any committed write.
+      surface: "mcp",
+      files: MemoryFiles.forStore(deps.store),
     });
     return build("remember", renderRemember(result), { recoverable: !result.ok });
   } catch (err) {

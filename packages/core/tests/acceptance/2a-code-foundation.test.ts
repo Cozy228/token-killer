@@ -67,7 +67,13 @@ describe("acceptance: 2a B1-symbols + B1-dirty (living repo)", () => {
     const codeDirty = await codeAdapter.dirtyCheck(store);
     expect(codeDirty.source).toBe("code");
     expect(codeDirty.dirty).toBe(true); // cold store — every code file is new
-    const engine = new RefreshEngine(store, createDefaultRegistry(), { catchupGateMs: 600_000 });
+    // Slice 4: memory write-through is always-on — sandbox its `.ctx` writer so the
+    // cold path never creates `.ctx/` in the real repo (the hard constraint).
+    const engine = new RefreshEngine(
+      store,
+      createDefaultRegistry({ memory: { ctxRoot: `${root}/ctx-mem` } }),
+      { catchupGateMs: 600_000 },
+    );
     await engine.refresh(600_000);
     await engine.background;
   }, 300_000);
@@ -119,7 +125,7 @@ describe("acceptance: 2a B1-symbols + B1-dirty (living repo)", () => {
   });
 
   test("B1-dirty: warm all-source dirtyCheck <20ms; .gitignore honored (no ignored files parsed)", async () => {
-    const adapters = createDefaultRegistry().list();
+    const adapters = createDefaultRegistry({ memory: { ctxRoot: `${root}/ctx-mem` } }).list();
     // Warm the shared-scan cache (steady-state serve path), then best-of-N min.
     await Promise.all(adapters.map((a) => a.dirtyCheck(store)));
     let warm = Number.POSITIVE_INFINITY;
