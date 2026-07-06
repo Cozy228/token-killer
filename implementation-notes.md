@@ -63,6 +63,38 @@ Fix-round deviations: `store.test.ts` / `memory-fold.test.ts` / `e-memory-qualit
 call sites updated for the `cache…` rename (they exercise the cache primitive directly —
 allowed, tests are excluded from the F6 guard). No other behavior change to existing tests.
 
+## Round-2 review (commit 3 on this branch — R2-1, R2-2)
+
+Round-2 verdict: F1/F2/F3/F6 closed. Two items addressed here (new commit on top of the
+F1–F6 commit):
+
+- **R2-1 (MAJOR, code) — F4 still open across a process restart.** `#lastEventAt` seeds
+  from `MAX(at)` at open, but the monotonic ULID factory restarts fresh each process, so
+  a clamp to `max(now, last)` could produce an EQUAL `at` whose fresh-random ULID sorts
+  BEFORE a prior higher-random event at the same ms → `(at, id)` inverts confirm/retire
+  across a restart with a rolled-back clock. Fix: the default-clock path is now STRICTLY
+  monotonic — `at = now > #lastEventAt ? now : #lastEventAt + 1` (then advance the base).
+  Explicit `input.at` stays verbatim (backfill/tests) and still advances the base. The
+  ms-level skew on same-ms bursts is accepted and documented (order is what matters). Test:
+  `memory-fold` "event `at` strict monotonicity across restart (R2-1)" — append retire,
+  close the store, reopen with an earlier clock, append confirm via the default path →
+  `confirmAt > retireAt` and the fold yields `active`.
+- **R2-2 (MEDIUM, contract-pin, NO behavior change) — drift stickiness across reingests.**
+  Codex objection: escalate-only drift is STICKY across passes (target-removed → a later
+  pass sees only body-changed → the annotation stays high, never auto-downgrading).
+  Fable arbitration (recorded so slice 3 revisits it deliberately): this stickiness is the
+  RATIFIED Phase-1 semantic, not a bug — drift flips to needs-review and the ONLY recovery
+  is a human `confirm` (E7-recovery); auto-downgrade would silently clear a requested
+  review, violating "conflicts surfaced, never auto-merged". Per-checkout wholesale
+  re-derivation of drift is slice-3 reindex scope (S4), which resets annotations from
+  scratch on a branch switch — the deliberate place to revisit stickiness. Actions taken:
+  (a) `flagAnchored` comment now states the contract explicitly ("escalate-only AND
+  sticky-until-confirm, mirroring the open stale-suspect conflict; slice-3 reindex
+  recomputes drift from scratch per checkout"); (b) pinning test `memory-fold` "R2-2: drift
+  is escalate-only AND sticky-until-confirm across reingest passes" (target-removed →
+  body-changed later → stays needs-review; confirm → drift cleared, active); (c) this
+  arbitration note.
+
 ---
 
 Work order: `MEMORY-SYNC-GOAL-PROMPT.md` "Implementation slices" item 2, under the

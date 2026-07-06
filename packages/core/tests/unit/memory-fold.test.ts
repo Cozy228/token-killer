@@ -267,6 +267,65 @@ describe("store is a rebuildable view (slice 2)", () => {
     expect(store.getMemory(id)?.driftReason).toBe("signature-changed"); // not downgraded
     expect(store.getMemory(id)?.status).toBe("needs-review"); // needs-review effect preserved
   });
+
+  test("R2-2: drift is escalate-only AND sticky-until-confirm across reingest passes", () => {
+    const id = store.resolveHandle(remb("sticky drift probe"))!.entityId;
+    const gen = store.publishedGen("memory");
+    store.setLink({ src: id, dst: "sym:a", predicate: "anchoredTo", method: "explicit-key" });
+    flagAnchored(store, "sym:a", "target-removed", gen);
+    expect(store.getMemory(id)?.status).toBe("needs-review");
+    // A LATER pass observing only body-changed must NOT downgrade (sticky).
+    flagAnchored(store, "sym:a", "body-changed", gen);
+    expect(store.getMemory(id)?.driftReason).toBe("target-removed");
+    expect(store.getMemory(id)?.status).toBe("needs-review");
+    // ONLY a human confirm clears it.
+    setMemoryLifecycle(store, store.internHandle(id), "active");
+    expect(store.getMemory(id)?.driftReason).toBeUndefined();
+    expect(store.getMemory(id)?.status).toBe("active");
+  });
+});
+
+// ---- R2-1: default-clock `at` is strictly monotonic across a process restart ----
+describe("event `at` strict monotonicity across restart (R2-1)", () => {
+  test("a reopen with a rolled-back clock still orders a new default event AFTER the last", () => {
+    const root = makeTempDir("ctx-r21-");
+    try {
+      const repo = makeGitFixture(root);
+      const home = join(root, "ctx-home");
+      let clock = 5_000;
+      const s1 = openStore({ projectDir: repo, home, now: () => clock });
+      const r = remember(s1, { note: "restart-order probe", now: () => clock });
+      if (!r.ok) throw new Error(`remember failed: ${r.reason}`);
+      const id = r.entityId;
+      s1.appendMemoryEvent({
+        memoryId: id,
+        verb: "retire",
+        actor: "test",
+        carrier: "test",
+        method: "explicit-key",
+        authority: "confirmed",
+      });
+      const retireAt = s1.memoryEvents(id).find((e) => e.verb === "retire")!.at;
+      s1.close();
+
+      // Reopen with a clock EARLIER than the retire's `at`; fresh ULID factory.
+      const s2 = openStore({ projectDir: repo, home, now: () => retireAt - 500 });
+      s2.appendMemoryEvent({
+        memoryId: id,
+        verb: "confirm",
+        actor: "test",
+        carrier: "test",
+        method: "explicit-key",
+        authority: "confirmed",
+      });
+      const confirmAt = s2.memoryEvents(id).find((e) => e.verb === "confirm")!.at;
+      expect(confirmAt).toBeGreaterThan(retireAt); // strictly after despite the rollback
+      expect(refoldMemory(s2, id, s2.publishedGen("memory"))).toBe("active"); // confirm wins
+      s2.close();
+    } finally {
+      cleanupTempDir(root);
+    }
+  });
 });
 
 // ---- F1 migration backfill: pre-slice-2 rows get a status-carrying create event ----

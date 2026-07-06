@@ -312,11 +312,20 @@ export function flagAnchored(
   for (const link of store.linksTo(targetId, "anchoredTo")) {
     const memId = link.src;
     if (!store.getMemory(memId)) continue;
-    // F5: escalate-only within a reingest. A memory anchored to two symbols may
-    // be flagged twice; a lower-severity class (body-changed) must NOT overwrite
-    // a higher one (signature-changed/target-removed) and drop the needs-review
-    // effect. Equal-or-higher severity replaces; lower is ignored. `confirm`
-    // (a human decision) is the only path that clears drift back to null.
+    // Drift annotation contract (F5 + R2-2 arbitration): the drift class is
+    // ESCALATE-ONLY AND STICKY-UNTIL-CONFIRM, mirroring the open stale-suspect
+    // conflict it files.
+    //   - escalate-only: within a reingest a memory anchored to two symbols may
+    //     be flagged twice; a lower class (body-changed) must NOT overwrite a
+    //     higher one (signature-changed/target-removed) and drop the needs-review
+    //     effect. Equal-or-higher replaces; lower is ignored.
+    //   - sticky: a LATER reingest observing only a lower class also does not
+    //     downgrade — once flagged needs-review, the ONLY recovery is a human
+    //     `confirm` (E7-recovery). Auto-downgrade would silently clear a requested
+    //     review ("conflicts surfaced, never auto-merged"). This is the ratified
+    //     Phase-1 semantic, not a bug. Per-checkout wholesale re-derivation of
+    //     drift is slice-3 reindex scope (S4), which resets annotations from
+    //     scratch on branch switch — revisit the stickiness there deliberately.
     const current = store.getMemory(memId)?.driftReason ?? null;
     if (driftSeverity(reason) >= driftSeverity(current)) store.setMemoryDrift(memId, reason);
     refoldMemory(store, memId, gen); // recompose served status = fold ∘ drift (A5)

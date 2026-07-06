@@ -528,12 +528,17 @@ class SqliteStore implements Store {
   }
 
   appendMemoryEvent(input: MemoryEventInput): string {
-    // F4: the default-clock path clamps `at` to be monotonic within this writer
-    // (a backwards system/injected clock must not regress the total order). An
-    // EXPLICIT `input.at` (backfill / tests) is stored verbatim, never clamped —
-    // but still advances the monotonic base so later default events don't dip
-    // below it. The ULID (the tiebreaker) is generated from the SAME clamped ms.
-    const at = input.at ?? Math.max(this.#now(), this.#lastEventAt);
+    // F4 (R2-1): the default-clock path is STRICTLY monotonic per writer — `at`
+    // must be > the last default event's `at`, not just ≥ it. `#lastEventAt` is
+    // seeded from `MAX(at)` at open, but the ULID factory restarts fresh each
+    // process; a mere clamp to `max(now, last)` could produce an EQUAL `at` whose
+    // fresh-random ULID sorts before a prior (higher-random) event at the same
+    // ms, inverting `(at, id)` across a process restart with a rolled-back clock.
+    // Strict `+1` keeps the total order monotonic regardless of the ULID. The
+    // ms-level skew on same-ms bursts is accepted (and harmless: order is what
+    // matters). An EXPLICIT `input.at` (backfill / tests) is stored VERBATIM but
+    // still advances the base so later default events stay strictly above it.
+    const at = input.at ?? (this.#now() > this.#lastEventAt ? this.#now() : this.#lastEventAt + 1);
     if (at > this.#lastEventAt) this.#lastEventAt = at;
     const id = input.id ?? this.#eventUlid(at);
     this.#db
