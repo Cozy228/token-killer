@@ -25,7 +25,9 @@ import type {
 import { MEMORY_GIST_MAX_CHARS } from "./claudeImporter.ts";
 import { currentHeadCommit } from "./anchoredAt.ts";
 import { fuzzyDuplicate } from "./dedup.ts";
-import type { MemoryFiles } from "./fileStore.ts";
+import type { MemoryFiles, MemoryZone } from "./fileStore.ts";
+import { ulidOf } from "./fileStore.ts";
+import { scanMemoryForSecret, secretRemediationNote } from "./secretGuard.ts";
 import { refoldMemory, resolveConflictViaEvent } from "./fold.ts";
 import { ulid, memoryId } from "./ulid.ts";
 import { recordCreate, recordDecision } from "./writeThrough.ts";
@@ -42,11 +44,24 @@ export interface RememberInput {
   authority?: "inferred" | "confirmed";
   now?: () => number;
   /**
-   * Committed / overlay file writer (slice 3). When present, `remember()`
-   * write-throughs to the file layer FIRST, then the index. Agent-authored
-   * (actor=`agent`) → the personal OVERLAY as `active` (E3: nothing
-   * auto-generated reaches the committed zone; the CLI-human → Mainline
-   * caller-surface split, S8a, is slice 4). Omit for store-only (slice-2) writes.
+   * S8a caller-surface split (slice 4). The landing zone + status are decided by
+   * WHO called `remember()`, because E3 governs it (committed = human-authored or
+   * human-confirmed):
+   *   - `cli` (human at the CLI) → committed MAINLINE as `active` (E4's
+   *     "`remember()` defaults to Mainline" applies to this human surface). The
+   *     E4 secret guard runs before the committed zone and diverts a secret-shaped
+   *     note to the overlay as `needs-review`.
+   *   - `mcp` (agent over MCP) → personal OVERLAY as `needs-review` (auto-generated
+   *     → never enters git unreviewed; human `confirm` promotes it, same pipeline
+   *     as host imports).
+   * Default `cli` (the human surface). `--local` / three-tier scope is slice 5.
+   */
+  surface?: "cli" | "mcp";
+  /**
+   * Committed / overlay file writer. Production write paths (CLI, MCP `serve.ts`)
+   * always pass one; write-through is always-on there (slice 4). Kept injectable
+   * so store-only unit fixtures and living-repo tests can redirect the `.ctx`
+   * writer at a sandbox and never touch the real repo (the hard constraint).
    */
   files?: MemoryFiles;
 }
@@ -79,9 +94,15 @@ export type RememberResult =
       handle: string;
       gist: string;
       anchors: string[];
+      /** Landing status (S8a): `active` for a committed CLI note, `needs-review`
+       *  for an agent/MCP note or an E4-diverted secret. */
+      status: MemoryStatus;
       supersededId?: string;
       /** Present only when a near-duplicate was found + linked (never blocks). */
       advisory?: WriteAdvisory;
+      /** Success-shaped E4 remediation note when a secret-shaped committed write
+       *  was diverted to the overlay as `needs-review` (never a hard error). */
+      remediation?: string;
     }
   | {
       ok: false;
@@ -296,6 +317,25 @@ export function remember(store: Store, input: RememberInput): RememberResult {
     });
   }
 
+  // S8a caller-surface split: the CLI human surface lands committed+active; the
+  // MCP agent surface lands overlay+needs-review (E3). E4 secret guard runs on the
+  // committed (mainline) surface and diverts a secret-shaped note to the overlay.
+  const surface = input.surface ?? "cli";
+  let zone: MemoryZone = surface === "cli" ? "mainline" : "overlay";
+  let status: MemoryStatus = surface === "cli" ? "active" : "needs-review";
+  const actor = surface === "cli" ? "cli" : "agent";
+  let remediation: string | undefined;
+  if (zone === "mainline") {
+    const finding = scanMemoryForSecret(gist, input.detail);
+    if (finding.secret) {
+      // E4: never commit a secret-shaped note. Divert to the gitignored overlay as
+      // needs-review with a success-shaped remediation note (never a hard error).
+      zone = "overlay";
+      status = "needs-review";
+      remediation = secretRemediationNote(finding.cls as string);
+    }
+  }
+
   const id = memoryId(ulid(now()));
   store.upsertEntity({
     id,
@@ -312,24 +352,24 @@ export function remember(store: Store, input: RememberInput): RememberResult {
     origin: "remember",
     sessionRef: input.sessionRef,
     authority: input.authority ?? "confirmed",
-    status: "active",
+    status,
   });
   // The `create` event is the fold's baseline (its `refs.status` landing status).
-  // Write-through (slice 3): agent-authored → the personal OVERLAY (E3). The
-  // committed line + the store event share ONE monotonic stamp, so all events
-  // (create / lifecycle / drift) share one time base and total-order correctly.
+  // Write-through: the committed line + the store event share ONE monotonic stamp,
+  // so all events (create / lifecycle / drift) share one time base and total-order
+  // correctly.
   const anchoredAt =
     input.files && plan.resolved.length > 0 ? currentHeadCommit(store.projectRoot) : undefined;
-  recordCreate(store, input.files, "overlay", {
+  recordCreate(store, input.files, zone, {
     memoryId: id,
     gist,
     detail: input.detail,
     origin: "remember",
-    actor: "agent",
+    actor,
     carrier: MEMORY_SOURCE,
     method: "explicit-key",
     authority: input.authority ?? "confirmed",
-    status: "active",
+    status,
     anchors: plan.resolved,
     anchoredAt,
     sessionRef: input.sessionRef,
@@ -362,11 +402,11 @@ export function remember(store: Store, input: RememberInput): RememberResult {
   if (supersededId !== undefined) {
     // Decision 5: supersede is an append-only decision EVENT; the old entry is
     // KEPT and its status is DERIVED from the fold, never overwritten in place.
-    // Agent-authored → overlay (E3), same zone as the create.
-    recordDecision(store, input.files, "overlay", {
+    // Same zone/actor as the create (S8a).
+    recordDecision(store, input.files, zone, {
       memoryId: supersededId,
       verb: "supersede",
-      actor: "agent",
+      actor,
       reason: `superseded by ${id}`,
       refs: { supersededBy: id },
       carrier: MEMORY_SOURCE,
@@ -434,8 +474,10 @@ export function remember(store: Store, input: RememberInput): RememberResult {
     handle,
     gist,
     anchors: plan.resolved,
+    status,
     ...(supersededId ? { supersededId } : {}),
     ...(advisory ? { advisory } : {}),
+    ...(remediation ? { remediation } : {}),
   };
 }
 
@@ -508,8 +550,60 @@ const LIFECYCLE_VERB_FOR_STATUS: Record<MemoryStatus, MemoryEventVerb> = {
 };
 
 export type LifecycleResult =
-  | { ok: true; entityId: string; status: MemoryStatus }
+  | {
+      ok: true;
+      entityId: string;
+      status: MemoryStatus;
+      /** True when a `confirm` promoted an overlay-only create to the committed
+       *  Mainline zone (S8a / slice-3 D3 close). */
+      promoted?: boolean;
+      /** Success-shaped E4 note when a `confirm` refused to promote a
+       *  secret-shaped body to the committed zone (kept in the overlay). */
+      remediation?: string;
+    }
   | { ok: false; reason: "unknown-handle" | "not-memory"; guidance: string };
+
+/**
+ * Promote an overlay-only memory's `create` body to the committed Mainline zone
+ * (slice-4 item 4 / closes slice-3 D3): reconstruct the `mem` line (+ its detail
+ * sidecar) from the store using the ORIGINAL create event id/at, and append it to
+ * the mainline log. On reindex the mainline create wins over the leftover overlay
+ * line (F6 mainline-wins → `shadowedOverlay`), so the stale overlay line stays
+ * (append-only) but is deterministically shadowed. E3 is satisfied: a human
+ * `confirm` is the act that authorizes the committed zone.
+ */
+function promoteCreateToMainline(store: Store, files: MemoryFiles, memId: string): void {
+  const mem = store.getMemory(memId);
+  const create = store.memoryEvents(memId).find((e) => e.verb === "create");
+  if (!mem || !create) return;
+  const anchoredAtRaw = store.getEntity(memId)?.attrs.anchoredAt;
+  const anchoredAt = typeof anchoredAtRaw === "string" ? anchoredAtRaw : undefined;
+  const status =
+    typeof create.refs.status === "string" ? (create.refs.status as MemoryStatus) : mem.status;
+  files.appendMemory(
+    "mainline",
+    {
+      eventId: create.id,
+      at: create.at,
+      memoryId: memId,
+      actor: create.actor,
+      carrier: create.carrier,
+      method: create.method,
+      authority: create.authority,
+      status,
+      gist: mem.gist,
+      origin: mem.origin,
+      detailPointer: mem.detail ? ulidOf(memId) : undefined,
+      anchors: store.anchorsOf(memId),
+      anchoredAt,
+      sessionRef: mem.sessionRef,
+      reason: create.reason,
+      validFrom: mem.validFrom,
+      validTo: mem.validTo,
+    },
+    mem.detail,
+  );
+}
 
 export function setMemoryLifecycle(
   store: Store,
@@ -538,6 +632,28 @@ export function setMemoryLifecycle(
   // committed = human-authored or human-confirmed).
   const memId = resolved.entityId;
   const gen = store.publishedGen(MEMORY_SOURCE);
+  // Item 4 — `confirm` PROMOTES an overlay-only create to the committed Mainline
+  // zone (closes slice-3 D3: a mainline `dec` line no longer references an id no
+  // peer has). E4 runs first: a secret-shaped body is NEVER promoted — it stays in
+  // the gitignored overlay and the confirm decision is written there too, so no
+  // dangling mainline `dec` line and nothing sensitive enters git.
+  let zone: MemoryZone = "mainline";
+  let promoted = false;
+  let remediation: string | undefined;
+  if (status === "active" && files) {
+    const inMainline = files.readMemories("mainline").some((m) => m.memoryId === memId);
+    if (!inMainline) {
+      const mem = store.getMemory(memId);
+      const finding = scanMemoryForSecret(mem?.gist ?? "", mem?.detail);
+      if (finding.secret) {
+        zone = "overlay"; // E4: keep the secret out of the committed zone
+        remediation = secretRemediationNote(finding.cls as string);
+      } else {
+        promoteCreateToMainline(store, files, memId);
+        promoted = true;
+      }
+    }
+  }
   // R9: a `confirm` that clears a drift must carry, IN THE COMMITTED BYTES, which
   // drift class it cleared (`clearedDrift`) and the HEAD it judged that absence
   // against (`confirmedAt`, mirror of anchored-at). A full reindex reads these to
@@ -551,7 +667,7 @@ export function setMemoryLifecycle(
   const confirmRefs: Record<string, unknown> = {};
   if (clearedDrift) confirmRefs.clearedDrift = clearedDrift;
   if (confirmedAt) confirmRefs.confirmedAt = confirmedAt;
-  recordDecision(store, files, "mainline", {
+  recordDecision(store, files, zone, {
     memoryId: memId,
     verb: LIFECYCLE_VERB_FOR_STATUS[status],
     actor: "cli",
@@ -574,7 +690,13 @@ export function setMemoryLifecycle(
     }
   }
   const effective = refoldMemory(store, memId, gen);
-  return { ok: true, entityId: memId, status: effective };
+  return {
+    ok: true,
+    entityId: memId,
+    status: effective,
+    ...(promoted ? { promoted } : {}),
+    ...(remediation ? { remediation } : {}),
+  };
 }
 
 /**
