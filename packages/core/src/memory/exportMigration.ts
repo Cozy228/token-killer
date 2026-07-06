@@ -1,197 +1,69 @@
 /**
- * S3 — one-shot migration of store-only (M1) memory into committed `.ctx/` files.
+ * S3 — migrate store-only (M1) memory into committed `.ctx/` files, and keep it
+ * swept (F4). A one-shot gate is wrong: post-migration, store-only writes (the
+ * MCP `remember` surface + the refresh-path import — wired in slice 4) would
+ * strand behind a set marker forever. So this is an id-keyed CATCH-UP:
+ * `isMigrationDue` = "any store memory event absent from the files"; the marker
+ * is a last-run STAMP, not a gate; every cold-path check sweeps new store-only
+ * events into their correct zone.
  *
- * Idempotent + resumable, id-keyed by `mem:<ulid>` (a re-run scans the committed
- * logs and SKIPS every ULID already present → a second run writes zero lines).
- * The `meta` marker (`memory_migrated_at`) is written LAST, after all entries are
- * flushed — so a crash mid-migration leaves the marker unset and the next run
- * completes the remainder (id-keyed skip = idempotent; marker-last = resumable).
+ * The catch-up export (`catchup.ts`) exports the full event history VERBATIM
+ * (F2), then this ends with the sanctioned RESET rebuild (F5) so the local store
+ * re-derives from the files EXACTLY like a fresh clone — no additive drift, no
+ * locally-only lifecycle history. The catch-up runs BEFORE the reset (ordering
+ * guard) so nothing store-only strands.
  *
- * Zone routing on export (E3): a row that is host-import-origin AND still
- * unconfirmed (`needs-review`) goes to the personal OVERLAY, not the committed
- * zone; everything else goes to Mainline. The E4 secret guard runs on the export
- * path: a secret-shaped entry is DIVERTED to the overlay as `needs-review` with a
- * success-shaped remediation note — never silently committed, never a hard error.
+ * This amends the S3 settlement's "status replayed" MECHANICS (it predates the
+ * slice-2 event log): status is now derived from the verbatim events, never a
+ * mutable copy — the ruling is unchanged and satisfied more strictly.
  *
- * Status is REPLAYED, not copied (S3): the create line carries the natural
- * landing status; a non-landing current status is reproduced by a synthesized
- * `migration` decision event so the E2/E5 fold derives the same status.
- * Provenance / authority / anchors / valid_from-to are carried verbatim.
- *
- * No LLM / no network — deterministic file writes + a local read-only reindex.
+ * No LLM / no network — deterministic file writes + a local reset rebuild.
  */
-import type { MemoryFiles, MemoryZone } from "./fileStore.ts";
-import { ulidOf } from "./fileStore.ts";
+import { catchUpStoreOnlyEvents, fileEventIds } from "./catchup.ts";
+import type { MemoryFiles } from "./fileStore.ts";
 import { reindexMemoryFromFiles } from "./reindex.ts";
-import { scanMemoryForSecret, secretRemediationNote } from "./secretGuard.ts";
-import type { SerializedDecision, SerializedMemory } from "./serialize.ts";
-import type { MemoryEvent, MemoryEventVerb, MemoryRow, MemoryStatus } from "../store/types.ts";
 import type { Store } from "../store/store.ts";
 
 export const MIGRATION_MARKER = "memory_migrated_at";
 
-const VERB_FOR_STATUS: Record<MemoryStatus, MemoryEventVerb> = {
-  active: "confirm",
-  "needs-review": "review",
-  retired: "retire",
-  superseded: "supersede",
-};
-
 export interface MigrationReport {
   migrated: boolean;
-  /** Rows written this run. */
+  /** Rows exported this run (wrote ≥1 new line). */
   exported: number;
-  /** Rows skipped because their ULID is already present (idempotent re-run). */
+  /** Rows already fully present (idempotent skip). */
   skipped: number;
-  /** Rows diverted by the secret guard (E4). */
+  /** Rows diverted by the E4 secret guard. */
   diverted: number;
   toMainline: number;
   toOverlay: number;
 }
 
-const ZERO = { exported: 0, skipped: 0, diverted: 0, toMainline: 0, toOverlay: 0 };
-
-/** Migration is due when there is store-only memory and the marker is unset. */
-export function isMigrationDue(store: Store): boolean {
-  if (store.getMeta(MIGRATION_MARKER) !== undefined) return false;
-  return store.allMemories().length > 0;
+/**
+ * Migration is DUE whenever a store memory event is not yet in the files (F4) —
+ * a brand-new store-only row OR a lifecycle line missing after a crash-resume.
+ * O(events) scan; the marker does not gate it.
+ */
+export function isMigrationDue(store: Store, files: MemoryFiles): boolean {
+  const present = fileEventIds(files);
+  for (const e of store.allMemoryEvents()) {
+    if (!present.has(e.id)) return true;
+  }
+  return false;
 }
 
-/** Natural landing status: host imports land `needs-review` (A3); authored memory
- *  lands `active`. Later transitions are replayed as decision events. */
-function landingStatus(origin: string): MemoryStatus {
-  return origin.startsWith("host-import") ? "needs-review" : "active";
-}
-
-/** Which status a `migration` decision must replay to reach `current` (R5).
- *  Non-secret: any non-landing status. Secret-diverted: only a TERMINAL status
- *  (so a retired/superseded secret does not resurrect); a live secret stays at
- *  the `needs-review` landing until a human redacts it. */
-function statusToReplay(
-  secret: boolean,
-  current: MemoryStatus,
-  landing: MemoryStatus,
-): MemoryStatus | undefined {
-  if (current === landing) return undefined;
-  if (!secret) return current;
-  return current === "retired" || current === "superseded" ? current : undefined;
-}
-
+/**
+ * Sweep store-only memory into the files, then reset-rebuild the index from the
+ * files. Idempotent + crash-resumable (id-keyed catch-up). `migrated` is true
+ * whenever the sweep ran (even if it exported nothing — a cheap no-op check).
+ */
 export function migrateStoreMemoryToFiles(store: Store, files: MemoryFiles): MigrationReport {
-  if (store.getMeta(MIGRATION_MARKER) !== undefined) {
-    return { migrated: false, ...ZERO }; // already migrated
-  }
-  files.ensureScaffold();
-
-  // Idempotency: the ULIDs already committed / in the overlay (skip these).
-  const present = new Set<string>();
-  for (const zone of ["mainline", "overlay"] as const) {
-    for (const m of files.readMemories(zone)) present.add(m.memoryId);
-  }
-
-  let exported = 0;
-  let skipped = 0;
-  let diverted = 0;
-  let toMainline = 0;
-  let toOverlay = 0;
-
-  for (const mem of store.allMemories()) {
-    if (present.has(mem.entityId)) {
-      skipped++;
-      continue;
-    }
-    const finding = scanMemoryForSecret(mem.gist, mem.detail);
-    let zone: MemoryZone;
-    let landing: MemoryStatus;
-    let reason: string | undefined;
-    if (finding.secret) {
-      zone = "overlay";
-      landing = "needs-review";
-      reason = secretRemediationNote(finding.cls as string);
-      diverted++;
-    } else if (mem.origin.startsWith("host-import") && mem.status === "needs-review") {
-      zone = "overlay";
-      landing = "needs-review";
-    } else {
-      zone = "mainline";
-      landing = landingStatus(mem.origin);
-    }
-
-    const created = store.memoryEvents(mem.entityId).find((e) => e.verb === "create");
-    const entry = memoryEntry(store, mem, created, landing, reason);
-    files.appendMemory(zone, entry, mem.detail);
-
-    // Status replay (S3): synthesize a `migration` decision so the fold
-    // reproduces the current status. R5: a diverted secret lands `needs-review`
-    // (a human MUST review + redact it), but a TERMINAL original status
-    // (retired/superseded) is still replayed so a dead secret does not resurrect
-    // into the review queue — only a live (active/needs-review) secret stays
-    // pending. Non-secret rows replay any non-landing status.
-    const replay = statusToReplay(finding.secret, mem.status, landing);
-    if (replay !== undefined) {
-      files.appendDecision(zone, migrationDecision(store, mem.entityId, replay));
-    }
-
-    exported++;
-    if (zone === "mainline") toMainline++;
-    else toOverlay++;
-  }
-
-  // Marker LAST (resumable): only after every entry + sidecar is flushed.
+  // Catch-up FIRST (ordering guard) so nothing store-only strands under the reset.
+  const report = catchUpStoreOnlyEvents(store, files);
+  // Marker = last-run STAMP, not a gate (F4).
   store.setMeta(MIGRATION_MARKER, String(store.nextEventStamp().at));
-
-  // Reindex: the store reverts to a pure rebuildable index over the files.
-  reindexMemoryFromFiles(store, files);
-
-  return { migrated: true, exported, skipped, diverted, toMainline, toOverlay };
-}
-
-/** Build the committed memory-log entry, carrying provenance verbatim. */
-function memoryEntry(
-  store: Store,
-  mem: MemoryRow,
-  created: MemoryEvent | undefined,
-  landing: MemoryStatus,
-  reason: string | undefined,
-): SerializedMemory {
-  const stamp = created ? { id: created.id, at: created.at } : store.nextEventStamp();
-  return {
-    eventId: stamp.id,
-    at: stamp.at,
-    memoryId: mem.entityId,
-    actor: created?.actor ?? "migration",
-    carrier: created?.carrier ?? "migration",
-    method: created?.method ?? "structural",
-    authority: created?.authority ?? mem.authority,
-    status: landing,
-    gist: mem.gist,
-    origin: mem.origin,
-    detailPointer: mem.detail ? ulidOf(mem.entityId) : undefined,
-    anchors: store.anchorsOf(mem.entityId),
-    // Legacy rows carry no `anchored-at` — never fabricate a commit id (item 6).
-    anchoredAt: undefined,
-    sessionRef: mem.sessionRef,
-    reason,
-    validFrom: mem.validFrom,
-    validTo: mem.validTo,
-  };
-}
-
-function migrationDecision(
-  store: Store,
-  memoryId: string,
-  status: MemoryStatus,
-): SerializedDecision {
-  const stamp = store.nextEventStamp();
-  return {
-    eventId: stamp.id,
-    at: stamp.at,
-    memoryId,
-    verb: VERB_FOR_STATUS[status],
-    actor: "migration",
-    carrier: "migration",
-    method: "structural",
-    authority: "derived",
-    reason: `migration: status replayed as ${status}`,
-  };
+  // The store reverts to a pure rebuildable index — reset so it re-derives from
+  // the files exactly like a fresh clone (F5). (Reset re-runs the catch-up as a
+  // belt-and-suspenders guard; it is an idempotent no-op the second time.)
+  reindexMemoryFromFiles(store, files, { mode: "reset" });
+  return { migrated: true, ...report };
 }

@@ -23,6 +23,7 @@ import type { MemoryFiles, MemoryZone } from "./fileStore.ts";
 import type { SerializedDecision, SerializedMemory } from "./serialize.ts";
 import { lineTag, parseDecision, parseMemory } from "./serialize.ts";
 import { classifyAbsentAnchor, isAncestor } from "./anchoredAt.ts";
+import { catchUpStoreOnlyEvents } from "./catchup.ts";
 import {
   foldStatus,
   rebuildConflictStatuses,
@@ -43,6 +44,24 @@ export interface ReindexReport {
   /** Committed lines skipped because they were unparseable (R1 — corrupt /
    *  hand-edited line; success-shaped, surfaced for a later `ctx doctor`). */
   skipped: number;
+  /** Overlay mem entries skipped because MAINLINE already owns the id (F6 —
+   *  mainline wins deterministically; surfaced for a later `ctx doctor`). */
+  shadowedOverlay: number;
+}
+
+export interface ReindexOptions {
+  recomputeDrift?: boolean;
+  /**
+   * `additive` (default): INSERT OR IGNORE over the append-only tables — safe for
+   * plain appends. `reset`: the sanctioned files→store cache reset (F5) — used at
+   * migration end and on a NON-APPEND pull-delta fallback (a rewrite/redaction
+   * that must SHED rows). Reset runs the catch-up export FIRST (ordering guard),
+   * so store-only rows are committed before the cache is cleared — nothing strands.
+   */
+  mode?: "additive" | "reset";
+  /** Event ids that were in the OLD committed history (pull-delta fallback): a
+   *  redacted/removed committed row is purged, not re-exported by the catch-up. */
+  resetExcludeIds?: ReadonlySet<string>;
 }
 
 /** Rebuild the memory index cache from every committed / overlay file. Never
@@ -50,10 +69,19 @@ export interface ReindexReport {
 export function reindexMemoryFromFiles(
   store: Store,
   files: MemoryFiles,
-  opts: { recomputeDrift?: boolean } = {},
+  opts: ReindexOptions = {},
 ): ReindexReport {
+  if (opts.mode === "reset") {
+    // Ordering guard (F5): export store-only events BEFORE clearing the cache.
+    // `resetExcludeIds` keeps committed-then-removed rows from being re-exported.
+    catchUpStoreOnlyEvents(store, files, opts.resetExcludeIds);
+    store.resetMemoryCache();
+  }
   const gen = store.beginGeneration(MEMORY_SOURCE);
-  const report: ReindexReport = { memories: 0, decisions: 0, skipped: 0 };
+  const report: ReindexReport = { memories: 0, decisions: 0, skipped: 0, shadowedOverlay: 0 };
+  // F6: MAINLINE wins. Track the ids ingested from mainline so an overlay mem
+  // entry with the same id never clobbers the committed (possibly redacted) text.
+  const mainlineIds = new Set<string>();
   for (const zone of ZONES) {
     for (const raw of files.memoryLines(zone)) {
       const m = parseMemory(raw);
@@ -61,7 +89,12 @@ export function reindexMemoryFromFiles(
         report.skipped++;
         continue;
       }
+      if (zone === "overlay" && mainlineIds.has(m.memoryId)) {
+        report.shadowedOverlay++;
+        continue;
+      }
       ingestMemoryEntry(store, files, zone, m, gen);
+      if (zone === "mainline") mainlineIds.add(m.memoryId);
       report.memories++;
     }
     for (const raw of files.decisionLines(zone)) {
@@ -290,63 +323,134 @@ export function pullDeltaReindex(
   files: MemoryFiles,
   opts: { projectRoot: string; oldTip: string; newTip: string },
 ): PullDeltaResult {
+  // Old committed event ids — a redaction removes some of these; the reset must
+  // purge those rows, not re-export them via the catch-up (F5).
+  const excludeIds = (): ReadonlySet<string> => committedEventIds(opts.projectRoot, opts.oldTip);
   const diff = gitDiff(opts.projectRoot, opts.oldTip, opts.newTip);
   if (diff === undefined) {
-    const r = reindexMemoryFromFiles(store, files);
+    const r = reindexMemoryFromFiles(store, files, {
+      mode: "reset",
+      resetExcludeIds: excludeIds(),
+    });
     return { mode: "full-fallback", added: 0, skipped: r.skipped };
   }
-  const added: string[] = [];
+  // F7: route added lines by the FILE they came from (track the `+++` header),
+  // not by tag alone; a rename degrades to delete+add (`--no-renames`) → the
+  // non-append fallback catches it.
+  let currentFile = "";
+  const added: Array<{ file: string; content: string }> = [];
   for (const raw of diff.split("\n")) {
-    if (raw.startsWith("+++") || raw.startsWith("---")) continue; // file headers
+    if (raw.startsWith("+++")) {
+      currentFile = headerPath(raw);
+      continue;
+    }
+    if (raw.startsWith("---")) continue; // old-side header
     if (raw.startsWith("-")) {
-      // A removed / rewritten entry line = non-append shape → full reconciliation.
+      // A removed / rewritten entry line = non-append shape → a rewrite/redaction
+      // that must SHED rows → the sanctioned RESET reconciliation (F5).
       if (lineTag(raw.slice(1)) !== undefined) {
-        const r = reindexMemoryFromFiles(store, files);
+        const r = reindexMemoryFromFiles(store, files, {
+          mode: "reset",
+          resetExcludeIds: excludeIds(),
+        });
         return { mode: "full-fallback", added: 0, skipped: r.skipped };
       }
       continue;
     }
     if (raw.startsWith("+")) {
       const content = raw.slice(1);
-      if (lineTag(content) !== undefined) added.push(content);
+      if (content.trim().length > 0) added.push({ file: currentFile, content });
     }
   }
   const gen = store.beginGeneration(MEMORY_SOURCE);
   const touched = new Set<string>();
+  let addedCount = 0;
   let skipped = 0;
-  for (const content of added) {
-    if (lineTag(content) === "mem") {
+  for (const { file, content } of added) {
+    if (file.endsWith("log.md")) {
       const m = parseMemory(content);
       if (m) {
         ingestMemoryEntry(store, files, "mainline", m, gen);
         touched.add(m.memoryId);
+        addedCount++;
       } else {
-        skipped++; // R1: a tag-valid but corrupt appended line is skipped
+        skipped++; // corrupt (R1) or a `dec` line in the wrong file (F7)
       }
-    } else {
+    } else if (file.endsWith("decisions.md")) {
       const d = parseDecision(content);
       if (d) {
         store.ingestMemoryEvent(decisionEvent(d));
         touched.add(d.memoryId);
+        addedCount++;
       } else {
         skipped++;
       }
+    } else {
+      skipped++; // an entry line from an unexpected file
     }
   }
   for (const id of touched) refoldMemory(store, id, gen);
   rebuildConflictStatuses(store);
   store.publishGeneration(MEMORY_SOURCE);
-  return { mode: "delta", added: added.length, skipped };
+  return { mode: "delta", added: addedCount, skipped };
 }
 
-/** Local read-only `git diff` over the committed memory logs. `undefined` when
- *  git is unavailable / the range is invalid → caller falls back to full rebuild. */
+/** Event ids committed at `tip` (both mainline logs) — the F5 purge exclusion. */
+function committedEventIds(projectRoot: string, tip: string): ReadonlySet<string> {
+  const ids = new Set<string>();
+  for (const path of [".ctx/memory/log.md", ".ctx/memory/decisions.md"]) {
+    const text = gitShow(projectRoot, tip, path);
+    if (text === undefined) continue;
+    for (const raw of text.split("\n")) {
+      const m = parseMemory(raw);
+      if (m) {
+        ids.add(m.eventId);
+        continue;
+      }
+      const d = parseDecision(raw);
+      if (d) ids.add(d.eventId);
+    }
+  }
+  return ids;
+}
+
+function gitShow(projectRoot: string, tip: string, path: string): string | undefined {
+  try {
+    return execFileSync("git", ["--no-pager", "show", `${tip}:${path}`], {
+      cwd: projectRoot,
+      encoding: "utf8",
+      stdio: ["ignore", "pipe", "ignore"],
+      timeout: 10_000,
+    });
+  } catch {
+    return undefined; // path absent at that commit → no ids
+  }
+}
+
+/** The basename of a `+++ b/<path>` diff header (F7 file routing). */
+function headerPath(header: string): string {
+  const m = /^\+\+\+ (?:b\/)?(.*)$/.exec(header.trim());
+  const p = m ? (m[1] as string) : "";
+  return p.split("/").pop() ?? "";
+}
+
+/**
+ * Local read-only `git diff` over the committed memory logs. `--no-ext-diff` +
+ * `--no-textconv` (F3) neutralise any user `diff.external` (delta/difftastic) or
+ * textconv filter that would otherwise mangle the plumbing output and silently
+ * index nothing; `--no-renames` (F7) makes a log rename a delete+add so the
+ * non-append fallback fires. `undefined` on any git error → full-rebuild fallback.
+ */
 function gitDiff(projectRoot: string, oldTip: string, newTip: string): string | undefined {
   try {
     return execFileSync(
       "git",
       [
+        "--no-pager",
         "diff",
+        "--no-ext-diff",
+        "--no-textconv",
+        "--no-renames",
         "--no-color",
         "-U0",
         `${oldTip}..${newTip}`,

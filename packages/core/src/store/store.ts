@@ -57,6 +57,18 @@ export const LEASE_TTL_MS = 30_000;
 export const MEMORY_GIST_MAX_CHARS = 240;
 const MEMORY_SOURCE = "memory";
 
+/** The `memory_events` append-only triggers (migration 002). Kept here so the
+ *  sanctioned reset seam can drop + recreate them around a files→store rebuild. */
+const MEMORY_EVENTS_TRIGGERS = `
+CREATE TRIGGER memory_events_no_update BEFORE UPDATE ON memory_events
+BEGIN
+  SELECT RAISE(ABORT, 'memory_events is append-only (no UPDATE)');
+END;
+CREATE TRIGGER memory_events_no_delete BEFORE DELETE ON memory_events
+BEGIN
+  SELECT RAISE(ABORT, 'memory_events is append-only (no DELETE)');
+END;`;
+
 export interface OpenStoreOptions {
   /** Directory to resolve the project shard from (default: process.cwd()). */
   projectDir?: string;
@@ -196,6 +208,18 @@ export interface Store {
   /** Every memory index row (unfiltered) — the S3 migration export enumerates
    *  the full store, including non-`active`/gen-invisible rows. Read-only. */
   allMemories(): MemoryRow[];
+  /**
+   * The ONE sanctioned cache-reset seam (files→store only). Drops the
+   * append-only `memory_events` triggers, clears the entire memory domain
+   * (events, memory rows + entities/FTS/anchors/links, and memory-provenance
+   * claims + their conflicts), then recreates the triggers — all in one
+   * transaction. The append-only triggers stay AUTHORITATIVE for normal
+   * operation; this is the only bypass, used exclusively to rebuild the
+   * rebuildable cache from the committed files (migration end, non-append
+   * pull-delta fallback). Nothing store-only is exported here — the CALLER runs
+   * the catch-up export first (ordering guard).
+   */
+  resetMemoryCache(): void;
   setAnchors(memoryId: string, entityIds: string[]): void;
   anchorsOf(memoryId: string): string[];
   /**
@@ -580,6 +604,32 @@ class SqliteStore implements Store {
       if (row) out.push(row);
     }
     return out;
+  }
+
+  resetMemoryCache(): void {
+    transaction(this.#db, () => {
+      // Bypass the append-only guard ONLY here (files→store rebuild).
+      this.#db.exec("DROP TRIGGER IF EXISTS memory_events_no_update");
+      this.#db.exec("DROP TRIGGER IF EXISTS memory_events_no_delete");
+      this.#db.exec("DELETE FROM memory_events");
+      // FTS is contentless — clear the memory entities' rows before the entities.
+      this.#db.exec(
+        "DELETE FROM fts WHERE rowid IN (SELECT rowid FROM entities WHERE kind = 'memory')",
+      );
+      this.#db.exec("DELETE FROM anchors");
+      this.#db.exec("DELETE FROM links WHERE src LIKE 'mem:%' OR dst LIKE 'mem:%'");
+      // Conflicts referencing memory-provenance claims (resolve before the claims).
+      this.#db.exec(
+        `DELETE FROM conflicts WHERE
+           a IN (SELECT id FROM claims WHERE subject LIKE 'mem:%') OR
+           b IN (SELECT id FROM claims WHERE subject LIKE 'mem:%')`,
+      );
+      this.#db.exec("DELETE FROM claims WHERE subject LIKE 'mem:%'");
+      this.#db.exec("DELETE FROM memory");
+      this.#db.exec("DELETE FROM entities WHERE kind = 'memory'");
+      // Restore the append-only guard for normal operation.
+      this.#db.exec(MEMORY_EVENTS_TRIGGERS);
+    });
   }
 
   cacheMemoryStatus(entityId: string, status: MemoryRow["status"]): void {
