@@ -1,0 +1,3 @@
+# Ephemeral working artifacts: sandboxes, per-cell scratch checkouts, run JSON,
+# mined candidates, reports. Regenerable — never committed.
+.work/
