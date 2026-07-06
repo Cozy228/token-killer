@@ -140,6 +140,16 @@ export interface Store {
    */
   cacheConflictStatus(a: number, b: number, status: ConflictStatus): void;
   /**
+   * Delete every conflict row of one kind (a CACHE deletion, not a source
+   * mutation). The full reindex recomputes the DERIVED `stale-suspect` layer from
+   * scratch (S4 §1): it deletes the cached rows then re-files only the ones
+   * re-derived this pass. Non-destruction holds — the committed source + the
+   * append-only events + the underlying claims are untouched; only the
+   * rebuildable conflict cache is cleared. Contradiction conflicts are NOT passed
+   * here (they keep re-deriving from events).
+   */
+  deleteConflictsByKind(kind: ConflictKind): void;
+  /**
    * OPEN `stale-suspect` conflicts whose `a` claim's subject is this memory —
    * the CURRENT-STATE staleness signal (E7): rank/push read it, the lifecycle
    * `confirm` verb resolves it. The append-only `stale-reason` claims stay as
@@ -488,6 +498,10 @@ class SqliteStore implements Store {
 
   cacheConflictStatus(a: number, b: number, status: ConflictStatus): void {
     this.#db.prepare("UPDATE conflicts SET status = ? WHERE a = ? AND b = ?").run(status, a, b);
+  }
+
+  deleteConflictsByKind(kind: ConflictKind): void {
+    this.#db.prepare("DELETE FROM conflicts WHERE kind = ?").run(kind);
   }
 
   openStaleSuspects(memoryId: string): Conflict[] {

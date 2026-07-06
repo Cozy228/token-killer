@@ -183,7 +183,9 @@ export interface MemoryInput {
   detail?: string;
   origin: MemoryOrigin;
   sessionRef?: string;
-  authority: "inferred" | "confirmed";
+  // 4-valued (R4): S3 carries authority VERBATIM through reindex — a migrated
+  // row's `observed`/`derived` must survive, not collapse to inferred|confirmed.
+  authority: Authority;
   status?: MemoryStatus;
   /** C5 bitemporal validity — explicit only, never inferred. */
   validFrom?: number;
@@ -196,7 +198,7 @@ export interface MemoryRow {
   detail: string | undefined;
   origin: MemoryOrigin;
   sessionRef: string | undefined;
-  authority: "inferred" | "confirmed";
+  authority: Authority; // 4-valued (R4) — carried verbatim through reindex
   status: MemoryStatus;
   servedCount: number;
   lastServed: number | undefined;
@@ -218,7 +220,7 @@ export interface MemoryListRow {
   name: string;
   gist: string;
   origin: MemoryOrigin;
-  authority: "inferred" | "confirmed";
+  authority: Authority; // 4-valued (R4)
   status: MemoryStatus;
   handle: string | null;
 }

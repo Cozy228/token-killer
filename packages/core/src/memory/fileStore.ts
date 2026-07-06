@@ -46,6 +46,8 @@ memory/decisions.md merge=union
 
 const GITIGNORE = `# ctx personal overlay — gitignored, per-person, never shared (E3 / three-tier).
 # Nothing auto-generated (agent remember, host imports) reaches git unreviewed.
+# (The rebuildable SQLite index lives under ~/.ctx, outside the repo, so it needs
+# no pattern here; if a future index moves in-repo, add its pattern below.)
 *.local.md
 *.local.jsonc
 details.local/
@@ -116,6 +118,8 @@ export class MemoryFiles {
    *  then the log line is appended carrying the `detail=<ulid>` pointer. */
   appendMemory(zone: MemoryZone, entry: SerializedMemory, detailBody?: string): void {
     this.ensureScaffold();
+    // R6: never mutate the caller's `entry` — keep the pointer local.
+    let toWrite = entry;
     if (detailBody !== undefined && detailBody.length > 0) {
       const ulid = entry.detailPointer ?? ulidOf(entry.memoryId);
       const path = this.sidecarPath(zone, ulid);
@@ -123,9 +127,9 @@ export class MemoryFiles {
         mkdirSync(dirname(path), { recursive: true });
         writeFileSync(path, detailBody, "utf8"); // write-once — never overwrite
       }
-      entry.detailPointer = ulid;
+      toWrite = { ...entry, detailPointer: ulid };
     }
-    appendLine(this.#memoryLog(zone), serializeMemory(entry));
+    appendLine(this.#memoryLog(zone), serializeMemory(toWrite));
   }
 
   /** Append a lifecycle / decision event to `zone`. */

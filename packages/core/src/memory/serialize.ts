@@ -113,6 +113,18 @@ export function serializeMemory(m: SerializedMemory): string {
 }
 
 export function parseMemory(raw: string): SerializedMemory | undefined {
+  // NEVER throws (R1): a corrupt / hand-edited line (bad percent-escape, bad refs
+  // JSON) is an expected input on a human-reviewed committed log (E3) and under a
+  // manual conflict resolution (S10 #3). An unparseable line returns `undefined`
+  // (the caller skips + counts it, S1b success-shaped), never a crash.
+  try {
+    return parseMemoryUnsafe(raw);
+  } catch {
+    return undefined;
+  }
+}
+
+function parseMemoryUnsafe(raw: string): SerializedMemory | undefined {
   const m = /^- mem\s+(.*)$/.exec(raw.trim());
   if (!m) return undefined;
   const t = parseTokens(m[1] as string);
@@ -161,6 +173,15 @@ export function serializeDecision(d: SerializedDecision): string {
 }
 
 export function parseDecision(raw: string): SerializedDecision | undefined {
+  // NEVER throws (R1) — see `parseMemory`. A corrupt line returns `undefined`.
+  try {
+    return parseDecisionUnsafe(raw);
+  } catch {
+    return undefined;
+  }
+}
+
+function parseDecisionUnsafe(raw: string): SerializedDecision | undefined {
   const m = /^- dec\s+(.*)$/.exec(raw.trim());
   if (!m) return undefined;
   const t = parseTokens(m[1] as string);

@@ -15,7 +15,13 @@ import { existsSync } from "node:fs";
 import { isAbsolute, join } from "node:path";
 import { shortHandleCandidate } from "../store/handles.ts";
 import type { Store } from "../store/store.ts";
-import type { EntityKind, Facet, MemoryEventVerb, MemoryStatus } from "../store/types.ts";
+import type {
+  Authority,
+  EntityKind,
+  Facet,
+  MemoryEventVerb,
+  MemoryStatus,
+} from "../store/types.ts";
 import { MEMORY_GIST_MAX_CHARS } from "./claudeImporter.ts";
 import { currentHeadCommit } from "./anchoredAt.ts";
 import { fuzzyDuplicate } from "./dedup.ts";
@@ -480,7 +486,7 @@ export interface MemoryListItem {
   name: string;
   gist: string;
   origin: string;
-  authority: "inferred" | "confirmed";
+  authority: Authority; // 4-valued (R4)
   status: MemoryStatus;
   handle: string;
 }

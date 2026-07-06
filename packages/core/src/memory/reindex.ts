@@ -25,26 +25,55 @@ import { lineTag, parseDecision, parseMemory } from "./serialize.ts";
 import { classifyAbsentAnchor } from "./anchoredAt.ts";
 import { rebuildConflictStatuses, rebuildMemoryStatuses, refoldMemory } from "./fold.ts";
 import type { Store } from "../store/store.ts";
-import type { MemoryEvent } from "../store/types.ts";
+import type { MemoryEvent, MemoryOrigin } from "../store/types.ts";
 
 const MEMORY_SOURCE = "memory";
 const ZONES: readonly MemoryZone[] = ["mainline", "overlay"];
 
-/** Rebuild the memory index cache from every committed / overlay file. */
+export interface ReindexReport {
+  /** Memory (create) entries indexed. */
+  memories: number;
+  /** Lifecycle/decision events indexed. */
+  decisions: number;
+  /** Committed lines skipped because they were unparseable (R1 — corrupt /
+   *  hand-edited line; success-shaped, surfaced for a later `ctx doctor`). */
+  skipped: number;
+}
+
+/** Rebuild the memory index cache from every committed / overlay file. Never
+ *  throws on a mangled line — it is skipped + counted (R1 / S1b). */
 export function reindexMemoryFromFiles(
   store: Store,
   files: MemoryFiles,
   opts: { recomputeDrift?: boolean } = {},
-): void {
+): ReindexReport {
   const gen = store.beginGeneration(MEMORY_SOURCE);
+  const report: ReindexReport = { memories: 0, decisions: 0, skipped: 0 };
   for (const zone of ZONES) {
-    for (const m of files.readMemories(zone)) ingestMemoryEntry(store, files, zone, m, gen);
-    for (const d of files.readDecisions(zone)) store.ingestMemoryEvent(decisionEvent(d));
+    for (const raw of files.memoryLines(zone)) {
+      const m = parseMemory(raw);
+      if (!m) {
+        report.skipped++;
+        continue;
+      }
+      ingestMemoryEntry(store, files, zone, m, gen);
+      report.memories++;
+    }
+    for (const raw of files.decisionLines(zone)) {
+      const d = parseDecision(raw);
+      if (!d) {
+        report.skipped++;
+        continue;
+      }
+      store.ingestMemoryEvent(decisionEvent(d));
+      report.decisions++;
+    }
   }
   rebuildMemoryStatuses(store, gen);
   rebuildConflictStatuses(store);
   if (opts.recomputeDrift !== false) recomputeDriftAtReindex(store, gen);
   store.publishGeneration(MEMORY_SOURCE);
+  return report;
 }
 
 /** Ingest one committed memory (create) entry into the index cache. */
@@ -70,9 +99,9 @@ function ingestMemoryEntry(
     entityId: m.memoryId,
     gist: m.gist,
     detail, // a dangling pointer reads `undefined` — success-shaped (S1b)
-    origin: m.origin as never,
+    origin: m.origin as MemoryOrigin,
     sessionRef: m.sessionRef,
-    authority: (m.authority === "confirmed" ? "confirmed" : "inferred") as never,
+    authority: m.authority, // carried VERBATIM (R4) — 4-valued, no collapse
     status: m.status,
     validFrom: m.validFrom,
     validTo: m.validTo,
@@ -141,6 +170,15 @@ function decisionEvent(d: SerializedDecision): MemoryEvent {
  */
 export function recomputeDriftAtReindex(store: Store, gen: number): void {
   for (const m of store.allMemories()) store.setMemoryDrift(m.entityId, null);
+  // R2 — the derived `stale-suspect` conflict layer is per-checkout index state
+  // (S4 §1), so recompute it from scratch: delete the cached rows, then re-file
+  // ONLY the ones re-derived below. Otherwise `rebuildConflictStatuses` reopens
+  // yesterday's drift forever, and a long-lived peer + a fresh clone at the same
+  // commit dump DIFFERENT conflict sets (E6 breakage). Cache deletion only — the
+  // committed source, the append-only events, and the stale-reason claims are
+  // untouched (non-destruction). The R2-2 within-process stickiness formally
+  // ENDS here (ratified S4 §1); contradiction conflicts keep deriving from events.
+  store.deleteConflictsByKind("stale-suspect");
   const codePublished = store.publishedGen("code") > 0 || store.publishedGen("docs") > 0;
   // Re-derivation needs a checkout to run `git merge-base --is-ancestor` against.
   const projectRoot = store.projectRoot;
@@ -202,6 +240,8 @@ function findOrAddClaim(
 export interface PullDeltaResult {
   mode: "delta" | "full-fallback";
   added: number;
+  /** Added lines skipped because they were unparseable (R1). */
+  skipped: number;
 }
 
 /**
@@ -216,8 +256,8 @@ export function pullDeltaReindex(
 ): PullDeltaResult {
   const diff = gitDiff(opts.projectRoot, opts.oldTip, opts.newTip);
   if (diff === undefined) {
-    reindexMemoryFromFiles(store, files);
-    return { mode: "full-fallback", added: 0 };
+    const r = reindexMemoryFromFiles(store, files);
+    return { mode: "full-fallback", added: 0, skipped: r.skipped };
   }
   const added: string[] = [];
   for (const raw of diff.split("\n")) {
@@ -225,8 +265,8 @@ export function pullDeltaReindex(
     if (raw.startsWith("-")) {
       // A removed / rewritten entry line = non-append shape → full reconciliation.
       if (lineTag(raw.slice(1)) !== undefined) {
-        reindexMemoryFromFiles(store, files);
-        return { mode: "full-fallback", added: 0 };
+        const r = reindexMemoryFromFiles(store, files);
+        return { mode: "full-fallback", added: 0, skipped: r.skipped };
       }
       continue;
     }
@@ -237,25 +277,30 @@ export function pullDeltaReindex(
   }
   const gen = store.beginGeneration(MEMORY_SOURCE);
   const touched = new Set<string>();
+  let skipped = 0;
   for (const content of added) {
     if (lineTag(content) === "mem") {
       const m = parseMemory(content);
       if (m) {
         ingestMemoryEntry(store, files, "mainline", m, gen);
         touched.add(m.memoryId);
+      } else {
+        skipped++; // R1: a tag-valid but corrupt appended line is skipped
       }
     } else {
       const d = parseDecision(content);
       if (d) {
         store.ingestMemoryEvent(decisionEvent(d));
         touched.add(d.memoryId);
+      } else {
+        skipped++;
       }
     }
   }
   for (const id of touched) refoldMemory(store, id, gen);
   rebuildConflictStatuses(store);
   store.publishGeneration(MEMORY_SOURCE);
-  return { mode: "delta", added: added.length };
+  return { mode: "delta", added: added.length, skipped };
 }
 
 /** Local read-only `git diff` over the committed memory logs. `undefined` when

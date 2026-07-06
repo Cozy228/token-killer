@@ -13,6 +13,7 @@
  * from either a full id or a short [handle].
  */
 import type { Store } from "../store/store.ts";
+import type { Authority } from "../store/types.ts";
 import { authorityBoost, decayBasis, memoryFreshnessPenalty, timeDecay } from "../select/rank.ts";
 import { listMemories } from "../memory/remember.ts";
 import type { PushConfig } from "./config.ts";
@@ -21,7 +22,7 @@ export interface GotchaCandidate {
   entityId: string;
   gist: string;
   handle: string;
-  authority: "inferred" | "confirmed";
+  authority: Authority;
   /** Composite §6.3 memory score (authority × recency decay). */
   score: number;
   /** True when force-included by a `.ctx/push.jsonc` pin. */
@@ -95,7 +96,7 @@ export function rankGotchas(
 
   // Enumerate active memories; index by entity id so pins (all eligible → active)
   // promote members and reference gists uniformly.
-  const byId = new Map<string, { gist: string; authority: "inferred" | "confirmed" }>();
+  const byId = new Map<string, { gist: string; authority: Authority }>();
   for (const m of listMemories(store, { status: "active" })) {
     byId.set(m.entityId, { gist: m.gist, authority: m.authority });
   }

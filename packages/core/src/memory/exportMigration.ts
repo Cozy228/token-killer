@@ -63,6 +63,20 @@ function landingStatus(origin: string): MemoryStatus {
   return origin.startsWith("host-import") ? "needs-review" : "active";
 }
 
+/** Which status a `migration` decision must replay to reach `current` (R5).
+ *  Non-secret: any non-landing status. Secret-diverted: only a TERMINAL status
+ *  (so a retired/superseded secret does not resurrect); a live secret stays at
+ *  the `needs-review` landing until a human redacts it. */
+function statusToReplay(
+  secret: boolean,
+  current: MemoryStatus,
+  landing: MemoryStatus,
+): MemoryStatus | undefined {
+  if (current === landing) return undefined;
+  if (!secret) return current;
+  return current === "retired" || current === "superseded" ? current : undefined;
+}
+
 export function migrateStoreMemoryToFiles(store: Store, files: MemoryFiles): MigrationReport {
   if (store.getMeta(MIGRATION_MARKER) !== undefined) {
     return { migrated: false, ...ZERO }; // already migrated
@@ -107,10 +121,15 @@ export function migrateStoreMemoryToFiles(store: Store, files: MemoryFiles): Mig
     const entry = memoryEntry(store, mem, created, landing, reason);
     files.appendMemory(zone, entry, mem.detail);
 
-    // Status replay (S3): if the current status differs from the landing status,
-    // synthesize a `migration` decision event so the fold reproduces it.
-    if (!finding.secret && mem.status !== landing) {
-      files.appendDecision(zone, migrationDecision(store, mem.entityId, mem.status));
+    // Status replay (S3): synthesize a `migration` decision so the fold
+    // reproduces the current status. R5: a diverted secret lands `needs-review`
+    // (a human MUST review + redact it), but a TERMINAL original status
+    // (retired/superseded) is still replayed so a dead secret does not resurrect
+    // into the review queue — only a live (active/needs-review) secret stays
+    // pending. Non-secret rows replay any non-landing status.
+    const replay = statusToReplay(finding.secret, mem.status, landing);
+    if (replay !== undefined) {
+      files.appendDecision(zone, migrationDecision(store, mem.entityId, replay));
     }
 
     exported++;
