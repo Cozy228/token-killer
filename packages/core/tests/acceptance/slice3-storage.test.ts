@@ -28,6 +28,7 @@ import {
 } from "../../src/memory/exportMigration.ts";
 import { dumpJson } from "../../src/memory/dump.ts";
 import { classifyAbsentAnchor, currentHeadCommit } from "../../src/memory/anchoredAt.ts";
+import { flagAnchored } from "../../src/ingest/code/incremental.ts";
 import type { SerializedMemory } from "../../src/memory/serialize.ts";
 import type { MemoryOrigin, MemoryStatus } from "../../src/store/types.ts";
 import { cleanupTempDir, git, makeGitFixture, makeTempDir } from "../helpers/sandbox.ts";
@@ -364,6 +365,27 @@ describe("slice 3 — migration (S3)", () => {
     }
   });
 
+  test("R5: a retired secret-shaped row does not resurrect as needs-review", () => {
+    const gen = store.beginGeneration("memory");
+    seedMemory(store, gen, {
+      id: "mem:01MIGSECRETDEAD00000000A",
+      gist: "dead key sk-ABCDEFGH1234567890secret was rotated long ago",
+      origin: "remember",
+      status: "retired",
+    });
+    store.publishGeneration("memory");
+    migrateStoreMemoryToFiles(store, files);
+    // The secret is diverted to the overlay, but its terminal status is replayed,
+    // so it stays retired (not resurrected into the review queue).
+    const fresh = openStore({ projectDir: repo, home: join(root, "fresh-r5"), now });
+    try {
+      reindexMemoryFromFiles(fresh, new MemoryFiles(join(repo, ".ctx")));
+      expect(fresh.getMemory("mem:01MIGSECRETDEAD00000000A")?.status).toBe("retired");
+    } finally {
+      fresh.close();
+    }
+  });
+
   test("re-running after the marker is a no-op", () => {
     migrateStoreMemoryToFiles(store, files);
     const mainlineBefore = files.memoryLines("mainline").length;
@@ -600,6 +622,147 @@ describe("slice 3 — sidecar integrity (S1)", () => {
     try {
       expect(() => reindexMemoryFromFiles(store, files)).not.toThrow();
       expect(store.getMemory("mem:01HASENTRY0000000000000A")?.gist).toBe("a real entry");
+    } finally {
+      store.close();
+    }
+  });
+});
+
+describe("slice 3 — review round 1 fixes", () => {
+  let root: string;
+  let repo: string;
+
+  beforeEach(() => {
+    root = makeTempDir("ctx-s3-r1-");
+    repo = makeGitFixture(root);
+  });
+  afterEach(() => cleanupTempDir(root));
+
+  test("R1: a corrupt committed line is skipped + counted, good lines still index", () => {
+    const logDir = join(repo, ".ctx", "memory");
+    mkdirSync(logDir, { recursive: true });
+    const good =
+      "- mem id=01G at=1000 mid=mem:01GOODLINE0000000000000A verb=create actor=cli carrier=cli method=explicit-key authority=confirmed status=active origin=human-note gist=good%20line";
+    // Bad percent-escape in the gist AND bad refs JSON on a decision — both would
+    // throw inside decodeURIComponent / JSON.parse without the R1 guard.
+    const badMem =
+      "- mem id=01B at=2000 mid=mem:01BADLINE00000000000000A verb=create actor=cli carrier=cli method=explicit-key authority=confirmed status=active origin=human-note gist=%ZZbroken";
+    const badDec =
+      "- dec id=01D at=3000 mid=mem:01GOODLINE0000000000000A verb=confirm actor=cli carrier=cli method=explicit-key authority=confirmed refs=%GG";
+    writeFileSync(join(logDir, "log.md"), `${good}\n${badMem}\n`, "utf8");
+    writeFileSync(join(logDir, "decisions.md"), `${badDec}\n`, "utf8");
+
+    const store = openStore({ projectDir: repo, home: join(root, "home"), now });
+    try {
+      let report!: ReturnType<typeof reindexMemoryFromFiles>;
+      expect(() => {
+        report = reindexMemoryFromFiles(store, new MemoryFiles(join(repo, ".ctx")));
+      }).not.toThrow();
+      expect(report.memories).toBe(1);
+      expect(report.skipped).toBe(2); // one mem + one dec line skipped
+      expect(store.getMemory("mem:01GOODLINE0000000000000A")?.gist).toBe("good line");
+      expect(store.getMemory("mem:01BADLINE00000000000000A")).toBeUndefined();
+    } finally {
+      store.close();
+    }
+  });
+
+  test("R2(i): a peer's historical stale-suspect is recomputed → dump equals a fresh clone", () => {
+    const files = new MemoryFiles(join(repo, ".ctx"));
+    files.appendMemory(
+      "mainline",
+      memEntry({
+        memoryId: "mem:01PEERMEM000000000000000A",
+        gist: "anchored to a symbol that once drifted",
+        anchors: ["sym:src/x.ts#present"],
+      }),
+    );
+
+    // Peer A: reindex, then a within-process code re-ingest flags signature-changed
+    // (drift + an open stale-suspect conflict), exactly like the landed 2c path.
+    const peer = openStore({ projectDir: repo, home: join(root, "peer"), now });
+    // Fresh clone B: same committed files, never saw the drift.
+    const clone = openStore({ projectDir: repo, home: join(root, "clone"), now });
+    try {
+      reindexMemoryFromFiles(peer, new MemoryFiles(join(repo, ".ctx")));
+      const gen = peer.publishedGen("memory");
+      flagAnchored(peer, "sym:src/x.ts#present", "signature-changed", gen);
+      expect(peer.openStaleSuspects("mem:01PEERMEM000000000000000A").length).toBeGreaterThan(0);
+
+      // A full reindex recomputes the derived stale-suspect layer from scratch.
+      reindexMemoryFromFiles(peer, new MemoryFiles(join(repo, ".ctx")));
+      reindexMemoryFromFiles(clone, new MemoryFiles(join(repo, ".ctx")));
+
+      // The historical signature-changed conflict is gone (not ancestry-provable).
+      expect(peer.conflicts("open").filter((c) => c.kind === "stale-suspect")).toHaveLength(0);
+      // E6: the peer and the fresh clone now dump identically.
+      expect(dumpJson(peer)).toBe(dumpJson(clone));
+    } finally {
+      peer.close();
+      clone.close();
+    }
+  });
+
+  test("R2(ii): stale-suspect re-files when the target is absent, clears when present", () => {
+    const head = currentHeadCommit(repo)!;
+    const files = new MemoryFiles(join(repo, ".ctx"));
+    files.appendMemory(
+      "mainline",
+      memEntry({
+        memoryId: "mem:01RECOMPUTE00000000000AA",
+        gist: "anchored to a ghost symbol on this line of history",
+        anchors: ["sym:src/x.ts#ghost2"],
+        anchoredAt: head,
+      }),
+    );
+
+    const store = openStore({ projectDir: repo, home: join(root, "home"), now });
+    try {
+      store.beginGeneration("code");
+      store.publishGeneration("code");
+      reindexMemoryFromFiles(store, files);
+      // Target absent + anchored-at ancestor → stale-suspect filed, needs-review.
+      expect(store.openStaleSuspects("mem:01RECOMPUTE00000000000AA").length).toBeGreaterThan(0);
+      expect(store.getMemory("mem:01RECOMPUTE00000000000AA")?.status).toBe("needs-review");
+
+      // The symbol comes back (a later checkout / re-ingest): reindex clears both
+      // the drift annotation AND the derived conflict; status returns to the fold.
+      store.upsertEntity({
+        id: "sym:src/x.ts#ghost2",
+        kind: "symbol",
+        name: "ghost2",
+        locator: { t: "file", path: "src/x.ts", span: [1, 1] },
+        gen: store.publishedGen("code"),
+      });
+      reindexMemoryFromFiles(store, files);
+      expect(store.openStaleSuspects("mem:01RECOMPUTE00000000000AA")).toHaveLength(0);
+      expect(store.getMemory("mem:01RECOMPUTE00000000000AA")?.driftReason).toBeUndefined();
+      expect(store.getMemory("mem:01RECOMPUTE00000000000AA")?.status).toBe("active");
+    } finally {
+      store.close();
+    }
+  });
+
+  test("R4: a 4-valued authority (observed) survives serialize → reindex → dump", () => {
+    const files = new MemoryFiles(join(repo, ".ctx"));
+    files.appendMemory(
+      "mainline",
+      memEntry({
+        memoryId: "mem:01AUTHOBSERVED00000000AA",
+        gist: "an observed-authority memory",
+        authority: "observed",
+      }),
+    );
+    const store = openStore({ projectDir: repo, home: join(root, "home"), now });
+    try {
+      reindexMemoryFromFiles(store, new MemoryFiles(join(repo, ".ctx")));
+      expect(store.getMemory("mem:01AUTHOBSERVED00000000AA")?.authority).toBe("observed");
+      const dump = JSON.parse(dumpJson(store)) as {
+        memories: Array<{ entityId: string; authority: string }>;
+      };
+      expect(
+        dump.memories.find((m) => m.entityId === "mem:01AUTHOBSERVED00000000AA")?.authority,
+      ).toBe("observed");
     } finally {
       store.close();
     }

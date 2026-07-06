@@ -133,6 +133,55 @@ truth; the SQLite store is a rebuildable index over them. The event model (slice
 - `docs/reference/`, `docs/agents/`, `docs/design/measurement/` untracked at the repo root (pre-existing,
   the parallel session's) — left untouched, as instructed.
 
+## Fable review round 1 (fixes — new commits, history not rewritten)
+
+Codex was quota-blocked; this Fable round was the deep one. 7 findings, all addressed.
+
+- **R1 (MAJOR — parse never crashes reindex).** `parseMemory`/`parseDecision` now wrap the
+  `decodeURIComponent`/`JSON.parse` body in try/catch and return `undefined` on any corrupt line (bad
+  percent-escape, bad refs JSON). `reindexMemoryFromFiles` now iterates raw lines, SKIPS + COUNTS
+  unparseable ones, and returns a `ReindexReport {memories, decisions, skipped}` (success-shaped,
+  doctor-visible later); `pullDeltaReindex` gained a `skipped` count too. A mangled line is an expected
+  input on a human-reviewed committed log (E3) and under a manual conflict resolution (S10 #3), and
+  S1(b) rules integrity problems are warnings, never crashes. Test: a log with one bad-percent mem line
+  + one bad-refs dec line → reindex completes, `memories=1`, `skipped=2`.
+- **R2 (MAJOR — derived stale-suspect layer recomputed at full reindex).** `recomputeDriftAtReindex`
+  now calls the new `store.deleteConflictsByKind("stale-suspect")` (a CACHE deletion — committed source,
+  events, and stale-reason claims untouched, so non-destruction holds) BEFORE re-deriving, so only the
+  ancestry-provable `target-removed` stale-suspects survive a full reindex. This ends the R2-2
+  within-process stickiness AT the reindex boundary (ratified S4 §1: "drift AND the stale-suspect
+  conflict it files are derived index state, recomputed per checkout"), fixing both the E6 divergence (a
+  long-lived peer vs a fresh clone) and the incoherent active-memory-with-open-stale-suspect pair.
+  Contradiction conflicts + human resolutions keep deriving from events; the within-process
+  `flagAnchored` stickiness (between reindexes) is untouched. Tests: (i) peer with a historical
+  signature-changed stale-suspect → full reindex → `dumpJson` equals a fresh clone; (ii) target absent
+  + anchored-at ancestor → stale-suspect filed → target present again → conflict gone, drift null,
+  status = fold. **Follow-up for OPEN.md (NOT slice 3):** a deterministic forward path for
+  signature/body-changed drift across a full reindex needs a committed content-hash baseline in the
+  anchor bytes; today those classes are dropped at full reindex and re-flagged only on the next
+  within-process code re-ingest.
+- **R3 (MEDIUM — migration E3 rationale, notes only).** Running the S3 migration is itself a human act:
+  the operator's decision to run it IS the human confirmation that authorizes the committed zone for
+  authored rows (only host-import-unconfirmed + secrets divert to the overlay). The `MigrationReport`
+  counts (`toMainline`/`toOverlay`/`diverted`) are the operator's exact visibility of what was committed
+  vs withheld. So "unconfirmed agent-authored row → Mainline on migration, but → overlay on the live
+  path" is not an E3 violation: the live path has no human in the loop; the migration run does.
+- **R4 (MEDIUM — authority carried verbatim).** `MemoryInput.authority` / `MemoryRow.authority` /
+  `MemoryListRow.authority` / `MemoryListItem.authority` / `push/rank.ts`'s `GotchaCandidate.authority`
+  widened to the 4-valued `Authority`; `ingestMemoryEntry` no longer collapses via
+  `=== "confirmed" ? … : …`/`as never` — it carries the parsed authority through unchanged. Test: an
+  `observed`-authority row survives serialize → reindex → `getMemory` + `dumpJson`.
+- **R5 (MINOR — secret-diverted status replay).** A diverted secret lands `needs-review` (a human must
+  review+redact it), but a TERMINAL original status (retired/superseded) is now replayed via the
+  overlay decision log so a DEAD secret does not resurrect into the review queue; only a live
+  (active/needs-review) secret stays pending. `statusToReplay(secret, current, landing)` encodes this.
+  Test: a retired secret-shaped row migrates → fresh reindex → status `retired`, not `needs-review`.
+- **R6 (MINOR — no argument mutation).** `MemoryFiles.appendMemory` no longer writes back
+  `entry.detailPointer`; it serializes a local `{ ...entry, detailPointer }` copy.
+- **R7 (MINOR — gitignore comment).** The `.gitignore` template comment no longer promises an index
+  pattern it does not list; it notes the index lives under `~/.ctx` (outside the repo) and where to add
+  a pattern if a future index moves in-repo.
+
 ## Open questions
 
 - None blocking. Slice-4 handoffs: (1) wire `MemoryFiles` always-on + the migration trigger into the
