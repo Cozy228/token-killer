@@ -98,8 +98,11 @@ CREATE TABLE conflicts (
 );
 -- `unresolved-here` is NOT a conflict row: it is a derived, per-machine/per-branch anchor
 -- annotation (target not resolvable here — un-imported ③ snapshot or branch-absent symbol),
--- kept strictly disjoint from `stale-suspect` (which requires a prior content_hash in this
--- index lineage). See MEMORY-SYNC-SETTLEMENTS.md S4/S9.
+-- kept strictly disjoint from `stale-suspect`. For an absent local target the split is
+-- deterministic via the committed anchor line's `anchored-at:<commit-id>` (author HEAD at
+-- remember-time): `git merge-base --is-ancestor <anchored-at> HEAD` → ancestor = target-removed
+-- drift = stale-suspect; not-ancestor = branch-absent = unresolved-here. Never keyed on local
+-- index history (E6). See MEMORY-SYNC-SETTLEMENTS.md S4/S9.
 
 -- DERIVED INDEX over committed .ctx/memory/ files (B1/C3) — regenerable, never source of truth.
 -- gist/detail read through to committed files; `status` is the deterministic fold over the
@@ -308,10 +311,13 @@ a **decision-log** event in `.ctx/memory/decisions.md` (append-only, C2: who / w
 reason / refs); the old entry is kept, status is **derived** from the fold over the decision log
 (E2/E5), not overwritten. Lifecycle verbs (`confirm/retire/supersede/dismiss`) and conflict
 resolutions are the same shape — an appended, provenance-carrying decision event (C4; resolutions
-themselves supersedable) — never a hidden DB mutation. **Write scope + landing zone:** `remember()`
-defaults to the committed Mainline; `--local` writes the personal overlay; **host imports land in the
-personal overlay / local index only, as `needs-review` (E3)** — human confirmation is the act that
-appends a committed Mainline event. **Secret guard (E4):** a deterministic secret-shaped regex guard
+themselves supersedable) — never a hidden DB mutation. **Write scope + landing zone, by caller surface (E3/E4/A4):** **CLI
+`remember()` = human-authored** → committed Mainline default (`--local` → personal overlay); **MCP
+`remember()` = agent-authored** → personal overlay as `needs-review`, promoted to a committed
+Mainline event only on human confirmation (same pipeline as host imports; A4 keeps lifecycle
+human/CLI-only). **Host imports likewise land in the personal overlay / local index only, as
+`needs-review` (E3).** Confirmation is the act that appends the committed Mainline event — nothing
+auto-generated reaches git unreviewed. **Secret guard (E4):** a deterministic secret-shaped regex guard
 (`sk-` keys, tokens, passwords, credentials) runs **before** anything enters the committed zone → a
 success-shaped refusal with guidance (never a hard error, no LLM/network); a per-repo opt-out
 disables committing memory entirely. Host importers (⛏ RESOLVED
@@ -420,10 +426,13 @@ convention):
   never forced on the team; a pin only orders already-eligible items (A2), veto always wins.
 - **Two disjoint anchor states on served memory** (never conflated): `stale-suspect` = drift, a
   reason-classed conflict (needs-review for `target-removed`/`signature-changed`, down-rank for
-  `body-changed`, A5/E7) — requires a prior `content_hash` in this index lineage; `unresolved-here`
-  = a derived, per-machine/per-branch annotation for an anchor **not resolvable here** (un-imported
-  ③ snapshot or branch-absent symbol), rendered with an import hint (`run \`ctx import <carrier>\``),
-  **never** treated as stale and never flipped to needs-review by drift. Settled: `docs/build/MEMORY-SYNC-SETTLEMENTS.md` (S4/S9).
+  `body-changed`, A5/E7) — the target is present but its `content_hash` differs, or (absent target)
+  its committed `anchored-at:<commit-id>` **is an ancestor of HEAD** (`git merge-base --is-ancestor`);
+  `unresolved-here` = a derived, per-machine/per-branch annotation for an anchor **not resolvable
+  here** (un-imported ③ snapshot, or an absent local target whose `anchored-at` is **not** an ancestor
+  of HEAD), rendered with an import hint (`run \`ctx import <carrier>\``), **never** treated as stale
+  and never flipped to needs-review by drift. The split is deterministic across peers (git graph, not
+  local index — E6). Settled: `docs/build/MEMORY-SYNC-SETTLEMENTS.md` (S4/S9).
 - **Secret guard on the `remember` write path (E4)**: a deterministic secret-shaped regex guard
   (`sk-` keys, tokens, passwords, credentials) runs before anything enters the committed zone → a
   success-shaped refusal with guidance, never an `isError`; there is no LLM/network to lean on.

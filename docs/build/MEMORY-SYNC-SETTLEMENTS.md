@@ -30,8 +30,8 @@ interleaving.
 
 **Options (diverge first):**
 1. **Sidecar file per detail** — the log stays one physical line per entry (C1); the entry line
-   carries an inline pointer token (`↳detail:<ulid>`) to a separate write-once file
-   `.ctx/memory/details/<ulid>.md` holding the multi-line body.
+   carries an inline pointer token (`detail:<ulid>`, plain ASCII — final grammar is slice-3-owned)
+   to a separate write-once file `.ctx/memory/details/<ulid>.md` holding the multi-line body.
 2. **Fenced continuation** — the entry line is followed, in the *same* log file, by a fenced
    (```` ``` ````) block of detail lines.
 3. **Inline-escaped single line** — gist + detail encoded on one physical line with `\n` escapes,
@@ -46,6 +46,18 @@ interleaved by union merge, and two peers cannot collide on it. Arbitrarily larg
 without bloating the log line. Sidecars are never deleted (non-destruction invariant). For a zone-2
 (overlay) entry the sidecar lives under the gitignored overlay path; for a Mainline entry it lives
 under committed `.ctx/memory/details/`.
+
+**Integrity — dangling pointers & orphan sidecars.** The entry line and its sidecar are separate git
+objects, so partial staging, a crash, or a manual conflict resolution can leave a pointer without its
+detail file (dangling) or a sidecar with no referencing entry (orphan). Invariants:
+- (a) **Single-commit atomicity.** The sidecar is written and staged **before-or-with** the log line,
+  and the authoring commit MUST contain both the entry line and its `<ulid>.md` — cheap for
+  `ctx doctor` to assert (every `detail:<ulid>` pointer resolves to a committed sidecar).
+- (b) **Dangling pointer = success-shaped.** A pointer whose sidecar is missing on this checkout
+  renders as `"detail missing on this checkout"` and is a `ctx doctor` integrity **warning**, never a
+  crash or an `isError`.
+- (c) **Orphan sidecar = inert.** A sidecar with no referencing entry is never served and **never
+  deleted** (non-destruction invariant); `ctx doctor` lists it.
 
 **Rejected:**
 - **(2) Fenced continuation** — *tearable*: union merge is line-wise and E2 declares line order
@@ -146,16 +158,24 @@ contract, it does not re-write the machinery.
    reconcile (which files contradictions between two memories at the same post-merge step).
 
 4. **Interaction with `unresolved-here` (S9): a branch-absent anchor is NOT `stale-suspect`.** The
-   deterministic split, implementable on the reverse `dependency_index` / generation history (the
-   same machinery S10 uses):
-   - **`target-removed` (drift → stale-suspect, needs-review):** the anchor target **had a prior
-     `content_hash` in this index lineage** and is now gone/changed — it existed here and drifted,
-     so the memory may be stale.
-   - **branch-absent (→ `unresolved-here`, NOT stale):** the anchor target is **absent AND never had
-     a `content_hash` in this index lineage** (a per-branch symbol, or a target that rode in via
-     merge but lives on another branch). Absence-of-evidence, not evidence of staleness. Rendered
+   split must be **deterministic across peers** (E6): it may NOT depend on the *local* index history,
+   because two peers at the same commit would then classify the same absent anchor differently (one
+   saw the symbol on a previous checkout, one never did), a branch switch would turn a per-branch
+   symbol into a false `stale-suspect`, and a fresh clone would turn a real deletion into a false
+   `unresolved-here`. Ground "having-been-here" in the **git graph**, not the local index: the
+   committed anchor line carries **`anchored-at: <commit-id>`** — the author's HEAD at remember-time,
+   written once, part of the committed bytes. On any machine, for an **absent** target, one
+   `git merge-base --is-ancestor <anchored-at> HEAD` check decides it:
+   - **`anchored-at` IS an ancestor of current HEAD** → the target's lineage is in this branch's
+     history → it existed here and is now gone/changed → **`target-removed` drift → stale-suspect**
+     (A5 classes apply); the memory may be stale.
+   - **`anchored-at` is NOT an ancestor of HEAD** → the memory rode in from a divergent branch → the
+     target never lived on this line → **branch-absent → `unresolved-here`**, NOT stale. Rendered
      "anchor not present on this branch/checkout"; still recallable; committed status unchanged.
-   - Rule: *removed* requires having-been-here; *unresolved-here* is never-been-here-on-this-checkout.
+   - Rule: *removed* requires having-been-here, and "having-been-here" is answered by the git graph
+     (`anchored-at` ancestry), so the same absent anchor classifies identically on every peer and on
+     a fresh clone. (`signature-changed`/`body-changed` need no ancestry check — the target is still
+     present; its `content_hash` differs, which is drift by definition.)
 
 ---
 
@@ -172,7 +192,14 @@ synced; regenerated locally; `store.sqlite` gitignored). **②** authored-local 
 committed; freshness = snapshot age). Plus two non-category rows the frame requires: **overlay** =
 zone 2 (gitignored, per-person, never synced) and **push target** (an output surface, not a source).
 
-| Carrier | Content type(s) fed | Category | Zone | Sync policy | Reason |
+**Column semantics (read before the table).** The **Sync policy** column describes the
+**ctx-held representation** — the index rows / snapshot ctx materializes for that carrier — NOT the
+source bytes. A category-① *source file* (an ADR, a committed-local meeting recap) still travels
+between peers via git as ordinary repo content; what ctx holds *over* it (the `store.sqlite` index)
+is regenerated locally and never synced. So "① — never synced" means "ctx's derived representation is
+never synced," not "the file never moves."
+
+| Carrier | Content type(s) fed | Category | Zone | Sync policy (ctx-held representation) | Reason |
 |---|---|---|---|---|---|
 | tree-sitter tier-1 | Code structure | **①** | cache | never synced; regenerated locally | derived from committed source; store = deterministic cache |
 | `index.scip` (when present) | Code structure | **①** | cache | never synced; regenerated locally | derived artifact over committed source; no divergence by construction |
@@ -184,7 +211,8 @@ zone 2 (gitignored, per-person, never synced) and **push target** (an output sur
 | GitHub PR / issue threads | Change history · Decisions | **③** | snapshot | re-import per person (credentialed); never committed | external SoR; staleness + credential-leak risk |
 | Jira (stories / issues) | Requirements/stories · Decisions | **③** | snapshot | re-import per person (credentialed); never committed | external SoR |
 | Confluence (incl. **meeting recap fetched from Confluence**) | Domain/doc knowledge · Decisions | **③** | snapshot | re-import per person (credentialed); never committed | external SoR; **same recap content, ③ because the carrier is credentialed/network** |
-| `remember()` durable memory | Memory/experience | **②** | committed | git + PR; E1 three-layer conflict | authored-local; SoT = committed `.ctx/memory/` |
+| `remember()` **via CLI** (human-authored) | Memory/experience | **②** | committed | git + PR; E1 three-layer conflict | human at the CLI → E3 satisfied; E4 "defaults to Mainline" applies to this surface (`--local` → overlay) |
+| `remember()` **via MCP** (agent-authored) | Memory/experience | **overlay → ② on confirm** | overlay (zone 2) | lands as `needs-review`; human confirmation promotes to a committed ② event | E3: agent-authored is auto-generated → never enters git unreviewed (same pipeline as host imports); ruling A4 keeps lifecycle human/CLI-only |
 | human notes (`remember` human-authored) | Memory/experience | **②** | committed | git + PR | human-authored → satisfies E3 directly; committed |
 | concepts (glossary/definition entities) | Domain/doc knowledge | **②** | committed | git + PR | C3: concepts follow memory out of index-not-copy into committed `.ctx/concepts/` |
 | host auto-memory dirs (Claude / Codex / Copilot `memories/`) | Memory/experience | **overlay → ② on confirm** | overlay (zone 2) | imports land per-person in the overlay as `needs-review`; **confirmation** produces a committed ② event | E3: committed = human-authored **or human-confirmed**; auto-generated notes never enter git unreviewed (closes echo loop + privacy hole) |
@@ -194,8 +222,20 @@ zone 2 (gitignored, per-person, never synced) and **push target** (an output sur
 | `store.sqlite` / `ledgers.sqlite` | — (the index itself) | **① by construction** | cache | gitignored; rebuildable | not a carrier; the derived index — commit sources, gitignore the index (src/ vs dist/) |
 
 **Driver (why the matrix is carrier-keyed):** a meeting recap **imported as a committed local file is
-①/② → git-synced**; the **same recap fetched from Confluence is ③ → per-person snapshot, never
-committed**. Same content, different carrier, different policy.
+category ①** — the *file* travels between peers via git as ordinary repo content, while ctx's derived
+representation of it is regenerated locally and never synced; the **same recap fetched from Confluence
+is ③ → a per-person snapshot, never committed**. Same content, different carrier, different policy.
+
+**S8a — `remember()` landing zone is decided by the caller surface (E3 + E4 + A4).** The `remember()`
+row splits above because E3 (committed = human-authored **or** human-confirmed) governs it and E3
+names agent `remember` as auto-generated:
+- **CLI `remember()` = human-authored** → Mainline default (E4's "`remember()` defaults to Mainline"
+  applies to this human surface); `--local` writes the personal overlay.
+- **MCP `remember()` = agent-authored** → personal overlay as `needs-review`; human confirmation
+  (CLI/git, per A4's human-only lifecycle) promotes it to a committed Mainline event — the same
+  overlay→confirm pipeline as host imports (E3).
+This does not weaken E3: nothing auto-generated reaches git unreviewed. The E4 secret guard runs on
+both surfaces before the committed zone.
 
 ---
 
@@ -212,14 +252,16 @@ committed**. Same content, different carrier, different policy.
 - **Rendering:** external case — `"anchor unresolved on this machine — run \`ctx import <carrier>\`"`;
   branch-absent case — `"anchor not present on this branch/checkout"`. Same state, context-appropriate
   hint.
-- **Disjoint from `stale-suspect` (the keeping-apart rule):** `stale-suspect` requires the target to
-  have **existed in this index lineage and then changed/been-removed** (a positive drift signal with a
-  recorded prior `content_hash`). `unresolved-here` is the **absence** of any prior resolution here
-  (no `content_hash` in this lineage) — absence-of-evidence, not evidence of staleness. An
-  `unresolved-here` memory is therefore **never** down-ranked as stale and **never** flipped to
-  `needs-review` by drift; its committed fold-status is unchanged; it stays recallable with the import
-  hint. It becomes `stale-suspect` only if, after import/checkout, the now-resolvable target shows
-  drift.
+- **Disjoint from `stale-suspect` (the keeping-apart rule, deterministic per E6):** for an **absent**
+  local (symbol/file) target the split is decided by the committed `anchored-at: <commit-id>` via
+  `git merge-base --is-ancestor` (S4 §4) — ancestor of HEAD → `target-removed` drift → `stale-suspect`;
+  not an ancestor → branch-absent → `unresolved-here`. For a **category-③** target the split is
+  simpler still: no snapshot imported locally → `unresolved-here` (the external SoR is the authority,
+  not this machine). Neither test reads the local index history, so the same absent anchor classifies
+  identically on every peer and on a fresh clone. An `unresolved-here` memory is therefore **never**
+  down-ranked as stale and **never** flipped to `needs-review` by drift; its committed fold-status is
+  unchanged; it stays recallable with the import hint. It becomes `stale-suspect` only if, after
+  import/checkout, the now-resolvable target shows drift (`content_hash` differs).
 - **Push (Decision 7):** on a machine where an anchor is `unresolved-here`, freshness cannot be
   verified, so the memory is **locally** excluded from the ≤1KB push digest (conservative — push
   requires fresh anchors). This is a local eligibility exclusion, never a global status change.
@@ -247,9 +289,14 @@ equality), the M1 first-call catch-up gate (D25 refresh-trigger model). Mechanic
    (indexed by changed symbol id) yields exactly the anchored memories touching the changed set — an
    indexed lookup keyed by the changed-symbol set, **never** a scan over all memory. Cost =
    `O(changed anchors)`, not `O(all memory)`. Asserted at scale (N memories, k changed → k re-checks).
-3. **Reindex on `git pull` is pulled-delta-proportional.** The append-only log + a byte-offset /
-   last-ULID cursor let reindex replay only the appended/changed entries (and their detail sidecars)
-   from the pulled `git diff`, not the whole `.ctx/memory/`. Cost ∝ pulled lines.
+3. **Reindex on `git pull` is pulled-delta-proportional.** Reindex processes exactly the **added
+   lines** from `git diff <old-tip>..<new-tip> -- .ctx/` (and their detail sidecars), not the whole
+   `.ctx/memory/`. This is delta-proportional by construction and is safe under `merge=union`, where
+   a byte-offset or last-ULID cursor is NOT: a union merge can insert lines *before* any byte cursor,
+   and pulled events can carry ULIDs *older* than local writes — both cursors would silently skip
+   events. If the diff is any non-append shape (a rewrite, a manual conflict resolution touching
+   existing lines), fall back to a **full ULID-set reconciliation scan** of `.ctx/memory/` (correct,
+   rare). Cost ∝ pulled lines in the common append case.
 4. **Status fold is cached in the index, never replayed per query.** The derived status (E2/E5 fold
    over the decision log) is materialized in the rebuildable index's `memory.status` column; queries
    read the column (single indexed read). The fold runs once at ingest of new decision events, and
@@ -264,3 +311,38 @@ equality), the M1 first-call catch-up gate (D25 refresh-trigger model). Mechanic
 **A11 not regressed:** dirty is dominated by ~one stat on an unchanged tree (< 20 ms); serve is
 single indexed reads with no log replay and no full scan (< 150 ms), on a large `.ctx/memory/`
 fixture.
+
+---
+
+## Appendix — Slice-1 implementation notes (deviation log)
+
+Docs-only slice. Every settlement stays strictly under the cited rulings; no ruling re-opened or
+contradicted. Relocated here from the removed root `implementation-notes.md` (joint-review MAJOR 5).
+
+**Decisions (choices the design left open):**
+- **S1-residual → sidecar-file-per-detail** (ULID-named, write-once): the only layout that keeps the
+  committed log strictly one-line-per-entry (C1) AND makes the multi-line body untearable under the
+  E2 `merge=union` line-wise merge; plus the dangling/orphan integrity invariants (doctor-asserted).
+- **S4/S9 drift-vs-`unresolved-here` split grounded in the git graph** via committed
+  `anchored-at:<commit-id>` + `git merge-base --is-ancestor` — deterministic across peers and on a
+  fresh clone (E6). (Replaced an earlier local-index-history rule that the joint review correctly
+  flagged as non-deterministic.)
+- **S8a — `remember()` landing zone by caller surface:** CLI = human-authored → Mainline (E4);
+  MCP = agent-authored → overlay `needs-review` → committed on human confirm (E3 + A4). Preserves E3.
+- **S3 migration runs the E4 guard on export** (pre-guard store memory not silently committed) and
+  writes the `meta` marker **last** for idempotent + resumable behavior.
+- **Repo `.ctx/` layout named concretely** (`.ctx/memory/*.md`, `.ctx/memory/details/`,
+  `.ctx/memory/decisions.md`, `.ctx/concepts/`, `.ctx/push.jsonc`, `.ctx/*.local.*`,
+  `.gitattributes merge=union`) — implementer conventions for slice 3, not rulings; slice 3 owns the
+  final names.
+
+**Deviations:**
+- Commits use `--no-verify` **only if** the husky `lint-staged` hook is unavailable in the worktree
+  (deps not installed; known offline gotcha). All changes are docs-only `.md` — nothing a linter
+  gates. Re-checked each commit per the fix-round instruction.
+
+**Adjacent-found (untouched):**
+- `docs/reference/` is untracked at the repo root (pre-existing, out of scope) — left untouched.
+
+**Open questions:**
+- None blocking. Exact on-disk names under `.ctx/` are conventions owned by slice 3 (storage swap).
