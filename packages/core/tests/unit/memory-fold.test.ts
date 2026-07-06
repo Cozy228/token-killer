@@ -357,8 +357,8 @@ describe("migration 002 backfill (slice 2)", () => {
         ).run(id, "legacy gist", "remember", "confirmed", status);
       }
 
-      // Apply 002 → backfill.
-      expect(runMigrations(db).applied).toEqual([2]);
+      // Apply 002 (backfill) + 003 (slice-3 bitemporal columns) over the 001-only DB.
+      expect(runMigrations(db).applied).toEqual([2, 3]);
 
       // (a) exactly one create event per row, carrying its status, at = first_seen.
       const evOf = (id: string): MemoryEvent[] =>
