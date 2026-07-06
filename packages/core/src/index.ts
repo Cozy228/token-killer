@@ -143,6 +143,9 @@ export type {
 
 // memory source (slice 1c): remember/recall + host import + lifecycle
 export { MemorySourceAdapter } from "./memory/adapter.ts";
+export type { MemoryAdapterOptions } from "./memory/adapter.ts";
+export { memoryOpsReport, MEMORY_MANIFEST_META } from "./memory/ops.ts";
+export type { MemoryOpsReport } from "./memory/ops.ts";
 export {
   importClaudeCodeMemory,
   resolveClaudeMemoryDir,

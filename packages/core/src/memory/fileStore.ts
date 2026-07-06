@@ -23,7 +23,14 @@
  * never be torn by the union merge. Sidecars are ULID-named + write-once — a
  * second writer never targets the same file, so union merge cannot collide.
  */
-import { appendFileSync, existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
+import {
+  appendFileSync,
+  existsSync,
+  mkdirSync,
+  readdirSync,
+  readFileSync,
+  writeFileSync,
+} from "node:fs";
 import { dirname, join } from "node:path";
 import type { Store } from "../store/store.ts";
 import {
@@ -171,6 +178,16 @@ export class MemoryFiles {
   readSidecar(zone: MemoryZone, ulid: string): string | undefined {
     const path = this.sidecarPath(zone, ulid);
     return existsSync(path) ? readFileSync(path, "utf8") : undefined;
+  }
+
+  /** ULIDs of the detail sidecar files present in a zone (E8 orphan detection).
+   *  Absent dir → empty (never a throw — read-only diagnostics). */
+  sidecarUlids(zone: MemoryZone): string[] {
+    const dir = this.#detailsDir(zone);
+    if (!existsSync(dir)) return [];
+    return readdirSync(dir)
+      .filter((f) => f.endsWith(".md"))
+      .map((f) => f.slice(0, -3));
   }
 }
 
