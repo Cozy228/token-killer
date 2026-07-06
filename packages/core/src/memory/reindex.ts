@@ -207,7 +207,12 @@ function decisionEvent(d: SerializedDecision): MemoryEvent {
  * when the code index is absent (cannot judge freshness → leave cleared).
  */
 export function recomputeDriftAtReindex(store: Store, gen: number): void {
-  for (const m of store.allMemories()) store.setMemoryDrift(m.entityId, null);
+  for (const m of store.allMemories()) {
+    store.setMemoryDrift(m.entityId, null);
+    // S9 `unresolved-here` is per-checkout derived state too — clear then re-derive
+    // from scratch, so a branch switch never carries a stale branch-absent flag.
+    store.setMemoryUnresolvedHere(m.entityId, false);
+  }
   // R2 — the derived `stale-suspect` conflict layer is per-checkout index state
   // (S4 §1), so recompute it from scratch: delete the cached rows, then re-file
   // ONLY the ones re-derived below. Otherwise `rebuildConflictStatuses` reopens
@@ -229,11 +234,25 @@ export function recomputeDriftAtReindex(store: Store, gen: number): void {
       const anchoredAt = readAnchoredAt(store, m.entityId);
       for (const anchorId of store.anchorsOf(m.entityId)) {
         if (store.getEntity(anchorId)) continue; // present target — not removed
-        if (!/^(sym|file):/.test(anchorId)) continue; // external → unresolved-here
-        if (classifyAbsentAnchor(projectRoot, anchoredAt) === "target-removed") {
+        if (!/^(sym|file):/.test(anchorId)) {
+          // External SoR target (category-③, e.g. a Jira/PR id): no local snapshot
+          // to resolve against → `unresolved-here` (S9), never stale.
+          store.setMemoryUnresolvedHere(m.entityId, true);
+          break;
+        }
+        // Absent local (symbol/file) target: the committed anchored-at ancestry
+        // splits `target-removed` (drift → stale-suspect) from branch-absent
+        // (`unresolved-here`, S9 — never stale, never down-ranked).
+        const cls = classifyAbsentAnchor(projectRoot, anchoredAt);
+        if (cls === "target-removed") {
           fileTargetRemoved(store, m.entityId, anchorId, gen);
           break; // one drift annotation per memory is enough
         }
+        if (cls === "unresolved-here") {
+          store.setMemoryUnresolvedHere(m.entityId, true);
+          break;
+        }
+        // `skip` (no anchored-at): conservative — leave both annotations clear.
       }
     }
   }

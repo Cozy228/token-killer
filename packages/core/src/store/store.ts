@@ -184,6 +184,9 @@ export interface Store {
   /** Set the derived anchor-drift annotation (S4) — per-checkout index state,
    *  never an event. `null` clears it (a human confirm affirms freshness). */
   setMemoryDrift(entityId: string, reason: MemoryDriftReason | null): void;
+  /** Set the derived S9 `unresolved-here` annotation (per-checkout index state,
+   *  never an event). Disjoint from drift; recomputed from scratch at reindex. */
+  setMemoryUnresolvedHere(entityId: string, unresolved: boolean): void;
   /** Append an immutable lifecycle/decision event (append-only; the fold source).
    *  Returns the event ULID. Never updates/deletes (DB triggers enforce it). */
   appendMemoryEvent(input: MemoryEventInput): string;
@@ -589,6 +592,7 @@ class SqliteStore implements Store {
       servedCount: row.served_count as number,
       lastServed: (row.last_served as number | null) ?? undefined,
       driftReason: (row.drift_reason as MemoryDriftReason | null) ?? undefined,
+      unresolvedHere: Number(row.unresolved_here ?? 0) === 1,
       validFrom: (row.valid_from as number | null) ?? undefined,
       validTo: (row.valid_to as number | null) ?? undefined,
     };
@@ -640,6 +644,12 @@ class SqliteStore implements Store {
     this.#db
       .prepare("UPDATE memory SET drift_reason = ? WHERE entity_id = ?")
       .run(reason, entityId);
+  }
+
+  setMemoryUnresolvedHere(entityId: string, unresolved: boolean): void {
+    this.#db
+      .prepare("UPDATE memory SET unresolved_here = ? WHERE entity_id = ?")
+      .run(unresolved ? 1 : 0, entityId);
   }
 
   appendMemoryEvent(input: MemoryEventInput): string {

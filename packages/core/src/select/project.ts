@@ -87,11 +87,15 @@ export function renderAtTier(
     // anchor whose symbol drifted → `needs-review`) is flagged so the served
     // answer never presents stale guidance as clean.
     const flag = mem && mem.status !== "active" ? `⚠ ${mem.status}: ` : "";
+    // S9 `unresolved-here`: a committed, still-active memory whose anchor is not
+    // resolvable on this checkout. NOT stale — surfaced with a branch/import hint,
+    // never a ⚠-status flag and never down-ranked (rank.ts leaves it untouched).
+    const hint = mem?.unresolvedHere ? " ⓘ anchor not present on this branch/checkout" : "";
     if (tier === "skeleton" || !mem?.detail) {
-      const text = `${flag}${gist} [${handle}]`;
+      const text = `${flag}${gist} [${handle}]${hint}`;
       return { tier: "skeleton", text, tokens: estimateTokens(text) };
     }
-    const text = `${flag}${gist} [${handle}]\n${mem.detail}`;
+    const text = `${flag}${gist} [${handle}]${hint}\n${mem.detail}`;
     return { tier: "full", text, tokens: estimateTokens(text) };
   }
 
