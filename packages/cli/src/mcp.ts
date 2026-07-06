@@ -216,9 +216,9 @@ export async function runMcp(opts: RunMcpOptions = {}): Promise<number> {
     ...(opts.home !== undefined ? { home: opts.home } : {}),
     ...(opts.now !== undefined ? { now: opts.now } : {}),
   });
-  // Symbol-level `touches` (slice 2b): serve returns symbol biographies, not
-  // just file-level history.
-  const registry = createDefaultRegistry({ git: { symbolTouches: true } });
+  // Symbol-level `touches` (slice 2b) come from the default registry: serve
+  // returns symbol biographies, not just file-level history.
+  const registry = createDefaultRegistry();
   const engine = new RefreshEngine(
     store,
     registry,

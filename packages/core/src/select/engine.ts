@@ -453,7 +453,9 @@ function renderFacet(ctx: Ctx, entity: Entity, facet: Facet): FacetResult {
       const touches = store
         .linksTo(entity.id, "touches")
         .map((l) => entityOf(ctx, l.src))
-        .filter((e): e is Entity => e !== undefined && e.kind === "commit")
+        .filter(
+          (e): e is Entity => e !== undefined && e.kind === "commit" && ctx.visibility.isVisible(e),
+        )
         .sort((a, b) => String(b.attrs["date"] ?? "").localeCompare(String(a.attrs["date"] ?? "")));
       for (const commit of touches) {
         const h = store.internHandle(commit.id);
@@ -486,7 +488,11 @@ function renderFacet(ctx: Ctx, entity: Entity, facet: Facet): FacetResult {
         if (seen.has(id)) continue;
         seen.add(id);
         const e = entityOf(ctx, id);
-        if (e) neighbors.push(e);
+        // Gate on published visibility: a link may point at an entity written by
+        // an in-progress (unpublished) generation, or at a retired symbol whose
+        // entity is kept for history — neither belongs in a served drill-down
+        // (generation isolation, CTX-IMPL §2 — #2).
+        if (e && ctx.visibility.isVisible(e)) neighbors.push(e);
       }
       neighbors.sort((a, b) => (a.name < b.name ? -1 : a.name > b.name ? 1 : a.id < b.id ? -1 : 1));
       if (neighbors.length === 0) {

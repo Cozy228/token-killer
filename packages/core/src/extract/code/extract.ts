@@ -184,6 +184,7 @@ export function extractFromTree(
     qualified: string;
     kind: SymbolKind;
     arity: number | undefined;
+    sig: string;
     startIndex: number;
   }
   const built: Built[] = [];
@@ -197,12 +198,17 @@ export function extractFromTree(
       qualified,
       kind,
       arity: arityOf(raw.defNode),
+      sig: paramSignature(raw.defNode),
       startIndex: raw.defNode.startIndex,
     });
   }
 
-  // Disambiguate genuine same-qualified-name collisions (overloads) by arity,
-  // then by source order — the unique common case stays a bare id (G-9 stable).
+  // Disambiguate genuine same-qualified-name collisions (overloads): unique
+  // arity stays a bare `~<arity>`; a shared arity splits by an order-INDEPENDENT
+  // parameter-signature hash (`~<arity>~<sighash>`), so inserting/reordering a
+  // same-arity overload never re-keys an existing symbol (G-9). Only genuinely
+  // identical signatures — an unavoidable ambiguity — fall back to a source-order
+  // ordinal. The unique common case stays a bare id.
   const byQualified = new Map<string, Built[]>();
   for (const b of built) {
     const group = byQualified.get(b.qualified);
@@ -212,20 +218,41 @@ export function extractFromTree(
   const symbols: SymbolRecord[] = [];
   for (const group of byQualified.values()) {
     const disambiguate = group.length > 1;
-    // Stable source order for ordinal fallback.
+    // Stable source order so the identical-signature last resort is deterministic.
     group.sort((x, y) => x.startIndex - y.startIndex);
-    const arityCounts = new Map<number, number>();
+    const arityTotals = new Map<number, number>();
+    const sigTotals = new Map<string, number>();
+    if (disambiguate) {
+      for (const b of group) {
+        const arity = b.arity ?? 0;
+        arityTotals.set(arity, (arityTotals.get(arity) ?? 0) + 1);
+      }
+      for (const b of group) {
+        const arity = b.arity ?? 0;
+        if ((arityTotals.get(arity) ?? 0) > 1) {
+          const key = `${arity}~${sigHash(b.sig)}`;
+          sigTotals.set(key, (sigTotals.get(key) ?? 0) + 1);
+        }
+      }
+    }
+    const sigOrdinals = new Map<string, number>();
     for (const b of group) {
       let disambig: string | undefined;
       if (disambiguate) {
         const arity = b.arity ?? 0;
-        const sameArity = group.filter((g) => (g.arity ?? 0) === arity).length;
-        if (sameArity > 1) {
-          const ord = arityCounts.get(arity) ?? 0;
-          arityCounts.set(arity, ord + 1);
-          disambig = `${arity}~${ord}`;
+        if ((arityTotals.get(arity) ?? 0) === 1) {
+          disambig = String(arity); // arity alone is unique in this overload set
         } else {
-          disambig = String(arity);
+          const sh = sigHash(b.sig);
+          const key = `${arity}~${sh}`;
+          if ((sigTotals.get(key) ?? 0) > 1) {
+            // Identical signature (degenerate redeclaration): source-order ordinal.
+            const ord = sigOrdinals.get(key) ?? 0;
+            sigOrdinals.set(key, ord + 1);
+            disambig = `${arity}~${sh}~${ord}`;
+          } else {
+            disambig = key;
+          }
         }
       }
       symbols.push(buildSymbol(relPath, b.defNode, b.name, b.qualified, b.kind, b.arity, disambig));
@@ -320,17 +347,40 @@ function goReceiver(node: Node): string | undefined {
   return undefined;
 }
 
-function arityOf(defNode: Node): number | undefined {
-  const params =
+function paramsNode(defNode: Node): Node | null {
+  return (
     defNode.childForFieldName("parameters") ??
     defNode.childForFieldName("parameter_list") ??
     // arrow/function-valued declarators wrap the callable
     defNode.namedChildren
       .find((c) => c && (c.type === "arrow_function" || c.type === "function_expression"))
       ?.childForFieldName("parameters") ??
-    null;
+    null
+  );
+}
+
+function arityOf(defNode: Node): number | undefined {
+  const params = paramsNode(defNode);
   if (!params) return undefined;
   return params.namedChildren.filter((c) => c && c.type !== "comment").length;
+}
+
+/**
+ * An order-INDEPENDENT disambiguator for same-name/same-arity overloads (G-9):
+ * a short hash of the normalized parameter-list text. Two overloads that differ
+ * only by parameter TYPES (the only legal same-arity overload in a typed
+ * language) get distinct, position-free ids, so inserting or reordering a third
+ * overload never shifts an existing symbol's id (the old source-order ordinal
+ * did). Whitespace is collapsed so a reformat is not a signature change; the
+ * text is read via `node.text` only (G-8). Empty when there is no parameter list.
+ */
+function paramSignature(defNode: Node): string {
+  const params = paramsNode(defNode);
+  return params ? params.text.replace(/\s+/g, " ").trim() : "";
+}
+
+function sigHash(signature: string): string {
+  return blake2bHex(signature).slice(0, 8);
 }
 
 function lineSpan(node: Node): LineSpan {

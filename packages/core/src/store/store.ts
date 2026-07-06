@@ -111,6 +111,15 @@ export interface Store {
    * Returns the number of links removed.
    */
   clearLinks(src: string, predicate?: string): number;
+  /**
+   * Delete the resolved links INTO `dst` (optionally one predicate) — the mirror
+   * of `clearLinks` for incoming edges. A retired symbol (dropped from the
+   * `contains` graph but kept as an entity so rename-chain history survives)
+   * must not keep stale INCOMING `calls`/`references` edges from callers/docs
+   * that were not themselves re-parsed this pass (2c/2d retire completion).
+   * Returns the number of links removed.
+   */
+  clearLinksTo(dst: string, predicate?: string): number;
 
   // conflicts
   addConflict(a: number, b: number, kind: ConflictKind): void;
@@ -389,6 +398,14 @@ class SqliteStore implements Store {
       predicate === undefined
         ? this.#db.prepare("DELETE FROM links WHERE src = ?").run(src)
         : this.#db.prepare("DELETE FROM links WHERE src = ? AND predicate = ?").run(src, predicate);
+    return Number(result.changes);
+  }
+
+  clearLinksTo(dst: string, predicate?: string): number {
+    const result =
+      predicate === undefined
+        ? this.#db.prepare("DELETE FROM links WHERE dst = ?").run(dst)
+        : this.#db.prepare("DELETE FROM links WHERE dst = ? AND predicate = ?").run(dst, predicate);
     return Number(result.changes);
   }
 

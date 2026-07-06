@@ -69,9 +69,10 @@ export async function runSync(args: string[], io: CliIO, opts: SyncOptions = {})
   const force = args.includes("--force"); // escape hatch (file-scan sources); git is exact.
   const store = openStore({ projectDir: opts.projectDir, home: opts.home });
   try {
-    // Real serve gets symbol-level `touches` (slice 2b): commit history joins to
-    // symbols, not just files, so `context(sym)` returns a symbol biography.
-    const registry = createDefaultRegistry({ git: { symbolTouches: true } });
+    // Symbol-level `touches` (slice 2b) come from the default registry: commit
+    // history joins to symbols, not just files, so `context(sym)` returns a
+    // symbol biography.
+    const registry = createDefaultRegistry();
     const engine = new RefreshEngine(store, registry, {
       // Cold path: the first-call catch-up gate must not clip a full sync.
       catchupGateMs: SYNC_BUDGET_MS,
@@ -266,7 +267,7 @@ async function runInstall(io: RunIo): Promise<number> {
     // Cold-path full catch-up: same large budget as `ctx sync` (§4.4 / §9 row).
     const engine = new RefreshEngine(
       store,
-      createDefaultRegistry({ git: { symbolTouches: true } }), // symbol biography (2b)
+      createDefaultRegistry(), // symbol biography (2b) — registry default
       { catchupGateMs: SYNC_BUDGET_MS },
     );
     const report = await engine.refresh(SYNC_BUDGET_MS);

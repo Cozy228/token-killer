@@ -56,8 +56,9 @@ export interface GitAdapterOptions {
    * Emit SYMBOL-level `touches` by re-parsing each commit×code-file post-image
    * and joining `--unified=0` hunks against its symbol spans (slice 2b). When
    * off (default), `touches` stay file-level (1d behaviour) — the bare adapter
-   * is code-source-free. The default registry turns this on so real serve gets
-   * symbol biography; M1 unit fixtures keep it off.
+   * is code-source-free, so M1 unit fixtures never pull the WASM engine.
+   * `createDefaultRegistry` opts this on (it always registers the code source),
+   * so real serve gets symbol biography without every caller remembering to.
    */
   symbolTouches?: boolean;
 }

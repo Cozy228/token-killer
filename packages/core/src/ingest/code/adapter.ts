@@ -23,7 +23,7 @@
  * Spans/hashes are attributes, never identity (G-9); span text via `node.text`
  * only (G-8).
  */
-import { readFileSync } from "node:fs";
+import { readFileSync, statSync } from "node:fs";
 import { join } from "node:path";
 import type { Store } from "../../store/store.ts";
 import { blake2bHex } from "../../store/hash.ts";
@@ -63,6 +63,23 @@ interface FileState {
   fp?: string;
 }
 
+/** Root `index.scip` (size, mtime, hash) — tracked so a SCIP-only regeneration
+ *  (no source file touched) still triggers the 2e arbitration pass (#7). */
+interface ScipState {
+  size: number;
+  mtimeMs: number;
+  hash: string;
+}
+
+/** Persisted cursor shape: the per-file state map plus the optional `index.scip`
+ *  fingerprint. Back-compat: a pre-#7 cursor is a bare file map (no `scip`). */
+interface CursorState {
+  files: Record<string, FileState>;
+  scip?: ScipState;
+}
+
+const SCIP_FILE = "index.scip";
+
 interface DirtyFile extends ScannedFile {
   hash: string;
   fp: string;
@@ -81,6 +98,11 @@ interface CodeDirtyDetail {
   /** Structural files newly seen this scan (drive shadow detection). */
   added: string[];
   deleted: string[];
+  /** `index.scip` fingerprint to persist on publish (undefined = no SCIP file). */
+  scip?: ScipState;
+  /** `index.scip` changed since the last publish → run the 2e pass even when no
+   *  source file is dirty (#7). */
+  scipChanged: boolean;
 }
 
 /** The three-method surface the ingest path drives — the real worker manager or
@@ -135,7 +157,8 @@ export class CodeSourceAdapter implements SourceAdapter {
 
   async dirtyCheck(store: Store): Promise<DirtyReport> {
     const files = await scanSourceFiles(store.projectRoot, CODE_EXTENSIONS);
-    const prev = readState(store);
+    const cursor = readState(store);
+    const prev = cursor.files;
     const next: Record<string, FileState> = {};
     const structural: DirtyFile[] = [];
     const cosmetic: string[] = [];
@@ -166,14 +189,30 @@ export class CodeSourceAdapter implements SourceAdapter {
     }
 
     const deleted = Object.keys(prev).filter((path) => !seen.has(path));
-    const detail: CodeDirtyDetail = { next, prev, structural, cosmetic, added, deleted };
+
+    // `index.scip` is not a source file (not in CODE_EXTENSIONS) so it never
+    // enters `next`/`deleted`; track it separately. A SCIP regeneration with no
+    // source edit must still re-run the 2e arbitration pass (#7).
+    const scip = readScipState(store.projectRoot, cursor.scip);
+    const scipChanged = !scipStateEqual(scip, cursor.scip);
+
+    const detail: CodeDirtyDetail = {
+      next,
+      prev,
+      structural,
+      cosmetic,
+      added,
+      deleted,
+      ...(scip !== undefined ? { scip } : {}),
+      scipChanged,
+    };
     const magnitude = structural.length + deleted.length;
     return {
       source: SOURCE,
-      dirty: structural.length > 0 || cosmetic.length > 0 || deleted.length > 0,
+      dirty: structural.length > 0 || cosmetic.length > 0 || deleted.length > 0 || scipChanged,
       // Cosmetic changes still count for ordering so they get their cheap flush,
       // but never dominate a structural backlog.
-      magnitude: magnitude + (magnitude === 0 ? cosmetic.length : 0),
+      magnitude: magnitude + (magnitude === 0 ? cosmetic.length + (scipChanged ? 1 : 0) : 0),
       detail,
     };
   }
@@ -185,11 +224,13 @@ export class CodeSourceAdapter implements SourceAdapter {
     // ---- COSMETIC-only fast path: no re-extract, no cascade, anchors untouched.
     // Just persist the refreshed (size,mtime,hash,fingerprint) so the next
     // dirtyCheck stops re-flagging the file (§4: "update hash, skip downstream").
-    if (detail.structural.length === 0 && detail.deleted.length === 0) {
+    // A changed `index.scip` falls THROUGH to the full path even with no source
+    // edit, so the 2e arbitration pass runs (#7).
+    if (detail.structural.length === 0 && detail.deleted.length === 0 && !detail.scipChanged) {
       if (detail.cosmetic.length > 0) {
         store.setCursor(
           SOURCE,
-          JSON.stringify(detail.next),
+          cursorPosition(detail.next, detail.scip),
           budget.now(),
           store.publishedGen(SOURCE),
         );
@@ -240,24 +281,30 @@ export class CodeSourceAdapter implements SourceAdapter {
     for (const path of effective.keys()) {
       prevByFile.set(path, readPrevSymbols(store, fileEntityId(path), prevPublishedGen));
     }
-    let prevDeletedSymbols = 0;
     let driftFlagged = 0; // accumulates across deleted-file (Phase A) + re-parse (Phase D) drift
-    const deletedSymbolIds: string[] = [];
     for (const path of detail.deleted) {
       const prevSyms = readPrevSymbols(store, fileEntityId(path), prevPublishedGen);
-      prevDeletedSymbols += prevSyms.size;
-      deletedSymbolIds.push(...prevSyms.keys());
       flagAnchorDrift(store, prevSyms, [], gen); // gone → target-removed (symbol anchors)
       // E7(c): a memory anchored directly to the FILE entity (`file:<path>`) is
       // just as stale when that file is deleted — flag it target-removed too.
       driftFlagged += flagAnchored(store, fileEntityId(path), "target-removed", gen);
       store.clearLinks(fileEntityId(path), "contains");
       store.clearLinks(fileEntityId(path), "imports");
+      // The file's symbols are gone: retire each (search + `calls`/`references`
+      // edges cleared, entity kept for history) so a deleted file leaves no
+      // resolvable ghost symbols behind (#4/#5).
+      for (const oldId of prevSyms.keys()) retireSymbol(store, oldId);
     }
 
     // ---- Phase B: parse the effective set into a buffer (honor the budget).
     const parser = this.#parserFactory();
     const buffer = new Map<string, { file: EffectiveFile; result: ExtractResult }>();
+    // Files that threw on parse this pass: their previous symbols are kept, and
+    // they must NOT be marked clean in the cursor — otherwise the (size,mtime,
+    // hash) match short-circuits every future dirtyCheck and the file is frozen
+    // stale forever (#3). Reverting them to their prev state keeps them dirty so
+    // the next refresh retries.
+    const failed = new Set<string>();
     let complete = true;
     try {
       const langs = [...new Set([...effective.values()].map((f) => f.lang))];
@@ -273,7 +320,8 @@ export class CodeSourceAdapter implements SourceAdapter {
         try {
           result = await parser.parse(f.path, content, f.lang);
         } catch {
-          continue; // transient parse failure → keep the previous symbols (2a rule)
+          failed.add(f.path); // keep the previous symbols AND keep the file dirty
+          continue;
         }
         buffer.set(f.path, { file: f, result });
       }
@@ -290,9 +338,7 @@ export class CodeSourceAdapter implements SourceAdapter {
         prevBuffered += prevByFile.get(path)?.size ?? 0;
         newBuffered += result.symbols.length;
       }
-      const prevTotal = store.countByKind("symbol", prevPublishedGen);
-      const projected = prevTotal - prevBuffered - prevDeletedSymbols + newBuffered;
-      const decision = shrinkGuard(prevTotal, projected, detail.deleted.length);
+      const decision = shrinkGuard(prevBuffered, newBuffered);
       if (decision.refused) {
         // Refuse: do NOT write the buffer, do NOT publish, do NOT advance the
         // cursor → the previous published generation stays intact and served,
@@ -321,18 +367,24 @@ export class CodeSourceAdapter implements SourceAdapter {
       store.clearLinks(fileEntityId(path), "contains");
       store.clearLinks(fileEntityId(path), "imports");
       writeFile(store, file, result, gen, knownPaths, counts);
-      driftFlagged += flagAnchorDrift(
-        store,
-        prevByFile.get(path) ?? new Map(),
-        result.symbols,
-        gen,
-      );
+      const prevSyms = prevByFile.get(path) ?? new Map<string, PrevSymbol>();
+      driftFlagged += flagAnchorDrift(store, prevSyms, result.symbols, gen);
+      // Retire symbols that were in this file's previous generation but are gone
+      // now (rename / deletion within the file). The entity is KEPT (2a: rename
+      // chains + `touches` history hang off it — never deleted), but it is
+      // dropped from search and its `calls`/`references` edges are cleared so a
+      // retired id stops polluting the callee index / drill-downs (#4/#5). Runs
+      // AFTER flagAnchorDrift, which still needs the anchor link intact.
+      const liveIds = new Set(result.symbols.map((s) => s.id));
+      for (const oldId of prevSyms.keys()) {
+        if (!liveIds.has(oldId)) retireSymbol(store, oldId);
+      }
     }
 
     // ---- Phase E: resolve call sites → `calls` edges (2d). Runs AFTER every
     // buffered file's symbols are written, so cross-file `project` callees are
     // resolvable against the full current symbol universe (§5.2).
-    const callEdges = writeCallEdges(store, buffer, deletedSymbolIds, gen, counts);
+    const callEdges = writeCallEdges(store, buffer, gen, counts);
 
     if (!complete) {
       // Partial pass: persist progress (parsed files done, the rest stay dirty),
@@ -346,7 +398,9 @@ export class CodeSourceAdapter implements SourceAdapter {
         const st = detail.next[path];
         if (st) progress[path] = st;
       }
-      store.setCursor(SOURCE, JSON.stringify(progress), budget.now(), gen);
+      // A partial pass starts from `prev`, so parse-failed files are already left
+      // dirty here; scip stays unpublished until a complete pass.
+      store.setCursor(SOURCE, cursorPosition(progress, detail.scip), budget.now(), gen);
       return {
         source: SOURCE,
         complete: false,
@@ -370,11 +424,21 @@ export class CodeSourceAdapter implements SourceAdapter {
       ? runScipPass(store, {
           repoRoot: store.projectRoot,
           gen,
-          effectivePaths: new Set(buffer.keys()),
+          // A SCIP-only refresh (index.scip changed, no source re-parsed) must
+          // reconsider EVERY document, not the empty re-parsed set — otherwise it
+          // arbitrates nothing (#7). Any pass where index.scip itself changed
+          // re-emits over all documents; a plain incremental stays bounded to the
+          // re-parsed files.
+          ...(detail.scipChanged ? {} : { effectivePaths: new Set(buffer.keys()) }),
         })
       : undefined;
 
-    store.setCursor(SOURCE, JSON.stringify(detail.next), budget.now(), gen);
+    store.setCursor(
+      SOURCE,
+      cursorPosition(cursorFilesExcludingFailed(detail, failed), detail.scip),
+      budget.now(),
+      gen,
+    );
     store.publishGeneration(SOURCE);
     return {
       source: SOURCE,
@@ -530,27 +594,34 @@ function writeSymbol(
 function writeCallEdges(
   store: Store,
   buffer: Map<string, { file: EffectiveFile; result: ExtractResult }>,
-  deletedSymbolIds: readonly string[],
   gen: number,
   counts: { entities: number; claims: number },
 ): number {
-  // The project-wide symbol universe (freshly-written buffer symbols included).
+  if (buffer.size === 0) return 0; // SCIP-only / no-op pass: nothing to resolve
+
+  // The callee universe is only CONTAINED symbols — those a file currently holds
+  // via a `contains` link. A retired symbol's entity is kept (rename-chain
+  // history) but has no contains link, so excluding non-contained ids keeps a
+  // renamed-away id from silently capturing a call to its old name (#4).
+  const contained = new Set<string>();
+  for (const f of store.entitiesByKind("file")) {
+    for (const l of store.linksFrom(f.id, "contains")) contained.add(l.dst);
+  }
   const indexed: IndexedSymbol[] = [];
   for (const e of store.entitiesByKind("symbol")) {
     const lang = e.attrs.lang;
-    if (e.locator.t !== "file" || typeof lang !== "string") continue;
+    if (e.locator.t !== "file" || typeof lang !== "string" || !contained.has(e.id)) continue;
     indexed.push({ id: e.id, name: e.name, lang: lang as LanguageId, path: e.locator.path });
   }
   const index = buildCalleeIndex(indexed);
 
-  // Clear stale outgoing calls for every symbol being (re)considered this pass:
-  // the re-parsed files' symbols + any deleted files' lingering symbols. Links
-  // are a mutable current view (unlike append-only claims), so a re-resolution
-  // must not leave a redirected/removed callee edge behind.
+  // Clear stale outgoing calls for every re-parsed symbol before re-resolving:
+  // links are a mutable current view (unlike append-only claims), so a
+  // re-resolution must not leave a redirected callee edge behind. (Deleted /
+  // retired symbols already had their `calls` cleared by retireSymbol.)
   for (const { result } of buffer.values()) {
     for (const s of result.symbols) store.clearLinks(s.id, "calls");
   }
-  for (const id of deletedSymbolIds) store.clearLinks(id, "calls");
 
   let edges = 0;
   for (const { file, result } of buffer.values()) {
@@ -590,19 +661,95 @@ function writeCallEdges(
   return edges;
 }
 
-function readState(store: Store): Record<string, FileState> {
-  const cursor = store.getCursor(SOURCE);
-  if (!cursor?.position) return {};
-  try {
-    return JSON.parse(cursor.position) as Record<string, FileState>;
-  } catch {
-    return {};
+/**
+ * Retire a symbol that left the current `contains` graph (renamed away or its
+ * file deleted). The ENTITY is deliberately kept (2a invariant: rename chains and
+ * `touches` history hang off it), but it must stop behaving like a live symbol:
+ * drop it from full-text search and cut its `calls`/`references` edges in BOTH
+ * directions so drill-downs and the callee index no longer surface a ghost. The
+ * rename-chain (`renamed-to`), git `touches`, and memory `anchoredTo` links are
+ * preserved — history and anchor drift stay reachable through the retired id.
+ */
+function retireSymbol(store: Store, id: string): void {
+  store.ftsRemove(id);
+  store.clearLinks(id, "calls"); // outgoing (this symbol's own call sites)
+  store.clearLinksTo(id, "calls"); // incoming (callers not re-parsed this pass)
+  store.clearLinksTo(id, "references"); // incoming (doc mentions)
+}
+
+/** Cursor file map for a COMPLETE pass, reverting parse-failed files to their
+ *  prior state so they stay dirty and get retried, never frozen stale (#3). */
+function cursorFilesExcludingFailed(
+  detail: CodeDirtyDetail,
+  failed: ReadonlySet<string>,
+): Record<string, FileState> {
+  if (failed.size === 0) return detail.next;
+  const out: Record<string, FileState> = { ...detail.next };
+  for (const path of failed) {
+    const prior = detail.prev[path];
+    if (prior !== undefined)
+      out[path] = prior; // modified vs scan → dirty next pass
+    else delete out[path]; // never parsed cleanly → treated as added → dirty next pass
   }
+  return out;
+}
+
+function readState(store: Store): CursorState {
+  const cursor = store.getCursor(SOURCE);
+  if (!cursor?.position) return { files: {} };
+  try {
+    const parsed = JSON.parse(cursor.position) as Record<string, FileState> | CursorState;
+    // Back-compat: a pre-#7 cursor is a bare file map; the new shape nests it
+    // under `files` alongside the optional `scip` fingerprint.
+    if (parsed && typeof parsed === "object" && "files" in parsed) {
+      return parsed as CursorState;
+    }
+    return { files: (parsed as Record<string, FileState>) ?? {} };
+  } catch {
+    return { files: {} };
+  }
+}
+
+/** Serialize the cursor: file map + optional `index.scip` fingerprint (#7). */
+function cursorPosition(files: Record<string, FileState>, scip: ScipState | undefined): string {
+  return JSON.stringify(scip !== undefined ? { files, scip } : { files });
+}
+
+function readScipState(root: string, prev: ScipState | undefined): ScipState | undefined {
+  const abs = join(root, SCIP_FILE);
+  let stat: { size: number; mtimeMs: number };
+  try {
+    stat = statSync(abs);
+  } catch {
+    return undefined; // no index.scip
+  }
+  // The SCIP file can be large and dirtyCheck runs on every serve; a (size,
+  // mtime) match against the stored state short-circuits the hash, mirroring the
+  // source-file dirty scan (§4.2).
+  if (prev !== undefined && prev.size === stat.size && prev.mtimeMs === stat.mtimeMs) {
+    return prev;
+  }
+  const bytes = safeReadBytes(abs);
+  if (bytes === undefined) return undefined;
+  return { size: stat.size, mtimeMs: stat.mtimeMs, hash: blake2bHex(bytes) };
+}
+
+function scipStateEqual(a: ScipState | undefined, b: ScipState | undefined): boolean {
+  if (a === undefined || b === undefined) return a === b;
+  return a.size === b.size && a.mtimeMs === b.mtimeMs && a.hash === b.hash;
 }
 
 function safeRead(abs: string): string | undefined {
   try {
     return readFileSync(abs, "utf8");
+  } catch {
+    return undefined;
+  }
+}
+
+function safeReadBytes(abs: string): Buffer | undefined {
+  try {
+    return readFileSync(abs);
   } catch {
     return undefined;
   }

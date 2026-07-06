@@ -216,4 +216,32 @@ describe("select/engine", () => {
     const r = search(store, { query: "retry orders", now: () => NOW });
     expect(r.items.some((i) => i.entityId === "doc:orders.md#draft")).toBe(false);
   });
+
+  test("callees facet: a callee at an unpublished generation is excluded (link visibility — #2)", () => {
+    const sym = (id: string, name: string, gen: number): void =>
+      store.upsertEntity({
+        id,
+        kind: "symbol",
+        name,
+        locator: { t: "file", path: "m.ts", span: [1, 1] },
+        attrs: { lang: "typescript" },
+        gen,
+      });
+    const g1 = store.beginGeneration("code");
+    sym("sym:m.ts#caller", "caller", g1);
+    sym("sym:m.ts#live", "livecallee", g1);
+    store.publishGeneration("code"); // published_gen(code) = g1
+    // A callee written by an in-progress generation that has NOT been published.
+    const g2 = store.beginGeneration("code");
+    sym("sym:m.ts#pending", "pendingcallee", g2);
+    // The caller links to BOTH — links carry no generation of their own, so only
+    // the endpoint's published visibility can gate the served drill-down (#2).
+    for (const dst of ["sym:m.ts#live", "sym:m.ts#pending"]) {
+      store.setLink({ src: "sym:m.ts#caller", dst, predicate: "calls", method: "structural" });
+    }
+    const r = select(store, { handle: "sym:m.ts#caller!callees", now: () => NOW });
+    if (!r.ok || r.mode !== "facet") throw new Error("expected a FacetResult");
+    expect(r.text).toContain("livecallee");
+    expect(r.text, "unpublished callee excluded from the facet").not.toContain("pendingcallee");
+  });
 });

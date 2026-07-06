@@ -16,7 +16,7 @@
  *     note, and the observed reason class per edit (body-changed /
  *     signature-changed / signature-changed on an overload re-key).
  */
-import { mkdirSync, writeFileSync } from "node:fs";
+import { mkdirSync, rmSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { DatabaseSync } from "node:sqlite";
 import { afterEach, beforeEach, describe, expect, test } from "vitest";
@@ -327,5 +327,129 @@ describe("acceptance: 2c fingerprint invalidation + incremental trio", () => {
     // Generation stayed on the previous published gen; the graph is intact.
     expect(store.publishedGen("code")).toBe(publishedBefore);
     expect(store.countByKind("symbol", publishedBefore)).toBe(symbolsBefore);
+  });
+
+  test("B3-shrink: a truncated re-parse is still refused when an UNRELATED file is deleted the same pass — deletions no longer disable the guard (#9)", async () => {
+    write(
+      "a.ts",
+      `export function a1(): number {\n  return 1;\n}\nexport function a2(): number {\n  return 2;\n}\n`,
+    );
+    write(
+      "b.ts",
+      `export function b1(): number {\n  return 1;\n}\nexport function b2(): number {\n  return 2;\n}\n`,
+    );
+    write(
+      "c.ts",
+      `export function c1(): number {\n  return 1;\n}\nexport function c2(): number {\n  return 2;\n}\n`,
+    );
+    write("d.ts", `export function d1(): number {\n  return 1;\n}\n`); // small, unrelated
+
+    await ingest(new CodeSourceAdapter({ inProcess: true }));
+    const publishedBefore = store.publishedGen("code");
+    const symbolsBefore = store.countByKind("symbol");
+    expect(symbolsBefore).toBe(7);
+
+    // Delete the unrelated d.ts (a legitimate deletion) AND truncate a/b/c. The
+    // OLD guard disabled itself on any deletion, letting the truncation publish;
+    // the reconciled guard measures the re-parsed files only, so it still refuses.
+    rmSync(join(proj, "d.ts"));
+    write(
+      "a.ts",
+      `export function a1(): number {\n  return 11;\n}\nexport function a2(): number {\n  return 22;\n}\n`,
+    );
+    write(
+      "b.ts",
+      `export function b1(): number {\n  return 11;\n}\nexport function b2(): number {\n  return 22;\n}\n`,
+    );
+    write(
+      "c.ts",
+      `export function c1(): number {\n  return 11;\n}\nexport function c2(): number {\n  return 22;\n}\n`,
+    );
+
+    const truncatingParser: CodeParserLike = {
+      preload: async () => {},
+      parse: async (_relPath, _content, langId): Promise<ExtractResult> => ({
+        language: langId,
+        symbols: [],
+        imports: [],
+        calls: [],
+        hadError: false,
+      }),
+      close: async () => {},
+    };
+    const result = await ingest(new CodeSourceAdapter({ parserFactory: () => truncatingParser }));
+
+    expect(result.refused, "deletion must not bypass the shrink guard").toBe(true);
+    // Nothing published: the previous generation (incl. d.ts) stays intact.
+    expect(store.publishedGen("code")).toBe(publishedBefore);
+    expect(store.countByKind("symbol", publishedBefore)).toBe(symbolsBefore);
+  });
+
+  test("B3-parsefail: a file that throws on parse keeps its previous symbols AND stays dirty for retry — never frozen clean-but-stale (#3)", async () => {
+    write("a.ts", `export function a1(): number {\n  return 1;\n}\n`);
+    await ingest(new CodeSourceAdapter({ inProcess: true }));
+    expect(store.getEntity("sym:a.ts#a1")?.kind).toBe("symbol");
+
+    // Structurally edit a.ts (adds a2), then re-ingest through a parser that
+    // THROWS on it. The old symbol is kept; the new one is not written.
+    write(
+      "a.ts",
+      `export function a1(): number {\n  return 1;\n}\nexport function a2(): number {\n  return 2;\n}\n`,
+    );
+    const throwingParser: CodeParserLike = {
+      preload: async () => {},
+      parse: async () => {
+        throw new Error("simulated parser crash");
+      },
+      close: async () => {},
+    };
+    await ingest(new CodeSourceAdapter({ parserFactory: () => throwingParser }));
+    expect(store.getEntity("sym:a.ts#a1")?.kind, "old symbol kept").toBe("symbol");
+    expect(store.getEntity("sym:a.ts#a2"), "failed parse wrote nothing new").toBeUndefined();
+
+    // Crucially: a.ts must NOT have been marked clean. The next dirtyCheck still
+    // flags it, so a later (working) pass retries and picks up a2.
+    clearScanCache();
+    const dirty = await new CodeSourceAdapter({ inProcess: true }).dirtyCheck(store);
+    expect(dirty.dirty, "parse-failed file stays dirty").toBe(true);
+
+    await ingest(new CodeSourceAdapter({ inProcess: true }));
+    expect(store.getEntity("sym:a.ts#a2")?.kind, "retry recovers the new symbol").toBe("symbol");
+  });
+
+  test("B3-retire: a renamed-away symbol is dropped from search + the callee index and its `calls` edges are cleared, but its entity survives (2a — #4/#5)", async () => {
+    write(
+      "target.ts",
+      `export function foo(): void {\n  keep();\n}\nexport function keep(): void {}\n`,
+    );
+    write(
+      "caller.ts",
+      `import { foo } from "./target";\nexport function caller(): void {\n  foo();\n}\n`,
+    );
+    await ingest(new CodeSourceAdapter({ inProcess: true }));
+
+    const FOO = "sym:target.ts#foo";
+    // Baseline: caller --calls--> foo, foo --calls--> keep, and FTS finds foo.
+    expect(store.linksFrom("sym:caller.ts#caller", "calls").map((l) => l.dst)).toContain(FOO);
+    expect(store.linksFrom(FOO, "calls").map((l) => l.dst)).toContain("sym:target.ts#keep");
+    expect(store.ftsSearch("foo").map((h) => h.entityId)).toContain(FOO);
+
+    // Rename foo → bar. caller (imports target) is boundary-expanded and re-parsed.
+    write(
+      "target.ts",
+      `export function bar(): void {\n  keep();\n}\nexport function keep(): void {}\n`,
+    );
+    await ingest(new CodeSourceAdapter({ inProcess: true }));
+
+    // #4: the retired id is gone from the callee index (caller's stale `foo()` no
+    // longer resolves to it) and from full-text search...
+    expect(store.linksFrom("sym:caller.ts#caller", "calls").map((l) => l.dst)).not.toContain(FOO);
+    expect(store.ftsSearch("foo").map((h) => h.entityId)).not.toContain(FOO);
+    // #5: ...and its own outgoing `calls` edges are cleared.
+    expect(store.linksFrom(FOO, "calls")).toHaveLength(0);
+    // 2a invariant: the entity itself is NOT deleted (rename-chain / history).
+    expect(store.getEntity(FOO)?.kind, "entity survives retirement").toBe("symbol");
+    // The new name is a live, searchable symbol.
+    expect(store.ftsSearch("bar").map((h) => h.entityId)).toContain("sym:target.ts#bar");
   });
 });

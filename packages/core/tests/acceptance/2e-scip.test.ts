@@ -170,6 +170,35 @@ describe("acceptance: 2e SCIP arbitration", () => {
     expect(result.scip?.edges).toBe(1);
   });
 
+  test("B5-incremental: dropping in index.scip AFTER a tree-sitter ingest is itself dirty and runs a SCIP pass — index.scip enters dirtyCheck (#7)", async () => {
+    // Cold ingest with NO index.scip present: tree-sitter only, everything Derived.
+    const first = await ingest();
+    expect(first.complete).toBe(true);
+    expect(first.scip?.reason).toBe("absent");
+    const derived = store.linksFrom(RUN, "calls").find((l) => l.dst === PERSIST);
+    expect(store.getClaim(derived!.claimId!)?.authority).toBe("derived");
+
+    // Now add index.scip WITHOUT touching any source file. dirtyCheck must flag
+    // the code source dirty purely on the SCIP change (the pre-#7 scan ignored it).
+    writeScipFixture(proj, [SVC_SCIP]);
+    clearScanCache();
+    const probe = new CodeSourceAdapter({ inProcess: true });
+    const dirty = await probe.dirtyCheck(store);
+    expect(dirty.dirty, "index.scip change alone is dirty").toBe(true);
+
+    // Ingesting that dirty report runs the arbitration pass and upgrades the edge.
+    const second = await probe.ingest(store, dirty, MAX_BUDGET);
+    expect(second.scip?.applied).toBe(true);
+    expect(second.scip?.reason).toBe("consumed");
+    const winner = store.linksFrom(RUN, "calls").find((l) => l.dst === PERSIST);
+    expect(store.getClaim(winner!.claimId!)?.carrier).toBe("scip");
+    expect(store.getClaim(winner!.claimId!)?.authority).toBe("observed");
+
+    // A second dirtyCheck with index.scip unchanged is clean again (state persisted).
+    clearScanCache();
+    expect((await new CodeSourceAdapter({ inProcess: true }).dirtyCheck(store)).dirty).toBe(false);
+  });
+
   test("B5-failopen: malformed/truncated index.scip → ingest completes on tree-sitter alone, success-shaped, no partial SCIP claims left behind", async () => {
     // The fixture is genuinely malformed: the reader throws on it.
     expect(() => decodeScipIndex(truncatedScip([SVC_SCIP]))).toThrow(ScipDecodeError);

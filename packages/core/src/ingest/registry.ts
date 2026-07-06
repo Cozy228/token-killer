@@ -21,7 +21,13 @@ export interface RegistryOptions {
 
 export function createDefaultRegistry(opts: RegistryOptions = {}): SourceRegistry {
   const registry = new SourceRegistry();
-  if (opts.git !== false) registry.register(createGitAdapter(opts.git));
+  // The assembled registry always has the code source registered, so git
+  // `touches` must be SYMBOL-level (2b symbol biography) — the doc contract at
+  // GitAdapterOptions.symbolTouches. The BARE GitAdapter keeps file-level as its
+  // default (M1 code-source-free unit fixtures); the default registry owns the
+  // opt-in so no caller has to remember it. Callers/tests still override via
+  // `git: { symbolTouches: false }`.
+  if (opts.git !== false) registry.register(createGitAdapter({ symbolTouches: true, ...opts.git }));
   if (opts.docs !== false) registry.register(new DocsAdapter());
   if (opts.memory !== false) registry.register(new MemorySourceAdapter(opts.memory));
   if (opts.code !== false) registry.register(createCodeAdapter(opts.code));

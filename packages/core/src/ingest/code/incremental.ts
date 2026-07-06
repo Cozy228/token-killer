@@ -167,11 +167,11 @@ export function expandShadow(
 // Shrink guard
 // ---------------------------------------------------------------------------
 
-/** A pass that drops below this fraction of the previous symbol graph, with no
- *  observed deletions, is treated as a silently-truncated extraction. */
+/** A re-parsed file-set that returns below this fraction of the symbols its
+ *  previous generation held is treated as a silently-truncated extraction. */
 export const SHRINK_RATIO = 0.5;
-/** Below this many prior symbols the guard is disabled — a tiny graph naturally
- *  swings by large fractions and there is nothing to protect. */
+/** Below this many prior symbols in the re-parsed set the guard is disabled — a
+ *  tiny set naturally swings by large fractions and there is nothing to protect. */
 export const SHRINK_MIN_BASELINE = 4;
 
 export interface ShrinkDecision {
@@ -181,22 +181,26 @@ export interface ShrinkDecision {
   projectedSymbols: number;
 }
 
-export function shrinkGuard(
-  prevTotal: number,
-  projectedTotal: number,
-  deletedCount: number,
-): ShrinkDecision {
-  const refused =
-    prevTotal >= SHRINK_MIN_BASELINE &&
-    deletedCount === 0 &&
-    projectedTotal < prevTotal * SHRINK_RATIO;
+/**
+ * Reconcile a re-parse against silent truncation by comparing the symbol counts
+ * of the RE-PARSED files only — `prevReparsed` (what those files held in the
+ * previous generation) vs `newReparsed` (what they returned now). File DELETIONS
+ * are legitimate, unbounded symbol loss and are deliberately NOT part of this
+ * ratio (the old whole-graph guard disabled itself whenever `deletedCount > 0`,
+ * so deleting one unrelated file let a truncated re-parse of everything else slip
+ * through — issue #9). Measuring the re-parsed subset makes deletions irrelevant:
+ * a collapse among the files we actually re-read is caught however many other
+ * files were removed.
+ */
+export function shrinkGuard(prevReparsed: number, newReparsed: number): ShrinkDecision {
+  const refused = prevReparsed >= SHRINK_MIN_BASELINE && newReparsed < prevReparsed * SHRINK_RATIO;
   return {
     refused,
     reason: refused
-      ? `symbol graph would shrink ${prevTotal}→${projectedTotal} (below ${SHRINK_RATIO}× previous) with no observed deletions — refusing to publish a likely-truncated extraction`
+      ? `re-parsed files' symbol count collapsed ${prevReparsed}→${newReparsed} (below ${SHRINK_RATIO}× their previous generation) — refusing to publish a likely-truncated extraction`
       : "",
-    prevSymbols: prevTotal,
-    projectedSymbols: projectedTotal,
+    prevSymbols: prevReparsed,
+    projectedSymbols: newReparsed,
   };
 }
 

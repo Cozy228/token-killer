@@ -66,4 +66,27 @@ describe("code extractor rules", () => {
     const res = await parse(`export function only() {}\n`);
     expect(res.symbols[0]?.id).toBe("sym:t.ts#only");
   });
+
+  test("same-arity overloads disambiguate by signature, STABLE under reorder (G-9 — #8)", async () => {
+    // Two same-name/same-arity overloads differ only by parameter TYPE. Their ids
+    // must be order-INDEPENDENT: reordering them and inserting a third same-arity
+    // overload must NOT re-key the existing two (the old source-order ordinal did).
+    const foosOf = (res: { symbols: { qualified: string; id: string }[] }): string[] =>
+      res.symbols.filter((s) => s.qualified === "C.foo").map((s) => s.id);
+
+    const a = await parse(`class C {\n  void foo(String a) {}\n  void foo(int a) {}\n}\n`, "java");
+    const foosA = foosOf(a);
+    expect(foosA.length).toBe(2);
+    expect(new Set(foosA).size).toBe(2); // two distinct, signature-keyed ids
+
+    // Source B: same two overloads REORDERED + a third same-arity overload first.
+    const b = await parse(
+      `class C {\n  void foo(long a) {}\n  void foo(int a) {}\n  void foo(String a) {}\n}\n`,
+      "java",
+    );
+    const foosB = new Set(foosOf(b));
+    // Every id from A survives verbatim in B despite the reorder + insertion.
+    for (const id of foosA) expect(foosB.has(id), `${id} stable across reorder`).toBe(true);
+    expect(foosB.size).toBe(3);
+  });
 });
