@@ -11,6 +11,7 @@
  * so two stores built from the same files dump identically.
  */
 import type { Store } from "../store/store.ts";
+import { claimKeyOf } from "./fold.ts";
 
 export interface MemoryDumpRow {
   entityId: string;
@@ -50,11 +51,10 @@ export interface MemoryDump {
   conflicts: ConflictDumpRow[];
 }
 
-/** Stable, id-free key for a claim (subject / predicate / object / locus). */
+/** Stable, id-free key for a claim — the ONE shared definition (R8, fold.ts). */
 function claimKey(store: Store, claimId: number): string {
   const c = store.getClaim(claimId);
-  if (!c) return `?:${claimId}`;
-  return [c.subject, c.predicate, c.object ?? "", c.locus ?? ""].join("|");
+  return c ? claimKeyOf(c) : `?:${claimId}`;
 }
 
 /** Produce the canonical logical dump (deterministic row order). */

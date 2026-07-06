@@ -538,6 +538,19 @@ export function setMemoryLifecycle(
   // committed = human-authored or human-confirmed).
   const memId = resolved.entityId;
   const gen = store.publishedGen(MEMORY_SOURCE);
+  // R9: a `confirm` that clears a drift must carry, IN THE COMMITTED BYTES, which
+  // drift class it cleared (`clearedDrift`) and the HEAD it judged that absence
+  // against (`confirmedAt`, mirror of anchored-at). A full reindex reads these to
+  // avoid re-deriving `target-removed` and undoing the human's E7-recovery on
+  // every checkout. A confirm made while the target was PRESENT carries no
+  // `clearedDrift`, so a later real removal still flags on every machine.
+  const clearedDrift =
+    status === "active" ? (store.getMemory(memId)?.driftReason ?? undefined) : undefined;
+  const confirmedAt =
+    status === "active" && files ? currentHeadCommit(store.projectRoot) : undefined;
+  const confirmRefs: Record<string, unknown> = {};
+  if (clearedDrift) confirmRefs.clearedDrift = clearedDrift;
+  if (confirmedAt) confirmRefs.confirmedAt = confirmedAt;
   recordDecision(store, files, "mainline", {
     memoryId: memId,
     verb: LIFECYCLE_VERB_FOR_STATUS[status],
@@ -545,6 +558,7 @@ export function setMemoryLifecycle(
     carrier: "cli",
     method: "explicit-key",
     authority: "confirmed",
+    refs: Object.keys(confirmRefs).length > 0 ? confirmRefs : undefined,
   });
   // `confirm` (→ active) is the recovery verb: the human re-affirms the note, so
   // the derived drift annotation is cleared (freshness affirmed) and its open

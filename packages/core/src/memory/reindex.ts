@@ -22,8 +22,13 @@ import { execFileSync } from "node:child_process";
 import type { MemoryFiles, MemoryZone } from "./fileStore.ts";
 import type { SerializedDecision, SerializedMemory } from "./serialize.ts";
 import { lineTag, parseDecision, parseMemory } from "./serialize.ts";
-import { classifyAbsentAnchor } from "./anchoredAt.ts";
-import { rebuildConflictStatuses, rebuildMemoryStatuses, refoldMemory } from "./fold.ts";
+import { classifyAbsentAnchor, isAncestor } from "./anchoredAt.ts";
+import {
+  foldStatus,
+  rebuildConflictStatuses,
+  rebuildMemoryStatuses,
+  refoldMemory,
+} from "./fold.ts";
 import type { Store } from "../store/store.ts";
 import type { MemoryEvent, MemoryOrigin } from "../store/types.ts";
 
@@ -184,6 +189,10 @@ export function recomputeDriftAtReindex(store: Store, gen: number): void {
   const projectRoot = store.projectRoot;
   if (codePublished) {
     for (const m of store.allMemories()) {
+      // R9: a human `confirm` that already cleared a `target-removed` drift on
+      // this line of history suppresses re-derivation — otherwise every reindex
+      // (slice-4 branch switches) re-undoes the confirm forever.
+      if (confirmSuppressesTargetRemoved(store, m.entityId, projectRoot)) continue;
       const anchoredAt = readAnchoredAt(store, m.entityId);
       for (const anchorId of store.anchorsOf(m.entityId)) {
         if (store.getEntity(anchorId)) continue; // present target — not removed
@@ -197,6 +206,33 @@ export function recomputeDriftAtReindex(store: Store, gen: number): void {
   }
   // Re-fold so every served status = fold ∘ drift after the recompute.
   rebuildMemoryStatuses(store, gen);
+  // R10: re-apply resolution events AFTER the stale-suspect re-file, so a locally
+  // resolved/dismissed conflict that is still derivable does not reopen. (Composes
+  // with R9: a confirmed memory does not even re-file; this covers non-confirm
+  // resolutions like `dismiss`.)
+  rebuildConflictStatuses(store);
+}
+
+/**
+ * R9 — true iff the memory carries a `confirm` decision that cleared a
+ * `target-removed` drift AND was made on this branch's history (its committed
+ * `confirmedAt` is an ancestor of HEAD) AND still governs (fold status active).
+ * The human already judged this absence on this line; re-deriving would undo it.
+ */
+function confirmSuppressesTargetRemoved(
+  store: Store,
+  memoryId: string,
+  projectRoot: string,
+): boolean {
+  const events = store.memoryEvents(memoryId);
+  if (foldStatus(events) !== "active") return false;
+  for (const e of events) {
+    if (e.verb !== "confirm") continue;
+    if (e.refs.clearedDrift !== "target-removed") continue;
+    const at = e.refs.confirmedAt;
+    if (typeof at === "string" && isAncestor(projectRoot, at)) return true;
+  }
+  return false;
 }
 
 function readAnchoredAt(store: Store, memoryId: string): string | undefined {
