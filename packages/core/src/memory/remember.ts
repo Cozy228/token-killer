@@ -15,11 +15,20 @@ import { existsSync } from "node:fs";
 import { isAbsolute, join } from "node:path";
 import { shortHandleCandidate } from "../store/handles.ts";
 import type { Store } from "../store/store.ts";
-import type { EntityKind, Facet, MemoryEventVerb, MemoryStatus } from "../store/types.ts";
+import type {
+  Authority,
+  EntityKind,
+  Facet,
+  MemoryEventVerb,
+  MemoryStatus,
+} from "../store/types.ts";
 import { MEMORY_GIST_MAX_CHARS } from "./claudeImporter.ts";
+import { currentHeadCommit } from "./anchoredAt.ts";
 import { fuzzyDuplicate } from "./dedup.ts";
+import type { MemoryFiles } from "./fileStore.ts";
 import { refoldMemory, resolveConflictViaEvent } from "./fold.ts";
 import { ulid, memoryId } from "./ulid.ts";
+import { recordCreate, recordDecision } from "./writeThrough.ts";
 
 const MEMORY_SOURCE = "memory";
 
@@ -32,6 +41,14 @@ export interface RememberInput {
   /** User/agent assertions are `confirmed` by default (they carry authority). */
   authority?: "inferred" | "confirmed";
   now?: () => number;
+  /**
+   * Committed / overlay file writer (slice 3). When present, `remember()`
+   * write-throughs to the file layer FIRST, then the index. Agent-authored
+   * (actor=`agent`) → the personal OVERLAY as `active` (E3: nothing
+   * auto-generated reaches the committed zone; the CLI-human → Mainline
+   * caller-surface split, S8a, is slice 4). Omit for store-only (slice-2) writes.
+   */
+  files?: MemoryFiles;
 }
 
 export interface EntityCandidate {
@@ -298,18 +315,24 @@ export function remember(store: Store, input: RememberInput): RememberResult {
     status: "active",
   });
   // The `create` event is the fold's baseline (its `refs.status` landing status).
-  // remember() lands `active` today; the E3 CLI/MCP caller-surface split (host
-  // imports / agent writes → needs-review overlay) is slice 4, not here.
-  store.appendMemoryEvent({
+  // Write-through (slice 3): agent-authored → the personal OVERLAY (E3). The
+  // committed line + the store event share ONE monotonic stamp, so all events
+  // (create / lifecycle / drift) share one time base and total-order correctly.
+  const anchoredAt =
+    input.files && plan.resolved.length > 0 ? currentHeadCommit(store.projectRoot) : undefined;
+  recordCreate(store, input.files, "overlay", {
     memoryId: id,
-    verb: "create",
+    gist,
+    detail: input.detail,
+    origin: "remember",
     actor: "agent",
-    refs: { status: "active" },
     carrier: MEMORY_SOURCE,
     method: "explicit-key",
     authority: input.authority ?? "confirmed",
-    // `at` intentionally omitted → the store stamps its own clock, so ALL events
-    // (create / lifecycle / drift) share one time base and total-order correctly.
+    status: "active",
+    anchors: plan.resolved,
+    anchoredAt,
+    sessionRef: input.sessionRef,
   });
   store.setAnchors(id, plan.resolved);
   for (const anchorId of plan.resolved) {
@@ -339,7 +362,8 @@ export function remember(store: Store, input: RememberInput): RememberResult {
   if (supersededId !== undefined) {
     // Decision 5: supersede is an append-only decision EVENT; the old entry is
     // KEPT and its status is DERIVED from the fold, never overwritten in place.
-    store.appendMemoryEvent({
+    // Agent-authored → overlay (E3), same zone as the create.
+    recordDecision(store, input.files, "overlay", {
       memoryId: supersededId,
       verb: "supersede",
       actor: "agent",
@@ -462,7 +486,7 @@ export interface MemoryListItem {
   name: string;
   gist: string;
   origin: string;
-  authority: "inferred" | "confirmed";
+  authority: Authority; // 4-valued (R4)
   status: MemoryStatus;
   handle: string;
 }
@@ -491,6 +515,7 @@ export function setMemoryLifecycle(
   store: Store,
   idOrHandle: string,
   status: MemoryStatus,
+  files?: MemoryFiles,
 ): LifecycleResult {
   const resolved = store.resolveHandle(idOrHandle);
   if (!resolved) {
@@ -509,15 +534,31 @@ export function setMemoryLifecycle(
   }
   // A4: lifecycle is a human/CLI decision — recorded as an append-only EVENT;
   // the status is DERIVED by the fold, never overwritten in place (Decision 5).
+  // Write-through: CLI/human decisions → the committed MAINLINE zone (E3:
+  // committed = human-authored or human-confirmed).
   const memId = resolved.entityId;
   const gen = store.publishedGen(MEMORY_SOURCE);
-  store.appendMemoryEvent({
+  // R9: a `confirm` that clears a drift must carry, IN THE COMMITTED BYTES, which
+  // drift class it cleared (`clearedDrift`) and the HEAD it judged that absence
+  // against (`confirmedAt`, mirror of anchored-at). A full reindex reads these to
+  // avoid re-deriving `target-removed` and undoing the human's E7-recovery on
+  // every checkout. A confirm made while the target was PRESENT carries no
+  // `clearedDrift`, so a later real removal still flags on every machine.
+  const clearedDrift =
+    status === "active" ? (store.getMemory(memId)?.driftReason ?? undefined) : undefined;
+  const confirmedAt =
+    status === "active" && files ? currentHeadCommit(store.projectRoot) : undefined;
+  const confirmRefs: Record<string, unknown> = {};
+  if (clearedDrift) confirmRefs.clearedDrift = clearedDrift;
+  if (confirmedAt) confirmRefs.confirmedAt = confirmedAt;
+  recordDecision(store, files, "mainline", {
     memoryId: memId,
     verb: LIFECYCLE_VERB_FOR_STATUS[status],
     actor: "cli",
     carrier: "cli",
     method: "explicit-key",
     authority: "confirmed",
+    refs: Object.keys(confirmRefs).length > 0 ? confirmRefs : undefined,
   });
   // `confirm` (→ active) is the recovery verb: the human re-affirms the note, so
   // the derived drift annotation is cleared (freshness affirmed) and its open
@@ -529,7 +570,7 @@ export function setMemoryLifecycle(
   if (status === "active") {
     store.setMemoryDrift(memId, null);
     for (const c of store.openStaleSuspects(memId)) {
-      resolveConflictViaEvent(store, memId, c.a, c.b, "resolve-conflict");
+      resolveConflictViaEvent(store, memId, c.a, c.b, "resolve-conflict", "cli", files);
     }
   }
   const effective = refoldMemory(store, memId, gen);

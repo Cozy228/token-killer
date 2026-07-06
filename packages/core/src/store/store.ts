@@ -57,6 +57,18 @@ export const LEASE_TTL_MS = 30_000;
 export const MEMORY_GIST_MAX_CHARS = 240;
 const MEMORY_SOURCE = "memory";
 
+/** The `memory_events` append-only triggers (migration 002). Kept here so the
+ *  sanctioned reset seam can drop + recreate them around a files→store rebuild. */
+const MEMORY_EVENTS_TRIGGERS = `
+CREATE TRIGGER memory_events_no_update BEFORE UPDATE ON memory_events
+BEGIN
+  SELECT RAISE(ABORT, 'memory_events is append-only (no UPDATE)');
+END;
+CREATE TRIGGER memory_events_no_delete BEFORE DELETE ON memory_events
+BEGIN
+  SELECT RAISE(ABORT, 'memory_events is append-only (no DELETE)');
+END;`;
+
 export interface OpenStoreOptions {
   /** Directory to resolve the project shard from (default: process.cwd()). */
   projectDir?: string;
@@ -140,6 +152,16 @@ export interface Store {
    */
   cacheConflictStatus(a: number, b: number, status: ConflictStatus): void;
   /**
+   * Delete every conflict row of one kind (a CACHE deletion, not a source
+   * mutation). The full reindex recomputes the DERIVED `stale-suspect` layer from
+   * scratch (S4 §1): it deletes the cached rows then re-files only the ones
+   * re-derived this pass. Non-destruction holds — the committed source + the
+   * append-only events + the underlying claims are untouched; only the
+   * rebuildable conflict cache is cleared. Contradiction conflicts are NOT passed
+   * here (they keep re-deriving from events).
+   */
+  deleteConflictsByKind(kind: ConflictKind): void;
+  /**
    * OPEN `stale-suspect` conflicts whose `a` claim's subject is this memory —
    * the CURRENT-STATE staleness signal (E7): rank/push read it, the lifecycle
    * `confirm` verb resolves it. The append-only `stale-reason` claims stay as
@@ -165,10 +187,39 @@ export interface Store {
   /** Append an immutable lifecycle/decision event (append-only; the fold source).
    *  Returns the event ULID. Never updates/deletes (DB triggers enforce it). */
   appendMemoryEvent(input: MemoryEventInput): string;
+  /**
+   * Allocate the next monotonic event stamp `(id, at)` WITHOUT inserting a row —
+   * so a file-first write-through (slice 3) can serialize the committed line with
+   * the SAME id/at it then hands to `appendMemoryEvent`. Advances the store's
+   * monotonic base (single-writer), so it must always be followed by the insert.
+   */
+  nextEventStamp(at?: number): { id: string; at: number };
+  /**
+   * Idempotently replay a committed event line into the index cache (reindex /
+   * pull-delta). `INSERT OR IGNORE` keyed by the file-supplied `id`, so parsing
+   * the same append-only log twice never duplicates — the files are the log, the
+   * table is the rebuildable cache (S10 #4).
+   */
+  ingestMemoryEvent(event: MemoryEvent): void;
   /** A memory's events in total order `(at, then ULID)` (E2) — the fold input. */
   memoryEvents(memoryId: string): MemoryEvent[];
   /** Every lifecycle/decision event, total-ordered — the rebuild path input. */
   allMemoryEvents(): MemoryEvent[];
+  /** Every memory index row (unfiltered) — the S3 migration export enumerates
+   *  the full store, including non-`active`/gen-invisible rows. Read-only. */
+  allMemories(): MemoryRow[];
+  /**
+   * The ONE sanctioned cache-reset seam (files→store only). Drops the
+   * append-only `memory_events` triggers, clears the entire memory domain
+   * (events, memory rows + entities/FTS/anchors/links, and memory-provenance
+   * claims + their conflicts), then recreates the triggers — all in one
+   * transaction. The append-only triggers stay AUTHORITATIVE for normal
+   * operation; this is the only bypass, used exclusively to rebuild the
+   * rebuildable cache from the committed files (migration end, non-append
+   * pull-delta fallback). Nothing store-only is exported here — the CALLER runs
+   * the catch-up export first (ordering guard).
+   */
+  resetMemoryCache(): void;
   setAnchors(memoryId: string, entityIds: string[]): void;
   anchorsOf(memoryId: string): string[];
   /**
@@ -473,6 +524,10 @@ class SqliteStore implements Store {
     this.#db.prepare("UPDATE conflicts SET status = ? WHERE a = ? AND b = ?").run(status, a, b);
   }
 
+  deleteConflictsByKind(kind: ConflictKind): void {
+    this.#db.prepare("DELETE FROM conflicts WHERE kind = ?").run(kind);
+  }
+
   openStaleSuspects(memoryId: string): Conflict[] {
     return this.#db
       .prepare(
@@ -498,11 +553,12 @@ class SqliteStore implements Store {
         // cached status is the fold output, so a re-import/re-write must NOT reset
         // it — that would clobber a human confirm. The fold (memory/fold.ts) is the
         // only writer of `status` after creation, via `cacheMemoryStatus`.
-        `INSERT INTO memory (entity_id, gist, detail, origin, session_ref, authority, status)
-         VALUES (?, ?, ?, ?, ?, ?, ?)
+        `INSERT INTO memory (entity_id, gist, detail, origin, session_ref, authority, status, valid_from, valid_to)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
          ON CONFLICT(entity_id) DO UPDATE SET
            gist = excluded.gist, detail = excluded.detail, origin = excluded.origin,
-           session_ref = excluded.session_ref, authority = excluded.authority`,
+           session_ref = excluded.session_ref, authority = excluded.authority,
+           valid_from = excluded.valid_from, valid_to = excluded.valid_to`,
       )
       .run(
         input.entityId,
@@ -512,6 +568,8 @@ class SqliteStore implements Store {
         input.sessionRef ?? null,
         input.authority,
         input.status ?? "active",
+        input.validFrom ?? null,
+        input.validTo ?? null,
       );
   }
 
@@ -531,7 +589,47 @@ class SqliteStore implements Store {
       servedCount: row.served_count as number,
       lastServed: (row.last_served as number | null) ?? undefined,
       driftReason: (row.drift_reason as MemoryDriftReason | null) ?? undefined,
+      validFrom: (row.valid_from as number | null) ?? undefined,
+      validTo: (row.valid_to as number | null) ?? undefined,
     };
+  }
+
+  allMemories(): MemoryRow[] {
+    const ids = this.#db
+      .prepare("SELECT entity_id FROM memory ORDER BY entity_id")
+      .all() as unknown as Array<{ entity_id: string }>;
+    const out: MemoryRow[] = [];
+    for (const { entity_id } of ids) {
+      const row = this.getMemory(entity_id);
+      if (row) out.push(row);
+    }
+    return out;
+  }
+
+  resetMemoryCache(): void {
+    transaction(this.#db, () => {
+      // Bypass the append-only guard ONLY here (files→store rebuild).
+      this.#db.exec("DROP TRIGGER IF EXISTS memory_events_no_update");
+      this.#db.exec("DROP TRIGGER IF EXISTS memory_events_no_delete");
+      this.#db.exec("DELETE FROM memory_events");
+      // FTS is contentless — clear the memory entities' rows before the entities.
+      this.#db.exec(
+        "DELETE FROM fts WHERE rowid IN (SELECT rowid FROM entities WHERE kind = 'memory')",
+      );
+      this.#db.exec("DELETE FROM anchors");
+      this.#db.exec("DELETE FROM links WHERE src LIKE 'mem:%' OR dst LIKE 'mem:%'");
+      // Conflicts referencing memory-provenance claims (resolve before the claims).
+      this.#db.exec(
+        `DELETE FROM conflicts WHERE
+           a IN (SELECT id FROM claims WHERE subject LIKE 'mem:%') OR
+           b IN (SELECT id FROM claims WHERE subject LIKE 'mem:%')`,
+      );
+      this.#db.exec("DELETE FROM claims WHERE subject LIKE 'mem:%'");
+      this.#db.exec("DELETE FROM memory");
+      this.#db.exec("DELETE FROM entities WHERE kind = 'memory'");
+      // Restore the append-only guard for normal operation.
+      this.#db.exec(MEMORY_EVENTS_TRIGGERS);
+    });
   }
 
   cacheMemoryStatus(entityId: string, status: MemoryRow["status"]): void {
@@ -581,6 +679,42 @@ class SqliteStore implements Store {
         at,
       );
     return id;
+  }
+
+  nextEventStamp(explicitAt?: number): { id: string; at: number } {
+    // Same monotonic discipline as appendMemoryEvent's default-clock path (F4 /
+    // R2-1): a backwards clock must not regress the total order. Advances the
+    // base, so the caller MUST follow with the insert (single-writer).
+    const nowMs = this.#now();
+    const at = explicitAt ?? (nowMs > this.#lastEventAt ? nowMs : this.#lastEventAt + 1);
+    if (at > this.#lastEventAt) this.#lastEventAt = at;
+    return { id: this.#eventUlid(at), at };
+  }
+
+  ingestMemoryEvent(event: MemoryEvent): void {
+    // Reindex replay — idempotent (INSERT OR IGNORE by the file-supplied id). The
+    // files are the append-only source; the table is a rebuildable cache, so
+    // replaying the same log line twice is a no-op, never a duplicate.
+    this.#db
+      .prepare(
+        `INSERT OR IGNORE INTO memory_events
+           (id, memory_id, verb, actor, reason, refs, carrier, locus, method, authority, at)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+      )
+      .run(
+        event.id,
+        event.memoryId,
+        event.verb,
+        event.actor,
+        event.reason ?? null,
+        JSON.stringify(event.refs ?? {}),
+        event.carrier,
+        event.locus ?? null,
+        event.method,
+        event.authority,
+        event.at,
+      );
+    if (event.at > this.#lastEventAt) this.#lastEventAt = event.at;
   }
 
   memoryEvents(memoryId: string): MemoryEvent[] {

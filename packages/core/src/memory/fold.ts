@@ -22,12 +22,47 @@
  * No LLM / no network — a pure deterministic function of the local event log.
  */
 import type { Store } from "../store/store.ts";
+import type { MemoryFiles } from "./fileStore.ts";
+import { recordDecision } from "./writeThrough.ts";
 import type {
   MemoryDriftReason,
   MemoryEvent,
   MemoryEventVerb,
   MemoryStatus,
 } from "../store/types.ts";
+
+/**
+ * The ONE stable, cross-machine claim key (R8): `subject|predicate|object|locus`.
+ * Committed resolution refs and the E6 dump both address claims through this — a
+ * per-store autoincrement id is meaningless on another clone. Claim field values
+ * (entity ids, fixed predicates, reason classes) never contain `|`.
+ */
+export function claimKeyOf(c: {
+  subject: string;
+  predicate: string;
+  object?: string;
+  locus?: string;
+}): string {
+  return [c.subject, c.predicate, c.object ?? "", c.locus ?? ""].join("|");
+}
+
+function claimKeyById(store: Store, id: number): string | undefined {
+  const c = store.getClaim(id);
+  return c ? claimKeyOf(c) : undefined;
+}
+
+/** Resolve a committed claim key to a LOCAL claim id by content (R8). */
+function localClaimIdForKey(store: Store, key: string): number | undefined {
+  const parts = key.split("|");
+  const [subject, predicate] = parts;
+  const object = parts[2] ?? "";
+  const locus = parts.slice(3).join("|"); // tolerate a `|` inside locus, defensively
+  if (!subject || !predicate) return undefined;
+  for (const c of store.claimsFor(subject, predicate)) {
+    if ((c.object ?? "") === object && (c.locus ?? "") === locus) return c.id;
+  }
+  return undefined;
+}
 
 /** Verbs that assert a memory status. `create` carries its landing status in
  *  `refs.status` (the fold baseline) and is handled separately below. */
@@ -176,12 +211,25 @@ export function resolveConflictViaEvent(
   b: number,
   verb: "resolve-conflict" | "dismiss",
   actor = "cli",
+  files?: MemoryFiles,
 ): void {
-  store.appendMemoryEvent({
+  // R8: the committed bytes must be CONTENT-ADDRESSED — per-store autoincrement
+  // claim ids are meaningless on another clone (they collide or mis-target). Write
+  // stable claim KEYS (`subject|predicate|object|locus`) so a peer resolves the
+  // referenced pair by content on reindex. (Legacy same-store events still carry
+  // numeric `conflictA/B` and remain valid locally — read below.)
+  const keyA = claimKeyById(store, a);
+  const keyB = claimKeyById(store, b);
+  const refs =
+    keyA !== undefined && keyB !== undefined
+      ? { a: keyA, b: keyB }
+      : { conflictA: a, conflictB: b }; // fallback (claim vanished — same-store only)
+  // Human/CLI resolution → the committed MAINLINE decision log (write-through).
+  recordDecision(store, files, "mainline", {
     memoryId,
     verb,
     actor,
-    refs: { conflictA: a, conflictB: b },
+    refs,
     carrier: actor,
     method: "explicit-key",
     authority: "confirmed",
@@ -210,10 +258,21 @@ export function rebuildConflictStatuses(store: Store): void {
   for (const c of store.allConflicts()) store.cacheConflictStatus(c.a, c.b, "open");
   for (const e of store.allMemoryEvents()) {
     if (e.verb !== "resolve-conflict" && e.verb !== "dismiss") continue;
+    const status = e.verb === "dismiss" ? "dismissed" : "resolved";
+    // R8: content-addressed refs (new writes) resolve to LOCAL claim ids by
+    // content; numeric refs (legacy same-store events) apply directly.
+    const ka = e.refs.a;
+    const kb = e.refs.b;
+    if (typeof ka === "string" && typeof kb === "string") {
+      const la = localClaimIdForKey(store, ka);
+      const lb = localClaimIdForKey(store, kb);
+      if (la !== undefined && lb !== undefined) store.cacheConflictStatus(la, lb, status);
+      continue;
+    }
     const a = e.refs.conflictA;
     const b = e.refs.conflictB;
     if (typeof a === "number" && typeof b === "number") {
-      store.cacheConflictStatus(a, b, e.verb === "dismiss" ? "dismissed" : "resolved");
+      store.cacheConflictStatus(a, b, status);
     }
   }
 }

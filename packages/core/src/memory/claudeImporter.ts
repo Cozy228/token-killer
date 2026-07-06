@@ -24,9 +24,11 @@ import { homedir } from "node:os";
 import { basename, join } from "node:path";
 import type { Store } from "../store/store.ts";
 import { fuzzyDuplicate } from "./dedup.ts";
+import type { MemoryFiles } from "./fileStore.ts";
 import { refoldMemory } from "./fold.ts";
 import { hasSentinel, stripSentinelBlocks } from "./sentinel.ts";
 import { deterministicUlid, memoryId } from "./ulid.ts";
+import { recordCreate } from "./writeThrough.ts";
 
 export const MEMORY_GIST_MAX_CHARS = 240;
 const MEMORY_SOURCE = "memory";
@@ -43,6 +45,13 @@ export interface ImportOptions {
    */
   projectRoots?: string[];
   now?: () => number;
+  /**
+   * Committed / overlay file writer (slice 3). Host auto-memory is
+   * auto-generated → it write-throughs to the personal OVERLAY as
+   * `needs-review` (E3: never enters git until a human confirms). Omit for
+   * store-only imports (slice-2 behaviour — e.g. living-repo fixtures).
+   */
+  files?: MemoryFiles;
 }
 
 export interface ImportReport {
@@ -234,16 +243,20 @@ export function importClaudeCodeMemory(store: Store, opts: ImportOptions = {}): 
     // human-confirmed import back to needs-review. `writeMemory` (F2b) already
     // preserves the cached status on conflict, so this is the second guard.
     if (!store.memoryEvents(id).some((e) => e.verb === "create")) {
-      store.appendMemoryEvent({
+      // Write-through: host auto-memory → the personal OVERLAY as needs-review
+      // (E3). The committed line + store event share one monotonic stamp.
+      recordCreate(store, opts.files, "overlay", {
         memoryId: id,
-        verb: "create",
+        gist: safeGist.length > 0 ? safeGist : deriveName(frontmatter, body, file),
+        detail: safeDetail,
+        origin: `host-import:${HOST}`,
         actor: `host:${HOST}`,
-        refs: { status: "needs-review" },
         carrier: `host:${HOST}`,
         method: "structural",
         authority: "inferred",
-        // `at` omitted → store clock, consistent with lifecycle events so a later
-        // human confirm always total-orders after this create.
+        status: "needs-review",
+        anchors: [],
+        sessionRef: frontmatter.originSessionId,
       });
       refoldMemory(store, id, gen); // materialize the cache from the new event
     }

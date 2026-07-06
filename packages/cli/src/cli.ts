@@ -27,6 +27,7 @@ import {
   installMcpRegistration,
   listMemories,
   openStore,
+  MemoryFiles,
   recall,
   RefreshEngine,
   remember,
@@ -139,6 +140,8 @@ function cmdRemember(io: RunIo, args: ParsedArgs): number {
       detail: args.flags.detail?.[0],
       anchors: args.flags.anchor,
       supersedes: args.flags.supersedes?.[0],
+      // Slice 3: write-through to committed `.ctx/` files (agent → overlay).
+      files: MemoryFiles.forStore(store),
     });
     if (result.ok) {
       io.out(`remembered [${result.handle}] — ${result.gist}`);
@@ -189,7 +192,9 @@ function cmdMemory(io: RunIo, args: ParsedArgs): number {
     return 2;
   }
   return withStore(io, (store) => {
-    const result = setMemoryLifecycle(store, id, target);
+    // Slice 3: CLI/human lifecycle decisions write-through to the committed
+    // MAINLINE decision log (E3).
+    const result = setMemoryLifecycle(store, id, target, MemoryFiles.forStore(store));
     io.out(result.ok ? `${result.entityId} → ${result.status}` : result.guidance);
     return 0;
   });

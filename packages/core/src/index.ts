@@ -168,6 +168,34 @@ export type {
   EntityCandidate,
 } from "./memory/remember.ts";
 export { ulid, deterministicUlid, memoryId } from "./memory/ulid.ts";
+// memory storage locus (slice 3): committed `.ctx/` files + reindex + migration
+export { MemoryFiles, ulidOf } from "./memory/fileStore.ts";
+export type { MemoryZone } from "./memory/fileStore.ts";
+export {
+  serializeMemory,
+  parseMemory,
+  serializeDecision,
+  parseDecision,
+  lineTag,
+} from "./memory/serialize.ts";
+export type { SerializedMemory, SerializedDecision } from "./memory/serialize.ts";
+export {
+  reindexMemoryFromFiles,
+  pullDeltaReindex,
+  recomputeDriftAtReindex,
+} from "./memory/reindex.ts";
+export type { PullDeltaResult } from "./memory/reindex.ts";
+export {
+  migrateStoreMemoryToFiles,
+  isMigrationDue,
+  MIGRATION_MARKER,
+} from "./memory/exportMigration.ts";
+export type { MigrationReport } from "./memory/exportMigration.ts";
+export { logicalDump, dumpJson } from "./memory/dump.ts";
+export type { MemoryDump } from "./memory/dump.ts";
+export { scanForSecret, scanMemoryForSecret, secretRemediationNote } from "./memory/secretGuard.ts";
+export type { SecretFinding } from "./memory/secretGuard.ts";
+export { currentHeadCommit, isAncestor, classifyAbsentAnchor } from "./memory/anchoredAt.ts";
 export {
   SENTINEL_BEGIN,
   SENTINEL_END,
