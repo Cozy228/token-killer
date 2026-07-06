@@ -185,6 +185,9 @@ export interface MemoryInput {
   sessionRef?: string;
   authority: "inferred" | "confirmed";
   status?: MemoryStatus;
+  /** C5 bitemporal validity — explicit only, never inferred. */
+  validFrom?: number;
+  validTo?: number;
 }
 
 export interface MemoryRow {
@@ -203,6 +206,9 @@ export interface MemoryRow {
    * fold with this annotation (A5); exposed for rebuild + diagnostics.
    */
   driftReason: MemoryDriftReason | undefined;
+  /** C5 bitemporal validity (explicit only) — null columns = "valid now". */
+  validFrom: number | undefined;
+  validTo: number | undefined;
 }
 
 /** One row of the memory enumeration (A6): the lifecycle-listing view joining a
