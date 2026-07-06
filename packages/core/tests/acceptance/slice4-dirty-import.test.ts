@@ -29,6 +29,7 @@ import { memoryOpsReport } from "../../src/memory/ops.ts";
 import { serializeMemory } from "../../src/memory/serialize.ts";
 import { rankGotchas } from "../../src/push/rank.ts";
 import { renderAtTier } from "../../src/select/project.ts";
+import { serveContext } from "../../src/serve/serve.ts";
 import { cleanupTempDir, git, makeTempDir } from "../helpers/sandbox.ts";
 import type { Budget } from "../../src/ingest/adapter.ts";
 
@@ -273,6 +274,21 @@ describe("acceptance: slice 4 — memory dirty source + import→overlay→confi
     }
     expect(min, `warm memory dirtyCheck ${min.toFixed(2)}ms (target <20ms)`).toBeLessThan(
       20 * factor,
+    );
+
+    // Warm serve over the large memory fixture is a single indexed read, no log
+    // replay + no git spawn (A11 serve < 150ms). Drill a memory by its handle.
+    const handle = store.internHandle("mem:00000000000000000000000000");
+    await serveContext({ store }, { handle }); // warm the path once
+    let serveMin = Number.POSITIVE_INFINITY;
+    for (let i = 0; i < 12; i++) {
+      const t0 = performance.now();
+      await serveContext({ store }, { handle });
+      const ms = performance.now() - t0;
+      if (ms < serveMin) serveMin = ms;
+    }
+    expect(serveMin, `warm serve ${serveMin.toFixed(2)}ms (target <150ms)`).toBeLessThan(
+      150 * factor,
     );
 
     // E8 ops report is a cheap read (doctor surface): the review queue is drained.
