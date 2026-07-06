@@ -42,12 +42,16 @@ import type {
   Link,
   LinkInput,
   Locator,
+  MemoryDriftReason,
+  MemoryEvent,
+  MemoryEventInput,
   MemoryInput,
   MemoryListRow,
   MemoryRow,
   MemoryStatus,
   ReadThroughResult,
 } from "./types.ts";
+import { monotonicUlidFactory } from "../memory/ulid.ts";
 
 export const LEASE_TTL_MS = 30_000;
 export const MEMORY_GIST_MAX_CHARS = 240;
@@ -124,7 +128,17 @@ export interface Store {
   // conflicts
   addConflict(a: number, b: number, kind: ConflictKind): void;
   conflicts(status?: ConflictStatus): Conflict[];
-  setConflictStatus(a: number, b: number, status: ConflictStatus): void;
+  /** Every conflict regardless of status — the rebuild path re-derives their
+   *  cached `status` from resolution events (conflicts.status = folded state). */
+  allConflicts(): Conflict[];
+  /**
+   * Write a conflict's CACHED status. Internal cache-write — conflict
+   * resolve/dismiss go through the fold module's `resolveConflictViaEvent`
+   * (append event, then materialize) (C4/Decision 5). Named `cache…` so any call
+   * site reads as a cache write; production callers are `memory/fold.ts` + this
+   * file only (guarded by a test). A store-primitive unit test exercises it.
+   */
+  cacheConflictStatus(a: number, b: number, status: ConflictStatus): void;
   /**
    * OPEN `stale-suspect` conflicts whose `a` claim's subject is this memory —
    * the CURRENT-STATE staleness signal (E7): rank/push read it, the lifecycle
@@ -137,7 +151,24 @@ export interface Store {
   // memory + anchors (store IS the source of truth here — §2 notes exception)
   writeMemory(input: MemoryInput): void;
   getMemory(entityId: string): MemoryRow | undefined;
-  setMemoryStatus(entityId: string, status: MemoryRow["status"]): void;
+  /**
+   * Write a memory's CACHED status. INTERNAL cache-write used only by the status
+   * fold (`memory/fold.ts`) to materialize the E2/E5 fold composed with the drift
+   * annotation (A5). Lifecycle verbs append an immutable event and refold — they
+   * never call this. Named `cache…` so any call site reads as a cache write;
+   * production callers are `memory/fold.ts` + this file only (guarded by a test).
+   */
+  cacheMemoryStatus(entityId: string, status: MemoryRow["status"]): void;
+  /** Set the derived anchor-drift annotation (S4) — per-checkout index state,
+   *  never an event. `null` clears it (a human confirm affirms freshness). */
+  setMemoryDrift(entityId: string, reason: MemoryDriftReason | null): void;
+  /** Append an immutable lifecycle/decision event (append-only; the fold source).
+   *  Returns the event ULID. Never updates/deletes (DB triggers enforce it). */
+  appendMemoryEvent(input: MemoryEventInput): string;
+  /** A memory's events in total order `(at, then ULID)` (E2) — the fold input. */
+  memoryEvents(memoryId: string): MemoryEvent[];
+  /** Every lifecycle/decision event, total-ordered — the rebuild path input. */
+  allMemoryEvents(): MemoryEvent[];
   setAnchors(memoryId: string, entityIds: string[]): void;
   anchorsOf(memoryId: string): string[];
   /**
@@ -222,6 +253,13 @@ class SqliteStore implements Store {
   readonly dbPath: string;
   readonly #db: DatabaseSync;
   readonly #now: () => number;
+  /** Monotonic ULID source for event ids — the E2 total-order tiebreaker must
+   *  reflect causal order even for two events sharing a millisecond. */
+  readonly #eventUlid = monotonicUlidFactory();
+  /** Monotonic base for default-clock event `at` (F4): a backwards clock must not
+   *  regress the total order. Seeded from the max existing event `at` at open, so
+   *  it survives process restarts. */
+  #lastEventAt = -1;
 
   constructor(db: DatabaseSync, dbPath: string, res: ShardResolution, now: () => number) {
     this.#db = db;
@@ -230,6 +268,10 @@ class SqliteStore implements Store {
     this.projectRoot = res.projectRoot;
     this.mainRoot = res.mainRoot;
     this.#now = now;
+    const maxAt = this.#db.prepare("SELECT MAX(at) AS m FROM memory_events").get() as {
+      m: number | null;
+    };
+    this.#lastEventAt = maxAt.m ?? -1;
   }
 
   close(): void {
@@ -423,7 +465,11 @@ class SqliteStore implements Store {
       .all(status) as unknown as Conflict[];
   }
 
-  setConflictStatus(a: number, b: number, status: ConflictStatus): void {
+  allConflicts(): Conflict[] {
+    return this.#db.prepare("SELECT * FROM conflicts").all() as unknown as Conflict[];
+  }
+
+  cacheConflictStatus(a: number, b: number, status: ConflictStatus): void {
     this.#db.prepare("UPDATE conflicts SET status = ? WHERE a = ? AND b = ?").run(status, a, b);
   }
 
@@ -448,12 +494,15 @@ class SqliteStore implements Store {
     }
     this.#db
       .prepare(
+        // `status` applies on INSERT only; on CONFLICT it is PRESERVED (F2): the
+        // cached status is the fold output, so a re-import/re-write must NOT reset
+        // it — that would clobber a human confirm. The fold (memory/fold.ts) is the
+        // only writer of `status` after creation, via `cacheMemoryStatus`.
         `INSERT INTO memory (entity_id, gist, detail, origin, session_ref, authority, status)
          VALUES (?, ?, ?, ?, ?, ?, ?)
          ON CONFLICT(entity_id) DO UPDATE SET
            gist = excluded.gist, detail = excluded.detail, origin = excluded.origin,
-           session_ref = excluded.session_ref, authority = excluded.authority,
-           status = excluded.status`,
+           session_ref = excluded.session_ref, authority = excluded.authority`,
       )
       .run(
         input.entityId,
@@ -481,11 +530,71 @@ class SqliteStore implements Store {
       status: row.status as MemoryRow["status"],
       servedCount: row.served_count as number,
       lastServed: (row.last_served as number | null) ?? undefined,
+      driftReason: (row.drift_reason as MemoryDriftReason | null) ?? undefined,
     };
   }
 
-  setMemoryStatus(entityId: string, status: MemoryRow["status"]): void {
+  cacheMemoryStatus(entityId: string, status: MemoryRow["status"]): void {
     this.#db.prepare("UPDATE memory SET status = ? WHERE entity_id = ?").run(status, entityId);
+  }
+
+  setMemoryDrift(entityId: string, reason: MemoryDriftReason | null): void {
+    this.#db
+      .prepare("UPDATE memory SET drift_reason = ? WHERE entity_id = ?")
+      .run(reason, entityId);
+  }
+
+  appendMemoryEvent(input: MemoryEventInput): string {
+    // F4 (R2-1): the default-clock path is STRICTLY monotonic per writer — `at`
+    // must be > the last default event's `at`, not just ≥ it. `#lastEventAt` is
+    // seeded from `MAX(at)` at open, but the ULID factory restarts fresh each
+    // process; a mere clamp to `max(now, last)` could produce an EQUAL `at` whose
+    // fresh-random ULID sorts before a prior (higher-random) event at the same
+    // ms, inverting `(at, id)` across a process restart with a rolled-back clock.
+    // Strict `+1` keeps the total order monotonic regardless of the ULID. The
+    // ms-level skew on same-ms bursts is accepted (and harmless: order is what
+    // matters). An EXPLICIT `input.at` (backfill / tests) is stored VERBATIM but
+    // still advances the base so later default events stay strictly above it.
+    // Sample the clock ONCE — a rollback between two `this.#now()` reads could
+    // otherwise still yield `at <= #lastEventAt`, which a fresh ULID factory
+    // cannot compensate for across a restart (SQL orders by `at` first).
+    const nowMs = this.#now();
+    const at = input.at ?? (nowMs > this.#lastEventAt ? nowMs : this.#lastEventAt + 1);
+    if (at > this.#lastEventAt) this.#lastEventAt = at;
+    const id = input.id ?? this.#eventUlid(at);
+    this.#db
+      .prepare(
+        `INSERT INTO memory_events (id, memory_id, verb, actor, reason, refs, carrier, locus, method, authority, at)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+      )
+      .run(
+        id,
+        input.memoryId,
+        input.verb,
+        input.actor,
+        input.reason ?? null,
+        JSON.stringify(input.refs ?? {}),
+        input.carrier,
+        input.locus ?? null,
+        input.method,
+        input.authority,
+        at,
+      );
+    return id;
+  }
+
+  memoryEvents(memoryId: string): MemoryEvent[] {
+    const rows = this.#db
+      .prepare("SELECT * FROM memory_events WHERE memory_id = ? ORDER BY at, id")
+      .all(memoryId) as unknown as Array<Record<string, unknown>>;
+    return rows.map((r) => memoryEventFromRow(r));
+  }
+
+  allMemoryEvents(): MemoryEvent[] {
+    const rows = this.#db
+      .prepare("SELECT * FROM memory_events ORDER BY at, id")
+      .all() as unknown as Array<Record<string, unknown>>;
+    return rows.map((r) => memoryEventFromRow(r));
   }
 
   setAnchors(memoryId: string, entityIds: string[]): void {
@@ -828,6 +937,22 @@ function claimFromRow(row: Record<string, unknown>): Claim {
     authority: row.authority as Claim["authority"],
     at: row.at as number,
     gen: row.gen as number,
+  };
+}
+
+function memoryEventFromRow(row: Record<string, unknown>): MemoryEvent {
+  return {
+    id: row.id as string,
+    memoryId: row.memory_id as string,
+    verb: row.verb as MemoryEvent["verb"],
+    actor: row.actor as string,
+    reason: (row.reason as string | null) ?? undefined,
+    refs: JSON.parse((row.refs as string) ?? "{}") as Record<string, unknown>,
+    carrier: row.carrier as string,
+    locus: (row.locus as string | null) ?? undefined,
+    method: row.method as MemoryEvent["method"],
+    authority: row.authority as MemoryEvent["authority"],
+    at: row.at as number,
   };
 }
 

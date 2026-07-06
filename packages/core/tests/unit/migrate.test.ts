@@ -16,11 +16,11 @@ describe("migrations (forward-only, NNN-<name>.sql, one transaction each)", () =
     cleanupTempDir(dir);
   });
 
-  test("fresh DB: applies 001-init and lands the §2 tables", () => {
+  test("fresh DB: applies 001-init + 002-memory-events and lands the §2 tables", () => {
     const db = openDatabase(join(dir, "store.sqlite"));
     const outcome = runMigrations(db);
-    expect(outcome.applied).toEqual([1]);
-    expect(outcome.schemaVersion).toBe(1);
+    expect(outcome.applied).toEqual([1, 2]); // slice 2 added 002-memory-events
+    expect(outcome.schemaVersion).toBe(2);
     const tables = (
       db
         .prepare("SELECT name FROM sqlite_master WHERE type IN ('table','view') ORDER BY name")
@@ -38,6 +38,7 @@ describe("migrations (forward-only, NNN-<name>.sql, one transaction each)", () =
       "generations",
       "meta",
       "fts",
+      "memory_events",
     ]) {
       expect(tables).toContain(required);
     }
@@ -49,7 +50,7 @@ describe("migrations (forward-only, NNN-<name>.sql, one transaction each)", () =
     runMigrations(db);
     const again = runMigrations(db);
     expect(again.applied).toEqual([]);
-    expect(schemaVersionOf(db)).toBe(1);
+    expect(schemaVersionOf(db)).toBe(2);
     db.close();
   });
 

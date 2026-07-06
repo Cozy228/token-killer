@@ -11,6 +11,7 @@
  * the code adapter writes so the boundary/shadow graph has edges to walk.
  */
 import { posix } from "node:path";
+import { refoldMemory } from "../../memory/fold.ts";
 import type { Store } from "../../store/store.ts";
 import type { SymbolRecord } from "../../extract/code/symbol.ts";
 
@@ -283,7 +284,28 @@ export function flagAnchorDrift(
  * memory to `needs-review`; `body-changed` does NOT flip status (noise control)
  * — it is down-ranked only, via the `stale-reason` claim the rank freshness
  * penalty reads. All three still file the conflict + claim (visible, not hidden).
+ *
+ * S4: drift is DERIVED, per-checkout INDEX state — recorded as the memory's
+ * `drift_reason` annotation (NOT an event, NEVER committed) and composed into
+ * the served status by the fold (`composeStatus`). This keeps the append-only
+ * event log untouched by a branch checkout, and a refold/rebuild never erases an
+ * active drift annotation. The A5 status effect is applied by `composeStatus`.
  */
+/** Drift severity ladder (F5): target-removed ≥ signature-changed > body-changed
+ *  > no-drift. Escalate-only writes never downgrade the annotation. */
+function driftSeverity(reason: StaleReasonClass | null): number {
+  switch (reason) {
+    case "target-removed":
+      return 3;
+    case "signature-changed":
+      return 2;
+    case "body-changed":
+      return 1;
+    default:
+      return 0;
+  }
+}
+
 export function flagAnchored(
   store: Store,
   targetId: string,
@@ -294,7 +316,23 @@ export function flagAnchored(
   for (const link of store.linksTo(targetId, "anchoredTo")) {
     const memId = link.src;
     if (!store.getMemory(memId)) continue;
-    if (reason !== "body-changed") store.setMemoryStatus(memId, "needs-review");
+    // Drift annotation contract (F5 + R2-2 arbitration): the drift class is
+    // ESCALATE-ONLY AND STICKY-UNTIL-CONFIRM, mirroring the open stale-suspect
+    // conflict it files.
+    //   - escalate-only: within a reingest a memory anchored to two symbols may
+    //     be flagged twice; a lower class (body-changed) must NOT overwrite a
+    //     higher one (signature-changed/target-removed) and drop the needs-review
+    //     effect. Equal-or-higher replaces; lower is ignored.
+    //   - sticky: a LATER reingest observing only a lower class also does not
+    //     downgrade — once flagged needs-review, the ONLY recovery is a human
+    //     `confirm` (E7-recovery). Auto-downgrade would silently clear a requested
+    //     review ("conflicts surfaced, never auto-merged"). This is the ratified
+    //     Phase-1 semantic, not a bug. Per-checkout wholesale re-derivation of
+    //     drift is slice-3 reindex scope (S4), which resets annotations from
+    //     scratch on branch switch — revisit the stickiness there deliberately.
+    const current = store.getMemory(memId)?.driftReason ?? null;
+    if (driftSeverity(reason) >= driftSeverity(current)) store.setMemoryDrift(memId, reason);
+    refoldMemory(store, memId, gen); // recompose served status = fold ∘ drift (A5)
     // `stale-reason` powers the rank down-rank; keep it for all reason classes.
     const reasonClaim = store.addClaim({
       subject: memId,

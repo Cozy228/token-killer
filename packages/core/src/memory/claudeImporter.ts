@@ -24,6 +24,7 @@ import { homedir } from "node:os";
 import { basename, join } from "node:path";
 import type { Store } from "../store/store.ts";
 import { fuzzyDuplicate } from "./dedup.ts";
+import { refoldMemory } from "./fold.ts";
 import { hasSentinel, stripSentinelBlocks } from "./sentinel.ts";
 import { deterministicUlid, memoryId } from "./ulid.ts";
 
@@ -226,6 +227,26 @@ export function importClaudeCodeMemory(store: Store, opts: ImportOptions = {}): 
       // clean current fact or pushed until a human confirms it.
       status: "needs-review",
     });
+    // The `create` event carries the landing status so the fold reproduces
+    // `needs-review` on any rebuild (A3/E3). E3's overlay landing zone is slice 4.
+    // F2: append it ONCE — a re-import of an unchanged file (same deterministic
+    // id) must NOT add a duplicate later-`at` create that would re-flip a
+    // human-confirmed import back to needs-review. `writeMemory` (F2b) already
+    // preserves the cached status on conflict, so this is the second guard.
+    if (!store.memoryEvents(id).some((e) => e.verb === "create")) {
+      store.appendMemoryEvent({
+        memoryId: id,
+        verb: "create",
+        actor: `host:${HOST}`,
+        refs: { status: "needs-review" },
+        carrier: `host:${HOST}`,
+        method: "structural",
+        authority: "inferred",
+        // `at` omitted → store clock, consistent with lifecycle events so a later
+        // human confirm always total-orders after this create.
+      });
+      refoldMemory(store, id, gen); // materialize the cache from the new event
+    }
     store.ftsIndex(id, {
       name: deriveName(frontmatter, body, file),
       text: `${safeGist} ${safeDetail ?? ""}`.trim(),

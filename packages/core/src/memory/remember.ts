@@ -15,9 +15,10 @@ import { existsSync } from "node:fs";
 import { isAbsolute, join } from "node:path";
 import { shortHandleCandidate } from "../store/handles.ts";
 import type { Store } from "../store/store.ts";
-import type { EntityKind, Facet, MemoryStatus } from "../store/types.ts";
+import type { EntityKind, Facet, MemoryEventVerb, MemoryStatus } from "../store/types.ts";
 import { MEMORY_GIST_MAX_CHARS } from "./claudeImporter.ts";
 import { fuzzyDuplicate } from "./dedup.ts";
+import { refoldMemory, resolveConflictViaEvent } from "./fold.ts";
 import { ulid, memoryId } from "./ulid.ts";
 
 const MEMORY_SOURCE = "memory";
@@ -296,6 +297,20 @@ export function remember(store: Store, input: RememberInput): RememberResult {
     authority: input.authority ?? "confirmed",
     status: "active",
   });
+  // The `create` event is the fold's baseline (its `refs.status` landing status).
+  // remember() lands `active` today; the E3 CLI/MCP caller-surface split (host
+  // imports / agent writes → needs-review overlay) is slice 4, not here.
+  store.appendMemoryEvent({
+    memoryId: id,
+    verb: "create",
+    actor: "agent",
+    refs: { status: "active" },
+    carrier: MEMORY_SOURCE,
+    method: "explicit-key",
+    authority: input.authority ?? "confirmed",
+    // `at` intentionally omitted → the store stamps its own clock, so ALL events
+    // (create / lifecycle / drift) share one time base and total-order correctly.
+  });
   store.setAnchors(id, plan.resolved);
   for (const anchorId of plan.resolved) {
     const claimId = store.addClaim({
@@ -322,7 +337,19 @@ export function remember(store: Store, input: RememberInput): RememberResult {
   });
 
   if (supersededId !== undefined) {
-    store.setMemoryStatus(supersededId, "superseded"); // old entry KEPT, just re-statused
+    // Decision 5: supersede is an append-only decision EVENT; the old entry is
+    // KEPT and its status is DERIVED from the fold, never overwritten in place.
+    store.appendMemoryEvent({
+      memoryId: supersededId,
+      verb: "supersede",
+      actor: "agent",
+      reason: `superseded by ${id}`,
+      refs: { supersededBy: id },
+      carrier: MEMORY_SOURCE,
+      method: "explicit-key",
+      authority: input.authority ?? "confirmed",
+    });
+    refoldMemory(store, supersededId, gen); // fold → superseded (cache write)
     const claimId = store.addClaim({
       subject: id,
       predicate: "supersedes",
@@ -448,6 +475,14 @@ export const LIFECYCLE_STATUS: Record<string, MemoryStatus> = {
   review: "needs-review",
 };
 
+/** The event verb that produces each target status (event-log write path). */
+const LIFECYCLE_VERB_FOR_STATUS: Record<MemoryStatus, MemoryEventVerb> = {
+  active: "confirm",
+  "needs-review": "review",
+  retired: "retire",
+  superseded: "supersede",
+};
+
 export type LifecycleResult =
   | { ok: true; entityId: string; status: MemoryStatus }
   | { ok: false; reason: "unknown-handle" | "not-memory"; guidance: string };
@@ -472,19 +507,33 @@ export function setMemoryLifecycle(
       guidance: `\`${resolved.entityId}\` is not a memory entry.`,
     };
   }
-  store.setMemoryStatus(resolved.entityId, status);
+  // A4: lifecycle is a human/CLI decision — recorded as an append-only EVENT;
+  // the status is DERIVED by the fold, never overwritten in place (Decision 5).
+  const memId = resolved.entityId;
+  const gen = store.publishedGen(MEMORY_SOURCE);
+  store.appendMemoryEvent({
+    memoryId: memId,
+    verb: LIFECYCLE_VERB_FOR_STATUS[status],
+    actor: "cli",
+    carrier: "cli",
+    method: "explicit-key",
+    authority: "confirmed",
+  });
   // `confirm` (→ active) is the recovery verb: the human re-affirms the note, so
-  // its open stale-suspect conflicts resolve and rank/push standing is restored.
-  // Idempotent for an already-active row (exactly the body-changed drift case:
-  // no status flip happened, the confirm just clears the flag). The stale-reason
-  // claims are untouched — they are the permanent audit trail. `retire` leaves
-  // conflicts as-is (the status gate already excludes retired everywhere).
+  // the derived drift annotation is cleared (freshness affirmed) and its open
+  // stale-suspect conflicts resolve — each resolution is ITSELF an append-only
+  // decision event carrying the conflict reference (C4). Idempotent for an
+  // already-active row (the body-changed drift case: no fold flip, just clears
+  // the flag). The `stale-reason` claims are untouched — the permanent audit
+  // trail. `retire` leaves conflicts as-is (retired is status-gated everywhere).
   if (status === "active") {
-    for (const c of store.openStaleSuspects(resolved.entityId)) {
-      store.setConflictStatus(c.a, c.b, "resolved");
+    store.setMemoryDrift(memId, null);
+    for (const c of store.openStaleSuspects(memId)) {
+      resolveConflictViaEvent(store, memId, c.a, c.b, "resolve-conflict");
     }
   }
-  return { ok: true, entityId: resolved.entityId, status };
+  const effective = refoldMemory(store, memId, gen);
+  return { ok: true, entityId: memId, status: effective };
 }
 
 /**

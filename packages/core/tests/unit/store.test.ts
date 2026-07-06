@@ -103,7 +103,7 @@ describe("Store (SQLite spine)", () => {
   test("conflicts: open by default, status transitions", () => {
     store.addConflict(1, 2, "stale-suspect");
     expect(store.conflicts()).toHaveLength(1);
-    store.setConflictStatus(1, 2, "dismissed");
+    store.cacheConflictStatus(1, 2, "dismissed");
     expect(store.conflicts()).toHaveLength(0);
     expect(store.conflicts("dismissed")).toHaveLength(1);
   });
@@ -131,7 +131,7 @@ describe("Store (SQLite spine)", () => {
         authority: "confirmed",
       }),
     ).toThrow(RangeError);
-    store.setMemoryStatus("mem:01TEST", "superseded");
+    store.cacheMemoryStatus("mem:01TEST", "superseded");
     expect(store.getMemory("mem:01TEST")?.status).toBe("superseded");
   });
 

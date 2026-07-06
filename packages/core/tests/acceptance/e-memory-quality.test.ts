@@ -12,6 +12,7 @@ import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, test } from "vitest";
 import { importClaudeCodeMemory } from "../../src/memory/claudeImporter.ts";
 import { fuzzyDuplicate } from "../../src/memory/dedup.ts";
+import { rebuildMemoryStatuses } from "../../src/memory/fold.ts";
 import {
   listMemories,
   recall,
@@ -430,4 +431,149 @@ describe("acceptance: E memory-quality", () => {
   test.todo(
     "EG-drawer/EG-readonly: the ctx guide loopback (Hono read-only endpoints, evidence drawer, write-free handlers) — lands with M3",
   );
+
+  // ---- Slice 2 — event log + derived status fold ----
+
+  // E5 collision · label: contradiction
+  test("S2-E5: retire then supersede on one memory files a contradiction; later wins; both events kept", () => {
+    const m = remb("collision candidate", { note: "collision candidate" });
+    setMemoryLifecycle(store, m.handle, "retired"); // retire @ t1
+    const v2 = remb("collision replacement", {
+      note: "collision replacement",
+      supersedes: m.handle,
+    }); // supersede @ t2
+
+    // later-by-total-order (supersede) wins the derived status.
+    expect(store.getMemory(m.entityId)?.status).toBe("superseded");
+    // a contradiction conflict is filed for human review (nothing auto-merged).
+    const contradiction = store
+      .conflicts("open")
+      .filter((c) => c.kind === "contradiction")
+      .find((c) => store.getClaim(c.a)?.subject === m.entityId);
+    expect(contradiction, "contradiction conflict filed").toBeDefined();
+    // BOTH colliding decisions are retained in the append-only log.
+    const verbs = store.memoryEvents(m.entityId).map((e) => e.verb);
+    expect(verbs).toContain("retire");
+    expect(verbs).toContain("supersede");
+    expect(recall(store, m.entityId).ok).toBe(true); // old memory kept
+    void v2;
+  });
+
+  // Lifecycle verbs append provenance-carrying events; old rows kept.
+  test("S2: lifecycle verbs append immutable, provenance-carrying events (create baseline + verb)", () => {
+    const m = remb("lifecycle provenance", { note: "lifecycle provenance" });
+    const created = store.memoryEvents(m.entityId);
+    expect(created).toHaveLength(1);
+    expect(created[0]?.verb).toBe("create");
+    expect(created[0]?.refs.status).toBe("active"); // remember lands active (E3 overlay = slice 4)
+
+    setMemoryLifecycle(store, m.handle, "retired");
+    const after = store.memoryEvents(m.entityId);
+    expect(after).toHaveLength(2);
+    const retire = after[1]!;
+    expect(retire.verb).toBe("retire");
+    expect(retire.actor).toBe("cli"); // A4: lifecycle is a human/CLI decision
+    expect(retire.carrier).toBe("cli");
+    expect(retire.at).toBeGreaterThanOrEqual(created[0]!.at); // total-orders after create
+  });
+
+  // Confirm resolves the stale-suspect via an EVENT; drift appends NO events.
+  test("S2: drift never appends events; confirm resolves the conflict via a resolve-conflict event", async () => {
+    await ingestSources(store);
+    const symId = redeliverSymbolId(store)!;
+    const note = "redeliver holds the idempotency key";
+    const mem = remb(note, { note, anchors: [symId] });
+    expect(store.memoryEvents(mem.entityId)).toHaveLength(1); // just `create`
+
+    // Anchor drift (signature change) — derived index state, NOT an event (S4).
+    changeRedeliverSignature(repo);
+    await reingestGitCode(store);
+    expect(store.getMemory(mem.entityId)?.status).toBe("needs-review"); // composed (A5)
+    expect(store.getMemory(mem.entityId)?.driftReason).toBe("signature-changed");
+    expect(store.memoryEvents(mem.entityId), "drift added no events").toHaveLength(1);
+
+    // Human confirm = a decision event; it clears drift + resolves the conflict
+    // via an appended resolve-conflict event carrying the conflict reference.
+    setMemoryLifecycle(store, mem.handle, "active");
+    const verbs = store.memoryEvents(mem.entityId).map((e) => e.verb);
+    expect(verbs).toContain("confirm");
+    expect(verbs).toContain("resolve-conflict");
+    expect(store.getMemory(mem.entityId)?.status).toBe("active");
+    expect(store.getMemory(mem.entityId)?.driftReason).toBeUndefined(); // drift cleared
+    expect(store.openStaleSuspects(mem.entityId)).toHaveLength(0);
+  });
+
+  // Rebuild preserves the drift annotation AND the fold (invariant b).
+  test("S2: rebuild recomposes fold ∘ drift — drift annotation survives a status wipe", async () => {
+    await ingestSources(store);
+    const symId = redeliverSymbolId(store)!;
+    const note = "redeliver never double-dispatches";
+    const mem = remb(note, { note, anchors: [symId] });
+    changeRedeliverSignature(repo);
+    await reingestGitCode(store);
+    expect(store.getMemory(mem.entityId)?.status).toBe("needs-review");
+
+    // Corrupt the cached status, then rebuild purely from events + drift column.
+    store.cacheMemoryStatus(mem.entityId, "active");
+    rebuildMemoryStatuses(store, store.publishedGen("memory"));
+    expect(store.getMemory(mem.entityId)?.status).toBe("needs-review"); // drift recomposed, not erased
+    expect(store.getMemory(mem.entityId)?.driftReason).toBe("signature-changed");
+  });
+
+  // A1: retired (now event-derived) stays hard-excluded from selection.
+  test("S2-A1: an event-derived retire hard-excludes the memory from selection; recall still works", async () => {
+    const keep = remb(GIST.active1, { note: GIST.active1, anchors: ["file:src/retry.ts"] });
+    const gone = remb("obsolete throwaway gotcha about retry", {
+      note: "obsolete throwaway gotcha about retry",
+      anchors: ["file:src/retry.ts"],
+    });
+    setMemoryLifecycle(store, gone.handle, "retired");
+
+    const r = await serveSearch({ store, now }, { query: "retry idempotency metadata" });
+    const ids = r.diag.search!.items.map((i) => i.entityId);
+    expect(ids).not.toContain(gone.entityId); // retired excluded from pull
+    expect(recall(store, gone.handle).ok).toBe(true); // but recoverable by handle
+    void keep;
+  });
+
+  // F2: re-import must not clobber a human confirm (no duplicate create event).
+  test("S2-F2: re-import of an unchanged file preserves a human confirm", () => {
+    seedHostMemory(claudeHome, store.projectRoot);
+    const r1 = importClaudeCodeMemory(store, {
+      projectRoots: [store.projectRoot],
+      claudeHome,
+      now,
+    });
+    const id = r1.written[0]!;
+    expect(store.getMemory(id)?.status).toBe("needs-review");
+
+    // Human confirms the imported memory → active.
+    setMemoryLifecycle(store, store.internHandle(id), "active");
+    expect(store.getMemory(id)?.status).toBe("active");
+    expect(store.memoryEvents(id).filter((e) => e.verb === "create")).toHaveLength(1);
+
+    // Re-import the SAME files (same mtime → same id): must be inert on status.
+    importClaudeCodeMemory(store, { projectRoots: [store.projectRoot], claudeHome, now });
+    expect(store.getMemory(id)?.status, "confirm not clobbered").toBe("active");
+    expect(
+      store.memoryEvents(id).filter((e) => e.verb === "create"),
+      "no duplicate create event",
+    ).toHaveLength(1);
+  });
+
+  // A7: served_count is telemetry-only — untouched by lifecycle / fold / drift.
+  test("S2-A7: served_count is untouched by remember / lifecycle / drift", async () => {
+    await ingestSources(store);
+    const symId = redeliverSymbolId(store)!;
+    const mem = remb("redeliver keeps ordering", {
+      note: "redeliver keeps ordering",
+      anchors: [symId],
+    });
+    expect(store.getMemory(mem.entityId)?.servedCount).toBe(0);
+    setMemoryLifecycle(store, mem.handle, "needs-review");
+    changeRedeliverSignature(repo);
+    await reingestGitCode(store);
+    setMemoryLifecycle(store, mem.handle, "active");
+    expect(store.getMemory(mem.entityId)?.servedCount).toBe(0); // never a ranking/lifecycle input
+  });
 });

@@ -52,6 +52,46 @@ export function ulid(nowMs: number = Date.now(), random: Uint8Array = randomByte
   return encodeTime(nowMs, TIME_LEN) + encodeRandom(random, RAND_LEN);
 }
 
+/** Increment a Crockford base32 string by one, with carry (for monotonic ULIDs). */
+function incrementCrockford(s: string): string {
+  const chars = s.split("");
+  for (let i = chars.length - 1; i >= 0; i--) {
+    const idx = CROCKFORD.indexOf(chars[i] as string);
+    if (idx < 31) {
+      chars[i] = CROCKFORD[idx + 1] as string;
+      return chars.join("");
+    }
+    chars[i] = CROCKFORD[0] as string; // carry into the next-higher char
+  }
+  return chars.join(""); // 80-bit overflow (practically unreachable) — wraps
+}
+
+/**
+ * A MONOTONIC ULID factory (the E2 tiebreaker must reflect causal order). ULID
+ * timestamps are millisecond-granular; two events created in the same ms would
+ * otherwise get random, causally-meaningless low bits, so the `(at, then ULID)`
+ * fold could pick the wrong winner. This factory guarantees that a later call
+ * yields a strictly larger ULID even within the same (or a non-advancing) ms, by
+ * incrementing the previous random part. One instance per single-writer store.
+ */
+export function monotonicUlidFactory(
+  random: () => Uint8Array = () => randomBytes(10),
+): (nowMs?: number) => string {
+  let lastMs = -1;
+  let lastRand = "";
+  return (nowMs: number = Date.now()): string => {
+    if (nowMs > lastMs) {
+      lastMs = nowMs;
+      lastRand = encodeRandom(random(), RAND_LEN);
+    } else {
+      // Same ms or a backwards clock: keep the (larger) reference ms and bump
+      // the random part so the id stays strictly monotonic within this writer.
+      lastRand = incrementCrockford(lastRand);
+    }
+    return encodeTime(lastMs, TIME_LEN) + lastRand;
+  };
+}
+
 /**
  * A deterministic ULID derived from (timeMs, seed): same inputs → same id.
  * Used by host importers so a re-import upserts in place instead of duplicating.
