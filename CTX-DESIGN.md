@@ -346,9 +346,11 @@ durable memory (and concepts, C3) move out of the store as source of truth into 
   overlay as `needs-review`. Closes the echo loop and the privacy hole in one rule.
 - **E4 — a deterministic secret-shaped guard runs before anything enters the committed zone.**
   Regex classes (`sk-` keys, tokens, passwords, credentials) → success-shaped refusal with
-  guidance, never a hard error (no LLM/network to lean on). `remember()` defaults to Mainline
-  (committed); `--local` writes the personal overlay; a per-repo opt-out disables committing
-  memory entirely.
+  guidance, never a hard error (no LLM/network to lean on). **CLI** `remember()` (human-authored)
+  defaults to Mainline (committed); `--local` writes the personal overlay; **MCP** `remember()`
+  (agent-authored) lands in the overlay as `needs-review` and is committed only on human confirm
+  (E3 + A4; settlement S8a in `docs/build/MEMORY-SYNC-SETTLEMENTS.md`); a per-repo opt-out disables
+  committing memory entirely.
 
 ## 10. Forks — RESOLVED (P23, 2026-07-03)
 
