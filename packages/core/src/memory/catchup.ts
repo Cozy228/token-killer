@@ -79,10 +79,14 @@ export function catchUpStoreOnlyEvents(
   };
 
   for (const mem of store.allMemories()) {
-    // A committed-origin row being reconciled by the reset (its create was in the
-    // old commit) is purged, not re-exported (F5 redaction purge path).
+    // C3-2 (F-B): the exclusion is PER-EVENT with a PURGE condition, not per-memory.
+    // PURGE (skip the whole memory) ONLY when its create was in the old committed
+    // history AND is now ABSENT from the files — a genuine redaction that must not
+    // be re-exported. If the create is still present in the files, the memory
+    // SURVIVES and any NEW store-only lifecycle event on it must still export
+    // (handled by the per-event skip below). The prior per-memory skip lost those.
     const createId = store.memoryEvents(mem.entityId).find((e) => e.verb === "create")?.id;
-    if (createId !== undefined && excludeCommittedIds?.has(createId)) {
+    if (createId !== undefined && excludeCommittedIds?.has(createId) && !present.has(createId)) {
       report.skipped++;
       continue;
     }
@@ -120,15 +124,22 @@ export function catchUpStoreOnlyEvents(
         }
       }
     } else {
+      // C5-2 (F-H): route by SURFACE INTENT, not host-import alone. Committed =
+      // human-authored-OR-confirmed (E3), so a `remember-local` row (never shared)
+      // and ANY still-`needs-review` row (unconfirmed by definition) go to the
+      // OVERLAY; terminal/active AUTHORED rows keep MAINLINE (the R3
+      // migration-is-a-human-act rationale covers only authored/confirmed rows).
+      // Origin exports verbatim below, so `remember-local` stays push-excluded.
       zone =
-        mem.origin.startsWith("host-import") && mem.status === "needs-review"
-          ? "overlay"
-          : "mainline";
+        mem.origin === "remember-local" || mem.status === "needs-review" ? "overlay" : "mainline";
       // F2: export the ENTIRE event history VERBATIM, id-keyed.
       const anchoredAt = readAnchoredAt(store, mem.entityId);
       const anchors = store.anchorsOf(mem.entityId);
       for (const ev of store.memoryEvents(mem.entityId)) {
-        if (present.has(ev.id)) continue;
+        // Skip an event already present in the files, OR one whose id was in the
+        // OLD committed history but is now absent (a partial redaction — e.g. an
+        // old-committed `dec` line the human removed): never re-export it (F-B).
+        if (present.has(ev.id) || excludeCommittedIds?.has(ev.id)) continue;
         if (ev.verb === "create") {
           files.appendMemory(zone, memLine(mem, ev, anchoredAt, anchors), mem.detail);
         } else {
