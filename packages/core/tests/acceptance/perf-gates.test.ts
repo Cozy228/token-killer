@@ -176,7 +176,12 @@ describe("acceptance: perf gates", () => {
     ).toBeLessThan(2500 * RUNNER_FACTOR);
   });
 
-  test("A11-size", () => {
+  // 120s: the denominator walks the FULL living checkout (tracked files + .git +
+  // node_modules) — on a dev tree with untracked doc churn the walk alone can
+  // straddle the default 30s (observed 31–35s, assertions green). Size is the
+  // gate here, not latency — same doc-churn robustness class as the 300s
+  // ingest hookTimeout above.
+  test("A11-size", { timeout: 120_000 }, () => {
     // Checkpoint the WAL into the main db so we measure the persisted store size
     // (what a clean shutdown leaves), then sum db + any residual -wal/-shm.
     const cp = new DatabaseSync(store.dbPath);
