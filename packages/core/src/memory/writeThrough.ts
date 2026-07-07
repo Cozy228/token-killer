@@ -33,6 +33,9 @@ export interface CreateThroughInput {
   status: MemoryStatus;
   anchors: string[];
   anchoredAt?: string;
+  /** O-18 committed content-hash baselines per anchor (item 2), captured at write
+   *  time from each resolved target's `contentHash` (+ symbol arity). */
+  anchorSigs?: Record<string, { h: string; a?: number }>;
   sessionRef?: string;
   reason?: string;
   validFrom?: number;
@@ -65,6 +68,7 @@ export function recordCreate(
         detailPointer: input.detail ? ulidOf(input.memoryId) : undefined,
         anchors: input.anchors,
         anchoredAt: input.anchoredAt,
+        ...(input.anchorSigs ? { anchorSigs: input.anchorSigs } : {}),
         sessionRef: input.sessionRef,
         reason: input.reason,
         validFrom: input.validFrom,

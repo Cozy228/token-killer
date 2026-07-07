@@ -57,6 +57,14 @@ function isPushEligible(store: Store, entityId: string): boolean {
   // attention — it must NEVER enter the push digest (a shared/committed artifact),
   // even in the author's own view. A pin cannot force it in either.
   if (row.origin === "remember-local") return false;
+  // Slice 6 item 4: a note whose committed-vs-overlay provenance is OVERLAY is
+  // never a shared artifact (an E4 opt-out repo redirects ordinary notes to the
+  // gitignored overlay; an mcp/needs-review note lands there too). Exclude it from
+  // the (possibly-committed) push digest, so an opt-out repo's own locally-placed
+  // digest never leaks overlay-kept notes. `undefined` (store-only / never
+  // reindexed, or a genuinely committed mainline note) → includable, unchanged: a
+  // peer's SHARED digest is byte-identical to before.
+  if (row.originZone === "overlay") return false;
   return true;
 }
 
@@ -109,9 +117,14 @@ export function rankGotchas(
     // S9 / Decision 7: `unresolved-here` memories are locally excluded from the
     // digest (freshness unverifiable on this checkout) — dropped from BOTH the
     // auto-ranked set and pin resolution (a pin can only force an eligible item).
-    if (store.getMemory(m.entityId)?.unresolvedHere) continue;
+    const memRow = store.getMemory(m.entityId);
+    if (memRow?.unresolvedHere) continue;
     // Slice 5 / E4: a `remember --local` note never enters the shared push digest.
     if (m.origin === "remember-local") continue;
+    // Slice 6 item 4: an overlay-kept note (opt-out repo redirect / needs-review /
+    // mcp) is never a shared artifact — dropped from BOTH the auto-ranked set and
+    // pin resolution (a pin can only force an eligible item).
+    if (memRow?.originZone === "overlay") continue;
     byId.set(m.entityId, { gist: m.gist, authority: m.authority });
   }
 

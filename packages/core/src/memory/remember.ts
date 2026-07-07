@@ -211,6 +211,27 @@ function planAnchors(store: Store, anchors: string[]): AnchorPlan {
 }
 
 /**
+ * O-18 (item 2): the content-hash baseline map for a set of resolved anchor ids —
+ * each target's `contentHash` (the store's existing blake2b primitive, no second
+ * pipeline) plus its symbol `arity`. Skips a target with no `contentHash` (a bare
+ * file entity), leaving that anchor legacy. Reads resolved store entities only —
+ * no git spawn, no file IO (A11).
+ */
+function anchorSigsFor(
+  store: Store,
+  anchorIds: string[],
+): Record<string, { h: string; a?: number }> | undefined {
+  const sigs: Record<string, { h: string; a?: number }> = {};
+  for (const anchorId of anchorIds) {
+    const e = store.getEntity(anchorId);
+    if (!e || e.contentHash === undefined) continue;
+    const arity = typeof e.attrs.arity === "number" ? e.attrs.arity : undefined;
+    sigs[anchorId] = arity !== undefined ? { h: e.contentHash, a: arity } : { h: e.contentHash };
+  }
+  return Object.keys(sigs).length > 0 ? sigs : undefined;
+}
+
+/**
  * Deterministic near-duplicate search over EXISTING memories, scoped cheaply to
  * FTS candidates on the gist + shared-anchor overlap (per the research). Precision
  * is the entropy/number-guarded `fuzzyDuplicate` — FTS/anchors only widen recall.
@@ -384,6 +405,12 @@ export function remember(store: Store, input: RememberInput): RememberResult {
   // `reindex.ingestMemoryEntry` stores.
   const anchoredAt =
     input.files && plan.resolved.length > 0 ? currentHeadCommit(store.projectRoot) : undefined;
+  // O-18 (item 2): capture each resolved anchor target's content-hash baseline at
+  // write time (only when file-backed — the baseline lives in the committed bytes).
+  // Absent for a target with no `contentHash` (e.g. a bare file entity) → a legacy
+  // anchor that degrades to today's behaviour. No git spawn / file IO (A11): reads
+  // the already-resolved store entities.
+  const anchorSigs = input.files ? anchorSigsFor(store, plan.resolved) : undefined;
 
   const id = memoryId(ulid(now()));
   store.upsertEntity({
@@ -391,7 +418,11 @@ export function remember(store: Store, input: RememberInput): RememberResult {
     kind: "memory",
     name: gist.slice(0, 80),
     locator: { t: "store" },
-    attrs: { origin, ...(anchoredAt ? { anchoredAt } : {}) },
+    attrs: {
+      origin,
+      ...(anchoredAt ? { anchoredAt } : {}),
+      ...(anchorSigs ? { anchorSigs } : {}),
+    },
     gen,
   });
   store.writeMemory({
@@ -403,6 +434,13 @@ export function remember(store: Store, input: RememberInput): RememberResult {
     authority: input.authority ?? "confirmed",
     status,
   });
+  // S6-R2 (item 4): stamp the committed-vs-overlay provenance at the LIVE write, not
+  // only at reindex — otherwise an opt-out repo that `remember`s then `push`es before
+  // any reindex leaks the overlay-kept note into the digest. `zone` here is the
+  // PHYSICAL zone (already redirected to overlay by the secret guard / opt-out).
+  // Only when file-backed — a store-only row keeps `undefined` (includable, today's
+  // behaviour). Reindex recomputes this per checkout.
+  if (input.files) store.setMemoryOriginZone(id, zone);
   // The `create` event is the fold's baseline (its `refs.status` landing status).
   // Write-through: the committed line + the store event share ONE monotonic stamp,
   // so all events (create / lifecycle / drift) share one time base and total-order
@@ -419,6 +457,7 @@ export function remember(store: Store, input: RememberInput): RememberResult {
     status,
     anchors: plan.resolved,
     anchoredAt,
+    ...(anchorSigs ? { anchorSigs } : {}),
     sessionRef: input.sessionRef,
   });
   store.setAnchors(id, plan.resolved);
@@ -638,8 +677,12 @@ function promoteCreateToMainline(store: Store, files: MemoryFiles, memId: string
   // to the overlay instead, so no committed `dec` line dangles on an unpromoted id
   // (the exact D3 defect this slice closes).
   if (!mem || !create) return false;
-  const anchoredAtRaw = store.getEntity(memId)?.attrs.anchoredAt;
-  const anchoredAt = typeof anchoredAtRaw === "string" ? anchoredAtRaw : undefined;
+  const attrs = store.getEntity(memId)?.attrs;
+  const anchoredAt = typeof attrs?.anchoredAt === "string" ? attrs.anchoredAt : undefined;
+  const anchorSigs =
+    attrs?.anchorSigs && typeof attrs.anchorSigs === "object"
+      ? (attrs.anchorSigs as Record<string, { h: string; a?: number }>)
+      : undefined;
   const status =
     typeof create.refs.status === "string" ? (create.refs.status as MemoryStatus) : mem.status;
   files.appendMemory(
@@ -658,6 +701,7 @@ function promoteCreateToMainline(store: Store, files: MemoryFiles, memId: string
       detailPointer: mem.detail ? ulidOf(memId) : undefined,
       anchors: store.anchorsOf(memId),
       anchoredAt,
+      ...(anchorSigs ? { anchorSigs } : {}),
       sessionRef: mem.sessionRef,
       reason: create.reason,
       validFrom: mem.validFrom,
@@ -745,9 +789,31 @@ export function setMemoryLifecycle(
     status === "active" ? (store.getMemory(memId)?.driftReason ?? undefined) : undefined;
   const confirmedAt =
     status === "active" && files ? currentHeadCommit(store.projectRoot) : undefined;
+  // S6-R1 (O-18 confirm side): a `confirm` clearing a PRESENT-target drift
+  // (signature/body-changed) must record, IN THE COMMITTED BYTES, the CURRENT
+  // signatures of the anchored targets it judged — otherwise a full reindex keeps
+  // comparing the current target to the STALE write-time baseline and re-undoes the
+  // human's E7-recovery on every checkout (the R9 defect, resurrected for the two
+  // present-target classes). `recomputeDriftAtReindex` suppresses re-deriving a
+  // present anchor's drift when the target's current signature equals the confirmed
+  // one; a later change (current ≠ confirmed) re-derives. Deterministic from
+  // committed bytes + the current index — no ancestry check for the present case.
+  const confirmSigs =
+    status === "active" && files ? anchorSigsFor(store, store.anchorsOf(memId)) : undefined;
+  // C6-1: record WHICH absent anchors the human judged, so a full reindex suppresses
+  // `target-removed` re-derivation PER ANCHOR — a LATER removal of a DIFFERENT anchor
+  // on the same memory still flags. A confirm clearing a `target-removed` drift lists
+  // the anchors currently absent from the index. Legacy confirms (no `confirmAbsent`)
+  // keep the old memory-level suppression (degrade rule).
+  const confirmAbsent =
+    status === "active" && files && clearedDrift === "target-removed"
+      ? store.anchorsOf(memId).filter((a) => !store.getEntity(a))
+      : undefined;
   const confirmRefs: Record<string, unknown> = {};
   if (clearedDrift) confirmRefs.clearedDrift = clearedDrift;
   if (confirmedAt) confirmRefs.confirmedAt = confirmedAt;
+  if (confirmSigs) confirmRefs.confirmSigs = confirmSigs;
+  if (confirmAbsent && confirmAbsent.length > 0) confirmRefs.confirmAbsent = confirmAbsent;
   recordDecision(store, files, zone, {
     memoryId: memId,
     verb: LIFECYCLE_VERB_FOR_STATUS[status],
@@ -773,6 +839,11 @@ export function setMemoryLifecycle(
       resolveConflictViaEvent(store, memId, c.a, c.b, "resolve-conflict", "cli", files, zone);
     }
   }
+  // S6-R2 (item 4): a confirm that PROMOTED the create to the committed Mainline
+  // zone must update the provenance immediately, so the just-promoted note is
+  // push-eligible without waiting for the next reindex. A secret/`--local`/opt-out
+  // divert keeps the create in the overlay → leave the zone as-is.
+  if (promoted) store.setMemoryOriginZone(memId, "mainline");
   const effective = refoldMemory(store, memId, gen);
   return {
     ok: true,
