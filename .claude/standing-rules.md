@@ -1,0 +1,6 @@
+- 回复用中文；代码、注释、GitHub issue/PR 评论用英文。
+- 只修改任务明确指向的目标；相邻问题先报告，不动手。
+- 只用 pnpm。(hook)
+- 每个修改先考虑分发环境（他人机器的 Node/AV/PATH/冷启动），不是本机。
+- 合并即 push，不留 "awaiting maintainer" 状态。
+- 同一纠错第二次出现 → 按 durable-context.md 升级为规则/hook 并告知用户。

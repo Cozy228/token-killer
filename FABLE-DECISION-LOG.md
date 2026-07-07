@@ -310,6 +310,23 @@ Fable + Codex. Full E-group (E1–E8) + the A/B/C/D rulings live in
 work order in `docs/build/MEMORY-SYNC-GOAL-PROMPT.md`. Reconciled across VISION invariant 3,
 CTX-DESIGN §2/§3/§6/§8/§9, CTX-IMPL §2/§5.6/§7, REPORT-canonical Decision 11.
 
+**P32 — Measurement design ratified after grilling (MEASUREMENT-DESIGN.md, Q1–Q17).** `[2026-07-06]`
+All committed recommendations confirmed by the maintainer: **B arm = pull+push** (product default;
+channel ablation in R2 separates them); **contamination freeze = full time-cut environment
+including R1** (repo history truncated at fix-parent + ctx store/memory/config filtered to
+source-timestamp < T); **acceptance commands hand-authored** from real fix commits, audited once;
+**R1→R2 gate = four joint conditions** (pass_B≥pass_A on ≥8/10 · median paired Δ>0 · 90% bootstrap
+CI excludes 0 · total-input not ballooned); **R2 keeps the 30% held-out headline set** and **adds
+arm C (ctx tools present, store empty)**; **R2 budget pre-approved ≈$2–5k** at fixed N=40/repo,
+single look, null reported as "not detectable at N=40"; **R3 = spec now, build post-R2**. New
+**Q17 (bank-shortfall fallback): smaller N + post-authored acceptance tests** (written from the fix
+commit only, never reading the ctx store), never rewritten-from-git prompts — prompt authenticity
+is a narrative asset. Q1/Q3/Q4/Q6/Q7/Q8/Q10/Q16 passed as-written (no contest space). Landscape
+sweep (collector, `docs/design/measurement/landscape-measurement-methods-20260706.md`): no
+comparable tool publishes a correctness-gated token measurement — only academic papers (SWE-Pruner,
+FastContext, Codebase-Memory) pair savings with success rates; Codebase-Memory's 10×-savings-at-9pt-
+quality-cost is the live case for the M2 guardrail.
+
 ## Open
 
 - **O1 / O2** (pack §9) — value metric & joint story: partially reshaped by P15 (measurement is

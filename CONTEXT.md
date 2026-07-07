@@ -612,3 +612,32 @@ it back. The inline pointer cites the **persisted snapshot file path** (the exac
 the digest was derived from), not a `tk --raw <cmd>` re-run — a re-run re-executes the
 command and can drift from what the agent is looking at once the repo changes mid-turn.
 _Avoid_: re-run pointer (it can drift); raw pointer alone (the persisted store must exist).
+
+## Measurement
+
+Vocabulary of the ctx value-measurement experiments (design: `docs/design/measurement/`).
+
+**Arm**:
+One complete agent configuration under measurement (without-ctx baseline, with-ctx, or
+empty-store control). Arms differ **only** in the ctx-related knobs; every other input —
+prompt, model, repo state, sandbox, tools — is byte-identical across arms of one task.
+_Avoid_: variant, condition, group (overloaded).
+
+**Task bank**:
+The frozen set of real mined coding tasks used for an experiment rung. Each entry carries a
+real session prompt, a pinned repo state, and an objective acceptance command; the bank is
+immutable once a rung starts and every exclusion is reported with its reason.
+_Avoid_: benchmark suite (suggests synthetic tasks), test set (overloaded).
+
+**Time-cut environment**:
+The contamination freeze for one task: every input the agent can observe — repo (history
+truncated at the fix-parent), ctx store/memory/index, host config — reconstructed to contain
+only material whose source timestamp precedes the task's start time T.
+_Avoid_: SHA freeze (git-only — leaves ctx's own memory, derived from the same session
+history the tasks are mined from, as the dominant leak).
+
+**Held-out set**:
+The fraction of the task bank (30% in R2) never run during ctx development or tuning; the
+externally reported headline number comes from it alone, guarding against tuning ctx to the
+evaluation tasks.
+_Avoid_: test set, validation set (ML jargon with conflicting meanings here).
