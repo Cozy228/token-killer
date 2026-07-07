@@ -239,3 +239,26 @@ is the follow-up for a future slice, out of scope here.
 Post-fix suites (worktree): core **450 passed | 2 todo** (48 files); cli **23 passed** (5 files);
 product **1896 passed | 4 skipped** (1900); `tsc --noEmit` clean for core + cli. Red→green proven for all
 four (disabling each fix reds its matching test).
+
+## O-21 fix — lifecycle dec zone follows the create's zone
+
+`setMemoryLifecycle` (packages/core/src/memory/remember.ts) defaulted `zone = "mainline"` and only
+redirected to the overlay for the confirm→active path (promotion / secret-divert / unpromoted) and
+for `--local` / E4 opt-out notes. A `retire` / `review` (and any non-confirm verb) on an OVERLAY-ONLY
+row — e.g. an unconfirmed mcp import that lives only in `.ctx/memory.local.md` — still wrote its `dec`
+line to the COMMITTED `.ctx/memory/decisions.md`, so peers saw a fold-inert dangling mainline dec
+referencing a `mem:` id no peer has (the D3 class, closed for confirm by slice 4 and for `--local`/
+secret by F-E/F-G, but NOT for the non-confirm verbs).
+
+Fix: after the existing confirm/promotion logic runs, for EVERY verb, if the memory's create is not
+present in the mainline files AND this call did not just promote it, route the dec (and the F-E
+resolution decs) to the overlay: `zone = "overlay"` when `!files.readMemories("mainline").some(m =>
+m.memoryId === memId)`. A successful promotion keeps `zone = "mainline"` (guarded by `!promoted`);
+`--local` and secret/opt-out diverts already forced overlay above and stay there; a mainline-owned
+memory keeps today's behaviour exactly. `originZone` stamping is unchanged — retire does not move
+zones, and the S6-R2 live-stamp only fires on a promotion.
+
+Tests (packages/core/tests/acceptance/slice4-dirty-import.test.ts): (i) retire on an overlay-only mcp
+note → dec in the overlay log, `readDecisions("mainline")` empty, committed `decisions.md` never
+mentions the id, fold status `retired`; (ii) retire on a mainline note → dec stays in mainline
+(unchanged). Test (i) proven red on pre-fix code.
