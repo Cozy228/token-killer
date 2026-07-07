@@ -127,7 +127,9 @@ export function reindexMemoryFromFiles(
   }
   rebuildMemoryStatuses(store, gen);
   rebuildConflictStatuses(store);
-  if (opts.recomputeDrift !== false) recomputeDriftAtReindex(store, gen);
+  // C6-3: scope drift derivation to the ids present in the current files too (shed
+  // stale additive rows), exactly like the identity layer below.
+  if (opts.recomputeDrift !== false) recomputeDriftAtReindex(store, gen, seenMemoryIds);
   // D1 identity layer (item 1): derive `sameAsCandidate` conflicts from committed
   // content — independent of the code index, so it runs regardless of `recomputeDrift`.
   // C6-3: scope to the ids present in the current files (shed stale additive rows).
@@ -239,7 +241,11 @@ function decisionEvent(d: SerializedDecision): MemoryEvent {
  * anchor is branch-absent (`unresolved-here`, S9) — never marked stale. Skips
  * when the code index is absent (cannot judge freshness → leave cleared).
  */
-export function recomputeDriftAtReindex(store: Store, gen: number): void {
+export function recomputeDriftAtReindex(
+  store: Store,
+  gen: number,
+  seenIds?: ReadonlySet<string>,
+): void {
   for (const m of store.allMemories()) {
     store.setMemoryDrift(m.entityId, null);
     // S9 `unresolved-here` is per-checkout derived state too — clear then re-derive
@@ -260,6 +266,15 @@ export function recomputeDriftAtReindex(store: Store, gen: number): void {
   const projectRoot = store.projectRoot;
   if (codePublished) {
     for (const m of store.allMemories()) {
+      // C6-3 (for drift): on an ADDITIVE full reindex the store keeps rows for
+      // memories whose committed line is GONE on this checkout (the additive path
+      // never sheds rows). Deriving drift from such a stale row would re-file a
+      // `stale-suspect` a fresh clone never has, diverging a long-lived peer (E6).
+      // The CLEAR loop above is deliberately UNFILTERED (every row, incl. stale
+      // ones, has its drift/unresolved-here annotation reset); only this DERIVE step
+      // scopes to the ids actually present in the CURRENT files. `undefined`
+      // (pull-delta: append-only, no removals) → no filtering, correct there.
+      if (seenIds !== undefined && !seenIds.has(m.entityId)) continue;
       // R9: a human `confirm` that already cleared a `target-removed` drift on this
       // line of history suppresses re-deriving THAT class — otherwise every reindex
       // (slice-4 branch switches) re-undoes the confirm forever. Item 2 refines it
