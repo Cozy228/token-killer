@@ -22,7 +22,7 @@
  * No LLM / no network — a pure deterministic function of the local event log.
  */
 import type { Store } from "../store/store.ts";
-import type { MemoryFiles } from "./fileStore.ts";
+import type { MemoryFiles, MemoryZone } from "./fileStore.ts";
 import { recordDecision } from "./writeThrough.ts";
 import type {
   MemoryDriftReason,
@@ -212,6 +212,11 @@ export function resolveConflictViaEvent(
   verb: "resolve-conflict" | "dismiss",
   actor = "cli",
   files?: MemoryFiles,
+  // C4-2 (F-E): the resolution decision must follow the CONFIRM's zone. Default
+  // `mainline` keeps every other caller's behaviour; `setMemoryLifecycle` passes
+  // `overlay` for a secret-diverted / unpromoted-overlay / `--local` confirm, so a
+  // committed resolution `dec` never dangles on an id no peer has (the D3 class).
+  zone: MemoryZone = "mainline",
 ): void {
   // R8: the committed bytes must be CONTENT-ADDRESSED — per-store autoincrement
   // claim ids are meaningless on another clone (they collide or mis-target). Write
@@ -224,8 +229,9 @@ export function resolveConflictViaEvent(
     keyA !== undefined && keyB !== undefined
       ? { a: keyA, b: keyB }
       : { conflictA: a, conflictB: b }; // fallback (claim vanished — same-store only)
-  // Human/CLI resolution → the committed MAINLINE decision log (write-through).
-  recordDecision(store, files, "mainline", {
+  // Human/CLI resolution → the caller's zone (committed MAINLINE by default; the
+  // overlay for a secret/unpromoted/`--local` confirm) via write-through.
+  recordDecision(store, files, zone, {
     memoryId,
     verb,
     actor,
