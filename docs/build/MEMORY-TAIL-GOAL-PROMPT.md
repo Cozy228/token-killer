@@ -39,11 +39,8 @@ DEFECT/ALIGNMENT work on already-shipped behavior, not features — they do not 
    reindexes M1+M2 then reindexes files carrying only M1 → no drift/stale-suspect re-filed from
    the stale row; E6 conflict-level convergence with a fresh clone.
 
-3. **O-21 — overlay-only retire/supersede writes a dangling mainline dec** (D3's retire
-   variant). *In flight 2026-07-07 evening (builder on `memory/o21-lifecycle-zone`); if merged,
-   check it off in OPEN.md and strike this item.* Fix shape (arbitrated): every lifecycle verb
-   routes its dec (and F-E resolutions) to the zone where the create lives when the id is absent
-   from mainline and not just promoted.
+3. ~~**O-21 — overlay-only retire/supersede writes a dangling mainline dec**~~ **DONE
+   2026-07-07 @d5fcc8c** (merged same evening this order was written; OPEN.md checked off).
 
 ## Decision-needed (grill/ratify BEFORE any code — do not build from this doc)
 
