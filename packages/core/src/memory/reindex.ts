@@ -103,6 +103,18 @@ export function reindexMemoryFromFiles(
         report.skipped++;
         continue;
       }
+      // C3-3 (F-C): MAINLINE wins for lifecycle decisions too. A leftover overlay
+      // `dec` on a mainline-owned id (e.g. a migration secret replay) would flip a
+      // committed memory's fold LOCALLY, breaking mainline-wins + peer determinism.
+      // Skip + count it. EXEMPTION: under the E4 opt-out (`localOnly`) every legit
+      // decision — including for pre-opt-out mainline creates — is routed to the
+      // overlay and MUST keep folding, so it is never shadowed there. Non-destruction
+      // holds: the line stays in the file; only the index ignores it (doctor already
+      // surfaces `shadowedOverlay`).
+      if (zone === "overlay" && mainlineIds.has(d.memoryId) && !files.localOnly) {
+        report.shadowedOverlay++;
+        continue;
+      }
       store.ingestMemoryEvent(decisionEvent(d));
       report.decisions++;
     }
@@ -421,7 +433,13 @@ export function pullDeltaReindex(
     }
   }
   for (const id of touched) refoldMemory(store, id, gen);
-  rebuildConflictStatuses(store);
+  // C3-1 (F-A): the delta path must recompute drift from scratch, exactly like the
+  // full path (line ~112). Otherwise a pulled memory anchored to a target that is
+  // absent-and-ancestry-removed on this checkout stays clean-active instead of
+  // filing `target-removed` drift / stale-suspect. `recomputeDriftAtReindex`
+  // re-runs `rebuildConflictStatuses` as its last step (R10), so we do not call it
+  // separately here. Pull is a cold path; A11 (dirty/serve) is untouched.
+  recomputeDriftAtReindex(store, gen);
   store.publishGeneration(MEMORY_SOURCE);
   return { mode: "delta", added: addedCount, skipped };
 }
