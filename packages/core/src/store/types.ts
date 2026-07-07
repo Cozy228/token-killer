@@ -221,6 +221,16 @@ export interface MemoryRow {
    * hint and locally excluded from the push digest. Rebuildable index state.
    */
   unresolvedHere: boolean;
+  /**
+   * Slice-6 item 4 — the zone this memory's `create` currently lives in
+   * (`mainline` = committed/shared, `overlay` = gitignored/personal). DERIVED,
+   * per-checkout index state recomputed at every reindex from the files (like
+   * `driftReason` / `unresolvedHere`), never a committed status and never synced.
+   * `undefined` = unknown (a store-only row never reindexed from files, or legacy)
+   * → treated as includable. Lets an opt-out repo's locally-placed push digest
+   * exclude overlay-kept notes while a peer's shared digest is unchanged.
+   */
+  originZone: "mainline" | "overlay" | undefined;
   /** C5 bitemporal validity (explicit only) — null columns = "valid now". */
   validFrom: number | undefined;
   validTo: number | undefined;

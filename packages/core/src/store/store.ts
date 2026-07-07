@@ -187,6 +187,10 @@ export interface Store {
   /** Set the derived S9 `unresolved-here` annotation (per-checkout index state,
    *  never an event). Disjoint from drift; recomputed from scratch at reindex. */
   setMemoryUnresolvedHere(entityId: string, unresolved: boolean): void;
+  /** Set the derived committed-vs-overlay provenance (slice-6 item 4) — the zone
+   *  this memory's `create` currently lives in. Per-checkout index state recomputed
+   *  at reindex, never a committed status. */
+  setMemoryOriginZone(entityId: string, zone: "mainline" | "overlay"): void;
   /** Append an immutable lifecycle/decision event (append-only; the fold source).
    *  Returns the event ULID. Never updates/deletes (DB triggers enforce it). */
   appendMemoryEvent(input: MemoryEventInput): string;
@@ -593,6 +597,7 @@ class SqliteStore implements Store {
       lastServed: (row.last_served as number | null) ?? undefined,
       driftReason: (row.drift_reason as MemoryDriftReason | null) ?? undefined,
       unresolvedHere: Number(row.unresolved_here ?? 0) === 1,
+      originZone: (row.origin_zone as MemoryRow["originZone"] | null) ?? undefined,
       validFrom: (row.valid_from as number | null) ?? undefined,
       validTo: (row.valid_to as number | null) ?? undefined,
     };
@@ -650,6 +655,10 @@ class SqliteStore implements Store {
     this.#db
       .prepare("UPDATE memory SET unresolved_here = ? WHERE entity_id = ?")
       .run(unresolved ? 1 : 0, entityId);
+  }
+
+  setMemoryOriginZone(entityId: string, zone: "mainline" | "overlay"): void {
+    this.#db.prepare("UPDATE memory SET origin_zone = ? WHERE entity_id = ?").run(zone, entityId);
   }
 
   appendMemoryEvent(input: MemoryEventInput): string {

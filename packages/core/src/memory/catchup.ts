@@ -134,6 +134,7 @@ export function catchUpStoreOnlyEvents(
         mem.origin === "remember-local" || mem.status === "needs-review" ? "overlay" : "mainline";
       // F2: export the ENTIRE event history VERBATIM, id-keyed.
       const anchoredAt = readAnchoredAt(store, mem.entityId);
+      const anchorSigs = readAnchorSigs(store, mem.entityId);
       const anchors = store.anchorsOf(mem.entityId);
       for (const ev of store.memoryEvents(mem.entityId)) {
         // Skip an event already present in the files, OR one whose id was in the
@@ -141,7 +142,7 @@ export function catchUpStoreOnlyEvents(
         // old-committed `dec` line the human removed): never re-export it (F-B).
         if (present.has(ev.id) || excludeCommittedIds?.has(ev.id)) continue;
         if (ev.verb === "create") {
-          files.appendMemory(zone, memLine(mem, ev, anchoredAt, anchors), mem.detail);
+          files.appendMemory(zone, memLine(mem, ev, anchoredAt, anchors, anchorSigs), mem.detail);
         } else {
           files.appendDecision(zone, decLine(ev));
         }
@@ -166,12 +167,21 @@ function readAnchoredAt(store: Store, memoryId: string): string | undefined {
   return typeof v === "string" ? v : undefined;
 }
 
+function readAnchorSigs(
+  store: Store,
+  memoryId: string,
+): Record<string, { h: string; a?: number }> | undefined {
+  const v = store.getEntity(memoryId)?.attrs.anchorSigs;
+  return v && typeof v === "object" ? (v as Record<string, { h: string; a?: number }>) : undefined;
+}
+
 /** A `create` event → the committed `mem` line, carrying its status VERBATIM. */
 function memLine(
   mem: MemoryRow,
   create: MemoryEvent,
   anchoredAt: string | undefined,
   anchors: string[],
+  anchorSigs: Record<string, { h: string; a?: number }> | undefined,
 ): SerializedMemory {
   const status =
     typeof create.refs.status === "string" ? (create.refs.status as MemoryStatus) : mem.status;
@@ -189,6 +199,7 @@ function memLine(
     detailPointer: mem.detail ? ulidOf(mem.entityId) : undefined,
     anchors,
     anchoredAt,
+    ...(anchorSigs ? { anchorSigs } : {}),
     sessionRef: mem.sessionRef,
     reason: create.reason,
     validFrom: mem.validFrom,

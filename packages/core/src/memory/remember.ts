@@ -211,6 +211,27 @@ function planAnchors(store: Store, anchors: string[]): AnchorPlan {
 }
 
 /**
+ * O-18 (item 2): the content-hash baseline map for a set of resolved anchor ids —
+ * each target's `contentHash` (the store's existing blake2b primitive, no second
+ * pipeline) plus its symbol `arity`. Skips a target with no `contentHash` (a bare
+ * file entity), leaving that anchor legacy. Reads resolved store entities only —
+ * no git spawn, no file IO (A11).
+ */
+function anchorSigsFor(
+  store: Store,
+  anchorIds: string[],
+): Record<string, { h: string; a?: number }> | undefined {
+  const sigs: Record<string, { h: string; a?: number }> = {};
+  for (const anchorId of anchorIds) {
+    const e = store.getEntity(anchorId);
+    if (!e || e.contentHash === undefined) continue;
+    const arity = typeof e.attrs.arity === "number" ? e.attrs.arity : undefined;
+    sigs[anchorId] = arity !== undefined ? { h: e.contentHash, a: arity } : { h: e.contentHash };
+  }
+  return Object.keys(sigs).length > 0 ? sigs : undefined;
+}
+
+/**
  * Deterministic near-duplicate search over EXISTING memories, scoped cheaply to
  * FTS candidates on the gist + shared-anchor overlap (per the research). Precision
  * is the entropy/number-guarded `fuzzyDuplicate` — FTS/anchors only widen recall.
@@ -384,6 +405,12 @@ export function remember(store: Store, input: RememberInput): RememberResult {
   // `reindex.ingestMemoryEntry` stores.
   const anchoredAt =
     input.files && plan.resolved.length > 0 ? currentHeadCommit(store.projectRoot) : undefined;
+  // O-18 (item 2): capture each resolved anchor target's content-hash baseline at
+  // write time (only when file-backed — the baseline lives in the committed bytes).
+  // Absent for a target with no `contentHash` (e.g. a bare file entity) → a legacy
+  // anchor that degrades to today's behaviour. No git spawn / file IO (A11): reads
+  // the already-resolved store entities.
+  const anchorSigs = input.files ? anchorSigsFor(store, plan.resolved) : undefined;
 
   const id = memoryId(ulid(now()));
   store.upsertEntity({
@@ -391,7 +418,11 @@ export function remember(store: Store, input: RememberInput): RememberResult {
     kind: "memory",
     name: gist.slice(0, 80),
     locator: { t: "store" },
-    attrs: { origin, ...(anchoredAt ? { anchoredAt } : {}) },
+    attrs: {
+      origin,
+      ...(anchoredAt ? { anchoredAt } : {}),
+      ...(anchorSigs ? { anchorSigs } : {}),
+    },
     gen,
   });
   store.writeMemory({
@@ -419,6 +450,7 @@ export function remember(store: Store, input: RememberInput): RememberResult {
     status,
     anchors: plan.resolved,
     anchoredAt,
+    ...(anchorSigs ? { anchorSigs } : {}),
     sessionRef: input.sessionRef,
   });
   store.setAnchors(id, plan.resolved);
@@ -638,8 +670,12 @@ function promoteCreateToMainline(store: Store, files: MemoryFiles, memId: string
   // to the overlay instead, so no committed `dec` line dangles on an unpromoted id
   // (the exact D3 defect this slice closes).
   if (!mem || !create) return false;
-  const anchoredAtRaw = store.getEntity(memId)?.attrs.anchoredAt;
-  const anchoredAt = typeof anchoredAtRaw === "string" ? anchoredAtRaw : undefined;
+  const attrs = store.getEntity(memId)?.attrs;
+  const anchoredAt = typeof attrs?.anchoredAt === "string" ? attrs.anchoredAt : undefined;
+  const anchorSigs =
+    attrs?.anchorSigs && typeof attrs.anchorSigs === "object"
+      ? (attrs.anchorSigs as Record<string, { h: string; a?: number }>)
+      : undefined;
   const status =
     typeof create.refs.status === "string" ? (create.refs.status as MemoryStatus) : mem.status;
   files.appendMemory(
@@ -658,6 +694,7 @@ function promoteCreateToMainline(store: Store, files: MemoryFiles, memId: string
       detailPointer: mem.detail ? ulidOf(memId) : undefined,
       anchors: store.anchorsOf(memId),
       anchoredAt,
+      ...(anchorSigs ? { anchorSigs } : {}),
       sessionRef: mem.sessionRef,
       reason: create.reason,
       validFrom: mem.validFrom,

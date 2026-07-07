@@ -24,6 +24,7 @@ import type { SerializedDecision, SerializedMemory } from "./serialize.ts";
 import { lineTag, parseDecision, parseMemory } from "./serialize.ts";
 import { classifyAbsentAnchor, isAncestor } from "./anchoredAt.ts";
 import { catchUpStoreOnlyEvents } from "./catchup.ts";
+import { identityCandidatePairs } from "./dedup.ts";
 import {
   foldStatus,
   rebuildConflictStatuses,
@@ -31,7 +32,7 @@ import {
   refoldMemory,
 } from "./fold.ts";
 import type { Store } from "../store/store.ts";
-import type { MemoryEvent, MemoryOrigin } from "../store/types.ts";
+import type { Entity, MemoryDriftReason, MemoryEvent, MemoryOrigin } from "../store/types.ts";
 
 const MEMORY_SOURCE = "memory";
 const ZONES: readonly MemoryZone[] = ["mainline", "overlay"];
@@ -122,6 +123,9 @@ export function reindexMemoryFromFiles(
   rebuildMemoryStatuses(store, gen);
   rebuildConflictStatuses(store);
   if (opts.recomputeDrift !== false) recomputeDriftAtReindex(store, gen);
+  // D1 identity layer (item 1): derive `sameAsCandidate` conflicts from committed
+  // content — independent of the code index, so it runs regardless of `recomputeDrift`.
+  recomputeIdentityAtReindex(store, gen);
   store.publishGeneration(MEMORY_SOURCE);
   return report;
 }
@@ -140,9 +144,15 @@ function ingestMemoryEntry(
     kind: "memory",
     name: m.gist.slice(0, 80),
     locator: { t: "store" },
-    // `anchoredAt` rides in the entity attrs so the from-scratch drift recompute
-    // can read the author's HEAD without a dedicated column (S4 §4).
-    attrs: { origin: m.origin, ...(m.anchoredAt ? { anchoredAt: m.anchoredAt } : {}) },
+    // `anchoredAt` + `anchorSigs` ride in the entity attrs so the from-scratch
+    // drift recompute can read the author's HEAD (S4 §4) and the O-18 content-hash
+    // baseline (item 2) without dedicated columns — both are recomputed per
+    // checkout, never synced.
+    attrs: {
+      origin: m.origin,
+      ...(m.anchoredAt ? { anchoredAt: m.anchoredAt } : {}),
+      ...(m.anchorSigs && Object.keys(m.anchorSigs).length > 0 ? { anchorSigs: m.anchorSigs } : {}),
+    },
     gen,
   });
   store.writeMemory({
@@ -156,6 +166,11 @@ function ingestMemoryEntry(
     validFrom: m.validFrom,
     validTo: m.validTo,
   });
+  // Item 4: record the zone the create currently lives in (derived provenance,
+  // recomputed per checkout). MAINLINE wins for a shadowed id (the overlay entry
+  // never reaches here — F6 skips it before this call), so this reflects the
+  // committed zone whenever mainline owns the id.
+  store.setMemoryOriginZone(m.memoryId, zone);
   store.ingestMemoryEvent(createEvent(m));
   // Anchors: both the anchors table AND the `anchoredTo` links (the drift path
   // reads links). Anchor targets may not exist yet (code un-ingested) — that is
@@ -239,23 +254,38 @@ export function recomputeDriftAtReindex(store: Store, gen: number): void {
   const projectRoot = store.projectRoot;
   if (codePublished) {
     for (const m of store.allMemories()) {
-      // R9: a human `confirm` that already cleared a `target-removed` drift on
-      // this line of history suppresses re-derivation — otherwise every reindex
-      // (slice-4 branch switches) re-undoes the confirm forever.
-      if (confirmSuppressesTargetRemoved(store, m.entityId, projectRoot)) continue;
+      // R9: a human `confirm` that already cleared a `target-removed` drift on this
+      // line of history suppresses re-deriving THAT class — otherwise every reindex
+      // (slice-4 branch switches) re-undoes the confirm forever. Item 2 refines it
+      // to per-ANCHOR: the suppression applies only to an ABSENT target's
+      // `target-removed`; a PRESENT anchor whose committed content-hash baseline no
+      // longer matches (a reappeared-and-changed target) STILL re-derives drift, so
+      // the hash comparison beats a stale `clearedDrift` (the R9 reappear edge).
+      const suppressTargetRemoved = confirmSuppressesTargetRemoved(store, m.entityId, projectRoot);
       const anchoredAt = readAnchoredAt(store, m.entityId);
-      // F1 (review): scan ALL anchors before deciding, and let DRIFT WIN. A memory
-      // with both a branch-absent/external anchor AND an ancestry-proven-removed
-      // local anchor is genuinely STALE — it must render as `target-removed` drift,
-      // never as merely `unresolved-here`. `store.anchorsOf` order is unspecified,
-      // so a break-on-first-match made the outcome order-dependent (a stale memory
-      // could hide behind an external anchor seen first). Collect the classes, then
-      // file drift if ANY absent local anchor is `target-removed`; only otherwise
-      // (external present, or branch-absent local) mark `unresolved-here`.
+      const sigs = readAnchorSigs(store, m.entityId);
+      // F1 (review): scan ALL anchors before deciding, and let the HIGHEST-severity
+      // drift class WIN (target-removed > signature-changed > body-changed), never a
+      // break-on-first-match (order-dependent). Collect classes, then file one drift.
       let removedAnchor: string | undefined;
+      let changedAnchor: string | undefined;
+      let changedReason: MemoryDriftReason | undefined;
       let unresolved = false;
       for (const anchorId of store.anchorsOf(m.entityId)) {
-        if (store.getEntity(anchorId)) continue; // present target — not removed
+        const target = store.getEntity(anchorId);
+        if (target) {
+          // O-18 present-target drift (item 2): compare the target's CURRENT content
+          // signature to the committed baseline. A change re-derives deterministically
+          // at a full reindex / on a fresh clone (previously ONLY `target-removed`
+          // survived a reindex — R2's named follow-up). Absent baseline (legacy anchor)
+          // → no present-target drift, exactly today's behaviour.
+          const reason = presentTargetDrift(sigs?.[anchorId], target);
+          if (reason && driftRank(reason) > driftRank(changedReason ?? null)) {
+            changedReason = reason;
+            changedAnchor = anchorId;
+          }
+          continue;
+        }
         if (!/^(sym|file):/.test(anchorId)) {
           // External SoR target (category-③, e.g. a Jira/PR id): no local snapshot
           // to resolve against → `unresolved-here` (S9), never stale.
@@ -267,14 +297,16 @@ export function recomputeDriftAtReindex(store: Store, gen: number): void {
         // (`unresolved-here`, S9 — never stale, never down-ranked).
         const cls = classifyAbsentAnchor(projectRoot, anchoredAt);
         if (cls === "target-removed") {
-          removedAnchor ??= anchorId; // first removed anchor names the drift
+          if (!suppressTargetRemoved) removedAnchor ??= anchorId;
         } else if (cls === "unresolved-here") {
           unresolved = true;
         }
         // `skip` (no anchored-at): conservative — contributes neither class.
       }
       if (removedAnchor !== undefined) {
-        fileTargetRemoved(store, m.entityId, removedAnchor, gen); // drift wins
+        fileDrift(store, m.entityId, removedAnchor, "target-removed", gen); // highest wins
+      } else if (changedAnchor !== undefined && changedReason !== undefined) {
+        fileDrift(store, m.entityId, changedAnchor, changedReason, gen);
       } else if (unresolved) {
         store.setMemoryUnresolvedHere(m.entityId, true);
       }
@@ -287,6 +319,63 @@ export function recomputeDriftAtReindex(store: Store, gen: number): void {
   // with R9: a confirmed memory does not even re-file; this covers non-confirm
   // resolutions like `dismiss`.)
   rebuildConflictStatuses(store);
+}
+
+/**
+ * D1 identity layer (slice 6 item 1): derive `sameAsCandidate` identity conflicts
+ * from the committed bytes — two zones / two merged branches carrying the same-or-
+ * near-identical memory. Files an OPEN `sameAsCandidate` conflict per near-dup pair
+ * (surfaced, never auto-merged; the human resolves via the append-only decision-log
+ * verbs, C4). This closes the slice-3 D1 scope limit: dedup links become committed-
+ * DERIVED state (identical across peers and fresh clones, E6), not author-local.
+ *
+ * "claims=evidence, conflicts=state" (S4): the DERIVED conflict layer is
+ * per-checkout index state, so — exactly like `stale-suspect` — clear the cached
+ * `sameAsCandidate` conflicts first, then re-file only the ones re-derived from the
+ * current committed content. Derivation is content-keyed + order-independent
+ * (`identityCandidatePairs`), so a long-lived peer and a fresh clone converge to the
+ * same conflict set. A human `dismiss`/`resolve-conflict` is folded by the trailing
+ * `rebuildConflictStatuses` (content-addressed refs, R8). Retired memories are
+ * excluded (a retired note is not a live duplicate).
+ */
+export function recomputeIdentityAtReindex(store: Store, gen: number): void {
+  // Cache deletion only — the committed source + append-only events are untouched
+  // (non-destruction); the layer re-derives below.
+  store.deleteConflictsByKind("sameAsCandidate");
+  const memories = store
+    .allMemories()
+    .filter((m) => m.status !== "retired")
+    .map((m) => ({ id: m.entityId, gist: m.gist }));
+  for (const [a, b] of identityCandidatePairs(memories)) {
+    // Non-destructive sameAsCandidate: one claim per direction (idempotent by
+    // subject/object — reused if a write-time dedup already added it, F-mirror),
+    // filed in canonical order so the conflict is identical across machines. The
+    // E6 dump keys the conflict by claim CONTENT (subject|predicate|object|locus),
+    // never the per-store numeric id, so two clones dump identically.
+    const forward = findOrAddSameAsClaim(store, a, b, gen);
+    const reverse = findOrAddSameAsClaim(store, b, a, gen);
+    store.addConflict(forward, reverse, "sameAsCandidate");
+  }
+  // Fold any committed resolution/dismiss over the freshly re-filed conflicts.
+  rebuildConflictStatuses(store);
+}
+
+/** Find-or-add the derived `sameAsCandidate` claim `subject → object` (matched by
+ *  object so it reuses a write-time dedup claim of the same content). */
+function findOrAddSameAsClaim(store: Store, subject: string, object: string, gen: number): number {
+  const existing = store
+    .claimsFor(subject, "sameAsCandidate")
+    .find((c) => (c.object ?? "") === object);
+  if (existing) return existing.id;
+  return store.addClaim({
+    subject,
+    predicate: "sameAsCandidate",
+    object,
+    carrier: "reindex",
+    method: "semantic-proposal",
+    authority: "derived",
+    gen,
+  });
 }
 
 /**
@@ -317,11 +406,63 @@ function readAnchoredAt(store: Store, memoryId: string): string | undefined {
   return typeof v === "string" ? v : undefined;
 }
 
+/** The committed O-18 content-hash baselines carried in the memory entity attrs
+ *  (item 2), keyed by anchor id. Absent for legacy anchors. */
+function readAnchorSigs(
+  store: Store,
+  memoryId: string,
+): Record<string, { h: string; a?: number }> | undefined {
+  const v = store.getEntity(memoryId)?.attrs.anchorSigs;
+  return v && typeof v === "object" ? (v as Record<string, { h: string; a?: number }>) : undefined;
+}
+
+/**
+ * O-18 (item 2): classify a PRESENT anchor target's drift by comparing its current
+ * content signature to the committed baseline captured at write time. Mirrors the
+ * within-branch `flagAnchorDrift` split (A5): arity changed → `signature-changed`;
+ * else body hash changed → `body-changed`. No baseline (legacy anchor) → no drift
+ * (returns undefined — exactly today's behaviour). Deterministic: reads committed
+ * bytes + the current code index only.
+ */
+function presentTargetDrift(
+  baseline: { h: string; a?: number } | undefined,
+  target: Entity,
+): MemoryDriftReason | undefined {
+  if (!baseline) return undefined;
+  const arity = typeof target.attrs.arity === "number" ? target.attrs.arity : undefined;
+  if ((baseline.a ?? -1) !== (arity ?? -1)) return "signature-changed";
+  if (target.contentHash !== undefined && target.contentHash !== baseline.h) return "body-changed";
+  return undefined;
+}
+
+/** Drift severity ladder (mirror of incremental.ts): target-removed > signature-
+ *  changed > body-changed > no-drift. Used to pick the highest across anchors. */
+function driftRank(reason: MemoryDriftReason | null): number {
+  switch (reason) {
+    case "target-removed":
+      return 3;
+    case "signature-changed":
+      return 2;
+    case "body-changed":
+      return 1;
+    default:
+      return 0;
+  }
+}
+
 /** Mirror `flagAnchored`'s artifacts per-memory (drift + stale-suspect conflict),
- *  idempotently (stable claims keyed by locus) so repeated reindexes never spam. */
-function fileTargetRemoved(store: Store, memId: string, targetId: string, gen: number): void {
-  store.setMemoryDrift(memId, "target-removed");
-  const reasonClaim = findOrAddClaim(store, memId, "stale-reason", "target-removed", targetId, gen);
+ *  idempotently (stable claims keyed by locus) so repeated reindexes never spam.
+ *  Reason-classed (A5) — `composeStatus` applies the status effect (signature-
+ *  changed/target-removed → needs-review; body-changed → down-rank only). */
+function fileDrift(
+  store: Store,
+  memId: string,
+  targetId: string,
+  reason: MemoryDriftReason,
+  gen: number,
+): void {
+  store.setMemoryDrift(memId, reason);
+  const reasonClaim = findOrAddClaim(store, memId, "stale-reason", reason, targetId, gen);
   const anchorClaim = findOrAddClaim(store, memId, "stale-anchor", targetId, targetId, gen);
   store.addConflict(anchorClaim, reasonClaim, "stale-suspect");
   refoldMemory(store, memId, gen);
@@ -440,6 +581,10 @@ export function pullDeltaReindex(
   // re-runs `rebuildConflictStatuses` as its last step (R10), so we do not call it
   // separately here. Pull is a cold path; A11 (dirty/serve) is untouched.
   recomputeDriftAtReindex(store, gen);
+  // D1 identity layer (item 1): a pulled near-dup (e.g. a peer committed a memory
+  // that duplicates one of ours) must file `sameAsCandidate` at the pull-delta path
+  // too, not only on a full rebuild. Deterministic + content-keyed.
+  recomputeIdentityAtReindex(store, gen);
   store.publishGeneration(MEMORY_SOURCE);
   return { mode: "delta", added: addedCount, skipped };
 }

@@ -43,6 +43,18 @@ export interface SerializedMemory {
   anchors: string[];
   /** author HEAD commit at write time (S4 §4) — absent for legacy rows. */
   anchoredAt?: string;
+  /**
+   * O-18 committed content-hash baseline (slice 6): the anchored target's content
+   * signature AT WRITE TIME, keyed by anchor id. `h` = the target entity's
+   * `contentHash` (blake2bHex of its normalized span — the store's existing hash
+   * primitive, no second pipeline); `a` = its `arity` when the target is a symbol
+   * (lets a full reindex re-derive `signature-changed` vs `body-changed` per A5,
+   * exactly like the within-branch `flagAnchorDrift`). OPTIONAL in the grammar —
+   * an absent map is a legacy anchor and degrades to today's behaviour EXACTLY
+   * (present-target drift stays invisible to a from-scratch reindex). Captured at
+   * write/confirm/reindex time only (A11: no per-query file IO or git spawn).
+   */
+  anchorSigs?: Record<string, { h: string; a?: number }>;
   sessionRef?: string;
   reason?: string;
   /** C5 bitemporal validity (populated only from explicit args / supersede). */
@@ -105,6 +117,12 @@ export function serializeMemory(m: SerializedMemory): string {
     ["detail", m.detailPointer ? enc(m.detailPointer) : undefined],
     ["anchors", m.anchors.length > 0 ? enc(JSON.stringify(m.anchors)) : undefined],
     ["anchored-at", m.anchoredAt ? enc(m.anchoredAt) : undefined],
+    [
+      "anchor-sig",
+      m.anchorSigs && Object.keys(m.anchorSigs).length > 0
+        ? enc(JSON.stringify(m.anchorSigs))
+        : undefined,
+    ],
     ["session", m.sessionRef ? enc(m.sessionRef) : undefined],
     ["reason", m.reason ? enc(m.reason) : undefined],
     ["valid-from", m.validFrom !== undefined ? String(m.validFrom) : undefined],
@@ -130,6 +148,9 @@ function parseMemoryUnsafe(raw: string): SerializedMemory | undefined {
   const t = parseTokens(m[1] as string);
   if (!t.id || !t.mid || t.at === undefined) return undefined;
   const anchors = t.anchors ? (JSON.parse(dec(t.anchors)) as string[]) : [];
+  const anchorSigs = t["anchor-sig"]
+    ? (JSON.parse(dec(t["anchor-sig"])) as Record<string, { h: string; a?: number }>)
+    : undefined;
   const validFrom = t["valid-from"] !== undefined ? Number(t["valid-from"]) : undefined;
   const validTo = t["valid-to"] !== undefined ? Number(t["valid-to"]) : undefined;
   return {
@@ -146,6 +167,7 @@ function parseMemoryUnsafe(raw: string): SerializedMemory | undefined {
     detailPointer: t.detail ? dec(t.detail) : undefined,
     anchors,
     anchoredAt: t["anchored-at"] ? dec(t["anchored-at"]) : undefined,
+    ...(anchorSigs ? { anchorSigs } : {}),
     sessionRef: t.session ? dec(t.session) : undefined,
     reason: t.reason ? dec(t.reason) : undefined,
     ...(validFrom !== undefined && !Number.isNaN(validFrom) ? { validFrom } : {}),
