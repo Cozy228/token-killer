@@ -153,3 +153,39 @@ Per acceptance line (test that proves it):
 - Hard invariants (no LLM/network/egress; conflicts surfaced never auto-merged; non-destruction; E3) →
   the global-invariants + slice-3/4/5 E-series suites unmodified and green; identity/drift are cache-only
   re-derivations (committed bytes + append-only events untouched).
+
+## Fable review round 1 (fixes — new commits, history not rewritten)
+
+Two findings, both fixed with red→green proof.
+
+- **S6-R1 (MAJOR — a confirm of a PRESENT-target drift was undone at every full reindex).** Item 2
+  says "Anchoring AND R9 confirm records a content hash". The first pass implemented the anchoring side
+  only: a `confirm` recorded `clearedDrift`+`confirmedAt`, and `confirmSuppressesTargetRemoved`
+  suppressed ONLY `target-removed`. So a confirmed `signature-changed`/`body-changed` PRESENT-target
+  drift re-derived on every reindex (current target vs the STALE write-time baseline), re-undoing the
+  human's E7-recovery — the exact defect slice-3 R9 fixed for `target-removed`, resurrected for the two
+  new present-target classes. Fix (the arbitrated one): `setMemoryLifecycle` now records
+  `refs.confirmSigs = { <anchorId>: {h,a?} }` — the CURRENT signatures of the present anchor targets it
+  judged (reusing `anchorSigsFor`; refs are JSON, no grammar change). `recomputeDriftAtReindex`
+  (`activeConfirmSigs` + `sigEquals`/`currentSig`) suppresses re-deriving a present anchor's drift when
+  the target's current signature EQUALS the confirmed one; a later change (current ≠ confirmed)
+  re-derives. Deterministic from committed bytes + current index — no ancestry check for the present
+  case. Legacy confirms (no `confirmSigs`) keep today's behaviour. Tests: `slice6…` "review round 1"
+  "S6-R1: a confirmed present-target drift stays active across reindex (same machine + fresh clone)" +
+  "S6-R1: a target that changes AGAIN after the confirm re-derives drift on both machines". The R9
+  `target-removed` tests stay green (untouched path).
+
+- **S6-R2 (MEDIUM — `originZone` stamped only at reindex left a live-write window).** An E4 opt-out
+  repo that `remember`s then `push`es BEFORE any reindex left `originZone` undefined → the overlay-kept
+  note leaked into the locally-placed digest (the exact leak item 4 closes); and confirm-promotion moved
+  the create to mainline without updating `originZone`, so a just-promoted note stayed wrongly excluded
+  until the next reindex. Fix: `remember()` stamps `store.setMemoryOriginZone(id, zone)` at the live
+  write using the PHYSICAL zone (already redirected to overlay by the secret guard / opt-out), only when
+  file-backed; `setMemoryLifecycle` sets `origin_zone = "mainline"` after a successful promotion (a
+  secret/`--local`/opt-out divert leaves it overlay). Reindex still recomputes it per checkout. Tests:
+  "S6-R2: an opt-out remember is push-excluded with NO reindex in between" + "S6-R2: a confirm-promoted
+  mcp note is immediately push-eligible without a reindex".
+
+Post-fix suites (worktree): core **446 passed | 2 todo** (48 files); cli **23 passed** (5 files);
+product **1896 passed | 4 skipped** (1900); `tsc --noEmit` clean for core + cli. Red→green proven for
+both fixes (disabling the suppression reds S6-R1(i); disabling the live stamp reds both S6-R2 tests).

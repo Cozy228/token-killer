@@ -704,3 +704,164 @@ describe("slice 6 — item 4: opt-out repo excludes overlay-kept notes from its 
     }
   });
 });
+
+// ---------------------------------------------------------------------------
+// Fable review round 1 — S6-R1 (confirm of present-target drift) + S6-R2 (live zone)
+// ---------------------------------------------------------------------------
+
+describe("slice 6 — review round 1", () => {
+  let root: string;
+  let repo: string;
+  beforeEach(() => {
+    root = makeTempDir("ctx-s6-rr1-");
+    repo = makeGitFixture(root);
+  });
+  afterEach(() => cleanupTempDir(root));
+
+  /** Reindex a store whose code index carries `sym:src/x.ts#f` at (hash, arity). */
+  function reindexWithSymbol(home: string, sym: { hash: string; arity: number } | "absent"): Store {
+    const store = openStore({ projectDir: repo, home, now });
+    const gen = store.beginGeneration("code");
+    if (sym !== "absent") {
+      store.upsertEntity({
+        id: "sym:src/x.ts#f",
+        kind: "symbol",
+        name: "f",
+        locator: { t: "file", path: "src/x.ts", span: [1, 5] },
+        contentHash: sym.hash,
+        attrs: { arity: sym.arity },
+        gen,
+      });
+    }
+    store.publishGeneration("code");
+    reindexMemoryFromFiles(store, new MemoryFiles(join(repo, ".ctx")));
+    return store;
+  }
+
+  test("S6-R1: a confirmed present-target drift stays active across reindex (same machine + fresh clone)", () => {
+    const files = new MemoryFiles(join(repo, ".ctx"));
+    files.appendMemory(
+      "mainline",
+      memEntry({
+        memoryId: "mem:01CONFIRMSIG0000000000A",
+        gist: "documents the signature of f() taking two arguments in src/x.ts",
+        anchors: ["sym:src/x.ts#f"],
+        anchorSigs: { "sym:src/x.ts#f": { h: "h1", a: 2 } },
+      }),
+    );
+    const memId = "mem:01CONFIRMSIG0000000000A";
+
+    // Arity changed (2 → 3): reindex derives signature-changed → needs-review.
+    const a = reindexWithSymbol(join(root, "a"), { hash: "h1", arity: 3 });
+    try {
+      expect(a.getMemory(memId)?.driftReason).toBe("signature-changed");
+      expect(a.getMemory(memId)?.status).toBe("needs-review");
+      // The human confirms — records confirmSigs {h1, a:3} in the committed dec.
+      expect(setMemoryLifecycle(a, memId, "active", new MemoryFiles(join(repo, ".ctx"))).ok).toBe(
+        true,
+      );
+      expect(a.getMemory(memId)?.status).toBe("active");
+      // A later full reindex on the SAME machine must NOT re-undo the confirm.
+      const g = a.beginGeneration("code");
+      a.upsertEntity({
+        id: "sym:src/x.ts#f",
+        kind: "symbol",
+        name: "f",
+        locator: { t: "file", path: "src/x.ts", span: [1, 5] },
+        contentHash: "h1",
+        attrs: { arity: 3 },
+        gen: g,
+      });
+      a.publishGeneration("code");
+      reindexMemoryFromFiles(a, new MemoryFiles(join(repo, ".ctx")));
+      expect(a.getMemory(memId)?.driftReason).toBeUndefined();
+      expect(a.getMemory(memId)?.status).toBe("active");
+    } finally {
+      a.close();
+    }
+    // A FRESH clone reads the same committed confirm bytes → same suppression.
+    const b = reindexWithSymbol(join(root, "b"), { hash: "h1", arity: 3 });
+    try {
+      expect(b.getMemory(memId)?.driftReason).toBeUndefined();
+      expect(b.getMemory(memId)?.status).toBe("active");
+    } finally {
+      b.close();
+    }
+  });
+
+  test("S6-R1: a target that changes AGAIN after the confirm re-derives drift on both machines", () => {
+    const files = new MemoryFiles(join(repo, ".ctx"));
+    files.appendMemory(
+      "mainline",
+      memEntry({
+        memoryId: "mem:01CONFIRMAGAIN00000000A",
+        gist: "documents the signature of f() taking two arguments in src/x.ts",
+        anchors: ["sym:src/x.ts#f"],
+        anchorSigs: { "sym:src/x.ts#f": { h: "h1", a: 2 } },
+      }),
+    );
+    const memId = "mem:01CONFIRMAGAIN00000000A";
+    const a = reindexWithSymbol(join(root, "a"), { hash: "h1", arity: 3 });
+    try {
+      setMemoryLifecycle(a, memId, "active", new MemoryFiles(join(repo, ".ctx")));
+      expect(a.getMemory(memId)?.status).toBe("active");
+    } finally {
+      a.close();
+    }
+    // The symbol arity changes AGAIN (3 → 4): the confirm no longer matches → drift.
+    const a2 = reindexWithSymbol(join(root, "a2"), { hash: "h1", arity: 4 });
+    const b = reindexWithSymbol(join(root, "b"), { hash: "h1", arity: 4 });
+    try {
+      expect(a2.getMemory(memId)?.driftReason).toBe("signature-changed");
+      expect(a2.getMemory(memId)?.status).toBe("needs-review");
+      expect(b.getMemory(memId)?.driftReason).toBe("signature-changed");
+      expect(dumpJson(a2)).toBe(dumpJson(b)); // deterministic across machines
+    } finally {
+      a2.close();
+      b.close();
+    }
+  });
+
+  test("S6-R2: an opt-out remember is push-excluded with NO reindex in between", () => {
+    const optOutFiles = new MemoryFiles(join(repo, ".ctx"), true);
+    const store = openStore({ projectDir: repo, home: join(root, "optout"), now });
+    try {
+      const r = remember(store, {
+        note: "the staging config must be exported before the deploy pipeline runs",
+        surface: "cli",
+        files: optOutFiles,
+        now,
+      });
+      expect(r.ok && r.committedZoneDisabled).toBe(true);
+      const id = r.ok ? r.entityId : "";
+      // The live write stamped originZone=overlay — excluded WITHOUT any reindex.
+      expect(store.getMemory(id)?.originZone).toBe("overlay");
+      expect(rankGotchas(store).map((g) => g.entityId)).not.toContain(id);
+    } finally {
+      store.close();
+    }
+  });
+
+  test("S6-R2: a confirm-promoted mcp note is immediately push-eligible without a reindex", () => {
+    const files = new MemoryFiles(join(repo, ".ctx"));
+    const store = openStore({ projectDir: repo, home: join(root, "promote"), now });
+    try {
+      const r = remember(store, {
+        note: "the release checklist requires a green three-os matrix before tagging",
+        surface: "mcp",
+        files,
+        now,
+      });
+      expect(r.ok && r.status).toBe("needs-review");
+      const id = r.ok ? r.entityId : "";
+      expect(store.getMemory(id)?.originZone).toBe("overlay");
+      // Human confirm promotes the create to Mainline → immediately eligible.
+      const res = setMemoryLifecycle(store, id, "active", new MemoryFiles(join(repo, ".ctx")));
+      expect(res.ok && res.promoted).toBe(true);
+      expect(store.getMemory(id)?.originZone).toBe("mainline");
+      expect(rankGotchas(store).map((g) => g.entityId)).toContain(id);
+    } finally {
+      store.close();
+    }
+  });
+});

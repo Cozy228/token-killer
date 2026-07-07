@@ -262,6 +262,11 @@ export function recomputeDriftAtReindex(store: Store, gen: number): void {
       // longer matches (a reappeared-and-changed target) STILL re-derives drift, so
       // the hash comparison beats a stale `clearedDrift` (the R9 reappear edge).
       const suppressTargetRemoved = confirmSuppressesTargetRemoved(store, m.entityId, projectRoot);
+      // S6-R1: the present-target signatures a human `confirm` judged (committed in
+      // the confirm dec refs). A present anchor whose current signature EQUALS the
+      // confirmed one is suppressed (the human accepted exactly this state); a later
+      // change (current ≠ confirmed) re-derives. Deterministic from committed bytes.
+      const confirmedSigs = activeConfirmSigs(store, m.entityId);
       const anchoredAt = readAnchoredAt(store, m.entityId);
       const sigs = readAnchorSigs(store, m.entityId);
       // F1 (review): scan ALL anchors before deciding, and let the HIGHEST-severity
@@ -280,9 +285,15 @@ export function recomputeDriftAtReindex(store: Store, gen: number): void {
           // survived a reindex — R2's named follow-up). Absent baseline (legacy anchor)
           // → no present-target drift, exactly today's behaviour.
           const reason = presentTargetDrift(sigs?.[anchorId], target);
-          if (reason && driftRank(reason) > driftRank(changedReason ?? null)) {
-            changedReason = reason;
-            changedAnchor = anchorId;
+          if (reason) {
+            // S6-R1: a confirm that judged this exact present state suppresses the
+            // re-derivation, so a full reindex never re-undoes the human's recovery.
+            const confirmed = confirmedSigs[anchorId];
+            const suppressed = confirmed !== undefined && sigEquals(confirmed, currentSig(target));
+            if (!suppressed && driftRank(reason) > driftRank(changedReason ?? null)) {
+              changedReason = reason;
+              changedAnchor = anchorId;
+            }
           }
           continue;
         }
@@ -433,6 +444,42 @@ function presentTargetDrift(
   if ((baseline.a ?? -1) !== (arity ?? -1)) return "signature-changed";
   if (target.contentHash !== undefined && target.contentHash !== baseline.h) return "body-changed";
   return undefined;
+}
+
+/** The target's CURRENT content signature (mirror of `anchorSigsFor` at write). */
+function currentSig(target: Entity): { h: string; a?: number } {
+  const arity = typeof target.attrs.arity === "number" ? target.attrs.arity : undefined;
+  return arity !== undefined
+    ? { h: target.contentHash ?? "", a: arity }
+    : { h: target.contentHash ?? "" };
+}
+
+function sigEquals(a: { h: string; a?: number }, b: { h: string; a?: number }): boolean {
+  return a.h === b.h && (a.a ?? -1) === (b.a ?? -1);
+}
+
+/**
+ * S6-R1: the anchor signatures recorded by an ACTIVE-governing `confirm` (committed
+ * in the confirm dec refs). Empty when the memory's fold is not active (a later
+ * retire/supersede governs) or no confirm carried `confirmSigs` (legacy confirm →
+ * today's behaviour). Merges every active confirm's map (last write wins per anchor
+ * in total order — later confirms judge the newer state).
+ */
+function activeConfirmSigs(
+  store: Store,
+  memoryId: string,
+): Record<string, { h: string; a?: number }> {
+  const events = store.memoryEvents(memoryId);
+  if (foldStatus(events) !== "active") return {};
+  const out: Record<string, { h: string; a?: number }> = {};
+  for (const e of events) {
+    if (e.verb !== "confirm") continue;
+    const cs = e.refs.confirmSigs;
+    if (cs && typeof cs === "object") {
+      Object.assign(out, cs as Record<string, { h: string; a?: number }>);
+    }
+  }
+  return out;
 }
 
 /** Drift severity ladder (mirror of incremental.ts): target-removed > signature-

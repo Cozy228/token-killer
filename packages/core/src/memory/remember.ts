@@ -434,6 +434,13 @@ export function remember(store: Store, input: RememberInput): RememberResult {
     authority: input.authority ?? "confirmed",
     status,
   });
+  // S6-R2 (item 4): stamp the committed-vs-overlay provenance at the LIVE write, not
+  // only at reindex — otherwise an opt-out repo that `remember`s then `push`es before
+  // any reindex leaks the overlay-kept note into the digest. `zone` here is the
+  // PHYSICAL zone (already redirected to overlay by the secret guard / opt-out).
+  // Only when file-backed — a store-only row keeps `undefined` (includable, today's
+  // behaviour). Reindex recomputes this per checkout.
+  if (input.files) store.setMemoryOriginZone(id, zone);
   // The `create` event is the fold's baseline (its `refs.status` landing status).
   // Write-through: the committed line + the store event share ONE monotonic stamp,
   // so all events (create / lifecycle / drift) share one time base and total-order
@@ -782,9 +789,21 @@ export function setMemoryLifecycle(
     status === "active" ? (store.getMemory(memId)?.driftReason ?? undefined) : undefined;
   const confirmedAt =
     status === "active" && files ? currentHeadCommit(store.projectRoot) : undefined;
+  // S6-R1 (O-18 confirm side): a `confirm` clearing a PRESENT-target drift
+  // (signature/body-changed) must record, IN THE COMMITTED BYTES, the CURRENT
+  // signatures of the anchored targets it judged — otherwise a full reindex keeps
+  // comparing the current target to the STALE write-time baseline and re-undoes the
+  // human's E7-recovery on every checkout (the R9 defect, resurrected for the two
+  // present-target classes). `recomputeDriftAtReindex` suppresses re-deriving a
+  // present anchor's drift when the target's current signature equals the confirmed
+  // one; a later change (current ≠ confirmed) re-derives. Deterministic from
+  // committed bytes + the current index — no ancestry check for the present case.
+  const confirmSigs =
+    status === "active" && files ? anchorSigsFor(store, store.anchorsOf(memId)) : undefined;
   const confirmRefs: Record<string, unknown> = {};
   if (clearedDrift) confirmRefs.clearedDrift = clearedDrift;
   if (confirmedAt) confirmRefs.confirmedAt = confirmedAt;
+  if (confirmSigs) confirmRefs.confirmSigs = confirmSigs;
   recordDecision(store, files, zone, {
     memoryId: memId,
     verb: LIFECYCLE_VERB_FOR_STATUS[status],
@@ -810,6 +829,11 @@ export function setMemoryLifecycle(
       resolveConflictViaEvent(store, memId, c.a, c.b, "resolve-conflict", "cli", files, zone);
     }
   }
+  // S6-R2 (item 4): a confirm that PROMOTED the create to the committed Mainline
+  // zone must update the provenance immediately, so the just-promoted note is
+  // push-eligible without waiting for the next reindex. A secret/`--local`/opt-out
+  // divert keeps the create in the overlay → leave the zone as-is.
+  if (promoted) store.setMemoryOriginZone(memId, "mainline");
   const effective = refoldMemory(store, memId, gen);
   return {
     ok: true,
