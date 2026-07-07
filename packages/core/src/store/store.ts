@@ -11,10 +11,10 @@
  * - single-writer lease is compare-and-set in meta, 30s TTL, stealable on
  *   expiry (§4.5); readers never block (WAL + snapshot reads).
  */
-import { mkdirSync } from "node:fs";
+import { existsSync, mkdirSync } from "node:fs";
 import { relative, isAbsolute, sep } from "node:path";
 import type { DatabaseSync } from "node:sqlite";
-import { openDatabase, transaction, iterateRows } from "./sqlite.ts";
+import { openDatabase, openDatabaseReadOnly, transaction, iterateRows } from "./sqlite.ts";
 import { runMigrations } from "./migrate.ts";
 import { resolveShard, ctxHome, shardDir, storePath, type ShardResolution } from "./shard.ts";
 import { HANDLE_MIN_LEN, parseHandle, shortHandleCandidate } from "./handles.ts";
@@ -1052,6 +1052,25 @@ export function openStore(opts: OpenStoreOptions = {}): Store {
   const store = new SqliteStore(db, dbPath, res, opts.now ?? Date.now);
   if (store.getMeta("project_root") === undefined) store.setMeta("project_root", res.mainRoot);
   return store;
+}
+
+/**
+ * Open an EXISTING store strictly read-only (F-C4-3 / `ctx doctor`): never mkdirs
+ * the shard, never runs migrations, never writes `project_root` meta — a doctor
+ * run on a fresh checkout must leave ZERO traces. Throws when the store file is
+ * absent (the caller reports an advisory "memory ops unavailable"). The schema is
+ * whatever is on disk; the caller must not read columns a stale schema may lack
+ * (doctor checks `schema_version` first and never upgrades).
+ */
+export function openStoreReadOnly(opts: OpenStoreOptions = {}): Store {
+  const res = resolveShard(opts.projectDir ?? process.cwd());
+  const home = opts.home ?? ctxHome();
+  const dbPath = storePath(res.shard, home);
+  if (!existsSync(dbPath)) {
+    throw new Error(`no memory store at ${dbPath}`);
+  }
+  const db = openDatabaseReadOnly(dbPath);
+  return new SqliteStore(db, dbPath, res, opts.now ?? Date.now);
 }
 
 function entityFromRow(row: EntityRow): Entity {
