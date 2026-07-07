@@ -777,6 +777,21 @@ export function setMemoryLifecycle(
       }
     }
   }
+  // O-21: a lifecycle dec must land in the zone where the create actually lives.
+  // The confirm branch above may have PROMOTED an overlay-only create into the
+  // mainline log (a successful promotion keeps `zone = "mainline"`); for EVERY
+  // OTHER verb (retire / review / supersede) on an overlay-only row — e.g. an
+  // unconfirmed mcp import that lives only in the personal overlay — the dec (and
+  // the F-E resolutions below) must follow the create into the overlay. Otherwise
+  // a committed `dec` line dangles on a `mem:` id no peer has (the D3 class,
+  // closed for confirm by slice 4 and for `--local`/secret by F-E/F-G, now closed
+  // for the non-confirm verbs). `--local` (F-G) and the secret/opt-out diverts
+  // already forced overlay above and stay there; a mainline-owned memory keeps
+  // mainline exactly (today's behaviour, unchanged).
+  if (files && zone === "mainline" && !promoted) {
+    const inMainline = files.readMemories("mainline").some((m) => m.memoryId === memId);
+    if (!inMainline) zone = "overlay";
+  }
   // Disclosure (F-G): local for EITHER an E4 opt-out OR a `--local` note.
   const localOnly = committedZoneDisabled || isLocalNote;
   // R9: a `confirm` that clears a drift must carry, IN THE COMMITTED BYTES, which

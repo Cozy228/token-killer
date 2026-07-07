@@ -16,13 +16,20 @@
  * no LLM (assertNoEgress stays armed). Injected `claudeHome` points at an empty
  * dir so the REAL host memory never leaks into these deterministic fixtures.
  */
-import { copyFileSync, existsSync, mkdirSync, statSync, writeFileSync } from "node:fs";
+import {
+  copyFileSync,
+  existsSync,
+  mkdirSync,
+  readFileSync,
+  statSync,
+  writeFileSync,
+} from "node:fs";
 import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, test } from "vitest";
 import { openStore, type Store } from "../../src/store/store.ts";
 import { remember, setMemoryLifecycle } from "../../src/memory/remember.ts";
 import { importClaudeCodeMemory } from "../../src/memory/claudeImporter.ts";
-import { MemoryFiles } from "../../src/memory/fileStore.ts";
+import { MemoryFiles, ulidOf } from "../../src/memory/fileStore.ts";
 import { reindexMemoryFromFiles } from "../../src/memory/reindex.ts";
 import { currentHeadCommit } from "../../src/memory/anchoredAt.ts";
 import { flagAnchored } from "../../src/ingest/code/incremental.ts";
@@ -462,6 +469,58 @@ describe("acceptance: slice 4 — Codex post-merge review fixes (O-17/O-20)", ()
     );
     expect(files.readDecisions("mainline")).toHaveLength(0);
     expect(existsSync(join(repo, ".ctx", "memory", "decisions.md"))).toBe(false);
+    store.close();
+  });
+
+  test("O-21: retire on an overlay-only mcp note routes the dec to the OVERLAY (no dangling mainline dec)", () => {
+    const { repo, store } = setup(root);
+    const files = MemoryFiles.forStore(store);
+
+    // An unconfirmed mcp import: lives ONLY in the personal overlay as needs-review.
+    const r = remember(store, { note: "agent proposed overlay-only note", surface: "mcp", files });
+    if (!r.ok) throw new Error("remember failed");
+    expect(r.status).toBe("needs-review");
+    expect(files.readMemories("mainline")).toHaveLength(0);
+
+    // Retire it WITHOUT ever confirming/promoting. The create lives in the overlay,
+    // so the retire dec must follow it there — a committed dec referencing this id
+    // would be a fold-inert dangling mainline dec no peer has (the D3 class).
+    const res = setMemoryLifecycle(store, r.entityId, "retired", files);
+    expect(res.ok && res.status).toBe("retired"); // fold derives retired locally
+    expect(store.getMemory(r.entityId)?.status).toBe("retired");
+
+    // The retire dec is in the personal overlay, NEVER the committed mainline log.
+    expect(
+      files.readDecisions("overlay").some((d) => d.verb === "retire" && d.memoryId === r.entityId),
+    ).toBe(true);
+    expect(files.readDecisions("mainline")).toHaveLength(0);
+    // The committed decisions.md was never created / never mentions the id.
+    const committedDecPath = join(repo, ".ctx", "memory", "decisions.md");
+    if (existsSync(committedDecPath)) {
+      expect(readFileSync(committedDecPath, "utf8")).not.toContain(ulidOf(r.entityId));
+    }
+    store.close();
+  });
+
+  test("O-21: retire on a mainline note keeps the dec in the mainline log (unchanged)", () => {
+    const { store } = setup(root);
+    const files = MemoryFiles.forStore(store);
+
+    // A plain cli note: committed to the mainline zone as active.
+    const r = remember(store, { note: "committed mainline note", surface: "cli", files });
+    if (!r.ok) throw new Error("remember failed");
+    expect(files.readMemories("mainline").map((m) => m.memoryId)).toContain(r.entityId);
+
+    const res = setMemoryLifecycle(store, r.entityId, "retired", files);
+    expect(res.ok && res.status).toBe("retired");
+
+    // A mainline-owned memory keeps today's behaviour: the dec stays in mainline.
+    expect(
+      files.readDecisions("mainline").some((d) => d.verb === "retire" && d.memoryId === r.entityId),
+    ).toBe(true);
+    expect(
+      files.readDecisions("overlay").some((d) => d.verb === "retire" && d.memoryId === r.entityId),
+    ).toBe(false);
     store.close();
   });
 
