@@ -220,6 +220,45 @@ describe("acceptance: 2c fingerprint invalidation + incremental trio", () => {
   });
 
   // -------------------------------------------------------------------------
+  test("B3-drift-file: deleting a file a memory anchors to (file:foo.ts) → target-removed drift, reason-classed stale-suspect conflict, needs-review (E7(c) within-branch)", async () => {
+    const adapter = new CodeSourceAdapter({ inProcess: true });
+    write("foo.ts", `export function used(): number {\n  return 1;\n}\n`);
+    await ingest(adapter);
+
+    // Anchor a note directly to the FILE entity (not a symbol). `remember`
+    // auto-creates/resolves `file:foo.ts` because the file exists under the root.
+    const fileId = "file:foo.ts";
+    const mem = remember(store, {
+      surface: "cli",
+      note: "foo.ts holds the used helper",
+      anchors: [fileId],
+    });
+    if (!mem.ok) throw new Error("file-anchor setup failed");
+    expect(store.getEntity(fileId)?.kind).toBe("file");
+    expect(store.getMemory(mem.entityId)?.status).toBe("active");
+
+    // Delete the whole file → its `file:` anchor target is gone.
+    rmSync(join(proj, "foo.ts"));
+    const result = await ingest(adapter);
+    expect(result.driftFlagged, "the file-anchored memory is flagged").toBeGreaterThanOrEqual(1);
+
+    // E7(c) + A5: a deleted file is `target-removed`, which FLIPS the memory to
+    // needs-review (unlike body-changed).
+    expect(store.getMemory(mem.entityId)?.driftReason).toBe("target-removed");
+    expect(store.getMemory(mem.entityId)?.status).toBe("needs-review");
+    expect(reasonClasses(mem.entityId)).toContain("target-removed");
+
+    // Drift also files a reason-classed stale-suspect conflict so
+    // conflictCandidates()/doctor/the guide stale-list surface it (E7(b)).
+    const conflict = store
+      .conflicts("open")
+      .filter((c) => c.kind === "stale-suspect")
+      .find((c) => store.getClaim(c.a)?.subject === mem.entityId);
+    expect(conflict, "file deletion files a stale-suspect conflict").toBeDefined();
+    expect(store.getClaim(conflict!.b)?.object).toBe("target-removed");
+  });
+
+  // -------------------------------------------------------------------------
   test("B3-boundary: 1-hop boundary expansion — editing a barrel re-export re-ingests the unchanged-side file whose edge crossed the boundary", async () => {
     // Import-based barrel (2a captures `import ... from`, not `export ... from`).
     write("leaf.ts", `export function leafFn(): number {\n  return 1;\n}\n`);

@@ -31,7 +31,11 @@ import { dumpJson } from "../../src/memory/dump.ts";
 import { identityCandidatePairs } from "../../src/memory/dedup.ts";
 import { parseMemory, serializeMemory, type SerializedMemory } from "../../src/memory/serialize.ts";
 import { rankGotchas } from "../../src/push/rank.ts";
+import { CodeSourceAdapter } from "../../src/ingest/code/adapter.ts";
+import { clearScanCache } from "../../src/ingest/scan.ts";
+import type { Budget } from "../../src/ingest/adapter.ts";
 import type { Conflict } from "../../src/store/types.ts";
+import { rmSync } from "node:fs";
 import { cleanupTempDir, git, makeGitFixture, makeTempDir } from "../helpers/sandbox.ts";
 
 let clock = 1_700_000_000_000;
@@ -1104,6 +1108,272 @@ describe("slice 6 — Codex review round", () => {
       }
     } finally {
       b.close();
+    }
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Memory tail work order (post-slice-6): E7 convergence + drift determinism
+// ---------------------------------------------------------------------------
+
+const MAX_BUDGET: Budget = { deadline: Number.MAX_SAFE_INTEGER, now: Date.now };
+
+/** The reason-class triple both derivation paths must AGREE on (E7): the memory's
+ *  drift annotation, the reason-classed stale-suspect conflict object, and the
+ *  served status effect. Content-keyed — independent of per-store numeric ids /
+ *  carrier ("tree-sitter" vs "reindex"), which the E6 dump also ignores. */
+function driftTriple(
+  store: Store,
+  memId: string,
+): { drift?: string; staleObject?: string; status?: string } {
+  const conflict = store
+    .conflicts("open")
+    .filter((c) => c.kind === "stale-suspect")
+    .find((c) => store.getClaim(c.a)?.subject === memId);
+  return {
+    drift: store.getMemory(memId)?.driftReason,
+    staleObject: conflict ? store.getClaim(conflict.b)?.object : undefined,
+    status: store.getMemory(memId)?.status,
+  };
+}
+
+describe("memory tail — item 1(b): within-branch ↔ reindex drift convergence (E7)", () => {
+  let root: string;
+  let repo: string;
+  beforeEach(() => {
+    root = makeTempDir("ctx-tail-conv-");
+    repo = makeGitFixture(root);
+  });
+  afterEach(() => cleanupTempDir(root));
+
+  /** dirtyCheck + ingest a code adapter over `proj` (mirrors the 2c harness). */
+  async function ingestCode(store: Store, adapter: CodeSourceAdapter): Promise<void> {
+    clearScanCache(); // the fixture tree is mutated between passes
+    const dirty = await adapter.dirtyCheck(store);
+    await adapter.ingest(store, dirty, MAX_BUDGET);
+  }
+
+  /** Publish a code index carrying `sym:src/x.ts#f` at (hash, arity), or none. */
+  function reindexWithSymbol(
+    home: string,
+    files: MemoryFiles,
+    sym: { hash: string; arity: number } | "absent",
+  ): Store {
+    const store = openStore({ projectDir: repo, home, now });
+    const gen = store.beginGeneration("code");
+    if (sym !== "absent") {
+      store.upsertEntity({
+        id: "sym:src/x.ts#f",
+        kind: "symbol",
+        name: "f",
+        locator: { t: "file", path: "src/x.ts", span: [1, 5] },
+        contentHash: sym.hash,
+        attrs: { arity: sym.arity },
+        gen,
+      });
+    }
+    store.publishGeneration("code");
+    reindexMemoryFromFiles(store, files);
+    return store;
+  }
+
+  test("PRESENT-target signature change: within-branch == reindex (signature-changed → needs-review)", async () => {
+    // (i) within-branch: a real file + adapter re-ingest across an arity change.
+    const proj = join(root, "wb");
+    mkdirSync(proj, { recursive: true });
+    const wb = openStore({ projectDir: proj, home: join(root, "wb-home"), now });
+    let wbTriple: ReturnType<typeof driftTriple>;
+    try {
+      const adapter = new CodeSourceAdapter({ inProcess: true });
+      writeFileSync(
+        join(proj, "x.ts"),
+        `export function f(a: number): number {\n  return a;\n}\n`,
+        "utf8",
+      );
+      await ingestCode(wb, adapter);
+      const mem = remember(wb, {
+        surface: "cli",
+        note: "f takes one arg",
+        anchors: ["sym:x.ts#f"],
+      });
+      if (!mem.ok) throw new Error("within-branch anchor setup failed");
+      // Arity 1 → 2 (same id): a signature change.
+      writeFileSync(
+        join(proj, "x.ts"),
+        `export function f(a: number, b: number): number {\n  return a + b;\n}\n`,
+        "utf8",
+      );
+      await ingestCode(wb, adapter);
+      wbTriple = driftTriple(wb, mem.entityId);
+    } finally {
+      wb.close();
+    }
+
+    // (ii) reindex: the committed memory carries an arity-1 baseline; the current
+    // code index carries `f` at arity 2 → presentTargetDrift → signature-changed.
+    const files = new MemoryFiles(join(repo, ".ctx"));
+    files.appendMemory(
+      "mainline",
+      memEntry({
+        memoryId: "mem:01CONVSIGCHANGED0000000A",
+        gist: "documents the signature of f() in src/x.ts",
+        anchors: ["sym:src/x.ts#f"],
+        anchorSigs: { "sym:src/x.ts#f": { h: "h1", a: 1 } },
+      }),
+    );
+    const rx = reindexWithSymbol(join(root, "rx"), new MemoryFiles(join(repo, ".ctx")), {
+      hash: "h2",
+      arity: 2,
+    });
+    let rxTriple: ReturnType<typeof driftTriple>;
+    try {
+      rxTriple = driftTriple(rx, "mem:01CONVSIGCHANGED0000000A");
+    } finally {
+      rx.close();
+    }
+
+    // Both paths agree on the reason class, the conflict object, and the status.
+    const expected = {
+      drift: "signature-changed",
+      staleObject: "signature-changed",
+      status: "needs-review",
+    };
+    expect(wbTriple).toEqual(expected);
+    expect(rxTriple).toEqual(expected);
+  });
+
+  test("deleted-file target-removed: within-branch == reindex (target-removed → needs-review)", async () => {
+    // (i) within-branch: anchor a note to a real file, then delete the file.
+    const proj = join(root, "wb");
+    mkdirSync(proj, { recursive: true });
+    const wb = openStore({ projectDir: proj, home: join(root, "wb-home"), now });
+    let wbTriple: ReturnType<typeof driftTriple>;
+    try {
+      const adapter = new CodeSourceAdapter({ inProcess: true });
+      writeFileSync(
+        join(proj, "foo.ts"),
+        `export function used(): number {\n  return 1;\n}\n`,
+        "utf8",
+      );
+      await ingestCode(wb, adapter);
+      const mem = remember(wb, {
+        surface: "cli",
+        note: "foo.ts holds used",
+        anchors: ["file:foo.ts"],
+      });
+      if (!mem.ok) throw new Error("within-branch file anchor setup failed");
+      rmSync(join(proj, "foo.ts"));
+      await ingestCode(wb, adapter);
+      wbTriple = driftTriple(wb, mem.entityId);
+    } finally {
+      wb.close();
+    }
+
+    // (ii) reindex: the committed memory anchors to `file:foo.ts` (anchoredAt an
+    // ancestor of HEAD) and the current code index does NOT carry that file entity
+    // → classifyAbsentAnchor → target-removed.
+    const head = currentHeadCommit(repo)!;
+    const files = new MemoryFiles(join(repo, ".ctx"));
+    files.appendMemory(
+      "mainline",
+      memEntry({
+        memoryId: "mem:01CONVTARGETREMOVED0000A",
+        gist: "documents foo.ts which no longer exists on this checkout",
+        anchors: ["file:foo.ts"],
+        anchoredAt: head,
+      }),
+    );
+    const rx = reindexWithSymbol(join(root, "rx"), new MemoryFiles(join(repo, ".ctx")), "absent");
+    let rxTriple: ReturnType<typeof driftTriple>;
+    try {
+      rxTriple = driftTriple(rx, "mem:01CONVTARGETREMOVED0000A");
+    } finally {
+      rx.close();
+    }
+
+    const expected = {
+      drift: "target-removed",
+      staleObject: "target-removed",
+      status: "needs-review",
+    };
+    expect(wbTriple).toEqual(expected);
+    expect(rxTriple).toEqual(expected);
+  });
+});
+
+describe("memory tail — item 2: recomputeDriftAtReindex sheds stale additive rows (C6-3 for drift)", () => {
+  let root: string;
+  let repo: string;
+  beforeEach(() => {
+    root = makeTempDir("ctx-tail-drift-");
+    repo = makeGitFixture(root);
+  });
+  afterEach(() => cleanupTempDir(root));
+
+  /** Content-keyed open stale-suspect set (`memId|reason`), order-independent —
+   *  the E6 convergence unit (never per-store numeric claim ids). */
+  function staleSuspectSet(store: Store): string[] {
+    return store
+      .conflicts("open")
+      .filter((c) => c.kind === "stale-suspect")
+      .map((c) => `${store.getClaim(c.a)?.subject}|${store.getClaim(c.b)?.object}`)
+      .sort();
+  }
+
+  test("an additive reindex does not re-file drift from a stale (files-absent) row; peer == fresh clone (E6)", () => {
+    const ctx = join(repo, ".ctx");
+    const log = join(repo, ".ctx/memory/log.md");
+    const head = currentHeadCommit(repo)!;
+    const m1 = memEntry({
+      memoryId: "mem:01DRIFTSTALEROW00000AAAA",
+      gist: "documents helper a() that is removed on this branch of history",
+      anchors: ["sym:src/x.ts#a"],
+      anchoredAt: head,
+    });
+    const m2 = memEntry({
+      memoryId: "mem:01DRIFTSTALEROW00000BBBB",
+      gist: "documents helper b() that is removed on this branch of history",
+      anchors: ["sym:src/x.ts#b"],
+      anchoredAt: head,
+    });
+    const files = new MemoryFiles(ctx);
+    files.appendMemory("mainline", m1);
+    files.appendMemory("mainline", m2);
+
+    /** Publish an EMPTY code index (drift derivation runs; both anchors absent →
+     *  target-removed via ancestry) then reindex the committed memory files. */
+    function publishAndReindex(store: Store): void {
+      store.beginGeneration("code");
+      store.publishGeneration("code"); // no symbols → sym#a / sym#b absent
+      reindexMemoryFromFiles(store, new MemoryFiles(ctx));
+    }
+
+    const peer = openStore({ projectDir: repo, home: join(root, "peer"), now });
+    try {
+      publishAndReindex(peer);
+      // Both memories anchor to since-removed symbols → two target-removed suspects.
+      expect(staleSuspectSet(peer)).toEqual([
+        "mem:01DRIFTSTALEROW00000AAAA|target-removed",
+        "mem:01DRIFTSTALEROW00000BBBB|target-removed",
+      ]);
+
+      // The peer switches to a checkout where M2's line is GONE (only M1 committed).
+      writeFileSync(log, `${serializeMemory(m1)}\n`, "utf8");
+      publishAndReindex(peer); // additive default — the M2 store row lingers.
+
+      // A fresh clone of the same M1-only files.
+      const clone = openStore({ projectDir: repo, home: join(root, "clone"), now });
+      try {
+        publishAndReindex(clone);
+        // The stale M2 store row must NOT re-file its target-removed stale-suspect…
+        expect(staleSuspectSet(peer)).toEqual(["mem:01DRIFTSTALEROW00000AAAA|target-removed"]);
+        // …so the drift conflict set converges with the fresh clone (E6).
+        expect(staleSuspectSet(peer)).toEqual(staleSuspectSet(clone));
+      } finally {
+        clone.close();
+      }
+    } finally {
+      peer.close();
     }
   });
 });
