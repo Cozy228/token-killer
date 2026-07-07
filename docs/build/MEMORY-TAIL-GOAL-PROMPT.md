@@ -1,5 +1,13 @@
 # Memory-line tail — work order for what's left after slice 6
 
+> **CLOSED 2026-07-08 — death condition satisfied.** Build-ready items **1** (E7 within-branch↔reindex
+> drift convergence + missing tests) and **2** (`recomputeDriftAtReindex` seenIds determinism sweep) LANDED
+> @4f7f4c4 (pushed → 3-OS CI); item **3** was already DONE @d5fcc8c. Verdict absorbed into
+> `MEMORY-TAIL-NOTES.md` + OPEN.md (O-05 closed). Decision-needed items **4–8** are re-routed to their
+> registers/milestones (O-16/O-03 → next grill; O-07 → M5; O-08/O-09 → next design round; compaction +
+> delta-pull stay evidence-gated) — they were NEVER buildable from this doc and remain tracked in OPEN.md.
+> Comprehension-gate quizzes (slices 4/5/6) stay pending as user action. This file is now historical/context.
+
 <!-- Per-slice work order (no YAML frontmatter — living-repo ingest gotcha). Death
 condition: every item below lands, is re-routed to a milestone, or is explicitly
 waived → absorb the surviving verdict into OPEN.md/decision log and archive, per
