@@ -189,3 +189,53 @@ Two findings, both fixed with red→green proof.
 Post-fix suites (worktree): core **446 passed | 2 todo** (48 files); cli **23 passed** (5 files);
 product **1896 passed | 4 skipped** (1900); `tsc --noEmit` clean for core + cli. Red→green proven for
 both fixes (disabling the suppression reds S6-R1(i); disabling the live stamp reds both S6-R2 tests).
+
+## Codex joint-review round (fixes — new commits, history not rewritten)
+
+Four findings, all fixed with red→green proof.
+
+- **C6-1 (MAJOR — `target-removed` confirm suppression must be per-anchor).** Suppression was one
+  boolean per memory, so a memory anchoring `symA + symB` whose confirm cleared A's removal ALSO
+  suppressed a LATER genuine removal of B. Fix (mirrors the S6-R1 shape): `setMemoryLifecycle` records
+  `refs.confirmAbsent = [<anchorId>…]` — the anchors currently absent at confirm (only when clearing a
+  `target-removed`). `reindex.ts` `targetRemovedSuppression` returns `{ legacy, anchors }`: an anchor's
+  `target-removed` is suppressed only if an active-making confirm lists it in `confirmAbsent` AND its
+  `confirmedAt` is an ancestor. A LEGACY confirm (cleared `target-removed`, no `confirmAbsent` — pre-C6-1
+  bytes) keeps the memory-WIDE suppression exactly (degrade rule / non-destruction). Tests: `slice6…`
+  "Codex review round" "C6-1: target-removed suppression is per-anchor …" (B's later removal files
+  target-removed on the same machine + a fresh clone; the R9 single-anchor tests stay green).
+
+- **C6-2 (MEDIUM — superseded memories still joined identity derivation).** `recomputeIdentityAtReindex`
+  filtered only `retired`, so an `M2 supersedes M1` near-dup pair (already reconciled by the human)
+  re-filed an open `sameAsCandidate`. Fix: exclude BOTH terminal statuses (`retired` + `superseded`);
+  statuses are folded before identity runs. Test: "C6-2: a supersede pair does not seed an identity
+  conflict" (no open sameAsCandidate; fresh clone agrees, E6).
+
+- **C6-3 (MEDIUM — additive full reindex derived identity from stale store rows).** The additive path
+  never sheds rows absent from the current files, and identity read `store.allMemories()`, so a peer that
+  switched to a checkout without M2's line re-filed the M1↔M2 conflict from the stale row while a fresh
+  clone did not. Fix: `reindexMemoryFromFiles` collects `seenMemoryIds` (every id present in the CURRENT
+  files, both zones, including a mainline-shadowed id) and passes it to `recomputeIdentityAtReindex(store,
+  gen, seenIds)`, which filters its input to that set; `pullDeltaReindex` passes `undefined` (an
+  append-only delta implies no removals; a removal triggers the reset fallback, which sheds). Test: "C6-3:
+  an additive reindex does not re-file identity from a stale (files-absent) row" (asserts the identity
+  layer converges with a fresh clone — see the adjacent-found caveat below).
+
+- **C6-4 (MINOR — no two-copy fixture exercised `pullDeltaReindex`).** Added "C6-4: the pull-delta path
+  files + folds identity across two working copies": B clones at `oldTip` + full-reindexes, A commits a
+  near-dup memory + a dismiss resolution, B `git pull`s (sandbox), then runs `pullDeltaReindex(store,
+  files, {oldTip, newTip})` — the delta path files the identity conflict AND folds the committed dismiss,
+  and B's dump equals a fresh clone's full reindex (E6, this path DOES converge fully because M2 is
+  legitimately present, no stale row).
+
+**Adjacent-found (recorded, NOT fixed — pre-dates this slice, per the C6-3 ruling):** the additive
+`reindexMemoryFromFiles` keeps a stale MEMORY row for a memory whose committed line is gone on the current
+checkout (the same exposure exists for `recomputeDriftAtReindex`, slice-3 shape). C6-3 fixes only the
+IDENTITY-derivation divergence (no conflict re-filed from a stale row); the stale row itself remains, so
+the C6-3 test asserts conflict-level convergence with a fresh clone, not full `dumpJson` equality (the
+lingering M2 memory row would differ). Shedding stale additive rows (a reset-on-removal or seen-id prune)
+is the follow-up for a future slice, out of scope here.
+
+Post-fix suites (worktree): core **450 passed | 2 todo** (48 files); cli **23 passed** (5 files);
+product **1896 passed | 4 skipped** (1900); `tsc --noEmit` clean for core + cli. Red→green proven for all
+four (disabling each fix reds its matching test).

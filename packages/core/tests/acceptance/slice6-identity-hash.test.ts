@@ -23,8 +23,10 @@ import { afterEach, beforeEach, describe, expect, test } from "vitest";
 import { openStore, type Store } from "../../src/store/store.ts";
 import { remember, setMemoryLifecycle } from "../../src/memory/remember.ts";
 import { MemoryFiles } from "../../src/memory/fileStore.ts";
-import { reindexMemoryFromFiles } from "../../src/memory/reindex.ts";
+import { pullDeltaReindex, reindexMemoryFromFiles } from "../../src/memory/reindex.ts";
 import { resolveConflictViaEvent } from "../../src/memory/fold.ts";
+import { currentHeadCommit } from "../../src/memory/anchoredAt.ts";
+import { writeFileSync } from "node:fs";
 import { dumpJson } from "../../src/memory/dump.ts";
 import { identityCandidatePairs } from "../../src/memory/dedup.ts";
 import { parseMemory, serializeMemory, type SerializedMemory } from "../../src/memory/serialize.ts";
@@ -862,6 +864,246 @@ describe("slice 6 — review round 1", () => {
       expect(rankGotchas(store).map((g) => g.entityId)).toContain(id);
     } finally {
       store.close();
+    }
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Codex joint-review round — C6-1..C6-4
+// ---------------------------------------------------------------------------
+
+describe("slice 6 — Codex review round", () => {
+  let root: string;
+  let repo: string;
+  beforeEach(() => {
+    root = makeTempDir("ctx-s6-codex-");
+    repo = makeGitFixture(root);
+  });
+  afterEach(() => cleanupTempDir(root));
+
+  test("C6-1: target-removed suppression is per-anchor — a LATER removal of a different anchor still flags", () => {
+    const head = currentHeadCommit(repo)!;
+    const ctx = join(repo, ".ctx");
+    const memId = "mem:01TWOANCHORS0000000000A";
+    new MemoryFiles(ctx).appendMemory(
+      "mainline",
+      memEntry({
+        memoryId: memId,
+        gist: "documents two symbols that may each be removed independently",
+        anchors: ["sym:src/x.ts#a", "sym:src/x.ts#b"],
+        anchoredAt: head,
+      }),
+    );
+
+    /** Reindex a fresh store with a chosen presence for each symbol. */
+    function reindexWith(home: string, present: string[]): Store {
+      const store = openStore({ projectDir: repo, home, now });
+      const gen = store.beginGeneration("code");
+      for (const id of present) {
+        store.upsertEntity({
+          id,
+          kind: "symbol",
+          name: id.split("#")[1]!,
+          locator: { t: "file", path: "src/x.ts", span: [1, 5] },
+          contentHash: `hash-${id}`,
+          gen,
+        });
+      }
+      store.publishGeneration("code");
+      reindexMemoryFromFiles(store, new MemoryFiles(ctx));
+      return store;
+    }
+
+    // sym#a absent, sym#b present → target-removed drift for #a; the human confirms.
+    const s1 = reindexWith(join(root, "s1"), ["sym:src/x.ts#b"]);
+    try {
+      expect(s1.getMemory(memId)?.driftReason).toBe("target-removed");
+      const res = setMemoryLifecycle(s1, memId, "active", new MemoryFiles(ctx));
+      expect(res.ok).toBe(true);
+      expect(s1.getMemory(memId)?.status).toBe("active");
+    } finally {
+      s1.close();
+    }
+
+    // LATER, sym#b is removed too (both absent). #a stays suppressed (the human
+    // judged it), but #b's genuine removal MUST still file target-removed.
+    const s2 = reindexWith(join(root, "s2"), []);
+    const clone = reindexWith(join(root, "clone"), []);
+    try {
+      expect(s2.getMemory(memId)?.driftReason).toBe("target-removed");
+      expect(s2.getMemory(memId)?.status).toBe("needs-review");
+      // The open stale-suspect names #b (the newly-removed anchor), not #a.
+      const staleClaims = s2
+        .openStaleSuspects(memId)
+        .map((c) => s2.getClaim(c.a)?.object ?? s2.getClaim(c.b)?.object);
+      expect(staleClaims).toContain("sym:src/x.ts#b");
+      expect(dumpJson(s2)).toBe(dumpJson(clone)); // deterministic peer vs fresh clone
+    } finally {
+      s2.close();
+      clone.close();
+    }
+  });
+
+  test("C6-2: a supersede pair does not seed an identity conflict", () => {
+    const ctx = join(repo, ".ctx");
+    const files = new MemoryFiles(ctx);
+    files.appendMemory(
+      "mainline",
+      memEntry({
+        memoryId: "mem:01SUPERSEDEDUP0000000AA",
+        gist: "the old rule for resolving anchor drift on a branch switch here",
+      }),
+    );
+    files.appendMemory(
+      "mainline",
+      memEntry({
+        memoryId: "mem:01SUPERSEDEDUP0000000BB",
+        gist: "the old rule for resolving anchor drift on a branch switch now",
+      }),
+    );
+    // BB supersedes the near-duplicate AA (the human already reconciled them).
+    files.appendDecision("mainline", {
+      eventId: "01SUPDEC00000000000000AAA",
+      at: (clock += 1000),
+      memoryId: "mem:01SUPERSEDEDUP0000000AA",
+      verb: "supersede",
+      actor: "cli",
+      carrier: "cli",
+      method: "explicit-key",
+      authority: "confirmed",
+      refs: { supersededBy: "mem:01SUPERSEDEDUP0000000BB" },
+    });
+
+    const peer = openStore({ projectDir: repo, home: join(root, "peer"), now });
+    const clone = openStore({ projectDir: repo, home: join(root, "clone"), now });
+    try {
+      reindexMemoryFromFiles(peer, new MemoryFiles(ctx));
+      reindexMemoryFromFiles(clone, new MemoryFiles(ctx));
+      expect(peer.getMemory("mem:01SUPERSEDEDUP0000000AA")?.status).toBe("superseded");
+      // No open identity conflict for a pair the supersede already resolved.
+      expect(openConflicts(peer, "sameAsCandidate")).toHaveLength(0);
+      expect(dumpJson(peer)).toBe(dumpJson(clone)); // E6
+    } finally {
+      peer.close();
+      clone.close();
+    }
+  });
+
+  test("C6-3: an additive reindex does not re-file identity from a stale (files-absent) row", () => {
+    const ctx = join(repo, ".ctx");
+    const log = join(repo, ".ctx/memory/log.md");
+    const m1 = memEntry({
+      memoryId: "mem:01STALEROW00000000000AA",
+      gist: "the reindex derives identity candidates from the committed memory bytes",
+    });
+    const m2 = memEntry({
+      memoryId: "mem:01STALEROW00000000000BB",
+      gist: "the reindex derives identity candidates from committed memory byte data",
+    });
+    const files = new MemoryFiles(ctx);
+    files.appendMemory("mainline", m1);
+    files.appendMemory("mainline", m2);
+
+    const peer = openStore({ projectDir: repo, home: join(root, "peer"), now });
+    try {
+      reindexMemoryFromFiles(peer, new MemoryFiles(ctx));
+      expect(openConflicts(peer, "sameAsCandidate")).toHaveLength(1);
+
+      // The peer switches to a checkout where M2's line is GONE (only M1 committed).
+      writeFileSync(log, `${serializeMemory(m1)}\n`, "utf8");
+      reindexMemoryFromFiles(peer, new MemoryFiles(ctx)); // additive default
+
+      // A fresh clone of the same M1-only files.
+      const clone = openStore({ projectDir: repo, home: join(root, "clone"), now });
+      try {
+        reindexMemoryFromFiles(clone, new MemoryFiles(ctx));
+        // The stale M2 store row must NOT re-file the M1↔M2 identity conflict…
+        expect(openConflicts(peer, "sameAsCandidate")).toHaveLength(0);
+        // …so the identity layer converges with the fresh clone (which has none).
+        expect(peer.conflicts("open").filter((c) => c.kind === "sameAsCandidate")).toEqual(
+          clone.conflicts("open").filter((c) => c.kind === "sameAsCandidate"),
+        );
+      } finally {
+        clone.close();
+      }
+    } finally {
+      peer.close();
+    }
+  });
+
+  test("C6-4: the pull-delta path files + folds identity across two working copies", () => {
+    // repoA base: scaffold + M1 committed.
+    new MemoryFiles(join(repo, ".ctx")).appendMemory(
+      "mainline",
+      memEntry({
+        memoryId: "mem:01PULLDELTA0000000000AA",
+        gist: "the push digest reads the shared config merged with the personal overlay",
+      }),
+    );
+    commitAll(repo, "base M1");
+
+    // B clones at oldTip and full-reindexes (has M1, no conflict).
+    const repoB = join(root, "repoB");
+    git(["clone", "-q", repo, repoB], root);
+    git(["config", "user.email", "ctx-test@example.invalid"], repoB);
+    git(["config", "user.name", "ctx test"], repoB);
+    const oldTip = currentHeadCommit(repoB)!;
+    const b = openStore({ projectDir: repoB, home: join(root, "b"), now });
+    try {
+      reindexMemoryFromFiles(b, new MemoryFiles(join(repoB, ".ctx")));
+      expect(openConflicts(b, "sameAsCandidate")).toHaveLength(0);
+
+      // A commits a near-duplicate memory + a dismiss resolution.
+      const a = openStore({ projectDir: repo, home: join(root, "a"), now });
+      try {
+        new MemoryFiles(join(repo, ".ctx")).appendMemory(
+          "mainline",
+          memEntry({
+            memoryId: "mem:01PULLDELTA0000000000BB",
+            gist: "the push digest reads the shared config merged with a personal overlay",
+          }),
+        );
+        reindexMemoryFromFiles(a, new MemoryFiles(join(repo, ".ctx")));
+        const c = openConflicts(a, "sameAsCandidate")[0]!;
+        resolveConflictViaEvent(
+          a,
+          "mem:01PULLDELTA0000000000AA",
+          c.a,
+          c.b,
+          "dismiss",
+          "cli",
+          new MemoryFiles(join(repo, ".ctx")),
+          "mainline",
+        );
+      } finally {
+        a.close();
+      }
+      commitAll(repo, "A: near-dup M2 + dismiss");
+
+      // B pulls, then runs the DELTA reindex path over the pulled commits.
+      git(["pull", "-q", "--no-edit", "origin", "main"], repoB);
+      const newTip = currentHeadCommit(repoB)!;
+      const res = pullDeltaReindex(b, new MemoryFiles(join(repoB, ".ctx")), {
+        projectRoot: repoB,
+        oldTip,
+        newTip,
+      });
+      expect(res.mode).toBe("delta");
+
+      // The pull-delta path filed the identity conflict AND folded the committed dismiss.
+      expect(openConflicts(b, "sameAsCandidate")).toHaveLength(0);
+      expect(b.conflicts("dismissed").filter((x) => x.kind === "sameAsCandidate")).toHaveLength(1);
+
+      // E6: dump equals a fresh clone that full-reindexes the same committed bytes.
+      const fresh = openStore({ projectDir: repoB, home: join(root, "fresh"), now });
+      try {
+        reindexMemoryFromFiles(fresh, new MemoryFiles(join(repoB, ".ctx")));
+        expect(dumpJson(b)).toBe(dumpJson(fresh));
+      } finally {
+        fresh.close();
+      }
+    } finally {
+      b.close();
     }
   });
 });

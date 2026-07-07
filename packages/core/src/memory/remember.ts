@@ -800,10 +800,20 @@ export function setMemoryLifecycle(
   // committed bytes + the current index — no ancestry check for the present case.
   const confirmSigs =
     status === "active" && files ? anchorSigsFor(store, store.anchorsOf(memId)) : undefined;
+  // C6-1: record WHICH absent anchors the human judged, so a full reindex suppresses
+  // `target-removed` re-derivation PER ANCHOR — a LATER removal of a DIFFERENT anchor
+  // on the same memory still flags. A confirm clearing a `target-removed` drift lists
+  // the anchors currently absent from the index. Legacy confirms (no `confirmAbsent`)
+  // keep the old memory-level suppression (degrade rule).
+  const confirmAbsent =
+    status === "active" && files && clearedDrift === "target-removed"
+      ? store.anchorsOf(memId).filter((a) => !store.getEntity(a))
+      : undefined;
   const confirmRefs: Record<string, unknown> = {};
   if (clearedDrift) confirmRefs.clearedDrift = clearedDrift;
   if (confirmedAt) confirmRefs.confirmedAt = confirmedAt;
   if (confirmSigs) confirmRefs.confirmSigs = confirmSigs;
+  if (confirmAbsent && confirmAbsent.length > 0) confirmRefs.confirmAbsent = confirmAbsent;
   recordDecision(store, files, zone, {
     memoryId: memId,
     verb: LIFECYCLE_VERB_FOR_STATUS[status],

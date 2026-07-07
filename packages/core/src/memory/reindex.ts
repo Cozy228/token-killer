@@ -83,6 +83,10 @@ export function reindexMemoryFromFiles(
   // F6: MAINLINE wins. Track the ids ingested from mainline so an overlay mem
   // entry with the same id never clobbers the committed (possibly redacted) text.
   const mainlineIds = new Set<string>();
+  // C6-3: every memory id PRESENT in the current files (both zones, including a
+  // mainline-shadowed overlay id) — the identity derivation filters to this so a
+  // stale store row (additive reindex never sheds) can't re-file a conflict.
+  const seenMemoryIds = new Set<string>();
   for (const zone of ZONES) {
     for (const raw of files.memoryLines(zone)) {
       const m = parseMemory(raw);
@@ -90,6 +94,7 @@ export function reindexMemoryFromFiles(
         report.skipped++;
         continue;
       }
+      seenMemoryIds.add(m.memoryId);
       if (zone === "overlay" && mainlineIds.has(m.memoryId)) {
         report.shadowedOverlay++;
         continue;
@@ -125,7 +130,8 @@ export function reindexMemoryFromFiles(
   if (opts.recomputeDrift !== false) recomputeDriftAtReindex(store, gen);
   // D1 identity layer (item 1): derive `sameAsCandidate` conflicts from committed
   // content — independent of the code index, so it runs regardless of `recomputeDrift`.
-  recomputeIdentityAtReindex(store, gen);
+  // C6-3: scope to the ids present in the current files (shed stale additive rows).
+  recomputeIdentityAtReindex(store, gen, seenMemoryIds);
   store.publishGeneration(MEMORY_SOURCE);
   return report;
 }
@@ -261,7 +267,10 @@ export function recomputeDriftAtReindex(store: Store, gen: number): void {
       // `target-removed`; a PRESENT anchor whose committed content-hash baseline no
       // longer matches (a reappeared-and-changed target) STILL re-derives drift, so
       // the hash comparison beats a stale `clearedDrift` (the R9 reappear edge).
-      const suppressTargetRemoved = confirmSuppressesTargetRemoved(store, m.entityId, projectRoot);
+      // C6-1: `target-removed` suppression is PER-ANCHOR — a confirm lists the absent
+      // anchors it judged (`confirmAbsent`); a legacy confirm (no list) still
+      // suppresses memory-wide (degrade rule).
+      const trSuppress = targetRemovedSuppression(store, m.entityId, projectRoot);
       // S6-R1: the present-target signatures a human `confirm` judged (committed in
       // the confirm dec refs). A present anchor whose current signature EQUALS the
       // confirmed one is suppressed (the human accepted exactly this state); a later
@@ -308,7 +317,7 @@ export function recomputeDriftAtReindex(store: Store, gen: number): void {
         // (`unresolved-here`, S9 — never stale, never down-ranked).
         const cls = classifyAbsentAnchor(projectRoot, anchoredAt);
         if (cls === "target-removed") {
-          if (!suppressTargetRemoved) removedAnchor ??= anchorId;
+          if (!(trSuppress.legacy || trSuppress.anchors.has(anchorId))) removedAnchor ??= anchorId;
         } else if (cls === "unresolved-here") {
           unresolved = true;
         }
@@ -349,13 +358,29 @@ export function recomputeDriftAtReindex(store: Store, gen: number): void {
  * `rebuildConflictStatuses` (content-addressed refs, R8). Retired memories are
  * excluded (a retired note is not a live duplicate).
  */
-export function recomputeIdentityAtReindex(store: Store, gen: number): void {
+export function recomputeIdentityAtReindex(
+  store: Store,
+  gen: number,
+  seenIds?: ReadonlySet<string>,
+): void {
   // Cache deletion only — the committed source + append-only events are untouched
   // (non-destruction); the layer re-derives below.
   store.deleteConflictsByKind("sameAsCandidate");
   const memories = store
     .allMemories()
-    .filter((m) => m.status !== "retired")
+    // C6-2: exclude BOTH terminal statuses. A `retired` or `superseded` memory is
+    // not a live duplicate — the human already dispositioned it (a supersede is
+    // itself the resolution of a near-dup), so it must not seed a fresh
+    // `sameAsCandidate`. Statuses are folded before this runs.
+    .filter((m) => m.status !== "retired" && m.status !== "superseded")
+    // C6-3: on an ADDITIVE full reindex the store keeps rows for memories whose
+    // committed line is GONE on this checkout (the additive path never sheds rows —
+    // the same stale-row exposure that pre-dates this slice for drift). Filter the
+    // identity input to the ids actually present in the CURRENT files, so a peer that
+    // switched to a checkout without M2's line stops re-filing the M1↔M2 conflict and
+    // converges with a fresh clone (E6). `undefined` (pull-delta: append-only, no
+    // removals) → no filtering, correct there.
+    .filter((m) => seenIds === undefined || seenIds.has(m.entityId))
     .map((m) => ({ id: m.entityId, gist: m.gist }));
   for (const [a, b] of identityCandidatePairs(memories)) {
     // Non-destructive sameAsCandidate: one claim per direction (idempotent by
@@ -390,25 +415,36 @@ function findOrAddSameAsClaim(store: Store, subject: string, object: string, gen
 }
 
 /**
- * R9 — true iff the memory carries a `confirm` decision that cleared a
- * `target-removed` drift AND was made on this branch's history (its committed
- * `confirmedAt` is an ancestor of HEAD) AND still governs (fold status active).
- * The human already judged this absence on this line; re-deriving would undo it.
+ * R9 / C6-1 — the `target-removed` suppression a human `confirm` established, now
+ * PER ANCHOR. A confirm that cleared a `target-removed` drift, was made on this
+ * branch's history (committed `confirmedAt` is an ancestor of HEAD), and still
+ * governs (fold status active), suppresses re-deriving `target-removed` for the
+ * absent anchors it listed (`confirmAbsent`). A LEGACY confirm (cleared
+ * `target-removed` but carries no `confirmAbsent` — pre-C6-1 committed bytes) keeps
+ * the old memory-WIDE suppression, so nothing regresses (degrade rule). A later
+ * removal of a DIFFERENT anchor is NOT in any confirm's list → it still flags.
  */
-function confirmSuppressesTargetRemoved(
+function targetRemovedSuppression(
   store: Store,
   memoryId: string,
   projectRoot: string,
-): boolean {
+): { legacy: boolean; anchors: Set<string> } {
+  const out = { legacy: false, anchors: new Set<string>() };
   const events = store.memoryEvents(memoryId);
-  if (foldStatus(events) !== "active") return false;
+  if (foldStatus(events) !== "active") return out;
   for (const e of events) {
     if (e.verb !== "confirm") continue;
     if (e.refs.clearedDrift !== "target-removed") continue;
     const at = e.refs.confirmedAt;
-    if (typeof at === "string" && isAncestor(projectRoot, at)) return true;
+    if (typeof at !== "string" || !isAncestor(projectRoot, at)) continue;
+    const absent = e.refs.confirmAbsent;
+    if (Array.isArray(absent)) {
+      for (const a of absent) if (typeof a === "string") out.anchors.add(a);
+    } else {
+      out.legacy = true; // legacy confirm → memory-wide suppression
+    }
   }
-  return false;
+  return out;
 }
 
 function readAnchoredAt(store: Store, memoryId: string): string | undefined {
