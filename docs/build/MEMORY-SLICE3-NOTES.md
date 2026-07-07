@@ -305,3 +305,31 @@ are the source — the cache needed ONE sanctioned reset-rebuild seam (F5). 7 co
   E4 guard on the live import/remember paths (the module is reused as-is). Slice-3 review focus (deepest
   round): the append-only-triggers-kept + additive-reindex decision, the opt-in write-through, and the
   E3 zone routing.
+
+## Codex post-merge review fixes (O-17/O-20, 2026-07-07)
+
+- **F-A (C3-1, MAJOR) — pull-delta must recompute drift.** `pullDeltaReindex`'s delta path ended with
+  `rebuildConflictStatuses` only, so a pulled memory anchored to a target that is absent-and-
+  ancestry-removed on this checkout stayed clean-`active` instead of filing `target-removed` drift.
+  Fix: the delta path now calls `recomputeDriftAtReindex(store, gen)` after the refold loop (it re-runs
+  `rebuildConflictStatuses` last, R10 — no double rebuild), matching the full path. Pull is a cold path;
+  A11 untouched. Test: `slice3-storage.test.ts` "F-A: pull-delta recomputes drift …" (pulled anchor to
+  a removed target now files `target-removed` + a stale-suspect; needs-review).
+- **F-B (C3-2, MAJOR) — catch-up exclusion is per-event with a purge condition.** `catchUpStoreOnlyEvents`
+  skipped the WHOLE memory when its create id was in `excludeCommittedIds`, losing new store-only
+  lifecycle events on still-committed memories. Fix: PURGE only when the create is in `excludeCommittedIds`
+  AND absent from the files (a redaction); otherwise export per-event, skipping any event id present OR in
+  `excludeCommittedIds`. Test: `slice3-storage.test.ts` "F-B: catch-up exclusion is per-event …" (a
+  still-committed memory's new store-only retire survives; the redacted row is still purged — F5 stays
+  green).
+- **F-C (C3-3, MAJOR) — mainline-wins extends to overlay decision lines.** A leftover overlay `dec` on a
+  mainline-owned id flipped a committed memory's fold locally (broke mainline-wins + peer determinism).
+  Fix: in the decisions loop, `zone === "overlay" && mainlineIds.has(d.memoryId) && !files.localOnly` →
+  skip + count in `shadowedOverlay`. The `localOnly` (E4 opt-out) exemption keeps overlay-routed decisions
+  folding. Non-destruction holds (bytes stay; only the index ignores them). Edge acknowledged: an opt-out
+  flipped OFF mid-life leaves overlay-era decisions shadowed — surfaced via `shadowedOverlay`. Test:
+  `slice3-storage.test.ts` "F-C: an overlay dec on a mainline-owned id is shadowed … folds under opt-out".
+- **C3-4 (not fixed — record only).** The slice-3 active-overlay-in-push-digest finding is subsumed at
+  HEAD by slice-4/5 routing (cli→mainline, mcp→needs-review, local→`remember-local` push-excluded). The
+  residual (an OPT-OUT repo's ordinary notes in its own locally-placed digest) is slice-6 scope item 4
+  (already scheduled). No code here.

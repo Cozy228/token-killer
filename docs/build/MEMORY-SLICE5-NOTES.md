@@ -177,3 +177,25 @@ Per acceptance item (test that proves it):
    CLI disclosure → `memory-cli.test.ts` "remember --local discloses…"; `ctx push --local` view →
    `push-cli.test.ts` "push --local renders the merged local view…"; opt-out preserved across a pin
    edit → `push-cli.test.ts` "push pin preserves the E4 commitMemory opt-out".
+
+## Codex post-merge review fixes (O-17/O-20, 2026-07-07)
+
+- **F-G (C5-1, MAJOR) — confirm must never promote a `--local` note.** `setMemoryLifecycle`'s promotion
+  guard checked `files.localOnly` but not the memory's origin, so a `remember --local` note (origin
+  `remember-local`) confirmed via `ctx memory confirm` got its body appended to the committed `log.md` —
+  breaking "--local never appears in any committed file". Fix: a `remember-local` memory routes its confirm
+  dec (and the F-E resolution decs) to the overlay and is never promoted, regardless of the repo opt-out.
+  Added `committedZoneDisabled?` to `LifecycleResult` so the CLI tells an E4 opt-out apart from a `--local`
+  note; the CLI now discloses "local only — never shared" for the latter. Tests:
+  `slice5-local-overlay.test.ts` "F-G: confirm on a `--local` note never promotes it …" (committed files
+  never carry the id; confirm dec in the overlay; not `promoted`) + `memory-cli.test.ts` "F-G: confirming a
+  --local note discloses it stays local …" (disclosure mentions local, not "promoted").
+- **F-H (C5-2, MAJOR) — catch-up zone routing honours surface intent.** The catch-up zone default routed
+  everything except host-import+needs-review to MAINLINE, so a files-less `remember(store, {note,
+  surface:"local"})` (public core API — `files` optional) and a files-less `mcp` row got exported to the
+  committed zone by migration/catch-up. Fix: zone = `overlay` when `origin === "remember-local"` OR the
+  current status is `needs-review` (any origin — E3: needs-review is unconfirmed, committed =
+  human-authored-or-confirmed); terminal/active AUTHORED rows keep mainline. Origin exports verbatim so
+  `remember-local` stays push-excluded after reindex. Test: `slice5-local-overlay.test.ts` "F-H: files-less
+  local/mcp store-only rows catch-up into the OVERLAY …" (both land in the overlay — local `active`
+  `remember-local`, mcp `needs-review`; fresh reindex preserves zones; push digest excludes both).

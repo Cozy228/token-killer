@@ -220,7 +220,12 @@ function cmdMemory(io: RunIo, args: ParsedArgs): number {
     io.out(`${result.entityId} → ${result.status}`);
     if (result.promoted) io.out("  promoted to the shared committed memory log");
     if (result.localOnly) {
-      io.out("  (this repo does not commit memory (E4) — recorded in your personal overlay)");
+      // F-G: distinguish an E4 repo opt-out from a `--local` note kept local.
+      io.out(
+        result.committedZoneDisabled
+          ? "  (this repo does not commit memory (E4) — recorded in your personal overlay)"
+          : "  local only — never shared (recorded in your personal overlay)",
+      );
     }
     if (result.remediation) io.out(`  ${result.remediation}`);
     return 0;

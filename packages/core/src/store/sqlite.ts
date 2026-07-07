@@ -24,6 +24,21 @@ export function openDatabase(file: string): DatabaseSync {
 }
 
 /**
+ * Open an EXISTING store file strictly read-only (F-C4-3 / `ctx doctor`): the
+ * connection can never write, so a doctor run on a fresh checkout leaves zero
+ * traces — no journal-mode switch, no WAL/-shm creation, no mtime bump. Only
+ * connection-scoped read pragmas are set (no disk write): `busy_timeout` and
+ * `query_only=ON` (a hard belt-and-braces guard on top of the OS-level readonly
+ * open). `{ readonly: true }` is supported on the Node ≥22.16 floor.
+ */
+export function openDatabaseReadOnly(file: string): DatabaseSync {
+  const db = new DatabaseSync(file, { readOnly: true });
+  db.exec("PRAGMA busy_timeout=5000");
+  db.exec("PRAGMA query_only=ON");
+  return db;
+}
+
+/**
  * Run `fn` inside one immediate (write-locking) transaction. IMMEDIATE grabs
  * the write lock up front so the compare-and-set patterns (lease, generation
  * publish) cannot interleave with another writer between read and write.

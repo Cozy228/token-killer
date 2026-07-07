@@ -377,13 +377,21 @@ export function remember(store: Store, input: RememberInput): RememberResult {
   // notes the repo happens to keep local, not per-note "never share" declarations.
   const origin: MemoryOrigin = surface === "local" ? "remember-local" : "remember";
 
+  // C4-1 (F-D): compute `anchoredAt` BEFORE the entity write so the live entity
+  // attrs carry it — `promoteCreateToMainline` reconstructs the mainline line from
+  // these attrs on a pre-reindex confirm, and would otherwise read `undefined`
+  // (the attrs were only rebuilt at the next full reindex). Mirrors what
+  // `reindex.ingestMemoryEntry` stores.
+  const anchoredAt =
+    input.files && plan.resolved.length > 0 ? currentHeadCommit(store.projectRoot) : undefined;
+
   const id = memoryId(ulid(now()));
   store.upsertEntity({
     id,
     kind: "memory",
     name: gist.slice(0, 80),
     locator: { t: "store" },
-    attrs: { origin },
+    attrs: { origin, ...(anchoredAt ? { anchoredAt } : {}) },
     gen,
   });
   store.writeMemory({
@@ -398,9 +406,7 @@ export function remember(store: Store, input: RememberInput): RememberResult {
   // The `create` event is the fold's baseline (its `refs.status` landing status).
   // Write-through: the committed line + the store event share ONE monotonic stamp,
   // so all events (create / lifecycle / drift) share one time base and total-order
-  // correctly.
-  const anchoredAt =
-    input.files && plan.resolved.length > 0 ? currentHeadCommit(store.projectRoot) : undefined;
+  // correctly. `anchoredAt` was computed above (F-D) so the entity attrs carry it.
   recordCreate(store, input.files, zone, {
     memoryId: id,
     gist,
@@ -603,9 +609,14 @@ export type LifecycleResult =
       /** Success-shaped E4 note when a `confirm` refused to promote a
        *  secret-shaped body to the committed zone (kept in the overlay). */
       remediation?: string;
-      /** Slice 5: the repo opted out of committing memory (E4), so this decision
-       *  was recorded in the personal overlay and nothing was promoted/committed. */
+      /** Slice 5: the decision was recorded in the personal overlay and nothing was
+       *  promoted/committed. True for BOTH an E4 repo opt-out AND a `--local`
+       *  (origin `remember-local`) note that is never shared (F-G). */
       localOnly?: boolean;
+      /** Slice 5 (F-G): distinguishes the E4 repo opt-out (this repo commits no
+       *  memory) from a `--local` note kept local, so the CLI discloses the right
+       *  reason. Present only when the repo opted out. */
+      committedZoneDisabled?: boolean;
     }
   | { ok: false; reason: "unknown-handle" | "not-memory"; guidance: string };
 
@@ -696,8 +707,15 @@ export function setMemoryLifecycle(
   // committed zone — the confirm decision is recorded in the overlay (the
   // MemoryFiles layer redirects the write; here we skip the promotion attempt so
   // no create body is reconstructed into a Mainline-shaped line at all).
-  const localOnly = files?.localOnly ?? false;
-  if (status === "active" && files && !localOnly) {
+  const committedZoneDisabled = files?.localOnly ?? false;
+  // C5-1 (F-G): a `--local` note (origin `remember-local`) is NEVER shared — a
+  // confirm must not promote it to the committed zone. Route its confirm dec (and
+  // the F-E resolution decs below) to the personal overlay, same shape as the
+  // secret divert. Guarded by origin regardless of the repo opt-out state.
+  const isLocalNote = store.getMemory(memId)?.origin === "remember-local";
+  if (isLocalNote) {
+    zone = "overlay";
+  } else if (status === "active" && files && !committedZoneDisabled) {
     const inMainline = files.readMemories("mainline").some((m) => m.memoryId === memId);
     if (!inMainline) {
       const mem = store.getMemory(memId);
@@ -715,6 +733,8 @@ export function setMemoryLifecycle(
       }
     }
   }
+  // Disclosure (F-G): local for EITHER an E4 opt-out OR a `--local` note.
+  const localOnly = committedZoneDisabled || isLocalNote;
   // R9: a `confirm` that clears a drift must carry, IN THE COMMITTED BYTES, which
   // drift class it cleared (`clearedDrift`) and the HEAD it judged that absence
   // against (`confirmedAt`, mirror of anchored-at). A full reindex reads these to
@@ -747,7 +767,10 @@ export function setMemoryLifecycle(
   if (status === "active") {
     store.setMemoryDrift(memId, null);
     for (const c of store.openStaleSuspects(memId)) {
-      resolveConflictViaEvent(store, memId, c.a, c.b, "resolve-conflict", "cli", files);
+      // F-E: the resolution dec follows the confirm's zone (overlay for a
+      // secret-diverted / unpromoted / `--local` confirm), never a dangling
+      // committed line referencing an id no peer has.
+      resolveConflictViaEvent(store, memId, c.a, c.b, "resolve-conflict", "cli", files, zone);
     }
   }
   const effective = refoldMemory(store, memId, gen);
@@ -758,6 +781,7 @@ export function setMemoryLifecycle(
     ...(promoted ? { promoted } : {}),
     ...(remediation ? { remediation } : {}),
     ...(localOnly ? { localOnly } : {}),
+    ...(committedZoneDisabled ? { committedZoneDisabled } : {}),
   };
 }
 

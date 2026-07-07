@@ -14,7 +14,7 @@
 import { existsSync, readFileSync, statSync } from "node:fs";
 import { join, resolve } from "node:path";
 import { DatabaseSync } from "node:sqlite";
-import { openStore } from "../store/store.ts";
+import { openStore, openStoreReadOnly, type Store } from "../store/store.ts";
 import { runMigrations } from "../store/migrate.ts";
 import { MemoryFiles } from "../memory/fileStore.ts";
 import { memoryOpsReport } from "../memory/ops.ts";
@@ -228,54 +228,74 @@ function checkEgressGuard(opts: DoctorOptions): DoctorCheck {
  * never auto-expired, E8); only sidecar integrity problems flag a warning fix.
  * Read-only: opens the store, reads the `.ctx` layout, never writes / creates it.
  */
-function checkMemoryOps(opts: DoctorOptions): DoctorCheck {
+export function checkMemoryOps(opts: DoctorOptions): DoctorCheck {
+  // F-C4-3: genuinely read-only. `openStoreReadOnly` never mkdirs the shard, runs
+  // migrations, or writes meta — a doctor run on a fresh checkout leaves zero
+  // traces. A missing store throws → the advisory branch below.
+  let store: Store;
   try {
-    const store = openStore({
+    store = openStoreReadOnly({
       projectDir: opts.projectDir ?? opts.projectRoot,
       ...(opts.home !== undefined ? { home: opts.home } : {}),
     });
-    try {
-      const files = new MemoryFiles(join(opts.projectRoot, ".ctx"));
-      const r = memoryOpsReport(store, files);
-      const oldest =
-        r.oldestReviewAgeMs !== undefined
-          ? `${Math.floor(r.oldestReviewAgeMs / 86_400_000)}d`
-          : "n/a";
-      const snapshots =
-        r.snapshotAges.length > 0
-          ? r.snapshotAges
-              .map((s) => `${s.carrier} ${Math.floor(s.ageMs / 86_400_000)}d`)
-              .join(", ")
-          : "none";
-      // E4 per-repo opt-out (slice 5 item 4) — surface the write mode.
-      const optedOut = readMemoryOptOut(join(opts.projectRoot, ".ctx"));
-      const mode = optedOut
-        ? "commit-memory OFF (E4: every memory write stays in your personal overlay — never committed)"
-        : "commit-memory ON";
-      const detail =
-        `${mode}; review-queue ${r.reviewQueue} (oldest ${oldest}); reindex skipped ` +
-        `${r.reindexSkipped}, shadowedOverlay ${r.shadowedOverlay}; sidecars dangling ` +
-        `${r.danglingSidecars}, orphan ${r.orphanSidecars}; snapshots ${snapshots}`;
-      const integrityBad = r.danglingSidecars > 0 || r.orphanSidecars > 0;
-      return {
-        name: "memory",
-        ok: !integrityBad,
-        detail,
-        ...(integrityBad
-          ? {
-              fix: "Sidecar integrity drift — run `ctx sync` to rebuild; a persistent dangling/orphan sidecar means a hand-edited `.ctx/memory` log (review it).",
-            }
-          : {}),
-      };
-    } finally {
-      store.close();
-    }
   } catch (err) {
     return {
       name: "memory",
       ok: true, // advisory — a missing/unopenable store is reported by `store` above
       detail: `memory ops unavailable (${err instanceof Error ? err.message : String(err)})`,
     };
+  }
+  try {
+    // Doctor must not upgrade an old-schema store (read-only). If the on-disk
+    // schema predates the shipped code, report advisory rather than reading
+    // columns it may lack — `ctx sync` owns the migration.
+    const observed = Number(store.getMeta("schema_version") ?? "0");
+    const latest = latestSchemaVersion();
+    if (observed < latest) {
+      return {
+        name: "memory",
+        ok: true,
+        detail: `memory ops unavailable (store schema ${observed} < current ${latest}; run \`ctx sync\`)`,
+      };
+    }
+    const files = new MemoryFiles(join(opts.projectRoot, ".ctx"));
+    const r = memoryOpsReport(store, files);
+    const oldest =
+      r.oldestReviewAgeMs !== undefined
+        ? `${Math.floor(r.oldestReviewAgeMs / 86_400_000)}d`
+        : "n/a";
+    const snapshots =
+      r.snapshotAges.length > 0
+        ? r.snapshotAges.map((s) => `${s.carrier} ${Math.floor(s.ageMs / 86_400_000)}d`).join(", ")
+        : "none";
+    // E4 per-repo opt-out (slice 5 item 4) — surface the write mode.
+    const optedOut = readMemoryOptOut(join(opts.projectRoot, ".ctx"));
+    const mode = optedOut
+      ? "commit-memory OFF (E4: every memory write stays in your personal overlay — never committed)"
+      : "commit-memory ON";
+    const detail =
+      `${mode}; review-queue ${r.reviewQueue} (oldest ${oldest}); reindex skipped ` +
+      `${r.reindexSkipped}, shadowedOverlay ${r.shadowedOverlay}; sidecars dangling ` +
+      `${r.danglingSidecars}, orphan ${r.orphanSidecars}; snapshots ${snapshots}`;
+    const integrityBad = r.danglingSidecars > 0 || r.orphanSidecars > 0;
+    return {
+      name: "memory",
+      ok: !integrityBad,
+      detail,
+      ...(integrityBad
+        ? {
+            fix: "Sidecar integrity drift — run `ctx sync` to rebuild; a persistent dangling/orphan sidecar means a hand-edited `.ctx/memory` log (review it).",
+          }
+        : {}),
+    };
+  } catch (err) {
+    return {
+      name: "memory",
+      ok: true, // advisory — an unreadable store is reported by the `store` check
+      detail: `memory ops unavailable (${err instanceof Error ? err.message : String(err)})`,
+    };
+  } finally {
+    store.close();
   }
 }
 
