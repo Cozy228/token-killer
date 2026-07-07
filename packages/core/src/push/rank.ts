@@ -53,6 +53,10 @@ function isPushEligible(store: Store, entityId: string): boolean {
   // this machine, so the memory is LOCALLY excluded from the ≤1KB push digest
   // (a local eligibility exclusion, never a global status change).
   if (row.unresolvedHere) return false;
+  // Slice 5 / E4: a `remember --local` note is deliberately-never-shared personal
+  // attention — it must NEVER enter the push digest (a shared/committed artifact),
+  // even in the author's own view. A pin cannot force it in either.
+  if (row.origin === "remember-local") return false;
   return true;
 }
 
@@ -73,7 +77,7 @@ function scoreOf(store: Store, entityId: string, now: number): number {
  */
 export function rankGotchas(
   store: Store,
-  config: PushConfig = { pin: [], veto: [], warnings: [], ok: true },
+  config: PushConfig = { pin: [], veto: [], commitMemory: true, warnings: [], ok: true },
   now: number = Date.now(),
 ): GotchaCandidate[] {
   const veto = new Set<string>();
@@ -106,6 +110,8 @@ export function rankGotchas(
     // digest (freshness unverifiable on this checkout) — dropped from BOTH the
     // auto-ranked set and pin resolution (a pin can only force an eligible item).
     if (store.getMemory(m.entityId)?.unresolvedHere) continue;
+    // Slice 5 / E4: a `remember --local` note never enters the shared push digest.
+    if (m.origin === "remember-local") continue;
     byId.set(m.entityId, { gist: m.gist, authority: m.authority });
   }
 

@@ -76,24 +76,32 @@ describe("push rank: determinism + reuse of selection primitives", () => {
   });
 
   test("confirmed authority outranks inferred at equal recency (authorityBoost reuse)", () => {
-    const inferred = remember(store, { note: "inferred fact", authority: "inferred" });
-    const confirmed = remember(store, { note: "confirmed fact", authority: "confirmed" });
+    const inferred = remember(store, {
+      surface: "cli",
+      note: "inferred fact",
+      authority: "inferred",
+    });
+    const confirmed = remember(store, {
+      surface: "cli",
+      note: "confirmed fact",
+      authority: "confirmed",
+    });
     if (!inferred.ok || !confirmed.ok) throw new Error("seed failed");
     const ranked = rankGotchas(store, undefined, 1_600_000_000_000);
     expect(ranked[0]?.entityId).toBe(confirmed.entityId); // ×1.3 boost wins the tie
   });
 
   test("ranking is deterministic across calls (score desc, id asc)", () => {
-    remember(store, { note: "one" });
-    remember(store, { note: "two" });
-    remember(store, { note: "three" });
+    remember(store, { surface: "cli", note: "one" });
+    remember(store, { surface: "cli", note: "two" });
+    remember(store, { surface: "cli", note: "three" });
     const a = rankGotchas(store, undefined, 1_600_000_100_000).map((g) => g.entityId);
     const b = rankGotchas(store, undefined, 1_600_000_100_000).map((g) => g.entityId);
     expect(a).toEqual(b);
   });
 
   test("buildPushBlock handles round-trip via the store (G-5 spirit)", () => {
-    const r = remember(store, { note: "resolvable gotcha" });
+    const r = remember(store, { surface: "cli", note: "resolvable gotcha" });
     if (!r.ok) throw new Error("seed failed");
     const block = buildPushBlock(store, { now: 1_600_000_000_000 });
     expect(block.rendered.length).toBe(1);

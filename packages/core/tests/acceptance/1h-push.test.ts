@@ -148,11 +148,11 @@ describe("acceptance: 1h push", () => {
     const store = openStore({ projectDir: repo, home, now: () => clock });
 
     clock = 1_000_000_000_000; // oldest → lowest recency score
-    const m1 = must(remember(store, { note: "alpha: oldest gotcha" }));
+    const m1 = must(remember(store, { surface: "cli", note: "alpha: oldest gotcha" }));
     clock = 1_000_000_100_000;
-    const m2 = must(remember(store, { note: "bravo: middle gotcha" }));
+    const m2 = must(remember(store, { surface: "cli", note: "bravo: middle gotcha" }));
     clock = 1_000_000_200_000; // newest → highest recency score
-    const m3 = must(remember(store, { note: "charlie: newest gotcha" }));
+    const m3 = must(remember(store, { surface: "cli", note: "charlie: newest gotcha" }));
     const NOW = 1_000_000_300_000;
 
     // Default top-2: newest two (m3, m2); m1 is cut, m3 is in.
@@ -191,9 +191,11 @@ describe("acceptance: 1h push", () => {
     const repo = makeRepo(root);
     let clock = 1_000_000_000_000;
     const store = openStore({ projectDir: repo, home, now: () => clock });
-    const review = must(remember(store, { note: "delta: unreviewed gotcha pending confirmation" }));
+    const review = must(
+      remember(store, { surface: "cli", note: "delta: unreviewed gotcha pending confirmation" }),
+    );
     clock = 1_000_000_100_000;
-    const ok = must(remember(store, { note: "echo: a clean active gotcha" }));
+    const ok = must(remember(store, { surface: "cli", note: "echo: a clean active gotcha" }));
     // Flip the first to needs-review (as a host import or anchor drift would).
     setMemoryLifecycle(store, review.handle, "needs-review");
 
@@ -213,9 +215,9 @@ describe("acceptance: 1h push", () => {
     let clock = 1_700_000_000_000;
     const store = openStore({ projectDir: repo, home, now: () => clock });
     clock = 1_700_000_000_000;
-    must(remember(store, { note: "retry queue drops metadata on redelivery" }));
+    must(remember(store, { surface: "cli", note: "retry queue drops metadata on redelivery" }));
     clock = 1_700_000_050_000;
-    must(remember(store, { note: "shard key hashes the git-common-dir realpath" }));
+    must(remember(store, { surface: "cli", note: "shard key hashes the git-common-dir realpath" }));
     const NOW = 1_700_000_100_000;
 
     const a = buildPushBlock(store, { now: NOW });

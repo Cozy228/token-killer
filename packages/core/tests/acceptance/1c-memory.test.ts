@@ -82,7 +82,11 @@ describe("acceptance: 1c memory source", () => {
     // resolves (auto-created as a file entity — valid before docs ingest).
     const store = openStore({ projectDir: REPO_ROOT, home });
 
-    const ok = remember(store, { note: "test note", anchors: ["file:CTX-IMPL.md"] });
+    const ok = remember(store, {
+      surface: "cli",
+      note: "test note",
+      anchors: ["file:CTX-IMPL.md"],
+    });
     expect(ok.ok).toBe(true);
     if (!ok.ok) throw new Error("remember should succeed");
     expect(ok.anchors).toEqual(["file:CTX-IMPL.md"]);
@@ -95,7 +99,7 @@ describe("acceptance: 1c memory source", () => {
 
     // A 300-char note → success-shaped guidance, nothing written.
     const before = store.entityCount();
-    const long = remember(store, { note: "x".repeat(300) });
+    const long = remember(store, { surface: "cli", note: "x".repeat(300) });
     expect(long.ok).toBe(false);
     if (!long.ok) {
       expect(long.reason).toBe("gist-too-long");
@@ -107,11 +111,12 @@ describe("acceptance: 1c memory source", () => {
 
   test("A2-supersede: second entry supersedes the first; old kept, re-statused, linked", () => {
     const store = openStore({ projectDir: REPO_ROOT, home });
-    const first = remember(store, { note: "retry queue drops metadata" });
+    const first = remember(store, { surface: "cli", note: "retry queue drops metadata" });
     expect(first.ok).toBe(true);
     if (!first.ok) throw new Error("first remember failed");
 
     const second = remember(store, {
+      surface: "cli",
       note: "retry queue drops metadata on redelivery (fixed)",
       supersedes: first.handle,
     });

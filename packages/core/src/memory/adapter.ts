@@ -26,6 +26,7 @@ import { join } from "node:path";
 import type { Budget, DirtyReport, IngestResult, SourceAdapter } from "../ingest/adapter.ts";
 import type { Store } from "../store/store.ts";
 import { blake2bHex } from "../store/hash.ts";
+import { readMemoryOptOut } from "../push/config.ts";
 import { importClaudeCodeMemory, resolveClaudeMemoryDir } from "./claudeImporter.ts";
 import { MemoryFiles } from "./fileStore.ts";
 import { isMigrationDue, migrateStoreMemoryToFiles } from "./exportMigration.ts";
@@ -220,7 +221,9 @@ export class MemorySourceAdapter implements SourceAdapter {
 
   async ingest(store: Store, dirty: DirtyReport, budget: Budget): Promise<IngestResult> {
     const ctxRoot = this.#ctxRootFor(store);
-    const files = new MemoryFiles(ctxRoot);
+    // E4 opt-out (item 4): honor the per-repo knob on the cold-path write surface
+    // so migration + import land in the overlay, never the committed zone.
+    const files = new MemoryFiles(ctxRoot, readMemoryOptOut(ctxRoot));
     const prevManifest = this.#readManifest(store);
     // Shape decision reads the committed files BEFORE any write-through mutates them.
     const shape = this.#reindexShape(ctxRoot, prevManifest);

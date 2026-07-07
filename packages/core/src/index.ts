@@ -266,7 +266,13 @@ export {
 export type { PushBlock, BuildBlockOptions } from "./push/block.ts";
 export { rankGotchas } from "./push/rank.ts";
 export type { GotchaCandidate } from "./push/rank.ts";
-export { parsePushConfig, stripJsonComments, emptyPushConfig } from "./push/config.ts";
+export {
+  parsePushConfig,
+  stripJsonComments,
+  emptyPushConfig,
+  mergePushConfig,
+  readMemoryOptOut,
+} from "./push/config.ts";
 export type { PushConfig } from "./push/config.ts";
 export {
   applyManagedBlock,
@@ -280,8 +286,12 @@ export {
   runPush,
   editPinVeto,
   readPushConfig,
+  readLocalPushConfig,
+  readMergedPushConfig,
   pushConfigPath,
+  pushLocalConfigPath,
   PUSH_CONFIG_REL,
+  PUSH_LOCAL_CONFIG_REL,
   PUSH_SHA_META,
 } from "./push/push.ts";
 export type {

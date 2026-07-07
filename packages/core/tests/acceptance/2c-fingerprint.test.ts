@@ -105,7 +105,11 @@ describe("acceptance: 2c fingerprint invalidation + incremental trio", () => {
 
     const anchoredId = "sym:mod.ts#anchored";
     expect(store.getEntity(anchoredId)?.kind).toBe("symbol");
-    const mem = remember(store, { note: "anchored doubles on purpose", anchors: [anchoredId] });
+    const mem = remember(store, {
+      surface: "cli",
+      note: "anchored doubles on purpose",
+      anchors: [anchoredId],
+    });
     expect(mem.ok).toBe(true);
     if (!mem.ok) throw new Error("anchor setup failed");
 
@@ -146,7 +150,7 @@ describe("acceptance: 2c fingerprint invalidation + incremental trio", () => {
     write("drift.ts", `export function target(a: number): number {\n  return a + 1;\n}\n`);
     await ingest(adapter);
     expect(store.getEntity(symId)?.attrs.arity).toBe(1);
-    const memBody = remember(store, { note: "target adds one", anchors: [symId] });
+    const memBody = remember(store, { surface: "cli", note: "target adds one", anchors: [symId] });
     if (!memBody.ok) throw new Error("body-drift anchor setup failed");
     write("drift.ts", `export function target(a: number): number {\n  return a + 999;\n}\n`);
     const bodyResult = await ingest(adapter);
@@ -167,7 +171,11 @@ describe("acceptance: 2c fingerprint invalidation + incremental trio", () => {
     // (b) SIGNATURE change (arity): same id, arity 1→2 → signature-changed.
     write("drift.ts", `export function target(a: number): number {\n  return a + 999;\n}\n`);
     await ingest(adapter); // settle (no change) — ensures a clean baseline read
-    const memSig = remember(store, { note: "target's arity matters", anchors: [symId] });
+    const memSig = remember(store, {
+      surface: "cli",
+      note: "target's arity matters",
+      anchors: [symId],
+    });
     if (!memSig.ok) throw new Error("signature-drift anchor setup failed");
     write(
       "drift.ts",
@@ -184,7 +192,11 @@ describe("acceptance: 2c fingerprint invalidation + incremental trio", () => {
     write("drift2.ts", `export function target(a: number): number {\n  return a + 1;\n}\n`);
     await ingest(adapter);
     const rekeyId = "sym:drift2.ts#target";
-    const memRekey = remember(store, { note: "target is unique for now", anchors: [rekeyId] });
+    const memRekey = remember(store, {
+      surface: "cli",
+      note: "target is unique for now",
+      anchors: [rekeyId],
+    });
     if (!memRekey.ok) throw new Error("re-key anchor setup failed");
     write(
       "drift2.ts",

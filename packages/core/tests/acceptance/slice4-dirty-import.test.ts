@@ -284,8 +284,8 @@ describe("acceptance: slice 4 — memory dirty source + import→overlay→confi
   test("migration cold-path trigger is idempotent (adapter run twice sweeps once, no churn)", async () => {
     const { store, emptyHome } = setup(root);
     // Legacy store-only rows (M1 shape: written WITHOUT a files writer).
-    remember(store, { note: "legacy store-only alpha" });
-    remember(store, { note: "legacy store-only bravo" });
+    remember(store, { surface: "cli", note: "legacy store-only alpha" });
+    remember(store, { surface: "cli", note: "legacy store-only bravo" });
     const before = store.allMemories().length;
     expect(before).toBe(2);
 

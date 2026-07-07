@@ -157,7 +157,7 @@ describe("slice 3 — write-through zone routing (E3)", () => {
   });
 
   test("without a files writer the write path stays store-only (slice-2 behaviour)", () => {
-    const r = remember(store, { note: "no file writer here", now });
+    const r = remember(store, { surface: "cli", note: "no file writer here", now });
     expect(r.ok).toBe(true);
     expect(existsSync(join(repo, ".ctx"))).toBe(false); // nothing written
     expect(store.getMemory((r as { entityId: string }).entityId)?.status).toBe("active");

@@ -20,6 +20,7 @@ import type {
   EntityKind,
   Facet,
   MemoryEventVerb,
+  MemoryOrigin,
   MemoryStatus,
 } from "../store/types.ts";
 import { MEMORY_GIST_MAX_CHARS } from "./claudeImporter.ts";
@@ -34,6 +35,16 @@ import { recordCreate, recordDecision } from "./writeThrough.ts";
 
 const MEMORY_SOURCE = "memory";
 
+/** Caller-surface → landing zone/status/actor (S8a + slice-5 `local`). */
+const ROUTE_FOR_SURFACE: Record<
+  "cli" | "mcp" | "local",
+  { zone: MemoryZone; status: MemoryStatus; actor: string }
+> = {
+  cli: { zone: "mainline", status: "active", actor: "cli" },
+  mcp: { zone: "overlay", status: "needs-review", actor: "agent" },
+  local: { zone: "overlay", status: "active", actor: "cli" },
+};
+
 export interface RememberInput {
   note: string;
   detail?: string;
@@ -44,9 +55,11 @@ export interface RememberInput {
   authority?: "inferred" | "confirmed";
   now?: () => number;
   /**
-   * S8a caller-surface split (slice 4). The landing zone + status are decided by
+   * S8a caller-surface split (slice 4/5). The landing zone + status are decided by
    * WHO called `remember()`, because E3 governs it (committed = human-authored or
-   * human-confirmed):
+   * human-confirmed). REQUIRED (slice 5): no default — a caller that forgets its
+   * surface is a compile error, never a silent commit into the shared zone (the
+   * slice-4 fail-open advisory).
    *   - `cli` (human at the CLI) → committed MAINLINE as `active` (E4's
    *     "`remember()` defaults to Mainline" applies to this human surface). The
    *     E4 secret guard runs before the committed zone and diverts a secret-shaped
@@ -54,9 +67,12 @@ export interface RememberInput {
    *   - `mcp` (agent over MCP) → personal OVERLAY as `needs-review` (auto-generated
    *     → never enters git unreviewed; human `confirm` promotes it, same pipeline
    *     as host imports).
-   * Default `cli` (the human surface). `--local` / three-tier scope is slice 5.
+   *   - `local` (human, `remember --local`) → personal OVERLAY as `active`
+   *     (slice 5, three-tier (c) / E4). A deliberately divergent my-view note: a
+   *     human authored it (no review queue) but it NEVER syncs — gitignored,
+   *     never promoted, never in a peer's push digest.
    */
-  surface?: "cli" | "mcp";
+  surface: "cli" | "mcp" | "local";
   /**
    * Committed / overlay file writer. Production write paths (CLI, MCP `serve.ts`)
    * always pass one; write-through is always-on there (slice 4). Kept injectable
@@ -103,6 +119,14 @@ export type RememberResult =
       /** Success-shaped E4 remediation note when a secret-shaped committed write
        *  was diverted to the overlay as `needs-review` (never a hard error). */
       remediation?: string;
+      /** Slice 5: the note landed in the gitignored personal overlay and will
+       *  NEVER be shared — chosen via `--local` (surface `local`) or forced by the
+       *  repo E4 opt-out. The CLI discloses "local only — never shared". */
+      localOnly?: boolean;
+      /** Slice 5: the repo opted out of committing memory (E4), so a CLI note that
+       *  would normally commit was kept local. Distinguishes the opt-out case from
+       *  an explicit `--local` for the disclosure text. */
+      committedZoneDisabled?: boolean;
     }
   | {
       ok: false;
@@ -317,13 +341,16 @@ export function remember(store: Store, input: RememberInput): RememberResult {
     });
   }
 
-  // S8a caller-surface split: the CLI human surface lands committed+active; the
-  // MCP agent surface lands overlay+needs-review (E3). E4 secret guard runs on the
-  // committed (mainline) surface and diverts a secret-shaped note to the overlay.
-  const surface = input.surface ?? "cli";
-  let zone: MemoryZone = surface === "cli" ? "mainline" : "overlay";
-  let status: MemoryStatus = surface === "cli" ? "active" : "needs-review";
-  const actor = surface === "cli" ? "cli" : "agent";
+  // S8a caller-surface split (slice 4/5): the CLI human surface lands
+  // committed+active; the MCP agent surface lands overlay+needs-review (E3); the
+  // `local` human surface lands overlay+active (a divergent my-view note that
+  // never syncs). E4 secret guard runs on the committed (mainline) surface and
+  // diverts a secret-shaped note to the overlay.
+  const surface = input.surface;
+  const route = ROUTE_FOR_SURFACE[surface];
+  let zone: MemoryZone = route.zone;
+  let status: MemoryStatus = route.status;
+  const actor = route.actor;
   let remediation: string | undefined;
   if (zone === "mainline") {
     const finding = scanMemoryForSecret(gist, input.detail);
@@ -335,6 +362,20 @@ export function remember(store: Store, input: RememberInput): RememberResult {
       remediation = secretRemediationNote(finding.cls as string);
     }
   }
+  // E4 per-repo opt-out (item 4): a repo that must not commit memory redirects a
+  // Mainline write to the overlay (the MemoryFiles layer enforces the file
+  // redirect; here we mirror the zone so the store event + disclosure agree). The
+  // note stays `active` — it is still a human CLI note, just kept local.
+  const committedZoneDisabled = zone === "mainline" && (input.files?.localOnly ?? false);
+  if (committedZoneDisabled) zone = "overlay";
+  // Disclosure: the note landed in the personal overlay and will never be shared
+  // (chosen via `--local`, or forced by the repo opt-out).
+  const localOnly = surface === "local" || committedZoneDisabled;
+  // A `--local` note is marked with a never-share origin so the SHARED push digest
+  // excludes it (it is deliberately divergent my-view attention, never a shared
+  // artifact). The repo opt-out keeps the normal origin — its notes are ordinary
+  // notes the repo happens to keep local, not per-note "never share" declarations.
+  const origin: MemoryOrigin = surface === "local" ? "remember-local" : "remember";
 
   const id = memoryId(ulid(now()));
   store.upsertEntity({
@@ -342,14 +383,14 @@ export function remember(store: Store, input: RememberInput): RememberResult {
     kind: "memory",
     name: gist.slice(0, 80),
     locator: { t: "store" },
-    attrs: { origin: "remember" },
+    attrs: { origin },
     gen,
   });
   store.writeMemory({
     entityId: id,
     gist,
     detail: input.detail,
-    origin: "remember",
+    origin,
     sessionRef: input.sessionRef,
     authority: input.authority ?? "confirmed",
     status,
@@ -364,7 +405,7 @@ export function remember(store: Store, input: RememberInput): RememberResult {
     memoryId: id,
     gist,
     detail: input.detail,
-    origin: "remember",
+    origin,
     actor,
     carrier: MEMORY_SOURCE,
     method: "explicit-key",
@@ -478,6 +519,8 @@ export function remember(store: Store, input: RememberInput): RememberResult {
     ...(supersededId ? { supersededId } : {}),
     ...(advisory ? { advisory } : {}),
     ...(remediation ? { remediation } : {}),
+    ...(localOnly ? { localOnly } : {}),
+    ...(committedZoneDisabled ? { committedZoneDisabled } : {}),
   };
 }
 
@@ -560,6 +603,9 @@ export type LifecycleResult =
       /** Success-shaped E4 note when a `confirm` refused to promote a
        *  secret-shaped body to the committed zone (kept in the overlay). */
       remediation?: string;
+      /** Slice 5: the repo opted out of committing memory (E4), so this decision
+       *  was recorded in the personal overlay and nothing was promoted/committed. */
+      localOnly?: boolean;
     }
   | { ok: false; reason: "unknown-handle" | "not-memory"; guidance: string };
 
@@ -646,7 +692,12 @@ export function setMemoryLifecycle(
   let zone: MemoryZone = "mainline";
   let promoted = false;
   let remediation: string | undefined;
-  if (status === "active" && files) {
+  // E4 opt-out (item 4): a repo that must not commit memory never promotes to the
+  // committed zone — the confirm decision is recorded in the overlay (the
+  // MemoryFiles layer redirects the write; here we skip the promotion attempt so
+  // no create body is reconstructed into a Mainline-shaped line at all).
+  const localOnly = files?.localOnly ?? false;
+  if (status === "active" && files && !localOnly) {
     const inMainline = files.readMemories("mainline").some((m) => m.memoryId === memId);
     if (!inMainline) {
       const mem = store.getMemory(memId);
@@ -706,6 +757,7 @@ export function setMemoryLifecycle(
     status: effective,
     ...(promoted ? { promoted } : {}),
     ...(remediation ? { remediation } : {}),
+    ...(localOnly ? { localOnly } : {}),
   };
 }
 

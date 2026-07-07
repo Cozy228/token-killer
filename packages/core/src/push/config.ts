@@ -12,14 +12,26 @@
  * pin∩veto collision — excluding is the conservative operation).
  */
 
+import { existsSync, readFileSync } from "node:fs";
+import { join } from "node:path";
+
 /** Allowed top-level keys — anything else is rejected WITH GUIDANCE (P28). */
-const ALLOWED_KEYS = new Set(["pin", "veto"]);
+const ALLOWED_KEYS = new Set(["pin", "veto", "commitMemory"]);
 
 export interface PushConfig {
   /** Ids/handles to force-include (in listed order). */
   pin: string[];
   /** Ids/handles to force-exclude (wins over pin). */
   veto: string[];
+  /**
+   * E4 per-repo memory opt-out (slice 5). `false` = this repo must NOT commit
+   * memory at all: every memory write (CLI `remember`, confirm-promotion,
+   * migration, import) lands in the gitignored personal overlay instead of the
+   * committed Mainline zone; nothing creates or appends the committed logs.
+   * Default `true` (commit as usual). This is PROJECT TRUTH — only the shared
+   * committed `.ctx/push.jsonc` sets it; a personal overlay config never does.
+   */
+  commitMemory: boolean;
   /** Success-shaped guidance for anything malformed/unknown (never thrown). */
   warnings: string[];
   /** True when the raw source parsed and validated cleanly (no warnings). */
@@ -27,7 +39,7 @@ export interface PushConfig {
 }
 
 export function emptyPushConfig(): PushConfig {
-  return { pin: [], veto: [], warnings: [], ok: true };
+  return { pin: [], veto: [], commitMemory: true, warnings: [], ok: true };
 }
 
 /**
@@ -130,6 +142,7 @@ export function parsePushConfig(source: string): PushConfig {
     return {
       pin: [],
       veto: [],
+      commitMemory: true,
       warnings: [
         `\`.ctx/push.jsonc\` is not valid JSON (${msg}). ` +
           `Expected \`{ "pin": [ids], "veto": [ids] }\` (comments allowed). Config ignored.`,
@@ -142,6 +155,7 @@ export function parsePushConfig(source: string): PushConfig {
     return {
       pin: [],
       veto: [],
+      commitMemory: true,
       warnings: [
         `\`.ctx/push.jsonc\` must be a JSON object \`{ "pin": [ids], "veto": [ids] }\`. Config ignored.`,
       ],
@@ -157,9 +171,10 @@ export function parsePushConfig(source: string): PushConfig {
     return {
       pin: [],
       veto: [],
+      commitMemory: true,
       warnings: [
         `\`.ctx/push.jsonc\` has unknown key(s): ${unknown.join(", ")}. ` +
-          `Only \`pin\` and \`veto\` are allowed. Config ignored — fix or remove the extra key(s).`,
+          `Only \`pin\`, \`veto\` and \`commitMemory\` are allowed. Config ignored — fix or remove the extra key(s).`,
       ],
       ok: false,
     };
@@ -168,5 +183,71 @@ export function parsePushConfig(source: string): PushConfig {
   const warnings: string[] = [];
   const pin = asIdList(obj.pin, "pin", warnings);
   const veto = asIdList(obj.veto, "veto", warnings);
-  return { pin, veto, warnings, ok: warnings.length === 0 };
+  const commitMemory = asCommitMemory(obj.commitMemory, warnings);
+  return { pin, veto, commitMemory, warnings, ok: warnings.length === 0 };
+}
+
+/**
+ * Coerce the `commitMemory` opt-out (E4). Absent → `true` (commit as usual). A
+ * non-boolean value is success-shaped: a warning + the safe default (`true`), so
+ * a typo never silently stops committing memory.
+ */
+function asCommitMemory(value: unknown, warnings: string[]): boolean {
+  if (value === undefined) return true;
+  if (typeof value !== "boolean") {
+    warnings.push(
+      `\`commitMemory\` must be a boolean (true = commit memory, false = keep memory local); ` +
+        `got ${typeof value}. Defaulting to true (commit as usual).`,
+    );
+    return true;
+  }
+  return value;
+}
+
+/**
+ * Deterministic three-tier merge (slice 5): the SHARED committed config
+ * (`.ctx/push.jsonc`) is project truth; the PERSONAL overlay config
+ * (`.ctx/*.local.*`) adds LOCAL-EFFECT-ONLY attention — extra pins/vetoes for MY
+ * push digest only. Order is stable (shared entries first, then overlay extras)
+ * so two machines with the same inputs render byte-identical output.
+ *
+ * `commitMemory` is PROJECT TRUTH: it is taken from the SHARED layer only — a
+ * personal overlay never opts a whole repo out of committing memory (that is a
+ * shared decision). Warnings from both layers are concatenated.
+ */
+export function mergePushConfig(shared: PushConfig, overlay: PushConfig): PushConfig {
+  const pin = dedup([...shared.pin, ...overlay.pin]);
+  const veto = dedup([...shared.veto, ...overlay.veto]);
+  return {
+    pin,
+    veto,
+    commitMemory: shared.commitMemory, // shared-only: opt-out is project truth
+    warnings: [...shared.warnings, ...overlay.warnings],
+    ok: shared.ok && overlay.ok,
+  };
+}
+
+function dedup(ids: string[]): string[] {
+  const seen = new Set<string>();
+  const out: string[] = [];
+  for (const id of ids) {
+    if (seen.has(id)) continue;
+    seen.add(id);
+    out.push(id);
+  }
+  return out;
+}
+
+/**
+ * E4 per-repo memory opt-out, read from the SHARED committed config
+ * (`<ctxRoot>/push.jsonc`). Returns `true` when the repo has opted OUT of
+ * committing memory (`{ "commitMemory": false }`). Success-shaped: a missing or
+ * malformed file → `false` (commit as usual). Keyed on `ctxRoot` (not
+ * `projectRoot`) so a sandbox-injected `MemoryFiles` reads its OWN `.ctx` — the
+ * living-repo tests never read the real repo's config (the hard constraint).
+ */
+export function readMemoryOptOut(ctxRoot: string): boolean {
+  const path = join(ctxRoot, "push.jsonc");
+  if (!existsSync(path)) return false;
+  return parsePushConfig(readFileSync(path, "utf8")).commitMemory === false;
 }
