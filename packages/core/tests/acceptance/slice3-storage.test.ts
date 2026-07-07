@@ -1270,3 +1270,141 @@ describe("slice 3 — review round 3 fixes (cache reset seam + distribution)", (
     }
   });
 });
+
+describe("slice 3 — Codex post-merge review fixes (O-17/O-20)", () => {
+  let root: string;
+  let repo: string;
+
+  beforeEach(() => {
+    root = makeTempDir("ctx-s3-cx-");
+    repo = makeGitFixture(root);
+  });
+  afterEach(() => cleanupTempDir(root));
+
+  function commit(msg: string): string {
+    git(["add", "-A"], repo);
+    git(["commit", "-q", "-m", msg], repo);
+    return git(["rev-parse", "HEAD"], repo);
+  }
+
+  test("F-A: pull-delta recomputes drift — a pulled anchor to a removed target files stale-suspect", () => {
+    const files = new MemoryFiles(join(repo, ".ctx"));
+    files.appendMemory(
+      "mainline",
+      memEntry({ memoryId: "mem:01FAKEEP0000000000000000A", gist: "first at old tip" }),
+    );
+    const oldTip = commit("ctx: memory A");
+    const head = currentHeadCommit(repo)!; // = oldTip, an ancestor of the pulled commit
+    files.appendMemory(
+      "mainline",
+      memEntry({
+        memoryId: "mem:01FASTALE000000000000000A",
+        gist: "pulled note anchored to a now-removed symbol",
+        anchors: ["sym:src/x.ts#faGhost"],
+        anchoredAt: head,
+      }),
+    );
+    const newTip = commit("ctx: memory B (pulled)");
+
+    const store = openStore({ projectDir: repo, home: join(root, "home"), now });
+    try {
+      // A code index exists → the reindex may judge anchor freshness.
+      store.beginGeneration("code");
+      store.publishGeneration("code");
+      const res = pullDeltaReindex(store, files, { projectRoot: repo, oldTip, newTip });
+      expect(res.mode).toBe("delta");
+      expect(res.added).toBe(1);
+      // Pre-fix the delta path never recomputed drift → this stayed clean-active.
+      const m = store.getMemory("mem:01FASTALE000000000000000A");
+      expect(m?.driftReason).toBe("target-removed");
+      expect(m?.status).toBe("needs-review"); // composeStatus (A5)
+      expect(store.openStaleSuspects("mem:01FASTALE000000000000000A").length).toBeGreaterThan(0);
+    } finally {
+      store.close();
+    }
+  });
+
+  test("F-B: catch-up exclusion is per-event — a still-committed memory's new store-only retire survives", () => {
+    const files = new MemoryFiles(join(repo, ".ctx"));
+    const A = "mem:01FBMEMA0000000000000000A";
+    const B = "mem:01FBMEMB0000000000000000A";
+    files.appendMemory("mainline", memEntry({ memoryId: A, gist: "still-committed keeper" }));
+    files.appendMemory("mainline", memEntry({ memoryId: B, gist: "will be redacted" }));
+    const oldTip = commit("ctx: two memories");
+
+    const store = openStore({ projectDir: repo, home: join(root, "home"), now });
+    try {
+      reindexMemoryFromFiles(store, files); // store now holds A + B (create events)
+      // A NEW store-only lifecycle event lands on the still-committed A.
+      store.appendMemoryEvent({
+        memoryId: A,
+        verb: "retire",
+        actor: "cli",
+        carrier: "cli",
+        method: "explicit-key",
+        authority: "confirmed",
+      });
+
+      // A human redacts B (removes its line) → the pull sees a non-append shape →
+      // the reset fallback runs catch-up with the old committed ids as excludeIds.
+      const logPath = join(repo, ".ctx", "memory", "log.md");
+      const kept = readFileSync(logPath, "utf8")
+        .split("\n")
+        .filter((l) => l.includes("01FBMEMA0000000000000000A"))
+        .join("\n");
+      writeFileSync(logPath, `${kept}\n`, "utf8");
+      const newTip = commit("ctx: redact B");
+
+      const res = pullDeltaReindex(store, files, { projectRoot: repo, oldTip, newTip });
+      expect(res.mode).toBe("full-fallback");
+      // (i) A survives AND its new store-only retire was exported + folded (pre-fix
+      //     the whole memory was skipped because its create id was in excludeIds).
+      expect(
+        files.readDecisions("mainline").some((d) => d.verb === "retire" && d.memoryId === A),
+      ).toBe(true);
+      expect(store.getMemory(A)?.status).toBe("retired");
+      // (ii) B (committed-then-removed) is purged, not re-exported.
+      expect(store.getMemory(B)).toBeUndefined();
+      expect(files.readMemories("mainline").map((m) => m.memoryId)).not.toContain(B);
+    } finally {
+      store.close();
+    }
+  });
+
+  test("F-C: an overlay dec on a mainline-owned id is shadowed (non-opt-out), but folds under opt-out", () => {
+    const ctx = join(repo, ".ctx");
+    const writer = new MemoryFiles(ctx); // lay down the literal files (not opt-out)
+    const X = "mem:01FCMEMX0000000000000000A";
+    writer.appendMemory("mainline", memEntry({ memoryId: X, gist: "committed active memory" }));
+    writer.appendDecision("overlay", {
+      eventId: "01FCRETIRE",
+      at: (clock += 1000),
+      memoryId: X,
+      verb: "retire",
+      actor: "cli",
+      carrier: "cli",
+      method: "explicit-key",
+      authority: "confirmed",
+    });
+
+    // Non-opt-out reindex: MAINLINE wins → X stays active; the overlay dec is
+    // shadowed + counted (pre-fix it was ingested and flipped X to retired).
+    const a = openStore({ projectDir: repo, home: join(root, "a"), now });
+    try {
+      const report = reindexMemoryFromFiles(a, new MemoryFiles(ctx));
+      expect(a.getMemory(X)?.status).toBe("active");
+      expect(report.shadowedOverlay).toBe(1);
+    } finally {
+      a.close();
+    }
+
+    // Opt-out repo: every legit decision is routed to the overlay, so it must FOLD.
+    const b = openStore({ projectDir: repo, home: join(root, "b"), now });
+    try {
+      reindexMemoryFromFiles(b, new MemoryFiles(ctx, true /* localOnly */));
+      expect(b.getMemory(X)?.status).toBe("retired");
+    } finally {
+      b.close();
+    }
+  });
+});

@@ -16,7 +16,7 @@
  * no LLM (assertNoEgress stays armed). Injected `claudeHome` points at an empty
  * dir so the REAL host memory never leaks into these deterministic fixtures.
  */
-import { copyFileSync, mkdirSync, writeFileSync } from "node:fs";
+import { copyFileSync, existsSync, mkdirSync, statSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, test } from "vitest";
 import { openStore, type Store } from "../../src/store/store.ts";
@@ -24,6 +24,9 @@ import { remember, setMemoryLifecycle } from "../../src/memory/remember.ts";
 import { importClaudeCodeMemory } from "../../src/memory/claudeImporter.ts";
 import { MemoryFiles } from "../../src/memory/fileStore.ts";
 import { reindexMemoryFromFiles } from "../../src/memory/reindex.ts";
+import { currentHeadCommit } from "../../src/memory/anchoredAt.ts";
+import { flagAnchored } from "../../src/ingest/code/incremental.ts";
+import { checkMemoryOps } from "../../src/install/doctor.ts";
 import { MemorySourceAdapter } from "../../src/memory/adapter.ts";
 import { memoryOpsReport } from "../../src/memory/ops.ts";
 import { serializeMemory } from "../../src/memory/serialize.ts";
@@ -393,5 +396,100 @@ describe("acceptance: slice 4 — memory dirty source + import→overlay→confi
     });
     expect(line).not.toContain("\n");
     expect(line.startsWith("- mem ")).toBe(true);
+  });
+});
+
+describe("acceptance: slice 4 — Codex post-merge review fixes (O-17/O-20)", () => {
+  let root: string;
+  beforeEach(() => {
+    root = makeTempDir("ctx-s4-cx-");
+  });
+  afterEach(() => cleanupTempDir(root));
+
+  test("F-D: a pre-reindex confirm promotes the create WITH its anchored-at", () => {
+    const { repo, store } = setup(root);
+    const files = MemoryFiles.forStore(store);
+    const head = currentHeadCommit(repo)!;
+
+    // MCP surface → overlay needs-review, anchored to a file that exists.
+    const r = remember(store, {
+      note: "agent note anchored to the readme",
+      surface: "mcp",
+      anchors: ["file:README.md"],
+      files,
+    });
+    if (!r.ok) throw new Error("remember failed");
+
+    // Confirm immediately — NO reindex between write and confirm. The promotion
+    // reconstructs the mainline line from the live entity attrs, which must carry
+    // anchored-at (pre-fix they were only rebuilt at the next full reindex).
+    const res = setMemoryLifecycle(store, r.entityId, "active", files);
+    expect(res.ok && res.promoted).toBe(true);
+    const line = files.readMemories("mainline").find((m) => m.memoryId === r.entityId);
+    expect(line?.anchoredAt).toBe(head);
+    store.close();
+  });
+
+  test("F-E: a secret-diverted confirm routes its stale-suspect resolution to the OVERLAY", () => {
+    const { repo, store } = setup(root);
+    const files = MemoryFiles.forStore(store);
+
+    // A secret-shaped overlay note anchored to a real file (so it can drift).
+    const r = remember(store, {
+      note: "leak sk-ABCDEFGH1234567890secret keep this note",
+      surface: "mcp",
+      anchors: ["file:README.md"],
+      files,
+    });
+    if (!r.ok) throw new Error("remember failed");
+
+    // File a drift + open stale-suspect on it (the 2c anchor-drift path).
+    const gen = store.publishedGen("memory");
+    flagAnchored(store, "file:README.md", "signature-changed", gen);
+    expect(store.openStaleSuspects(r.entityId).length).toBeGreaterThan(0);
+
+    // Confirm: the body is secret → kept in the overlay (never promoted). Both the
+    // confirm dec AND the resolve-conflict dec must land in the OVERLAY log; the
+    // committed mainline decisions.md must stay empty (pre-fix the resolution was
+    // hardcoded to mainline → a dangling committed line referencing an unshared id).
+    const res = setMemoryLifecycle(store, r.entityId, "active", files);
+    expect(res.ok && res.remediation).toBeDefined();
+    expect(res.ok && res.promoted).toBeUndefined();
+    const overlay = files.readDecisions("overlay");
+    expect(overlay.some((d) => d.verb === "confirm" && d.memoryId === r.entityId)).toBe(true);
+    expect(overlay.some((d) => d.verb === "resolve-conflict" && d.memoryId === r.entityId)).toBe(
+      true,
+    );
+    expect(files.readDecisions("mainline")).toHaveLength(0);
+    expect(existsSync(join(repo, ".ctx", "memory", "decisions.md"))).toBe(false);
+    store.close();
+  });
+
+  test("F-F: doctor's memory check is genuinely read-only", () => {
+    // (a) A HOME with no store: no shard dir is created, advisory returned.
+    const repoA = join(root, "repo-a");
+    git(["init", "-q", "-b", "main", repoA], root);
+    git(["config", "user.email", "ctx-test@example.invalid"], repoA);
+    git(["config", "user.name", "ctx test"], repoA);
+    writeFileSync(join(repoA, "README.md"), "# a\n");
+    git(["add", "-A"], repoA);
+    git(["commit", "-q", "-m", "init"], repoA);
+    const freshHome = join(root, "fresh-home");
+    const missing = checkMemoryOps({ projectRoot: repoA, home: freshHome });
+    expect(missing.ok).toBe(true); // advisory, never a failure
+    expect(missing.detail).toContain("unavailable");
+    expect(existsSync(join(freshHome, "projects"))).toBe(false); // zero traces
+
+    // (b) An existing store: the report is returned and the DB file is untouched.
+    const { store } = setup(root);
+    remember(store, { note: "a durable note", surface: "cli", files: MemoryFiles.forStore(store) });
+    const dbPath = store.dbPath;
+    store.close();
+    const before = statSync(dbPath);
+    const check = checkMemoryOps({ projectRoot: join(root, "repo"), home: join(root, "ctx-home") });
+    expect(check.detail).toContain("commit-memory");
+    const after = statSync(dbPath);
+    expect(after.mtimeMs).toBe(before.mtimeMs); // read-only: no mtime bump
+    expect(after.size).toBe(before.size);
   });
 });

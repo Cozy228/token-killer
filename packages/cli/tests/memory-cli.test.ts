@@ -94,6 +94,20 @@ describe("ctx CLI: memory lifecycle", () => {
     expect(lines.join("\n")).not.toContain("local only");
   });
 
+  test("F-G: confirming a --local note discloses it stays local, never 'promoted'", () => {
+    expect(run(["remember", "my private local note", "--local"], io)).toBe(0);
+    const handle = (lines[0]?.match(/\[([^\]]+)\]/) ?? [])[1];
+    expect(handle).toBeDefined();
+    lines = [];
+    expect(run(["memory", "confirm", `[${handle}]`], io)).toBe(0);
+    const out = lines.join("\n");
+    // Disclosure mentions local; it is NOT promoted to the shared committed log,
+    // and the message is the --local wording, not the E4 opt-out wording.
+    expect(out.toLowerCase()).toContain("local");
+    expect(out).not.toContain("promoted to the shared committed memory log");
+    expect(out).not.toContain("does not commit memory");
+  });
+
   test("unknown command falls back to the scaffold notice", () => {
     expect(run(["frobnicate"], io)).toBe(0);
     expect(lines.join("\n")).toContain("lands in a later M1 slice");

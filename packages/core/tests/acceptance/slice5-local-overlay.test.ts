@@ -22,6 +22,7 @@ import { remember, setMemoryLifecycle, listMemories, recall } from "../../src/me
 import { importClaudeCodeMemory } from "../../src/memory/claudeImporter.ts";
 import { MemoryFiles } from "../../src/memory/fileStore.ts";
 import { reindexMemoryFromFiles } from "../../src/memory/reindex.ts";
+import { catchUpStoreOnlyEvents } from "../../src/memory/catchup.ts";
 import { migrateStoreMemoryToFiles } from "../../src/memory/exportMigration.ts";
 import { buildPushBlock } from "../../src/push/block.ts";
 import { rankGotchas } from "../../src/push/rank.ts";
@@ -242,5 +243,63 @@ describe("acceptance: slice 5 — personal overlay + three-tier scope", () => {
     expect(shallow.detail).toContain("WARNING");
     expect(shallow.detail).toContain("shallow clone");
     expect(shallow.detail).toContain("anchored-at");
+  });
+
+  test("F-G: confirm on a `--local` note never promotes it to the committed zone", () => {
+    const { repo, store } = setup(root);
+    const files = MemoryFiles.forStore(store);
+    const loc = remember(store, { note: "my private local note", surface: "local", files });
+    if (!loc.ok) throw new Error("remember failed");
+
+    const conf = setMemoryLifecycle(store, loc.entityId, "active", files);
+    expect(conf.ok).toBe(true);
+    // Never promoted; disclosed as local, but NOT as a repo opt-out.
+    expect(conf.ok && conf.promoted).toBeUndefined();
+    expect(conf.ok && conf.localOnly).toBe(true);
+    expect(conf.ok && conf.committedZoneDisabled).toBeUndefined();
+
+    // Pre-fix the confirm promoted the create to mainline log.md + wrote a mainline
+    // confirm dec. The committed files must never carry this id.
+    expect(existsSync(join(repo, ".ctx", "memory", "log.md"))).toBe(false);
+    expect(existsSync(join(repo, ".ctx", "memory", "decisions.md"))).toBe(false);
+    expect(files.readMemories("mainline")).toHaveLength(0);
+    expect(files.readDecisions("mainline")).toHaveLength(0);
+    // The confirm dec lives in the personal overlay.
+    expect(
+      files
+        .readDecisions("overlay")
+        .some((d) => d.verb === "confirm" && d.memoryId === loc.entityId),
+    ).toBe(true);
+    store.close();
+  });
+
+  test("F-H: files-less local/mcp store-only rows catch-up into the OVERLAY, never committed", () => {
+    const { repo, store } = setup(root);
+    // Public core API — RememberInput.files is optional → store-only rows.
+    const loc = remember(store, { note: "files-less local scratch", surface: "local" });
+    const mcp = remember(store, { note: "files-less agent proposal", surface: "mcp" });
+    expect(loc.ok && mcp.ok).toBe(true);
+
+    const files = MemoryFiles.forStore(store); // NOT opt-out
+    catchUpStoreOnlyEvents(store, files);
+
+    // Both land in the OVERLAY; the committed mainline log is never created.
+    expect(existsSync(join(repo, ".ctx", "memory", "log.md"))).toBe(false);
+    expect(files.readMemories("mainline")).toHaveLength(0);
+    const overlay = files.readMemories("overlay");
+    const localRow = overlay.find((m) => m.gist === "files-less local scratch");
+    const agentRow = overlay.find((m) => m.gist === "files-less agent proposal");
+    expect(localRow?.origin).toBe("remember-local"); // exported verbatim → push-excluded
+    expect(localRow?.status).toBe("active");
+    expect(agentRow?.status).toBe("needs-review");
+
+    // A fresh reindex preserves the zones; the push digest excludes both.
+    const fresh = openStore({ projectDir: repo, home: join(root, "fresh-home") });
+    reindexMemoryFromFiles(fresh, new MemoryFiles(join(repo, ".ctx")));
+    const gists = rankGotchas(fresh).map((g) => g.gist);
+    expect(gists).not.toContain("files-less local scratch");
+    expect(gists).not.toContain("files-less agent proposal");
+    fresh.close();
+    store.close();
   });
 });

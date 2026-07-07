@@ -207,3 +207,28 @@ fixed on the same branch.
   requires; no living-repo test dodges by omitting it) is fine as-is. Not to be "fixed" to non-optional.
 - **Wider test re-pointing — ACCEPTED.** Sandboxing the memory writer in `perf-gates` / `2a` / `2e`
   (beyond the two named tests) via `MemoryAdapterOptions.ctxRoot` is the correct equivalent isolation.
+
+## Codex post-merge review fixes (O-17/O-20, 2026-07-07)
+
+- **F-D (C4-1, MAJOR) — promotion must not lose `anchored-at`.** `remember()` computed `anchoredAt` AFTER
+  `upsertEntity`, so the live entity attrs never carried it; a confirm BEFORE any reindex called
+  `promoteCreateToMainline`, which read `attrs.anchoredAt` → `undefined`, and the promoted mainline line
+  dropped its anchor stamp. Fix: compute `anchoredAt` before the entity write and include it in the attrs
+  (mirrors `reindex.ingestMemoryEntry`). Test: `slice4-dirty-import.test.ts` "F-D: a pre-reindex confirm
+  promotes the create WITH its anchored-at" (MCP note anchored to the readme → immediate confirm → the
+  promoted line's `anchored-at` equals the sandbox HEAD).
+- **F-E (C4-2, MAJOR) — stale-suspect resolutions follow the confirm's zone.** `resolveConflictViaEvent`
+  hardcoded zone `mainline`; a secret-diverted (or unpromoted overlay) confirm therefore wrote a committed
+  resolution `dec` referencing an id no peer has (the D3 dangling class). Fix: `resolveConflictViaEvent`
+  takes a `zone` parameter (default `mainline`); `setMemoryLifecycle` passes the SAME zone it used for the
+  confirm dec. Test: `slice4-dirty-import.test.ts` "F-E: a secret-diverted confirm routes its stale-suspect
+  resolution to the OVERLAY" (both the confirm dec AND the resolve-conflict dec land in the overlay;
+  mainline `decisions.md` never created).
+- **F-F (C4-3, MEDIUM) — doctor's memory check is genuinely read-only.** `checkMemoryOps` opened via
+  `openStore`, which mkdirs the shard, runs migrations, and writes `project_root` meta — a doctor run on a
+  fresh checkout left traces. Fix: added `openDatabaseReadOnly` (node:sqlite `{ readOnly: true }`,
+  available on the 22.16 floor) + `openStoreReadOnly` (no mkdir/migrations/setMeta; throws when the DB is
+  absent). `checkMemoryOps` uses it and reports an advisory (`ok: true`) when the store is MISSING or its
+  schema predates the shipped code (doctor never upgrades). Test: `slice4-dirty-import.test.ts` "F-F:
+  doctor's memory check is genuinely read-only" (no store → no shard dir created + advisory; existing
+  store → report returned, DB mtime + size untouched).
