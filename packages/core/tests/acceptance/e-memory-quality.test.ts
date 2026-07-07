@@ -68,10 +68,11 @@ describe("acceptance: E memory-quality", () => {
   /** remember() at the current clock, unwrapped (advances the clock by 1s). */
   function remb(
     note: string,
-    opts: Parameters<typeof remember>[1] = { note },
+    opts: Partial<Parameters<typeof remember>[1]> = {},
   ): RememberResult & { ok: true } {
     clock += 1000;
-    const r = remember(store, { ...opts, note, now });
+    // Store-only quality fixtures assert the human-committed surface (slice 5).
+    const r = remember(store, { surface: "cli", ...opts, note, now });
     if (!r.ok) throw new Error(`remember failed (${r.reason}): ${note}`);
     return r;
   }

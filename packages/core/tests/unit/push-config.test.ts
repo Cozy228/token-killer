@@ -1,5 +1,13 @@
-import { describe, expect, test } from "vitest";
-import { parsePushConfig, stripJsonComments } from "../../src/push/config.ts";
+import { mkdtempSync, rmSync, writeFileSync, mkdirSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
+import { afterEach, beforeEach, describe, expect, test } from "vitest";
+import {
+  mergePushConfig,
+  parsePushConfig,
+  readMemoryOptOut,
+  stripJsonComments,
+} from "../../src/push/config.ts";
 
 // §10 unit — .ctx/push.jsonc JSONC parsing edge cases (P28: comments allowed;
 // unknown keys rejected with guidance; every failure success-shaped, never a throw).
@@ -67,5 +75,65 @@ describe("push config: JSONC parsing", () => {
   test("duplicate ids are de-duplicated, blanks dropped", () => {
     const c = parsePushConfig(`{ "pin": ["m1", "m1", " ", "m2"] }`);
     expect(c.pin).toEqual(["m1", "m2"]);
+  });
+
+  // ---- slice 5: E4 opt-out (`commitMemory`) + three-tier merge ----
+  test("commitMemory defaults to true; parses false; non-boolean → warn + default true", () => {
+    expect(parsePushConfig("{}").commitMemory).toBe(true);
+    expect(parsePushConfig(`{ "commitMemory": false }`).commitMemory).toBe(false);
+    expect(parsePushConfig(`{ "commitMemory": true }`).commitMemory).toBe(true);
+    const bad = parsePushConfig(`{ "commitMemory": "no" }`);
+    expect(bad.commitMemory).toBe(true); // success-shaped: default, not a throw
+    expect(bad.ok).toBe(false);
+    expect(bad.warnings[0]).toMatch(/commitMemory/);
+  });
+
+  test("commitMemory coexists with pin/veto (a known key, not rejected)", () => {
+    const c = parsePushConfig(`{ "pin": ["m1"], "veto": ["m2"], "commitMemory": false }`);
+    expect(c.ok).toBe(true);
+    expect(c.pin).toEqual(["m1"]);
+    expect(c.veto).toEqual(["m2"]);
+    expect(c.commitMemory).toBe(false);
+  });
+
+  test("mergePushConfig: shared-first order, dedup, opt-out is shared-only, warnings concat", () => {
+    const shared = parsePushConfig(`{ "pin": ["a", "b"], "veto": ["x"], "commitMemory": false }`);
+    const overlay = parsePushConfig(`{ "pin": ["b", "c"], "veto": ["y"], "commitMemory": true }`);
+    const merged = mergePushConfig(shared, overlay);
+    expect(merged.pin).toEqual(["a", "b", "c"]); // shared first, "b" de-duplicated
+    expect(merged.veto).toEqual(["x", "y"]);
+    // Opt-out is project truth → taken from the SHARED layer only (overlay ignored).
+    expect(merged.commitMemory).toBe(false);
+  });
+
+  test("mergePushConfig is deterministic (byte-identical for identical inputs)", () => {
+    const s = parsePushConfig(`{ "pin": ["a"] }`);
+    const o = parsePushConfig(`{ "pin": ["b"] }`);
+    expect(JSON.stringify(mergePushConfig(s, o))).toBe(JSON.stringify(mergePushConfig(s, o)));
+  });
+});
+
+describe("push config: E4 opt-out reader (readMemoryOptOut)", () => {
+  let root: string;
+  beforeEach(() => {
+    root = mkdtempSync(join(tmpdir(), "ctx-optout-"));
+  });
+  afterEach(() => {
+    rmSync(root, { recursive: true, force: true, maxRetries: 5, retryDelay: 100 });
+  });
+
+  test("missing config → not opted out; malformed → not opted out (success-shaped)", () => {
+    const ctxRoot = join(root, ".ctx");
+    expect(readMemoryOptOut(ctxRoot)).toBe(false); // no file
+    mkdirSync(ctxRoot, { recursive: true });
+    writeFileSync(join(ctxRoot, "push.jsonc"), "{ not json");
+    expect(readMemoryOptOut(ctxRoot)).toBe(false);
+  });
+
+  test("`commitMemory: false` in the SHARED config → opted out", () => {
+    const ctxRoot = join(root, ".ctx");
+    mkdirSync(ctxRoot, { recursive: true });
+    writeFileSync(join(ctxRoot, "push.jsonc"), `{ "commitMemory": false }`);
+    expect(readMemoryOptOut(ctxRoot)).toBe(true);
   });
 });

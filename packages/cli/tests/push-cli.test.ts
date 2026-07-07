@@ -1,5 +1,5 @@
 import { execFileSync } from "node:child_process";
-import { existsSync, mkdtempSync, readFileSync, rmSync } from "node:fs";
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, test } from "vitest";
@@ -92,5 +92,30 @@ describe("ctx CLI: push", () => {
   test("push pin without an id prints usage (exit 2)", () => {
     expect(run(["push", "pin"], io)).toBe(2);
     expect(lines.join("\n")).toMatch(/usage: ctx push pin/);
+  });
+
+  test("ctx push --local renders the merged local view without writing any file", () => {
+    run(["remember", "gotcha for local view"], io);
+    lines = [];
+    expect(run(["push", "--local"], io)).toBe(0);
+    const out = lines.join("\n");
+    expect(out).toContain("local view");
+    expect(out).toContain("NOT written to any file");
+    // Display-only: no host file placed.
+    expect(existsSync(join(repo, "AGENTS.md"))).toBe(false);
+    expect(existsSync(join(repo, "CLAUDE.md"))).toBe(false);
+  });
+
+  test("push pin preserves the E4 commitMemory opt-out in .ctx/push.jsonc", () => {
+    // Author sets the per-repo opt-out by hand, then edits a pin via the CLI.
+    mkdirSync(join(repo, ".ctx"), { recursive: true });
+    writeFileSync(join(repo, ".ctx", "push.jsonc"), `{ "commitMemory": false }`);
+    run(["remember", "pin me too"], io);
+    const handle = (lines[0]?.match(/\[([^\]]+)\]/) ?? [])[1];
+    lines = [];
+    expect(run(["push", "pin", handle as string], io)).toBe(0);
+    const cfg = JSON.parse(readFileSync(join(repo, ".ctx", "push.jsonc"), "utf8"));
+    expect(cfg.commitMemory).toBe(false); // opt-out NOT erased by the pin edit
+    expect(cfg.pin).toContain(handle);
   });
 });

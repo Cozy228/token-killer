@@ -84,6 +84,16 @@ describe("ctx CLI: memory lifecycle", () => {
     expect(out.toLowerCase()).toContain("overlay"); // remediation note surfaced
   });
 
+  test("ctx remember --local discloses the personal-overlay landing zone", () => {
+    expect(run(["remember", "my private scratch note", "--local"], io)).toBe(0);
+    const out = lines.join("\n");
+    expect(out).toContain("local only — never shared");
+    // A plain (committed) remember must NOT disclose local-only.
+    lines = [];
+    run(["remember", "a shared committed gotcha"], io);
+    expect(lines.join("\n")).not.toContain("local only");
+  });
+
   test("unknown command falls back to the scaffold notice", () => {
     expect(run(["frobnicate"], io)).toBe(0);
     expect(lines.join("\n")).toContain("lands in a later M1 slice");

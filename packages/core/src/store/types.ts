@@ -122,7 +122,13 @@ export interface Conflict {
   status: ConflictStatus;
 }
 
-export type MemoryOrigin = `host-import:${string}` | "remember" | "human-note";
+export type MemoryOrigin =
+  | `host-import:${string}`
+  | "remember"
+  /** `remember --local` (slice 5): a human, overlay-only, never-shared note. Marked
+   *  distinctly so the shared push digest excludes it (never a shared artifact). */
+  | "remember-local"
+  | "human-note";
 export type MemoryStatus = "active" | "needs-review" | "superseded" | "retired";
 
 /**

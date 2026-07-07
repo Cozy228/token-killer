@@ -21,6 +21,7 @@
 import { realpathSync } from "node:fs";
 import { pathToFileURL } from "node:url";
 import {
+  buildPushBlock,
   createDefaultRegistry,
   editPinVeto,
   formatDoctorReport,
@@ -28,6 +29,7 @@ import {
   listMemories,
   openStore,
   MemoryFiles,
+  readMergedPushConfig,
   recall,
   RefreshEngine,
   remember,
@@ -131,19 +133,25 @@ function withStore(io: RunIo, fn: (store: Store) => number): number {
 function cmdRemember(io: RunIo, args: ParsedArgs): number {
   const note = args.positionals[0];
   if (note === undefined) {
-    io.out('usage: ctx remember "<note>" [--detail <text>] [--anchor <id>]... [--supersedes <id>]');
+    io.out(
+      'usage: ctx remember "<note>" [--detail <text>] [--anchor <id>]... [--supersedes <id>] [--local]',
+    );
     return 2;
   }
+  // `--local` (slice 5): a human note that lands in the gitignored personal
+  // overlay as `active` — deliberately divergent my-view attention that NEVER
+  // syncs. Plain `remember` stays the committed Mainline default.
+  const local = args.flags.local !== undefined;
   return withStore(io, (store) => {
     const result = remember(store, {
       note,
       detail: args.flags.detail?.[0],
       anchors: args.flags.anchor,
       supersedes: args.flags.supersedes?.[0],
-      // S8a: the CLI is the HUMAN surface → committed Mainline as `active` (the E4
-      // secret guard diverts a secret-shaped note to the overlay as needs-review).
-      // Write-through is always-on (slice 4).
-      surface: "cli",
+      // S8a: the CLI is the HUMAN surface. `local` → overlay+active (never shared);
+      // default → committed Mainline as `active` (the E4 secret guard diverts a
+      // secret-shaped note to the overlay). Write-through is always-on (slice 4).
+      surface: local ? "local" : "cli",
       files: MemoryFiles.forStore(store),
     });
     if (result.ok) {
@@ -151,6 +159,10 @@ function cmdRemember(io: RunIo, args: ParsedArgs): number {
       if (result.anchors.length > 0) io.out(`  anchors: ${result.anchors.join(", ")}`);
       if (result.supersededId) io.out(`  supersedes: ${result.supersededId}`);
       if (result.status !== "active") io.out(`  status: ${result.status}`);
+      if (result.localOnly) io.out("  local only — never shared");
+      if (result.committedZoneDisabled) {
+        io.out("  (this repo does not commit memory (E4) — kept in your personal overlay)");
+      }
       if (result.remediation) io.out(`  ${result.remediation}`);
       return 0;
     }
@@ -207,6 +219,9 @@ function cmdMemory(io: RunIo, args: ParsedArgs): number {
     }
     io.out(`${result.entityId} → ${result.status}`);
     if (result.promoted) io.out("  promoted to the shared committed memory log");
+    if (result.localOnly) {
+      io.out("  (this repo does not commit memory (E4) — recorded in your personal overlay)");
+    }
     if (result.remediation) io.out(`  ${result.remediation}`);
     return 0;
   });
@@ -228,6 +243,24 @@ function cmdPush(io: RunIo, args: ParsedArgs): number {
         return 0;
       }
       io.out(`${remove ? "un-" : ""}${sub} ${id} → ${res.path}`);
+      return 0;
+    });
+  }
+
+  // `ctx push --local`: render MY local view — the shared committed config merged
+  // with my personal overlay attention (`.ctx/push.local.jsonc`). DISPLAY ONLY,
+  // never placed into a (possibly committed) host file, so personal pins/vetoes
+  // never leak into a shared artifact (slice 5, three-tier (c)).
+  if (args.flags.local !== undefined) {
+    return withStore(io, (store) => {
+      const merged = readMergedPushConfig(store.projectRoot);
+      for (const w of merged.warnings) io.out(`note: ${w}`);
+      const block = buildPushBlock(store, { config: merged });
+      io.out(block.text);
+      io.out(
+        `local view: ${block.bytes} bytes, ${block.rendered.length} gotcha(s) ` +
+          "(shared config + your personal overlay) — NOT written to any file.",
+      );
       return 0;
     });
   }

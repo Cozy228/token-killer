@@ -13,11 +13,15 @@ import { dirname, join } from "node:path";
 import { blake2bHex } from "../store/hash.ts";
 import type { Store } from "../store/store.ts";
 import { buildPushBlock, type PushBlock } from "./block.ts";
-import { emptyPushConfig, parsePushConfig, type PushConfig } from "./config.ts";
+import { emptyPushConfig, mergePushConfig, parsePushConfig, type PushConfig } from "./config.ts";
 import { placePushBlock, type PlacementResult } from "./hosts.ts";
 
 /** Project-relative path of the pin/veto config (git-shareable, D27/D30). */
 export const PUSH_CONFIG_REL = join(".ctx", "push.jsonc");
+
+/** Project-relative path of the PERSONAL overlay config (slice 5, three-tier
+ *  (c) — `.ctx/*.local.*` convention; gitignored, per-person, never shared). */
+export const PUSH_LOCAL_CONFIG_REL = join(".ctx", "push.local.jsonc");
 
 /** Store meta key holding the last-pushed block digest (no-op guard). */
 export const PUSH_SHA_META = "push:last-sha";
@@ -26,11 +30,41 @@ export function pushConfigPath(projectRoot: string): string {
   return join(projectRoot, ".ctx", "push.jsonc");
 }
 
-/** Read + parse `.ctx/push.jsonc`; a missing file is an empty (clean) config. */
+/** Absolute path of the personal overlay config (`.ctx/push.local.jsonc`). */
+export function pushLocalConfigPath(projectRoot: string): string {
+  return join(projectRoot, ".ctx", "push.local.jsonc");
+}
+
+/**
+ * Read + parse the SHARED committed `.ctx/push.jsonc`; a missing file is an empty
+ * (clean) config. This is the project-truth layer: the block PLACED into the host
+ * instruction files (which may be committed) is built from THIS config only, so
+ * peers with the same committed config get a byte-identical placed digest and no
+ * personal attention ever leaks into a shared file.
+ */
 export function readPushConfig(projectRoot: string): PushConfig {
   const path = pushConfigPath(projectRoot);
   if (!existsSync(path)) return emptyPushConfig();
   return parsePushConfig(readFileSync(path, "utf8"));
+}
+
+/** Read + parse the PERSONAL overlay config (`.ctx/push.local.jsonc`); missing →
+ *  empty (clean). Reuses the shared `parsePushConfig` pipeline (no second parser). */
+export function readLocalPushConfig(projectRoot: string): PushConfig {
+  const path = pushLocalConfigPath(projectRoot);
+  if (!existsSync(path)) return emptyPushConfig();
+  return parsePushConfig(readFileSync(path, "utf8"));
+}
+
+/**
+ * Three-tier MERGED view (slice 5): the shared committed config plus MY personal
+ * overlay attention (extra pins/vetoes). Used for the LOCAL push view only
+ * (`ctx push --local`) — never for the placed/committed block. Deterministic
+ * merge (shared entries first). Read-once-per-invocation: this is a cold-path
+ * command reader, not a per-query serve read (A11).
+ */
+export function readMergedPushConfig(projectRoot: string): PushConfig {
+  return mergePushConfig(readPushConfig(projectRoot), readLocalPushConfig(projectRoot));
 }
 
 export type PinVetoList = "pin" | "veto";
@@ -68,10 +102,26 @@ export function editPinVeto(
   const target = list === "pin" ? pin : veto;
   if (action === "add") target.add(id);
   else target.delete(id);
-  const obj = { pin: [...pin], veto: [...veto] };
+  // Preserve the E4 opt-out across a pin/veto edit (only serialize it when set,
+  // so an ordinary repo's config stays a plain `{ pin, veto }`).
+  const obj: { pin: string[]; veto: string[]; commitMemory?: boolean } = {
+    pin: [...pin],
+    veto: [...veto],
+    ...(current.commitMemory === false ? { commitMemory: false } : {}),
+  };
   mkdirSync(dirname(path), { recursive: true });
   writeFileSync(path, `${JSON.stringify(obj, null, 2)}\n`);
-  return { ok: true, path, config: { pin: obj.pin, veto: obj.veto, warnings: [], ok: true } };
+  return {
+    ok: true,
+    path,
+    config: {
+      pin: obj.pin,
+      veto: obj.veto,
+      commitMemory: current.commitMemory,
+      warnings: [],
+      ok: true,
+    },
+  };
 }
 
 export interface RunPushOptions {
@@ -117,7 +167,11 @@ export function runPush(
     return { skipped: true, block, placements: [], warnings: config.warnings, sha };
   }
 
-  const placements = placePushBlock(projectRoot, block.text, (opts.dryRun !== undefined ? { dryRun: opts.dryRun } : {}));
+  const placements = placePushBlock(
+    projectRoot,
+    block.text,
+    opts.dryRun !== undefined ? { dryRun: opts.dryRun } : {},
+  );
   if (!opts.dryRun) store.setMeta(PUSH_SHA_META, sha);
   return { skipped: false, block, placements, warnings: config.warnings, sha };
 }

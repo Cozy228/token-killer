@@ -189,7 +189,7 @@ describe("store is a rebuildable view (slice 2)", () => {
 
   const remb = (note: string, opts = {}): string => {
     clock += 1000;
-    const r = remember(store, { note, now, ...opts });
+    const r = remember(store, { surface: "cli", note, now, ...opts });
     if (!r.ok) throw new Error(`remember failed: ${r.reason}`);
     return r.handle;
   };
@@ -294,7 +294,7 @@ describe("event `at` strict monotonicity across restart (R2-1)", () => {
       const home = join(root, "ctx-home");
       let clock = 5_000;
       const s1 = openStore({ projectDir: repo, home, now: () => clock });
-      const r = remember(s1, { note: "restart-order probe", now: () => clock });
+      const r = remember(s1, { surface: "cli", note: "restart-order probe", now: () => clock });
       if (!r.ok) throw new Error(`remember failed: ${r.reason}`);
       const id = r.entityId;
       s1.appendMemoryEvent({

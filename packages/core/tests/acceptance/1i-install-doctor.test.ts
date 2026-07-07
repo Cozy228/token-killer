@@ -84,7 +84,7 @@ describe("acceptance: 1i install/doctor", () => {
     const report = runDoctor({ projectRoot, home, env: {} });
     const byName = Object.fromEntries(report.checks.map((c) => [c.name, c]));
     expect(Object.keys(byName).sort()).toEqual(
-      ["egress-guard", "mcp", "memory", "node", "push", "sqlite", "store"].sort(),
+      ["egress-guard", "git-depth", "mcp", "memory", "node", "push", "sqlite", "store"].sort(),
     );
     for (const c of report.checks) {
       expect(c.ok, `${c.name} should pass post-install: ${c.detail}`).toBe(true);

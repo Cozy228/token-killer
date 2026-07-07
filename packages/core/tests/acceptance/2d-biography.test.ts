@@ -68,6 +68,7 @@ describe("acceptance: 2d flagship biography (deterministic, drift-honest)", () =
     );
     await ingest();
     const mem = remember(store, {
+      surface: "cli",
       note: "target adds one to its argument",
       anchors: [TARGET],
       // Slice 4: write-through is always-on; redirect the `.ctx` writer to a
@@ -151,6 +152,7 @@ describe("acceptance: 2d flagship biography (living repo — openStore)", () => 
       }
     }
     const mem = remember(store, {
+      surface: "cli",
       note: NOTE,
       anchors: [OPEN_STORE],
       files: new MemoryFiles(join(root, "mem-ctx")),

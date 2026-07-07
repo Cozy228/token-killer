@@ -291,7 +291,7 @@ describe("memory: remember / recall / lifecycle", () => {
 
   test("unresolved anchor → guidance, nothing written", () => {
     const before = store.entityCount();
-    const r = remember(store, { note: "note", anchors: ["sym:does/not/exist#x"] });
+    const r = remember(store, { surface: "cli", note: "note", anchors: ["sym:does/not/exist#x"] });
     expect(r.ok).toBe(false);
     if (!r.ok) {
       expect(r.reason).toBe("unresolved-anchors");
@@ -308,7 +308,7 @@ describe("memory: remember / recall / lifecycle", () => {
       locator: { t: "file", path: "README.md" },
       gen: 1,
     });
-    const r = remember(store, { note: "anchored", anchors: ["file:README.md"] });
+    const r = remember(store, { surface: "cli", note: "anchored", anchors: ["file:README.md"] });
     expect(r.ok).toBe(true);
     if (r.ok) expect(store.anchorsOf(r.entityId)).toEqual(["file:README.md"]);
   });
@@ -321,10 +321,14 @@ describe("memory: remember / recall / lifecycle", () => {
 
   test("D3: prewrite reconcile — near-dup write links + advises, never blocks", () => {
     const a = must(
-      remember(store, { note: "the retry queue drops request metadata on redelivery under load" }),
+      remember(store, {
+        surface: "cli",
+        note: "the retry queue drops request metadata on redelivery under load",
+      }),
     );
     // A near-duplicate (same numbers, high word overlap) → success, linked + advised.
     const b = remember(store, {
+      surface: "cli",
       note: "the retry queue drops request metadata on redelivery when overloaded",
     });
     expect(b.ok).toBe(true); // never gated
@@ -343,9 +347,13 @@ describe("memory: remember / recall / lifecycle", () => {
 
   test("D3: differing embedded numbers → no candidate, no link, no advisory", () => {
     const a = must(
-      remember(store, { note: "ADR 0011 records the evidence ladder decision for the store" }),
+      remember(store, {
+        surface: "cli",
+        note: "ADR 0011 records the evidence ladder decision for the store",
+      }),
     );
     const b = remember(store, {
+      surface: "cli",
       note: "ADR 0013 records the evidence ladder decision for the store",
     });
     expect(b.ok).toBe(true);
@@ -357,8 +365,8 @@ describe("memory: remember / recall / lifecycle", () => {
   });
 
   test("lifecycle: list + status transitions (confirm/retire), status filter", () => {
-    const a = remember(store, { note: "first fact about the retry path" });
-    const b = remember(store, { note: "second fact about the store spine" });
+    const a = remember(store, { surface: "cli", note: "first fact about the retry path" });
+    const b = remember(store, { surface: "cli", note: "second fact about the store spine" });
     expect(a.ok && b.ok).toBe(true);
     if (!a.ok || !b.ok) throw new Error("setup failed");
 
@@ -378,8 +386,12 @@ describe("memory: remember / recall / lifecycle", () => {
   });
 
   test("A1: a retired memory is excluded from default pull (search), recall still works", () => {
-    const keep = remember(store, { note: "the retry queue redelivers on failure under load" });
+    const keep = remember(store, {
+      surface: "cli",
+      note: "the retry queue redelivers on failure under load",
+    });
     const gone = remember(store, {
+      surface: "cli",
       note: "the retry queue drops metadata on redelivery when busy",
     });
     expect(keep.ok && gone.ok).toBe(true);

@@ -32,6 +32,7 @@ import {
   writeFileSync,
 } from "node:fs";
 import { dirname, join } from "node:path";
+import { readMemoryOptOut } from "../push/config.ts";
 import type { Store } from "../store/store.ts";
 import {
   parseDecision,
@@ -67,14 +68,31 @@ export function ulidOf(memoryId: string): string {
 
 export class MemoryFiles {
   readonly ctxRoot: string;
+  /**
+   * E4 per-repo opt-out (slice 5): when true, EVERY write that logically targets
+   * the committed Mainline zone is redirected to the gitignored personal overlay,
+   * so nothing ever creates or appends the committed logs. READS still address the
+   * literal zone (mainline reads stay empty; reindex never double-counts). Set once
+   * at construction from the shared `.ctx/push.jsonc` — never re-read per write.
+   */
+  readonly localOnly: boolean;
 
-  constructor(ctxRoot: string) {
+  constructor(ctxRoot: string, localOnly = false) {
     this.ctxRoot = ctxRoot;
+    this.localOnly = localOnly;
   }
 
-  /** The `.ctx` directory under a store's current checkout root. */
+  /** The `.ctx` directory under a store's current checkout root. Reads the E4
+   *  opt-out from that `.ctx`'s shared config once. */
   static forStore(store: Store): MemoryFiles {
-    return new MemoryFiles(join(store.projectRoot, ".ctx"));
+    const ctxRoot = join(store.projectRoot, ".ctx");
+    return new MemoryFiles(ctxRoot, readMemoryOptOut(ctxRoot));
+  }
+
+  /** WRITE zone after the E4 opt-out: mainline → overlay when `localOnly`. Reads
+   *  never call this — they must address the literal zone. */
+  #writeZone(zone: MemoryZone): MemoryZone {
+    return this.localOnly ? "overlay" : zone;
   }
 
   // ---- path helpers ----
@@ -125,24 +143,27 @@ export class MemoryFiles {
    *  then the log line is appended carrying the `detail=<ulid>` pointer. */
   appendMemory(zone: MemoryZone, entry: SerializedMemory, detailBody?: string): void {
     this.ensureScaffold();
+    // E4 opt-out redirects a Mainline write to the overlay (item 4).
+    const z = this.#writeZone(zone);
     // R6: never mutate the caller's `entry` — keep the pointer local.
     let toWrite = entry;
     if (detailBody !== undefined && detailBody.length > 0) {
       const ulid = entry.detailPointer ?? ulidOf(entry.memoryId);
-      const path = this.sidecarPath(zone, ulid);
+      const path = this.sidecarPath(z, ulid);
       if (!existsSync(path)) {
         mkdirSync(dirname(path), { recursive: true });
         writeFileSync(path, detailBody, "utf8"); // write-once — never overwrite
       }
       toWrite = { ...entry, detailPointer: ulid };
     }
-    appendLine(this.#memoryLog(zone), serializeMemory(toWrite));
+    appendLine(this.#memoryLog(z), serializeMemory(toWrite));
   }
 
-  /** Append a lifecycle / decision event to `zone`. */
+  /** Append a lifecycle / decision event to `zone` (E4 opt-out redirects a
+   *  Mainline write to the overlay). */
   appendDecision(zone: MemoryZone, event: SerializedDecision): void {
     this.ensureScaffold();
-    appendLine(this.#decisionLog(zone), serializeDecision(event));
+    appendLine(this.#decisionLog(this.#writeZone(zone)), serializeDecision(event));
   }
 
   // ---- read ----

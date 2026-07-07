@@ -11,13 +11,14 @@
  * the store opens under the caller-supplied `home`, and all placement reads are
  * under `projectRoot`; nothing touches the real `~/.claude`/`~/.copilot`.
  */
-import { existsSync, readFileSync } from "node:fs";
-import { join } from "node:path";
+import { existsSync, readFileSync, statSync } from "node:fs";
+import { join, resolve } from "node:path";
 import { DatabaseSync } from "node:sqlite";
 import { openStore } from "../store/store.ts";
 import { runMigrations } from "../store/migrate.ts";
 import { MemoryFiles } from "../memory/fileStore.ts";
 import { memoryOpsReport } from "../memory/ops.ts";
+import { readMemoryOptOut } from "../push/config.ts";
 import { EGRESS_ENV_KEYS } from "../serve/egress.ts";
 import { PUSH_MAX_BYTES } from "../push/block.ts";
 import { DEFAULT_PUSH_TARGETS, extractManagedBlock } from "../push/hosts.ts";
@@ -246,10 +247,15 @@ function checkMemoryOps(opts: DoctorOptions): DoctorCheck {
               .map((s) => `${s.carrier} ${Math.floor(s.ageMs / 86_400_000)}d`)
               .join(", ")
           : "none";
+      // E4 per-repo opt-out (slice 5 item 4) — surface the write mode.
+      const optedOut = readMemoryOptOut(join(opts.projectRoot, ".ctx"));
+      const mode = optedOut
+        ? "commit-memory OFF (E4: every memory write stays in your personal overlay — never committed)"
+        : "commit-memory ON";
       const detail =
-        `review-queue ${r.reviewQueue} (oldest ${oldest}); reindex skipped ${r.reindexSkipped}, ` +
-        `shadowedOverlay ${r.shadowedOverlay}; sidecars dangling ${r.danglingSidecars}, ` +
-        `orphan ${r.orphanSidecars}; snapshots ${snapshots}`;
+        `${mode}; review-queue ${r.reviewQueue} (oldest ${oldest}); reindex skipped ` +
+        `${r.reindexSkipped}, shadowedOverlay ${r.shadowedOverlay}; sidecars dangling ` +
+        `${r.danglingSidecars}, orphan ${r.orphanSidecars}; snapshots ${snapshots}`;
       const integrityBad = r.danglingSidecars > 0 || r.orphanSidecars > 0;
       return {
         name: "memory",
@@ -273,6 +279,58 @@ function checkMemoryOps(opts: DoctorOptions): DoctorCheck {
   }
 }
 
+/**
+ * True when the checkout is a shallow clone. Resolves `.git` whether it is a
+ * directory (normal repo), a `gitdir:` pointer file (linked worktree / submodule),
+ * or has a `commondir` (linked worktree keeps `shallow` in the common dir). No git
+ * spawn — pure filesystem, success-shaped (any read error → not shallow).
+ */
+function isShallowClone(projectRoot: string): boolean {
+  try {
+    const dotGit = join(projectRoot, ".git");
+    if (!existsSync(dotGit)) return false;
+    let gitDir = dotGit;
+    if (statSync(dotGit).isFile()) {
+      const m = /gitdir:\s*(.+)/.exec(readFileSync(dotGit, "utf8"));
+      if (!m) return false;
+      gitDir = resolve(projectRoot, m[1]!.trim());
+    }
+    const commonDirFile = join(gitDir, "commondir");
+    const commonDir = existsSync(commonDirFile)
+      ? resolve(gitDir, readFileSync(commonDirFile, "utf8").trim())
+      : gitDir;
+    return existsSync(join(commonDir, "shallow"));
+  } catch {
+    return false;
+  }
+}
+
+/**
+ * Slice-5 item 5 (slice-3 D2 handoff): a shallow clone truncates history, so the
+ * `anchored-at` ancestry classifier cannot tell `unresolved-here` (anchor absent
+ * on THIS branch) from `target-removed` (anchor genuinely deleted) drift. ADVISORY
+ * — always `ok: true` (warn, never fail); the warning rides in `detail`.
+ */
+function checkGitDepth(opts: DoctorOptions): DoctorCheck {
+  if (isShallowClone(opts.projectRoot)) {
+    return {
+      name: "git-depth",
+      ok: true,
+      detail:
+        "WARNING: shallow clone (`.git/shallow` present) — merge-base depth is truncated, so the " +
+        "`anchored-at` ancestry classifier is unreliable: an absent anchor may be mislabeled " +
+        "`unresolved-here` vs `target-removed` (drift). Run `git fetch --unshallow` for accurate " +
+        "drift classification. Advisory only — memory stays fully functional.",
+    };
+  }
+  return {
+    name: "git-depth",
+    ok: true,
+    detail:
+      "full clone — `anchored-at` ancestry depth available for accurate drift classification.",
+  };
+}
+
 /** Run every read-only check and roll up an overall pass/fail. */
 export function runDoctor(opts: DoctorOptions): DoctorReport {
   const checks = [
@@ -283,6 +341,7 @@ export function runDoctor(opts: DoctorOptions): DoctorReport {
     checkPush(opts),
     checkEgressGuard(opts),
     checkMemoryOps(opts),
+    checkGitDepth(opts),
   ];
   return { checks, ok: checks.every((c) => c.ok) };
 }
