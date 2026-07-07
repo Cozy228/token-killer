@@ -20,16 +20,18 @@ describe("migrations (forward-only, NNN-<name>.sql, one transaction each)", () =
     const db = openDatabase(join(dir, "store.sqlite"));
     const outcome = runMigrations(db);
     // slice 2 added 002-memory-events; slice 3 added 003-memory-bitemporal (C5);
-    // slice 4 added 004-memory-unresolved-here (S9 derived annotation).
-    expect(outcome.applied).toEqual([1, 2, 3, 4]);
-    expect(outcome.schemaVersion).toBe(4);
-    // C5 bitemporal columns + S9 unresolved-here landed on the memory index.
+    // slice 4 added 004-memory-unresolved-here (S9); slice 6 added
+    // 005-memory-origin-zone (item 4 committed-vs-overlay provenance).
+    expect(outcome.applied).toEqual([1, 2, 3, 4, 5]);
+    expect(outcome.schemaVersion).toBe(5);
+    // C5 bitemporal columns + S9 unresolved-here + item-4 origin_zone on the index.
     const memCols = (
       db.prepare("SELECT name FROM pragma_table_info('memory')").all() as Array<{ name: string }>
     ).map((r) => r.name);
     expect(memCols).toContain("valid_from");
     expect(memCols).toContain("valid_to");
     expect(memCols).toContain("unresolved_here");
+    expect(memCols).toContain("origin_zone");
     const tables = (
       db
         .prepare("SELECT name FROM sqlite_master WHERE type IN ('table','view') ORDER BY name")
@@ -59,7 +61,7 @@ describe("migrations (forward-only, NNN-<name>.sql, one transaction each)", () =
     runMigrations(db);
     const again = runMigrations(db);
     expect(again.applied).toEqual([]);
-    expect(schemaVersionOf(db)).toBe(4);
+    expect(schemaVersionOf(db)).toBe(5);
     db.close();
   });
 
