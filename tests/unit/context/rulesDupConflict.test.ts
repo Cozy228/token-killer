@@ -12,7 +12,7 @@ let cwd: string;
 
 beforeEach(() => {
   registerAllRules();
-  root = mkdtempSync(join(tmpdir(), "tk-ctx-dc-"));
+  root = mkdtempSync(join(tmpdir(), "ctx-ctx-dc-"));
   cwd = join(root, "repo");
   mkdirSync(cwd, { recursive: true });
 });
@@ -93,7 +93,11 @@ describe("conditional_rule_in_always_on", () => {
   test("flags path/framework scopes embedded in an always-on file", () => {
     write(
       "AGENTS.md",
-      ["# Rules", "For files under src/**, run the React lint with `npm run lint`.", "When editing frontend code, prefer hooks."].join("\n"),
+      [
+        "# Rules",
+        "For files under src/**, run the React lint with `npm run lint`.",
+        "When editing frontend code, prefer hooks.",
+      ].join("\n"),
     );
     expect(types()).toContain("conditional_rule_in_always_on");
   });
@@ -108,7 +112,13 @@ describe("task_prompt_in_instruction", () => {
   test("flags a workflow template with placeholders", () => {
     write(
       "AGENTS.md",
-      ["# Rules", "Use this prompt to triage <issue>:", "1. Read the report", "2. Reproduce", "3. When the user asks, file a fix"].join("\n"),
+      [
+        "# Rules",
+        "Use this prompt to triage <issue>:",
+        "1. Read the report",
+        "2. Reproduce",
+        "3. When the user asks, file a fix",
+      ].join("\n"),
     );
     expect(types()).toContain("task_prompt_in_instruction");
   });
@@ -123,7 +133,14 @@ describe("agent_overbreadth", () => {
   test("flags a generic read-only agent with write tools", () => {
     write(
       ".github/agents/dev.agent.md",
-      ["---", "name: developer", "tools: [edit, terminal]", "model: opus", "---", "Review and summarize pull requests."].join("\n"),
+      [
+        "---",
+        "name: developer",
+        "tools: [edit, terminal]",
+        "model: opus",
+        "---",
+        "Review and summarize pull requests.",
+      ].join("\n"),
     );
     expect(types()).toContain("agent_overbreadth");
   });
@@ -131,7 +148,14 @@ describe("agent_overbreadth", () => {
   test("no finding for a focused agent", () => {
     write(
       ".github/agents/release.agent.md",
-      ["---", "name: release-captain", "description: Cuts a release following the checklist", "tools: [read]", "---", "Cut a release."].join("\n"),
+      [
+        "---",
+        "name: release-captain",
+        "description: Cuts a release following the checklist",
+        "tools: [read]",
+        "---",
+        "Cut a release.",
+      ].join("\n"),
     );
     expect(types()).not.toContain("agent_overbreadth");
   });

@@ -2,7 +2,7 @@
 /**
  * Fast rebuild: reuse existing VM, just transfer source and recompile.
  *
- * Ported from rtk/scripts/benchmark/rebuild.ts and adapted to tk conventions:
+ * Ported from rtk/scripts/benchmark/rebuild.ts and adapted to ctx conventions:
  * bun -> tsx, vmBuildRtk -> vmBuildTk (builds dist/cli.js via pnpm).
  *
  * Usage: pnpm exec tsx scripts/benchmark/rebuild.ts

@@ -1,22 +1,22 @@
 // Claude Code settings patcher (goal §2) — the config-writing routine that
-// `tk install --host claude-code` calls. It is NOT a standalone installer; like
-// `install.ts` (Copilot), installation is `tk install`'s job.
+// `ctx install --host claude-code` calls. It is NOT a standalone installer; like
+// `install.ts` (Copilot), installation is `ctx install`'s job.
 //
 // Claude Code's hook config lives in `~/.claude/settings.json` and uses a
 // nested shape — an array of `{ matcher, hooks: [{ type, command }] }` groups —
-// which is DIFFERENT from Copilot's flat `tk-rewrite.json`. So this is its own
+// which is DIFFERENT from Copilot's flat `ctx-rewrite.json`. So this is its own
 // patcher; only `resolveHookCommand` (absolute node + cli path, per the
 // Windows/PATH fix) is shared with `install.ts`.
 //
 // Drop-in semantics: an existing PreToolUse/Bash hook that invokes
-// `rtk hook claude` (or a prior `tk hook claude`) is REPLACED IN PLACE; after
+// `rtk hook claude` (or a prior `ctx hook claude`) is REPLACED IN PLACE; after
 // install, `rtk` is no longer invoked. Otherwise we append a new Bash group.
 //
 // Surgical & marker-guarded: we touch ONLY the PreToolUse Bash rewrite hook;
 // `statusLine`, `enabledPlugins`, `env`, and any non-rewrite hook are preserved
 // (parse → patch → write). We add NO foreign key to the host's schema — the
 // embedded absolute cli path IS the marker that proves an entry is ours, so
-// `--uninstall` removes only tk's entry and never a user's own `rtk` hook.
+// `--uninstall` removes only ctx's entry and never a user's own `rtk` hook.
 
 import { existsSync, mkdirSync, readFileSync } from "node:fs";
 import { writeFileAtomicSync } from "../core/atomicWrite.js";
@@ -32,7 +32,7 @@ export function claudeSettingsPath(loc: ClaudeLocation = {}): string {
 }
 
 // Our PreToolUse Bash hook command: `"<node>" "<cli>" hook claude`. The absolute
-// cli path is self-marking — it is how uninstall recognizes tk's own entry.
+// cli path is self-marking — it is how uninstall recognizes ctx's own entry.
 export function claudeHookCommand(): string {
   return resolveHookCommand("claude");
 }
@@ -42,26 +42,26 @@ type MatcherGroup = { matcher?: string; hooks?: CommandHook[]; [k: string]: unkn
 type PreToolUseSettings = { PreToolUse?: MatcherGroup[]; [k: string]: unknown };
 export type ClaudeSettings = { hooks?: PreToolUseSettings; [k: string]: unknown };
 
-// Any rtk/tk/absolute "… hook claude" rewrite hook — the entry we REPLACE in
+// Any rtk/ctx/absolute "… hook claude" rewrite hook — the entry we REPLACE in
 // place on install (drop-in over `rtk hook claude`).
 function isClaudeRewriteHook(command: string | undefined): boolean {
   return typeof command === "string" && /\bhook\s+claude\b/.test(command);
 }
 
-// Is this hook OURS (tk), as opposed to a foreign `rtk hook claude` the user may
+// Is this hook OURS (ctx), as opposed to a foreign `rtk hook claude` the user may
 // keep? Used by uninstall (so we never remove someone else's hook) and by the
-// `pointsAtTk` status probe (`tk debug` §2 / `tk status`). Ours is the exact
-// command we'd write, OR any invocation of a `tk` binary — `node /abs/bin/tk hook
-// claude`, a bare `tk hook claude`, or the Windows `tk.cmd`/`tk.exe` shim. The
-// binary may sit behind any absolute path, so the boundary before `tk` must allow
+// `pointsAtTk` status probe (`ctx debug` §2 / `ctx status`). Ours is the exact
+// command we'd write, OR any invocation of a `ctx` binary — `node /abs/bin/ctx hook
+// claude`, a bare `ctx hook claude`, or the Windows `ctx.cmd`/`ctx.exe` shim. The
+// binary may sit behind any absolute path, so the boundary before `ctx` must allow
 // a path separator (or quote/space/start), NOT just whitespace — otherwise a real
-// global install (`…/bin/tk`) reads as foreign and a healthy, actively-rewriting
-// hook is reported "NOT tk"/"not wired". `rtk` stays excluded: its `tk` is
+// global install (`…/bin/ctx`) reads as foreign and a healthy, actively-rewriting
+// hook is reported "NOT ctx"/"not wired". `rtk` stays excluded: its `ctx` is
 // preceded by `r`, which is not a boundary char.
 function isOurClaudeHook(command: string | undefined, ourCommand: string): boolean {
   if (typeof command !== "string") return false;
   if (command === ourCommand) return true;
-  if (/(^|[\\/\s"'])tk(\.exe|\.cmd)?["'\s]+hook\s+claude\b/.test(command)) return true;
+  if (/(^|[\\/\s"'])ctx(\.exe|\.cmd)?["'\s]+hook\s+claude\b/.test(command)) return true;
   const cli = process.argv[1];
   return Boolean(cli) && command.includes(cli!) && /\bhook\s+claude\b/.test(command);
 }
@@ -128,7 +128,7 @@ export type ClaudeInstallPlan = {
 
 function readSettings(path: string): ClaudeSettings {
   // A present-but-invalid settings.json must NOT be clobbered — surface the
-  // parse error to the caller (tk install) instead of overwriting the user's file.
+  // parse error to the caller (ctx install) instead of overwriting the user's file.
   return JSON.parse(readFileSync(path, "utf8")) as ClaudeSettings;
 }
 
@@ -145,7 +145,7 @@ function currentClaudeCommand(settings: ClaudeSettings): string | undefined {
   return undefined;
 }
 
-// Compute what install WOULD do without writing — backs `tk install --dry-run`.
+// Compute what install WOULD do without writing — backs `ctx install --dry-run`.
 export function planClaudeHookInstall(
   loc: ClaudeLocation,
   command: string = claudeHookCommand(),
@@ -159,7 +159,7 @@ export function planClaudeHookInstall(
   return { path, action, contents: serialize(settings), previousCommand, command };
 }
 
-// Idempotently point the PreToolUse Bash hook at tk. Returns the plan.
+// Idempotently point the PreToolUse Bash hook at ctx. Returns the plan.
 export function installClaudeHook(loc: ClaudeLocation, command?: string): ClaudeInstallPlan {
   const plan = planClaudeHookInstall(loc, command);
   if (plan.action !== "unchanged") {
@@ -169,7 +169,7 @@ export function installClaudeHook(loc: ClaudeLocation, command?: string): Claude
   return plan;
 }
 
-// Remove ONLY tk's Bash PreToolUse entry; drop a group that we thereby empty;
+// Remove ONLY ctx's Bash PreToolUse entry; drop a group that we thereby empty;
 // leave every other key, group, and hook (including a foreign `rtk hook claude`)
 // intact. Never throws on a missing/invalid file.
 export function uninstallClaudeHook(
@@ -197,7 +197,7 @@ export function uninstallClaudeHook(
     const kept = group.hooks.filter((hook) => !isOurClaudeHook(hook.command, ourCommand));
     const removedHere = kept.length !== group.hooks.length;
     if (removedHere) removed = true;
-    // A group we emptied was a dedicated tk Bash group → drop it. A group with
+    // A group we emptied was a dedicated ctx Bash group → drop it. A group with
     // surviving hooks keeps them (co-resident hooks preserved).
     if (kept.length === 0 && removedHere) continue;
     nextGroups.push(kept.length === group.hooks.length ? group : { ...group, hooks: kept });
@@ -230,8 +230,8 @@ export function claudeHookStatus(
     : [];
   const claudeHooks = hooks.filter((h) => isClaudeRewriteHook(h.command));
   // The ACTUAL command string installed in settings.json (ours if present, else the
-  // first foreign rewrite hook) — `tk debug` runs it to verify the binary it names
-  // can actually load, not just that the string looks like tk.
+  // first foreign rewrite hook) — `ctx debug` runs it to verify the binary it names
+  // can actually load, not just that the string looks like ctx.
   const installed =
     claudeHooks.find((h) => isOurClaudeHook(h.command, ourCommand)) ?? claudeHooks[0];
   return {

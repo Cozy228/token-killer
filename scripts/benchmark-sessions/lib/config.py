@@ -1,7 +1,7 @@
 """
-Task configuration for tk (token-killer) benchmark sessions.
+Task configuration for ctx (contexa) benchmark sessions.
 
-Ported alongside rtk/scripts/benchmark-sessions/lib/runner.py and adapted to tk
+Ported alongside rtk/scripts/benchmark-sessions/lib/runner.py and adapted to ctx
 conventions. Describes a benchmark task: the model under test, the codebase the
 Claude session operates on, and per-session limits.
 """

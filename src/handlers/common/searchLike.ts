@@ -59,7 +59,7 @@ function searchPattern(args: string[]): string {
 // (a real correctness footgun seen repeatedly in dogfood). rg already recurses
 // by default, so a replace value that is just grep-style flag letters is almost
 // certainly this mistake. We detect it and surface a warning — WITHOUT changing
-// what rg runs (the value really was passed; tk only annotates the output).
+// what rg runs (the value really was passed; ctx only annotates the output).
 //
 // grep is excluded on purpose: there `-r` genuinely is recursive.
 const GREP_FLAG_LETTERS = new Set([
@@ -144,14 +144,14 @@ export function replaceFootgunBanner(program: string, args: string[]): string | 
 // RTK: grep_cmd.rs::run — RTK re-invokes the search with `-nH` so every match is
 // emitted as `file:line:content`, which is what the grouping parser needs. A raw
 // `grep -r pattern dir` omits line numbers (and, for a single file, the filename),
-// so tk cannot group it and falls back to passthrough (0% savings). Forcing `-n`
+// so ctx cannot group it and falls back to passthrough (0% savings). Forcing `-n`
 // and `-H` restores the parseable shape, and the per-file / global caps then
 // compress a large recursive search.
 //
 // rg IS rewritten too (parity with RTK's real behavior): piped to a non-TTY, `rg`
 // OMITS line numbers by default, so its output is unparseable and falls back to
 // passthrough (0% savings). Forcing `-n -H --no-heading` restores
-// `file:line:content`. Deliberate divergence from RTK: tk does NOT add
+// `file:line:content`. Deliberate divergence from RTK: ctx does NOT add
 // `--no-ignore-vcs` — it keeps rg's default .gitignore-respecting scope, which
 // yields less, more relevant output for an agent. Format flags (-c/-l/-L/-o/-Z/
 // --json) and context flags (-A/-B/-C) always pass through (see grepFilter).
@@ -222,7 +222,11 @@ export const searchLikeHandler: CommandHandler = {
       original: [command.program, ...args],
       displayCommand: `${command.program} ${args.join(" ")}`.trim(),
     };
-    return executeCommand(rewritten);
+    // Do NOT forward ctx's stdin: ripgrep with no path operand reads a readable-pipe
+    // stdin instead of recursing the cwd, so the empty pipe ctx would hand it makes
+    // `ctx rg PATTERN` (and `-g`/`--glob` forms) report a false "0 matches". A
+    // /dev/null stdin makes rg/grep recurse the cwd like a direct invocation.
+    return executeCommand(rewritten, undefined, { forwardStdin: false });
   },
 
   async filter(raw, command, options) {
@@ -254,7 +258,7 @@ export const searchLikeHandler: CommandHandler = {
     }
 
     // Recovery contract item 3: when matches are suppressed, name how to recover.
-    // M7-grep fix: ADR 0001 d6 bans `tk --raw` re-run hints (a re-run would
+    // M7-grep fix: ADR 0001 d6 bans `ctx --raw` re-run hints (a re-run would
     // re-fire side-effecting commands like POST requests). Recovery is via the
     // raw snapshot the gate persists (rawPointer) or `--level minimal` for a
     // lossless group.

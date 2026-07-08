@@ -13,13 +13,13 @@ let root: string;
 let cwd: string;
 
 beforeEach(() => {
-  root = mkdtempSync(join(tmpdir(), "tk-ledger-"));
+  root = mkdtempSync(join(tmpdir(), "ctx-ledger-"));
   cwd = join(root, "repo");
   mkdirSync(cwd, { recursive: true });
-  process.env.TOKEN_KILLER_HOME = join(root, ".token-killer");
+  process.env.CONTEXA_HOME = join(root, ".contexa");
 });
 afterEach(() => {
-  delete process.env.TOKEN_KILLER_HOME;
+  delete process.env.CONTEXA_HOME;
   rmSync(root, { recursive: true, force: true });
 });
 
@@ -123,7 +123,7 @@ describe("loadLedgers — four independent ledgers, joined read-side", () => {
   test("corrupt governance.jsonl → empty ③ section, never a throw", async () => {
     const file = join(
       root,
-      ".token-killer",
+      ".contexa",
       "projects",
       fingerprintSegment(projectFingerprint(cwd)),
       "governance.jsonl",

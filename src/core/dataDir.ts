@@ -2,12 +2,13 @@ import { createHash } from "node:crypto";
 import { chmodSync, mkdirSync, readFileSync, realpathSync, statSync } from "node:fs";
 import os from "node:os";
 import path from "node:path";
+import { DEFAULT_HOME_DIR, HOME_ENV } from "./identity.js";
 
 // Windows `realpathSync` does NOT normalize drive-letter case — it returns the
 // path with whatever case it was handed. VS Code's agent `run_in_terminal` reports
 // a lowercase drive (`c:\…`) while the user's interactive shell reports uppercase
 // (`C:\…`); since the resolved root is hashed as a raw string, the SAME repo would
-// split into two `repo:<hash>` buckets that `tk gain` (single-bucket) can never
+// split into two `repo:<hash>` buckets that `ctx gain` (single-bucket) can never
 // reconcile (I6). Uppercasing the drive letter collapses both to one bucket. POSIX
 // paths have no drive letter, so this is a no-op there.
 export function normalizeDriveCase(
@@ -30,7 +31,7 @@ function resolveProjectRoot(cwd: string): string {
 // from OR which linked worktree it lives in. Keying on the raw cwd path (the old
 // behaviour) fragmented a single project across many `repo:` buckets — every
 // `cd src && …` and every worktree-isolated subagent minted its own — and
-// `tk gain` then under-counted by reporting just one shard. The walk is in-process
+// `ctx gain` then under-counted by reporting just one shard. The walk is in-process
 // (stat/readFile up the tree, no `git` fork) to stay cheap on the compression hot
 // path. A non-git directory returns undefined and the caller falls back to the
 // cwd hash, so the fingerprint of the main repo ROOT is byte-identical to before.
@@ -73,14 +74,14 @@ function gitRepoAnchor(start: string): string | undefined {
   return undefined;
 }
 
-export function tokenKillerHome(): string {
-  if (process.env.TOKEN_KILLER_HOME) {
-    return path.resolve(process.env.TOKEN_KILLER_HOME);
+export function contexaHome(): string {
+  if (process.env[HOME_ENV]) {
+    return path.resolve(process.env[HOME_ENV]);
   }
-  return path.join(os.homedir(), ".token-killer");
+  return path.join(os.homedir(), DEFAULT_HOME_DIR);
 }
 
-export function ensureTokenKillerHome(home: string = tokenKillerHome()): string {
+export function ensureContexaHome(home: string = contexaHome()): string {
   mkdirSync(home, { recursive: true, mode: 0o700 });
   chmodSync(home, 0o700);
   return home;
@@ -91,7 +92,7 @@ export function ensureTokenKillerHome(home: string = tokenKillerHome()): string 
 // is computed ONCE per distinct cwd and reused. recordHistory alone asks for it 3×
 // per command (historyFile, the record field, project meta), and governance/ledger
 // add more — all collapse to one walk. Keyed by the RAW cwd string the caller passed
-// (each tk invocation is a fresh process, so the cache never outlives one run).
+// (each ctx invocation is a fresh process, so the cache never outlives one run).
 const fingerprintCache = new Map<string, string>();
 const anchorCache = new Map<string, string>();
 
@@ -119,7 +120,7 @@ export function projectFingerprint(cwd: string): string {
   return fingerprint;
 }
 
-// Display-only project label for `tk gain --user` (ADR 0004 §3): the basename of the
+// Display-only project label for `ctx gain --user` (ADR 0004 §3): the basename of the
 // repo root, NEVER the full path. Anchored identically to the fingerprint, so the
 // name shown always matches the bucket it labels.
 export function projectLabel(cwd: string): string {
@@ -146,7 +147,7 @@ export function fingerprintSegment(fingerprint: string): string {
 }
 
 export function projectDataDir(cwd: string): string {
-  return path.join(tokenKillerHome(), "projects", fingerprintSegment(projectFingerprint(cwd)));
+  return path.join(contexaHome(), "projects", fingerprintSegment(projectFingerprint(cwd)));
 }
 
 export function historyFile(cwd: string): string {
@@ -160,7 +161,7 @@ export function projectMetaFile(cwd: string): string {
 }
 
 export function projectMetaFileForFingerprint(fingerprint: string): string {
-  return path.join(tokenKillerHome(), "projects", fingerprintSegment(fingerprint), "meta.json");
+  return path.join(contexaHome(), "projects", fingerprintSegment(fingerprint), "meta.json");
 }
 
 export function rawOutputDir(cwd: string): string {
@@ -183,5 +184,5 @@ export function rawOutputPathRelative(cwd: string, fileName: string): string {
 }
 
 export function resolveStoredPath(storedPath: string): string {
-  return path.isAbsolute(storedPath) ? storedPath : path.join(tokenKillerHome(), storedPath);
+  return path.isAbsolute(storedPath) ? storedPath : path.join(contexaHome(), storedPath);
 }

@@ -13,7 +13,7 @@ export function routeCommand(command: ParsedCommand): CommandHandler {
 // is a version string or prose help. Handlers that match on the program name alone
 // (eslint, vitest, jest, …) otherwise hijack it: `eslint --version` was rewritten to
 // the nonsensical "ESLint: 0 problems in 0 files", which the inflation gate then
-// caught and REVERTED, logging a false `inflated` row and polluting `tk gain`. Skip
+// caught and REVERTED, logging a false `inflated` row and polluting `ctx gain`. Skip
 // straight to passthrough. Only LONG-form flags are matched — short `-v`/`-h` are
 // overloaded (grep -v invert, ls -h human-readable) and must never be treated as
 // probes. `-version`/`-help` (single dash) are the JVM spelling (`javac -version`).

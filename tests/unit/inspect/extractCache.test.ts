@@ -17,7 +17,7 @@ let dir: string;
 let cacheRoot: string;
 
 beforeEach(() => {
-  dir = mkdtempSync(join(tmpdir(), "tk-extract-cache-"));
+  dir = mkdtempSync(join(tmpdir(), "ctx-extract-cache-"));
   cacheRoot = join(dir, "cache");
 });
 afterEach(() => {
@@ -102,10 +102,10 @@ describe("scan disk cache", () => {
     expect(recovered).toEqual(scan(discovery([file])));
   });
 
-  test("TK_NO_SCAN_CACHE disables the disk cache (no entries written)", () => {
+  test("CTX_NO_SCAN_CACHE disables the disk cache (no entries written)", () => {
     const file = writeTranscript("t.jsonl", SAMPLE);
     const scanCache = makeDiskExtractCache<FileScanExtract>(cacheRoot, "scan", {
-      TK_NO_SCAN_CACHE: "1",
+      CTX_NO_SCAN_CACHE: "1",
     } as NodeJS.ProcessEnv);
     const r = scan(discovery([file]), { scanCache });
     expect(r).toEqual(scan(discovery([file])));
@@ -270,10 +270,10 @@ describe("scan event cache (--since / --session)", () => {
     expect(r2).toEqual(scan(discovery([file]), { session: "S1" }));
   });
 
-  test("TK_NO_SCAN_CACHE disables the event cache (no entries written)", () => {
+  test("CTX_NO_SCAN_CACHE disables the event cache (no entries written)", () => {
     const file = writeTranscript("t.jsonl", WINDOWED);
     const disk = makeDiskExtractCache<FileEventExtract>(cacheRoot, "scan-events", {
-      TK_NO_SCAN_CACHE: "1",
+      CTX_NO_SCAN_CACHE: "1",
     } as NodeJS.ProcessEnv);
     const r = scan(discovery([file]), { eventCache: disk, sinceMs: cutoff });
     expect(r).toEqual(scan(discovery([file]), { sinceMs: cutoff }));

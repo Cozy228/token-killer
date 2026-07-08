@@ -1,2 +1,2 @@
-* token-killer-node-cli
+* contexa-node-cli
   main

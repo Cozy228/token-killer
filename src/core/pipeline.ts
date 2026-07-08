@@ -52,7 +52,7 @@ export async function runPipeline(
   // No dedup: emit the full output; the commit runs the (no-op or MISS-upsert)
   // persistence, THEN appends the ledger-① history row. Accounting is best-effort and
   // must NEVER throw into the caller — an unguarded throw (unwritable
-  // TOKEN_KILLER_HOME — disk full, perms) would reach cli.ts's fail-open catch, which
+  // CONTEXA_HOME — disk full, perms) would reach cli.ts's fail-open catch, which
   // re-ran the ALREADY-EXECUTED command via passthrough, double-executing side effects
   // like `eslint --fix`/`git push` (C6). recordHistory is wrapped here; persist is
   // fail-open inside itself.

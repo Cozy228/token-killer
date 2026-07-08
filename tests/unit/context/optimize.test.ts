@@ -18,15 +18,15 @@ let cwd: string;
 
 beforeEach(() => {
   registerAllRules();
-  root = mkdtempSync(join(tmpdir(), "tk-ctx-opt-"));
+  root = mkdtempSync(join(tmpdir(), "ctx-ctx-opt-"));
   home = join(root, "home");
   cwd = join(root, "repo");
   mkdirSync(home, { recursive: true });
   mkdirSync(cwd, { recursive: true });
-  process.env.TOKEN_KILLER_HOME = join(home, ".token-killer");
+  process.env.CONTEXA_HOME = join(home, ".contexa");
 });
 afterEach(() => {
-  delete process.env.TOKEN_KILLER_HOME;
+  delete process.env.CONTEXA_HOME;
   rmSync(root, { recursive: true, force: true });
   vi.restoreAllMocks();
 });
@@ -128,7 +128,7 @@ describe("runOptimize (default preview)", () => {
     expect(out).toContain("preview, scope = project");
     expect(out).toContain("always_on_bloat");
     // No advice file is written in the default preview.
-    expect(existsSync(join(home, ".token-killer", "advice", "context"))).toBe(false);
+    expect(existsSync(join(home, ".contexa", "advice", "context"))).toBe(false);
   });
 
   test("hash mismatch suppresses a stale diff and asks for re-inspect", async () => {
@@ -147,6 +147,6 @@ describe("runOptimize (default preview)", () => {
     });
     restore();
     expect(code).toBe(0);
-    expect(calls.join("")).toContain("re-run `tk inspect`");
+    expect(calls.join("")).toContain("re-run `ctx inspect`");
   });
 });

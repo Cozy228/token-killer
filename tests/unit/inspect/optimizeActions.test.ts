@@ -18,11 +18,11 @@ const BUCKET: ScopeBucket = { scope: "user" };
 let root: string;
 
 beforeEach(() => {
-  root = mkdtempSync(join(tmpdir(), "tk-opt-act-"));
-  process.env.TOKEN_KILLER_HOME = join(root, ".token-killer");
+  root = mkdtempSync(join(tmpdir(), "ctx-opt-act-"));
+  process.env.CONTEXA_HOME = join(root, ".contexa");
 });
 afterEach(() => {
-  delete process.env.TOKEN_KILLER_HOME;
+  delete process.env.CONTEXA_HOME;
   rmSync(root, { recursive: true, force: true });
 });
 
@@ -66,8 +66,20 @@ describe("optimize-actions store round-trip", () => {
 describe("summarizeOptimizer — a STATE diff, never accumulated", () => {
   test("applying twice yields origBefore − finalAfter, not the sum of deltas", () => {
     const actions = [
-      action({ before_tokens: 100, before_hash: "h0", after_tokens: 70, after_hash: "h1", ts: "2026-06-05T10:00:00.000Z" }),
-      action({ before_tokens: 70, before_hash: "h1", after_tokens: 50, after_hash: "h2", ts: "2026-06-05T11:00:00.000Z" }),
+      action({
+        before_tokens: 100,
+        before_hash: "h0",
+        after_tokens: 70,
+        after_hash: "h1",
+        ts: "2026-06-05T10:00:00.000Z",
+      }),
+      action({
+        before_tokens: 70,
+        before_hash: "h1",
+        after_tokens: 50,
+        after_hash: "h2",
+        ts: "2026-06-05T11:00:00.000Z",
+      }),
     ];
     const ledger = summarizeOptimizer(actions);
     expect(ledger.estimate_kind).toBe("measured");

@@ -1,7 +1,7 @@
 // Ledger ③ store — governance opportunities (metrics-ledger Gap C, §0.1.3).
 //
 // The hook runtime appends ONE record per `deny`/`suggest` governance decision.
-// A `rewrite` is NEVER written here: an executed rewrite later runs as `tk <cmd>`
+// A `rewrite` is NEVER written here: an executed rewrite later runs as `ctx <cmd>`
 // and its saving is already counted in ledger ① — writing it here would
 // double-count the same saving. That exclusion is physical (this store only ever
 // sees deny/suggest), not a downstream filter.
@@ -14,7 +14,7 @@ import type { Dirent } from "node:fs";
 import { mkdir, readFile, readdir, writeFile } from "node:fs/promises";
 import path from "node:path";
 
-import { projectDataDir, projectFingerprint, tokenKillerHome } from "./dataDir.js";
+import { projectDataDir, projectFingerprint, contexaHome } from "./dataDir.js";
 import { parseJsonl } from "./jsonl.js";
 import type { GovernanceKind } from "../hook/govern.js";
 
@@ -67,7 +67,7 @@ export async function readGovernance(cwd: string): Promise<GovernanceRecord[]> {
 // User-level read: every project's governance.jsonl. Best-effort — an unreadable
 // directory or corrupt file is skipped, never thrown (cold path, fail-open).
 export async function listProjectGovernance(): Promise<GovernanceRecord[]> {
-  const projectsDir = path.join(tokenKillerHome(), "projects");
+  const projectsDir = path.join(contexaHome(), "projects");
   let entries: Dirent[];
   try {
     entries = await readdir(projectsDir, { withFileTypes: true });

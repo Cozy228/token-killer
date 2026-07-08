@@ -41,9 +41,9 @@ describe("RTK find behavior", () => {
 
   // ADR 0001 divergence: RTK caps the find listing at max_results (50) and prints
   // a `+18 more` overflow marker even though the directory-grouped form already
-  // fits the budget. tk does NOT — the grouped listing for 68 files (header `68F
+  // fits the budget. ctx does NOT — the grouped listing for 68 files (header `68F
   // 2D:` + 2 directory lines) is ~520 chars, far under the 120-line / 12000-char
-  // budget, so tk ships it IN FULL, losslessly, with NO fake `+N more` marker. The
+  // budget, so ctx ships it IN FULL, losslessly, with NO fake `+N more` marker. The
   // real compression here is the directory grouping (68 one-path-per-line entries
   // become 2 dir lines), not a cap. Assert every file survives (file51..file60 are
   // present, not suppressed) and that no over-budget marker is invented.
@@ -82,12 +82,12 @@ describe("RTK find behavior", () => {
 
 // Architecture note: RTK's find REPLACES find — it walks the filesystem itself
 // with its own glob_match / parse_find_args, so its glob_match_* and
-// parse_native_find_* #[test]s cover that FS-walker. tk instead FILTERS the real
+// parse_native_find_* #[test]s cover that FS-walker. ctx instead FILTERS the real
 // find command's output (grouping + cap + overflow), so those walker internals do
-// not exist in tk and are intentionally not ported as dead code. The tk-applicable
+// not exist in ctx and are intentionally not ported as dead code. The ctx-applicable
 // dimensions (grouping, uncapped overflow, empty message) are covered above.
 //
 // SCOPE DECISION (user-confirmed): the glob_match / parse_native_find dimension is
-// OUT-OF-SCOPE for tk — there is no tk-owned glob logic to test (GNU find does the
+// OUT-OF-SCOPE for ctx — there is no ctx-owned glob logic to test (GNU find does the
 // matching). Authoritative record: docs/green-test-parity-audit.md → D2. This is a
 // deliberate scope call, not an unwritten omission.

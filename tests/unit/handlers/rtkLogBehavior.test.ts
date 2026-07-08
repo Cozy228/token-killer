@@ -160,7 +160,7 @@ describe("RTK log behavior", () => {
   });
 
   // RTK: log_cmd.rs::run_file — `log <file>` reads and summarizes the file's
-  // contents rather than proxying to the platform `log` tool. tk's execute() must
+  // contents rather than proxying to the platform `log` tool. ctx's execute() must
   // read the file directly so the filter sees real log lines (not a macOS `log`
   // "Unknown subcommand" usage error, which would yield 0 errors/0 warnings).
   test("execute reads a log file argument instead of running the platform log tool", async () => {

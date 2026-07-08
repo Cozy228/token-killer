@@ -11,7 +11,7 @@ import {
 } from "../../../src/shim/path.js";
 
 describe("stripShimDir", () => {
-  const shim = "/home/u/.token-killer/shim";
+  const shim = "/home/u/.contexa/shim";
 
   test("removes only exact shim-dir entries and preserves order", () => {
     const pathVar = ["/usr/local/bin", shim, "/usr/bin", "/bin"].join(delimiter);
@@ -31,7 +31,7 @@ describe("stripShimDir", () => {
   });
 
   test("does not remove unrelated dirs that merely share a prefix", () => {
-    const pathVar = ["/home/u/.token-killer/shimmer", "/usr/bin"].join(delimiter);
+    const pathVar = ["/home/u/.contexa/shimmer", "/usr/bin"].join(delimiter);
     expect(stripShimDir(pathVar, shim)).toBe(pathVar);
   });
 });
@@ -40,17 +40,17 @@ describe("resolveReal + sentinel", () => {
   let tmp: string;
   let realDir: string;
   let shimDir: string;
-  const prevShim = process.env.TK_SHIM_DIR;
+  const prevShim = process.env.CTX_SHIM_DIR;
   // On Windows a bare extensionless script is not resolvable (resolveReal walks
   // PATHEXT), so the fixture carries a real PATHEXT extension. resolveReal is still
   // called with the bare "faketool" — it appends the extension during the walk.
   const isWin = process.platform === "win32";
   const toolFile = isWin ? "faketool.cmd" : "faketool";
   const realContent = isWin ? "@echo real\r\n" : "#!/bin/sh\necho real\n";
-  const shimContent = isWin ? "@tk faketool %*\r\n" : '#!/bin/sh\nexec tk faketool "$@"\n';
+  const shimContent = isWin ? "@ctx faketool %*\r\n" : '#!/bin/sh\nexec ctx faketool "$@"\n';
 
   beforeAll(() => {
-    tmp = mkdtempSync(join(tmpdir(), "tk-shim-path-"));
+    tmp = mkdtempSync(join(tmpdir(), "ctx-shim-path-"));
     realDir = join(tmp, "real");
     shimDir = join(tmp, "shim");
     mkdirSync(realDir);
@@ -63,8 +63,8 @@ describe("resolveReal + sentinel", () => {
   });
 
   afterAll(() => {
-    if (prevShim === undefined) delete process.env.TK_SHIM_DIR;
-    else process.env.TK_SHIM_DIR = prevShim;
+    if (prevShim === undefined) delete process.env.CTX_SHIM_DIR;
+    else process.env.CTX_SHIM_DIR = prevShim;
     rmSync(tmp, { recursive: true, force: true });
   });
 
@@ -77,23 +77,23 @@ describe("resolveReal + sentinel", () => {
   });
 
   test("sentinel passes when the real tool is reachable outside the shim dir", () => {
-    process.env.TK_SHIM_DIR = shimDir;
+    process.env.CTX_SHIM_DIR = shimDir;
     expect(() => assertNoRecursion("faketool", realDir)).not.toThrow();
   });
 
   test("sentinel throws when the resolved tool lands inside the shim dir", () => {
-    process.env.TK_SHIM_DIR = shimDir;
+    process.env.CTX_SHIM_DIR = shimDir;
     expect(() => assertNoRecursion("faketool", shimDir)).toThrow(ShimRecursionError);
   });
 
   test("sentinel throws when only the shim copy is reachable", () => {
-    process.env.TK_SHIM_DIR = shimDir;
+    process.env.CTX_SHIM_DIR = shimDir;
     // Stripped path has no real tool, but the shim-dir copy still exists.
     expect(() => assertNoRecursion("faketool", join(tmp, "empty"))).toThrow(ShimRecursionError);
   });
 
-  test("sentinel is a no-op when TK_SHIM_DIR is unset", () => {
-    delete process.env.TK_SHIM_DIR;
+  test("sentinel is a no-op when CTX_SHIM_DIR is unset", () => {
+    delete process.env.CTX_SHIM_DIR;
     expect(() => assertNoRecursion("faketool", join(tmp, "empty"))).not.toThrow();
   });
 });

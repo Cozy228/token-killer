@@ -20,7 +20,7 @@ export type McpAnalysis = {
   sources: string[];
 };
 
-// Known MCP config locations for the hosts tk targets. Both user- and project-level.
+// Known MCP config locations for the hosts ctx targets. Both user- and project-level.
 function configPaths(home: string, cwd: string): string[] {
   return [
     join(home, ".copilot", "mcp-config.json"), // Copilot CLI (user)

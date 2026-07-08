@@ -17,12 +17,12 @@ let root: string;
 let cwd: string;
 
 beforeEach(() => {
-  root = mkdtempSync(join(tmpdir(), "tk-gov-"));
+  root = mkdtempSync(join(tmpdir(), "ctx-gov-"));
   cwd = join(root, "repo");
-  process.env.TOKEN_KILLER_HOME = join(root, ".token-killer");
+  process.env.CONTEXA_HOME = join(root, ".contexa");
 });
 afterEach(() => {
-  delete process.env.TOKEN_KILLER_HOME;
+  delete process.env.CONTEXA_HOME;
   rmSync(root, { recursive: true, force: true });
 });
 
@@ -62,7 +62,9 @@ describe("governance store round-trip", () => {
   test("partially-corrupt store: good lines survive, bad lines are skipped", async () => {
     const file = governanceFile(cwd);
     mkdirSync(dirname(file), { recursive: true });
-    const good = JSON.stringify(gov({ kind: "denied_large_reads", decision: "deny", category: "read" }));
+    const good = JSON.stringify(
+      gov({ kind: "denied_large_reads", decision: "deny", category: "read" }),
+    );
     writeFileSync(file, `${good}\nnot-json\n${good}\n`);
     const rows = await readGovernance(cwd);
     expect(rows).toHaveLength(2);
@@ -75,8 +77,18 @@ describe("summarizeGovernance — counts first, estimate clearly labeled", () =>
     const ledger = summarizeGovernance([
       gov({ kind: "denied_large_reads", decision: "deny", category: "read" }),
       gov({ kind: "suggested_broad_searches", decision: "suggest", category: "search" }),
-      gov({ kind: "denied_large_prompts", decision: "deny", category: "prompt", estimated_tokens: 20000 }),
-      gov({ kind: "suggested_large_prompts", decision: "suggest", category: "prompt", estimated_tokens: 5000 }),
+      gov({
+        kind: "denied_large_prompts",
+        decision: "deny",
+        category: "prompt",
+        estimated_tokens: 20000,
+      }),
+      gov({
+        kind: "suggested_large_prompts",
+        decision: "suggest",
+        category: "prompt",
+        estimated_tokens: 5000,
+      }),
     ]);
 
     expect(ledger.denied_large_reads).toBe(1);
@@ -93,7 +105,11 @@ describe("summarizeGovernance — counts first, estimate clearly labeled", () =>
 describe("executed-rewrite exclusion (the single most important ③ property)", () => {
   test("a shell rewrite decision carries no governance_kind → never written to ③", () => {
     const d = decide(
-      normalize({ event: "preToolUse", toolName: "bash", toolArgs: JSON.stringify({ command: "git status" }) }),
+      normalize({
+        event: "preToolUse",
+        toolName: "bash",
+        toolArgs: JSON.stringify({ command: "git status" }),
+      }),
     );
     expect(d.decision).toBe("rewrite");
     expect(d.governance_kind).toBeUndefined();
@@ -101,7 +117,11 @@ describe("executed-rewrite exclusion (the single most important ③ property)", 
 
   test("a deny/suggest decision DOES carry a governance_kind", () => {
     const deny = decide(
-      normalize({ event: "preToolUse", tool_name: "read_file", tool_input: { filePath: "node_modules/x/i.js" } }),
+      normalize({
+        event: "preToolUse",
+        tool_name: "read_file",
+        tool_input: { filePath: "node_modules/x/i.js" },
+      }),
     );
     expect(deny.decision).toBe("deny");
     expect(deny.governance_kind).toBe("denied_large_reads");
@@ -123,7 +143,10 @@ describe("executed-rewrite exclusion (the single most important ③ property)", 
 describe("governance.jsonl is written line-delimited JSON", () => {
   test("appends one line per record", async () => {
     await recordGovernance(cwd, gov());
-    await recordGovernance(cwd, gov({ kind: "suggested_broad_searches", decision: "suggest", category: "search" }));
+    await recordGovernance(
+      cwd,
+      gov({ kind: "suggested_broad_searches", decision: "suggest", category: "search" }),
+    );
     const text = readFileSync(governanceFile(cwd), "utf8");
     expect(text.trim().split("\n")).toHaveLength(2);
   });

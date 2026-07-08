@@ -1,18 +1,18 @@
 /**
- * Multipass VM management for tk (token-killer) integration testing.
+ * Multipass VM management for ctx (contexa) integration testing.
  *
- * Ported from rtk/scripts/benchmark/lib/vm.ts and adapted to tk conventions:
+ * Ported from rtk/scripts/benchmark/lib/vm.ts and adapted to ctx conventions:
  *   - Bun's `$` shell helper replaced with Node child_process.
- *   - Build step builds the tk Node CLI (`pnpm install && pnpm build` -> dist/cli.js)
+ *   - Build step builds the ctx Node CLI (`pnpm install && pnpm build` -> dist/cli.js)
  *     instead of a Rust `cargo build --release` binary.
  *   - "binary size" reporting now measures the built dist/cli.js artifact size.
- *   - VM/labels renamed rtk -> tk.
+ *   - VM/labels renamed rtk -> ctx.
  */
 
 import { spawn } from "node:child_process";
 import { setTimeout as delay } from "node:timers/promises";
 
-const VM_NAME = "tk-test";
+const VM_NAME = "ctx-test";
 const CLOUD_INIT = "scripts/benchmark/cloud-init.yaml";
 
 export interface VmInfo {
@@ -39,9 +39,7 @@ function run(cmd: string, args: string[]): Promise<RunResult> {
     child.stdout.on("data", (d) => (stdout += d.toString()));
     child.stderr.on("data", (d) => (stderr += d.toString()));
     child.on("error", reject);
-    child.on("close", (code) =>
-      resolve({ stdout, stderr, exitCode: code ?? 0 }),
-    );
+    child.on("close", (code) => resolve({ stdout, stderr, exitCode: code ?? 0 }));
   });
 }
 
@@ -100,10 +98,7 @@ export async function vmStart(): Promise<void> {
 }
 
 /** Execute a command in the VM, returns stdout (60s timeout per test by default) */
-export async function vmExec(
-  cmd: string,
-  timeoutMs = 60_000,
-): Promise<RunResult> {
+export async function vmExec(cmd: string, timeoutMs = 60_000): Promise<RunResult> {
   const exec = run("multipass", ["exec", VM_NAME, "--", "bash", "-c", cmd]);
 
   const timeout = delay(timeoutMs).then(() => {
@@ -114,10 +109,7 @@ export async function vmExec(
 }
 
 /** Transfer a file to the VM */
-export async function vmTransfer(
-  localPath: string,
-  remotePath: string,
-): Promise<void> {
+export async function vmTransfer(localPath: string, remotePath: string): Promise<void> {
   await runChecked("multipass", ["transfer", localPath, `${VM_NAME}:${remotePath}`]);
 }
 
@@ -126,9 +118,7 @@ export async function vmWaitReady(maxWaitSec = 2400): Promise<boolean> {
   console.log("[vm] Waiting for cloud-init...");
   const start = Date.now();
   while ((Date.now() - start) / 1000 < maxWaitSec) {
-    const { exitCode } = await vmExec(
-      "test -f /home/ubuntu/.cloud-init-complete",
-    );
+    const { exitCode } = await vmExec("test -f /home/ubuntu/.cloud-init-complete");
     if (exitCode === 0) {
       const elapsed = Math.round((Date.now() - start) / 1000);
       console.log(`[vm] Cloud-init complete after ${elapsed}s`);
@@ -140,28 +130,26 @@ export async function vmWaitReady(maxWaitSec = 2400): Promise<boolean> {
   return false;
 }
 
-/** Transfer tk source and build the Node CLI (dist/cli.js) */
+/** Transfer ctx source and build the Node CLI (dist/cli.js) */
 export async function vmBuildTk(projectRoot: string): Promise<{
   buildTime: number;
   binarySize: number;
   version: string;
 }> {
-  console.log("[vm] Transferring tk source...");
+  console.log("[vm] Transferring ctx source...");
 
   // Create tarball excluding heavy dirs and macOS resource forks (._*)
   await runChecked("bash", [
     "-c",
-    `COPYFILE_DISABLE=1 tar czf /tmp/tk-src.tar.gz --exclude node_modules --exclude dist --exclude .git --exclude "index.html*" --exclude "._*" -C "${projectRoot}" .`,
+    `COPYFILE_DISABLE=1 tar czf /tmp/ctx-src.tar.gz --exclude node_modules --exclude dist --exclude .git --exclude "index.html*" --exclude "._*" -C "${projectRoot}" .`,
   ]);
-  await vmTransfer("/tmp/tk-src.tar.gz", "/tmp/tk-src.tar.gz");
-  await vmExec(
-    "mkdir -p /home/ubuntu/tk && cd /home/ubuntu/tk && tar xzf /tmp/tk-src.tar.gz",
-  );
+  await vmTransfer("/tmp/ctx-src.tar.gz", "/tmp/ctx-src.tar.gz");
+  await vmExec("mkdir -p /home/ubuntu/ctx && cd /home/ubuntu/ctx && tar xzf /tmp/ctx-src.tar.gz");
 
-  console.log("[vm] Building tk (pnpm install && pnpm build)...");
+  console.log("[vm] Building ctx (pnpm install && pnpm build)...");
   const start = Date.now();
   const { stdout, exitCode } = await vmExec(
-    "export PATH=$HOME/.local/share/pnpm:$PATH && cd /home/ubuntu/tk && pnpm install --frozen-lockfile && pnpm build 2>&1 | tail -5",
+    "export PATH=$HOME/.local/share/pnpm:$PATH && cd /home/ubuntu/ctx && pnpm install --frozen-lockfile && pnpm build 2>&1 | tail -5",
     600_000,
   );
   const buildTime = Math.round((Date.now() - start) / 1000);
@@ -171,18 +159,12 @@ export async function vmBuildTk(projectRoot: string): Promise<{
   }
 
   // "binary size" is the built dist/cli.js artifact size for the Node CLI.
-  const { stdout: sizeStr } = await vmExec(
-    "stat -c%s /home/ubuntu/tk/dist/cli.js",
-  );
+  const { stdout: sizeStr } = await vmExec("stat -c%s /home/ubuntu/ctx/dist/cli.js");
   const binarySize = parseInt(sizeStr.trim(), 10);
 
-  const { stdout: version } = await vmExec(
-    "node /home/ubuntu/tk/dist/cli.js --version",
-  );
+  const { stdout: version } = await vmExec("node /home/ubuntu/ctx/dist/cli.js --version");
 
-  console.log(
-    `[vm] Build OK in ${buildTime}s — ${binarySize} bytes — ${version.trim()}`,
-  );
+  console.log(`[vm] Build OK in ${buildTime}s — ${binarySize} bytes — ${version.trim()}`);
 
   return { buildTime, binarySize, version: version.trim() };
 }
@@ -201,34 +183,30 @@ export async function vmEnsureReady(): Promise<void> {
     }
     console.log(`[vm] Reusing existing VM ${VM_NAME}`);
     // Check if cloud-init is still running
-    const { exitCode } = await vmExec(
-      "test -f /home/ubuntu/.cloud-init-complete",
-    );
+    const { exitCode } = await vmExec("test -f /home/ubuntu/.cloud-init-complete");
     if (exitCode !== 0) {
       console.log("[vm] Cloud-init still running, waiting...");
       const ready = await vmWaitReady();
       if (!ready) {
         throw new Error(
-          "Cloud-init timed out. Check: multipass exec tk-test -- cat /var/log/cloud-init-output.log",
+          "Cloud-init timed out. Check: multipass exec ctx-test -- cat /var/log/cloud-init-output.log",
         );
       }
     }
   } else {
     await vmCreate();
     // multipass launch --timeout should wait, but double-check
-    const { exitCode } = await vmExec(
-      "test -f /home/ubuntu/.cloud-init-complete",
-    );
+    const { exitCode } = await vmExec("test -f /home/ubuntu/.cloud-init-complete");
     if (exitCode !== 0) {
       const ready = await vmWaitReady();
       if (!ready) {
         throw new Error(
-          "Cloud-init timed out. Check: multipass exec tk-test -- cat /var/log/cloud-init-output.log",
+          "Cloud-init timed out. Check: multipass exec ctx-test -- cat /var/log/cloud-init-output.log",
         );
       }
     }
   }
 }
 
-// The tk CLI is invoked as `node dist/cli.js`. TK_BIN is the launcher prefix.
-export const TK_BIN = "node /home/ubuntu/tk/dist/cli.js";
+// The ctx CLI is invoked as `node dist/cli.js`. CTX_BIN is the launcher prefix.
+export const CTX_BIN = "node /home/ubuntu/ctx/dist/cli.js";

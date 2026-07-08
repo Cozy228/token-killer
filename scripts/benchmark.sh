@@ -1,14 +1,14 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-# ── Detect tk binary ────────────────────────────────────────────────
+# ── Detect ctx binary ────────────────────────────────────────────────
 ROOT="$(pwd)"
 if [ -f "$ROOT/dist/cli.js" ]; then
-  TK="node $ROOT/dist/cli.js"
-elif command -v tk &> /dev/null; then
-  TK="$(command -v tk)"
+  CTX="node $ROOT/dist/cli.js"
+elif command -v ctx &> /dev/null; then
+  CTX="$(command -v ctx)"
 else
-  echo "Error: tk not found. Run 'pnpm build' or install tk globally."
+  echo "Error: ctx not found. Run 'pnpm build' or install ctx globally."
   exit 1
 fi
 
@@ -111,9 +111,9 @@ section() {
 
 # ══════════════════════════════════════════════════════════════════════
 echo ""
-printf "${BOLD}${CYAN}tk Benchmark${NC}\n"
+printf "${BOLD}${CYAN}ctx Benchmark${NC}\n"
 echo "════════════════════════════════════════════════════════════════"
-printf "   %-20s │ %s\n" "TEST" "TOKENS (raw → tk)"
+printf "   %-20s │ %s\n" "TEST" "TOKENS (raw → ctx)"
 echo "────────────────────────────────────────────────────────────────"
 
 # =====================
@@ -123,15 +123,15 @@ section "ls"
 
 bench "ls ." \
   "ls -la ." \
-  "$TK ls ."
+  "$CTX ls ."
 
 bench "ls src/" \
   "ls -la src/" \
-  "$TK ls src/"
+  "$CTX ls src/"
 
 bench "ls -la ." \
   "ls -la ." \
-  "$TK ls -la ."
+  "$CTX ls -la ."
 
 # =====================
 # read / cat
@@ -141,19 +141,19 @@ section "read/cat"
 if [ -f "package.json" ]; then
   bench "cat package.json" \
     "cat package.json" \
-    "$TK cat package.json"
+    "$CTX cat package.json"
 fi
 
 if [ -f "README.md" ]; then
   bench "cat README.md" \
     "cat README.md" \
-    "$TK cat README.md"
+    "$CTX cat README.md"
 fi
 
 if [ -f "src/cli.ts" ]; then
   bench "cat src/cli.ts" \
     "cat src/cli.ts" \
-    "$TK cat src/cli.ts"
+    "$CTX cat src/cli.ts"
 fi
 
 # =====================
@@ -163,11 +163,11 @@ section "find"
 
 bench "find src -name *.ts" \
   "find src -name '*.ts'" \
-  "$TK find src -name \"*.ts\""
+  "$CTX find src -name \"*.ts\""
 
 bench "find . -name *.json" \
   "find . -name '*.json' -not -path './node_modules/*' -not -path './dist/*' -not -path './.git/*'" \
-  "$TK find . -name \"*.json\""
+  "$CTX find . -name \"*.json\""
 
 # =====================
 # git
@@ -176,19 +176,19 @@ section "git"
 
 bench "git status" \
   "git status" \
-  "$TK git status"
+  "$CTX git status"
 
 bench "git log -5" \
   "git --no-pager log -5" \
-  "$TK git log -5"
+  "$CTX git log -5"
 
 bench "git diff" \
   "git --no-pager diff HEAD~1 2>/dev/null || echo ''" \
-  "$TK git diff"
+  "$CTX git diff"
 
 bench "git branch" \
   "git --no-pager branch" \
-  "$TK git branch"
+  "$CTX git branch"
 
 # =====================
 # grep
@@ -197,11 +197,11 @@ section "grep"
 
 bench "rg export src/" \
   "rg 'export' src/ 2>/dev/null || echo ''" \
-  "$TK rg export src/"
+  "$CTX rg export src/"
 
 bench "grep -r import src/" \
   "grep -r 'import' src/ 2>/dev/null || echo ''" \
-  "$TK grep -r import src/"
+  "$CTX grep -r import src/"
 
 # =====================
 # generic passthrough
@@ -210,11 +210,11 @@ section "generic passthrough"
 
 bench "echo hello" \
   "echo hello" \
-  "$TK echo hello"
+  "$CTX echo hello"
 
 bench "node -e" \
   "node -e \"console.log('test')\"" \
-  "$TK node -e \"console.log('test')\""
+  "$CTX node -e \"console.log('test')\""
 
 # =====================
 # npm / pnpm (conditional)
@@ -223,14 +223,14 @@ if command -v npm &> /dev/null; then
   section "npm"
   bench "npm list --depth=0" \
     "npm list --depth=0 2>&1 || true" \
-    "$TK npm list --depth=0"
+    "$CTX npm list --depth=0"
 fi
 
 if command -v pnpm &> /dev/null; then
   section "pnpm"
   bench "pnpm list --depth=0" \
     "pnpm list --depth=0 2>&1 || true" \
-    "$TK pnpm list --depth=0"
+    "$CTX pnpm list --depth=0"
 fi
 
 # =====================
@@ -240,7 +240,7 @@ if { command -v tsc &> /dev/null || [ -f "node_modules/.bin/tsc" ]; } && [ -f "t
   section "tsc"
   bench "tsc --noEmit" \
     "tsc --noEmit 2>&1 || true" \
-    "$TK tsc --noEmit"
+    "$CTX tsc --noEmit"
 fi
 
 # =====================
@@ -298,21 +298,21 @@ PYEOF
     section "ruff"
     bench "ruff check ." \
       "ruff check . 2>&1 || true" \
-      "$TK ruff check ."
+      "$CTX ruff check ."
   fi
 
   if $HAVE_PYTEST; then
     section "pytest"
     bench "pytest -v" \
       "pytest -v 2>&1 || true" \
-      "$TK pytest -v"
+      "$CTX pytest -v"
   fi
 
   if $HAVE_PIP; then
     section "pip"
     bench "pip list" \
       "pip list 2>&1 || true" \
-      "$TK pip list"
+      "$CTX pip list"
   fi
 
   cd "$ROOT"
@@ -329,7 +329,7 @@ if command -v javac &> /dev/null; then
   section "Java"
   bench "javac -version" \
     "javac -version 2>&1 || true" \
-    "$TK javac -version"
+    "$CTX javac -version"
 else
   echo ""
   echo "⏭️  Java (javac not in PATH, skipped)"

@@ -10,7 +10,7 @@ let home: string;
 let cwd: string;
 
 beforeEach(() => {
-  const root = mkdtempSync(join(tmpdir(), "tk-mcp-"));
+  const root = mkdtempSync(join(tmpdir(), "ctx-mcp-"));
   home = join(root, "home");
   cwd = join(root, "repo");
   mkdirSync(home, { recursive: true });

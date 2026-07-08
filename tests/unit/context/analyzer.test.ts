@@ -9,7 +9,7 @@ import { renderStaticContextSection } from "../../../src/context/report.js";
 let root: string;
 
 beforeEach(() => {
-  root = mkdtempSync(join(tmpdir(), "tk-ctx-analyzer-"));
+  root = mkdtempSync(join(tmpdir(), "ctx-ctx-analyzer-"));
 });
 afterEach(() => {
   rmSync(root, { recursive: true, force: true });
@@ -106,7 +106,7 @@ describe("context/report — static section render", () => {
       id: file,
       source: "static_context" as const,
       type: "skill_invocation_policy" as const,
-      severity: "info" as const,
+      severity: "warn" as const,
       confidence: 0.5,
       surface: "skill" as const,
       file,
@@ -120,12 +120,37 @@ describe("context/report — static section render", () => {
       findings: [mk("a/SKILL.md"), mk("b/SKILL.md"), mk("c/SKILL.md")],
     });
     // One grouped header with the count, the shared recommendation once, and a file list.
-    expect(out).toContain("[info] skill_invocation_policy (3 files)");
+    expect(out).toContain("[warn] skill_invocation_policy (3 files)");
     expect(out).toContain("    - a/SKILL.md:6");
     expect(out).toContain("    - c/SKILL.md:6");
     // The recommendation appears once, not three times.
     expect(out.match(/Add an `allowed-tools` list\./g)?.length).toBe(1);
     // No per-file Evidence repetition in a consolidated group.
     expect(out).not.toContain("Evidence: Read-only skill missing allowed-tools.");
+  });
+
+  test("promotes a split type to its max severity (nothing dropped) and shows a Saves line", () => {
+    const base = {
+      source: "static_context" as const,
+      confidence: 0.5,
+      surface: "skill" as const,
+      evidence: "x",
+      recommendation: "fix it",
+      fix_class: "advisory" as const,
+    };
+    const out = renderStaticContextSection({
+      files_scanned: 3,
+      findings: [
+        { ...base, id: "1", type: "skill_invocation_policy", severity: "warn", file: "a" },
+        { ...base, id: "2", type: "skill_invocation_policy", severity: "info", file: "b" },
+        { ...base, id: "3", type: "instruction_duplicate", severity: "info", file: "c" },
+      ] as never,
+    });
+    // The info-only type is KEPT (not dropped); the split type surfaces entirely as
+    // warn (both instances promoted, so it never appears under [info]).
+    expect(out).toContain("instruction_duplicate");
+    expect(out).toContain("skill_invocation_policy (2 files)");
+    // Every finding carries a Saves line (grounded or "varies").
+    expect(out).toContain("Saves:");
   });
 });

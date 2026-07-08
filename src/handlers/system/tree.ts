@@ -8,7 +8,7 @@ import { parseLevel, stripLevelFlags } from "../common/level.js";
 // (├──/└──/│). Trailing empty lines are removed. The bulk of RTK's savings comes
 // from rewriting the `tree` invocation with `-I <noise>` so heavy directories
 // (node_modules, .git, dist, …) are excluded before the tree is even rendered;
-// tk reproduces both the command rewrite (buildTreeArgs) and filter_tree_output.
+// ctx reproduces both the command rewrite (buildTreeArgs) and filter_tree_output.
 
 // RTK: system/constants.rs::NOISE_DIRS — directories excluded via `-I` unless the
 // user passes `-a`/`--all` or supplies their own `-I`/`--ignore=` pattern.
@@ -40,7 +40,7 @@ const NOISE_DIRS = [
   ".eggs",
 ];
 
-// tk divergence (see docs/align-rtk-divergences.md G3): inject tree's native
+// ctx divergence (see docs/align-rtk-divergences.md G3): inject tree's native
 // `--filelimit N` so genuinely oversized directories render as a single line with
 // a count marker (`[N entries exceeds filelimit, not opening dir]`) while the full
 // directory skeleton and DEPTH are preserved. RTK has no fan-out cap. Provisional
@@ -160,7 +160,7 @@ export const treeHandler: CommandHandler = {
   async execute(command) {
     // RTK: tree.rs::run — rewrite the invocation to exclude noise directories so
     // the rendered tree (and thus the token cost) drops sharply on real projects;
-    // tk additionally injects the --level fan-out cap (buildTreeArgs).
+    // ctx additionally injects the --level fan-out cap (buildTreeArgs).
     const args = buildTreeArgs(command.args);
     const rewritten: ParsedCommand = {
       ...command,

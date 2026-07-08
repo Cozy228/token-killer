@@ -306,7 +306,7 @@ export function normalize(payload: unknown): ToolEvent {
   // Guarded to a genuinely ABSENT event field — an event name that is present but
   // unrecognized stays `unknown` (it may be a future event we must not mislabel).
   // Safe even when the dual-schema PascalCase entry ALSO rewrites the same call —
-  // rewriteCommand is idempotent on an already-`tk` command (eligibility guards it).
+  // rewriteCommand is idempotent on an already-`ctx` command (eligibility guards it).
   if (
     event === "unknown" &&
     rawEvent === undefined &&

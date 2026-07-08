@@ -1,5 +1,5 @@
 // Shared aggregation over measured history rows (ADR 0004 §3). PURE functions, no
-// I/O — `tk gain` output and the telemetry payload both derive from here so the two
+// I/O — `ctx gain` output and the telemetry payload both derive from here so the two
 // can never diverge. This is ledger ① only: it sums measured command savings, never
 // invents estimates. I/O (reading the rows) lives in history.ts; these helpers take
 // the already-loaded HistoryRecord[].
@@ -49,7 +49,7 @@ function pct(saved: number, raw: number): number {
 
 // Example commands are illustrative, not the full record (that's `--history`). Cap each
 // at 80 chars so a giant `grep ... <many paths>` neither bloats the report data nor
-// floods `tk gain --text`. Renderers may shorten further for a narrow column.
+// floods `ctx gain --text`. Renderers may shorten further for a narrow column.
 export function truncateSample(command: string): string {
   return command.length > 80 ? `${command.slice(0, 79)}…` : command;
 }
@@ -138,7 +138,7 @@ export function fallbackCount(records: HistoryRecord[]): number {
 }
 
 // A generic count/token rollup keyed by some label extracted from each row. Used
-// by `tk debug`'s usage-aggregation section to fan the same measured rows out by
+// by `ctx debug`'s usage-aggregation section to fan the same measured rows out by
 // host (source_adapter), by exact command, and by handler without re-reading disk.
 // PURE — sorted by saved desc, ties broken by count desc then key for stable output.
 export type LabelRollup = {
@@ -249,7 +249,7 @@ export function byMonth(records: HistoryRecord[]): TimeBucket[] {
 }
 
 // Daily buckets for the last N calendar days (UTC), oldest first, with empty days
-// filled as zero buckets. Used by `tk gain --graph`, which renders empty days as the
+// filled as zero buckets. Used by `ctx gain --graph`, which renders empty days as the
 // lowest block. `now` is injected for deterministic tests.
 export function lastNDays(records: HistoryRecord[], n = 30, now: Date = new Date()): TimeBucket[] {
   const present = new Map(byDay(records).map((bucket) => [bucket.key, bucket]));

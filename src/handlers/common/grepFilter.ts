@@ -2,11 +2,11 @@
 // globally, and report suppressed matches with an uncapped overflow count.
 //
 // Architecture note: RTK invokes rg itself with `-0`/`-Z`, so its parse_match_line
-// disambiguates file from content via a NUL separator. tk filters the *already
+// disambiguates file from content via a NUL separator. ctx filters the *already
 // produced* output of the user's real grep/rg command, which is colon-separated
-// (`file:line:content`). tk therefore parses the colon form; the NUL-only edge
+// (`file:line:content`). ctx therefore parses the colon form; the NUL-only edge
 // cases (Windows drive letters, filenames containing `:digits:`) are specific to
-// RTK's NUL contract and are not reproducible on tk's colon input.
+// RTK's NUL contract and are not reproducible on ctx's colon input.
 
 // RTK: main.rs Grep defaults — max_len 80, max 200; config::limits grep_max_per_file 25.
 export const GREP_MAX_LINE_LEN = 80;
@@ -17,7 +17,7 @@ export type GrepMatch = { file: string; line: number; content: string };
 
 // RTK: grep_cmd.rs::has_format_flag — these flags produce already-small output
 // (counts, file lists, only-matching, NUL), so RTK passes them through verbatim.
-// tk extension: `--json` (rg) emits structured records that the colon parser
+// ctx extension: `--json` (rg) emits structured records that the colon parser
 // would half-read, so it joins the passthrough guard — a JSON-shaped rg output is
 // never half-parsed.
 //
@@ -74,7 +74,7 @@ export function hasContextFlag(args: string[]): boolean {
   });
 }
 
-// RTK: grep_cmd.rs::parse_match_line — adapted to tk's colon-separated input.
+// RTK: grep_cmd.rs::parse_match_line — adapted to ctx's colon-separated input.
 // `file:line:content`; the line number anchors the split so content colons
 // (e.g. `ClassRegistry::init`) stay in content. Returns null for non-match lines
 // (e.g. `-A`/`-B` context lines, or output produced without `-n` line numbers).
@@ -164,7 +164,7 @@ function dedupeMatches(matches: GrepMatch[]): GrepEntry[] {
 
 // RTK: grep_cmd.rs::run default path (lines 104-150). Returns the grouped,
 // compressed listing, or null when no line parses as a match — the caller then
-// passes the raw output through unchanged (tk cannot group what it cannot parse,
+// passes the raw output through unchanged (ctx cannot group what it cannot parse,
 // e.g. `grep` invoked without `-n`, or rg `--json`).
 export function groupGrepOutput(
   stdout: string,

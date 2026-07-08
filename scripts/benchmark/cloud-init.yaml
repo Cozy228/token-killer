@@ -1,12 +1,12 @@
 #cloud-config
-# tk (token-killer) Integration Test VM — Ubuntu 24.04
-# Installs all tools needed for comprehensive tk testing (~200 commands)
-# Ported from rtk/scripts/benchmark/cloud-init.yaml and adapted to tk conventions:
-#   - tk builds with Node/pnpm (no Rust toolchain); the Rust toolchain and the
+# ctx (contexa) Integration Test VM — Ubuntu 24.04
+# Installs all tools needed for comprehensive ctx testing (~200 commands)
+# Ported from rtk/scripts/benchmark/cloud-init.yaml and adapted to ctx conventions:
+#   - ctx builds with Node/pnpm (no Rust toolchain); the Rust toolchain and the
 #     fake Rust test project were dropped.
-#   - pnpm is installed globally for building the tk CLI.
-#   - Labels renamed rtk -> tk.
-# Usage: multipass launch --name tk-test --cloud-init scripts/benchmark/cloud-init.yaml --cpus 2 --memory 4G --disk 20G 24.04
+#   - pnpm is installed globally for building the ctx CLI.
+#   - Labels renamed rtk -> ctx.
+# Usage: multipass launch --name ctx-test --cloud-init scripts/benchmark/cloud-init.yaml --cpus 2 --memory 4G --disk 20G 24.04
 
 package_update: true
 package_upgrade: false
@@ -244,7 +244,7 @@ runcmd:
   - |
     su - ubuntu -c '
     mkdir -p /tmp/test-git && cd /tmp/test-git
-    git init && git config user.email "test@tk.dev" && git config user.name "tk Test"
+    git init && git config user.email "test@ctx.dev" && git config user.name "ctx Test"
     for i in $(seq 1 20); do echo "line $i" >> file.txt && git add file.txt && git commit -m "feat: commit number $i"; done
     echo "modified" >> file.txt && echo "new file" > new.txt
     '
@@ -292,6 +292,6 @@ runcmd:
   # Signal completion
   - touch /home/ubuntu/.cloud-init-complete
   - chown ubuntu:ubuntu /home/ubuntu/.cloud-init-complete
-  - echo "tk cloud-init setup complete" | tee /var/log/tk-setup.log
+  - echo "ctx cloud-init setup complete" | tee /var/log/ctx-setup.log
 
-final_message: "tk test VM ready in $UPTIME seconds"
+final_message: "ctx test VM ready in $UPTIME seconds"

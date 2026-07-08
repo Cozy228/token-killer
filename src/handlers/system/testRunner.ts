@@ -22,9 +22,9 @@ function extractTestSummary(
   const isPytest = command.includes("pytest");
   const isJest =
     command.includes("jest") || command.includes("npm test") || command.includes("yarn test");
-  // tk divergence (recorded in docs/align-rtk-divergences.md): RTK's runner.rs also
+  // ctx divergence (recorded in docs/align-rtk-divergences.md): RTK's runner.rs also
   // has a Go branch (`command.contains("go test")`), but Go is an out-of-scope
-  // ecosystem for tk, so the Go branch is intentionally NOT ported. Dropping it also
+  // ecosystem for ctx, so the Go branch is intentionally NOT ported. Dropping it also
   // removes RTK's latent bug where `"cargo test"` contains the substring "go test"
   // (car+"go test") and gets run through BOTH branches — duplicating every failure
   // line and folding the `test result:` summary into the FAILURES block.

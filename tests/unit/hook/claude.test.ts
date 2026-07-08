@@ -27,19 +27,19 @@ describe("decide — Claude PreToolUse Bash rewrite", () => {
       hookSpecificOutput: {
         hookEventName: "PreToolUse",
         permissionDecisionReason: CLAUDE_REWRITE_REASON,
-        updatedInput: { command: "tk git status" },
+        updatedInput: { command: "ctx git status" },
       },
     });
   });
 
-  test("reason string is exactly 'tk auto-rewrite'", () => {
-    expect(CLAUDE_REWRITE_REASON).toBe("tk auto-rewrite");
+  test("reason string is exactly 'ctx auto-rewrite'", () => {
+    expect(CLAUDE_REWRITE_REASON).toBe("ctx auto-rewrite");
   });
 
   test("serialized output matches the acceptance-criteria byte string", () => {
     const out = decide(pre("git status"));
     expect(JSON.stringify(out)).toBe(
-      '{"hookSpecificOutput":{"hookEventName":"PreToolUse","permissionDecisionReason":"tk auto-rewrite","updatedInput":{"command":"tk git status"}}}',
+      '{"hookSpecificOutput":{"hookEventName":"PreToolUse","permissionDecisionReason":"ctx auto-rewrite","updatedInput":{"command":"ctx git status"}}}',
     );
   });
 
@@ -59,7 +59,7 @@ describe("decide — Claude PreToolUse Bash rewrite", () => {
       },
     });
     expect(out?.hookSpecificOutput.updatedInput).toEqual({
-      command: "tk git status",
+      command: "ctx git status",
       description: "check the working tree",
       timeout: 5000,
       run_in_background: true,
@@ -70,8 +70,8 @@ describe("decide — Claude PreToolUse Bash rewrite", () => {
     expect(decide(pre("echo hi"))).toBeNull();
   });
 
-  test("already-tk command → null", () => {
-    expect(decide(pre("tk git status"))).toBeNull();
+  test("already-ctx command → null", () => {
+    expect(decide(pre("ctx git status"))).toBeNull();
   });
 
   test("mutating git commit → null (never rewritten)", () => {
@@ -108,7 +108,7 @@ describe("decideFromStdin — fail-open (CONTEXT.md → Fail-open)", () => {
   // must NOT write to stderr — Claude Code surfaces a fail-open hook's stderr as a
   // spurious "hook error" even though exit is 0 and the command ran fine — BUT the
   // reason must still be reconstructable after the fact. So it lands UNCONDITIONALLY
-  // in errors.log (not gated on TK_DEBUG, which can't be set retroactively).
+  // in errors.log (not gated on CTX_DEBUG, which can't be set retroactively).
   test("truncated payload: SILENT stderr, but errors.log gets the breadcrumb", () => {
     const original = process.stderr.write.bind(process.stderr);
     const written: string[] = [];
@@ -116,8 +116,8 @@ describe("decideFromStdin — fail-open (CONTEXT.md → Fail-open)", () => {
       written.push(String(chunk));
       return true;
     }) as typeof process.stderr.write;
-    const hadDebug = process.env.TK_DEBUG;
-    delete process.env.TK_DEBUG; // prove it is NOT gated on TK_DEBUG
+    const hadDebug = process.env.CTX_DEBUG;
+    delete process.env.CTX_DEBUG; // prove it is NOT gated on CTX_DEBUG
     const before = readErrorLog().length;
     try {
       // A long command whose JSON was cut off mid-string.
@@ -126,18 +126,18 @@ describe("decideFromStdin — fail-open (CONTEXT.md → Fail-open)", () => {
       ).toBeNull();
     } finally {
       process.stderr.write = original;
-      if (hadDebug !== undefined) process.env.TK_DEBUG = hadDebug;
+      if (hadDebug !== undefined) process.env.CTX_DEBUG = hadDebug;
     }
     // Nothing on stderr (no spurious host "hook error")…
     expect(written.join("")).toBe("");
-    // …but the durable breadcrumb is there, even with TK_DEBUG unset.
+    // …but the durable breadcrumb is there, even with CTX_DEBUG unset.
     const appended = readErrorLog().slice(before);
-    expect(appended).toContain("tk hook-error: claude: stdin parse");
+    expect(appended).toContain("ctx hook-error: claude: stdin parse");
   });
 
   test("valid rewrite payload from a JSON string", () => {
     const raw = JSON.stringify(pre("git status"));
-    expect(decideFromStdin(raw)?.hookSpecificOutput.updatedInput.command).toBe("tk git status");
+    expect(decideFromStdin(raw)?.hookSpecificOutput.updatedInput.command).toBe("ctx git status");
   });
 });
 

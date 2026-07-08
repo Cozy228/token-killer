@@ -1,9 +1,9 @@
-// Runtime handler for `tk hook claude` — the Claude Code PreToolUse (Bash) seam.
+// Runtime handler for `ctx hook claude` — the Claude Code PreToolUse (Bash) seam.
 //
 // Claude Code's ~/.claude/settings.json wires a PreToolUse hook with
 // `matcher: "Bash"` to this command (mirrors RTK's `rtk hook claude`). We read
 // the PreToolUse payload from stdin and, for a rewritable Bash command, emit the
-// `hookSpecificOutput` JSON that tells Claude Code to run `tk <cmd>` instead.
+// `hookSpecificOutput` JSON that tells Claude Code to run `ctx <cmd>` instead.
 // Everything else — non-Bash, non-rewritable, pass, parse error, internal
 // failure — produces **empty stdout, exit 0** (fail-open; CONTEXT.md →
 // Fail-open), so Claude Code runs the command unchanged and the agent never
@@ -22,9 +22,9 @@ import { readStreamWithTimeout } from "./copilot.js";
 import { recordHookError, tkDebug } from "./debug.js";
 import { rewriteBeacon } from "./beacon.js";
 
-// Ground-truth reason string Claude Code shows for the auto-rewrite (the tk
+// Ground-truth reason string Claude Code shows for the auto-rewrite (the ctx
 // analogue of RTK's "RTK auto-rewrite").
-export const CLAUDE_REWRITE_REASON = "tk auto-rewrite";
+export const CLAUDE_REWRITE_REASON = "ctx auto-rewrite";
 
 type ClaudePreToolUse = {
   hook_event_name?: string;
@@ -35,7 +35,7 @@ type ClaudePreToolUse = {
   // changes how the command runs (a backgrounded call would run in the foreground).
   tool_input?: { command?: string; [key: string]: unknown };
   // Claude Code stamps the conversation id at the top level of every hook payload.
-  // Carried into the rewrite as `--session <id>` so tk's history stamps it (ADR 0009).
+  // Carried into the rewrite as `--session <id>` so ctx's history stamps it (ADR 0009).
   session_id?: string;
 };
 
@@ -48,8 +48,8 @@ export type ClaudeHookOutput = {
     permissionDecisionReason: string;
     // The full original tool_input with only `command` overwritten (see decide).
     updatedInput: Record<string, unknown>;
-    // Issue #42: optional one-line "tk active" routing beacon (opt-in via
-    // TK_HOOK_BEACON). Present only when the operator asked for it, so the default
+    // Issue #42: optional one-line "ctx active" routing beacon (opt-in via
+    // CTX_HOOK_BEACON). Present only when the operator asked for it, so the default
     // wire is byte-identical and the transparent-rewrite contract is unchanged.
     additionalContext?: string;
   };
@@ -114,7 +114,7 @@ export function decideFromStdin(raw: string): ClaudeHookOutput | null {
     // the host streamed in slower than the stdin-read budget, so it arrived cut off
     // mid-string) is handled by running the command unchanged. Persist the reason to
     // errors.log UNCONDITIONALLY so the scene is reconstructable after the fact —
-    // the host shows only a bare "hook error" (or nothing) and TK_DEBUG cannot be
+    // the host shows only a bare "hook error" (or nothing) and CTX_DEBUG cannot be
     // set retroactively. Kept OFF stderr: Claude Code surfaces a fail-open hook's
     // stderr as a spurious error for a command that actually ran fine.
     recordHookError("claude: stdin parse (fail-open, command ran unchanged)", error);
@@ -130,7 +130,7 @@ async function readStdin(): Promise<string> {
   return readStreamWithTimeout(process.stdin);
 }
 
-// Runtime entry for `tk hook claude`. Emits the rewrite JSON on stdout (or
+// Runtime entry for `ctx hook claude`. Emits the rewrite JSON on stdout (or
 // nothing) and always exits 0 (fail-open — never block the Bash tool call).
 export async function runHookClaude(): Promise<number> {
   let raw = "";

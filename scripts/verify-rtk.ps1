@@ -1,5 +1,5 @@
 $rtk = "$env:USERPROFILE\.local\bin\rtk.exe"
-Set-Location "$env:USERPROFILE\workspace\token-killer"
+Set-Location "$env:USERPROFILE\workspace\contexa"
 
 Write-Host "=== rtk --version ==="
 & $rtk --version

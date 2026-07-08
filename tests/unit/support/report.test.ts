@@ -13,23 +13,23 @@ import {
 } from "../../../src/support/report.js";
 
 let home: string;
-const origHome = process.env.TOKEN_KILLER_HOME;
+const origHome = process.env.CONTEXA_HOME;
 
 beforeEach(() => {
-  home = mkdtempSync(join(tmpdir(), "tk-support-home-"));
-  process.env.TOKEN_KILLER_HOME = home;
+  home = mkdtempSync(join(tmpdir(), "ctx-support-home-"));
+  process.env.CONTEXA_HOME = home;
 });
 
 afterEach(() => {
   rmSync(home, { recursive: true, force: true });
-  if (origHome === undefined) delete process.env.TOKEN_KILLER_HOME;
-  else process.env.TOKEN_KILLER_HOME = origHome;
+  if (origHome === undefined) delete process.env.CONTEXA_HOME;
+  else process.env.CONTEXA_HOME = origHome;
 });
 
 describe("scrubHome (support-boundary scrubber)", () => {
   test("rewrites the home dir to ~ (covers the saved path the CLI puts into the mailto body)", () => {
-    expect(scrubHomePath(join(homedir(), ".token-killer/reports/support-x.md"))).toBe(
-      "~/.token-killer/reports/support-x.md",
+    expect(scrubHomePath(join(homedir(), ".contexa/reports/support-x.md"))).toBe(
+      "~/.contexa/reports/support-x.md",
     );
   });
 
@@ -55,7 +55,7 @@ describe("buildSupportReport", () => {
     writeFileSync(errorLogPath(), `boom near ${homedir()}/secret/path\n`);
     const { markdown, summary } = await buildSupportReport({ cwd: process.cwd(), redact: false });
 
-    expect(summary).toMatch(/^tk \S+ · \S+\/\S+ · node \S+ · host \S+$/m);
+    expect(summary).toMatch(/^ctx \S+ · \S+\/\S+ · node \S+ · host \S+$/m);
     expect(markdown).toContain("## Recent errors (errors.log)");
     // The home dir is scrubbed to ~ in the appended errors section.
     expect(markdown).toContain("boom near ~/secret/path");
@@ -84,7 +84,7 @@ describe("buildSupportReport", () => {
 });
 
 describe("writeSupportBundle", () => {
-  test("writes support-<ts>.md under ~/.token-killer/reports/ and returns the path", () => {
+  test("writes support-<ts>.md under ~/.contexa/reports/ and returns the path", () => {
     const path = writeSupportBundle("# report\n", Date.UTC(2026, 5, 13, 1, 2, 3));
     expect(path).toContain(join(home, "reports"));
     expect(path).toMatch(/support-2026-06-13T01-02-03-000Z\.md$/);

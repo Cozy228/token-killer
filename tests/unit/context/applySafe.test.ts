@@ -22,16 +22,16 @@ let cwd: string;
 
 beforeEach(() => {
   registerAllRules();
-  root = mkdtempSync(join(tmpdir(), "tk-ctx-apply-"));
+  root = mkdtempSync(join(tmpdir(), "ctx-ctx-apply-"));
   home = join(root, "home");
   cwd = join(root, "repo");
   mkdirSync(home, { recursive: true });
   mkdirSync(cwd, { recursive: true });
-  process.env.TOKEN_KILLER_HOME = join(home, ".token-killer");
+  process.env.CONTEXA_HOME = join(home, ".contexa");
 });
 afterEach(() => {
-  delete process.env.TOKEN_KILLER_HOME;
-  delete process.env.TK_USER_AGENT_INSTRUCTIONS;
+  delete process.env.CONTEXA_HOME;
+  delete process.env.CTX_USER_AGENT_INSTRUCTIONS;
   rmSync(root, { recursive: true, force: true });
   vi.restoreAllMocks();
 });
@@ -99,7 +99,7 @@ describe("runOptimize --apply", () => {
     // Body preserved.
     expect(after).toContain("Run the deploy and publish.");
     // Backup written, with a manifest so --restore can revert it.
-    const backupRoot = join(home, ".token-killer", "backups", "context");
+    const backupRoot = join(home, ".contexa", "backups", "context");
     expect(existsSync(backupRoot)).toBe(true);
 
     // --restore reverts the apply.

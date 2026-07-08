@@ -24,8 +24,8 @@ jobs:
         node-version: [20, 22]
     steps:
       - uses: actions/checkout@v4
-      # ripgrep is a real tool tk wraps: the `tk rg` integration tests invoke the
-      # actual rg binary (tk never fabricates output for an absent program — it
+      # ripgrep is a real tool ctx wraps: the `ctx rg` integration tests invoke the
+      # actual rg binary (ctx never fabricates output for an absent program — it
       # honestly reports command-not-found), so each runner must provide it. The
       # runner images do not ship rg by default.
       - if: runner.os == 'Linux'

@@ -541,7 +541,7 @@ const KNOWN_PROGRAMS: ReadonlySet<string> = new Set([
 // content. A position-≥2 token is emitted ONLY via a closed-vocabulary `.has()` hit.
 export function commandStem(raw: string): string {
   let cmd = raw.trim();
-  if (cmd.startsWith("tk ")) cmd = cmd.slice(3).trim();
+  if (cmd.startsWith("ctx ")) cmd = cmd.slice(3).trim();
   if (!cmd) return "";
 
   let tokens = splitCommandTokens(cmd);

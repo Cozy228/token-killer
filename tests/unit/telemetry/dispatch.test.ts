@@ -9,18 +9,18 @@ import { writeConfigTemplate } from "../../../src/core/config.js";
 import { loadOrCreateState, stateFile } from "../../../src/telemetry/state.js";
 import type { HistoryRecord } from "../../../src/core/history.js";
 
-const previousHome = process.env.TOKEN_KILLER_HOME;
+const previousHome = process.env.CONTEXA_HOME;
 const ENDPOINT = "https://telemetry.example.test/v1";
 
 afterEach(() => {
   vi.restoreAllMocks();
-  if (previousHome === undefined) delete process.env.TOKEN_KILLER_HOME;
-  else process.env.TOKEN_KILLER_HOME = previousHome;
+  if (previousHome === undefined) delete process.env.CONTEXA_HOME;
+  else process.env.CONTEXA_HOME = previousHome;
 });
 
 async function withHome<T>(fn: (home: string) => Promise<T> | T): Promise<T> {
-  const home = await mkdtemp(path.join(tmpdir(), "tk-disp-"));
-  process.env.TOKEN_KILLER_HOME = home;
+  const home = await mkdtemp(path.join(tmpdir(), "ctx-disp-"));
+  process.env.CONTEXA_HOME = home;
   vi.spyOn(process.stderr, "write").mockReturnValue(true);
   try {
     return await fn(home);

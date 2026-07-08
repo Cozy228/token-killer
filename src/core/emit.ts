@@ -39,7 +39,7 @@ export async function emitThenCommit(
   // the compressed output, never part of it, so it can't trip the quality gate.
   if (raw.exitCode !== 0) {
     const hint = failureHint(raw, command);
-    if (hint) process.stdout.write(`tk hint: ${hint}\n`);
+    if (hint) process.stdout.write(`ctx hint: ${hint}\n`);
   }
 
   if (options.stats) {

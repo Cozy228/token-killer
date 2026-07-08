@@ -4,7 +4,7 @@
 # way, so BOTH must parse + rewrite (a ParserError → exit 1 → Copilot fail-closed DENY).
 # Run under pwsh 7 (ConvertFrom-Json -AsHashtable needs it for the dual schema keys).
 [Console]::OutputEncoding = [System.Text.Encoding]::UTF8
-$cfgPath = Join-Path $env:USERPROFILE '.copilot\hooks\tk-rewrite.json'
+$cfgPath = Join-Path $env:USERPROFILE '.copilot\hooks\ctx-rewrite.json'
 $cfg = Get-Content -Raw $cfgPath | ConvertFrom-Json -AsHashtable
 $fields = [ordered]@{
   'PreToolUse.command (PascalCase)' = $cfg.hooks.PreToolUse[0].command
@@ -25,7 +25,7 @@ foreach ($name in $fields.Keys) {
          -NoNewWindow -Wait -PassThru
     $out = (Get-Content -Raw $tmpOut -ErrorAction SilentlyContinue)
     $err = (Get-Content -Raw $tmpErr -ErrorAction SilentlyContinue)
-    $rewrote = $out -match '"command":"tk git status"'
+    $rewrote = $out -match '"command":"ctx git status"'
     Write-Host ("    exit={0}  rewrote={1}" -f $p.ExitCode, [bool]$rewrote)
     if ($p.ExitCode -ne 0 -or -not $rewrote) {
       $msg = (($err + $out).Trim() -replace '\s+',' ')

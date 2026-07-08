@@ -41,7 +41,7 @@ describe("RTK git worktree behavior", () => {
     );
 
     expectRtkParity(result, {
-      critical: ["~/Workspace/token-killer", "62d59ca", "[token-killer-node-cli]"],
+      critical: ["~/Workspace/contexa", "62d59ca", "[contexa-node-cli]"],
       // The real home must be compacted to ~ — assert the machine's actual home
       // never survives, rather than a hardcoded /Users/... that only fails locally.
       forbidden: [homedir()],

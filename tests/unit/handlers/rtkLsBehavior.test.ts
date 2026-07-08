@@ -31,7 +31,7 @@ describe("RTK ls command construction (buildLsArgs)", () => {
 // listing: dirs first (name + "/"), then files (name + human size), NOISE_DIRS
 // filtered unless -a, optional octal perms with -l. The Rust summary line is
 // emitted only in interactive TTY mode (ls.rs::run is_terminal()); piped output
-// (how tk consumes it) carries only the entries.
+// (how ctx consumes it) carries only the entries.
 
 describe("RTK ls behavior", () => {
   // RTK: ls.rs::test_compact_basic + test_human_size — dirs gain a trailing

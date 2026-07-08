@@ -8,10 +8,10 @@ top findings by leverage were planned without a user selection round.
 
 **Updated 2026-06-15 — incremental delta audit + reconcile, against commit
 `22579d2`.** Audited only `0fcd6f6..HEAD` (the 5 commits since the last audit:
-calibrated token estimator, pricing/AI-Credits, the `tk support` subsystem, and
+calibrated token estimator, pricing/AI-Credits, the `ctx support` subsystem, and
 cross-cutting `telemetry`/`html`/`cli` touches — ~1900 lines; 3 parallel sweeps,
 every finding re-read against source). The delta is clean — no high-severity new
-bug; the `tk support` code applied the issue-#12 lesson (whole-bundle home-scrub +
+bug; the `ctx support` code applied the issue-#12 lesson (whole-bundle home-scrub +
 `0600`/`0700`, RFC-6068 mailto encoding, `rundll32` not `cmd /c start`). Outcomes:
 **plan 011** (reports/ permissions, issue #13) and **plan 012** (estimator
 hot-path allocation, issue #14) added; **DOCS-01** folded into plan 004 (Step 5,
@@ -30,19 +30,20 @@ row when done.
 
 | Plan | Title | Priority | Effort | Depends on | Issue | Status |
 |------|-------|----------|--------|------------|-------|--------|
-| 001  | Add GitHub Actions CI running the existing gates | P1 | S | — | [#4](https://github.com/Cozy228/token-killer/issues/4) | DONE |
-| 002  | Emit compressed output before accounting writes | P1 | M | 001 (soft) | [#5](https://github.com/Cozy228/token-killer/issues/5) | DONE |
-| 003  | Restrict metrics-store permissions to 0700/0600 | P1 | S | — | [#6](https://github.com/Cozy228/token-killer/issues/6) | DONE |
-| 004  | Docs truth sweep (README/Codex, DESIGN.md, dead `--no-dedup`, TELEMETRY price table) | P2 | S | — | [#7](https://github.com/Cozy228/token-killer/issues/7) | DONE |
-| 005  | Neutralize cmd.exe `%`-expansion for `.cmd`/`.bat` spawns | P2 | M | 001 (soft) | [#8](https://github.com/Cozy228/token-killer/issues/8) | DONE |
-| 006  | Truncation-safe multibyte decode at the 64MB capture cap | P3 | S | — | [#9](https://github.com/Cozy228/token-killer/issues/9) | DONE |
-| 007  | Telemetry stems: closed subcommand vocabulary (stop user-content transmission) | P1 | S | — | [#10](https://github.com/Cozy228/token-killer/issues/10) | DONE |
-| 008  | Refuse to overwrite an unmanaged copilot hook config on install | P2 | S | — | [#11](https://github.com/Cozy228/token-killer/issues/11) | DONE |
-| 009  | Add `tk support` — email/Teams report with auto-attached error + logs | P2 | M | — | [#12](https://github.com/Cozy228/token-killer/issues/12) | DONE (see Deviations A/B in plan) |
-| 010  | Spike — package tk as a GitHub Agent Plugin (Copilot CLI + VS Code distribution) | P3 | M | — | — | TODO |
-| 011  | Create reports/ dir + HTML reports owner-only (0700/0600) | P2 | S | — | [#13](https://github.com/Cozy228/token-killer/issues/13) | DONE |
-| 012  | Estimate tokens via an index loop (drop per-codepoint allocation) | P3 | S | — | [#14](https://github.com/Cozy228/token-killer/issues/14) | DONE |
-| 013  | `tk gain`: rtk-parity terminal output + landing-page report narrative | P2 | M | — | [#35](https://github.com/Cozy228/token-killer/issues/35) | IN PROGRESS |
+| 001  | Add GitHub Actions CI running the existing gates | P1 | S | — | [#4](https://github.com/Cozy228/contexa/issues/4) | DONE |
+| 002  | Emit compressed output before accounting writes | P1 | M | 001 (soft) | [#5](https://github.com/Cozy228/contexa/issues/5) | DONE |
+| 003  | Restrict metrics-store permissions to 0700/0600 | P1 | S | — | [#6](https://github.com/Cozy228/contexa/issues/6) | DONE |
+| 004  | Docs truth sweep (README/Codex, DESIGN.md, dead `--no-dedup`, TELEMETRY price table) | P2 | S | — | [#7](https://github.com/Cozy228/contexa/issues/7) | DONE |
+| 005  | Neutralize cmd.exe `%`-expansion for `.cmd`/`.bat` spawns | P2 | M | 001 (soft) | [#8](https://github.com/Cozy228/contexa/issues/8) | DONE |
+| 006  | Truncation-safe multibyte decode at the 64MB capture cap | P3 | S | — | [#9](https://github.com/Cozy228/contexa/issues/9) | DONE |
+| 007  | Telemetry stems: closed subcommand vocabulary (stop user-content transmission) | P1 | S | — | [#10](https://github.com/Cozy228/contexa/issues/10) | DONE |
+| 008  | Refuse to overwrite an unmanaged copilot hook config on install | P2 | S | — | [#11](https://github.com/Cozy228/contexa/issues/11) | DONE |
+| 009  | Add `ctx support` — email/Teams report with auto-attached error + logs | P2 | M | — | [#12](https://github.com/Cozy228/contexa/issues/12) | DONE (see Deviations A/B in plan) |
+| 010  | Spike — package ctx as a GitHub Agent Plugin (Copilot CLI + VS Code distribution) | P3 | M | — | — | TODO |
+| 011  | Create reports/ dir + HTML reports owner-only (0700/0600) | P2 | S | — | [#13](https://github.com/Cozy228/contexa/issues/13) | DONE |
+| 012  | Estimate tokens via an index loop (drop per-codepoint allocation) | P3 | S | — | [#14](https://github.com/Cozy228/contexa/issues/14) | DONE |
+| 013  | `ctx gain`: rtk-parity terminal output + landing-page report narrative | P2 | M | — | [#35](https://github.com/Cozy228/contexa/issues/35) | DONE |
+| 014  | Rename Contexa (`ctx`) to Contexa (`ctx`) from the 0.3.2 baseline | P1 | L | PR #57 green | — | DONE |
 
 Status values: TODO | IN PROGRESS | DONE | BLOCKED (with one-line reason) | REJECTED (with one-line rationale)
 
@@ -69,7 +70,7 @@ Status values: TODO | IN PROGRESS | DONE | BLOCKED (with one-line reason) | REJE
 LOW-severity items in `0fcd6f6..HEAD` deliberately not turned into plans (so they
 are not re-audited; each is a one-line fold-in if a future PR touches the file):
 
-- **`tk support` prints the unscrubbed absolute `bundlePath` to stdout**
+- **`ctx support` prints the unscrubbed absolute `bundlePath` to stdout**
   (`src/support/cli.ts:189,213,226`). The *transmitted* channels are scrubbed (the
   mailto body path via `cli.ts:138`; the whole bundle + summary via
   `report.ts:88,97`) and the saved file is `0600`; the stdout lines are *local*
@@ -84,8 +85,8 @@ are not re-audited; each is a one-line fold-in if a future PR touches the file):
 - **`report/html.ts:245,249` interpolate price numbers without `n()`/`esc()`** — not
   currently reachable (always numeric constants); defense-in-depth only.
 - **`debug/render.ts:30` home-scrubber is case-sensitive/separator-exact**, weaker
-  than `support/report.ts`'s `/gi` regex — but the `tk support` path is covered by
-  the report.ts boundary scrub; the gap is `tk debug`-local-file only.
+  than `support/report.ts`'s `/gi` regex — but the `ctx support` path is covered by
+  the report.ts boundary scrub; the gap is `ctx debug`-local-file only.
 - **`support/send.ts` does no email-format validation** — confirmed NOT injectable
   (RFC-6068 encoding; `?`/`&`/CRLF stay encoded); only a malformed address yields a
   malformed mailto.
@@ -115,7 +116,7 @@ are not re-audited; each is a one-line fold-in if a future PR touches the file):
   segmented bucketer at `src/core/tokens.ts:72-96`, re-measured at ~4.5× an index
   loop on 10MB output, and promoted to a planned S/P3 perf fix. The separate
   SHA-256 + ANSI-strip dedup pass remains deferred.)
-- **`tk gain --user` full-rebuilds a project rollup on any history growth**
+- **`ctx gain --user` full-rebuilds a project rollup on any history growth**
   (`src/core/rollup.ts:551-629`) — history.jsonl is append-only, so an
   incremental read from `source_bytes` is safe and cheap. Cold path; do when
   gain gets slow.
@@ -123,7 +124,7 @@ are not re-audited; each is a one-line fold-in if a future PR touches the file):
   (`src/handlers/base.ts:179-182`, `src/core/rawStore.ts:20-27`) — files are
   0600 and GC'd (7d/50MB, `gc.ts`), but content is unscrubbed. Needs a product
   design decision (secret-pattern redaction vs denylist), not a mechanical fix.
-- **GC only triggers on `tk gain`** (`gcRawStore` called solely from
+- **GC only triggers on `ctx gain`** (`gcRawStore` called solely from
   `gain.ts:181`) — a user who never runs gain accrues raw logs for the 7-day
   window unbounded by anything but the 50MB cap-on-next-gain. Consider a cheap
   probabilistic trigger on the hot path (e.g. 1-in-N commands).
@@ -162,13 +163,13 @@ are not re-audited; each is a one-line fold-in if a future PR touches the file):
 - **Agent Plugin as a distribution channel** (→ plan 010, spike): GitHub's shared
   Agent Plugin format (Copilot CLI + VS Code ≥ 1.122, public preview) + enterprise
   default-enable via `<enterprise>/.github-private/settings.json` is a *distribution*
-  win, not a capability one — the plugin `hooks.json` is the same Claude hook format tk
+  win, not a capability one — the plugin `hooks.json` is the same Claude hook format ctx
   already emits and `resolveHookCommand()` already produces a drop-in command. Known
   ceiling: VS Code `PostToolUse` still can't compress output (memory
   `vscode-copilot-hook-no-modifiedresult`). Right shape: a spike that builds a minimal
   package and live-verifies both hosts before any `src/` work.
 - **npm publication readiness**: v0.1.0, `bin`/`files` already correct, zero
-  runtime deps, README quick-start assumes an installed `tk`. After plan 001
+  runtime deps, README quick-start assumes an installed `ctx`. After plan 001
   (CI) and 004 (README), `pnpm publish` is mostly a decision, not work — and it
   collapses the acquisition-path problem.
 - **Calibrate the estimator ratios** (new, 2026-06-15): `scripts/calibrate-tokens.ts`
@@ -195,7 +196,7 @@ are not re-audited; each is a one-line fold-in if a future PR touches the file):
 - **Unknown-signal exit collapses to bare 128** (`executor.ts:15-22`): edge of
   an edge; no consumer distinguishes it today.
 - **"raw/ logs are never GC'd" (from ADR-0009 follow-ups)**: stale — `gc.ts`
-  ships 7-day/50MB GC. The residual (trigger only on `tk gain`) is in the
+  ships 7-day/50MB GC. The residual (trigger only on `ctx gain`) is in the
   deferred list above.
 - **HTML-report XSS, POSIX shim wrapper quoting, session-id injection,
   Terraform secrets/ingress, Claude settings.json clobbering**: checked, sound
@@ -208,16 +209,16 @@ are not re-audited; each is a one-line fold-in if a future PR touches the file):
   telemetry stem redaction (→ plan 007), copilot hook install overwrite
   (→ plan 008), and the win32 report-open path — `report/open.ts:37` spawns
   `cmd /c start "" <path>` on Windows, which IS cmd parsing (`%` expansion
-  applies to the path). Severity low because the path is tk-generated
-  (`~/.token-killer/reports/<kind>-<ISO>.html`), but the "argv-only, no shell"
+  applies to the path). Severity low because the path is ctx-generated
+  (`~/.contexa/reports/<kind>-<ISO>.html`), but the "argv-only, no shell"
   rationale was wrong; treat alongside plan 005's cmd-semantics work if
-  `TOKEN_KILLER_HOME` ever carries user-controlled `%…%` content.
+  `CONTEXA_HOME` ever carries user-controlled `%…%` content.
 - **Vendored repos / root tarball as committed bloat**: not committed —
-  `rtk/`, `ztk/`, `headroom/`, `token-killer-0.1.0.tgz` are all gitignored
+  `rtk/`, `ztk/`, `headroom/`, `contexa-0.1.0.tgz` are all gitignored
   local working copies.
 - **`src/cli.ts` as god object**: highest churn but structurally a thin lazy
   dispatch table; churn reflects surface cleanups, not rot.
-- **`tk support` subsystem (2026-06-15 delta)**: audited for leakage / URL
+- **`ctx support` subsystem (2026-06-15 delta)**: audited for leakage / URL
   injection / cmd-expansion / write-safety; sound. Whole-bundle home-scrub at the
   send boundary (`report.ts:88,97`), `0600`/`0700` saved file, RFC-6068 mailto
   recipient encoding (no header injection), and — notably — the opener uses

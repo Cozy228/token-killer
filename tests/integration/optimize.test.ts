@@ -1,4 +1,4 @@
-// Slice 5 integration — `tk optimize` consumer through the real CLI dispatch,
+// Slice 5 integration — `ctx optimize` consumer through the real CLI dispatch,
 // including the default inspect trigger (dynamic import) when the scope bucket
 // is absent.
 
@@ -19,8 +19,8 @@ let home: string;
 let project: string;
 
 beforeEach(() => {
-  home = mkdtempSync(path.join(tmpdir(), "tk-opt-home-"));
-  project = mkdtempSync(path.join(tmpdir(), "tk-opt-proj-"));
+  home = mkdtempSync(path.join(tmpdir(), "ctx-opt-home-"));
+  project = mkdtempSync(path.join(tmpdir(), "ctx-opt-proj-"));
 });
 afterEach(() => {
   rmSync(home, { recursive: true, force: true });
@@ -42,7 +42,7 @@ function runTk(args: string[]) {
       ...process.env,
       HOME: home,
       USERPROFILE: home,
-      TOKEN_KILLER_HOME: path.join(home, ".token-killer"),
+      CONTEXA_HOME: path.join(home, ".contexa"),
     },
   });
 }
@@ -51,7 +51,7 @@ function gitInit(): void {
   spawnSync("git", ["init", "-q"], { cwd: project, encoding: "utf8" });
 }
 
-describe("tk optimize", () => {
+describe("ctx optimize", () => {
   test("default preview triggers inspect when the bucket is absent and prints a plan, no writes", () => {
     write(
       "AGENTS.md",
@@ -62,9 +62,9 @@ describe("tk optimize", () => {
     expect(r.stdout).toContain("scope = project");
     expect(r.stdout).toContain("always_on_bloat");
     // No advice artifact in the default preview.
-    expect(existsSync(path.join(home, ".token-killer", "advice", "context"))).toBe(false);
+    expect(existsSync(path.join(home, ".contexa", "advice", "context"))).toBe(false);
     // But the inspect bucket was created by the trigger.
-    expect(existsSync(path.join(home, ".token-killer", "projects"))).toBe(true);
+    expect(existsSync(path.join(home, ".contexa", "projects"))).toBe(true);
   });
 
   test("a leading `context` token is still accepted (back-compat)", () => {
@@ -165,7 +165,7 @@ describe("tk optimize", () => {
     expect(after).toContain("Run the deploy and publish the release.");
 
     // A reversible backup was recorded.
-    expect(existsSync(path.join(home, ".token-killer", "backups", "context"))).toBe(true);
+    expect(existsSync(path.join(home, ".contexa", "backups", "context"))).toBe(true);
 
     // --restore brings the file back to its pre-apply content.
     const restore = runTk(["optimize", "--restore"]);

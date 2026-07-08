@@ -1,5 +1,5 @@
-// Slice 4 — proves the telemetry send path is unreachable from `tk <cmd>` (the hot
-// path is sacred) and reachable only from the cold paths (`tk gain` / `tk inspect`).
+// Slice 4 — proves the telemetry send path is unreachable from `ctx <cmd>` (the hot
+// path is sacred) and reachable only from the cold paths (`ctx gain` / `ctx inspect`).
 // Uses the observable telemetry-state.json `lastSentAt` stamp as the signal — no
 // network server needed: the bogus endpoint fails fast, but the stamp lands BEFORE
 // dispatch, so its presence/absence cleanly distinguishes "tried to send" from
@@ -21,7 +21,7 @@ const DEAD_ENDPOINT = "https://127.0.0.1:1/telemetry"; // refuses fast
 let home: string;
 
 beforeEach(async () => {
-  home = await mkdtemp(path.join(tmpdir(), "tk-tele-int-"));
+  home = await mkdtemp(path.join(tmpdir(), "ctx-tele-int-"));
   // Opt in to network telemetry.
   mkdirSync(home, { recursive: true });
   writeFileSync(path.join(home, "config.jsonc"), '{ "telemetry": true }\n');
@@ -40,8 +40,8 @@ function runTk(args: string[], cwd: string) {
     env: {
       ...process.env,
       PATH: `${localBin}${path.delimiter}${process.env.PATH ?? ""}`,
-      TOKEN_KILLER_HOME: home,
-      TK_TELEMETRY_ENDPOINT: DEAD_ENDPOINT,
+      CONTEXA_HOME: home,
+      CTX_TELEMETRY_ENDPOINT: DEAD_ENDPOINT,
     },
   });
 }
@@ -53,9 +53,9 @@ function stateLastSentAt(): string | null | undefined {
 }
 
 describe("telemetry send path reachability", () => {
-  test("tk <cmd> never reaches the telemetry trigger, even opted-in", () => {
+  test("ctx <cmd> never reaches the telemetry trigger, even opted-in", () => {
     // A real handler command exercises the compress hot path (repoRoot is a git
-    // repo). Post-U2 a DIRECT `tk echo` would error before any hot path runs, so
+    // repo). Post-U2 a DIRECT `ctx echo` would error before any hot path runs, so
     // route through an actual handled tool instead.
     const r = runTk(["git", "status"], repoRoot);
     expect(r.status).toBe(0);
@@ -63,13 +63,13 @@ describe("telemetry send path reachability", () => {
     expect(stateLastSentAt()).toBeUndefined();
   });
 
-  test("tk gain reaches the trigger, stamps lastSentAt, and a dead endpoint is swallowed", () => {
+  test("ctx gain reaches the trigger, stamps lastSentAt, and a dead endpoint is swallowed", () => {
     const r = runTk(["gain"], repoRoot);
     expect(r.status).toBe(0); // send failure never changes the exit code
     expect(stateLastSentAt()).toEqual(expect.any(String));
   });
 
-  test("a second tk gain inside 23h does not re-send (stamp unchanged)", () => {
+  test("a second ctx gain inside 23h does not re-send (stamp unchanged)", () => {
     runTk(["gain"], repoRoot);
     const first = stateLastSentAt();
     runTk(["gain"], repoRoot);

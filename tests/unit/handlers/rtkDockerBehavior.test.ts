@@ -47,7 +47,7 @@ describe("RTK docker command construction (buildDockerArgs)", () => {
   });
   // ADR 0001 decision 8 (divergence from RTK): the capture-time `--tail 100`
   // injection RTK uses is REMOVED — pre-truncating the fetch discards the very
-  // bytes the recovery contract relies on. So `logs` keeps the container but tk
+  // bytes the recovery contract relies on. So `logs` keeps the container but ctx
   // never adds `--tail 100`; value-flags (--since/-n/--tail/--index) are stripped
   // so the formatter sees a clean stream, and a live `-f`/`--follow` passes through
   // wholesale (it never exits and cannot be captured).
@@ -170,7 +170,7 @@ describe("RTK docker behavior", () => {
   });
 
   // RTK: cloud/container.rs::docker_ps + format_container_line_from_parts.
-  // tk receives the `--format "{{.ID}}\t{{.Names}}\t{{.Status}}\t{{.Image}}\t{{.Ports}}"`
+  // ctx receives the `--format "{{.ID}}\t{{.Names}}\t{{.Status}}\t{{.Image}}\t{{.Ports}}"`
   // stdout RTK produces internally: id truncated to 12 chars, image last segment.
   test("docker ps shortens ids/images and brackets compacted ports", async () => {
     const result = await filterRtkOutput(

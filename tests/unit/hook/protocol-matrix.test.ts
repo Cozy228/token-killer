@@ -4,7 +4,7 @@
 // `detect_format()` rejects `run_in_terminal`/`powershell`, yet its hook tests
 // reported "76 passed". Those tests asserted on the formatter in isolation, never
 // on the REAL host wire shapes. This suite is keyed to the exact bytes/objects a
-// host sends and drives them through tk's REAL entry points end-to-end at the
+// host sends and drives them through ctx's REAL entry points end-to-end at the
 // protocol layer:
 //
 //     raw stdin string ──normalizeStdin──▶ ToolEvent ──decide──▶ Decision
@@ -29,10 +29,10 @@
 // preservation == the rewrite is applied.
 //
 // LIMITATION + its complement (issue #21): this suite calls normalizeStdin/decide/
-// toHostOutput IN-PROCESS — it never spawns the actual `tk hook copilot` process the
+// toHostOutput IN-PROCESS — it never spawns the actual `ctx hook copilot` process the
 // host invokes, so it cannot catch a regression in stdin reading, stdout bytes, or the
 // exit code. That gap is covered by the opt-in real-process smoke in
-// `live-host-smoke.test.ts` (TK_LIVE_HOST_SMOKE=1), which spawns the real binary and
+// `live-host-smoke.test.ts` (CTX_LIVE_HOST_SMOKE=1), which spawns the real binary and
 // asserts the emitted JSON + exit 0 — the closest faithful step toward live execution.
 //
 // Determinism note: rows 1–5 use `git status` (or a `git` subcommand). The rewrite
@@ -55,7 +55,7 @@ import { normalizeStdin } from "../../../src/hook/normalize.js";
 
 // ---------------------------------------------------------------------------
 // Wire-payload builders — produce the RAW JSON STRING a host writes to the
-// hook's stdin, exactly as that host shapes it. No tk-internal types involved.
+// hook's stdin, exactly as that host shapes it. No ctx-internal types involved.
 // ---------------------------------------------------------------------------
 
 // VS Code Copilot Chat dialect: snake_case `tool_name` / object `tool_input`,
@@ -88,7 +88,7 @@ function pipe(raw: string): Record<string, unknown> | null {
 
 // ---------------------------------------------------------------------------
 // Row 1 — VS Code / run_in_terminal / object tool_input with realistic fields.
-// Locks #19: updatedInput must preserve ALL fields; command → `tk <cmd>`.
+// Locks #19: updatedInput must preserve ALL fields; command → `ctx <cmd>`.
 // ---------------------------------------------------------------------------
 
 describe("Row 1 — VS Code run_in_terminal: updatedInput preserves all fields (#19)", () => {
@@ -117,7 +117,7 @@ describe("Row 1 — VS Code run_in_terminal: updatedInput preserves all fields (
         permissionDecision: "allow",
         permissionDecisionReason: COPILOT_REWRITE_REASON,
         updatedInput: {
-          command: "tk git status",
+          command: "ctx git status",
           explanation: "Check the working tree",
           goal: "Inspect repository state",
           mode: "sync",
@@ -129,7 +129,7 @@ describe("Row 1 — VS Code run_in_terminal: updatedInput preserves all fields (
 
 // ---------------------------------------------------------------------------
 // Row 2 — Copilot CLI (Windows) / powershell / string toolArgs (JSON string).
-// Flat modifiedArgs preserves all fields; command → `tk <cmd>`.
+// Flat modifiedArgs preserves all fields; command → `ctx <cmd>`.
 // ---------------------------------------------------------------------------
 
 describe("Row 2 — Copilot CLI powershell, string toolArgs: full modifiedArgs", () => {
@@ -157,7 +157,7 @@ describe("Row 2 — Copilot CLI powershell, string toolArgs: full modifiedArgs",
       permissionDecision: "allow",
       permissionDecisionReason: COPILOT_REWRITE_REASON,
       modifiedArgs: {
-        command: "tk git status",
+        command: "ctx git status",
         description: "check repo status",
         initial_wait: 30,
         mode: "sync",
@@ -190,7 +190,7 @@ describe("Row 3 — Copilot CLI powershell, object toolArgs: full modifiedArgs",
       permissionDecision: "allow",
       permissionDecisionReason: COPILOT_REWRITE_REASON,
       modifiedArgs: {
-        command: "tk git status",
+        command: "ctx git status",
         description: "check repo status",
         initial_wait: 30,
         mode: "sync",
@@ -209,7 +209,7 @@ describe("Row 4 — Copilot CLI bash (Unix): string AND object toolArgs are equi
     permissionDecision: "allow",
     permissionDecisionReason: COPILOT_REWRITE_REASON,
     modifiedArgs: {
-      command: "tk git status",
+      command: "ctx git status",
       description: "inspect tree",
       mode: "sync",
     },
@@ -267,7 +267,7 @@ describe("Row 5 — leading UTF-8 BOM is stripped → normal rewrite (not fail-o
           hookEventName: "PreToolUse",
           permissionDecision: "allow",
           permissionDecisionReason: COPILOT_REWRITE_REASON,
-          updatedInput: { command: "tk git status", explanation: "x", mode: "sync" },
+          updatedInput: { command: "ctx git status", explanation: "x", mode: "sync" },
         },
       },
     ],
@@ -277,7 +277,7 @@ describe("Row 5 — leading UTF-8 BOM is stripped → normal rewrite (not fail-o
       {
         permissionDecision: "allow",
         permissionDecisionReason: COPILOT_REWRITE_REASON,
-        modifiedArgs: { command: "tk git status", mode: "sync" },
+        modifiedArgs: { command: "ctx git status", mode: "sync" },
       },
     ],
   ];
@@ -414,7 +414,7 @@ describe("Row 6 — malformed / empty / truncated stdin: fail-open (exit 0, emit
       expect(JSON.parse(writes[0])).toEqual({
         permissionDecision: "allow",
         permissionDecisionReason: COPILOT_REWRITE_REASON,
-        modifiedArgs: { command: "tk git status", mode: "sync" },
+        modifiedArgs: { command: "ctx git status", mode: "sync" },
       });
     } finally {
       Object.defineProperty(process, "stdin", { value: realStdin, configurable: true });
@@ -435,7 +435,7 @@ describe("Row 6 — malformed / empty / truncated stdin: fail-open (exit 0, emit
 // DOUBLE-FIRE ARBITRATION (issue #21 / #20): the capture shows BOTH callbacks receive
 // the SAME ORIGINAL `git status` (NOT the second seeing an already-rewritten command).
 // The acceptance property is therefore that the two responses CONVERGE: each rewrites
-// the original to the IDENTICAL `tk …` command, so however the host arbitrates two
+// the original to the IDENTICAL `ctx …` command, so however the host arbitrates two
 // responses (applies one / last-writer-wins), the executed command is the same single
 // rewrite — never a duplicate-applied or conflicting one. This in-process harness is the
 // faithful host contract; the live-host rerun is the final release gate for #20.
@@ -445,13 +445,13 @@ describe("Row 7 — real Copilot CLI 1.0.62 dual-fire captures", () => {
   // payload 1 — native camelCase preToolUse entry: NO event field, string toolArgs.
   const REAL_CLI_NATIVE =
     '{"sessionId":"a938a6db-5e2f-4e0e-8a65-7cd6bf7b6e13","timestamp":1781513173266,' +
-    '"cwd":"C:\\\\Users\\\\cozy2\\\\workspace\\\\token-killer","toolName":"powershell",' +
+    '"cwd":"C:\\\\Users\\\\cozy2\\\\workspace\\\\contexa","toolName":"powershell",' +
     '"toolArgs":"{\\"command\\":\\"git status\\",\\"description\\":\\"Run git status\\"}"}';
 
   // payload 2 — PascalCase PreToolUse entry: hook_event_name, tool_name "Bash", object input.
   const REAL_PASCAL =
     '{"hook_event_name":"PreToolUse","session_id":"a938a6db-5e2f-4e0e-8a65-7cd6bf7b6e13",' +
-    '"timestamp":"2026-06-15T08:46:14.917Z","cwd":"C:\\\\Users\\\\cozy2\\\\workspace\\\\token-killer",' +
+    '"timestamp":"2026-06-15T08:46:14.917Z","cwd":"C:\\\\Users\\\\cozy2\\\\workspace\\\\contexa",' +
     '"tool_name":"Bash","tool_input":{"command":"git status","description":"Run git status"}}';
 
   test("event-less native payload now infers preToolUse and rewrites (the fix)", () => {
@@ -466,7 +466,7 @@ describe("Row 7 — real Copilot CLI 1.0.62 dual-fire captures", () => {
       permissionDecision: "allow",
       permissionDecisionReason: COPILOT_REWRITE_REASON,
       modifiedArgs: {
-        command: "tk --session a938a6db-5e2f-4e0e-8a65-7cd6bf7b6e13 git status",
+        command: "ctx --session a938a6db-5e2f-4e0e-8a65-7cd6bf7b6e13 git status",
         description: "Run git status",
       },
     });
@@ -479,7 +479,7 @@ describe("Row 7 — real Copilot CLI 1.0.62 dual-fire captures", () => {
         permissionDecision: "allow",
         permissionDecisionReason: COPILOT_REWRITE_REASON,
         updatedInput: {
-          command: "tk --session a938a6db-5e2f-4e0e-8a65-7cd6bf7b6e13 git status",
+          command: "ctx --session a938a6db-5e2f-4e0e-8a65-7cd6bf7b6e13 git status",
           description: "Run git status",
         },
       },
@@ -489,11 +489,11 @@ describe("Row 7 — real Copilot CLI 1.0.62 dual-fire captures", () => {
   // The acceptance test the issue actually asks for (#21): observe BOTH responses of the
   // real double-fire and prove they resolve to EXACTLY ONE rewritten execution. This
   // faithfully models the captured sequence — both callbacks get the ORIGINAL `git
-  // status` — unlike a chained sequence where the second sees an already-`tk` command.
-  test("double-fire: both callbacks rewrite the SAME original to the SAME tk command (exactly one execution)", () => {
+  // status` — unlike a chained sequence where the second sees an already-`ctx` command.
+  test("double-fire: both callbacks rewrite the SAME original to the SAME ctx command (exactly one execution)", () => {
     // Both real payloads carry the same session id and the same original command, so
-    // both responses must rewrite to the byte-identical `tk --session … git status`.
-    const expected = "tk --session a938a6db-5e2f-4e0e-8a65-7cd6bf7b6e13 git status";
+    // both responses must rewrite to the byte-identical `ctx --session … git status`.
+    const expected = "ctx --session a938a6db-5e2f-4e0e-8a65-7cd6bf7b6e13 git status";
 
     const native = pipe(REAL_CLI_NATIVE) as { modifiedArgs?: { command?: string } } | null;
     const pascal = pipe(REAL_PASCAL) as {
@@ -510,15 +510,15 @@ describe("Row 7 — real Copilot CLI 1.0.62 dual-fire captures", () => {
     // one — the host cannot apply two different or conflicting rewrites.
     expect(new Set([nativeCmd, pascalCmd]).size).toBe(1);
     // …and that single command is not a double-wrap.
-    expect(nativeCmd).not.toContain("tk tk");
+    expect(nativeCmd).not.toContain("ctx ctx");
   });
 
-  test("defense-in-depth: even IF a host chained the entries, an already-`tk` command is not re-wrapped", () => {
+  test("defense-in-depth: even IF a host chained the entries, an already-`ctx` command is not re-wrapped", () => {
     // NOT the observed double-fire shape (both callbacks get the ORIGINAL — see the test
     // above). This is a belt-and-suspenders guard: should any future host ever feed the
     // second callback the FIRST's rewritten output, eligibility() must pass the already-
-    // `tk` command through → no `tk tk …` double-wrap, emit nothing.
-    const alreadyTk = cliWire("powershell", { command: "tk git status" });
+    // `ctx` command through → no `ctx ctx …` double-wrap, emit nothing.
+    const alreadyTk = cliWire("powershell", { command: "ctx git status" });
     const ev = normalizeStdin(alreadyTk);
     expect(ev.event).toBe("preToolUse");
     expect(pipe(alreadyTk)).toBeNull();

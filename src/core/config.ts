@@ -1,5 +1,5 @@
 // Slice 3a — the inspect-v1 config contract (ADR 0004 §1, inspect-v1-design.md).
-// `~/.token-killer/config.jsonc`: a JSONC file with a CLOSED allow-listed shape.
+// `~/.contexa/config.jsonc`: a JSONC file with a CLOSED allow-listed shape.
 // A parse error or any out-of-shape field MUST exit 1 (inspect-v1 rule); a MISSING
 // file is fine and reads as defaults (config is optional). This module is the only
 // place that knows the config shape — consent (telemetryExport / telemetry) lives
@@ -8,7 +8,7 @@
 import { readFileSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 
-import { ensureTokenKillerHome, tokenKillerHome } from "./dataDir.js";
+import { ensureContexaHome, contexaHome } from "./dataDir.js";
 import { parseJsonc } from "./jsonc.js";
 import { TELEMETRY_DEFAULT_ENABLED } from "../telemetry/defaults.js";
 
@@ -22,8 +22,8 @@ export type TgConfig = {
   // non-empty endpoint to send anything.
   telemetry: boolean;
   // ADR 0009: cross-invocation session dedup. DEFAULT-ON (absent ⇒ enabled; only an
-  // explicit `false` disables it — see sessionDedupEnabled). `TK_SESSION_DEDUP` env
-  // overrides this. Optional and NOT part of the default config object or the `tk
+  // explicit `false` disables it — see sessionDedupEnabled). `CTX_SESSION_DEDUP` env
+  // overrides this. Optional and NOT part of the default config object or the `ctx
   // config init` template — a user adds `false` by hand only to OPT OUT.
   sessionDedup?: boolean;
 };
@@ -31,10 +31,10 @@ export type TgConfig = {
 export class ConfigError extends Error {}
 
 export function configPath(): string {
-  return join(tokenKillerHome(), "config.jsonc");
+  return join(contexaHome(), "config.jsonc");
 }
 
-// The canonical closed-set template. `tk config init` and `tk telemetry
+// The canonical closed-set template. `ctx config init` and `ctx telemetry
 // enable|disable` regenerate the file from this — no comment-preserving edits.
 export function configTemplate(
   telemetry = TELEMETRY_DEFAULT_ENABLED,
@@ -42,7 +42,7 @@ export function configTemplate(
 ): string {
   return [
     "{",
-    "  // token-killer config — closed set; unknown keys are rejected (exit 1).",
+    "  // contexa config — closed set; unknown keys are rejected (exit 1).",
     "  // Edit values to opt in; creating this file is NOT itself opt-in.",
     '  "inputType": "vscode",',
     '  "defaultSince": "7d",',
@@ -128,13 +128,13 @@ export function readConfig(): TgConfig {
   return validate(parsed);
 }
 
-// Write the closed-set template. Used by `tk config init` (only if absent) and by
-// `tk telemetry enable|disable` (regenerate with the chosen consent values).
+// Write the closed-set template. Used by `ctx config init` (only if absent) and by
+// `ctx telemetry enable|disable` (regenerate with the chosen consent values).
 export function writeConfigTemplate(
   opts: { telemetry?: boolean; telemetryExport?: boolean } = {},
 ): string {
   const path = configPath();
-  ensureTokenKillerHome();
+  ensureContexaHome();
   writeFileSync(
     path,
     configTemplate(opts.telemetry ?? TELEMETRY_DEFAULT_ENABLED, opts.telemetryExport ?? false),

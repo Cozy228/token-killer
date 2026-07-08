@@ -2,14 +2,14 @@
 // because the project is "type":"module" — a bare .js here loads as ESM and `require`
 // throws. Invoked by a no-space .cmd shim a hook field points at. Captures the FULL
 // invocation context (including the PARENT process command-line chain — i.e. exactly how
-// Copilot launched the hook) + runs the REAL tk hook, then passes its stdout through and
+// Copilot launched the hook) + runs the REAL ctx hook, then passes its stdout through and
 // ALWAYS exits 0 so nothing is denied while diagnosing.
 const fs = require("fs");
 const { spawnSync } = require("child_process");
 
 const field = process.argv[2] || "?";
-const LOG = "C:\\Users\\cozy2\\tk-hooklog.txt";
-const CLI = "C:\\Users\\cozy2\\workspace\\token-killer\\dist\\cli.js";
+const LOG = "C:\\Users\\cozy2\\ctx-hooklog.txt";
+const CLI = "C:\\Users\\cozy2\\workspace\\contexa\\dist\\cli.js";
 
 let stdin = Buffer.alloc(0);
 try {
@@ -51,7 +51,7 @@ const lines = [
   `--- stdin ---`,
   `stdin.len=${stdin.length}`,
   `stdin=${stdin.toString("utf8")}`,
-  `--- real tk hook result ---`,
+  `--- real ctx hook result ---`,
   `real.status=${real.status}`,
   `real.signal=${real.signal}`,
   `real.error=${real.error == null ? "null" : real.error}`,

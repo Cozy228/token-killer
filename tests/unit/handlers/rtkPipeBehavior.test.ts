@@ -3,7 +3,7 @@ import { describe, expect, test } from "vitest";
 import { expectRtkParity, filterRtkOutput } from "../../helpers/rtkCommandHarness.js";
 
 // RTK oracle: rtk/src/cmds/system/pipe_cmd.rs. `rtk pipe [filter]` runs a named or
-// auto-detected filter over arbitrary piped output. In tk the command is
+// auto-detected filter over arbitrary piped output. In ctx the command is
 // `pipe <cmd> <args...>` and the filtered content is raw.stdout. Here args[0] is
 // the explicit RTK filter name (resolve_filter), and absent/unknown names fall to
 // auto_detect_filter. These tests mirror the locally-defined wrappers in
@@ -164,7 +164,7 @@ describe("RTK pipe behavior", () => {
     });
   });
 
-  // RTK: reaches its >= 40% find token-savings floor via caps. ADR 0001: tk reaches
+  // RTK: reaches its >= 40% find token-savings floor via caps. ADR 0001: ctx reaches
   // the SAME floor over budget through the step-1 digest (every dir + its file count,
   // filenames dropped) — no "+N more dirs" trailer, no revert, ~90% token savings.
   test("find filter meets the RTK token-savings floor (>= 40%)", async () => {

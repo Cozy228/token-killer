@@ -77,19 +77,19 @@ because enterprise pipelines usually standardize on ECR. Pick one:
   `filename`/`handler = "index.handler"`/`runtime = "nodejs20.x"`. No ECR, no
   Docker.
 
-## Front door: API Gateway (default) or internal ALB
+## Front door: internal ALB (default) or API Gateway
 
 Both deploy paths support two ingress types:
 
-- **`apigw` (default)** — private API Gateway REST. Gets **AWS-managed TLS for
-  free** via the execute-api endpoint, so no cert to manage. Recommended.
-- **`alb`** — internal Application Load Balancer → Lambda target group. Because
+- **`alb` (default)** — internal Application Load Balancer → Lambda target group. Because
   the `tk` client only speaks HTTPS, the ALB's 443 listener needs an **ACM cert**
   you provide, plus a Route53 (private zone) record mapping the cert's domain to
   the ALB. Before creating the ALB, both paths **precheck the subnets**: ≥2 AZs
   and ≥8 free IPs each (`available_ip_address_count`), failing fast otherwise.
+- **`apigw`** — private API Gateway REST. Gets **AWS-managed TLS for
+  free** via the execute-api endpoint, so no cert to manage.
 
-Pick with `INGRESS=alb` (script) / `ingress = "alb"` (Terraform).
+Pick with `INGRESS=alb|apigw` (script) / `ingress = "alb"` (Terraform).
 
 ## Deploy — option A: one-shot AWS CLI script
 
@@ -101,21 +101,15 @@ endpoints, the RDS-managed secret ARN, the IAM role ARN, …).
 ```bash
 export AWS_PROFILE=my-corp-profile     # or AWS_ACCESS_KEY_ID / AWS_SECRET_ACCESS_KEY
 export AWS_REGION=us-east-1
-./scripts/deploy.sh                     # prints the telemetry endpoint at the end
-```
-
-Internal-ALB variant (give a VPC, it finds + prechecks subnets itself):
-
-```bash
-export AWS_REGION=us-east-1
-INGRESS=alb CERT_ARN=arn:aws:acm:...:certificate/... VPC_ID=vpc-... ./scripts/deploy.sh
+CERT_ARN=arn:aws:acm:...:certificate/... VPC_ID=vpc-... ./scripts/deploy.sh
 # tune the IP floor with ALB_MIN_FREE_IPS (default 8); prints the ALB DNS to alias
 ```
 
 Optional overrides (all auto-discovered otherwise): `VPC_ID`, `SUBNET_IDS`,
 `CLIENT_CIDR`, `NAME_PREFIX`, `DB_INSTANCE_CLASS`, `IMAGE_TAG`,
-`CREATE_INTERFACE_ENDPOINTS`; ALB-only: `INGRESS=alb`, `CERT_ARN` (required),
-`LISTENER_PORT` (443), `ALB_MIN_FREE_IPS` (8). Prereqs: `aws`, `docker`
+`CREATE_INTERFACE_ENDPOINTS`, `INGRESS`; ALB-only: `CERT_ARN` (required),
+`LISTENER_PORT` (443), `ALB_MIN_FREE_IPS` (8). If API Gateway is allowed, run
+`INGRESS=apigw ./scripts/deploy.sh`. Prereqs: `aws`, `docker`
 (daemon running), `jq`.
 The image is built `--platform linux/amd64` to match the x86_64 Lambda, so it
 works from an Apple-Silicon machine too. Every step is "describe → reuse if

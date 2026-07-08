@@ -7,20 +7,20 @@ import { resetSupportHintForTest } from "../../../src/hook/debug.js";
 import { installShim } from "../../../src/shim/cli.js";
 import { defaultRcPath, vscodeSettingsPath, vscodeUserDir } from "../../../src/shim/hostConfig.js";
 
-// Constraint 4: a shim-install FAILURE is tk's OWN error, so it must nudge toward
-// `tk support`. We trigger the two failure branches with REAL filesystem conditions
+// Constraint 4: a shim-install FAILURE is ctx's OWN error, so it must nudge toward
+// `ctx support`. We trigger the two failure branches with REAL filesystem conditions
 // (no module mocks): a directory where the RC file should be (patchRc → EISDIR), and
 // an unparseable settings.json (patchVscodeSettings → throws).
 
 let home: string;
 let stderr: string[];
-const orig = { HOME: process.env.HOME, TOKEN_KILLER_HOME: process.env.TOKEN_KILLER_HOME };
+const orig = { HOME: process.env.HOME, CONTEXA_HOME: process.env.CONTEXA_HOME };
 
 beforeEach(() => {
   resetSupportHintForTest();
-  home = mkdtempSync(join(tmpdir(), "tk-installshim-hint-"));
+  home = mkdtempSync(join(tmpdir(), "ctx-installshim-hint-"));
   process.env.HOME = home;
-  process.env.TOKEN_KILLER_HOME = join(home, ".token-killer");
+  process.env.CONTEXA_HOME = join(home, ".contexa");
   stderr = [];
   vi.spyOn(process.stderr, "write").mockImplementation((c: string | Uint8Array) => {
     stderr.push(String(c));
@@ -37,14 +37,14 @@ afterEach(() => {
   }
 });
 
-describe("installShim — `tk support` hint on tk's OWN install failure (constraint 4)", () => {
+describe("installShim — `ctx support` hint on ctx's OWN install failure (constraint 4)", () => {
   test("shell RC patch failure emits the support hint on stderr", () => {
     // Make the RC path a DIRECTORY so patchRc's read/write throws EISDIR.
     mkdirSync(defaultRcPath(), { recursive: true });
     installShim({ rc: true, vscode: false, quiet: true });
     const out = stderr.join("");
     expect(out).toContain("shell RC patch failed");
-    expect(out).toContain("Run `tk support`");
+    expect(out).toContain("Run `ctx support`");
   });
 
   test("VS Code settings patch failure emits the support hint exactly once", () => {
@@ -54,6 +54,6 @@ describe("installShim — `tk support` hint on tk's OWN install failure (constra
     installShim({ rc: false, vscode: true, quiet: true });
     const out = stderr.join("");
     expect(out).toContain("VS Code settings.json is not valid JSON");
-    expect(stderr.filter((w) => w.includes("Run `tk support`"))).toHaveLength(1);
+    expect(stderr.filter((w) => w.includes("Run `ctx support`"))).toHaveLength(1);
   });
 });

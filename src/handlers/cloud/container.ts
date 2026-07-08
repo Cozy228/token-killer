@@ -60,7 +60,7 @@ function identContainerLine(parts: string[]): string | null {
 }
 
 // RTK: cloud/container.rs::docker_ps — "[docker] N containers:" header then one
-// line per container. (tk receives the `--format` stdout that RTK produces
+// line per container. (ctx receives the `--format` stdout that RTK produces
 // internally and reformats it.) Over budget it ladders: full → name/status digest
 // → count. No `… +N more`.
 function dockerPs(raw: string): LadderResult {
@@ -382,9 +382,9 @@ function formatKubectlServices(json: unknown): LadderResult {
 }
 
 // RTK: cloud/container.rs::format_compose_logs / docker_logs / kubectl_logs —
-// log streams are passed through a dedup engine and wrapped with a header. tk
+// log streams are passed through a dedup engine and wrapped with a header. ctx
 // has no separate log engine here, so the raw stream is surfaced under the same
-// header (still trimmed) and stays recoverable via `tk --raw`.
+// header (still trimmed) and stays recoverable via `ctx --raw`.
 function formatDockerLogs(container: string, raw: string): string {
   return `[docker] Logs for ${container}:\n${raw.trim()}`;
 }
@@ -443,7 +443,7 @@ function hasFollow(args: string[]): boolean {
 // value (e.g. the `50` in `docker logs --tail 50 web`), so skip a value-flag's
 // argument while searching. The `--flag=value` form carries its own value inline
 // and needs no skip. RTK parses these via clap so the operand is unambiguous;
-// this restores the same operand identification on tk's flag-tolerant path.
+// this restores the same operand identification on ctx's flag-tolerant path.
 const DOCKER_LOGS_VALUE_FLAGS = new Set(["--since", "--until", "--tail", "-n"]);
 // compose logs shares docker logs' `-n`/`--tail` alias and adds `--index`.
 const COMPOSE_LOGS_VALUE_FLAGS = new Set(["--since", "--until", "--tail", "-n", "--index"]);
@@ -583,7 +583,7 @@ function rewriteCommand(command: ParsedCommand, args: string[]): ParsedCommand {
   };
 }
 
-// RTK: cloud/container.rs::run / run_compose_* / run_kubectl_get dispatch. tk
+// RTK: cloud/container.rs::run / run_compose_* / run_kubectl_get dispatch. ctx
 // reformats the captured stdout instead of re-executing with `--format`/`-o
 // json`, so the docker ps/images branches assume tab-separated `--format`
 // stdout and the kubectl branches assume `-o json` stdout, matching how RTK
@@ -690,7 +690,7 @@ export const dockerHandler: CommandHandler = {
 
   async filter(raw, command, options) {
     // RTK: container.rs early_exit_on_failure — on failure RTK surfaces stderr
-    // and tracks raw; tk returns the unfiltered streams so diagnostics survive.
+    // and tracks raw; ctx returns the unfiltered streams so diagnostics survive.
     if (raw.exitCode !== 0) {
       return makeFilteredResult(this, raw, rawText(raw), options);
     }

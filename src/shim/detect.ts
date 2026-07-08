@@ -49,7 +49,7 @@ export function detectHost(env: DetectEnv): Host {
 
 // Does `<base>` resolve to an executable on PATH? PATHEXT-aware on Windows so an
 // npm-installed `copilot.cmd` / `code.cmd` shim is found — the case a bare
-// `spawnSync("copilot")` (no shell) misses, producing the "installed but tk can't
+// `spawnSync("copilot")` (no shell) misses, producing the "installed but ctx can't
 // see it" symptom. Never throws.
 function resolvesOnPath(base: string): boolean {
   try {

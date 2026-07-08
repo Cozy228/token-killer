@@ -34,17 +34,17 @@ describe("runDebug", () => {
   const saved: Record<string, string | undefined> = {};
 
   beforeEach(() => {
-    saved.TOKEN_KILLER_HOME = process.env.TOKEN_KILLER_HOME;
-    tkHome = mkdtempSync(path.join(tmpdir(), "tk-debug-cli-home-"));
-    cwd = mkdtempSync(path.join(tmpdir(), "tk-debug-cli-cwd-"));
-    process.env.TOKEN_KILLER_HOME = tkHome;
+    saved.CONTEXA_HOME = process.env.CONTEXA_HOME;
+    tkHome = mkdtempSync(path.join(tmpdir(), "ctx-debug-cli-home-"));
+    cwd = mkdtempSync(path.join(tmpdir(), "ctx-debug-cli-cwd-"));
+    process.env.CONTEXA_HOME = tkHome;
     vi.spyOn(process.stdout, "write").mockImplementation(() => true);
     vi.spyOn(process.stderr, "write").mockImplementation(() => true);
   });
 
   afterEach(() => {
-    if (saved.TOKEN_KILLER_HOME === undefined) delete process.env.TOKEN_KILLER_HOME;
-    else process.env.TOKEN_KILLER_HOME = saved.TOKEN_KILLER_HOME;
+    if (saved.CONTEXA_HOME === undefined) delete process.env.CONTEXA_HOME;
+    else process.env.CONTEXA_HOME = saved.CONTEXA_HOME;
     rmSync(tkHome, { recursive: true, force: true });
     rmSync(cwd, { recursive: true, force: true });
   });
@@ -54,7 +54,7 @@ describe("runDebug", () => {
     const code = await runDebug(["--out", out], cwd);
     expect(code).toBe(0);
     const md = readFileSync(out, "utf8");
-    expect(md).toContain("# tk debug bundle");
+    expect(md).toContain("# ctx debug bundle");
     expect(md).toContain("## 2. Delivery health self-check");
   });
 

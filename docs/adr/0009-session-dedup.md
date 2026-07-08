@@ -5,23 +5,23 @@ status: accepted
 # Cross-invocation session dedup: lossless "same as last run" suppression
 
 When a coding agent re-runs the **same read-only command** in the **same
-directory** within one session and tk's **already-compressed** output is
-**byte-identical** to what it last emitted, tk replaces the repeated bytes with a
+directory** within one session and ctx's **already-compressed** output is
+**byte-identical** to what it last emitted, ctx replaces the repeated bytes with a
 one-line marker that carries a recovery pointer — instead of re-billing the model
 for identical output it already has in context. The suppression is **lossless and
 recoverable**: the full output was delivered in full earlier this session, the
 marker names when it last differed, and the `rawStore` snapshot it points at is one
 fetch away.
 
-This closes the one concrete L1 gap tk had versus `ztk` (and versus VS Code's
+This closes the one concrete L1 gap ctx had versus `ztk` (and versus VS Code's
 native `IToolResultCompressor`, whose PR microsoft/vscode#315905 added a `cacheHit`
-field for exactly this). It is the only L1 capability worth adding here; tk does
+field for exactly this). It is the only L1 capability worth adding here; ctx does
 not chase ztk's filter breadth, which the hosts are commoditizing.
 
 ## Context
 
 ztk — the project VS Code copied for its native compressor (issue
-microsoft/vscode#315881) and tk's closest L1 sibling — already does cross-invocation
+microsoft/vscode#315881) and ctx's closest L1 sibling — already does cross-invocation
 dedup safely. The heart is `ztk/src/proxy_session.zig::applySession` (~50 lines):
 it runs the real command, filters it, hashes the **filtered** output, and dedups
 only when `fresh_hit && cached.out_hash == out_hash` — i.e. a real exact-compare,
@@ -31,7 +31,7 @@ category }` with a per-category TTL table `[30s, 120s, 300s, -1, -1]`, keyed on
 `XxHash64(cmd)` alone. After a mutating command it zeroes (`invalidateCategory`)
 the `fast_changing` rows — cheap belt-and-braces, never the correctness mechanism.
 
-The **shared spine tk adopts from ztk**: always run the real command and compress
+The **shared spine ctx adopts from ztk**: always run the real command and compress
 it as normal, hash the final compressed output, and dedup only when the new hash
 equals the stored hash for this command AND the stored entry is still within its
 freshness window. Exact-compare is the correctness spine — if anything changed
@@ -40,10 +40,10 @@ the hash differs, and the full output is re-emitted automatically. The window is
 freshness / "is the original still in the model's context" bound, **not** a "has
 state changed" guess.
 
-This is also why tk's hook/shim blind spot — it never observes an editor
-`Edit`/`Write`, an `rm`, or an `mv`, because those carry no tk handler and never
+This is also why ctx's hook/shim blind spot — it never observes an editor
+`Edit`/`Write`, an `rm`, or an `mv`, because those carry no ctx handler and never
 reach the executor — does **not** matter for correctness: a changed file changes
-the command's output, which changes the hash, which forces a re-emit. tk cannot,
+the command's output, which changes the hash, which forces a re-emit. ctx cannot,
 and need not, invalidate on file writes.
 
 ### Integration points (verified against the real code)
@@ -64,25 +64,25 @@ and need not, invalidate on file writes.
   snapshot at all.
 - `src/handlers/*` declare cacheability through `handler.traits` (the same seam
   that already carries `structural` / `masksSecrets` / `ladder` name-facts).
-- `tk gain` (`src/core/gain.ts`) reads the rollup cache (`src/core/rollup.ts`) over
+- `ctx gain` (`src/core/gain.ts`) reads the rollup cache (`src/core/rollup.ts`) over
   `history.jsonl`. `applyRecord` blindly sums any row's `saved_tokens` into ledger
   ①. To keep dedup savings structurally **unsummable** with filter savings, dedup
   events are recorded in a **separate** `dedup-events.jsonl`, read only by a new
-  `tk gain` section — never written into `history.jsonl`.
+  `ctx gain` section — never written into `history.jsonl`.
 
 ### Keying: project + command, NOT session (the one underspecified input)
 
 The goal sketched a `(sessionId, cwd, normCmd)` key, but the shell / PATH-shim
 compress path has **no session id today** — only the hook event normalizer
 (`src/hook/normalize.ts`) ever sees a `session` field, and it never threads it into
-compression. Rather than invent a fragile session id, tk keys exactly the way ztk
+compression. Rather than invent a fragile session id, ctx keys exactly the way ztk
 and VS Code do — **on the command** — and gets isolation for free from where the
 store already lives:
 
 - The dedup store is **one file per project**:
-  `~/.token-killer/projects/<fingerprint>/dedup.json`. The project fingerprint
+  `~/.contexa/projects/<fingerprint>/dedup.json`. The project fingerprint
   (git-repo-anchored, `dataDir.ts`) is therefore **implicit in the key** — two
-  different repos never collide, and that is the "cwd isolation" tk gets for free.
+  different repos never collide, and that is the "cwd isolation" ctx gets for free.
 - Inside that file the key is the **normalized command** alone:
   `key = (project_fingerprint, normCmd)`. Two sub-directories of one repo share a
   key; exact-compare degrades that to a miss (different listing → different hash →
@@ -97,37 +97,37 @@ session" vs "here") — never to key, gate the hit, or invalidate. (An earlier d
 also gated same-session on the long slow-class window; it was removed because it made
 the session marginally load-bearing and caused two alternating sessions to thrash —
 exact-compare already makes a cross-session hit correct and lossless.) This is the
-ztk/VS Code answer; tk's
+ztk/VS Code answer; ctx's
 per-project store is the only addition.
 
-### Carrying the session id through to the `tk` subprocess
+### Carrying the session id through to the `ctx` subprocess
 
-The hook only **prepends `tk`** (RTK-style, `rewrite.ts`), and the row is recorded
-in the *separate* `tk` subprocess — so the session must travel **inside the
-rewritten command**. tk injects a portable **`--session <id>` flag**, not a
-`TK_SESSION=<id> tk …` env prefix (which is POSIX-sh-only and breaks on the Windows
-pwsh tk supports):
+The hook only **prepends `ctx`** (RTK-style, `rewrite.ts`), and the row is recorded
+in the *separate* `ctx` subprocess — so the session must travel **inside the
+rewritten command**. ctx injects a portable **`--session <id>` flag**, not a
+`CTX_SESSION=<id> ctx …` env prefix (which is POSIX-sh-only and breaks on the Windows
+pwsh ctx supports):
 
-- `git status` → `tk --session <id> git status`; `a && b` → `tk --session <id> a &&
-  tk --session <id> b`.
+- `git status` → `ctx --session <id> git status`; `a && b` → `ctx --session <id> a &&
+  ctx --session <id> b`.
 - The id is **sanitized first** (`^[A-Za-z0-9._-]{1,128}$`); anything else omits the
   flag entirely (a raw id is never interpolated — shell-injection guard). The guard
   lives in both `parse.ts` and `rewrite.ts`.
 - `parse.ts` consumes `--session <id>` (never forwarding it to the wrapped tool) into
-  `options.sessionId`; precedence is **`--session` flag > `TK_SESSION` env >
+  `options.sessionId`; precedence is **`--session` flag > `CTX_SESSION` env >
   absent**. `recordHistory` then stamps `session_id` on the success row (honest-absent,
-  like `model`), so the shell path finally carries a session id — and `tk --raw`
+  like `model`), so the shell path finally carries a session id — and `ctx --raw`
   inherits it via `recordRawPassthrough`.
-- Non-session callers are byte-identical to before: no session ⇒ exactly `tk <cmd>`.
+- Non-session callers are byte-identical to before: no session ⇒ exactly `ctx <cmd>`.
 
 ## Decision
 
 Add a dedup stage to `runPipeline`, **default-on** because the suppression is
-lossless and recoverable, with explicit opt-outs: `TK_SESSION_DEDUP=0` (env),
+lossless and recoverable, with explicit opt-outs: `CTX_SESSION_DEDUP=0` (env),
 `sessionDedup: false` (config), `--no-dedup` (per command), and `--raw`. (The first
-cut shipped default-off behind `TK_SESSION_DEDUP=1`; once the dogfood proved the
+cut shipped default-off behind `CTX_SESSION_DEDUP=1`; once the dogfood proved the
 recovery pointer + separated accounting hold, the default was flipped on.) The stage
-mirrors ztk's `applySession` spine and adds tk's four divergences.
+mirrors ztk's `applySession` spine and adds ctx's four divergences.
 
 **Hit condition** (mirrors ztk's `applySession`): run + compress → hash the
 compressed output → if the command is **read-only**, its **exit code is 0/unchanged**,
@@ -136,23 +136,23 @@ stored entry is **within the re-anchor window** for its `ttlClass`, AND a recove
 pointer exists → emit a one-line marker instead of the bytes. Otherwise emit
 normally and upsert the store.
 
-**tk's four divergences over ztk:**
+**ctx's four divergences over ztk:**
 
 1. **A recovery pointer.** ztk's hit emits an "unchanged" summary with no path back
-   to the full output. tk's marker carries the `rawStore` pointer, so a dedup is
-   always recoverable — tk's standing lossless contract (ADR 0001). The single most
+   to the full output. ctx's marker carries the `rawStore` pointer, so a dedup is
+   always recoverable — ctx's standing lossless contract (ADR 0001). The single most
    important upgrade; the stage snapshots raw **lazily on the first hit**, so the
    pointer is always live yet a never-repeated command writes no snapshot.
 2. **Per-project key (cwd isolation for free).** ztk keys on `XxHash64(cmd)` alone in
-   one global `/tmp/ztk-state`; the same command in two repos collides. tk keys on
+   one global `/tmp/ztk-state`; the same command in two repos collides. ctx keys on
    `(project_fingerprint, normCmd)` — `sha256(normCmd)` inside a **single per-project
-   file** `~/.token-killer/projects/<fingerprint>/dedup.json`, the fingerprint implicit
+   file** `~/.contexa/projects/<fingerprint>/dedup.json`, the fingerprint implicit
    in the path. The session id is an entry attribute, never part of the key.
-3. **Honest separated accounting.** ztk just substitutes the output. tk records a
-   `dedup` dimension in a dedicated `dedup-events.jsonl`; `tk gain` shows dedup
+3. **Honest separated accounting.** ztk just substitutes the output. ctx records a
+   `dedup` dimension in a dedicated `dedup-events.jsonl`; `ctx gain` shows dedup
    savings on a separate line, **never summed** into ledger ①'s filter savings
    (mirrors VS Code PR #315905's `cacheHit`).
-4. **Exit code is part of identity.** ztk hashes stdout only; tk stores the exit
+4. **Exit code is part of identity.** ztk hashes stdout only; ctx stores the exit
    code and never dedups a non-zero or changed-exit result. Errors/stderr always
    pass through.
 
@@ -191,11 +191,11 @@ past, which is still one fetch away.
 **The marker** (one line, ends with newline):
 
 ```
-[tk] unchanged since 14:02:11 — same as the earlier `git status` here; full: <rawStore pointer>
+[ctx] unchanged since 14:02:11 — same as the earlier `git status` here; full: <rawStore pointer>
 ```
 
 It names the command + when it last differed, carries the `rawStore` pointer, and
-is unmistakably a tk marker.
+is unmistakably a ctx marker.
 
 **Tiny / structured output skips dedup.** Outputs below ~256 bytes are never cached
 (a marker would not be smaller — the standing never-make-worse rule), and structured
@@ -208,7 +208,7 @@ dedup. The TTY gate already routes interactive runs to passthrough, which never
 reaches `runPipeline`. `--no-save-raw` disables the recovery channel, so it disables
 dedup.
 
-**Accounting.** On a hit tk records **only** a `dedup` event (saved = compressed
+**Accounting.** On a hit ctx records **only** a `dedup` event (saved = compressed
 output tokens − marker tokens) and **does not** write a ledger-① history row — the
 repeat is a suppression, not a fresh compression, so its bytes are counted under the
 dedup dimension only and never double-counted as a filter win. On a miss the normal
@@ -217,8 +217,8 @@ dedup dimension only and never double-counted as a filter win. On a miss the nor
 ## Considered alternatives
 
 - **Mutation-invalidation (ztk's `invalidateCategory`).** Deliberately **not**
-  implemented in v1. tk's vantage point can only observe mutations that route
-  through a tk handler — a small minority; the editor `Edit`/`Write`, `rm`, `mv`,
+  implemented in v1. ctx's vantage point can only observe mutations that route
+  through a ctx handler — a small minority; the editor `Edit`/`Write`, `rm`, `mv`,
   `touch`, and `git checkout` that actually change a read command's output never
   reach the executor. A generation-bump would therefore be both **incomplete** (it
   misses the mutations that matter most) and **unnecessary** (exact-compare already
@@ -230,9 +230,9 @@ dedup dimension only and never double-counted as a filter win. On a miss the nor
   `applyRecord` and ~12 other consumers sum `saved_tokens`, so a dedup row risks
   contaminating ledger ① unless every consumer learns to exclude it — a wide blast
   radius against the never-sum invariant. A dedicated `dedup-events.jsonl` read by
-  one new `tk gain` section makes "never summed" structural, not a filter condition.
+  one new `ctx gain` section makes "never summed" structural, not a filter condition.
 - **A second recovery store for the compressed output** (like ztk's mmap data
-  region). Rejected: tk already persists raw via `rawStore`, and the recovery
+  region). Rejected: ctx already persists raw via `rawStore`, and the recovery
   contract (ADR 0001) points at that snapshot. Reusing it keeps one recovery channel
   and one mental model; the only addition is the lazy snapshot taken on the first hit.
 - **Crediting the repeat to ledger ① and dedup separately.** Rejected as

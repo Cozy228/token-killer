@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 #
-# tk Atlas lifecycle dogfood — exercises compression, hook rewrite dry-run, and
+# ctx Atlas lifecycle dogfood — exercises compression, hook rewrite dry-run, and
 # context optimizer surfaces against a real pnpm/TS monorepo (default: ../atlas).
 #
 # All command-proxy invocations pipe stdout through cat to simulate non-TTY agent
@@ -8,7 +8,7 @@
 #
 # Usage:
 #   bash scripts/atlas-dogfood.sh [target-repo]
-#   TK_DOGFOOD_CWD=~/Workspace/atlas bash scripts/atlas-dogfood.sh
+#   CTX_DOGFOOD_CWD=~/Workspace/atlas bash scripts/atlas-dogfood.sh
 #
 # Exit code: number of failures (0 = all green)
 #
@@ -30,20 +30,20 @@ ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
 
 find_tk() {
   if [ -f "$ROOT/dist/cli.js" ]; then
-    TK=(node "$ROOT/dist/cli.js")
-  elif command -v tk >/dev/null 2>&1; then
-    TK=(tk)
+    CTX=(node "$ROOT/dist/cli.js")
+  elif command -v ctx >/dev/null 2>&1; then
+    CTX=(ctx)
   else
-    echo "tk binary not found. Run: pnpm build"
+    echo "ctx binary not found. Run: pnpm build"
     exit 1
   fi
 }
 
 resolve_target() {
-  local candidate="${TK_DOGFOOD_CWD:-${1:-$ROOT/../atlas}}"
+  local candidate="${CTX_DOGFOOD_CWD:-${1:-$ROOT/../atlas}}"
   if [ ! -d "$candidate" ]; then
     echo "Target repo not found: $candidate"
-    echo "Set TK_DOGFOOD_CWD or pass a path: bash scripts/atlas-dogfood.sh <repo>"
+    echo "Set CTX_DOGFOOD_CWD or pass a path: bash scripts/atlas-dogfood.sh <repo>"
     exit 1
   fi
   TARGET="$(cd "$candidate" && pwd)"
@@ -57,7 +57,7 @@ run_tk_stats() {
   local name="$1"
   shift
   local out exit_code=0
-  out=$("${TK[@]}" --stats "$@" 2>&1 | cat) || exit_code=$?
+  out=$("${CTX[@]}" --stats "$@" 2>&1 | cat) || exit_code=$?
   if echo "$out" | grep -q "## Token Savings"; then
     PASS=$((PASS + 1))
     local stats suffix=""
@@ -82,12 +82,12 @@ run_tk_stats() {
 # (user directive): only outputs BELOW MIN_RAW may be 0% — anything large MUST
 # clear the per-case minimum savings, else FAIL. This turns the dogfood from
 # "did it run" into "did compression actually pay off on representative output".
-MIN_RAW=${TK_DOGFOOD_MIN_RAW:-1500}
+MIN_RAW=${CTX_DOGFOOD_MIN_RAW:-1500}
 run_tk_savings() {
   local name="$1" minpct="$2"
   shift 2
   local out exit_code=0 raw pct
-  out=$("${TK[@]}" --stats "$@" 2>&1 | cat) || exit_code=$?
+  out=$("${CTX[@]}" --stats "$@" 2>&1 | cat) || exit_code=$?
   if ! echo "$out" | grep -q "## Token Savings"; then
     FAIL=$((FAIL + 1))
     printf "  ${RED}FAIL${NC}  %-36s no compression (passthrough)\n" "$name"
@@ -114,7 +114,7 @@ run_hook_check() {
   local name="$1"
   shift
   local out exit_code=0
-  out=$("${TK[@]}" hook check "$@" 2>&1) || exit_code=$?
+  out=$("${CTX[@]}" hook check "$@" 2>&1) || exit_code=$?
   if [ "$exit_code" -eq 0 ] && [ -n "$out" ]; then
     PASS=$((PASS + 1))
     printf "  ${GREEN}PASS${NC}  %-40s %s\n" "$name" "$out"
@@ -138,10 +138,10 @@ cd "$TARGET"
 TMP_DIR="$(mktemp -d)"
 trap 'rm -rf "$TMP_DIR"' EXIT
 
-printf "${BOLD}tk Atlas Lifecycle Dogfood${NC}\n"
-printf "tk:      %s\n" "${TK[*]}"
+printf "${BOLD}ctx Atlas Lifecycle Dogfood${NC}\n"
+printf "ctx:      %s\n" "${CTX[*]}"
 printf "target:  %s\n" "$TARGET"
-printf "version: %s\n" "$("${TK[@]}" --version 2>&1)"
+printf "version: %s\n" "$("${CTX[@]}" --version 2>&1)"
 printf "date:    %s\n" "$(date '+%Y-%m-%d %H:%M')"
 
 if ! git rev-parse --is-inside-work-tree >/dev/null 2>&1; then
@@ -203,7 +203,7 @@ run_hook_check "hook: read" read CONTEXT.md
 run_hook_check "hook: ls" ls .
 
 section "Init / Optimize dry-run"
-if "${TK[@]}" init --host copilot-cli --dry-run >"$TMP_DIR/init.out" 2>&1; then
+if "${CTX[@]}" init --host copilot-cli --dry-run >"$TMP_DIR/init.out" 2>&1; then
   PASS=$((PASS + 1))
   printf "  ${GREEN}PASS${NC}  init --host copilot-cli --dry-run\n"
   grep '\[dry-run\]' "$TMP_DIR/init.out" | sed 's/^/        /'
@@ -212,7 +212,7 @@ else
   printf "  ${RED}FAIL${NC}  init --host copilot-cli --dry-run\n"
 fi
 
-if "${TK[@]}" optimize context --project --dry-run >"$TMP_DIR/optimize.out" 2>&1; then
+if "${CTX[@]}" optimize context --project --dry-run >"$TMP_DIR/optimize.out" 2>&1; then
   PASS=$((PASS + 1))
   printf "  ${GREEN}PASS${NC}  optimize context --project --dry-run\n"
   head -8 "$TMP_DIR/optimize.out" | sed 's/^/        /'
@@ -223,7 +223,7 @@ else
 fi
 
 section "Inspect (read-only)"
-if "${TK[@]}" inspect --project --copilot-context >"$TMP_DIR/inspect.out" 2>&1; then
+if "${CTX[@]}" inspect --project --copilot-context >"$TMP_DIR/inspect.out" 2>&1; then
   PASS=$((PASS + 1))
   printf "  ${GREEN}PASS${NC}  inspect --project --copilot-context\n"
 else

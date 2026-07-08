@@ -1,7 +1,7 @@
-// `tk config` dispatcher (Slice 3a). Today only `init`: non-interactive, never
+// `ctx config` dispatcher (Slice 3a). Today only `init`: non-interactive, never
 // overwrites. Creating the file is NOT opt-in — both consent fields default to
 // the build-time default (false in generic builds, true when baked with
-// TK_TELEMETRY_DEFAULT=true); the user opts in/out by editing or `tk telemetry`.
+// CTX_TELEMETRY_DEFAULT=true); the user opts in/out by editing or `ctx telemetry`.
 
 import { existsSync } from "node:fs";
 
@@ -13,7 +13,7 @@ export function runConfig(argv: string[]): number {
   if (sub === "init") {
     const path = configPath();
     if (existsSync(path)) {
-      process.stderr.write(`tk config: already exists at ${path}\n`);
+      process.stderr.write(`ctx config: already exists at ${path}\n`);
       return 1;
     }
     writeConfigTemplate();
@@ -34,11 +34,11 @@ export function runConfig(argv: string[]): number {
     } catch (error) {
       // Parse / out-of-shape ⇒ exit 1 (inspect-v1 rule).
       const message = error instanceof ConfigError ? error.message : String(error);
-      process.stderr.write(`tk config: ${message}\n`);
+      process.stderr.write(`ctx config: ${message}\n`);
       return 1;
     }
   }
 
-  process.stderr.write("tk config: usage: tk config <init|show|path>\n");
+  process.stderr.write("ctx config: usage: ctx config <init|show|path>\n");
   return 1;
 }

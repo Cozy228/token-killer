@@ -1,9 +1,9 @@
-# Windows live acceptance for tk hook fixes (#19/#20/#21) — DESIGN §12 step 4.
+# Windows live acceptance for ctx hook fixes (#19/#20/#21) — DESIGN §12 step 4.
 #
 # Feeds REAL host-shaped payloads to `node dist/cli.js hook copilot` over stdin and
 # asserts the rewrite output. This is the part unit tests can't prove: that the built
 # binary, under a real Windows PowerShell host, rewrites a powershell/run_in_terminal
-# tool call to `tk ...` while preserving every host-supplied field (so VS Code's
+# tool call to `ctx ...` while preserving every host-supplied field (so VS Code's
 # run_in_terminal schema validation does not silently drop the rewrite, #19), and that
 # it survives a leading UTF-8 BOM and a string-encoded toolArgs (Copilot CLI, #20/#21).
 #
@@ -11,7 +11,7 @@
 # `cmd /c "node ... < file"` so PowerShell pipeline re-encoding cannot corrupt the BOM.
 #
 # Usage (on the box):
-#   cd C:\Users\cozy2\workspace\token-killer
+#   cd C:\Users\cozy2\workspace\contexa
 #   pwsh -NoProfile -File scripts\windows-accept.ps1
 # Exit code 0 = all PASS, 1 = at least one FAIL.
 
@@ -51,7 +51,7 @@ function Invoke-Hook($name, $json, [bool]$withBom) {
   return [pscustomobject]@{ Raw = $raw; Parsed = $parsed }
 }
 
-Write-Host "=== tk hook copilot — live payload acceptance ==="
+Write-Host "=== ctx hook copilot — live payload acceptance ==="
 Write-Host "repo: $repo"
 Write-Host "cli:  $cli"
 Write-Host "captures: $capDir"
@@ -65,8 +65,8 @@ if ($null -eq $r.Parsed) {
 } else {
   $cmd = $r.Parsed.modifiedArgs.command
   $ok = ($r.Parsed.permissionDecision -eq 'allow') -and
-        ($r.Parsed.permissionDecisionReason -eq 'tk auto-rewrite') -and
-        ($cmd -like 'tk *') -and
+        ($r.Parsed.permissionDecisionReason -eq 'ctx auto-rewrite') -and
+        ($cmd -like 'ctx *') -and
         ($r.Parsed.modifiedArgs.description -eq 'check repo') -and
         ($r.Parsed.modifiedArgs.mode -eq 'sync')
   Add-Result 'T1 CLI powershell (toolArgs string)' $ok "modifiedArgs.command='$cmd'; extras preserved=$($r.Parsed.modifiedArgs.description -eq 'check repo' -and $r.Parsed.modifiedArgs.mode -eq 'sync')"
@@ -79,7 +79,7 @@ if ($null -eq $r.Parsed) {
   Add-Result 'T2 CLI powershell (toolArgs object)' $false "no/!json output: $($r.Raw)"
 } else {
   $cmd = $r.Parsed.modifiedArgs.command
-  $ok = ($r.Parsed.permissionDecision -eq 'allow') -and ($cmd -like 'tk *') -and ($r.Parsed.modifiedArgs.description -eq 'recent')
+  $ok = ($r.Parsed.permissionDecision -eq 'allow') -and ($cmd -like 'ctx *') -and ($r.Parsed.modifiedArgs.description -eq 'recent')
   Add-Result 'T2 CLI powershell (toolArgs object)' $ok "modifiedArgs.command='$cmd'"
 }
 
@@ -94,7 +94,7 @@ if ($null -eq $r.Parsed) {
   $ui = $r.Parsed.hookSpecificOutput.updatedInput
   $ok = ($r.Parsed.hookSpecificOutput.permissionDecision -eq 'allow') -and
         ($r.Parsed.hookSpecificOutput.hookEventName -eq 'PreToolUse') -and
-        ($ui.command -like 'tk *') -and
+        ($ui.command -like 'ctx *') -and
         ($ui.explanation -eq 'Check the working tree') -and
         ($ui.isBackground -eq $false)
   Add-Result 'T3 VS Code run_in_terminal (updatedInput full fields)' $ok "updatedInput.command='$($ui.command)'; explanation+isBackground preserved=$($ui.explanation -eq 'Check the working tree' -and $ui.isBackground -eq $false)"
@@ -106,7 +106,7 @@ if ($null -eq $r.Parsed) {
   Add-Result 'T4 CLI leading BOM (stripped, still rewrites)' $false "no/!json output: $($r.Raw)"
 } else {
   $cmd = $r.Parsed.modifiedArgs.command
-  $ok = ($cmd -like 'tk *') -and ($r.Parsed.modifiedArgs.description -eq 'check repo')
+  $ok = ($cmd -like 'ctx *') -and ($r.Parsed.modifiedArgs.description -eq 'check repo')
   Add-Result 'T4 CLI leading BOM (stripped, still rewrites)' $ok "modifiedArgs.command='$cmd'"
 }
 

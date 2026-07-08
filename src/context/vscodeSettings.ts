@@ -3,7 +3,7 @@
 // Copilot ships its OWN terminal-output compression toggle; the highest-leverage,
 // host-native token control is simply turning it on. `vscodeCompressFinding` reports
 // it to the inspect static-context pipeline (a `vscode_compress_disabled` finding)
-// and `tk optimize --apply` enables it via `applyCompress`. Only
+// and `ctx optimize --apply` enables it via `applyCompress`. Only
 // `chat.tools.compressOutput.enabled: true` is auto-applied; nothing else here is.
 //
 // Reversibility contract: apply writes a full-file backup AND a managed-state
@@ -14,7 +14,7 @@ import { existsSync, mkdirSync, readFileSync, rmSync, writeFileSync } from "node
 import { homedir } from "node:os";
 import { dirname, join } from "node:path";
 
-import { tokenKillerHome } from "../core/dataDir.js";
+import { contexaHome } from "../core/dataDir.js";
 import { parseJsonc } from "../core/jsonc.js";
 import { vscodeSettingsPath, writeSettings } from "../shim/hostConfig.js";
 import { writeBackup } from "./applySafe.js";
@@ -49,7 +49,7 @@ export function readVscodeSettingsFile(settingsPath: string): ReadResult {
 type CompressState = { priorPresent: boolean; prior: unknown; appliedAt: string };
 
 function statePath(): string {
-  return join(tokenKillerHome(), "state", "vscode-compress.json");
+  return join(contexaHome(), "state", "vscode-compress.json");
 }
 
 function writeState(state: CompressState): void {
@@ -68,7 +68,7 @@ function readState(): CompressState | undefined {
   }
 }
 
-// True when a managed compress change is on disk (so `tk optimize --restore` knows
+// True when a managed compress change is on disk (so `ctx optimize --restore` knows
 // it has a VS Code settings edit to revert, on top of any markdown backups).
 export function hasManagedCompressState(): boolean {
   return existsSync(statePath());
@@ -78,7 +78,7 @@ export function hasManagedCompressState(): boolean {
 
 // A single user-scope static-context finding when VS Code's host-native terminal-
 // output compression is off (or its settings.json is unreadable). Returned to the
-// inspect static-context pipeline so `tk optimize --apply` can enable it. Absent
+// inspect static-context pipeline so `ctx optimize --apply` can enable it. Absent
 // when settings.json is missing (not a VS Code user) or compression is already on.
 export function vscodeCompressFinding(
   platform: NodeJS.Platform = process.platform,
@@ -113,7 +113,7 @@ export function vscodeCompressFinding(
     scope: "user",
     file: settingsPath,
     evidence: `VS Code's built-in terminal-output compression (${COMPRESS_KEY}) is off, so full command output reaches the model.`,
-    recommendation: `Enable ${COMPRESS_KEY} to compress terminal output (host-native, reversible with tk optimize --restore).`,
+    recommendation: `Enable ${COMPRESS_KEY} to compress terminal output (host-native, reversible with ctx optimize --restore).`,
     fix_class: "safe_mechanical",
   };
 }
@@ -121,7 +121,7 @@ export function vscodeCompressFinding(
 // ── apply / restore / report (write to stdout, return exit code) ──────────────
 
 const PARSE_HINT = (settingsPath: string) =>
-  `tk optimize: ${settingsPath} is not strict JSON (comments?). Set "${COMPRESS_KEY}": true manually.\n`;
+  `ctx optimize: ${settingsPath} is not strict JSON (comments?). Set "${COMPRESS_KEY}": true manually.\n`;
 
 export function applyCompress(settingsPath: string, nowMs: number): number {
   const read = readVscodeSettingsFile(settingsPath);
@@ -132,7 +132,7 @@ export function applyCompress(settingsPath: string, nowMs: number): number {
   const settings = read.status === "ok" ? read.settings : {};
   if (settings[COMPRESS_KEY] === true) {
     process.stdout.write(
-      `tk optimize: ${COMPRESS_KEY} already enabled in ${settingsPath} (no change).\n`,
+      `ctx optimize: ${COMPRESS_KEY} already enabled in ${settingsPath} (no change).\n`,
     );
     return 0;
   }
@@ -155,7 +155,7 @@ export function applyCompress(settingsPath: string, nowMs: number): number {
 export function restoreCompress(settingsPath: string, nowMs: number): number {
   const state = readState();
   if (!state) {
-    process.stdout.write(`tk optimize: no managed ${COMPRESS_KEY} change to restore.\n`);
+    process.stdout.write(`ctx optimize: no managed ${COMPRESS_KEY} change to restore.\n`);
     return 0;
   }
   const read = readVscodeSettingsFile(settingsPath);

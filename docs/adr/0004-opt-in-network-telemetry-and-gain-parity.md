@@ -2,11 +2,11 @@
 status: accepted
 ---
 
-# Opt-in network telemetry (anonymous device hash, build-time endpoint) + `tk gain` parity
+# Opt-in network telemetry (anonymous device hash, build-time endpoint) + `ctx gain` parity
 
 > **Amended by [ADR 0006](0006-cli-consolidation-and-optimize-apply-engine.md) (2026-06-07):**
-> the detailed report is reached via `tk gain report` only (the `tk report` alias
-> is removed). `tk telemetry purge` is no longer a user-facing subcommand
+> the detailed report is reached via `ctx gain report` only (the `ctx report` alias
+> is removed). `ctx telemetry purge` is no longer a user-facing subcommand
 > (`purgeState()` remains internal). Consent model and payload are unchanged.
 
 ## Context
@@ -15,11 +15,11 @@ Two adjacent capabilities were conflated and are settled here together.
 
 **(A) User-facing savings analytics.** RTK ships `rtk gain` — a rich, local, zero-consent view
 of the user's own savings (summary, per-project, daily/weekly/monthly, ASCII graph, recent
-history, failures, quota/$ estimate, JSON/CSV). Token Killer has the data substrate
+history, failures, quota/$ estimate, JSON/CSV). Contexa has the data substrate
 ([`history.jsonl`](../../CONTEXT.md#evidence-and-recovery), one row per command with
 `raw/output/saved_tokens`, `savings_pct`, `handler`, `quality_status`, `source_adapter`,
 `duration_ms`) but only a minimal reader: `buildReport` in `src/core/report.ts`, reachable as
-`tk --report`. It computes totals + by-handler + by-quality, with no time series, no graph, no
+`ctx --report`. It computes totals + by-handler + by-quality, with no time series, no graph, no
 history listing, no quota, and **no `--user` cross-project aggregation despite DESIGN §8.2
 promising it**.
 
@@ -38,7 +38,7 @@ ADR lands:
   set than what was implemented.
 
 So telemetry today is (1) implemented against inspect-scanner fields that do not match the
-DESIGN §8.3 field policy, and (2) never actually transmitted — `tk inspect --telemetry-export`
+DESIGN §8.3 field policy, and (2) never actually transmitted — `ctx inspect --telemetry-export`
 only writes a local file because no endpoint is configured.
 
 The deployment target is an **enterprise intranet**: the endpoint is injected at build time, and
@@ -46,28 +46,28 @@ operators legitimately need to de-duplicate installs and observe retention — w
 inspect-v1 "no cross-run correlation" rule forbids.
 
 This ADR also slots into the **four-ledger metrics model**
-(`docs/metrics-ledger-architecture-goal.md`, decision-complete), which fixes naming: `tk gain`
-is **ledger ① (measured command savings) only**, and `tk report` is the future four-ledger
-superset. This ADR builds out `tk gain`; it does not build `tk report`.
+(`docs/metrics-ledger-architecture-goal.md`, decision-complete), which fixes naming: `ctx gain`
+is **ledger ① (measured command savings) only**, and `ctx report` is the future four-ledger
+superset. This ADR builds out `ctx gain`; it does not build `ctx report`.
 
 ## Decision
 
-1. **`tk gain` is the RTK-`gain`-parity command, scoped to ledger ① only.** It reads
+1. **`ctx gain` is the RTK-`gain`-parity command, scoped to ledger ① only.** It reads
    `history.jsonl` and renders measured command savings: summary, `--user` (cross-project,
    grouped by fingerprint — closes the DESIGN §8.2 gap), `--daily`/`--weekly`/`--monthly`/`--all`,
    `--graph` (ASCII, last 30 days), `--history [n]`, `--failures`, `--quota [-t <tier>]`, and
    `--format json|csv`. It MUST NOT sum across ledgers and MUST NOT call anything outside ledger
-   ① `saved_tokens` (metrics-ledger §0/§5/§6). `tk --report` and `tk report` keep their current
-   behavior until the four-ledger initiative supersedes them; `tk gain` is additive.
+   ① `saved_tokens` (metrics-ledger §0/§5/§6). `ctx --report` and `ctx report` keep their current
+   behavior until the four-ledger initiative supersedes them; `ctx gain` is additive.
 
 2. **All aggregation lives in one shared module** `src/core/aggregate.ts`, consumed by both
-   `tk gain` and the telemetry builder. This prevents a second "design vs implementation"
+   `ctx gain` and the telemetry builder. This prevents a second "design vs implementation"
    drift between what `gain` shows and what telemetry sends. It imports the **single** token
    estimator (see Decision 8).
 
 3. **Telemetry gains real opt-in network upload over an enterprise build-time endpoint.** The
    endpoint is a compile-time constant injected by `tsdown` `define` from
-   `process.env.TK_TELEMETRY_ENDPOINT` (mirrors how the build bakes constants; the generic/dev
+   `process.env.CTX_TELEMETRY_ENDPOINT` (mirrors how the build bakes constants; the generic/dev
    build leaves it empty). With an empty endpoint the behavior is exactly today's: write the
    local `telemetry-export.json`, warn, never fail. The endpoint is **never** stored in user
    config — it is a property of the build artifact, so public/dev builds are inert by
@@ -77,7 +77,7 @@ superset. This ADR builds out `tk gain`; it does not build `tk report`.
    "no cross-run correlation / no stable installation identifier" rule.** `device_hash =
    SHA-256(deviceSalt)`, where `deviceSalt` is a one-time random value. It contains no hostname,
    username, or any reversible identity. It is stable across runs (so the enterprise can count
-   unique installs and compute retention) and resettable via `tk telemetry purge`. Rationale for
+   unique installs and compute retention) and resettable via `ctx telemetry purge`. Rationale for
    the reversal: the target is an opt-in enterprise intranet where de-dup and retention are
    legitimate operational needs; a random, purgeable salt is the minimum identifier that enables
    them without identifying a person. The DESIGN §8.3 disallow-list otherwise stands in full.
@@ -93,21 +93,21 @@ superset. This ADR builds out `tk gain`; it does not build `tk report`.
    aggregates. The disallow-list (commands, args, paths, repo names, session ids, raw snippets,
    prompts, source) is enforced in the builder, not by convention.
 
-6. **Telemetry send fires only on the cold path** — `tk inspect` (existing) and `tk gain` — and
-   **never on the `tk <cmd>` hot path.** This is a deliberate divergence from RTK (which sends
-   from a background thread on every command). Token Killer's load-bearing guarantee is that the
+6. **Telemetry send fires only on the cold path** — `ctx inspect` (existing) and `ctx gain` — and
+   **never on the `ctx <cmd>` hot path.** This is a deliberate divergence from RTK (which sends
+   from a background thread on every command). Contexa's load-bearing guarantee is that the
    command hot path never blocks, never crashes, and always fails open to the real tool; bolting
    a network send onto it violates that. A 23-hour throttle marker (`lastSentAt`) keeps cadence
    to at most once per day regardless of how often the cold-path commands run.
 
 7. **Consent + state storage aligns with the existing config contract.** User preference lives
-   in `~/.token-killer/config.jsonc` (JSONC, per inspect-v1; `telemetryExport` field, `tk config
+   in `~/.contexa/config.jsonc` (JSONC, per inspect-v1; `telemetryExport` field, `ctx config
    init`). Machine state (`deviceSalt`, `lastSentAt`, `firstSeenAt`) lives in a separate internal
-   state file `~/.token-killer/telemetry-state.json` — kept out of the user-editable config so a
+   state file `~/.contexa/telemetry-state.json` — kept out of the user-editable config so a
    user editing prefs cannot corrupt the salt, mirroring RTK's separate `.device_salt`. New
-   commands: `tk telemetry enable|disable|status|preview|purge`. `preview` prints the exact JSON
+   commands: `ctx telemetry enable|disable|status|preview|purge`. `preview` prints the exact JSON
    that would be sent (auditable); `purge` deletes the salt + markers, resetting `device_hash`.
-   `tk init` MAY offer enablement with an explicit prompt defaulting to **no**.
+   `ctx init` MAY offer enablement with an explicit prompt defaulting to **no**.
 
 8. **Collapse the duplicated token estimator first (metrics-ledger Gap A).** `chars/4` exists in
    both `src/core/savings.ts` and `src/context/metrics.ts`. Aggregation (Decision 2) requires a
@@ -127,9 +127,9 @@ superset. This ADR builds out `tk gain`; it does not build `tk report`.
   fail-open hot-path guarantee (`PRINCIPLES.md`, ADR 0002). Cold-path firing trades guaranteed
   daily cadence for never touching the load-bearing path — an acceptable trade for an opt-in
   enterprise signal.
-- **Put `gain`'s rich views on `tk report` instead of `tk gain`.** Rejected: `metrics-ledger`
-  reserves `tk report` for the four-ledger superset and `tk gain` for ledger ①. Time series /
-  graph / history / quota are all ledger-① facts, so they belong on `tk gain`.
+- **Put `gain`'s rich views on `ctx report` instead of `ctx gain`.** Rejected: `metrics-ledger`
+  reserves `ctx report` for the four-ledger superset and `ctx gain` for ledger ①. Time series /
+  graph / history / quota are all ledger-① facts, so they belong on `ctx gain`.
 - **Keep telemetry purely local (no transport).** Rejected by the explicit requirement to add
   opt-in network upload to an enterprise endpoint.
 - **Store the endpoint in `config.jsonc`.** Rejected: the endpoint is a build property, not a
@@ -138,7 +138,7 @@ superset. This ADR builds out `tk gain`; it does not build `tk report`.
 
 ## Consequences
 
-- New `src/core/aggregate.ts` (shared) and a new `tk gain` command surface (`src/core/report.ts`
+- New `src/core/aggregate.ts` (shared) and a new `ctx gain` command surface (`src/core/report.ts`
   or a new `src/gain/`), plus a user-level history enumerator for `--user`.
 - `src/core/savings.ts` + `src/context/metrics.ts` lose their private `chars/4`; both import one
   estimator (`src/core/tokens.ts`). A test asserts identical numbers pre/post refactor.
@@ -147,9 +147,9 @@ superset. This ADR builds out `tk gain`; it does not build `tk report`.
 - New transport module performs HTTPS POST (Node built-in `https`, no new dependency), 2-second
   timeout, `unref()` so it never holds the process open, fire-and-forget, errors swallowed, no
   retry/queue. Failure warns and preserves the local payload (inspect-v1 transport contract).
-- `tsdown.config.ts` gains a `define` for `__TK_TELEMETRY_ENDPOINT__`.
-- New `tk telemetry` and `tk config init` command surfaces; `~/.token-killer/config.jsonc` and
-  `~/.token-killer/telemetry-state.json` are read/written; `deviceSalt` is generated lazily on
+- `tsdown.config.ts` gains a `define` for `__CTX_TELEMETRY_ENDPOINT__`.
+- New `ctx telemetry` and `ctx config init` command surfaces; `~/.contexa/config.jsonc` and
+  `~/.contexa/telemetry-state.json` are read/written; `deviceSalt` is generated lazily on
   first enabled send.
 - `docs/inspect-v1-design.md` Telemetry section is annotated as **partially superseded** by this
   ADR (stable `device_hash` now allowed; cross-run correlation now permitted for the opt-in
@@ -178,12 +178,38 @@ above; they sharpen ones that were under-specified.
 
 3. **The Decision 5 allow-list is shipped as a subset, by design.** The first telemetry version
    omits `hook_type` and `install_method` (their detection is fuzzy/best-effort) and the
-   inspect-scanner aggregates on the `tk gain` trigger path (they need a fresh scan; only
-   `tk inspect` populates them). Shipping fewer *allowed* fields is permitted; the allow-list
+   inspect-scanner aggregates on the `ctx gain` trigger path (they need a fresh scan; only
+   `ctx inspect` populates them). Shipping fewer *allowed* fields is permitted; the allow-list
    enforcement test still rejects any *disallowed* field (commands, paths, repo names, etc.).
    Telemetry aggregation is always **user-level** (all of a device's projects), matching the
    per-install `device_hash`.
 
-Also: the prerequisite config infrastructure (`config.jsonc` reader, `tk config init`, closed-set
+Also: the prerequisite config infrastructure (`config.jsonc` reader, `ctx config init`, closed-set
 shape validation, exit-1) was specified in `inspect-v1-design.md` but never implemented — it is
 built first in this initiative (goal Slice 3a), not merely "extended".
+
+## Amendment (2026-06, opportunistic hot-path flush)
+
+Decision 6 keeps the telemetry send **cold-path only** (`ctx inspect` / `ctx gain`) and never on the
+`ctx <cmd>` hot path — that remains the default. This amendment adds one narrow, guarded exception
+so installs that rarely run the cold path still report. A hot-path send is permitted ONLY when
+**all** of these hold:
+
+1. **The endpoint is non-empty.** A generic/dev build bakes `""`, so the entire branch — including
+   loading the telemetry module — is skipped at ~zero cost; only an enterprise build reaches it.
+2. **The 23h staleness window has elapsed.** It shares the SAME `lastSentAt` marker as the cold
+   path, so the combined hot+cold cadence is still at most one send per 23h; in the steady state
+   the gate is a single timestamp read.
+3. **It is asynchronous, unref'd, and fired AFTER the user-visible result is already on stdout.**
+   The socket is `unref()`'d (transport contract), so it can neither block process exit nor delay
+   the command. It merges the already-CACHED per-project rollups (user-level) and NEVER reads raw
+   history or rebuilds a rollup on the hot path; an empty cache simply sends nothing.
+
+Rationale: the load-bearing hot-path guarantee is preserved — the added cost on an enabled
+enterprise build is two small reads (consent flag + last-sent timestamp) plus a non-blocking
+beacon, and on every generic build it is a single constant check. The trade is a best-effort daily
+backstop for users who never open `ctx gain` / `ctx inspect`, at no risk to the command's latency,
+exit code, or fail-open behavior. This hot-path send is USER-LEVEL — it merges the already-built
+per-project cached rollups (a READ-ONLY load that, unlike the cold path, never reads history or
+rebuilds), so a device never mixes project-scoped and user-level points under one `device_hash`,
+and a project with history but no built rollup yet contributes nothing until a cold path seeds it.

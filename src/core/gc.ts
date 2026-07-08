@@ -6,7 +6,7 @@ import { rawOutputDir } from "./dataDir.js";
 const RAW_MAX_AGE_MS = 7 * 24 * 60 * 60 * 1000; // 7 days
 const RAW_MAX_BYTES = 50 * 1024 * 1024; // 50 MB
 
-// Best-effort GC of the per-project raw snapshot dir, run on the COLD path (`tk gain`)
+// Best-effort GC of the per-project raw snapshot dir, run on the COLD path (`ctx gain`)
 // only — never the hot per-command path (H4). Post-ADR-0001 every declared
 // digest/replacement force-persists a raw snapshot, so `raw/` grows without bound;
 // nothing else ever deletes it. Policy: drop snapshots older than 7 days, then if the
@@ -15,7 +15,7 @@ const RAW_MAX_BYTES = 50 * 1024 * 1024; // 50 MB
 // Safe because the dedup store lazily RE-snapshots on the next hit (ADR 0009), and a
 // digest/replacement pointer to a GC'd file just means the agent re-runs to see full
 // output — the recovery contract degrades gracefully, never corrupts. Fail-open
-// throughout: any error is swallowed so GC can never break `tk gain`.
+// throughout: any error is swallowed so GC can never break `ctx gain`.
 export async function gcRawStore(cwd: string, now = Date.now()): Promise<void> {
   try {
     const dir = rawOutputDir(cwd);

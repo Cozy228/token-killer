@@ -1,15 +1,15 @@
 // User-level context advice writer (goal §"Advice format"). Writes Markdown to
-// ~/.token-killer/advice/context/<fingerprint>.md (project) or user.md (user).
+// ~/.contexa/advice/context/<fingerprint>.md (project) or user.md (user).
 // Heuristic wording only — never claim provider token savings.
 
 import { mkdirSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 
-import { tokenKillerHome } from "../core/dataDir.js";
+import { contexaHome } from "../core/dataDir.js";
 import type { ContextFinding, ContextScope } from "./types.js";
 
 export function contextAdviceDir(): string {
-  return join(tokenKillerHome(), "advice", "context");
+  return join(contexaHome(), "advice", "context");
 }
 
 export function adviceFilePath(scope: ContextScope, fingerprint?: string): string {
@@ -66,7 +66,7 @@ export function writeContextAdvice(
   content: string,
 ): string {
   const dir = contextAdviceDir();
-  // Owner-only like every store under ~/.token-killer/ (0700 dir / 0600 file).
+  // Owner-only like every store under ~/.contexa/ (0700 dir / 0600 file).
   mkdirSync(dir, { recursive: true, mode: 0o700 });
   const path = adviceFilePath(scope, fingerprint);
   writeFileSync(path, content.endsWith("\n") ? content : `${content}\n`, { mode: 0o600 });

@@ -24,7 +24,7 @@ export type HookLoc = { project: boolean; cwd: string };
 // A hook tier install (or its --dry-run preview) rendered as output lines. init
 // prints `headerLines`, then the shared guidance step, then `Active tier: hook`,
 // then `trailerLines`. The split lets each host own its host-specific lines
-// (claude's `- prev` / `+ cmd` diff + "Ensure tk is on PATH"; copilot has
+// (claude's `- prev` / `+ cmd` diff + "Ensure ctx is on PATH"; copilot has
 // neither) while init stays host-agnostic.
 export type HookStep = { headerLines: string[]; trailerLines: string[] };
 
@@ -36,7 +36,7 @@ export interface HostAdapter {
   // Delivery tiers this host supports, best-first (ADR 0002). selectTier picks
   // among these given hook availability + the live shim probe.
   supportedTiers: Tier[];
-  // The TK.md usage-guide path for this host, or undefined if it has no home.
+  // The CTX.md usage-guide path for this host, or undefined if it has no home.
   guidancePath(home?: string): string | undefined;
   // The user-level instruction-injection target.
   injectionPath(home?: string, vscodeUserDir?: string): string;
@@ -83,7 +83,7 @@ function actionWould(action: string): string {
 }
 
 const CLAUDE_PATH_NOTE =
-  "Ensure tk is on PATH for Claude Code's Bash (e.g. pnpm build && npm link).";
+  "Ensure ctx is on PATH for Claude Code's Bash (e.g. pnpm build && npm link).";
 
 const claudeAdapter: HostAdapter = {
   host: "claude-code",
@@ -122,8 +122,8 @@ const copilotAdapter: HostAdapter = {
     if (plan.action === "skipped-unmanaged") {
       return {
         headerLines: [
-          `copilot hook config exists but is not managed by tk — left untouched: ${plan.path}`,
-          "  (remove it and re-run tk install to adopt)",
+          `copilot hook config exists but is not managed by ctx — left untouched: ${plan.path}`,
+          "  (remove it and re-run ctx install to adopt)",
         ],
         trailerLines: [],
       };
@@ -140,7 +140,7 @@ const copilotAdapter: HostAdapter = {
     if (plan.action === "skipped-unmanaged") {
       return {
         headerLines: [
-          `[dry-run] copilot hook config exists but is not managed by tk — would leave untouched: ${plan.path}`,
+          `[dry-run] copilot hook config exists but is not managed by ctx — would leave untouched: ${plan.path}`,
         ],
         trailerLines: [],
       };
@@ -167,10 +167,10 @@ const vscodeAdapter: HostAdapter = {
   // sole tier — `runInstall` installs both for this host (see init.ts).
   additiveHook: true,
   // VS Code reads the SAME hook locations the Copilot CLI writer already targets —
-  // user `~/.copilot/hooks/tk-rewrite.json`, project `.github/hooks/tk-rewrite.json`
+  // user `~/.copilot/hooks/ctx-rewrite.json`, project `.github/hooks/ctx-rewrite.json`
   // (ADR 0005 §5 corollary). So this REUSES installCopilotHookConfig: there is no
   // separate VS Code writer/file — both adapters share the one marker-guarded
-  // `~/.copilot/hooks/tk-rewrite.json`, which uninstall removes exactly once.
+  // `~/.copilot/hooks/ctx-rewrite.json`, which uninstall removes exactly once.
   installHook: (loc) => {
     const plan = installCopilotHookConfig({ project: loc.project, cwd: loc.cwd });
     return {

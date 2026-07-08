@@ -1,13 +1,13 @@
 #!/usr/bin/env -S npx tsx
 /**
- * tk (token-killer) Full Integration Test Suite — Multipass VM
+ * ctx (contexa) Full Integration Test Suite — Multipass VM
  *
- * Ported from rtk/scripts/benchmark/run.ts and adapted to tk conventions:
+ * Ported from rtk/scripts/benchmark/run.ts and adapted to ctx conventions:
  *   - Runtime: bun -> tsx (run via `pnpm exec tsx` or the shebang above).
  *   - Build: `cargo build --release` -> `pnpm install && pnpm build` (dist/cli.js).
  *   - Quality phase: cargo fmt/clippy/test -> pnpm typecheck/lint/test.
  *   - Binary: a single Rust binary -> the bundled dist/cli.js artifact.
- *   - Binary/VM/labels renamed rtk -> tk.
+ *   - Binary/VM/labels renamed rtk -> ctx.
  *
  * Usage:
  *   pnpm exec tsx scripts/benchmark/run.ts           # Full suite
@@ -20,7 +20,7 @@
 
 import { execFile } from "node:child_process";
 import { promisify } from "node:util";
-import { vmEnsureReady, vmBuildTk, vmExec, TK_BIN } from "./lib/vm";
+import { vmEnsureReady, vmBuildTk, vmExec, CTX_BIN } from "./lib/vm";
 import { testCmd, testSavings, testRewrite, skipTest, getCounts } from "./lib/test";
 import { saveReport } from "./lib/report";
 
@@ -34,9 +34,7 @@ async function git(...args: string[]): Promise<string> {
 
 const args = process.argv.slice(2);
 const quick = args.includes("--quick");
-const phaseArg = args.includes("--phase")
-  ? parseInt(args[args.indexOf("--phase") + 1], 10)
-  : null;
+const phaseArg = args.includes("--phase") ? parseInt(args[args.indexOf("--phase") + 1], 10) : null;
 const phaseOnly = phaseArg !== null && !Number.isNaN(phaseArg) ? phaseArg : null;
 if (args.includes("--phase") && phaseOnly === null) {
   console.error("Error: --phase requires a number (e.g. --phase 3)");
@@ -48,7 +46,7 @@ const reportPath = args.includes("--report")
   ? args[args.indexOf("--report") + 1]
   : `${PROJECT_ROOT}/benchmark-report.txt`;
 
-const TK = TK_BIN;
+const CTX = CTX_BIN;
 
 function shouldRun(phase: number): boolean {
   return phaseOnly === null || phaseOnly === phase;
@@ -62,7 +60,7 @@ function heading(phase: number, title: string) {
 // Phase 0: VM Setup
 // ══════════════════════════════════════════════════════════════
 
-console.log("\x1b[34m[tk-test] tk Full Integration Test Suite\x1b[0m");
+console.log("\x1b[34m[ctx-test] ctx Full Integration Test Suite\x1b[0m");
 console.log(`Project: ${PROJECT_ROOT}`);
 
 await vmEnsureReady();
@@ -77,7 +75,7 @@ const commit = await git("log", "--oneline", "-1");
 const buildInfo = await vmBuildTk(PROJECT_ROOT);
 
 // Bundle size check
-// tk ships a single bundled dist/cli.js (tsdown output). The dependency-free
+// ctx ships a single bundled dist/cli.js (tsdown output). The dependency-free
 // bundle stays well under a megabyte; we use a relaxed 4MB limit as a guard.
 const sizeLimit = 4_194_304; // 4MB
 if (buildInfo.binarySize < sizeLimit) {
@@ -95,17 +93,17 @@ if (shouldRun(2)) {
 
   await testCmd(
     "quality:prettier",
-    "export PATH=$HOME/.local/share/pnpm:$PATH && cd /home/ubuntu/tk && pnpm exec prettier --check . 2>&1",
+    "export PATH=$HOME/.local/share/pnpm:$PATH && cd /home/ubuntu/ctx && pnpm exec prettier --check . 2>&1",
   );
 
   await testCmd(
     "quality:typecheck",
-    "export PATH=$HOME/.local/share/pnpm:$PATH && cd /home/ubuntu/tk && pnpm typecheck 2>&1",
+    "export PATH=$HOME/.local/share/pnpm:$PATH && cd /home/ubuntu/ctx && pnpm typecheck 2>&1",
   );
 
   await testCmd(
     "quality:test",
-    "export PATH=$HOME/.local/share/pnpm:$PATH && cd /home/ubuntu/tk && pnpm test:product 2>&1",
+    "export PATH=$HOME/.local/share/pnpm:$PATH && cd /home/ubuntu/ctx && pnpm test:product 2>&1",
   );
 }
 
@@ -117,80 +115,103 @@ if (shouldRun(3)) {
   heading(3, "Built-in Commands");
 
   // Git
-  await testCmd("git:status", `cd /tmp/test-git && ${TK} git status`);
-  await testCmd("git:log", `cd /tmp/test-git && ${TK} git log -5`);
-  await testCmd("git:log --oneline", `cd /tmp/test-git && ${TK} git log --oneline -10`);
-  await testCmd("git:diff", `cd /tmp/test-git && ${TK} git diff`, "any");
-  await testCmd("git:branch", `cd /tmp/test-git && ${TK} git branch`);
-  await testCmd("git:add --dry-run", `cd /tmp/test-git && ${TK} git add --dry-run .`, "any");
+  await testCmd("git:status", `cd /tmp/test-git && ${CTX} git status`);
+  await testCmd("git:log", `cd /tmp/test-git && ${CTX} git log -5`);
+  await testCmd("git:log --oneline", `cd /tmp/test-git && ${CTX} git log --oneline -10`);
+  await testCmd("git:diff", `cd /tmp/test-git && ${CTX} git diff`, "any");
+  await testCmd("git:branch", `cd /tmp/test-git && ${CTX} git branch`);
+  await testCmd("git:add --dry-run", `cd /tmp/test-git && ${CTX} git add --dry-run .`, "any");
 
   // Files
-  await testCmd("files:ls", `${TK} ls /home/ubuntu/tk`);
-  await testCmd("files:ls src/", `${TK} ls /home/ubuntu/tk/src/`);
-  await testCmd("files:ls -R", `${TK} ls -R /home/ubuntu/tk/src/`);
-  await testCmd("files:read", `${TK} read /home/ubuntu/tk/src/cli.ts`);
-  await testCmd("files:read aggressive", `${TK} read /home/ubuntu/tk/src/cli.ts -l aggressive`);
-  await testCmd("files:smart", `${TK} smart /home/ubuntu/tk/src/cli.ts`);
-  await testCmd("files:find *.ts", `${TK} find '*.ts' /home/ubuntu/tk/src/`);
-  await testCmd("files:wc", `${TK} wc /home/ubuntu/tk/src/cli.ts`);
-  await testCmd("files:diff", `${TK} diff /home/ubuntu/tk/src/cli.ts /home/ubuntu/tk/src/parse.ts`);
+  await testCmd("files:ls", `${CTX} ls /home/ubuntu/ctx`);
+  await testCmd("files:ls src/", `${CTX} ls /home/ubuntu/ctx/src/`);
+  await testCmd("files:ls -R", `${CTX} ls -R /home/ubuntu/ctx/src/`);
+  await testCmd("files:read", `${CTX} read /home/ubuntu/ctx/src/cli.ts`);
+  await testCmd("files:read aggressive", `${CTX} read /home/ubuntu/ctx/src/cli.ts -l aggressive`);
+  await testCmd("files:smart", `${CTX} smart /home/ubuntu/ctx/src/cli.ts`);
+  await testCmd("files:find *.ts", `${CTX} find '*.ts' /home/ubuntu/ctx/src/`);
+  await testCmd("files:wc", `${CTX} wc /home/ubuntu/ctx/src/cli.ts`);
+  await testCmd(
+    "files:diff",
+    `${CTX} diff /home/ubuntu/ctx/src/cli.ts /home/ubuntu/ctx/src/parse.ts`,
+  );
 
   // Search
-  await testCmd("search:grep", `${TK} grep 'function main' /home/ubuntu/tk/src/`);
+  await testCmd("search:grep", `${CTX} grep 'function main' /home/ubuntu/ctx/src/`);
 
   // Data
-  await testCmd("data:json", `${TK} json /tmp/test-node/package.json`);
-  await testCmd("data:deps", `cd /home/ubuntu/tk && ${TK} deps`);
-  await testCmd("data:env", `${TK} env`);
+  await testCmd("data:json", `${CTX} json /tmp/test-node/package.json`);
+  await testCmd("data:deps", `cd /home/ubuntu/ctx && ${CTX} deps`);
+  await testCmd("data:env", `${CTX} env`);
 
   // Runners
-  await testCmd("runner:summary", `${TK} summary 'echo hello world'`);
-  await testCmd("runner:err", `${TK} err false`, "any");
-  await testCmd("runner:test", `${TK} test 'echo ok'`, "any");
+  await testCmd("runner:summary", `${CTX} summary 'echo hello world'`);
+  await testCmd("runner:err", `${CTX} err false`, "any");
+  await testCmd("runner:test", `${CTX} test 'echo ok'`, "any");
 
   // Logs
-  await testCmd("log:large", `${TK} log /tmp/large.log`);
+  await testCmd("log:large", `${CTX} log /tmp/large.log`);
 
   // Network
-  await testCmd("net:curl", `${TK} curl https://httpbin.org/get`, "any");
+  await testCmd("net:curl", `${CTX} curl https://httpbin.org/get`, "any");
 
   // GitHub
-  await testCmd("gh:pr list", `cd /home/ubuntu/tk && ${TK} gh pr list`, "any");
+  await testCmd("gh:pr list", `cd /home/ubuntu/ctx && ${CTX} gh pr list`, "any");
 
   // Python (test project has intentional failures)
-  await testCmd("python:pytest", `cd /tmp/test-python && ${TK} pytest`, 1);
-  await testCmd("python:ruff check", `cd /tmp/test-python && ${TK} ruff check .`, 1);
-  await testCmd("python:mypy", `cd /tmp/test-python && ${TK} mypy .`, 1);
-  await testCmd("python:pip list", `${TK} pip list`);
+  await testCmd("python:pytest", `cd /tmp/test-python && ${CTX} pytest`, 1);
+  await testCmd("python:ruff check", `cd /tmp/test-python && ${CTX} ruff check .`, 1);
+  await testCmd("python:mypy", `cd /tmp/test-python && ${CTX} mypy .`, 1);
+  await testCmd("python:pip list", `${CTX} pip list`);
 
   // Go (test project has intentional test failure)
-  await testCmd("go:test", `export PATH=$PATH:/usr/local/go/bin && cd /tmp/test-go && ${TK} go test ./...`, 1);
-  await testCmd("go:build", `export PATH=$PATH:/usr/local/go/bin && cd /tmp/test-go && ${TK} go build .`, 1);
-  await testCmd("go:vet", `export PATH=$PATH:/usr/local/go/bin && cd /tmp/test-go && ${TK} go vet ./...`, 1);
-  await testCmd("go:golangci-lint", `export PATH=$PATH:/usr/local/go/bin:$HOME/go/bin && cd /tmp/test-go && ${TK} golangci-lint run`, 1);
+  await testCmd(
+    "go:test",
+    `export PATH=$PATH:/usr/local/go/bin && cd /tmp/test-go && ${CTX} go test ./...`,
+    1,
+  );
+  await testCmd(
+    "go:build",
+    `export PATH=$PATH:/usr/local/go/bin && cd /tmp/test-go && ${CTX} go build .`,
+    1,
+  );
+  await testCmd(
+    "go:vet",
+    `export PATH=$PATH:/usr/local/go/bin && cd /tmp/test-go && ${CTX} go vet ./...`,
+    1,
+  );
+  await testCmd(
+    "go:golangci-lint",
+    `export PATH=$PATH:/usr/local/go/bin:$HOME/go/bin && cd /tmp/test-go && ${CTX} golangci-lint run`,
+    1,
+  );
 
   // TypeScript
-  await testCmd("ts:tsc", `cd /tmp/test-node && ${TK} tsc --noEmit`, "any");
+  await testCmd("ts:tsc", `cd /tmp/test-node && ${CTX} tsc --noEmit`, "any");
 
   // Linters
-  await testCmd("lint:eslint", `cd /tmp/test-node && ${TK} lint 'eslint src/'`, "any");
-  await testCmd("lint:prettier", `cd /tmp/test-node && ${TK} prettier --check src/`, "any");
+  await testCmd("lint:eslint", `cd /tmp/test-node && ${CTX} lint 'eslint src/'`, "any");
+  await testCmd("lint:prettier", `cd /tmp/test-node && ${CTX} prettier --check src/`, "any");
 
   // Docker
-  await testCmd("docker:ps", `${TK} docker ps`, "any");
-  await testCmd("docker:images", `${TK} docker images`, "any");
+  await testCmd("docker:ps", `${CTX} docker ps`, "any");
+  await testCmd("docker:images", `${CTX} docker images`, "any");
 
   // Kubernetes
-  await testCmd("k8s:pods", `${TK} kubectl pods`, "any");
+  await testCmd("k8s:pods", `${CTX} kubectl pods`, "any");
 
   // .NET
-  await testCmd("dotnet:build", `export DOTNET_ROOT=/usr/local/share/dotnet && export PATH=$PATH:$DOTNET_ROOT && cd /tmp/test-dotnet/TestApp 2>/dev/null && ${TK} dotnet build || echo 'dotnet skip'`, "any");
+  await testCmd(
+    "dotnet:build",
+    `export DOTNET_ROOT=/usr/local/share/dotnet && export PATH=$PATH:$DOTNET_ROOT && cd /tmp/test-dotnet/TestApp 2>/dev/null && ${CTX} dotnet build || echo 'dotnet skip'`,
+    "any",
+  );
 
   // Meta
-  await testCmd("meta:report", `${TK} --report`);
-  await testCmd("meta:report --json", `${TK} --report --json`);
-  await testCmd("meta:raw", `${TK} --raw echo 'raw test'`);
-  await testCmd("meta:version", `${TK} --version`);
+  await testCmd("meta:report", `${CTX} --report`);
+  await testCmd("meta:report --json", `${CTX} --report --json`);
+  await testCmd("meta:raw", `${CTX} --raw echo 'raw test'`);
+  await testCmd("meta:version", `${CTX} --version`);
 }
 
 // ══════════════════════════════════════════════════════════════
@@ -201,40 +222,40 @@ if (shouldRun(4)) {
   heading(4, "TOML Filter Commands");
 
   // System
-  await testCmd("toml:df", `${TK} df -h`);
-  await testCmd("toml:du", `${TK} du -sh /tmp`, "any");
-  await testCmd("toml:ps", `${TK} ps aux`);
-  await testCmd("toml:ping", `${TK} ping -c 2 127.0.0.1`);
+  await testCmd("toml:df", `${CTX} df -h`);
+  await testCmd("toml:du", `${CTX} du -sh /tmp`, "any");
+  await testCmd("toml:ps", `${CTX} ps aux`);
+  await testCmd("toml:ping", `${CTX} ping -c 2 127.0.0.1`);
 
   // Build tools
-  await testCmd("toml:make", `cd /tmp && ${TK} make -f Makefile`, "any");
-  await testCmd("toml:rsync", `${TK} rsync --version`);
+  await testCmd("toml:make", `cd /tmp && ${CTX} make -f Makefile`, "any");
+  await testCmd("toml:rsync", `${CTX} rsync --version`);
 
   // Linters
-  await testCmd("toml:shellcheck", `${TK} shellcheck /tmp/test.sh`, "any");
-  await testCmd("toml:hadolint", `${TK} hadolint /tmp/Dockerfile.bad`, "any");
-  await testCmd("toml:yamllint", `${TK} yamllint /tmp/test.yaml`, "any");
-  await testCmd("toml:markdownlint", `${TK} markdownlint /tmp/test.md`, "any");
+  await testCmd("toml:shellcheck", `${CTX} shellcheck /tmp/test.sh`, "any");
+  await testCmd("toml:hadolint", `${CTX} hadolint /tmp/Dockerfile.bad`, "any");
+  await testCmd("toml:yamllint", `${CTX} yamllint /tmp/test.yaml`, "any");
+  await testCmd("toml:markdownlint", `${CTX} markdownlint /tmp/test.md`, "any");
 
   // Cloud/Infra
-  await testCmd("toml:terraform", `${TK} terraform --version`, "any");
-  await testCmd("toml:helm", `${TK} helm version`, "any");
-  await testCmd("toml:ansible", `${TK} ansible-playbook --version`, "any");
+  await testCmd("toml:terraform", `${CTX} terraform --version`, "any");
+  await testCmd("toml:helm", `${CTX} helm version`, "any");
+  await testCmd("toml:ansible", `${CTX} ansible-playbook --version`, "any");
 
   // Mocked tools
-  await testCmd("toml:gcloud", `${TK} gcloud version`);
-  await testCmd("toml:shopify", `${TK} shopify theme check`, "any");
-  await testCmd("toml:pio", `${TK} pio run`, "any");
-  await testCmd("toml:quarto", `${TK} quarto render`, "any");
-  await testCmd("toml:sops", `${TK} sops --version`);
+  await testCmd("toml:gcloud", `${CTX} gcloud version`);
+  await testCmd("toml:shopify", `${CTX} shopify theme check`, "any");
+  await testCmd("toml:pio", `${CTX} pio run`, "any");
+  await testCmd("toml:quarto", `${CTX} quarto render`, "any");
+  await testCmd("toml:sops", `${CTX} sops --version`);
   // Swift ecosystem
-  await testCmd("toml:swift build", `${TK} swift build`, "any");
-  await testCmd("toml:swift test", `${TK} swift test`, "any");
-  await testCmd("toml:swift run", `${TK} swift run`, "any");
-  await testCmd("toml:swift package", `${TK} swift package resolve`, "any");
-  await testCmd("toml:swiftlint", `${TK} swiftlint`, "any");
-  await testCmd("toml:swiftformat", `${TK} swiftformat`, "any");
-  await testCmd("toml:kubectl", `${TK} kubectl version --client`, "any");
+  await testCmd("toml:swift build", `${CTX} swift build`, "any");
+  await testCmd("toml:swift test", `${CTX} swift test`, "any");
+  await testCmd("toml:swift run", `${CTX} swift run`, "any");
+  await testCmd("toml:swift package", `${CTX} swift package resolve`, "any");
+  await testCmd("toml:swiftlint", `${CTX} swiftlint`, "any");
+  await testCmd("toml:swiftformat", `${CTX} swiftformat`, "any");
+  await testCmd("toml:kubectl", `${CTX} kubectl version --client`, "any");
 }
 
 // ══════════════════════════════════════════════════════════════
@@ -245,28 +266,28 @@ if (shouldRun(5)) {
   heading(5, "Hook Rewrite Engine");
 
   // Basic rewrites
-  await testRewrite("git status", "tk git status");
-  await testRewrite("git log --oneline -10", "tk git log --oneline -10");
-  await testRewrite("docker ps", "tk docker ps");
-  // NOTE: tk rewrites "kubectl get pods" to "tk kubectl get pods" (preserves get)
-  await testRewrite("kubectl get pods", "tk kubectl get pods");
-  await testRewrite("ruff check", "tk ruff check");
-  await testRewrite("pytest", "tk pytest");
-  await testRewrite("go test", "tk go test");
-  await testRewrite("pnpm list", "tk pnpm list");
-  await testRewrite("gh pr list", "tk gh pr list");
-  await testRewrite("df -h", "tk df -h");
-  await testRewrite("ps aux", "tk ps aux");
+  await testRewrite("git status", "ctx git status");
+  await testRewrite("git log --oneline -10", "ctx git log --oneline -10");
+  await testRewrite("docker ps", "ctx docker ps");
+  // NOTE: ctx rewrites "kubectl get pods" to "ctx kubectl get pods" (preserves get)
+  await testRewrite("kubectl get pods", "ctx kubectl get pods");
+  await testRewrite("ruff check", "ctx ruff check");
+  await testRewrite("pytest", "ctx pytest");
+  await testRewrite("go test", "ctx go test");
+  await testRewrite("pnpm list", "ctx pnpm list");
+  await testRewrite("gh pr list", "ctx gh pr list");
+  await testRewrite("df -h", "ctx df -h");
+  await testRewrite("ps aux", "ctx ps aux");
 
   // Compound
-  await testRewrite("go test && git status", "tk go test && tk git status");
+  await testRewrite("go test && git status", "ctx go test && ctx git status");
   // NOTE: shell strips single quotes in vmExec, so 'msg' becomes msg
-  await testRewrite("git add . && git commit -m msg", "tk git add . && tk git commit -m msg");
+  await testRewrite("git add . && git commit -m msg", "ctx git add . && ctx git commit -m msg");
 
-  // No rewrite (shell builtins) — tk rewrite returns empty string + exit 1
+  // No rewrite (shell builtins) — ctx rewrite returns empty string + exit 1
   // We test via testCmd since testRewrite expects non-empty output
-  await testCmd("rewrite:cd (no rewrite)", `${TK} rewrite 'cd /tmp'`, 1);
-  await testCmd("rewrite:export (no rewrite)", `${TK} rewrite 'export FOO=bar'`, 1);
+  await testCmd("rewrite:cd (no rewrite)", `${CTX} rewrite 'cd /tmp'`, 1);
+  await testCmd("rewrite:export (no rewrite)", `${CTX} rewrite 'export FOO=bar'`, 1);
 }
 
 // ══════════════════════════════════════════════════════════════
@@ -277,13 +298,13 @@ if (shouldRun(6)) {
   heading(6, "Exit Code Preservation");
 
   // Success
-  await testCmd("exit:git status=0", `cd /tmp/test-git && ${TK} git status`, 0);
-  await testCmd("exit:ls=0", `${TK} ls /tmp`, 0);
-  await testCmd("exit:report=0", `${TK} --report`, 0);
+  await testCmd("exit:git status=0", `cd /tmp/test-git && ${CTX} git status`, 0);
+  await testCmd("exit:ls=0", `${CTX} ls /tmp`, 0);
+  await testCmd("exit:report=0", `${CTX} --report`, 0);
 
   // Failures
   // rg returns exit 1 (no match) or 2 (error) — accept both
-  await testCmd("exit:grep NOTFOUND", `${TK} grep NOTFOUND_XYZ_123 /tmp`, "any");
+  await testCmd("exit:grep NOTFOUND", `${CTX} grep NOTFOUND_XYZ_123 /tmp`, "any");
 }
 
 // ══════════════════════════════════════════════════════════════
@@ -296,39 +317,24 @@ if (shouldRun(7)) {
   await testSavings(
     "savings:git log",
     "cd /tmp/test-git && git log -20",
-    `cd /tmp/test-git && ${TK} git log -20`,
+    `cd /tmp/test-git && ${CTX} git log -20`,
     60,
   );
   await testSavings(
     "savings:ls",
-    "ls -la /home/ubuntu/tk/src/",
-    `${TK} ls /home/ubuntu/tk/src/`,
+    "ls -la /home/ubuntu/ctx/src/",
+    `${CTX} ls /home/ubuntu/ctx/src/`,
     60,
   );
-  await testSavings(
-    "savings:log dedup",
-    "cat /tmp/large.log",
-    `${TK} log /tmp/large.log`,
-    80,
-  );
+  await testSavings("savings:log dedup", "cat /tmp/large.log", `${CTX} log /tmp/large.log`, 80);
   await testSavings(
     "savings:read aggressive",
-    "cat /home/ubuntu/tk/src/cli.ts",
-    `${TK} read /home/ubuntu/tk/src/cli.ts -l aggressive`,
+    "cat /home/ubuntu/ctx/src/cli.ts",
+    `${CTX} read /home/ubuntu/ctx/src/cli.ts -l aggressive`,
     50,
   );
-  await testSavings(
-    "savings:swift test",
-    "swift test",
-    `${TK} swift test`,
-    60,
-  );
-  await testSavings(
-    "savings:swiftlint",
-    "swiftlint",
-    `${TK} swiftlint`,
-    20,
-  );
+  await testSavings("savings:swift test", "swift test", `${CTX} swift test`, 60);
+  await testSavings("savings:swiftlint", "swiftlint", `${CTX} swiftlint`, 20);
 }
 
 // ══════════════════════════════════════════════════════════════
@@ -338,9 +344,9 @@ if (shouldRun(7)) {
 if (shouldRun(8)) {
   heading(8, "Pipe Compatibility");
 
-  await testCmd("pipe:git status|wc", `cd /tmp/test-git && ${TK} git status | wc -l`);
-  await testCmd("pipe:ls|wc", `${TK} ls /home/ubuntu/tk/src/ | wc -l`);
-  await testCmd("pipe:grep|head", `${TK} grep 'function' /home/ubuntu/tk/src/ | head -5`);
+  await testCmd("pipe:git status|wc", `cd /tmp/test-git && ${CTX} git status | wc -l`);
+  await testCmd("pipe:ls|wc", `${CTX} ls /home/ubuntu/ctx/src/ | wc -l`);
+  await testCmd("pipe:grep|head", `${CTX} grep 'function' /home/ubuntu/ctx/src/ | head -5`);
 }
 
 // ══════════════════════════════════════════════════════════════
@@ -350,9 +356,13 @@ if (shouldRun(8)) {
 if (shouldRun(9)) {
   heading(9, "Edge Cases");
 
-  await testCmd("edge:summary true", `${TK} summary 'true'`, "any");
-  await testCmd("edge:grep NOTFOUND", `${TK} grep NOTFOUND_XYZ /home/ubuntu/tk/src/`, 1);
-  await testCmd("edge:unicode", `echo 'hello world' > /tmp/uni.txt && ${TK} grep 'hello' /tmp`, "any");
+  await testCmd("edge:summary true", `${CTX} summary 'true'`, "any");
+  await testCmd("edge:grep NOTFOUND", `${CTX} grep NOTFOUND_XYZ /home/ubuntu/ctx/src/`, 1);
+  await testCmd(
+    "edge:unicode",
+    `echo 'hello world' > /tmp/uni.txt && ${CTX} grep 'hello' /tmp`,
+    "any",
+  );
 }
 
 // ══════════════════════════════════════════════════════════════
@@ -366,13 +376,13 @@ if (shouldRun(10) && !quick) {
   const { exitCode: hfExist } = await vmExec("command -v hyperfine");
   if (hfExist === 0) {
     const { stdout: hfOut } = await vmExec(
-      `cd /tmp/test-git && hyperfine --warmup 3 --min-runs 5 '${TK} git status' 'git status' --export-json /dev/stdout 2>/dev/null`,
+      `cd /tmp/test-git && hyperfine --warmup 3 --min-runs 5 '${CTX} git status' 'git status' --export-json /dev/stdout 2>/dev/null`,
     );
     try {
       const hf = JSON.parse(hfOut);
       const tkMean = (hf.results?.[0]?.mean * 1000).toFixed(1);
       const rawMean = (hf.results?.[1]?.mean * 1000).toFixed(1);
-      console.log(`  Startup: tk=${tkMean}ms raw=${rawMean}ms`);
+      console.log(`  Startup: ctx=${tkMean}ms raw=${rawMean}ms`);
     } catch {
       console.log("  hyperfine output parse failed");
     }
@@ -382,7 +392,7 @@ if (shouldRun(10) && !quick) {
 
   // Memory
   const { stdout: memOut } = await vmExec(
-    `cd /tmp/test-git && /usr/bin/time -v ${TK} git status 2>&1 | grep 'Maximum resident'`,
+    `cd /tmp/test-git && /usr/bin/time -v ${CTX} git status 2>&1 | grep 'Maximum resident'`,
   );
   const memKb = parseInt(memOut.match(/(\d+)/)?.[1] ?? "0", 10);
   // Node has a higher baseline RSS than a Rust binary; use a relaxed 120MB guard.
@@ -405,7 +415,7 @@ if (shouldRun(11) && !quick) {
 
   await testCmd(
     "concurrency:10x git status",
-    `cd /tmp/test-git && for i in $(seq 1 10); do ${TK} git status >/dev/null & done; wait`,
+    `cd /tmp/test-git && for i in $(seq 1 10); do ${CTX} git status >/dev/null & done; wait`,
   );
 } else if (quick && shouldRun(11)) {
   skipTest("concurrency:10x", "--quick mode");
@@ -426,6 +436,8 @@ if (failed === 0) {
   console.log(`\n\x1b[32m  READY FOR RELEASE — ${passed}/${total} (${passRate}%)\x1b[0m\n`);
   process.exit(0);
 } else {
-  console.log(`\n\x1b[31m  NOT READY — ${failed} failures — ${passed}/${total} (${passRate}%)\x1b[0m\n`);
+  console.log(
+    `\n\x1b[31m  NOT READY — ${failed} failures — ${passed}/${total} (${passRate}%)\x1b[0m\n`,
+  );
   process.exit(1);
 }

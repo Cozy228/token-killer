@@ -163,7 +163,7 @@ function formatLog(raw: RawResult): string {
 
 // RTK: log_cmd.rs::run_file — rtk's `log` is its own log-analysis command, not a
 // proxy to the platform `log` tool. `log <file>` reads the file's contents and
-// summarizes them. tk mirrors this: when an argument resolves to a readable file,
+// summarizes them. ctx mirrors this: when an argument resolves to a readable file,
 // read it directly. Otherwise (e.g. macOS `log show`/`log stream` with no file
 // path) fall back to the real `log` command rather than guessing.
 async function readLogFile(

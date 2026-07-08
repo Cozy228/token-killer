@@ -10,13 +10,13 @@ let home: string;
 let cwd: string;
 
 beforeEach(async () => {
-  home = await mkdtemp(path.join(tmpdir(), "tk-gc-home-"));
-  cwd = await mkdtemp(path.join(tmpdir(), "tk-gc-cwd-"));
-  process.env.TOKEN_KILLER_HOME = home;
+  home = await mkdtemp(path.join(tmpdir(), "ctx-gc-home-"));
+  cwd = await mkdtemp(path.join(tmpdir(), "ctx-gc-cwd-"));
+  process.env.CONTEXA_HOME = home;
 });
 
 afterEach(async () => {
-  delete process.env.TOKEN_KILLER_HOME;
+  delete process.env.CONTEXA_HOME;
   await rm(home, { recursive: true, force: true });
   await rm(cwd, { recursive: true, force: true });
 });

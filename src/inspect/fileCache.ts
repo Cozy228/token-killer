@@ -1,5 +1,5 @@
 // A read-through cache shared across the inspect analyzers so each transcript /
-// session file is read from disk ONCE per `tk inspect` run. scan() and
+// session file is read from disk ONCE per `ctx inspect` run. scan() and
 // analyzeHabits() both walk the same SourceDiscovery file set; without sharing,
 // every file was opened twice — and on Windows every open is re-scanned by AV, so
 // the duplicate open is a real tax there (the OS page cache hides it on macOS).

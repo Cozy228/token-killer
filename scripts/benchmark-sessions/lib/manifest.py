@@ -1,8 +1,8 @@
 """
-Run manifest model for tk (token-killer) benchmark sessions.
+Run manifest model for ctx (contexa) benchmark sessions.
 
-Ported alongside rtk/scripts/benchmark-sessions/lib/runner.py and adapted to tk
-conventions: the per-session tracking artifact is tk's history (tk_db) rather
+Ported alongside rtk/scripts/benchmark-sessions/lib/runner.py and adapted to ctx
+conventions: the per-session tracking artifact is ctx's history (tk_db) rather
 than rtk's SQLite db. Serializes the manifest to manifest.json in the output
 directory.
 """
@@ -21,7 +21,7 @@ class SessionEntry:
     group: str
     stdout_json: str
     otel_log: str
-    # tk tracking history filename (None when tk was OFF for this VM).
+    # ctx tracking history filename (None when ctx was OFF for this VM).
     tk_db: str | None = None
     exit_code: int | None = None
     error: str | None = None

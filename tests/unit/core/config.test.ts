@@ -11,17 +11,17 @@ import {
 } from "../../../src/core/config.js";
 import { runConfig } from "../../../src/core/configCli.js";
 
-const previousHome = process.env.TOKEN_KILLER_HOME;
+const previousHome = process.env.CONTEXA_HOME;
 
 afterEach(() => {
   vi.restoreAllMocks();
-  if (previousHome === undefined) delete process.env.TOKEN_KILLER_HOME;
-  else process.env.TOKEN_KILLER_HOME = previousHome;
+  if (previousHome === undefined) delete process.env.CONTEXA_HOME;
+  else process.env.CONTEXA_HOME = previousHome;
 });
 
 async function withHome<T>(fn: (home: string) => Promise<T>): Promise<T> {
-  const home = await mkdtemp(path.join(tmpdir(), "tk-config-"));
-  process.env.TOKEN_KILLER_HOME = home;
+  const home = await mkdtemp(path.join(tmpdir(), "ctx-config-"));
+  process.env.CONTEXA_HOME = home;
   try {
     return await fn(home);
   } finally {
@@ -36,8 +36,8 @@ describe("readConfig", () => {
     });
   });
 
-  test("missing file reads telemetry true when TK_TELEMETRY_DEFAULT=true", async () => {
-    vi.stubEnv("TK_TELEMETRY_DEFAULT", "true");
+  test("missing file reads telemetry true when CTX_TELEMETRY_DEFAULT=true", async () => {
+    vi.stubEnv("CTX_TELEMETRY_DEFAULT", "true");
     vi.resetModules();
     const { readConfig: readWithDefault } = await import("../../../src/core/config.js");
     await withHome(async () => {
@@ -81,7 +81,7 @@ describe("readConfig", () => {
   });
 });
 
-describe("tk config init", () => {
+describe("ctx config init", () => {
   test("creates the closed-set template with telemetry off in generic builds", async () => {
     await withHome(async () => {
       vi.spyOn(process.stdout, "write").mockReturnValue(true);
@@ -99,8 +99,8 @@ describe("tk config init", () => {
     });
   });
 
-  test("tk config init writes telemetry true when TK_TELEMETRY_DEFAULT=true", async () => {
-    vi.stubEnv("TK_TELEMETRY_DEFAULT", "true");
+  test("ctx config init writes telemetry true when CTX_TELEMETRY_DEFAULT=true", async () => {
+    vi.stubEnv("CTX_TELEMETRY_DEFAULT", "true");
     vi.resetModules();
     const { configPath: cfgPath, readConfig: readWithDefault } =
       await import("../../../src/core/config.js");

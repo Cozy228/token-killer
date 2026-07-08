@@ -1,6 +1,6 @@
 # Installation and Internal Distribution
 
-How to install `tk` for end users and publish the package to a private npm registry.
+How to install `ctx` for end users and publish the package to a private npm registry.
 
 ## Prerequisites
 
@@ -15,42 +15,42 @@ How to install `tk` for end users and publish the package to a private npm regis
 
 ```bash
 # One-time: point your scope at the internal registry (see "Authenticate" below)
-npm install -g @your-org/token-killer
+npm install -g @your-org/contexa
 
-tk --version
-tk --help
+ctx --version
+ctx --help
 ```
 
 ### From source (development)
 
 ```bash
-git clone <repo-url> token-killer
-cd token-killer
+git clone <repo-url> contexa
+cd contexa
 pnpm install
 pnpm run build
-npm link          # exposes `tk` globally
+npm link          # exposes `ctx` globally
 
-tk --version
+ctx --version
 ```
 
 ### Wire into your agent host
 
 ```bash
-tk status                              # inspect current delivery tier
-tk install --host copilot-cli                  # Copilot CLI → hook tier
-tk install                                     # VS Code → shim tier (PATH wrappers)
-tk install --project                           # optional: project-level instruction injection
-tk uninstall                         # remove all tk-installed artifacts
+ctx doctor                              # inspect delivery + metrics health (--fix to repair)
+ctx install --host copilot-cli                  # Copilot CLI → hook tier
+ctx install                                     # VS Code → shim tier (PATH wrappers)
+ctx install --project                           # optional: project-level instruction injection
+ctx uninstall                         # remove all ctx-installed artifacts
 ```
 
-Data and config live under `~/.token-killer/` (override with `TOKEN_KILLER_HOME`).
+Data and config live under `~/.contexa/` (override with `CONTEXA_HOME`).
 
 ## Verify the install
 
 ```bash
 pnpm run test:install     # from the repo: build + smoke checks
-tk ls .
-tk gain                 # measured savings (empty until commands run)
+ctx ls .
+ctx gain                 # measured savings (empty until commands run)
 ```
 
 ---
@@ -63,7 +63,7 @@ Add `publishConfig` to `package.json`:
 
 ```json
 {
-  "name": "@your-org/token-killer",
+  "name": "@your-org/contexa",
   "version": "0.1.0",
   "publishConfig": {
     "registry": "https://npm.your-company.com/",
@@ -80,7 +80,7 @@ Common registry URLs:
 | GitHub Packages | `https://npm.pkg.github.com` |
 | Azure Artifacts | `https://pkgs.dev.azure.com/<org>/<project>/_packaging/<feed>/npm/registry/` |
 
-For GitHub Packages, also set `"repository": "github:your-org/token-killer"` and use a
+For GitHub Packages, also set `"repository": "github:your-org/contexa"` and use a
 `@your-org` scope matching the GitHub org.
 
 ### 2. Authenticate
@@ -120,21 +120,21 @@ machines):
 
 | Build env | Baked constant | Generic default | Internal build |
 |---|---|---|---|
-| `TK_TELEMETRY_ENDPOINT` | `__TK_TELEMETRY_ENDPOINT__` | `""` (network send inert) | `https://telemetry.internal.example/ingest` |
-| `TK_TELEMETRY_DEFAULT` | `__TK_TELEMETRY_DEFAULT__` | `false` | `true` |
+| `CTX_TELEMETRY_ENDPOINT` | `__CTX_TELEMETRY_ENDPOINT__` | `""` (network send inert) | `https://telemetry.internal.example/ingest` |
+| `CTX_TELEMETRY_DEFAULT` | `__CTX_TELEMETRY_DEFAULT__` | `false` | `true` |
 
-When `TK_TELEMETRY_DEFAULT=true`:
+When `CTX_TELEMETRY_DEFAULT=true`:
 
 - A **missing** `config.jsonc` reads `telemetry: true` (network upload opted in).
-- `tk config init` writes `"telemetry": true` in the template.
-- Users can still opt out: `tk telemetry disable` or edit `config.jsonc`.
+- `ctx config init` writes `"telemetry": true` in the template.
+- Users can still opt out: `ctx telemetry disable` or edit `config.jsonc`.
 
-Network upload still requires a non-empty `TK_TELEMETRY_ENDPOINT` **and** `telemetry: true`.
+Network upload still requires a non-empty `CTX_TELEMETRY_ENDPOINT` **and** `telemetry: true`.
 Both build args are normally set together for internal distributions.
 
 ```bash
-TK_TELEMETRY_ENDPOINT=https://telemetry.internal.example/ingest \
-TK_TELEMETRY_DEFAULT=true \
+CTX_TELEMETRY_ENDPOINT=https://telemetry.internal.example/ingest \
+CTX_TELEMETRY_DEFAULT=true \
 pnpm run build
 ```
 
@@ -149,8 +149,8 @@ pnpm run test:ci
 pnpm run build
 
 # Internal build (telemetry on by default + endpoint):
-TK_TELEMETRY_ENDPOINT=https://telemetry.internal.example/ingest \
-TK_TELEMETRY_DEFAULT=true \
+CTX_TELEMETRY_ENDPOINT=https://telemetry.internal.example/ingest \
+CTX_TELEMETRY_DEFAULT=true \
 pnpm run build
 
 npm publish --access restricted
@@ -168,9 +168,9 @@ Follow [Conventional Commits](https://www.conventionalcommits.org/). Bump `versi
 ## Uninstall
 
 ```bash
-tk uninstall
-npm uninstall -g @your-org/token-killer
+ctx uninstall
+npm uninstall -g @your-org/contexa
 
 # Optional: remove local data
-rm -rf ~/.token-killer
+rm -rf ~/.contexa
 ```

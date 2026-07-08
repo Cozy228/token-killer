@@ -2,14 +2,14 @@
 set -euo pipefail
 
 REPO_ROOT="$(cd "$(dirname "$0")/.." && pwd)"
-TK_HOME="${TOKEN_KILLER_HOME:-$HOME/.token-killer}"
-HISTORY="${TK_HISTORY_FILE:-$(node -e "
+CTX_HOME="${CONTEXA_HOME:-$HOME/.contexa}"
+HISTORY="${CTX_HISTORY_FILE:-$(node -e "
   const { createHash } = require('node:crypto');
   const { realpathSync } = require('node:fs');
   const path = require('node:path');
   const os = require('node:os');
   const cwd = process.argv[1];
-  const home = process.env.TOKEN_KILLER_HOME || path.join(os.homedir(), '.token-killer');
+  const home = process.env.CONTEXA_HOME || path.join(os.homedir(), '.contexa');
   let root = cwd;
   try { root = realpathSync(cwd); } catch { root = path.resolve(cwd); }
   const fp = 'repo:' + createHash('sha256').update(root).digest('hex').slice(0, 12);
@@ -21,7 +21,7 @@ MARKER_E="<!-- BENCHMARK_TABLE_END -->"
 
 # Step 1: Check history file
 if [[ ! -f "$HISTORY" ]] || [[ ! -s "$HISTORY" ]]; then
-  echo "No history data found. Run some tk commands first, then re-run this script."
+  echo "No history data found. Run some ctx commands first, then re-run this script."
   exit 0
 fi
 

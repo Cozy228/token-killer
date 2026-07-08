@@ -11,7 +11,7 @@ describe("inspect fileCache", () => {
   let file: string;
 
   beforeEach(() => {
-    dir = mkdtempSync(join(tmpdir(), "tk-filecache-"));
+    dir = mkdtempSync(join(tmpdir(), "ctx-filecache-"));
     file = join(dir, "a.jsonl");
     writeFileSync(file, "hello world"); // 11 bytes
   });

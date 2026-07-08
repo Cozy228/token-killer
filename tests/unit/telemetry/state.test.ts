@@ -12,16 +12,16 @@ import {
   stateFile,
 } from "../../../src/telemetry/state.js";
 
-const previousHome = process.env.TOKEN_KILLER_HOME;
+const previousHome = process.env.CONTEXA_HOME;
 
 afterEach(() => {
-  if (previousHome === undefined) delete process.env.TOKEN_KILLER_HOME;
-  else process.env.TOKEN_KILLER_HOME = previousHome;
+  if (previousHome === undefined) delete process.env.CONTEXA_HOME;
+  else process.env.CONTEXA_HOME = previousHome;
 });
 
 async function withHome<T>(fn: () => Promise<T> | T): Promise<T> {
-  const home = await mkdtemp(path.join(tmpdir(), "tk-state-"));
-  process.env.TOKEN_KILLER_HOME = home;
+  const home = await mkdtemp(path.join(tmpdir(), "ctx-state-"));
+  process.env.CONTEXA_HOME = home;
   try {
     return await fn();
   } finally {
@@ -34,9 +34,9 @@ describe("telemetry state", () => {
     if (process.platform === "win32") return;
     const previousUmask = process.umask(0o022);
     try {
-      const parent = await mkdtemp(path.join(tmpdir(), "tk-state-parent-"));
+      const parent = await mkdtemp(path.join(tmpdir(), "ctx-state-parent-"));
       const home = path.join(parent, "fresh");
-      process.env.TOKEN_KILLER_HOME = home;
+      process.env.CONTEXA_HOME = home;
       try {
         loadOrCreateState(new Date("2026-06-01T00:00:00.000Z"));
         expect(statSync(home).mode & 0o777).toBe(0o700);

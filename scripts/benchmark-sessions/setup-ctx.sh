@@ -1,30 +1,30 @@
 #!/usr/bin/env bash
-# Install and enable tk (token-killer) on a benchmark "ON" VM.
+# Install and enable ctx (contexa) on a benchmark "ON" VM.
 #
 # Ported alongside scripts/benchmark-sessions/lib/runner.py (which pushes this
-# script to ON VMs and runs it). Adapted to tk conventions: builds the tk Node
+# script to ON VMs and runs it). Adapted to ctx conventions: builds the ctx Node
 # CLI from the deployed codebase and installs the Claude Code command-rewrite
-# hook so every command Claude runs is routed through tk.
+# hook so every command Claude runs is routed through ctx.
 set -euo pipefail
 
 CODEBASE_DIR="${CODEBASE_DIR:-/home/ubuntu/codebase}"
 
-echo "[setup-tk] Installing pnpm (if missing)..."
+echo "[setup-ctx] Installing pnpm (if missing)..."
 if ! command -v pnpm >/dev/null 2>&1; then
   curl -fsSL https://get.pnpm.io/install.sh | sh -
   export PATH="$HOME/.local/share/pnpm:$PATH"
 fi
 
-echo "[setup-tk] Building tk from $CODEBASE_DIR..."
+echo "[setup-ctx] Building ctx from $CODEBASE_DIR..."
 cd "$CODEBASE_DIR"
 pnpm install --frozen-lockfile
 pnpm build
 
-echo "[setup-tk] Linking tk globally..."
+echo "[setup-ctx] Linking ctx globally..."
 pnpm link --global
 
-echo "[setup-tk] Installing Claude Code command-rewrite hook..."
-# Route every Bash command Claude issues through `tk` so its output is filtered.
+echo "[setup-ctx] Installing Claude Code command-rewrite hook..."
+# Route every Bash command Claude issues through `ctx` so its output is filtered.
 HOOK_DIR="$HOME/.claude"
 mkdir -p "$HOOK_DIR"
 cat > "$HOOK_DIR/settings.json" <<'JSON'
@@ -34,7 +34,7 @@ cat > "$HOOK_DIR/settings.json" <<'JSON'
       {
         "matcher": "Bash",
         "hooks": [
-          { "type": "command", "command": "tk rewrite" }
+          { "type": "command", "command": "ctx rewrite" }
         ]
       }
     ]
@@ -42,4 +42,4 @@ cat > "$HOOK_DIR/settings.json" <<'JSON'
 }
 JSON
 
-echo "[setup-tk] tk ready: $(tk --version)"
+echo "[setup-ctx] ctx ready: $(ctx --version)"

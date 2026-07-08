@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 #
-# test-install.sh — verify tk can be built, installed, and runs correctly
+# test-install.sh — verify ctx can be built, installed, and runs correctly
 # Ported from RTK scripts/test-install.sh
 #
 set -euo pipefail
@@ -43,10 +43,10 @@ fi
 # ── Step 3b: baked VERSION matches package.json (drift guard) ──
 #
 # The version is baked into the bundle at build time (tsdown `define`
-# __TK_VERSION__ ← package.json.version; see src/version.ts). If the manifest is
+# __CTX_VERSION__ ← package.json.version; see src/version.ts). If the manifest is
 # bumped but the shipped artifact carries a stale literal — or vice versa — the
 # CLI silently self-reports the wrong version (issue #45). Assert the freshly
-# built bundle's `tk --version` equals package.json.version so the manifest and
+# built bundle's `ctx --version` equals package.json.version so the manifest and
 # bundle can never diverge.
 
 PKG_VERSION=$(node -p "require('./package.json').version")
@@ -75,11 +75,11 @@ fi
 
 # ── Step 6: npm link round-trip ─────────────────────
 
-if npm link 2>/dev/null && tk --version >/dev/null 2>&1; then
-    pass "npm link && tk --version"
-    npm unlink -g token-killer 2>/dev/null || true
+if npm link 2>/dev/null && ctx --version >/dev/null 2>&1; then
+    pass "npm link && ctx --version"
+    npm unlink -g contexa 2>/dev/null || true
 else
-    pass "npm link && tk --version  ${YELLOW}(optional — skipped)${NC}"
+    pass "npm link && ctx --version  ${YELLOW}(optional — skipped)${NC}"
 fi
 
 # ── Report ──────────────────────────────────────────

@@ -1,9 +1,9 @@
 /**
- * Report generation for tk (token-killer) integration test results.
+ * Report generation for ctx (contexa) integration test results.
  *
- * Ported from rtk/scripts/benchmark/lib/report.ts and adapted to tk conventions:
+ * Ported from rtk/scripts/benchmark/lib/report.ts and adapted to ctx conventions:
  *   - Bun.write replaced with Node fs/promises writeFile.
- *   - Labels renamed rtk -> tk. "Binary" line reports the dist/cli.js artifact size.
+ *   - Labels renamed rtk -> ctx. "Binary" line reports the dist/cli.js artifact size.
  */
 
 import { writeFile } from "node:fs/promises";
@@ -26,7 +26,7 @@ export function generateReport(buildInfo: BuildInfo): string {
   const lines: string[] = [];
 
   lines.push("======================================================");
-  lines.push("        TK INTEGRATION TEST REPORT");
+  lines.push("        CTX INTEGRATION TEST REPORT");
   lines.push("======================================================");
   lines.push("");
   lines.push(`Date:    ${new Date().toISOString()}`);
@@ -80,8 +80,7 @@ export function generateReport(buildInfo: BuildInfo): string {
   const savingsResults = results.filter((r) => r.savings !== undefined);
   if (savingsResults.length > 0) {
     const avgSavings = Math.round(
-      savingsResults.reduce((sum, r) => sum + (r.savings ?? 0), 0) /
-        savingsResults.length,
+      savingsResults.reduce((sum, r) => sum + (r.savings ?? 0), 0) / savingsResults.length,
     );
     const minSavings = Math.min(...savingsResults.map((r) => r.savings ?? 100));
     const maxSavings = Math.max(...savingsResults.map((r) => r.savings ?? 0));
@@ -105,10 +104,7 @@ export function generateReport(buildInfo: BuildInfo): string {
 }
 
 /** Save report to file */
-export async function saveReport(
-  buildInfo: BuildInfo,
-  outPath: string,
-): Promise<string> {
+export async function saveReport(buildInfo: BuildInfo, outPath: string): Promise<string> {
   const report = generateReport(buildInfo);
   await writeFile(outPath, report);
   console.log(`\nReport saved to: ${outPath}`);

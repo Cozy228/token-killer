@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 #
-# tk Smoke Test Suite
-# Ported from RTK scripts/test-all.sh — exercises every tk command.
+# ctx Smoke Test Suite
+# Ported from RTK scripts/test-all.sh — exercises every ctx command.
 # Exit code: number of failures (0 = all green)
 #
 set -euo pipefail
@@ -123,7 +123,7 @@ assert_exit() {
 # assert_ok plus one-or-more assert_contains, which spawned the tool 2–4× per
 # logical check. Conditions precede `--`; the command follows.
 #
-#   assert_run "tk git status" ok has:"* " has:"package.json" -- $TK git status
+#   assert_run "ctx git status" ok has:"* " has:"package.json" -- $CTX git status
 #
 # Specs (any order, before `--`):
 #   ok        exit code must be 0
@@ -201,26 +201,26 @@ section() {
 # (e.g. `ls .` under Ls, Global flags, and Gain), so dedup would mask their output
 # and break the assertions. Own the opt-out here rather than relying on the CI job
 # to set it, so `bash tests/smoke/smoke.sh` is self-contained everywhere.
-export TK_SESSION_DEDUP=0
+export CTX_SESSION_DEDUP=0
 
-TK=""
+CTX=""
 
 find_tk() {
     if [ -f "./dist/cli.js" ]; then
-        TK="node ./dist/cli.js"
-    elif command -v tk >/dev/null 2>&1; then
-        TK="tk"
+        CTX="node ./dist/cli.js"
+    elif command -v ctx >/dev/null 2>&1; then
+        CTX="ctx"
     else
-        echo "tk binary not found. Run: pnpm run build"
+        echo "ctx binary not found. Run: pnpm run build"
         exit 1
     fi
 }
 
 find_tk
 
-printf "${BOLD}tk Smoke Test Suite${NC}\n"
-printf "Binary: %s\n" "$TK"
-printf "Version: %s\n" "$($TK --version 2>&1)"
+printf "${BOLD}ctx Smoke Test Suite${NC}\n"
+printf "Binary: %s\n" "$CTX"
+printf "Version: %s\n" "$($CTX --version 2>&1)"
 printf "Date: %s\n" "$(date '+%Y-%m-%d %H:%M')"
 
 if ! git rev-parse --is-inside-work-tree >/dev/null 2>&1; then
@@ -232,8 +232,8 @@ fi
 
 section "Version & Help"
 
-assert_contains "tk --version" "0." $TK --version
-assert_contains "tk --help" "Usage:" $TK --help
+assert_contains "ctx --version" "0." $CTX --version
+assert_contains "ctx --help" "Usage:" $CTX --help
 
 # ── 2. Ls ────────────────────────────────────────────
 
@@ -241,26 +241,26 @@ section "Ls"
 
 # H17: node_modules is not listed as a normal entry but DISCLOSED in a counted
 # "hidden" line (never silently dropped), so it appears under that disclosure.
-assert_run "tk ls ." ok has:"package.json" has:"hidden" -- $TK ls .
-assert_run "tk ls src/" ok -- $TK ls src/
+assert_run "ctx ls ." ok has:"package.json" has:"hidden" -- $CTX ls .
+assert_run "ctx ls src/" ok -- $CTX ls src/
 
 # ── 3. Read / Cat ────────────────────────────────────
 
 section "Read / Cat"
 
-assert_run "tk cat package.json" ok has:"token-killer" -- $TK cat package.json
-assert_run "tk cat README.md" ok has:"tk" -- $TK cat README.md
-assert_run "tk read aggressive" ok has:"Symbols:" -- $TK read --level aggressive tests/integration/cli.test.ts
+assert_run "ctx cat package.json" ok has:"contexa" -- $CTX cat package.json
+assert_run "ctx cat README.md" ok has:"ctx" -- $CTX cat README.md
+assert_run "ctx read aggressive" ok has:"Symbols:" -- $CTX read --level aggressive tests/integration/cli.test.ts
 
 # ── 4. Git ───────────────────────────────────────────
 
 section "Git"
 
-assert_run "tk git status" ok has:"* " -- $TK git status
-assert_ok      "tk git log"                     $TK git log
-assert_ok      "tk git log -5"                  $TK git log -- -5
-assert_ok      "tk git diff"                    $TK git diff
-assert_run "tk git branch" ok has:"*" -- $TK git branch
+assert_run "ctx git status" ok has:"* " -- $CTX git status
+assert_ok      "ctx git log"                     $CTX git log
+assert_ok      "ctx git log -5"                  $CTX git log -- -5
+assert_ok      "ctx git diff"                    $CTX git diff
+assert_run "ctx git branch" ok has:"*" -- $CTX git branch
 
 # ── 5. Diff ──────────────────────────────────────────
 
@@ -269,21 +269,21 @@ section "Diff"
 DIFF_DIR="$(mktemp -d)"
 printf "export const value = 1;\n" > "$DIFF_DIR/old.ts"
 printf "export const value = 1;\nexport const extra = 2;\n" > "$DIFF_DIR/new.ts"
-# `tk diff` exits 1 when the files differ (mirrors real diff), so these tolerate a
+# `ctx diff` exits 1 when the files differ (mirrors real diff), so these tolerate a
 # non-zero exit and assert on the compressed output.
-assert_contains_anyexit "tk diff files"         "->" $TK diff "$DIFF_DIR/old.ts" "$DIFF_DIR/new.ts"
-assert_contains_anyexit "tk diff summary"       "+1 -0" $TK diff "$DIFF_DIR/old.ts" "$DIFF_DIR/new.ts"
-assert_contains_anyexit "tk diff added line"    "export const extra = 2;" $TK diff "$DIFF_DIR/old.ts" "$DIFF_DIR/new.ts"
+assert_contains_anyexit "ctx diff files"         "->" $CTX diff "$DIFF_DIR/old.ts" "$DIFF_DIR/new.ts"
+assert_contains_anyexit "ctx diff summary"       "+1 -0" $CTX diff "$DIFF_DIR/old.ts" "$DIFF_DIR/new.ts"
+assert_contains_anyexit "ctx diff added line"    "export const extra = 2;" $CTX diff "$DIFF_DIR/old.ts" "$DIFF_DIR/new.ts"
 rm -rf "$DIFF_DIR"
 
 # ── 6. Grep / Search ─────────────────────────────────
 
 section "Grep / Search"
 
-assert_ok      "tk rg 'export' src/"            $TK rg "export" src/
-assert_ok      "tk grep -r 'export' src/"       $TK grep -r "export" src/
-assert_contains "tk rg shows matches"           "src/" $TK rg "import" src/
-assert_ok      "tk rg with path"                $TK rg "handler" src/handlers/
+assert_ok      "ctx rg 'export' src/"            $CTX rg "export" src/
+assert_ok      "ctx grep -r 'export' src/"       $CTX grep -r "export" src/
+assert_contains "ctx rg shows matches"           "src/" $CTX rg "import" src/
+assert_ok      "ctx rg with path"                $CTX rg "handler" src/handlers/
 
 # ── 7. Find ──────────────────────────────────────────
 
@@ -295,14 +295,14 @@ section "Find"
 # survives in the small-input raw-passthrough mode.
 #
 # `find` on Windows is System32 find.exe (a text-search tool), not GNU find — `-name`
-# isn't valid there and tk's GNU-find compression isn't exercisable, so skip rather
+# isn't valid there and ctx's GNU-find compression isn't exercisable, so skip rather
 # than assert POSIX output. (smoke runs under git-bash, so uname reports MINGW/MSYS.)
 case "$(uname -s)" in
   MINGW* | MSYS* | CYGWIN*)
-    skip_test "tk find src -name '*.ts'" "find is find.exe on Windows"
+    skip_test "ctx find src -name '*.ts'" "find is find.exe on Windows"
     ;;
   *)
-    assert_run "tk find src -name '*.ts'" ok has:"D:" -- $TK find src -name "*.ts"
+    assert_run "ctx find src -name '*.ts'" ok has:"D:" -- $CTX find src -name "*.ts"
     ;;
 esac
 
@@ -310,57 +310,57 @@ esac
 
 section "Generic passthrough (shim-invoked)"
 
-# Post-U2 hardening: a DIRECT `tk <unknown>` errors and spawns nothing. Generic
+# Post-U2 hardening: a DIRECT `ctx <unknown>` errors and spawns nothing. Generic
 # passthrough runs only when the shell resolved a real tool through the shim
-# (TK_SHIM_DIR set), so these exercise it as shim-invoked.
-export TK_SHIM_DIR="${TMPDIR:-/tmp}/tk-smoke-fake-shim"
-assert_run "tk echo hello" ok has:"hello" -- $TK echo hello
-assert_run "tk node -e console.log" ok has:"rtk-style" -- $TK node -e "console.log('rtk-style')"
-unset TK_SHIM_DIR
+# (CTX_SHIM_DIR set), so these exercise it as shim-invoked.
+export CTX_SHIM_DIR="${TMPDIR:-/tmp}/ctx-smoke-fake-shim"
+assert_run "ctx echo hello" ok has:"hello" -- $CTX echo hello
+assert_run "ctx node -e console.log" ok has:"rtk-style" -- $CTX node -e "console.log('rtk-style')"
+unset CTX_SHIM_DIR
 
 # Direct (no shim): an unknown command must error, never auto-spawn a PATH binary.
-assert_fails   "tk <unknown> errors (U2)"       $TK definitely-not-a-real-tool-xyz
+assert_fails   "ctx <unknown> errors (U2)"       $CTX definitely-not-a-real-tool-xyz
 
 # ── 9. Global flags ─────────────────────────────────
 
 section "Global flags"
 
-assert_contains "tk --stats shows savings"      "## Token Savings" $TK --stats ls .
-assert_run "tk --raw ls" ok has:"package.json" -- $TK --raw ls .
-assert_ok      "tk --max-lines 5 ls"            $TK --max-lines 5 ls .
-assert_ok      "tk --max-chars 500 ls"          $TK --max-chars 500 ls .
-assert_ok      "tk --save-raw ls"               $TK --save-raw ls .
-assert_ok      "tk --no-save-raw ls"            $TK --no-save-raw ls .
+assert_contains "ctx --stats shows savings"      "## Token Savings" $CTX --stats ls .
+assert_run "ctx --raw ls" ok has:"package.json" -- $CTX --raw ls .
+assert_ok      "ctx --max-lines 5 ls"            $CTX --max-lines 5 ls .
+assert_ok      "ctx --max-chars 500 ls"          $CTX --max-chars 500 ls .
+assert_ok      "ctx --save-raw ls"               $CTX --save-raw ls .
+assert_ok      "ctx --no-save-raw ls"            $CTX --no-save-raw ls .
 
 # ── 10. Gain (savings report) ────────────────────────
 
 section "Gain"
 
-assert_run "tk gain --text" ok has:"Token Savings" -- $TK gain --text
-assert_run "tk gain --json" ok has:'"commands"' -- $TK gain --json
-assert_run "tk gain --csv" ok has:"commands,input_tokens,output_tokens,saved_tokens,savings_pct" -- $TK gain --csv
-assert_contains "tk gain default → HTML"        "Generated HTML report" env TK_NO_OPEN=1 $TK gain
+assert_run "ctx gain --text" ok has:"Token Savings" -- $CTX gain --text
+assert_run "ctx gain --json" ok has:'"commands"' -- $CTX gain --json
+assert_run "ctx gain --csv" ok has:"commands,input_tokens,output_tokens,saved_tokens,savings_pct" -- $CTX gain --csv
+assert_contains "ctx gain default → HTML"        "Generated HTML report" env CTX_NO_OPEN=1 $CTX gain
 
 # ── 11. Error handling ──────────────────────────────
 
 section "Error handling"
 
-# Bare `tk` prints the command list (like --help) and exits 0 by design.
-assert_contains "tk (no command) prints help"   "Commands:" $TK
-# Exit-code passthrough is a shim-invoked concern (a direct `tk node` errors, U2).
-export TK_SHIM_DIR="${TMPDIR:-/tmp}/tk-smoke-fake-shim"
-assert_exit    "tk exit code passthrough" 7     $TK node -e "process.exit(7)"
-assert_exit    "tk failed command" 1            $TK node -e "process.exit(1)"
-unset TK_SHIM_DIR
+# Bare `ctx` prints the command list (like --help) and exits 0 by design.
+assert_contains "ctx (no command) prints help"   "Commands:" $CTX
+# Exit-code passthrough is a shim-invoked concern (a direct `ctx node` errors, U2).
+export CTX_SHIM_DIR="${TMPDIR:-/tmp}/ctx-smoke-fake-shim"
+assert_exit    "ctx exit code passthrough" 7     $CTX node -e "process.exit(7)"
+assert_exit    "ctx failed command" 1            $CTX node -e "process.exit(1)"
+unset CTX_SHIM_DIR
 
 # ── 12. Tsc (conditional) ───────────────────────────
 
 section "Tsc (TypeScript)"
 
 if command -v tsc >/dev/null 2>&1; then
-    assert_ok   "tk tsc --noEmit"              $TK tsc --noEmit
+    assert_ok   "ctx tsc --noEmit"              $CTX tsc --noEmit
 else
-    skip_test "tk tsc" "tsc not installed"
+    skip_test "ctx tsc" "tsc not installed"
 fi
 
 # ── 13. Python (conditional) ────────────────────────
@@ -368,27 +368,27 @@ fi
 section "Python (conditional)"
 
 if command -v pytest >/dev/null 2>&1; then
-    assert_ok   "tk pytest --version"           $TK pytest --version
+    assert_ok   "ctx pytest --version"           $CTX pytest --version
 else
-    skip_test "tk pytest" "pytest not installed"
+    skip_test "ctx pytest" "pytest not installed"
 fi
 
 if command -v ruff >/dev/null 2>&1; then
-    assert_ok   "tk ruff --version"             $TK ruff --version
+    assert_ok   "ctx ruff --version"             $CTX ruff --version
 else
-    skip_test "tk ruff" "ruff not installed"
+    skip_test "ctx ruff" "ruff not installed"
 fi
 
 if command -v pip >/dev/null 2>&1; then
-    assert_ok   "tk pip --version"              $TK pip --version
+    assert_ok   "ctx pip --version"              $CTX pip --version
 else
-    skip_test "tk pip" "pip not installed"
+    skip_test "ctx pip" "pip not installed"
 fi
 
 if command -v mypy >/dev/null 2>&1; then
-    assert_ok   "tk mypy --version"             $TK mypy --version
+    assert_ok   "ctx mypy --version"             $CTX mypy --version
 else
-    skip_test "tk mypy" "mypy not installed"
+    skip_test "ctx mypy" "mypy not installed"
 fi
 
 # ── 14. JS Testing (conditional) ────────────────────
@@ -396,15 +396,15 @@ fi
 section "JS Testing (conditional)"
 
 if command -v vitest >/dev/null 2>&1; then
-    assert_ok   "tk vitest --version"           $TK vitest --version
+    assert_ok   "ctx vitest --version"           $CTX vitest --version
 else
-    skip_test "tk vitest" "vitest not installed"
+    skip_test "ctx vitest" "vitest not installed"
 fi
 
 if command -v jest >/dev/null 2>&1; then
-    assert_ok   "tk jest --version"             $TK jest --version
+    assert_ok   "ctx jest --version"             $CTX jest --version
 else
-    skip_test "tk jest" "jest not installed"
+    skip_test "ctx jest" "jest not installed"
 fi
 
 # ── 15. ESLint (conditional) ────────────────────────
@@ -412,58 +412,58 @@ fi
 section "ESLint (conditional)"
 
 if command -v eslint >/dev/null 2>&1; then
-    assert_ok   "tk eslint --version"           $TK eslint --version
+    assert_ok   "ctx eslint --version"           $CTX eslint --version
 else
-    skip_test "tk eslint" "eslint not installed"
+    skip_test "ctx eslint" "eslint not installed"
 fi
 
 # ── 16. Npm / Pnpm (conditional) ────────────────────
 
 section "Npm / Pnpm (conditional)"
 
-assert_ok      "tk npm --version"               $TK npm --version
-assert_contains "tk npm list"                   "packages" $TK npm list --depth=0 2>&1 || true
-assert_ok      "tk pnpm --version"              $TK pnpm --version
-assert_ok      "tk pnpm list"                   $TK pnpm list --depth=0 2>&1 || true
+assert_ok      "ctx npm --version"               $CTX npm --version
+assert_contains "ctx npm list"                   "packages" $CTX npm list --depth=0 2>&1 || true
+assert_ok      "ctx pnpm --version"              $CTX pnpm --version
+assert_ok      "ctx pnpm list"                   $CTX pnpm list --depth=0 2>&1 || true
 
 # ── 17. Java (conditional) ──────────────────────────
 
 section "Java (conditional)"
 
 if command -v mvn >/dev/null 2>&1; then
-    assert_ok "tk mvn --version"                $TK mvn --version
+    assert_ok "ctx mvn --version"                $CTX mvn --version
 else
-    skip_test "tk mvn" "maven not installed"
+    skip_test "ctx mvn" "maven not installed"
 fi
 
 if command -v gradle >/dev/null 2>&1; then
-    assert_ok "tk gradle --version"             $TK gradle --version
+    assert_ok "ctx gradle --version"             $CTX gradle --version
 else
-    skip_test "tk gradle" "gradle not installed"
+    skip_test "ctx gradle" "gradle not installed"
 fi
 
 if command -v javac >/dev/null 2>&1; then
-    assert_ok "tk javac -version"               $TK javac -version
+    assert_ok "ctx javac -version"               $CTX javac -version
 else
-    skip_test "tk javac" "javac not installed"
+    skip_test "ctx javac" "javac not installed"
 fi
 
 # ── 18. Large output compression ────────────────────
 
 section "Large output passthrough"
 
-# Shim-invoked passthrough (a direct `tk node` errors post-U2).
-export TK_SHIM_DIR="${TMPDIR:-/tmp}/tk-smoke-fake-shim"
-LARGE_OUT=$($TK node -e "for(let i=0;i<200;i++) console.log('line '+i)" 2>&1)
-unset TK_SHIM_DIR
+# Shim-invoked passthrough (a direct `ctx node` errors post-U2).
+export CTX_SHIM_DIR="${TMPDIR:-/tmp}/ctx-smoke-fake-shim"
+LARGE_OUT=$($CTX node -e "for(let i=0;i<200;i++) console.log('line '+i)" 2>&1)
+unset CTX_SHIM_DIR
 LARGE_OUT_LINES="$(printf "%s\n" "$LARGE_OUT" | wc -l | tr -d ' ')"
 if [ "$LARGE_OUT_LINES" -eq 200 ]; then
     PASS=$((PASS + 1))
-    printf "  ${GREEN}PASS${NC}  %s\n" "tk passes through large generic output"
+    printf "  ${GREEN}PASS${NC}  %s\n" "ctx passes through large generic output"
 else
     FAIL=$((FAIL + 1))
-    FAILURES+=("tk passes through large generic output")
-    printf "  ${RED}FAIL${NC}  %s (expected 200 lines, got %s)\n" "tk passes through large generic output" "$LARGE_OUT_LINES"
+    FAILURES+=("ctx passes through large generic output")
+    printf "  ${RED}FAIL${NC}  %s (expected 200 lines, got %s)\n" "ctx passes through large generic output" "$LARGE_OUT_LINES"
 fi
 
 # ══════════════════════════════════════════════════════

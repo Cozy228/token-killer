@@ -14,21 +14,21 @@ import { recordHistory } from "../../../src/core/history.js";
 import type { FilteredResult, RawResult, TkOptions } from "../../../src/types.js";
 
 let home: string;
-const previousHome = process.env.TOKEN_KILLER_HOME;
-const previousNoHistory = process.env.TK_NO_HISTORY;
+const previousHome = process.env.CONTEXA_HOME;
+const previousNoHistory = process.env.CTX_NO_HISTORY;
 
 beforeEach(() => {
-  home = mkdtempSync(join(tmpdir(), "tk-hist-slim-"));
-  process.env.TOKEN_KILLER_HOME = home;
-  delete process.env.TK_NO_HISTORY;
+  home = mkdtempSync(join(tmpdir(), "ctx-hist-slim-"));
+  process.env.CONTEXA_HOME = home;
+  delete process.env.CTX_NO_HISTORY;
   resetFingerprintCacheForTests();
 });
 
 afterEach(() => {
-  if (previousHome === undefined) delete process.env.TOKEN_KILLER_HOME;
-  else process.env.TOKEN_KILLER_HOME = previousHome;
-  if (previousNoHistory === undefined) delete process.env.TK_NO_HISTORY;
-  else process.env.TK_NO_HISTORY = previousNoHistory;
+  if (previousHome === undefined) delete process.env.CONTEXA_HOME;
+  else process.env.CONTEXA_HOME = previousHome;
+  if (previousNoHistory === undefined) delete process.env.CTX_NO_HISTORY;
+  else process.env.CTX_NO_HISTORY = previousNoHistory;
   rmSync(home, { recursive: true, force: true });
 });
 
@@ -57,7 +57,7 @@ function options(cwd: string): TkOptions {
 
 describe("projectFingerprint memoization (2.4a)", () => {
   test("computes once per cwd and ignores a mid-run git-layout change until reset", () => {
-    const repo = mkdtempSync(join(tmpdir(), "tk-fp-repo-"));
+    const repo = mkdtempSync(join(tmpdir(), "ctx-fp-repo-"));
     const sub = join(repo, "sub");
     mkdirSync(sub);
     try {
@@ -114,14 +114,14 @@ describe("recordHistory fs-op slimming (2.4)", () => {
     expect(rows).toHaveLength(1); // the second row, re-created after the ENOENT self-heal
   });
 
-  test("TK_NO_HISTORY=1 suppresses the row (2.4e)", async () => {
+  test("CTX_NO_HISTORY=1 suppresses the row (2.4e)", async () => {
     const cwd = join(home, "workspace");
-    process.env.TK_NO_HISTORY = "1";
+    process.env.CTX_NO_HISTORY = "1";
     await recordHistory(raw(), filtered(), options(cwd));
     expect(existsSync(historyFile(cwd))).toBe(false);
 
     // Falsy values do NOT disable history.
-    process.env.TK_NO_HISTORY = "0";
+    process.env.CTX_NO_HISTORY = "0";
     await recordHistory(raw(), filtered(), options(cwd));
     expect(existsSync(historyFile(cwd))).toBe(true);
   });

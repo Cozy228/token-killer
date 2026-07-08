@@ -3,7 +3,7 @@
 // carry sanitized labels and counts only — never raw evidence.
 //
 // Advice LEADS with a delivery recommendation (the shim-primary model makes "how
-// is `tk` even reaching this host?" the first question), then per-command and
+// is `ctx` even reaching this host?" the first question), then per-command and
 // governance findings.
 
 import { LONG_PROMPT_CHARS, type HabitStats } from "./habits.js";
@@ -46,9 +46,9 @@ function clampConfidence(n: number): number {
   return Math.max(0, Math.min(0.99, Number(n.toFixed(2))));
 }
 
-// Shell opportunities the proxy could compress but were run raw (key !== "tk").
+// Shell opportunities the proxy could compress but were run raw (key !== "ctx").
 function compressibleRaw(scan: ScanResult): Opportunity[] {
-  return scan.opportunities.filter((o) => o.kind === "shell" && o.compressible && o.key !== "tk");
+  return scan.opportunities.filter((o) => o.kind === "shell" && o.compressible && o.key !== "ctx");
 }
 
 // Total invocations across opportunities in the given tool categories.
@@ -67,7 +67,7 @@ function workflowGapFindings(scan: ScanResult, opts: AdviceOptions): AdviceFindi
   const out: AdviceFinding[] = [];
 
   // storage-discovery: sessions exist on disk but NOTHING analyzable came out of
-  // them — the transcripts are stored somewhere tk did not look, or in a format the
+  // them — the transcripts are stored somewhere ctx did not look, or in a format the
   // reader could not descend. This is exactly the "inspect is empty" symptom; tell
   // the user where coverage broke rather than silently reporting nothing.
   if (scan.tool_event_count === 0 && scan.session_inventory >= opts.minOccurrences) {
@@ -121,27 +121,27 @@ function deliveryFinding(scan: ScanResult, rawTotal: number): AdviceFinding {
   if (scan.inputType === "copilot-cli") {
     return {
       type: "delivery",
-      title: "Wire the Copilot CLI hook so commands flow through tk",
-      detail: `${rawTotal} compressible terminal commands ran raw (no tk prefix).`,
+      title: "Wire the Copilot CLI hook so commands flow through ctx",
+      detail: `${rawTotal} compressible terminal commands ran raw (no ctx prefix).`,
       occurrences: rawTotal,
       confidence: 0.9,
       recommendation:
-        "Run `tk install --host copilot-cli` to install the rewrite hook, then apply the per-command rewrites below.",
+        "Run `ctx install --host copilot-cli` to install the rewrite hook, then apply the per-command rewrites below.",
     };
   }
   // vscode (default): the Copilot-CLI hook does not fire here — the shim is the
   // only deterministic delivery path.
   return {
     type: "delivery",
-    title: "Install the Token Killer shim so VS Code commands flow through tk",
-    detail: `${rawTotal} compressible terminal commands ran raw (no tk prefix). VS Code cannot use the Copilot-CLI hook; the shim is the deterministic path.`,
+    title: "Install the Contexa shim so VS Code commands flow through ctx",
+    detail: `${rawTotal} compressible terminal commands ran raw (no ctx prefix). VS Code cannot use the Copilot-CLI hook; the shim is the deterministic path.`,
     occurrences: rawTotal,
     confidence: 0.9,
-    recommendation: "Run `tk install` (installs the PATH shim) and restart VS Code.",
+    recommendation: "Run `ctx install` (installs the PATH shim) and restart VS Code.",
   };
 }
 
-// Habit-based cost tips — tk's `/chronicle cost tips`. Each tip is grounded in a
+// Habit-based cost tips — ctx's `/chronicle cost tips`. Each tip is grounded in a
 // published token-cost best practice (cited in the recommendation), and fires only
 // from privacy-safe COUNTS/LENGTHS the habit analyzer collected. `occurrences` is
 // set to a naturally-large representative count so a real habit clears the generic
@@ -257,11 +257,11 @@ export function buildAdvice(
     if (o.count < opts.minOccurrences) continue;
     findings.push({
       type: "shell-noise",
-      title: `Prefer \`tk ${o.key}\` over raw \`${o.key}\``,
+      title: `Prefer \`ctx ${o.key}\` over raw \`${o.key}\``,
       detail: `\`${o.key}\` ran ${o.count}× producing ~${o.total_output_tokens} tokens of output.`,
       occurrences: o.count,
       confidence: clampConfidence(0.6 + o.count * 0.04),
-      recommendation: `Use \`tk ${o.key}\` — the proxy compresses its output losslessly.`,
+      recommendation: `Use \`ctx ${o.key}\` — the proxy compresses its output losslessly.`,
     });
   }
 
@@ -307,7 +307,7 @@ export function buildAdvice(
         confidence: 0.7,
         recommendation:
           o.kind === "shell"
-            ? `Run via \`tk ${o.key}\` to cut output, or add a filter/limit.`
+            ? `Run via \`ctx ${o.key}\` to cut output, or add a filter/limit.`
             : "Narrow the request (range/scope) to reduce output volume.",
       });
     }
@@ -357,7 +357,7 @@ export function renderAdviceMarkdown(findings: AdviceFinding[]): string {
 
 // The persisted advice file (DESIGN §10.4). Generated marker in the header.
 export function renderAdviceFile(findings: AdviceFinding[]): string {
-  const lines: string[] = ["# CLI Corrections (generated by tk inspect)", ""];
+  const lines: string[] = ["# CLI Corrections (generated by ctx inspect)", ""];
   if (findings.length === 0) {
     lines.push("_No high-confidence corrections detected._", "");
     return lines.join("\n");

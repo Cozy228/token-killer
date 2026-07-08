@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-# check-installation.sh — verify tk is properly installed with all dependencies
+# check-installation.sh — verify ctx is properly installed with all dependencies
 # Ported from RTK scripts/check-installation.sh
 
 RED='\033[0;31m'
@@ -37,7 +37,7 @@ check_opt() {
     fi
 }
 
-echo "check-installation: verifying tk and dependencies..."
+echo "check-installation: verifying ctx and dependencies..."
 echo ""
 
 # Step 1: node >= 20
@@ -47,38 +47,38 @@ check "node >= 20" bash -c 'node -e "process.exit(parseInt(process.versions.node
 # Step 2: pnpm
 check "pnpm available" bash -c 'command -v pnpm >/dev/null 2>&1'
 
-# Step 3: tk binary
+# Step 3: ctx binary
 echo ""
-echo "--- tk binary ---"
-if command -v tk >/dev/null 2>&1; then
-    printf "  ${GREEN}PASS${NC}   tk (global command)\n"
+echo "--- ctx binary ---"
+if command -v ctx >/dev/null 2>&1; then
+    printf "  ${GREEN}PASS${NC}   ctx (global command)\n"
     PASS=$((PASS + 1))
-    TK_CMD="tk"
+    CTX_CMD="ctx"
 elif [ -x "dist/cli.js" ] && node -e "" 2>/dev/null; then
-    printf "  ${GREEN}PASS${NC}   tk via node dist/cli.js\n"
+    printf "  ${GREEN}PASS${NC}   ctx via node dist/cli.js\n"
     PASS=$((PASS + 1))
-    TK_CMD="node dist/cli.js"
+    CTX_CMD="node dist/cli.js"
 else
-    printf "  ${RED}FAIL${NC}   tk binary not found\n"
+    printf "  ${RED}FAIL${NC}   ctx binary not found\n"
     FAIL=$((FAIL + 1))
     EXIT_CODE=1
-    TK_CMD=""
+    CTX_CMD=""
 fi
 
-# Step 4: tk --version
+# Step 4: ctx --version
 echo ""
 echo "--- Version check ---"
-if [ -n "$TK_CMD" ]; then
-    if VERSION=$($TK_CMD --version 2>/dev/null || true); then
-        printf "  ${GREEN}PASS${NC}   tk version: %s\n" "$VERSION"
+if [ -n "$CTX_CMD" ]; then
+    if VERSION=$($CTX_CMD --version 2>/dev/null || true); then
+        printf "  ${GREEN}PASS${NC}   ctx version: %s\n" "$VERSION"
         PASS=$((PASS + 1))
     else
-        printf "  ${RED}FAIL${NC}   tk --version failed\n"
+        printf "  ${RED}FAIL${NC}   ctx --version failed\n"
         FAIL=$((FAIL + 1))
         EXIT_CODE=1
     fi
 else
-    printf "  ${RED}FAIL${NC}   tk --version skipped (no binary)\n"
+    printf "  ${RED}FAIL${NC}   ctx --version skipped (no binary)\n"
     FAIL=$((FAIL + 1))
     EXIT_CODE=1
 fi
@@ -119,7 +119,7 @@ if [ "$EXIT_CODE" -ne 0 ]; then
     echo "check-installation: ${RED}FAILED${NC} — critical checks did not pass."
 else
     echo ""
-    echo "check-installation: ${GREEN}OK${NC} — tk is ready."
+    echo "check-installation: ${GREEN}OK${NC} — ctx is ready."
 fi
 
 exit "$EXIT_CODE"

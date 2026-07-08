@@ -3,14 +3,14 @@
 A-spike: validate "saved tokens vs whole-session tokens" against REAL data.
 
 NOT production. Throwaway probe to expose the denominator (口径) problem before
-we commit to a `tk gain --session` design.
+we commit to a `ctx gain --session` design.
 
 Inputs (read-only):
-  - tk ledger:   ~/.token-killer/projects/<repo:hash>/history.jsonl  (saved_tokens, ts)
+  - ctx ledger:   ~/.contexa/projects/<repo:hash>/history.jsonl  (saved_tokens, ts)
   - CC sessions: ~/.claude/projects/<slug>/*.jsonl                   (message.usage, ts)
 
-The honest question: of everything the agent spent AFTER tk was onboarded,
-what fraction did tk save? The catch is what "everything" means once prompt
+The honest question: of everything the agent spent AFTER ctx was onboarded,
+what fraction did ctx save? The catch is what "everything" means once prompt
 caching re-reads the same context every turn. We print several denominators
 side by side so the choice is explicit, not accidental.
 """
@@ -19,9 +19,9 @@ from datetime import datetime
 
 HOME = os.path.expanduser("~")
 REPO_HASH = sys.argv[1] if len(sys.argv) > 1 else "repo:a47085322e05"
-CC_SLUG   = sys.argv[2] if len(sys.argv) > 2 else "-Users-ziyu-Workspace-token-killer"
+CC_SLUG   = sys.argv[2] if len(sys.argv) > 2 else "-Users-ziyu-Workspace-contexa"
 
-TK_HISTORY = f"{HOME}/.token-killer/projects/{REPO_HASH}/history.jsonl"
+CTX_HISTORY = f"{HOME}/.contexa/projects/{REPO_HASH}/history.jsonl"
 CC_GLOB    = f"{HOME}/.claude/projects/{CC_SLUG}/*.jsonl"
 
 # Anthropic prompt-cache price multipliers (relative to base input price).
@@ -33,10 +33,10 @@ def parse_ts(s):
     try: return datetime.fromisoformat(s.replace("Z", "+00:00"))
     except Exception: return None
 
-# ---- 1. tk ledger: total saved tokens + onboarding cutoff -------------------
+# ---- 1. ctx ledger: total saved tokens + onboarding cutoff -------------------
 saved = raw = outp = n_cmd = 0
 tk_min = tk_max = None
-with open(TK_HISTORY) as fh:
+with open(CTX_HISTORY) as fh:
     for line in fh:
         line = line.strip()
         if not line: continue
@@ -51,7 +51,7 @@ with open(TK_HISTORY) as fh:
             tk_min = ts if tk_min is None or ts < tk_min else tk_min
             tk_max = ts if tk_max is None or ts > tk_max else tk_max
 
-cutoff = tk_min  # "接入 tk 之后" = first observed tk command for this repo
+cutoff = tk_min  # "接入 ctx 之后" = first observed ctx command for this repo
 
 # ---- 2. CC sessions: sum real usage AFTER the cutoff ------------------------
 seen = set()
@@ -95,10 +95,10 @@ print("A-SPIKE: session-level savings on REAL data (throwaway)")
 print("=" * 68)
 print(f"repo hash      : {REPO_HASH}")
 print(f"cc slug        : {CC_SLUG}")
-print(f"tk cutoff (接入): {cutoff}")
-print(f"tk window      : {tk_min} .. {tk_max}")
+print(f"ctx cutoff (接入): {cutoff}")
+print(f"ctx window      : {tk_min} .. {tk_max}")
 print()
-print(f"tk ledger      : {n_cmd} cmds | raw={raw:,}  out={outp:,}  saved={saved:,} tok")
+print(f"ctx ledger      : {n_cmd} cmds | raw={raw:,}  out={outp:,}  saved={saved:,} tok")
 print(f"cc usage(>cut) : {turns} turns across {len(per_session)} sessions")
 print(f"  input_tokens          = {in_t:,}")
 print(f"  cache_creation_tokens = {cc_t:,}")
@@ -122,5 +122,5 @@ print("Per-session footprint (why history.jsonl needs session_id for real attrib
 for sid, fp in sorted(per_session.items(), key=lambda x: -x[1])[:8]:
     print(f"  {sid[:8]}  footprint={fp:,}")
 print()
-print("Note: correlation here is TIME-WINDOW only (tk history has no session_id).")
+print("Note: correlation here is TIME-WINDOW only (ctx history has no session_id).")
 print("      Adding session_id+host to history.jsonl => exact per-session join.")

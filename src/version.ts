@@ -1,5 +1,5 @@
 // `package.json`'s `version` is the single source of truth. tsdown's `define` replaces
-// `__TK_VERSION__` at build time with JSON.stringify(pkg.version) (see tsdown.config.mjs),
+// `__CTX_VERSION__` at build time with JSON.stringify(pkg.version) (see tsdown.config.mjs),
 // so a real build bakes in a compile-time literal and the version chunk reads no files.
 //
 // Under tsx/vitest there is no `define`, so the identifier is undefined; ONLY then do we
@@ -8,9 +8,9 @@
 // of fs I/O. Mirrors the build-arg pattern in src/telemetry/endpoint.ts.
 import { readFileSync } from "node:fs";
 
-declare const __TK_VERSION__: string | undefined;
+declare const __CTX_VERSION__: string | undefined;
 
 export const VERSION: string =
-  typeof __TK_VERSION__ !== "undefined"
-    ? __TK_VERSION__
+  typeof __CTX_VERSION__ !== "undefined"
+    ? __CTX_VERSION__
     : JSON.parse(readFileSync(new URL("../package.json", import.meta.url), "utf8")).version;

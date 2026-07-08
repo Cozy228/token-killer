@@ -8,12 +8,12 @@ import { parseGainArgs, runGain } from "../../../src/core/gain.js";
 import { recordHistory, readProjectMeta } from "../../../src/core/history.js";
 import type { FilteredResult, RawResult, TkOptions } from "../../../src/types.js";
 
-const previousHome = process.env.TOKEN_KILLER_HOME;
+const previousHome = process.env.CONTEXA_HOME;
 
 afterEach(() => {
   vi.restoreAllMocks();
-  if (previousHome === undefined) delete process.env.TOKEN_KILLER_HOME;
-  else process.env.TOKEN_KILLER_HOME = previousHome;
+  if (previousHome === undefined) delete process.env.CONTEXA_HOME;
+  else process.env.CONTEXA_HOME = previousHome;
 });
 
 function options(cwd: string): TkOptions {
@@ -47,8 +47,8 @@ function filtered(saved: number): FilteredResult {
 }
 
 async function withHome<T>(fn: (home: string) => Promise<T>): Promise<T> {
-  const home = await mkdtemp(path.join(tmpdir(), "tk-gain-"));
-  process.env.TOKEN_KILLER_HOME = home;
+  const home = await mkdtemp(path.join(tmpdir(), "ctx-gain-"));
+  process.env.CONTEXA_HOME = home;
   try {
     return await fn(home);
   } finally {
@@ -84,7 +84,7 @@ describe("parseGainArgs", () => {
 describe("runGain --json (ledger ① only)", () => {
   test("emits the measured object with no cross-ledger total", async () => {
     await withHome(async () => {
-      const cwd = path.join(process.env.TOKEN_KILLER_HOME!, "workspace");
+      const cwd = path.join(process.env.CONTEXA_HOME!, "workspace");
       await recordHistory(rawResult(), filtered(75), options(cwd));
 
       const cap = captureStdout();
@@ -103,7 +103,7 @@ describe("runGain --json (ledger ① only)", () => {
 
   test("--quota adds a heuristic sibling, never inside the measured object", async () => {
     await withHome(async () => {
-      const cwd = path.join(process.env.TOKEN_KILLER_HOME!, "workspace");
+      const cwd = path.join(process.env.CONTEXA_HOME!, "workspace");
       await recordHistory(rawResult(), filtered(75), options(cwd));
 
       const cap = captureStdout();
