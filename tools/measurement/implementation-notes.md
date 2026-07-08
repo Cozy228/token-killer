@@ -31,7 +31,7 @@ per-item acceptance self-verification. Authority on any conflict = the design do
   shares the origin's `.git` (the fix commit stays reachable — A2 fails) AND shares
   the ctx store shard, which is keyed by `git rev-parse --git-common-dir`
   (`packages/core/src/store/shard.ts:57-63`) — so it would collide with the REAL
-  `~/.ctx` store. `make-sandbox` instead extracts the tree via `git archive <sha> |
+  `~/.contexa` store. `make-sandbox` instead extracts the tree via `git archive <sha> |
   tar -x` into a fresh `git init` + single seed commit: the fix SHA is not even an
   object in the sandbox (A2 clean), and the sandbox gets its own common-dir ⇒ its
   own store shard (real store never touched).
@@ -50,7 +50,7 @@ per-item acceptance self-verification. Authority on any conflict = the design do
   (module resolution anchors to cli.ts, so cwd is free to be the sandbox). Since
   `ctx` is not on PATH inside a sandbox, arm B's `.mcp.json` registers an absolute
   `ctx-launch` wrapper (`{command:"<abs>/armB/ctx-launch", args:["mcp","--project",
-  "<abs>/armB/repo"], env:{CTX_HOME,HOME}}`), NOT `{command:"ctx"}` as §4 shows.
+  "<abs>/armB/repo"], env:{CONTEXA_HOME,HOME}}`), NOT `{command:"ctx"}` as §4 shows.
   The server is pinned to the FROZEN store at the canonical armB/repo so a per-rep
   scratch copy still serves the T-frozen context base.
 
@@ -86,7 +86,7 @@ per-item acceptance self-verification. Authority on any conflict = the design do
   `permission_denials` — all extracted per cell (smoke row confirmed).
 - **Headless `-p` does NOT append to `~/.claude/history.jsonl`** (measured: unchanged
   across two live cells). Less footprint than assumed.
-- **Path bug class (hit twice):** a relative `CTX_HOME` / `--mcp-config` / accept
+- **Path bug class (hit twice):** a relative `CONTEXA_HOME` / `--mcp-config` / accept
   script path is re-anchored against the CHILD process's cwd (the sandbox), landing
   artifacts inside the checkout or failing with 127 / "config not found". Fix:
   absolutize every path that crosses a subprocess-with-cwd boundary (`resolve()` at
@@ -143,7 +143,7 @@ fixes and one load-bearing finding about task authoring:
   post-commit `gc --auto` → ENOENT on a large tree like atlas); the A4 `fileMap`
   hashes bytes + records symlink targets + tolerates unreadable/special files
   (readFileSync-as-utf8 crashed on atlas binaries/symlinks). Every path crossing a
-  subprocess-with-cwd boundary is absolutized (a relative `CTX_HOME`/`--mcp-config`
+  subprocess-with-cwd boundary is absolutized (a relative `CONTEXA_HOME`/`--mcp-config`
   re-anchors against the child's cwd and lands artifacts inside the checkout).
 - **`grade-cell.ts`** exposes `$TK_MEASURE_DIR` so an accept_cmd can materialize a
   committed test asset (see below).

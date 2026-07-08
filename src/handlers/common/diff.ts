@@ -240,7 +240,7 @@ export const diffHandler: CommandHandler = {
       return executeCommand(command);
     }
     // A BARE `diff -` (the only operand is `-`) is the RTK convention for "condense a
-    // unified diff piped on stdin" (`git diff | tk diff -`), NOT a real diff — real
+    // unified diff piped on stdin" (`git diff | ctx diff -`), NOT a real diff — real
     // `diff -` errors with "missing operand". Read stdin so filter() can condense it.
     if (hasStdin) {
       return diffFromStdin(command);

@@ -115,9 +115,9 @@ Use the cloned reference material under `.research/memory` as evidence, not as t
 
 Required evidence classes:
 
-- Current ctx docs and code:
-  - `CTX-DESIGN.md`
-  - `CTX-IMPL.md`
+- Current Contexa docs and code:
+  - `CONTEXA-DESIGN.md`
+  - `CONTEXA-IMPL.md`
   - `packages/core/src/memory/*.ts`
   - relevant store/select/push files if needed
 - Tool practice (`.research/memory/` + `.research/memory/_hostdocs/`):
@@ -142,7 +142,7 @@ Required evidence classes:
 1. Purpose first. Start from ctx's job and costliest failures.
 2. Do not derive a universal theory of memory before discussing ctx.
 3. Do not copy a reference project's feature unless it survives ctx's invariants and failure priorities.
-4. Do not let current ctx implementation censor the research. It is evidence, not law.
+4. Do not let current Contexa implementation censor the research. It is evidence, not law.
 5. Do not recommend LLM/embedding/network-at-serve-time designs unless labeling them as consciously
    declined or future-out-of-scope.
 6. Prefer faithful, provenance-carrying, reviewable facts over adaptive-but-lossy memory.
@@ -152,7 +152,7 @@ Required evidence classes:
    implementation consequence.
 9. **Diverge before converging, per decision.** For each of the ten decisions, enumerate the plausible
    solution space widely (draw on biology, papers, and tool practice as divergent evidence) *before*
-   selecting a recommendation. The current ctx implementation must not narrow the option set — only the
+   selecting a recommendation. The current Contexa implementation must not narrow the option set — only the
    invariants and the failure priorities may. Record the options you considered and rejected.
 
 ## Subagent Plan

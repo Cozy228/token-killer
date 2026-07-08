@@ -7,8 +7,8 @@ then archive, per the slice-1/2/3/4 precedent. -->
 
 Work order: `MEMORY-SLICE5-GOAL-PROMPT.md` (5 scope items), under `MEMORY-SYNC-GOAL-PROMPT.md`
 (item 5 + hard invariants + acceptance bar), `MEMORY-DECISIONS.md` (E3, E4, D27/D30),
-`MEMORY-SYNC-SETTLEMENTS.md` (S8 matrix; the `.ctx/push.jsonc` = three-tier (b) and
-`.ctx/*.local.*` = three-tier (c) zone rows), and `MEMORY-SLICE4-NOTES.md` (the `surface`
+`MEMORY-SYNC-SETTLEMENTS.md` (S8 matrix; the `.contexa/push.jsonc` = three-tier (b) and
+`.contexa/*.local.*` = three-tier (c) zone rows), and `MEMORY-SLICE4-NOTES.md` (the `surface`
 fail-open advisory + the D2 shallow-clone handoff). Built directly on `feat/1.0.0 @ 8c05075`.
 
 ## Precondition waiver (O-17)
@@ -34,8 +34,8 @@ the durable-context requirement.
    `serve.ts`); every store-only test fixture now states the surface it means to test (see
    Deviations for the batch update + the two wrapper helpers).
 
-3. **Three-tier push config.** The shared committed `.ctx/push.jsonc` (project truth: pins/vetoes,
-   D27/D30) merges with a PERSONAL overlay `.ctx/push.local.jsonc` (the `.ctx/*.local.*` convention;
+3. **Three-tier push config.** The shared committed `.contexa/push.jsonc` (project truth: pins/vetoes,
+   D27/D30) merges with a PERSONAL overlay `.contexa/push.local.jsonc` (the `.contexa/*.local.*` convention;
    already gitignored by the memory scaffold's `*.local.jsonc` pattern). `mergePushConfig` is a
    deterministic merge (shared entries first, then overlay extras, de-duplicated). New readers reuse
    the existing `parsePushConfig` pipeline: `readPushConfig` (SHARED only — unchanged contract, used
@@ -44,9 +44,9 @@ the durable-context requirement.
    stdout, DISPLAY-ONLY — never placed into a host file. No write path from the personal layer into
    the committed file. See the Decision on why the placed block stays SHARED-only.
 
-4. **Per-repo opt-out knob (E4).** New `commitMemory` boolean on the shared `.ctx/push.jsonc`
+4. **Per-repo opt-out knob (E4).** New `commitMemory` boolean on the shared `.contexa/push.jsonc`
    (default `true`; `false` = this repo must not commit memory). Enforced at ONE chokepoint:
-   `MemoryFiles.localOnly` (read once at construction via `readMemoryOptOut(ctxRoot)`) redirects
+   `MemoryFiles.localOnly` (read once at construction via `readMemoryOptOut(contexaRoot)`) redirects
    EVERY write that logically targets the committed Mainline zone to the overlay
    (`appendMemory`/`appendDecision`), so nothing ever creates or appends the committed logs. Reads
    still address the literal zone (mainline reads stay empty; reindex never double-counts). This
@@ -85,9 +85,9 @@ the durable-context requirement.
   author's own digest too is the conservative privacy reading. See Open questions for the opt-out
   analogue.
 
-- **`commitMemory` lives on `.ctx/push.jsonc` (the shared config), read from `ctxRoot`, not
-  `projectRoot`.** Item 4 says "Knob location: the shared config (item 3)". `readMemoryOptOut(ctxRoot)`
-  keys on the `.ctx` dir so a sandbox-injected `MemoryFiles` reads its OWN `.ctx` — the living-repo
+- **`commitMemory` lives on `.contexa/push.jsonc` (the shared config), read from `contexaRoot`, not
+  `projectRoot`.** Item 4 says "Knob location: the shared config (item 3)". `readMemoryOptOut(contexaRoot)`
+  keys on the `.contexa` dir so a sandbox-injected `MemoryFiles` reads its OWN `.contexa` — the living-repo
   tests never read the real repo's config (the hard constraint). It is parsed only from the SHARED
   file; a personal overlay never opts a whole repo out (opt-out is project truth, taken from the
   shared layer in `mergePushConfig`).
@@ -157,7 +157,7 @@ the durable-context requirement.
 ## Self-verification (acceptance walk)
 
 Ran all three suites in the worktree:
-- core: `pnpm --filter @ctx/core test` → **421 passed | 2 todo (423)**, 47 files.
+- core: `pnpm --filter @contexa/core test` → **421 passed | 2 todo (423)**, 47 files.
 - cli: `pnpm --filter (cli) test` → **22 passed (5 files)**.
 - legacy (root): `pnpm test:product` → **1896 passed | 4 skipped (1900)**.
 - typecheck: `tsc --noEmit` green for both `packages/core` and `packages/cli`.

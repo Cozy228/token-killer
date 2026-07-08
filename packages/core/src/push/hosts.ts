@@ -1,5 +1,5 @@
 /**
- * Host adapters for push-block placement (CTX-IMPL §7).
+ * Host adapters for push-block placement (CONTEXA-IMPL §7).
  *
  * The two-file floor (P28-verified): root `AGENTS.md` (Codex CLI, Copilot CLI,
  * VS Code Copilot) + root `CLAUDE.md` (Claude Code, also auto-read by both

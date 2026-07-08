@@ -10,9 +10,9 @@
  *   - `unresolved-here` rendering (not stale, not down-ranked, push-excluded);
  *   - migration cold-path trigger idempotence via the adapter;
  *   - A11: warm memory dirtyCheck < 20 ms + serve < 150 ms on a large committed
- *     `.ctx/memory` fixture.
+ *     `.contexa/memory` fixture.
  *
- * Everything runs in a sandbox git repo under a temp CTX_HOME (G-7); no network,
+ * Everything runs in a sandbox git repo under a temp CONTEXA_HOME (G-7); no network,
  * no LLM (assertNoEgress stays armed). Injected `claudeHome` points at an empty
  * dir so the REAL host memory never leaks into these deterministic fixtures.
  */
@@ -54,7 +54,7 @@ function setup(root: string): { repo: string; store: Store; emptyHome: string } 
   writeFileSync(join(repo, "README.md"), "# fixture\n");
   git(["add", "-A"], repo);
   git(["commit", "-q", "-m", "init"], repo);
-  const store = openStore({ projectDir: repo, home: join(root, "ctx-home") });
+  const store = openStore({ projectDir: repo, home: join(root, "contexa-home") });
   const emptyHome = join(root, "empty-claude"); // resolveClaudeMemoryDir → undefined
   mkdirSync(emptyHome, { recursive: true });
   return { repo, store, emptyHome };
@@ -144,9 +144,9 @@ describe("acceptance: slice 4 — memory dirty source + import→overlay→confi
     // never shared) and reindexes → sees the promoted memory, active, no overlay.
     const peerCtx = join(root, "peer-ctx");
     mkdirSync(join(peerCtx, "memory", "details"), { recursive: true });
-    copyFileSync(join(repo, ".ctx", "memory", "log.md"), join(peerCtx, "memory", "log.md"));
+    copyFileSync(join(repo, ".contexa", "memory", "log.md"), join(peerCtx, "memory", "log.md"));
     copyFileSync(
-      join(repo, ".ctx", "memory", "decisions.md"),
+      join(repo, ".contexa", "memory", "decisions.md"),
       join(peerCtx, "memory", "decisions.md"),
     );
     const peerFiles = new MemoryFiles(peerCtx);
@@ -468,7 +468,7 @@ describe("acceptance: slice 4 — Codex post-merge review fixes (O-17/O-20)", ()
       true,
     );
     expect(files.readDecisions("mainline")).toHaveLength(0);
-    expect(existsSync(join(repo, ".ctx", "memory", "decisions.md"))).toBe(false);
+    expect(existsSync(join(repo, ".contexa", "memory", "decisions.md"))).toBe(false);
     store.close();
   });
 
@@ -495,7 +495,7 @@ describe("acceptance: slice 4 — Codex post-merge review fixes (O-17/O-20)", ()
     ).toBe(true);
     expect(files.readDecisions("mainline")).toHaveLength(0);
     // The committed decisions.md was never created / never mentions the id.
-    const committedDecPath = join(repo, ".ctx", "memory", "decisions.md");
+    const committedDecPath = join(repo, ".contexa", "memory", "decisions.md");
     if (existsSync(committedDecPath)) {
       expect(readFileSync(committedDecPath, "utf8")).not.toContain(ulidOf(r.entityId));
     }
@@ -545,7 +545,10 @@ describe("acceptance: slice 4 — Codex post-merge review fixes (O-17/O-20)", ()
     const dbPath = store.dbPath;
     store.close();
     const before = statSync(dbPath);
-    const check = checkMemoryOps({ projectRoot: join(root, "repo"), home: join(root, "ctx-home") });
+    const check = checkMemoryOps({
+      projectRoot: join(root, "repo"),
+      home: join(root, "contexa-home"),
+    });
     expect(check.detail).toContain("commit-memory");
     const after = statSync(dbPath);
     expect(after.mtimeMs).toBe(before.mtimeMs); // read-only: no mtime bump

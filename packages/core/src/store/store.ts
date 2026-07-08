@@ -1,7 +1,7 @@
 /**
- * The `Store` contract (CTX-IMPL §2/§3/§4) — pinned in slice 1b so 1c/1d/1e
+ * The `Store` contract (CONTEXA-IMPL §2/§3/§4) — pinned in slice 1b so 1c/1d/1e
  * build against ONE interface. SQLite-backed via node:sqlite; one DB per
- * project shard at $CTX_HOME/projects/<shard>/store.sqlite.
+ * project shard at $CONTEXA_HOME/projects/<shard>/store.sqlite.
  *
  * Invariants owned here:
  * - claims are append-only (no update/delete API exists, by design);
@@ -16,7 +16,7 @@ import { relative, isAbsolute, sep } from "node:path";
 import type { DatabaseSync } from "node:sqlite";
 import { openDatabase, openDatabaseReadOnly, transaction, iterateRows } from "./sqlite.ts";
 import { runMigrations } from "./migrate.ts";
-import { resolveShard, ctxHome, shardDir, storePath, type ShardResolution } from "./shard.ts";
+import { resolveShard, contexaHome, shardDir, storePath, type ShardResolution } from "./shard.ts";
 import { HANDLE_MIN_LEN, parseHandle, shortHandleCandidate } from "./handles.ts";
 import { blake2bHex } from "./hash.ts";
 import {
@@ -72,7 +72,7 @@ END;`;
 export interface OpenStoreOptions {
   /** Directory to resolve the project shard from (default: process.cwd()). */
   projectDir?: string;
-  /** Data home override (default: $CTX_HOME or ~/.ctx). Tests MUST set this (G-7). */
+  /** Data home override (default: $CONTEXA_HOME or ~/.contexa). Tests MUST set this (G-7). */
   home?: string;
   /** Injectable clock (lease TTL, timestamps) — fixed-clock tests (§10). */
   now?: () => number;
@@ -104,7 +104,7 @@ export interface Store {
   entitiesByKind(kind: EntityKind, maxGen?: number): Entity[];
   /**
    * Direct name index, case-insensitive exact match (additive, read-only;
-   * slice 1f named-seed injection — CTX-IMPL §6.1: identifier-shaped query
+   * slice 1f named-seed injection — CONTEXA-IMPL §6.1: identifier-shaped query
    * tokens resolve via the name index and are force-included).
    */
   entitiesByName(name: string, limit?: number): Entity[];
@@ -1053,7 +1053,7 @@ class SqliteStore implements Store {
  */
 export function openStore(opts: OpenStoreOptions = {}): Store {
   const res = resolveShard(opts.projectDir ?? process.cwd());
-  const home = opts.home ?? ctxHome();
+  const home = opts.home ?? contexaHome();
   mkdirSync(shardDir(res.shard, home), { recursive: true });
   const dbPath = storePath(res.shard, home);
   const db = openDatabase(dbPath);
@@ -1073,7 +1073,7 @@ export function openStore(opts: OpenStoreOptions = {}): Store {
  */
 export function openStoreReadOnly(opts: OpenStoreOptions = {}): Store {
   const res = resolveShard(opts.projectDir ?? process.cwd());
-  const home = opts.home ?? ctxHome();
+  const home = opts.home ?? contexaHome();
   const dbPath = storePath(res.shard, home);
   if (!existsSync(dbPath)) {
     throw new Error(`no memory store at ${dbPath}`);

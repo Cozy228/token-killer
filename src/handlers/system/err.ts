@@ -88,7 +88,7 @@ export const errHandler: CommandHandler = {
     return command.program === "err" && command.args.length > 0;
   },
   execute(command) {
-    // RTK runs the wrapped command; tk executes args directly (no shell).
+    // RTK runs the wrapped command; ctx executes args directly (no shell).
     return executeCommand({
       program: command.args[0] ?? "",
       args: command.args.slice(1),

@@ -1,7 +1,7 @@
 # design rounds — ctx
 
-Round artifacts for the 2026-07 ctx design discussion. **Live authority stays at repo root**:
-`CTX-DESIGN.md` (design), `CTX-IMPL.md` (implementation plan + build route), `FABLE-DECISION-LOG.md`
+Round artifacts for the 2026-07 Contexa design discussion. **Live authority stays at repo root**:
+`CONTEXA-DESIGN.md` (design), `CONTEXA-IMPL.md` (implementation plan + build route), `FABLE-DECISION-LOG.md`
 (decisions P9+). Detail layer = `docs/codemap/` (P29 reference-not-copy).
 
 | File | Role |

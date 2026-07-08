@@ -36,7 +36,7 @@ describe("DocsAdapter (fixture tree)", () => {
     // git-init so shard resolution pins projectRoot to exactly this fixture
     // (no commits needed — the docs source scans the working tree, not git).
     git(["init", "-q", "-b", "main", repo], root);
-    home = join(root, "ctx-home");
+    home = join(root, "contexa-home");
     store = openStore({ projectDir: repo, home });
   });
 

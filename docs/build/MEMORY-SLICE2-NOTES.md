@@ -100,7 +100,7 @@ F1–F6 commit):
 Work order: `MEMORY-SYNC-GOAL-PROMPT.md` "Implementation slices" item 2, under the
 E2/E5 rulings of `MEMORY-DECISIONS.md` and the S4/S10 contracts of
 `MEMORY-SYNC-SETTLEMENTS.md`. Event log lands on the CURRENT storage (SQLite); the
-locus move to committed `.ctx/` files is slice 3. Independently revertible: no
+locus move to committed `.contexa/` files is slice 3. Independently revertible: no
 storage-locus, file-layout, or `.gitignore` change.
 
 ## Decisions (mechanics the docs left open — I settled these)

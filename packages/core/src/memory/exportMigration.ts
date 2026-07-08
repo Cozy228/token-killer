@@ -1,5 +1,5 @@
 /**
- * S3 — migrate store-only (M1) memory into committed `.ctx/` files, and keep it
+ * S3 — migrate store-only (M1) memory into committed `.contexa/` files, and keep it
  * swept (F4). A one-shot gate is wrong: post-migration, store-only writes (the
  * MCP `remember` surface + the refresh-path import — wired in slice 4) would
  * strand behind a set marker forever. So this is an id-keyed CATCH-UP:

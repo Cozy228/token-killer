@@ -100,7 +100,7 @@ export const skillInvocationPolicyRule: PerFileRule = {
           recommendation:
             "Add `disable-model-invocation: true` so the model cannot auto-invoke this side-effect workflow.",
           // High-confidence, deterministic frontmatter add — safe_mechanical at
-          // either scope (`tk optimize --apply` discloses, backs up, and is
+          // either scope (`ctx optimize --apply` discloses, backs up, and is
           // reversible via --restore, so project-tracked skills are eligible too).
           fix_class: "safe_mechanical",
           start_line: fmEnd,

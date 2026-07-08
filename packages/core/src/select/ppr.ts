@@ -1,5 +1,5 @@
 /**
- * Stage 3a — personalized PageRank (CTX-IMPL §6.3, codegraph's
+ * Stage 3a — personalized PageRank (CONTEXA-IMPL §6.3, codegraph's
  * production-tuned constants): undirected adjacency over the subgraph, restart
  * probability α=0.25, 25 fixed power iterations (deterministic — no early
  * exit), DANGLING NODES KEEP THEIR MASS, teleport vector = normalized seed

@@ -1,9 +1,9 @@
 /**
- * Golden transcripts (CTX-IMPL §10): recorded input→output fixtures for
+ * Golden transcripts (CONTEXA-IMPL §10): recorded input→output fixtures for
  * context / search / remember. A format change must surface as a REVIEWED DIFF
  * of these files, never silent drift. Determinism: a script-generated fixture
  * (fixed content → stable entity ids → stable blake2b handles) under a fixed
- * clock and a temp CTX_HOME sandbox (G-7).
+ * clock and a temp CONTEXA_HOME sandbox (G-7).
  *
  * Update the goldens deliberately with `CTX_UPDATE_GOLDEN=1` and review the diff.
  * `remember()` mints a time+random ULID, so its one volatile handle is masked
@@ -138,7 +138,7 @@ describe("acceptance: 1g golden transcripts", () => {
  * (`!callers`) and biography (`context(ref:sym)`) render surfaces added by
  * 2c/2d must also be reviewed diffs, never silent drift. Deterministic: a fixed
  * TS fixture → stable `sym:` ids → content-derived (clock-independent) handles,
- * parsed in-process under a temp CTX_HOME (G-7). No git/memory → no volatile
+ * parsed in-process under a temp CONTEXA_HOME (G-7). No git/memory → no volatile
  * commit/ULID data in the output.
  */
 describe("acceptance: 2d symbol-bearing golden transcripts", () => {

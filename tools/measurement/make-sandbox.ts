@@ -6,11 +6,11 @@
  * (A4). The frozen tree is the SHA's tree extracted via `git archive` into a FRESH
  * single-commit repo — so the future fix commit is not even an object in the
  * sandbox (A2), stronger than a worktree (which shares .git and can `git log` the
- * fix). The sandbox also gets its OWN git-common-dir ⇒ its OWN ctx store shard, so
- * the real `~/.ctx` store is never touched.
+ * fix). The sandbox also gets its OWN git-common-dir ⇒ its OWN Contexa store shard, so
+ * the real `~/.contexa` store is never touched.
  *
- * Time-cut (Q14 / T1): arm B's ctx store is built by `ctx sync` with
- *   - CTX_HOME  → sandbox-local (armB/.ctxhome), never the real ~/.ctx
+ * Time-cut (Q14 / T1): arm B's Contexa store is built by `ctx sync` with
+ *   - CONTEXA_HOME  → sandbox-local (armB/.contexahome), never the real ~/.contexa
  *   - HOME      → a time-cut home whose `.claude/.../memory/` is empty (default)
  *                 or filtered to files mtime < T (--memory-mode asof)
  * The git/code/docs sources are time-cut by construction (the archived tree IS the
@@ -132,8 +132,8 @@ function stripCtxMcp(repoDir: string): void {
   if (!existsSync(p)) return;
   try {
     const cfg = JSON.parse(readFileSync(p, "utf8"));
-    if (cfg?.mcpServers?.ctx) {
-      delete cfg.mcpServers.ctx;
+    if (cfg?.mcpServers?.contexa) {
+      delete cfg.mcpServers.contexa;
       if (Object.keys(cfg.mcpServers).length === 0) rmSync(p);
       else writeFileSync(p, JSON.stringify(cfg, null, 2) + "\n");
     }
@@ -258,7 +258,7 @@ function main(): number {
     }
   }
   const task = String(f.task);
-  // Absolutize everything crossing a subprocess boundary: a relative CTX_HOME/HOME
+  // Absolutize everything crossing a subprocess boundary: a relative CONTEXA_HOME/HOME
   // re-anchors against the child's cwd (armB/repo) and lands artifacts INSIDE the
   // checkout. The .mcp.json also needs absolute paths to work from a scratch copy.
   const repo = resolve(String(f.repo));
@@ -294,8 +294,8 @@ function main(): number {
   stripPushBlocks(armArepo);
   stripCtxMcp(armArepo);
 
-  // 3) arm B: build the time-cut ctx store, register mcp, place the push block.
-  const ctxHome = join(out, "armB", ".ctxhome");
+  // 3) arm B: build the time-cut Contexa store, register mcp, place the push block.
+  const contexaHome = join(out, "armB", ".contexahome");
   const timecutHome = join(out, "armB", ".timecut-home");
   const wrapper = join(out, "armB", "ctx-launch");
   // arm B repo must ALSO start clean, then ctx adds exactly the knobs.
@@ -305,8 +305,8 @@ function main(): number {
   const memCopied = buildTimecutHome(timecutHome, repoRealPath, at, memoryMode);
   writeWrapper(wrapper);
 
-  // ctx sync: cwd = armB/repo so projectDir = the sandbox; CTX_HOME + HOME isolated.
-  const sync = runCtx(["sync"], { cwd: armBrepo, ctxHome, home: timecutHome });
+  // ctx sync: cwd = armB/repo so projectDir = the sandbox; CONTEXA_HOME + HOME isolated.
+  const sync = runCtx(["sync"], { cwd: armBrepo, contexaHome, home: timecutHome });
   if (sync.code !== 0) console.error(`warn: ctx sync exit ${sync.code}\n${sync.stderr}`);
   // Register the ctx MCP server with ABSOLUTE paths pointing at the FROZEN store
   // (so a per-rep scratch copy still serves the T-frozen context base).
@@ -315,17 +315,17 @@ function main(): number {
       ctx: {
         command: wrapper,
         args: ["mcp", "--project", armBrepo],
-        env: { CTX_HOME: ctxHome, HOME: timecutHome },
+        env: { CONTEXA_HOME: contexaHome, HOME: timecutHome },
       },
     },
   };
   writeFileSync(join(armBrepo, ".mcp.json"), JSON.stringify(mcpConfig, null, 2) + "\n");
   // Place the ≤1KB push block (cwd = armB/repo, same store).
-  const push = runCtx(["push"], { cwd: armBrepo, ctxHome, home: timecutHome });
+  const push = runCtx(["push"], { cwd: armBrepo, contexaHome, home: timecutHome });
   if (push.code !== 0) console.error(`warn: ctx push exit ${push.code}\n${push.stderr}`);
 
   // 4) A3 time-cut proof: zero host-import memory rows + input-boundary facts.
-  const storePath = findStore(ctxHome);
+  const storePath = findStore(contexaHome);
   const proof = timecutProof(
     storePath,
     timecutHome,
@@ -392,8 +392,8 @@ function main(): number {
   return allOk ? 0 : 1;
 }
 
-function findStore(ctxHome: string): string | null {
-  const projs = join(ctxHome, "projects");
+function findStore(contexaHome: string): string | null {
+  const projs = join(contexaHome, "projects");
   if (!existsSync(projs)) return null;
   for (const d of readdirSync(projs)) {
     const p = join(projs, d, "store.sqlite");

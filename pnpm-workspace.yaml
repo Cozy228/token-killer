@@ -1,11 +1,16 @@
 packages:
   - .
-  # ctx greenfield packages (M1). Kept separate from the legacy tk root package
-  # ('.') so tk keeps shipping untouched while ctx is built out (CTX-IMPL §1, P28).
+  # Contexa greenfield packages (M1). Kept separate from the legacy Contexa root package
+  # ('.') so the root compressor keeps shipping untouched while ctx is built out (CONTEXA-IMPL §1, P28).
   - packages/*
 
 allowBuilds:
   esbuild: true
+
+minimumReleaseAgeExclude:
+  - '@commitlint/cli@21.2.1'
+  - '@commitlint/read@21.2.1'
+  - tsdown@0.22.4
 
 onlyBuiltDependencies:
   - esbuild

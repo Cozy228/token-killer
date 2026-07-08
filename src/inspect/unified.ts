@@ -1,7 +1,7 @@
 // Unified finding model (DESIGN §9.0). Runtime and static-context analyzers
 // converge into a single Finding[]. Runtime findings carry aggregate metrics; static
 // context findings carry surface/file/lines (from src/context). The persisted
-// scope-bucket report is `{ ..., findings: Finding[] }`; `tk optimize context`
+// scope-bucket report is `{ ..., findings: Finding[] }`; `ctx optimize context`
 // reads the bucket and filters to source = "static_context".
 //
 // Runtime findings are AGGREGATED, not one-per-tool. The earlier model mapped every
@@ -38,7 +38,7 @@ export type RuntimeFinding = {
   scope?: "user" | "project";
   // Actionable location — the place the user acts, not a transcript file. Runtime
   // findings have no source file, so without this the report's "Where" was always
-  // empty. Examples: "AGENTS.md / CONTEXT.md", "Terminal (install the tk shim)".
+  // empty. Examples: "AGENTS.md / CONTEXT.md", "Terminal (install the ctx shim)".
   where?: string;
   metrics: RuntimeMetrics;
 };
@@ -128,7 +128,7 @@ export function runtimeFindings(
   // 1) Uncompressed commands — shell commands the proxy could compress, run raw.
   //    ONE aggregate finding (was one per command), naming the top offenders.
   const compressible = scan.opportunities.filter(
-    (o) => o.kind === "shell" && o.compressible && o.key !== "tk",
+    (o) => o.kind === "shell" && o.compressible && o.key !== "ctx",
   );
   const rawCount = compressible.reduce((s, o) => s + o.count, 0);
   if (rawCount >= MIN_OCC) {
@@ -146,12 +146,12 @@ export function runtimeFindings(
       confidence: 0.9,
       evidence: `${rawCount} shell command(s) ran raw (~${rawTokens} tok of output)${top.length ? `; e.g. ${top.join(", ")}` : ""}.`,
       recommendation: isCopilot
-        ? "Run `tk install --host copilot-cli` to wire the rewrite hook so these commands flow through tk, which compresses their output losslessly."
-        : "Run `tk install` (installs the PATH shim) and restart your editor — tk then compresses these commands' output losslessly.",
+        ? "Run `ctx install --host copilot-cli` to wire the rewrite hook so these commands flow through ctx, which compresses their output losslessly."
+        : "Run `ctx install` (installs the PATH shim) and restart your editor — ctx then compresses these commands' output losslessly.",
       fix_class: "delivery",
       where: isCopilot
-        ? "Copilot CLI hook (run `tk install --host copilot-cli`)"
-        : "Terminal PATH (run `tk install`)",
+        ? "Copilot CLI hook (run `ctx install --host copilot-cli`)"
+        : "Terminal PATH (run `ctx install`)",
       metrics: aggregateMetrics(compressible),
     });
   }

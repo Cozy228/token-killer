@@ -1,4 +1,4 @@
-; Tier-1 Java queries (CTX-IMPL §5.2). Enclosing class/record/enum/interface
+; Tier-1 Java queries (CONTEXA-IMPL §5.2). Enclosing class/record/enum/interface
 ; supplies the qualifier via ancestry in extract.ts; javadoc `/** */` blocks are
 ; attached as the preceding comment.
 

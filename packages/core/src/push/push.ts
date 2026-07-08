@@ -1,9 +1,9 @@
 /**
- * Push orchestration (CTX-IMPL §7): read `.ctx/push.jsonc` → build the ≤1KB
+ * Push orchestration (CONTEXA-IMPL §7): read `.contexa/push.jsonc` → build the ≤1KB
  * block → place it into the host instruction files, with an openwiki-style
  * no-op guard for the optional git post-commit hook (`--if-changed`).
  *
- * The pin/veto CLI (`ctx push pin|veto <id>`) edits `.ctx/push.jsonc`. Its
+ * The pin/veto CLI (`ctx push pin|veto <id>`) edits `.contexa/push.jsonc`. Its
  * mechanism is provided here; ctx never installs a git hook into the user's
  * repo in M1 — the hook mechanism is `runPush(..., { ifChanged: true })`,
  * offered but not auto-wired.
@@ -17,26 +17,26 @@ import { emptyPushConfig, mergePushConfig, parsePushConfig, type PushConfig } fr
 import { placePushBlock, type PlacementResult } from "./hosts.ts";
 
 /** Project-relative path of the pin/veto config (git-shareable, D27/D30). */
-export const PUSH_CONFIG_REL = join(".ctx", "push.jsonc");
+export const PUSH_CONFIG_REL = join(".contexa", "push.jsonc");
 
 /** Project-relative path of the PERSONAL overlay config (slice 5, three-tier
- *  (c) — `.ctx/*.local.*` convention; gitignored, per-person, never shared). */
-export const PUSH_LOCAL_CONFIG_REL = join(".ctx", "push.local.jsonc");
+ *  (c) — `.contexa/*.local.*` convention; gitignored, per-person, never shared). */
+export const PUSH_LOCAL_CONFIG_REL = join(".contexa", "push.local.jsonc");
 
 /** Store meta key holding the last-pushed block digest (no-op guard). */
 export const PUSH_SHA_META = "push:last-sha";
 
 export function pushConfigPath(projectRoot: string): string {
-  return join(projectRoot, ".ctx", "push.jsonc");
+  return join(projectRoot, ".contexa", "push.jsonc");
 }
 
-/** Absolute path of the personal overlay config (`.ctx/push.local.jsonc`). */
+/** Absolute path of the personal overlay config (`.contexa/push.local.jsonc`). */
 export function pushLocalConfigPath(projectRoot: string): string {
-  return join(projectRoot, ".ctx", "push.local.jsonc");
+  return join(projectRoot, ".contexa", "push.local.jsonc");
 }
 
 /**
- * Read + parse the SHARED committed `.ctx/push.jsonc`; a missing file is an empty
+ * Read + parse the SHARED committed `.contexa/push.jsonc`; a missing file is an empty
  * (clean) config. This is the project-truth layer: the block PLACED into the host
  * instruction files (which may be committed) is built from THIS config only, so
  * peers with the same committed config get a byte-identical placed digest and no
@@ -48,7 +48,7 @@ export function readPushConfig(projectRoot: string): PushConfig {
   return parsePushConfig(readFileSync(path, "utf8"));
 }
 
-/** Read + parse the PERSONAL overlay config (`.ctx/push.local.jsonc`); missing →
+/** Read + parse the PERSONAL overlay config (`.contexa/push.local.jsonc`); missing →
  *  empty (clean). Reuses the shared `parsePushConfig` pipeline (no second parser). */
 export function readLocalPushConfig(projectRoot: string): PushConfig {
   const path = pushLocalConfigPath(projectRoot);
@@ -79,7 +79,7 @@ export interface PinVetoResult {
 }
 
 /**
- * Add/remove an id in `.ctx/push.jsonc`'s pin or veto array. A malformed
+ * Add/remove an id in `.contexa/push.jsonc`'s pin or veto array. A malformed
  * existing file is NOT overwritten — the caller gets guidance to fix it first
  * (so a rewrite can't silently discard an unparseable hand edit). The mutator
  * writes canonical JSON; hand-authored comments are only preserved across
@@ -125,7 +125,7 @@ export function editPinVeto(
 }
 
 export interface RunPushOptions {
-  /** Explicit config (default: read `.ctx/push.jsonc`). */
+  /** Explicit config (default: read `.contexa/push.jsonc`). */
   config?: PushConfig;
   /** Injected clock for decay (tests). */
   now?: number;

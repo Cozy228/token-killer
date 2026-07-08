@@ -48,7 +48,7 @@ change on already-shipped behavior, independently re-verified: full suite green 
 - `pnpm --filter core test`: 48 files, 456 passed / 2 todo — independently re-run on the merged tree.
 - Item-2 red state independently confirmed by removing the DERIVE-loop guard (fails at the E6 convergence
   assertion, `[…(2)] ≠ [Array(1)]`), then restored.
-- typecheck (`tsc --noEmit`) + build (`tsdown`) green; diff = `reindex.ts` + 2 test files only; no `.ctx/`
+- typecheck (`tsc --noEmit`) + build (`tsdown`) green; diff = `reindex.ts` + 2 test files only; no `.contexa/`
   created in the repo.
 
 ## Commits (feat/1.0.0, pushed → 3-OS CI)

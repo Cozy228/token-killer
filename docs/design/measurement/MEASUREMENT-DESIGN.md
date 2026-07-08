@@ -164,14 +164,14 @@ headline number comes from the held-out set only (W5 §4 benchmark-overfitting m
 **Arm delta — the ONLY difference is ctx presence.** ctx reaches the agent by two channels
 (measured, repo `packages/`): **pull** = MCP tools `context/search/remember` via project
 `.mcp.json` (`packages/core/src/install/mcpConfig.ts`, server `ctx`, cmd `ctx mcp`), and **push**
-= a rendered digest block placed into `CLAUDE.md`/`AGENTS.md` via `ctx push` / `.ctx/push.jsonc`
+= a rendered digest block placed into `CLAUDE.md`/`AGENTS.md` via `ctx push` / `.contexa/push.jsonc`
 (`packages/core/src/push/`, cli `packages/cli/src/cli.ts`). "Full ctx" = both channels ON.
 
 Exact config diff (everything else byte-identical):
 
 | Knob | without-ctx (arm A) | with-ctx (arm B) |
 |---|---|---|
-| `.mcp.json` `mcpServers.ctx` | absent | `{command:"ctx",args:["mcp"]}` |
+| `.mcp.json` `mcpServers.contexa` | absent | `{command:"ctx",args:["mcp"]}` |
 | `--allowedTools` | `Bash Edit Read Write Grep Glob` | same **+** `mcp__ctx__context mcp__ctx__search mcp__ctx__remember` |
 | push block in `CLAUDE.md`/`AGENTS.md` | absent | present (`ctx push` output) |
 | model | `--model claude-opus-4-8` (pinned, snapshot logged) | identical |

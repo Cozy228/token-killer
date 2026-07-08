@@ -1,5 +1,5 @@
 /**
- * Incremental correctness trio + memory-anchor drift (CTX-IMPL §4 / §5.2 / §5.5)
+ * Incremental correctness trio + memory-anchor drift (CONTEXA-IMPL §4 / §5.2 / §5.5)
  * — slice 2c. The hardest bug class is "a file that didn't change has stale
  * derived data"; the three guards below (ported off gitnexus's incremental
  * subgraph-extract / shadow-candidates and graphify's shrink guard, adapted to

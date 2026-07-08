@@ -11,9 +11,9 @@ const repoRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "../
 const cli = path.join(repoRoot, "src/cli.ts");
 const tsxLoader = pathToFileURL(path.join(repoRoot, "node_modules/tsx/dist/loader.mjs")).href;
 
-function runTk(args: string[], input?: string, tokenKillerHome?: string) {
+function runTk(args: string[], input?: string, contexaHome?: string) {
   const env: NodeJS.ProcessEnv = { ...process.env };
-  if (tokenKillerHome) env.TOKEN_KILLER_HOME = tokenKillerHome;
+  if (contexaHome) env.CONTEXA_HOME = contexaHome;
   return spawnSync(process.execPath, ["--import", tsxLoader, cli, ...args], {
     cwd: repoRoot,
     encoding: "utf8",
@@ -23,7 +23,7 @@ function runTk(args: string[], input?: string, tokenKillerHome?: string) {
   });
 }
 
-describe("tk hook copilot — protocol over stdin/stdout", () => {
+describe("ctx hook copilot — protocol over stdin/stdout", () => {
   test("VS Code dialect: rewrites via hookSpecificOutput.updatedInput, stdout is ONLY that JSON", () => {
     const payload = JSON.stringify({
       event: "preToolUse",
@@ -34,7 +34,7 @@ describe("tk hook copilot — protocol over stdin/stdout", () => {
     expect(r.status).toBe(0);
     // stdout must parse as a single JSON object and contain nothing else.
     const parsed = JSON.parse(r.stdout);
-    expect(parsed.hookSpecificOutput.updatedInput).toEqual({ command: "tk git status" });
+    expect(parsed.hookSpecificOutput.updatedInput).toEqual({ command: "ctx git status" });
     expect(parsed.hookSpecificOutput.permissionDecision).toBe("allow");
   });
 
@@ -57,7 +57,7 @@ describe("tk hook copilot — protocol over stdin/stdout", () => {
     expect(r.status).toBe(0);
     const parsed = JSON.parse(r.stdout);
     expect(parsed.hookSpecificOutput.updatedInput).toEqual({
-      command: "tk git status",
+      command: "ctx git status",
       explanation: "Check repository status",
       goal: "Inspect working tree",
       mode: "sync",
@@ -72,7 +72,7 @@ describe("tk hook copilot — protocol over stdin/stdout", () => {
     });
     const r = runTk(["hook", "copilot"], payload);
     const parsed = JSON.parse(r.stdout);
-    expect(parsed.modifiedArgs).toEqual({ command: "tk git status" });
+    expect(parsed.modifiedArgs).toEqual({ command: "ctx git status" });
     expect("hookSpecificOutput" in parsed).toBe(false);
   });
 
@@ -101,7 +101,7 @@ describe("tk hook copilot — protocol over stdin/stdout", () => {
   });
 });
 
-describe("tk hook copilot — prompt + error events (Slice 2)", () => {
+describe("ctx hook copilot — prompt + error events (Slice 2)", () => {
   test("oversized prompt → deny", () => {
     const payload = JSON.stringify({ event: "userPromptSubmitted", prompt: "x".repeat(17000 * 4) });
     const r = runTk(["hook", "copilot"], payload);
@@ -120,7 +120,7 @@ describe("tk hook copilot — prompt + error events (Slice 2)", () => {
   });
 
   test("errorOccurred → additionalContext hint, and records a failure history row", async () => {
-    const home = await mkdtemp(path.join(tmpdir(), "tk-hook-fail-"));
+    const home = await mkdtemp(path.join(tmpdir(), "ctx-hook-fail-"));
     try {
       const payload = JSON.stringify({
         event: "errorOccurred",
@@ -133,8 +133,8 @@ describe("tk hook copilot — prompt + error events (Slice 2)", () => {
       // errorOccurred carries camelCase toolName → Copilot CLI flat dialect.
       expect(parsed.additionalContext).toContain("Command not found");
 
-      // The child runs with cwd=repoRoot and TOKEN_KILLER_HOME=home; build the
-      // history path the same way (fingerprint is TOKEN_KILLER_HOME-independent).
+      // The child runs with cwd=repoRoot and CONTEXA_HOME=home; build the
+      // history path the same way (fingerprint is CONTEXA_HOME-independent).
       const file = path.join(
         home,
         "projects",
@@ -153,11 +153,11 @@ describe("tk hook copilot — prompt + error events (Slice 2)", () => {
   });
 });
 
-describe("tk hook check — dry-run", () => {
+describe("ctx hook check — dry-run", () => {
   test("shows the rewrite", () => {
     const r = runTk(["hook", "check", "git", "status"]);
     expect(r.status).toBe(0);
-    expect(r.stdout.trim()).toBe("rewrite: tk git status");
+    expect(r.stdout.trim()).toBe("rewrite: ctx git status");
   });
 
   test("shows pass for a non-rewritable command", () => {
@@ -173,7 +173,7 @@ describe("tk hook check — dry-run", () => {
   });
 });
 
-describe("tk hook — unknown subcommand", () => {
+describe("ctx hook — unknown subcommand", () => {
   test("exit 1, diagnostic on stderr, stdout empty", () => {
     const r = runTk(["hook", "frobnicate"]);
     expect(r.status).toBe(1);

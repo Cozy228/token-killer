@@ -1,5 +1,5 @@
 /**
- * Runtime assertions for `ctx doctor` (CTX-IMPL sqlite.ts header): Node ≥22.16
+ * Runtime assertions for `ctx doctor` (CONTEXA-IMPL sqlite.ts header): Node ≥22.16
  * (node:sqlite present; `--experimental-sqlite` unflagged from 22.13) and the
  * bundled SQLite library ≥3.43 (contentless-FTS + the features the store DDL
  * relies on). Read-only — doctor REPORTS, it never mutates the runtime.

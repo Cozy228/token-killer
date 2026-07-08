@@ -1,5 +1,5 @@
 /**
- * Worktree-aware project shard placement (CTX-IMPL §3 + §9 P28 addenda).
+ * Worktree-aware project shard placement (CONTEXA-IMPL §3 + §9 P28 addenda).
  *
  * Shard key = 12 hex of blake2b over realpath(`git rev-parse --git-common-dir`);
  * fallback = realpath(project root) for non-git dirs. `--git-common-dir` (not
@@ -75,9 +75,11 @@ export function resolveShard(dir: string): ShardResolution {
   }
 }
 
-/** Base data dir: $CTX_HOME, default ~/.ctx (tests always set CTX_HOME — G-7). */
-export function ctxHome(env: NodeJS.ProcessEnv = process.env): string {
-  return env.CTX_HOME && env.CTX_HOME.length > 0 ? env.CTX_HOME : join(homedir(), ".ctx");
+/** Base data dir: $CONTEXA_HOME, default ~/.contexa (tests always set CONTEXA_HOME — G-7). */
+export function contexaHome(env: NodeJS.ProcessEnv = process.env): string {
+  return env.CONTEXA_HOME && env.CONTEXA_HOME.length > 0
+    ? env.CONTEXA_HOME
+    : join(homedir(), ".contexa");
 }
 
 export function shardDir(shard: string, home: string): string {

@@ -1,5 +1,5 @@
 /**
- * Stage 3b — post-multipliers + fusion (CTX-IMPL §6.3).
+ * Stage 3b — post-multipliers + fusion (CONTEXA-IMPL §6.3).
  *
  * Post-multipliers on the graph (PPR) side: time decay `exp(-age/90d)` for
  * history/memory kinds ONLY (code never decays), confidence soft factor

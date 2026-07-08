@@ -1,15 +1,15 @@
-// Issue #42 — `tk hook check <cmd>` routing-health dry-run.
+// Issue #42 — `ctx hook check <cmd>` routing-health dry-run.
 //
 // The acceptance flow uses this to assert the command-routing hook is wired
 // correctly WITHOUT invoking an agent or spending budget: a rewritable command must
-// print `rewrite: tk …` and exit 0. These pin that contract (the exact line the
+// print `rewrite: ctx …` and exit 0. These pin that contract (the exact line the
 // harness greps for) plus the other decision spellings.
 
 import { afterEach, describe, expect, test, vi } from "vitest";
 
 import { runHook } from "../../../src/hook/cli.js";
 
-// Capture stdout/stderr writes and run a `tk hook ...` invocation.
+// Capture stdout/stderr writes and run a `ctx hook ...` invocation.
 async function run(argv: string[]): Promise<{ code: number; out: string; err: string }> {
   const out: string[] = [];
   const err: string[] = [];
@@ -32,18 +32,18 @@ async function run(argv: string[]): Promise<{ code: number; out: string; err: st
 
 afterEach(() => vi.restoreAllMocks());
 
-describe("tk hook check — routing health (issue #42)", () => {
-  test("rewritable command → 'rewrite: tk …' on stdout, exit 0 (the acceptance gate)", async () => {
+describe("ctx hook check — routing health (issue #42)", () => {
+  test("rewritable command → 'rewrite: ctx …' on stdout, exit 0 (the acceptance gate)", async () => {
     const r = await run(["check", "git", "status"]);
     expect(r.code).toBe(0);
-    // The exact shape the acceptance harness asserts: `^rewrite:\s*tk\b`.
-    expect(r.out).toMatch(/^rewrite:\s*tk git status\b/);
+    // The exact shape the acceptance harness asserts: `^rewrite:\s*ctx\b`.
+    expect(r.out).toMatch(/^rewrite:\s*ctx git status\b/);
   });
 
   test("quoted single-arg form works too", async () => {
     const r = await run(["check", "git status"]);
     expect(r.code).toBe(0);
-    expect(r.out).toMatch(/^rewrite:\s*tk git status\b/);
+    expect(r.out).toMatch(/^rewrite:\s*ctx git status\b/);
   });
 
   test("mutating git subcommand → pass (not rewritten), still exit 0", async () => {

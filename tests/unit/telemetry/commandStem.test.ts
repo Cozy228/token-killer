@@ -5,7 +5,7 @@ import { commandStem } from "../../../src/telemetry/commandStem.js";
 describe("commandStem", () => {
   test("keeps program and subcommand, drops paths and flags", () => {
     expect(commandStem("git status")).toBe("git status");
-    expect(commandStem("tk git diff src/handlers/index.ts")).toBe("git diff");
+    expect(commandStem("ctx git diff src/handlers/index.ts")).toBe("git diff");
     expect(commandStem("vitest run tests/unit/foo.test.ts")).toBe("vitest run");
     expect(commandStem("ruff check src/ --fix")).toBe("ruff check");
     expect(commandStem("grep -r TODO src/")).toBe("grep");

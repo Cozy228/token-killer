@@ -1,5 +1,5 @@
 /**
- * Gotcha ranking for the push digest (CTX-IMPL §7).
+ * Gotcha ranking for the push digest (CONTEXA-IMPL §7).
  *
  * The push block surfaces the top memory gists ("gotchas"). Ranking REUSES the
  * selection engine's memory primitives (§6.3) rather than inventing a second
@@ -25,7 +25,7 @@ export interface GotchaCandidate {
   authority: Authority;
   /** Composite §6.3 memory score (authority × recency decay). */
   score: number;
-  /** True when force-included by a `.ctx/push.jsonc` pin. */
+  /** True when force-included by a `.contexa/push.jsonc` pin. */
   pinned: boolean;
 }
 

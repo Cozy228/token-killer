@@ -17,14 +17,14 @@ either fixed on `feat/1.0.0` or explicitly waived — do not build on an unrevie
 ## Scope
 
 1. **Memory becomes a real dirty source (S10 #1/#5).** `memory/adapter.ts` `dirtyCheck` =
-   mtime-first + manifest short-circuit over `.ctx/memory/` + the overlay files (unchanged
+   mtime-first + manifest short-circuit over `.contexa/memory/` + the overlay files (unchanged
    tree ≈ one stat, < 1ms); checksum only files whose own mtime advanced. Refresh ingests
    memory via the slice-3 reindex functions (additive for appends; reset for non-append
    shapes). Cadence = the M1 first-call per-process catch-up gate (D25) — never per-query,
    never a watcher.
 2. **Write-through becomes always-on.** Remove the opt-in `files?` default-off seam:
    production write paths (CLI, MCP `remember` in `serve.ts`, refresh-path import) always
-   carry a `MemoryFiles`. HARD CONSTRAINT unchanged: never create `.ctx/` in the
+   carry a `MemoryFiles`. HARD CONSTRAINT unchanged: never create `.contexa/` in the
    token-killer repo — the living-repo tests that call core write paths on `REPO_ROOT`
    (`2d-biography`, `1h-push`) must be re-pointed at sandbox fixture repos (or an
    equivalent isolation), not "solved" by keeping the writer optional.

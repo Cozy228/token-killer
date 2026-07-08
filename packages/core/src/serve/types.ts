@@ -1,5 +1,5 @@
 /**
- * Serving-surface types (CTX-IMPL §7, slice 1g). The three MCP tools return a
+ * Serving-surface types (CONTEXA-IMPL §7, slice 1g). The three MCP tools return a
  * `ServeResponse`: ONE markdown text block (`text`) plus the `isError` flag the
  * host sees, and an internal `diag` struct the shared invariant helpers assert
  * on (G-1..G-7). `diag` is NEVER serialized to the host — the host gets `text`.

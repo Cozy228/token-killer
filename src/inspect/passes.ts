@@ -1,6 +1,6 @@
 // Issue #39 — single-pass inspect scan + habits.
 //
-// A cold `tk inspect` used to walk every transcript / session file TWICE: once in
+// A cold `ctx inspect` used to walk every transcript / session file TWICE: once in
 // scan() and once in analyzeHabits(). The in-run FileCache dedups the READ, but each
 // file was still JSON.parsed twice (once per analyzer). On AV-heavy boxes the parse
 // (and the second open, when the file is over the FileCache budget) is the dominant
@@ -175,6 +175,9 @@ function aggregate(
           coverageErrors += ex.scan.parseErrors;
         } else {
           sessionInventory += 1;
+          // A session file carrying tool activity (Copilot CLI events.jsonl, or a
+          // populated VS Code snapshot) also counts as readable coverage.
+          if (ex.scan.hadEvent) transcriptCoverage += 1;
         }
       }
       processed += 1;

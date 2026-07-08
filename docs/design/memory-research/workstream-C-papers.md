@@ -21,7 +21,7 @@ SQLite+FTS5 store/project · `I5` index-not-copy (except memory/concepts) · `I6
 - Anchors → `anchoredTo` claims+links; auto-create `file:` entity when the file exists
   (`remember.ts:111-132, 210-228`).
 - Append-only, generation-stamped `claims` table = the provenance ledger (`remember.ts:212-252`).
-- Push digest ≤1KB, ranked by recency × anchor-freshness, each item a handle (CTX-DESIGN §push).
+- Push digest ≤1KB, ranked by recency × anchor-freshness, each item a handle (CONTEXA-DESIGN §push).
 
 ---
 
@@ -89,7 +89,7 @@ for supersede instead of wanting a mutate. The decisive decline is **2.2**: no p
 
 ## Theme 3 — Reflection / consolidation (and its deterministic analogue)
 
-**Why ctx cannot use LLM-style reflection at write/serve.** Every reflection design in the literature is
+**Why Contexa cannot use LLM-style reflection at write/serve.** Every reflection design in the literature is
 an LLM that reads N raw records and writes back a NEW, higher-level record that then becomes
 independently retrievable and itself re-reflectable. That collides with ctx on three invariants at once:
 **I1** (LLM at write), **I6** (the synthesized item's provenance is a summary, not a source — the survey
@@ -141,7 +141,7 @@ computable deterministically without embeddings/LLM:
 | **Mention frequency / popularity** ("frequently referenced becomes more accessible") | Zep §3.2 (episode-mentions reranker) | **Yes** — but **dangerous** (below) |
 | **Rank fusion** (RRF) combining multiple rankers | Zep §3.2 | **Yes** — arithmetic |
 | **Diversity** (MMR: penalize redundancy) | Zep §3.2 | **Partial** — needs a similarity metric; use lexical/anchor-overlap |
-| **Authority / explicit pin / status** | ctx design; implicit in gen-agents importance | **Yes** — ctx fields |
+| **Authority / explicit pin / status** | Contexa design; implicit in gen-agents importance | **Yes** — ctx fields |
 
 | # | Idea | Source | Label | Deterministic ctx form | Decision | Reason |
 |---|------|--------|-------|------------------------|----------|--------|

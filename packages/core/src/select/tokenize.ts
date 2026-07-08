@@ -1,5 +1,5 @@
 /**
- * Identifier-aware query tokenization (CTX-IMPL §6.1; reference: codegraph
+ * Identifier-aware query tokenization (CONTEXA-IMPL §6.1; reference: codegraph
  * `query-utils.ts` — camel/snake/dot splitting that KEEPS the compound token,
  * English-suffix stem variants, project-name down-weighting,
  * `isDistinctiveIdentifier` exact-match gating, tuned stopword list).

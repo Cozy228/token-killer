@@ -6,16 +6,16 @@ import { delimiter, dirname, join } from "node:path";
 import { resolveCachedBinary } from "../../../src/core/pathCache.js";
 
 let home: string;
-const originalHome = process.env.TOKEN_KILLER_HOME;
+const originalHome = process.env.CONTEXA_HOME;
 
 beforeEach(() => {
-  home = mkdtempSync(join(tmpdir(), "tk-path-cache-"));
-  process.env.TOKEN_KILLER_HOME = home;
+  home = mkdtempSync(join(tmpdir(), "ctx-path-cache-"));
+  process.env.CONTEXA_HOME = home;
 });
 
 afterEach(() => {
-  if (originalHome === undefined) delete process.env.TOKEN_KILLER_HOME;
-  else process.env.TOKEN_KILLER_HOME = originalHome;
+  if (originalHome === undefined) delete process.env.CONTEXA_HOME;
+  else process.env.CONTEXA_HOME = originalHome;
   rmSync(home, { recursive: true, force: true });
 });
 
@@ -36,7 +36,7 @@ describe("resolveCachedBinary (2.1 item 4)", () => {
   });
 
   test("returns undefined for an unresolvable program and writes nothing", () => {
-    expect(resolveCachedBinary("tk-nope-binary", nodeDir)).toBeUndefined();
+    expect(resolveCachedBinary("ctx-nope-binary", nodeDir)).toBeUndefined();
     // No positive to cache → no file written.
     expect(existsSync(cacheFile())).toBe(false);
   });

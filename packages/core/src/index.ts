@@ -1,7 +1,7 @@
 /**
- * @ctx/core — public entry.
+ * @contexa/core — public entry.
  *
- * Slice 1b pins the foundation contract: `Store` (store spine, CTX-IMPL §2/§3)
+ * Slice 1b pins the foundation contract: `Store` (store spine, CONTEXA-IMPL §2/§3)
  * and `SourceAdapter`/`RefreshEngine` (ingest framework, §4). 1c/1d/1e build
  * against these types; extract/select/serve layers land in later M1 slices.
  */
@@ -14,7 +14,7 @@ export {
   MEMORY_GIST_MAX_CHARS,
 } from "./store/store.ts";
 export type { Store, OpenStoreOptions } from "./store/store.ts";
-export { resolveShard, ctxHome, shardDir, storePath, SHARD_HEX_LEN } from "./store/shard.ts";
+export { resolveShard, contexaHome, shardDir, storePath, SHARD_HEX_LEN } from "./store/shard.ts";
 export type { ShardResolution } from "./store/shard.ts";
 export {
   parseHandle,
@@ -171,7 +171,7 @@ export type {
   EntityCandidate,
 } from "./memory/remember.ts";
 export { ulid, deterministicUlid, memoryId } from "./memory/ulid.ts";
-// memory storage locus (slice 3): committed `.ctx/` files + reindex + migration
+// memory storage locus (slice 3): committed `.contexa/` files + reindex + migration
 export { MemoryFiles, ulidOf } from "./memory/fileStore.ts";
 export type { MemoryZone } from "./memory/fileStore.ts";
 export {

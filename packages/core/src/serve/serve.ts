@@ -1,5 +1,5 @@
 /**
- * Serving surface (CTX-IMPL §7, slice 1g) — the three MCP tools as LIBRARY
+ * Serving surface (CONTEXA-IMPL §7, slice 1g) — the three MCP tools as LIBRARY
  * calls. The `ctx mcp` CLI subcommand is a thin stdio JSON-RPC shim over these
  * (§1: ~50-line shim; all logic here).
  *

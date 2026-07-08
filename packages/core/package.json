@@ -1,9 +1,9 @@
 {
-  "name": "@ctx/core",
+  "name": "@contexa/core",
   "version": "0.0.0",
   "private": true,
   "type": "module",
-  "description": "ctx core: store + ingest + extract + select + serve (pure library, no I/O CLI). Placeholder name until P13 naming lands.",
+  "description": "Contexa core: store + ingest + extract + select + serve (pure library, no I/O CLI). Placeholder name until P13 naming lands.",
   "exports": {
     ".": {
       "types": "./src/index.ts",

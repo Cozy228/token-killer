@@ -1,6 +1,6 @@
 /**
  * Slice 2d — Call edges, facets, mention→symbol (M2-ACCEPTANCE.md "2d"). Flips
- * the 2a-wired B4 todos green. Two tiers (CTX-IMPL §10):
+ * the 2a-wired B4 todos green. Two tiers (CONTEXA-IMPL §10):
  *
  *  • Deterministic tier — script-generated fixtures for the full
  *    {local, project, builtin, unknown} resolution matrix, the ~800-token facet
@@ -217,16 +217,16 @@ describe("acceptance: 2d call edges + facets + mention→symbol (deterministic)"
 describe("acceptance: 2d mention→symbol (living repo)", () => {
   let root: string;
   let store: Store;
-  // ⚠ CTX-IMPL.md §5.1 mentions `parseDiffHunks` in backticks; it is a REAL M1
+  // ⚠ CONTEXA-IMPL.md §5.1 mentions `parseDiffHunks` in backticks; it is a REAL M1
   // symbol in packages/core/src/ingest/git/diffHunks.ts (unique → exact tier).
-  //   grep -n '`parseDiffHunks`' CTX-IMPL.md
+  //   grep -n '`parseDiffHunks`' CONTEXA-IMPL.md
   //   grep -n 'function parseDiffHunks' packages/core/src/ingest/git/diffHunks.ts
   const TARGET_SYM = "sym:packages/core/src/ingest/git/diffHunks.ts#parseDiffHunks";
-  const MENTION_DOC = "file:CTX-IMPL.md";
+  const MENTION_DOC = "file:CONTEXA-IMPL.md";
 
   beforeAll(async () => {
     root = makeTempDir("ctx-2d-live-");
-    store = openStore({ projectDir: REPO_ROOT, home: join(root, "ctx-home") });
+    store = openStore({ projectDir: REPO_ROOT, home: join(root, "contexa-home") });
     // Code FIRST so the symbols are published, THEN docs resolves the backticked
     // mentions against them (the cold-sync order the cost model gives).
     clearScanCache();
@@ -242,7 +242,7 @@ describe("acceptance: 2d mention→symbol (living repo)", () => {
     cleanupTempDir(root);
   });
 
-  test("B4-mention: `parseDiffHunks` in CTX-IMPL.md → symbol-match references link (Derived)", () => {
+  test("B4-mention: `parseDiffHunks` in CONTEXA-IMPL.md → symbol-match references link (Derived)", () => {
     // ⚠ the symbol exists at HEAD (span-free stable id).
     expect(store.getEntity(TARGET_SYM)?.kind, "parseDiffHunks is a real M1 symbol").toBe("symbol");
     // ⚠ THE edge: the design doc's backticked `parseDiffHunks` resolves to it.

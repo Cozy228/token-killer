@@ -2,8 +2,8 @@ import { defineConfig } from "vitest/config";
 
 // ctx core test config — isolated from the legacy tk root vitest config.
 //
-// Tests MUST sandbox all host state into a temp CTX_HOME/HOME (G-7); there is no
-// global setup that touches the real ~/.ctx, ~/.claude or ~/.copilot. Acceptance
+// Tests MUST sandbox all host state into a temp CONTEXA_HOME/HOME (G-7); there is no
+// global setup that touches the real ~/.contexa, ~/.claude or ~/.copilot. Acceptance
 // scenarios live under tests/acceptance/ and start as `test.todo` in slice 1a.
 export default defineConfig({
   test: {

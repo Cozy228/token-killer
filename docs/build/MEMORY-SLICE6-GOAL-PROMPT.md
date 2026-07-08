@@ -74,9 +74,9 @@ spawn. E-series additions (the acceptance instrument): the five two-copy fixture
 green; identity candidates and drift re-derivation byte-deterministic across a long-lived peer
 vs a fresh clone (E6 dump equality); legacy anchors (no hash) behave exactly as today on every
 path; opt-out repo's local push digest excludes overlay-kept notes while a peer's shared digest
-is unchanged. HARD CONSTRAINT unchanged: never create `.ctx/` in the token-killer repo —
+is unchanged. HARD CONSTRAINT unchanged: never create `.contexa/` in the token-killer repo —
 two-copy fixtures build their OWN sandbox repos (mkdtemp + git init), and living-repo tests
-keep their sandbox writers/`ctxRoot` injection. All three suites green before merge.
+keep their sandbox writers/`contexaRoot` injection. All three suites green before merge.
 
 ## Execution model
 

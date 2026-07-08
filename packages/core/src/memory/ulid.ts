@@ -1,5 +1,5 @@
 /**
- * ULID generation for memory entity ids (`mem:<ulid>`, CTX-IMPL §3).
+ * ULID generation for memory entity ids (`mem:<ulid>`, CONTEXA-IMPL §3).
  *
  * A ULID is a 26-char Crockford base32 string: 10 chars of 48-bit millisecond
  * timestamp + 16 chars of 80-bit randomness. We support two flavours:

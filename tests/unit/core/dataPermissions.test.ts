@@ -1,6 +1,6 @@
-// Plan 003 — every store under ~/.token-killer/ must be created owner-only
+// Plan 003 — every store under ~/.contexa/ must be created owner-only
 // (0o700 dirs / 0o600 files), matching the rawStore precedent (the command line
-// tk persists routinely carries secrets). `mode` is honored only at CREATE time
+// ctx persists routinely carries secrets). `mode` is honored only at CREATE time
 // and ignored by Node on Windows, so each case skips on win32.
 
 import { chmodSync, mkdtempSync, statSync, writeFileSync } from "node:fs";
@@ -34,13 +34,13 @@ beforeEach(async () => {
   // regression is present. 0o022 strips nothing from owner bits, so explicit
   // 0o600/0o700 modes are the only thing that produces owner-only perms.
   savedUmask = process.umask(0o022);
-  home = await mkdtemp(path.join(tmpdir(), "tk-perm-home-"));
-  cwd = await mkdtemp(path.join(tmpdir(), "tk-perm-cwd-"));
-  process.env.TOKEN_KILLER_HOME = home;
+  home = await mkdtemp(path.join(tmpdir(), "ctx-perm-home-"));
+  cwd = await mkdtemp(path.join(tmpdir(), "ctx-perm-cwd-"));
+  process.env.CONTEXA_HOME = home;
 });
 
 afterEach(async () => {
-  delete process.env.TOKEN_KILLER_HOME;
+  delete process.env.CONTEXA_HOME;
   await rm(home, { recursive: true, force: true });
   await rm(cwd, { recursive: true, force: true });
   process.umask(savedUmask);
@@ -147,28 +147,31 @@ describe("Plan 003 — owner-only metrics-store permissions", () => {
     },
   );
 
-  // debug.log / errors.log live under ~/.token-killer/ too, carry command strings
-  // and fatal stacks, and are tailed into the `tk support` bundle — same data class
+  // debug.log / errors.log live under ~/.contexa/ too, carry command strings
+  // and fatal stacks, and are tailed into the `ctx support` bundle — same data class
   // as the stores above, so they must be owner-only (was a bare-write gap).
   it.skipIf(SKIP_WIN)("debug.log is created 0o600 under a 0o700 home", () => {
-    process.env.TK_DEBUG = "1";
+    process.env.CTX_DEBUG = "1";
     try {
       tkDebug("gate", { command: "curl -H 'Authorization: Bearer secret'" });
     } finally {
-      delete process.env.TK_DEBUG;
+      delete process.env.CTX_DEBUG;
     }
     expect(mode777(debugLogPath())).toBe(0o600);
     expect(mode777(home)).toBe(0o700);
   });
 
-  it.skipIf(SKIP_WIN)("errors.log is created 0o600 (carries fatal stacks read by `tk support`)", () => {
-    logFatalError("spawn", new Error("boom"));
-    expect(mode777(errorLogPath())).toBe(0o600);
-    expect(mode777(home)).toBe(0o700);
-  });
+  it.skipIf(SKIP_WIN)(
+    "errors.log is created 0o600 (carries fatal stacks read by `ctx support`)",
+    () => {
+      logFatalError("spawn", new Error("boom"));
+      expect(mode777(errorLogPath())).toBe(0o600);
+      expect(mode777(home)).toBe(0o700);
+    },
+  );
 
   it.skipIf(SKIP_WIN)(
-    "errors.log left 0o644 by a pre-fix tk is retroactively tightened to 0o600 on next write",
+    "errors.log left 0o644 by a pre-fix ctx is retroactively tightened to 0o600 on next write",
     () => {
       // `mode` applies only at create; an upgrade must chmod an existing world-readable
       // log, not leave it. This case fails on a mode-only fix and on the bare-write code.
@@ -186,11 +189,11 @@ describe("Plan 003 — owner-only metrics-store permissions", () => {
     () => {
       // inspect/advice/optimize do recursive mkdirs into the data-dir tree and are
       // often the FIRST writer on a clean install; a bare recursive mkdir would create
-      // ~/.token-killer/ at 0o755 (under this suite's umask) and defeat the metrics
+      // ~/.contexa/ at 0o755 (under this suite's umask) and defeat the metrics
       // stores' dir-gate. Point HOME at a not-yet-existing dir so the mkdir mode — not
       // mkdtemp's default 0o700 — is what's under test.
       const dataRoot = path.join(home, "freshtk");
-      process.env.TOKEN_KILLER_HOME = dataRoot;
+      process.env.CONTEXA_HOME = dataRoot;
       try {
         const file = writeInspectBucket(
           { scope: "user" },
@@ -199,7 +202,7 @@ describe("Plan 003 — owner-only metrics-store permissions", () => {
         expect(mode777(dataRoot)).toBe(0o700);
         expect(mode777(file)).toBe(0o600);
       } finally {
-        process.env.TOKEN_KILLER_HOME = home;
+        process.env.CONTEXA_HOME = home;
       }
     },
   );

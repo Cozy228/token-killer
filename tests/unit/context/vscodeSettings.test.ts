@@ -17,16 +17,16 @@ let settingsPath: string;
 const NOW = Date.UTC(2026, 5, 6);
 
 beforeEach(() => {
-  root = mkdtempSync(join(tmpdir(), "tk-vscode-"));
+  root = mkdtempSync(join(tmpdir(), "ctx-vscode-"));
   settingsPath = join(root, "settings.json");
-  process.env.TOKEN_KILLER_HOME = join(root, ".token-killer");
+  process.env.CONTEXA_HOME = join(root, ".contexa");
   // Isolate the VS Code user dir on Windows: vscodeUserDir() reads %APPDATA% on win32,
   // which would otherwise point at the runner's REAL VS Code settings and break test
   // isolation (e.g. "none when settings.json is missing"). POSIX ignores APPDATA.
   process.env.APPDATA = join(root, "AppData", "Roaming");
 });
 afterEach(() => {
-  delete process.env.TOKEN_KILLER_HOME;
+  delete process.env.CONTEXA_HOME;
   delete process.env.APPDATA;
   rmSync(root, { recursive: true, force: true });
   vi.restoreAllMocks();
@@ -102,7 +102,7 @@ describe("applyCompress", () => {
       ],
     ).toBe(13);
     // Backup + state recorded.
-    expect(existsSync(join(root, ".token-killer", "state", "vscode-compress.json"))).toBe(true);
+    expect(existsSync(join(root, ".contexa", "state", "vscode-compress.json"))).toBe(true);
     // Re-apply is a no-op (still true, no throw).
     expect(applyCompress(settingsPath, NOW)).toBe(0);
     expect(readKey()).toBe(true);
@@ -124,7 +124,7 @@ describe("applyCompress", () => {
     const parsed = JSON.parse(readFileSync(settingsPath, "utf8")) as Record<string, unknown>;
     expect(parsed.a).toBe(1);
     // applySafe snapshots the pre-apply original under backups/context before reformatting.
-    expect(existsSync(join(root, ".token-killer", "backups", "context"))).toBe(true);
+    expect(existsSync(join(root, ".contexa", "backups", "context"))).toBe(true);
   });
 
   test("still refuses genuinely malformed JSON (returns 1, leaves file untouched)", () => {

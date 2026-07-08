@@ -4,14 +4,14 @@
 > conversation that surfaced a gap the research did not cover: ctx's thesis is **project-owned
 > context** (`VISION.md` — one base, projected per task, serving human and agent; memory is Project
 > Mainline, not assistant-private), yet the current M1 implementation stores authored memory only in a
-> per-laptop `~/.ctx/…/store.sqlite`, never committed. So "project memory" is today aspirational for the
+> per-laptop `~/.contexa/…/store.sqlite`, never committed. So "project memory" is today aspirational for the
 > one content class that is authored, not derived — and it structurally diverges across people/branches.
 >
 > **Scope note (widened).** Memory is the concrete *driver*, but sync/ownership is a **cross-cutting**
 > property of **every** content type × carrier. Load-bearing principle: **ownership/sync policy is a
 > property of the CARRIER (where the authoritative bytes live), not of the content type.** This prompt
 > settles a **per-carrier ownership & sync model** (three categories — see S8), of which file-backed
-> memory is one case, and reconciles the three doc layers (VISION / CTX-DESIGN / CTX-IMPL).
+> memory is one case, and reconciles the three doc layers (VISION / CONTEXA-DESIGN / CONTEXA-IMPL).
 >
 > **Source of truth for rulings:** `docs/build/MEMORY-DECISIONS.md` (B1 / A1–A7 / C1–C5 / D1–D4 /
 > **E1–E8**). This prompt *references* those rulings; it does not restate them. Where it once described
@@ -29,10 +29,10 @@ Every memory write — `remember()`, host import, a lifecycle verb (`confirm/ret
 or a conflict resolution — is an **immutable event**. Each event lands in **exactly one of three
 zones**:
 
-1. **Committed Mainline log** — `.ctx/` files, git-synced, shared with the team.
+1. **Committed Mainline log** — `.contexa/` files, git-synced, shared with the team.
 2. **Personal overlay** — gitignored, per-person, never shared (session/task memory, my-view attention,
    host imports awaiting confirmation).
-3. **External snapshot** — `~/.ctx/…/snapshots/`, a dated cache of an external system-of-record, never
+3. **External snapshot** — `~/.contexa/…/snapshots/`, a dated cache of an external system-of-record, never
    committed.
 
 **Status** (`active` / `needs-review` / `superseded` / `retired`) is a **deterministic fold over the
@@ -69,9 +69,9 @@ guidance, never a hard error. There is no LLM/network to lean on, so the guard i
    problem.
 
 2. **Durable memory = committed files; store = rebuildable index over them.** Durable project memory
-   moves out of store-as-source-of-truth into committed repo files (`.ctx/memory/`). The `memory` table
+   moves out of store-as-source-of-truth into committed repo files (`.contexa/memory/`). The `memory` table
    becomes a derived index. **Memory + concepts leave the "index-not-copy exception"** — reconcile that
-   exception in `CTX-DESIGN.md §3` / `CTX-IMPL.md §2`.
+   exception in `CONTEXA-DESIGN.md §3` / `CONTEXA-IMPL.md §2`.
 
 3. **Git is the sync layer; the conflict model is three-layered (E1).** Clone = get the memory;
    pull/push = sync; branch = that branch's memory; merge to main via PR. Git handles **only the textual
@@ -107,8 +107,8 @@ guidance, never a hard error. There is no LLM/network to lean on, so the guard i
    is active serve, not a passive dump.
 
 7. **Three-tier visibility/scope.** (a) **Project truth** (confirm/retire/supersede/dismiss) → shared,
-   committed. (b) **Project presentation** (push pin/veto, `.ctx/push.jsonc`) → shared (D27/D30). (c)
-   **Personal attention** (my-view mute/pin) → gitignored personal overlay (`.ctx/*.local.*`); never
+   committed. (b) **Project presentation** (push pin/veto, `.contexa/push.jsonc`) → shared (D27/D30). (c)
+   **Personal attention** (my-view mute/pin) → gitignored personal overlay (`.contexa/*.local.*`); never
    forced on the team. Push ranking reads the shared config **merged with** the personal overlay.
 
 ## Open sub-decisions to settle (diverge, then converge with a recorded reason)
@@ -141,14 +141,14 @@ ratified decisions):
   - **① Derived-from-committed-source** (code, git, ADR/design-doc/commit decisions, local doc/domain
     knowledge): source of truth = git; store = deterministic cache. **Never synced; regenerated
     locally; `store.sqlite` gitignored.** No divergence by construction.
-  - **② Authored-local** (memory; concepts per C3): source of truth = committed `.ctx/` files. **git +
+  - **② Authored-local** (memory; concepts per C3): source of truth = committed `.contexa/` files. **git +
     PR; conflicts per the E1 three-layer model** (textual→git, semantic→post-merge reconcile).
   - **③ External system-of-record** (GitHub PR threads, Jira, Confluence, any credentialed carrier):
     source of truth = the **external** system. ctx holds a **dated local snapshot = cache of an
     external SoR**. **Re-import per person (credentialed), never committed/mirrored** (`VISION.md`
     invariant 4; plus staleness + credential-leak risk); **freshness = snapshot age**. Teammates
     reconcile with the external system, not with each other via git. Snapshots live under
-    `~/.ctx/…/snapshots/`, not repo-committed.
+    `~/.contexa/…/snapshots/`, not repo-committed.
   - Driver, explicitly: **a meeting recap imported as a committed local file is ①/②; the same recap
     fetched from Confluence is ③** — same content, different carrier, different policy. This is why the
     matrix is carrier-keyed.
@@ -162,10 +162,10 @@ ratified decisions):
   never mistaken for a stale fact.
 - **S10. Performance & incrementality budget (must not regress A11: dirty <20ms, serve <150ms).**
   - **Memory dirty-check must be incremental**: mtime-first, checksum only on mtime change over
-    `.ctx/memory/`; a directory-mtime / manifest short-circuit so an unchanged tree costs ~one stat.
+    `.contexa/memory/`; a directory-mtime / manifest short-circuit so an unchanged tree costs ~one stat.
   - **Anchor re-verification is change-set-bounded** via the reverse `dependency_index` (indexed lookup
     keyed by changed symbols), never a scan over all memory. Assert at scale.
-  - **Reindex on `git pull`** is proportional to the pulled delta, not the whole `.ctx/memory/`.
+  - **Reindex on `git pull`** is proportional to the pulled delta, not the whole `.contexa/memory/`.
   - **Status fold** must not replay the whole log per query — cache derived status in the (rebuildable)
     index; the log is the source, the index is the fast read.
   - Residual open Q: exact dirty-check cadence on the query hot path (per-query vs per-process gate vs
@@ -197,13 +197,13 @@ Verified on `feat/1.0.0`:
 
 - **`VISION.md`** — reword invariant 3 (local ≠ un-shared); make the Mainline/Overlay split explicit for
   memory; name git as the memory sync/collaboration layer (textual only, per E1).
-- **`CTX-DESIGN.md`** — §3: memory (+concepts, C3) join index-not-copy indexing `.ctx/memory/`;
-  `store.sqlite` gitignored; list committed files (`.ctx/memory/`, decision log, `push.jsonc`) vs local
+- **`CONTEXA-DESIGN.md`** — §3: memory (+concepts, C3) join index-not-copy indexing `.contexa/memory/`;
+  `store.sqlite` gitignored; list committed files (`.contexa/memory/`, decision log, `push.jsonc`) vs local
   cache/overlay/snapshots; add `valid_from/to`. **Add the S8 per-carrier matrix as a first-class table.**
   §2: network carriers are ingress-only dated snapshots, never committed (③). §6: guide = live serve,
   "read-only" = non-mutating, bites on memory curation. §8 (D27): concrete per-carrier sync + three-tier
   scope. §9: register; add the two new invariants (E3/E4) + the E1 conflict model.
-- **`CTX-IMPL.md`** — §2 schema: `memory` table → derived index; §5.6: `remember()` / importer write
+- **`CONTEXA-IMPL.md`** — §2 schema: `memory` table → derived index; §5.6: `remember()` / importer write
   events + decision-log; lifecycle appends decisions; §7: push reads shared+personal. Record
   `unresolved-here` (S9) alongside `stale-suspect`, and the secret guard (E4).
 - **`FABLE-DECISION-LOG.md`** — a new decision (next P-number) + the clarified/added invariants.
@@ -222,15 +222,15 @@ Ordered so the **event log lands before the storage move** — the storage swap 
    fold. Selection reads derived status → **subsumes/reframes Phase 1 item 1 (status-gate-pull)**: the
    selection status filter is reused; only the status *source* changes to the fold
    (`select/visibility.ts:44-52`). Independently revertible; no storage-locus change yet.
-3. **Storage locus swap.** Memory + the event log move to committed `.ctx/` files; the store becomes an
+3. **Storage locus swap.** Memory + the event log move to committed `.contexa/` files; the store becomes an
    index; migration (S3). **Mechanical, because the event model already exists** — this slice only
    changes *where the events live*. Highest risk → gets the deepest joint-review round (see Execution model).
 4. **Memory as a real dirty source + import→overlay→confirm pipeline.** `memory/adapter.ts` `dirtyCheck`
-   = mtime/checksum over `.ctx/memory/`; refresh ingests it. Host imports land in the **personal
+   = mtime/checksum over `.contexa/memory/`; refresh ingests it. Host imports land in the **personal
    overlay** as `needs-review` (E3); confirmation promotes them to a committed Mainline event. **Subsumes/
    reframes Phase 1 item 2 (import-unreachable)**: the mtime dirtyCheck converges into the file-source
    model; landing zone per E3; false CLI text fixed if Phase 1 has not. Secret guard (E4) on this path.
-5. **Personal overlay + three-tier scope.** Shared `.ctx/push.jsonc` merged with the gitignored personal
+5. **Personal overlay + three-tier scope.** Shared `.contexa/push.jsonc` merged with the gitignored personal
    overlay; project-truth decisions shared, personal attention local; `remember() --local`.
 6. **Collaboration eval.** Extend the E-series with a **two-working-copy** fixture:
    - **merge-clean-but-contradictory (E1):** two branches with contradictory memories merge **cleanly**
@@ -289,13 +289,13 @@ Ordered so the **event log lands before the storage move** — the storage swap 
   (routed to CLI/git); surfaces the `needs-review` queue size + oldest-item age (E8); not reducible to a
   static export.
 - **Performance (A11 not regressed):** the added memory dirty-check is incremental (mtime-first,
-  checksum-on-change; unchanged `.ctx/memory/` ≈ one stat); anchor re-verification is change-set-bounded
+  checksum-on-change; unchanged `.contexa/memory/` ≈ one stat); anchor re-verification is change-set-bounded
   via the reverse index; derived status is read from the cached index, not by replaying the log per
   query; a clean refresh serves the cached generation with zero re-parse. Dirty <20ms / serve <150ms
   hold on a large fixture.
 - The two M1 bugs (status-gate-pull, import-unreachable): **closed by Phase 1 and reframed by slices 2
   & 4** (or subsumed by them if Phase 1 has not shipped), with the E-series tests that encoded them green.
-- No LLM / embeddings / network anywhere; zero egress; every doc layer (VISION/CTX-DESIGN/CTX-IMPL/
+- No LLM / embeddings / network anywhere; zero egress; every doc layer (VISION/CONTEXA-DESIGN/CONTEXA-IMPL/
   decision-log/canonical) tells one consistent story.
 
 ## Deliverables

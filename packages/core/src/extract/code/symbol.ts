@@ -1,5 +1,5 @@
 /**
- * Extraction record types (CTX-IMPL §3 identity, §5.2). Everything here is plain
+ * Extraction record types (CONTEXA-IMPL §3 identity, §5.2). Everything here is plain
  * serializable data: the records cross the `worker_threads` boundary as JSON, so
  * NO tree-sitter nodes, class instances, or functions may appear on them.
  *

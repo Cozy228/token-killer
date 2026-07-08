@@ -1,11 +1,11 @@
 {
-  "name": "token-killer",
-  "version": "0.3.1",
+  "name": "contexa",
+  "version": "0.3.2",
   "description": "Token-saving command proxy.",
   "type": "module",
-  "packageManager": "pnpm@10.34.3",
+  "packageManager": "pnpm@11.10.0",
   "bin": {
-    "tk": "./dist/cli.js"
+    "ctx": "./dist/cli.js"
   },
   "files": [
     "dist",
@@ -15,11 +15,19 @@
     "dev": "tsx src/cli.ts",
     "build": "tsdown",
     "prepack": "tsdown",
+    "calibrate-tokens": "tsx scripts/calibrate-tokens.ts",
     "test": "vitest --config vitest.config.ts",
     "test:product": "vitest run --config vitest.config.ts",
     "test:smoke": "bash tests/smoke/smoke.sh",
+    "test:atlas-dogfood": "bash scripts/atlas-dogfood.sh",
     "test:windows-dogfood": "pwsh -NoProfile -File scripts/windows-dogfood.ps1",
-    "test:ci": "pnpm test:product && bash tests/smoke/smoke.sh",
+    "ssh:win": "bash scripts/ssh-windows.sh",
+    "ssh:win:dogfood": "bash scripts/ssh-windows.sh dogfood",
+    "test:check-presence": "bash scripts/check-test-presence.sh",
+    "test:validate-docs": "bash scripts/validate-docs.sh",
+    "test:install": "bash scripts/test-install.sh",
+    "check:installation": "bash scripts/check-installation.sh",
+    "test:ci": "pnpm test:product && pnpm test:install && bash scripts/check-test-presence.sh && bash scripts/validate-docs.sh && bash tests/smoke/smoke.sh",
     "typecheck": "tsc --noEmit",
     "prepare": "husky"
   },
@@ -30,19 +38,19 @@
     ]
   },
   "engines": {
-    "node": ">=20"
+    "node": ">=22.18.0"
   },
   "devDependencies": {
-    "@commitlint/cli": "^21.0.2",
-    "@commitlint/config-conventional": "^21.0.2",
-    "@types/node": "^25.9.3",
+    "@commitlint/cli": "^21.2.1",
+    "@commitlint/config-conventional": "^21.2.0",
+    "@types/node": "^22.18.6",
     "husky": "^9.1.7",
-    "lint-staged": "^17.0.7",
-    "oxfmt": "^0.55.0",
-    "oxlint": "^1.70.0",
-    "tsdown": "^0.22.3",
-    "tsx": "^4.22.4",
-    "typescript": "rc",
-    "vitest": "^4.1.9"
+    "lint-staged": "^17.0.8",
+    "oxfmt": "^0.58.0",
+    "oxlint": "^1.73.0",
+    "tsdown": "^0.22.4",
+    "tsx": "^4.23.0",
+    "typescript": "^6.0.3",
+    "vitest": "^4.1.10"
   }
 }

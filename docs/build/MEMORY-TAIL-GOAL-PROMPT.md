@@ -17,7 +17,7 @@ re-architecture (slices 1–6 all merged; O-17/O-20 review debts closed). -->
 **Authority (read first, do not relitigate):** `MEMORY-SYNC-GOAL-PROMPT.md` (hard invariants +
 acceptance bar — they still bind every item here), `MEMORY-DECISIONS.md` (E-group, esp. E7),
 `MEMORY-SLICE6-NOTES.md` (Adjacent-found + review rounds), repo `OPEN.md` (O-03/O-05/O-07/O-08/
-O-09/O-16/O-21), `CTX-IMPL.md` §"M3/M4/M5" (milestone boundaries).
+O-09/O-16/O-21), `CONTEXA-IMPL.md` §"M3/M4/M5" (milestone boundaries).
 
 **Standing order gate:** OPEN.md **O-14** rules "crude self-measurement BEFORE next feature".
 The R1 grid (maintainer authors ~10 `accept_cmd`s from `tools/measurement/task-bank-review.md`,
@@ -85,7 +85,7 @@ passes (or explicitly skips + logs) each; results go to the quiz-log per workflo
 
 Sync-prompt hard invariants verbatim (no LLM/network/egress at write+serve; conflicts surfaced
 never auto-merged; non-destruction; E3 on every path; A11 dirty <20ms / serve <150ms, no
-per-query file IO or git spawn). Never create `.ctx/` in this repo — sandbox fixtures only.
+per-query file IO or git spawn). Never create `.contexa/` in this repo — sandbox fixtures only.
 One Opus builder per item in a linked worktree off `feat/1.0.0`; review = Fable + Codex jointly
 (Codex deferred-to-file if quota-blocked); deviation notes appended to the relevant register;
 merge → push immediately.

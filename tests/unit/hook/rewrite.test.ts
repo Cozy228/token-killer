@@ -4,19 +4,19 @@ import { rewriteCommand } from "../../../src/hook/rewrite.js";
 
 describe("rewriteCommand — rewrite table (DESIGN §3.8)", () => {
   const rewrites: Array<[string, string]> = [
-    ["git status", "tk git status"],
-    ["git diff", "tk git diff"],
-    ["git log", "tk git log"],
-    ["git branch", "tk git branch"],
-    ["git show HEAD", "tk git show HEAD"],
-    ["rg pattern src", "tk rg pattern src"],
-    ["grep -r pattern src", "tk grep -r pattern src"],
-    ["cat file.txt", "tk cat file.txt"],
-    ["ls src", "tk ls src"],
-    ["npm test", "tk npm test"],
-    ["pnpm test", "tk pnpm test"],
-    ["tsc --noEmit", "tk tsc --noEmit"],
-    ["eslint src", "tk eslint src"],
+    ["git status", "ctx git status"],
+    ["git diff", "ctx git diff"],
+    ["git log", "ctx git log"],
+    ["git branch", "ctx git branch"],
+    ["git show HEAD", "ctx git show HEAD"],
+    ["rg pattern src", "ctx rg pattern src"],
+    ["grep -r pattern src", "ctx grep -r pattern src"],
+    ["cat file.txt", "ctx cat file.txt"],
+    ["ls src", "ctx ls src"],
+    ["npm test", "ctx npm test"],
+    ["pnpm test", "ctx pnpm test"],
+    ["tsc --noEmit", "ctx tsc --noEmit"],
+    ["eslint src", "ctx eslint src"],
   ];
   for (const [input, expected] of rewrites) {
     test(`${input} → ${expected}`, () => {
@@ -30,24 +30,24 @@ describe("rewriteCommand — rewrite table (DESIGN §3.8)", () => {
     });
   }
 
-  test("only prepends tk — nothing else changes (quoted args preserved)", () => {
+  test("only prepends ctx — nothing else changes (quoted args preserved)", () => {
     const r = rewriteCommand('cat "my file.txt"');
-    expect(r.rewritten).toBe('tk cat "my file.txt"');
+    expect(r.rewritten).toBe('ctx cat "my file.txt"');
   });
 
   test("L15: rewrite is a byte-faithful prepend even with \\ / escaped quotes the tokenizer does not parse", () => {
     // The tokenizer ignores backslash escapes; the rewrite must stay exactly
-    // `tk ` + the original segment (prepend-only), never a re-quoted/normalized form.
+    // `ctx ` + the original segment (prepend-only), never a re-quoted/normalized form.
     // (Command substitution `$(…)` is now gated upstream by P3 — see its own block.)
     for (const c of ['grep "a\\b" src', "grep 'it'\\''s' ."]) {
-      expect(rewriteCommand(c).rewritten).toBe(`tk ${c}`);
+      expect(rewriteCommand(c).rewritten).toBe(`ctx ${c}`);
     }
   });
 });
 
 describe("rewriteCommand — non-rewrite cases (pass)", () => {
-  test("already a tk command → pass (no nesting)", () => {
-    expect(rewriteCommand("tk git status").decision).toBe("pass");
+  test("already a ctx command → pass (no nesting)", () => {
+    expect(rewriteCommand("ctx git status").decision).toBe("pass");
   });
 
   test("unknown/generic command → pass", () => {
@@ -83,18 +83,18 @@ describe("rewriteCommand — non-rewrite cases (pass)", () => {
   });
 });
 
-describe("rewriteCommand — pass carries a reason (TK_DEBUG: why not rewritten)", () => {
+describe("rewriteCommand — pass carries a reason (CTX_DEBUG: why not rewritten)", () => {
   test("empty command", () => {
     expect(rewriteCommand("").reason).toBe("empty command");
   });
 
-  test("already a tk command", () => {
-    expect(rewriteCommand("tk git status").reason).toBe("already a tk command");
+  test("already a ctx command", () => {
+    expect(rewriteCommand("ctx git status").reason).toBe("already a ctx command");
   });
 
   test("no handler names the program", () => {
     expect(rewriteCommand("some-unknown-tool --flag").reason).toBe(
-      "no tk handler for 'some-unknown-tool'",
+      "no ctx handler for 'some-unknown-tool'",
     );
   });
 
@@ -140,7 +140,7 @@ describe("rewriteCommand — command substitution / expansion → pass (P3)", ()
     // gate must NOT trip, and `git log` still rewrites.
     const r = rewriteCommand("git log --grep '$(foo)'");
     expect(r.decision).toBe("rewrite");
-    expect(r.rewritten).toBe("tk git log --grep '$(foo)'");
+    expect(r.rewritten).toBe("ctx git log --grep '$(foo)'");
   });
 });
 
@@ -148,13 +148,13 @@ describe("rewriteCommand — line continuations (P4)", () => {
   test("backslash-newline collapses, then the command rewrites", () => {
     const r = rewriteCommand("git \\\n  log --oneline");
     expect(r.decision).toBe("rewrite");
-    expect(r.rewritten).toBe("tk git log --oneline");
+    expect(r.rewritten).toBe("ctx git log --oneline");
   });
 
   test("CRLF continuation also collapses", () => {
     const r = rewriteCommand("git \\\r\n log");
     expect(r.decision).toBe("rewrite");
-    expect(r.rewritten).toBe("tk git log");
+    expect(r.rewritten).toBe("ctx git log");
   });
 });
 
@@ -162,21 +162,21 @@ describe("rewriteCommand — chains", () => {
   test("&& rewrites both eligible sides", () => {
     const r = rewriteCommand("git status && tsc --noEmit");
     expect(r.decision).toBe("rewrite");
-    expect(r.rewritten).toBe("tk git status && tk tsc --noEmit");
+    expect(r.rewritten).toBe("ctx git status && ctx tsc --noEmit");
   });
 
   test("; rewrites both eligible sides", () => {
     const r = rewriteCommand("git status ; git diff");
-    expect(r.rewritten).toBe("tk git status; tk git diff");
+    expect(r.rewritten).toBe("ctx git status; ctx git diff");
   });
 
   test("|| rewrites both eligible sides", () => {
     const r = rewriteCommand("git status || git diff");
-    expect(r.rewritten).toBe("tk git status || tk git diff");
+    expect(r.rewritten).toBe("ctx git status || ctx git diff");
   });
 
   test("pipe head is NOT rewritten — compressing the producer corrupts the tail (C1)", () => {
-    // `tk git log | head` would feed `head` the COMPACTED log, not the real one.
+    // `ctx git log | head` would feed `head` the COMPACTED log, not the real one.
     // ADR 0007 follow-up #1: a segment whose stdout flows into `|` passes untouched.
     const r = rewriteCommand("git log | head");
     expect(r.decision).toBe("pass");
@@ -188,7 +188,7 @@ describe("rewriteCommand — chains", () => {
   });
 
   test("C1: counting filter over a handled producer keeps the real count", () => {
-    // `tk git diff | grep -c '^+'` would count `+` lines in the compacted diff (0),
+    // `ctx git diff | grep -c '^+'` would count `+` lines in the compacted diff (0),
     // not the real diff. Neither segment may be rewritten.
     const r = rewriteCommand("git diff | grep -c '^+'");
     expect(r.decision).toBe("pass");
@@ -196,7 +196,7 @@ describe("rewriteCommand — chains", () => {
 
   test("chain with an ineligible side rewrites only the eligible one", () => {
     const r = rewriteCommand("git commit -m x && git status");
-    expect(r.rewritten).toBe("git commit -m x && tk git status");
+    expect(r.rewritten).toBe("git commit -m x && ctx git status");
   });
 
   test("chain with no eligible side → pass", () => {
@@ -206,14 +206,14 @@ describe("rewriteCommand — chains", () => {
   test("operators inside quotes are not split", () => {
     const r = rewriteCommand('rg "a && b" src');
     expect(r.decision).toBe("rewrite");
-    expect(r.rewritten).toBe('tk rg "a && b" src');
+    expect(r.rewritten).toBe('ctx rg "a && b" src');
   });
 });
 
 describe("rewriteCommand — presence gate (D2)", () => {
-  // tk wraps real tools; it must not rewrite a command whose binary is absent (on
+  // ctx wraps real tools; it must not rewrite a command whose binary is absent (on
   // a stock Windows box `cat`/`ls` are pwsh cmdlet aliases, not executables, so
-  // `tk cat` would shell out to a missing binary and break them). The PATH check
+  // `ctx cat` would shell out to a missing binary and break them). The PATH check
   // is injected here for a deterministic, cross-platform assertion.
   test("passes a command whose binary is absent (no rewrite)", () => {
     const r = rewriteCommand("cat file.txt", undefined, () => false);
@@ -224,12 +224,12 @@ describe("rewriteCommand — presence gate (D2)", () => {
   test("rewrites the same command when the binary is present", () => {
     const r = rewriteCommand("cat file.txt", undefined, () => true);
     expect(r.decision).toBe("rewrite");
-    expect(r.rewritten).toBe("tk cat file.txt");
+    expect(r.rewritten).toBe("ctx cat file.txt");
   });
 
   test("in a chain, absent-binary segments pass while present ones rewrite", () => {
     const r = rewriteCommand("git status && cat foo", undefined, (p) => p === "git");
     expect(r.decision).toBe("rewrite");
-    expect(r.rewritten).toBe("tk git status && cat foo");
+    expect(r.rewritten).toBe("ctx git status && cat foo");
   });
 });

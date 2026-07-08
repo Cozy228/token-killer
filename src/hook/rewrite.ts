@@ -1,14 +1,14 @@
 // Slice 1 — Hook Rewrite Engine (DESIGN §3.8).
 //
 // A centralized command-rewrite registry over a raw shell command string. It is
-// RTK-style: a `rewrite` only PREPENDS `tk` (`git status` → `tk git status`);
-// nothing else changes. The `tk` proxy does the actual compression. The registry
+// RTK-style: a `rewrite` only PREPENDS `ctx` (`git status` → `ctx git status`);
+// nothing else changes. The `ctx` proxy does the actual compression. The registry
 // never replaces a tool result.
 //
 // Decisions (DESIGN §3.8):
-//   - rewrite — the command, with `tk` prepended on each eligible segment
+//   - rewrite — the command, with `ctx` prepended on each eligible segment
 //   - suggest — not rewritten, carries a hint
-//   - pass    — leave untouched (already `tk`, or a non-equivalent shell)
+//   - pass    — leave untouched (already `ctx`, or a non-equivalent shell)
 //   - deny    — blocked with a reason (unused by the terminal path today; direct-
 //               tool denies live in govern.ts)
 //
@@ -48,7 +48,7 @@ function splitTopLevel(command: string): Segment[] {
   let quote: '"' | "'" | null = null;
   // Depth of unquoted `{ ... }` nesting. A `;`/`|`/`&&`/`||` at depth > 0 belongs to
   // the block (a pwsh script block, e.g. `ForEach-Object { a; b }`, or a bash command
-  // group), NOT the outer chain — splitting there would inject `tk` mid-block and
+  // group), NOT the outer chain — splitting there would inject `ctx` mid-block and
   // change semantics (issue #25). At depth 0 the original top-level behavior is
   // byte-identical, so brace-free commands are unaffected.
   let braceDepth = 0;
@@ -152,14 +152,14 @@ function toParsed(tokens: string[]): ParsedCommand {
   };
 }
 
-// Build the `tk ` (or `tk --session <id> `) prefix prepended to each eligible
+// Build the `ctx ` (or `ctx --session <id> `) prefix prepended to each eligible
 // segment. The id is validated by the SINGLE shared `sanitizeSessionId` (parse.ts)
 // — a raw id is NEVER interpolated, so `abc; rm -rf /` can never become shell syntax,
 // and there is no second copy of the charset to drift out of sync. No/invalid session
-// → exactly `tk ` (byte-identical to the no-session rewrite).
+// → exactly `ctx ` (byte-identical to the no-session rewrite).
 function tkPrefix(session?: string): string {
   const id = sanitizeSessionId(session);
-  return id ? `tk --session ${id} ` : "tk ";
+  return id ? `ctx --session ${id} ` : "ctx ";
 }
 
 // Mutating ops are never rewritten (goal guardrail / DESIGN §14). routeSpecific
@@ -214,15 +214,15 @@ function isMutating(parsed: ParsedCommand): boolean {
 }
 
 // Why a segment is (in)eligible for rewrite. The reason is surfaced on `pass`
-// decisions so `TK_DEBUG` can explain "why wasn't this rewritten?" (the most
+// decisions so `CTX_DEBUG` can explain "why wasn't this rewritten?" (the most
 // common hook question). Total; never throws.
 type Eligibility = { eligible: true } | { eligible: false; reason: string };
 
 function eligibility(tokens: string[], isAvailable: (program: string) => boolean): Eligibility {
   if (tokens.length === 0) return { eligible: false, reason: "empty segment" };
-  if (tokens[0] === "tk") return { eligible: false, reason: "already a tk command" };
+  if (tokens[0] === "ctx") return { eligible: false, reason: "already a ctx command" };
   // `test`/`[` are shell conditional builtins (`test -f x`, `[ -z "$v" ]`), never a
-  // tool whose output is worth compressing. Rewriting to `tk test …` would run
+  // tool whose output is worth compressing. Rewriting to `ctx test …` would run
   // `args[0]` as a program and break the conditional with exit 127 (C3), so they are
   // hard-ineligible regardless of what the test-runner handler's matcher accepts.
   if (tokens[0] === "test" || tokens[0] === "[") {
@@ -230,11 +230,11 @@ function eligibility(tokens: string[], isAvailable: (program: string) => boolean
   }
   const parsed = toParsed(tokens);
   if (routeSpecific(parsed) === null) {
-    return { eligible: false, reason: `no tk handler for '${parsed.program}'` };
+    return { eligible: false, reason: `no ctx handler for '${parsed.program}'` };
   }
-  // tk wraps real tools; it must not claim a command whose binary is absent. On a
+  // ctx wraps real tools; it must not claim a command whose binary is absent. On a
   // stock Windows box `cat`/`ls`/`wc`/`env` are shell aliases, not executables, so
-  // rewriting `cat foo` → `tk cat foo` would shell out to a missing binary and
+  // rewriting `cat foo` → `ctx cat foo` would shell out to a missing binary and
   // break a command the shell would otherwise have run via its cmdlet alias (D2).
   // Off Windows this is always true (the gate is a Windows-only safety net).
   if (!isAvailable(parsed.program)) {
@@ -269,7 +269,7 @@ function collapseLineContinuations(command: string): string {
 
 // Command substitution (`$(…)`, backticks) and arithmetic expansion (`$((…))`)
 // are evaluated by the shell BEFORE the command runs, so their result can't be
-// reasoned about statically — prepending `tk` may change semantics or wrap the
+// reasoned about statically — prepending `ctx` may change semantics or wrap the
 // wrong program. Pass instead. Quote handling mirrors the shell (and RTK's
 // contains_substitution): single quotes suppress everything; a backslash escapes
 // the next char outside single quotes; `$(` and backticks stay ACTIVE inside
@@ -302,7 +302,7 @@ function hasShellSubstitution(command: string): boolean {
 }
 
 // A heredoc (`<<`/`<<-`) or output redirect (`>`/`>>`) makes the rewrite non-
-// equivalent: the `tk` wrapper would not see the same I/O context. Pass instead.
+// equivalent: the `ctx` wrapper would not see the same I/O context. Pass instead.
 // Conservative: any unquoted `<<`, `>`, or `>>` outside quotes → pass.
 function hasNonEquivalentRedirect(command: string): boolean {
   let quote: '"' | "'" | null = null;
@@ -330,8 +330,8 @@ function pipesIntoXargs(segments: Segment[]): boolean {
 
 // Rewrite a raw shell command per DESIGN §3.8. Pure and total; never throws. When
 // a (sanitized) `session` is supplied, each rewritten segment carries it as
-// `tk --session <id> …` so the separate `tk` subprocess can stamp `session_id` on
-// its history row (ADR 0009). A portable flag — not a `TK_SESSION=…` env prefix,
+// `ctx --session <id> …` so the separate `ctx` subprocess can stamp `session_id` on
+// its history row (ADR 0009). A portable flag — not a `CTX_SESSION=…` env prefix,
 // which only works in POSIX sh and breaks on Windows pwsh.
 export function rewriteCommand(
   raw: string,
@@ -348,7 +348,7 @@ export function rewriteCommand(
 
   // Non-equivalent shells → pass.
   if (hasNonEquivalentRedirect(command)) {
-    return { decision: "pass", reason: "output redirect or heredoc (not equivalent under tk)" };
+    return { decision: "pass", reason: "output redirect or heredoc (not equivalent under ctx)" };
   }
 
   // Command substitution / arithmetic expansion → pass (P3): the shell evaluates

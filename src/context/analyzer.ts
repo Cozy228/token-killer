@@ -1,4 +1,4 @@
-// Static-context analyzer (goal "Module layout"). Registered into `tk inspect`:
+// Static-context analyzer (goal "Module layout"). Registered into `ctx inspect`:
 // every run parses the discovered context files and emits ContextFinding[] with
 // source = "static_context". Independent of command handlers — pure functions
 // over discovered files. Cross-file rules (duplicate/conflict) receive the full

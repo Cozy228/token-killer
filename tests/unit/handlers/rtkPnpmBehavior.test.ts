@@ -54,7 +54,7 @@ describe("RTK pnpm behavior", () => {
   });
 
   // ADR 0001 decision 2: RTK's CAP_LIST (20-per-section) + "… +N more" marker is
-  // REMOVED. 25 packages — PAST the old cap — and tk lists EVERY one (including the
+  // REMOVED. 25 packages — PAST the old cap — and ctx lists EVERY one (including the
   // 21st–25th) with NO fake overflow marker, on the DEFAULT plain-list path (which
   // RTK would have truncated). Tree chars are stripped so the reshape is a shrink.
   test("reshapes every package past the old cap with no fake overflow marker", async () => {

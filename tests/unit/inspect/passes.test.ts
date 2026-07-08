@@ -33,7 +33,7 @@ function makeMemoryCache<T>(): ExtractCache<T> {
 let dir: string;
 
 beforeEach(() => {
-  dir = mkdtempSync(join(tmpdir(), "tk-inspect-passes-"));
+  dir = mkdtempSync(join(tmpdir(), "ctx-inspect-passes-"));
 });
 afterEach(() => {
   rmSync(dir, { recursive: true, force: true });

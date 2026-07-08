@@ -1,4 +1,4 @@
-; Tier-1 Python queries (CTX-IMPL §5.2). function_definition inside a class is
+; Tier-1 Python queries (CONTEXA-IMPL §5.2). function_definition inside a class is
 ; reclassified to `method` in extract.ts (callable/container ancestry). Module
 ; docstrings live in the body's first string and are attached in extract.ts.
 

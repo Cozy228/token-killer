@@ -1,5 +1,5 @@
 /**
- * Echo exclusion (CTX-IMPL §5.6, P28 bar): a host memory file may contain a
+ * Echo exclusion (CONTEXA-IMPL §5.6, P28 bar): a host memory file may contain a
  * ctx-managed push block (the digest ctx itself wrote — see §7). Re-importing
  * that block would echo our own output back into the store, so it is stripped
  * before an entity is created.

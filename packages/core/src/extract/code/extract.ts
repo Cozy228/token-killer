@@ -1,5 +1,5 @@
 /**
- * Pure symbol extraction from a parsed tree-sitter tree (CTX-IMPL §5.2, §3).
+ * Pure symbol extraction from a parsed tree-sitter tree (CONTEXA-IMPL §5.2, §3).
  *
  * G-8 (day-one regression): source text is read ONLY through `node.text`. We
  * never slice `content` by tree-sitter byte offsets — offsets are UTF-8 byte

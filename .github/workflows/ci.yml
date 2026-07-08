@@ -21,11 +21,11 @@ jobs:
       fail-fast: false
       matrix:
         os: [ubuntu-latest, windows-latest]
-        node-version: [20, 22]
+        node-version: [22.18.0, 24, 26]
     steps:
       - uses: actions/checkout@v4
-      # ripgrep is a real tool tk wraps: the `tk rg` integration tests invoke the
-      # actual rg binary (tk never fabricates output for an absent program — it
+      # ripgrep is a real tool ctx wraps: the `ctx rg` integration tests invoke the
+      # actual rg binary (ctx never fabricates output for an absent program — it
       # honestly reports command-not-found), so each runner must provide it. The
       # runner images do not ship rg by default.
       - if: runner.os == 'Linux'
@@ -48,10 +48,11 @@ jobs:
       # timeout.exe is an unrelated sleep command — exactly why bash is pinned.)
       - run: timeout -k 30 360 pnpm test:product
         shell: bash
-      # The build tool (tsdown) requires Node >=22.18, so the build — and the dist
-      # smoke that consumes ./dist/cli.js — run on the Node 22 jobs only. Node 20 still
-      # runs the full source suite (test:product) above to verify the runtime target
-      # (the shipped artifact is built with `target: node20`).
+      - run: timeout -k 30 360 pnpm test:install
+        shell: bash
+      - run: bash scripts/check-test-presence.sh
+        shell: bash
+      - run: bash scripts/validate-docs.sh
+        shell: bash
       - run: timeout -k 30 180 bash tests/smoke/smoke.sh
         shell: bash
-        if: matrix.node-version == 22

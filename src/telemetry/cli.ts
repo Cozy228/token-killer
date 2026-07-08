@@ -1,4 +1,4 @@
-// Slice 3b — `tk telemetry <enable|disable|status|preview>` (ADR 0004 §5).
+// Slice 3b — `ctx telemetry <enable|disable|status|preview>` (ADR 0004 §5).
 // `purge` (reset device id) stays an internal helper (state.purgeState), not a
 // user-facing subcommand — we don't surface device-reset to users.
 // NONE of these subcommands ever send over the network — `preview` prints the exact
@@ -25,7 +25,10 @@ export async function runTelemetry(argv: string[], now: Date = new Date()): Prom
     } catch (error) {
       return configError(error);
     }
-    const path = writeConfigTemplate({ telemetry: sub === "enable", telemetryExport: exportConsent });
+    const path = writeConfigTemplate({
+      telemetry: sub === "enable",
+      telemetryExport: exportConsent,
+    });
     process.stdout.write(
       `Telemetry ${sub === "enable" ? "enabled" : "disabled"} (network upload). Wrote ${path}\n`,
     );
@@ -75,12 +78,12 @@ export async function runTelemetry(argv: string[], now: Date = new Date()): Prom
     return 0;
   }
 
-  process.stderr.write("tk telemetry: usage: tk telemetry <enable|disable|status|preview>\n");
+  process.stderr.write("ctx telemetry: usage: ctx telemetry <enable|disable|status|preview>\n");
   return 1;
 }
 
 function configError(error: unknown): number {
   const message = error instanceof ConfigError ? error.message : String(error);
-  process.stderr.write(`tk telemetry: ${message}\n`);
+  process.stderr.write(`ctx telemetry: ${message}\n`);
   return 1;
 }

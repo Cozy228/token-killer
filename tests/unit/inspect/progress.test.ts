@@ -12,8 +12,8 @@ describe("progressEnabled — gate", () => {
     expect(progressEnabled({}, { isTTY: false })).toBe(false);
   });
 
-  test("false when TK_NO_PROGRESS is set, even on a TTY", () => {
-    expect(progressEnabled({ TK_NO_PROGRESS: "1" }, { isTTY: true })).toBe(false);
+  test("false when CTX_NO_PROGRESS is set, even on a TTY", () => {
+    expect(progressEnabled({ CTX_NO_PROGRESS: "1" }, { isTTY: true })).toBe(false);
   });
 });
 

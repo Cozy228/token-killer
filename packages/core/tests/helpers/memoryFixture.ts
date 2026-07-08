@@ -3,7 +3,7 @@
  * code + docs + decisions + git history + host memory — built script-side in a
  * temp dir so the E-series is machine-independent and needs no env gate.
  *
- * Determinism contract (§6): the caller opens the store under a temp CTX_HOME
+ * Determinism contract (§6): the caller opens the store under a temp CONTEXA_HOME
  * (G-7) with an injected clock; this module only writes files and drives the
  * real adapters. No network, no LLM (assertNoEgress stays armed in the suite).
  */
@@ -91,7 +91,7 @@ export function buildEvalRepo(root: string): string {
     "decisions/0002-strict-config.md",
     "---\nstatus: accepted\n---\n# Config validation is strict\nUnknown keys are rejected with guidance rather than silently ignored.\n",
   );
-  write(".ctx/push.jsonc", `{ "pin": [], "veto": [] }\n`);
+  write(".contexa/push.jsonc", `{ "pin": [], "veto": [] }\n`);
   git(["add", "-A"], repo);
   git(["commit", "-q", "-m", "C1: initial service"], repo);
   return repo;

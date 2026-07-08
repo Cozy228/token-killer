@@ -1,7 +1,7 @@
 /**
- * `ctx mcp` — MCP stdio server (CTX-IMPL §7 serving surface, slice 1g).
+ * `ctx mcp` — MCP stdio server (CONTEXA-IMPL §7 serving surface, slice 1g).
  *
- * A THIN stdio JSON-RPC 2.0 shim (§1: ~50-line shim) over the `@ctx/core`
+ * A THIN stdio JSON-RPC 2.0 shim (§1: ~50-line shim) over the `@contexa/core`
  * serving library. MCP's stdio transport is newline-delimited JSON-RPC — one
  * message per line, no embedded newlines. We implement the minimal loop locally
  * rather than depend on `@modelcontextprotocol/sdk`: the SDK is NOT in this
@@ -25,7 +25,7 @@ import {
   type RefreshReport,
   type ServeDeps,
   type Store,
-} from "@ctx/core";
+} from "@contexa/core";
 
 /** MCP protocol revision this shim speaks (stdio newline-delimited JSON-RPC). */
 export const MCP_PROTOCOL_VERSION = "2024-11-05";

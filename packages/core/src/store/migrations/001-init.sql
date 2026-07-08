@@ -1,4 +1,4 @@
--- 001-init: ctx store spine DDL, verbatim from CTX-IMPL §2 (authoritative).
+-- 001-init: ctx store spine DDL, verbatim from CONTEXA-IMPL §2 (authoritative).
 -- Forward-only; runs inside one transaction owned by the migration runner
 -- (PRAGMA journal_mode lives in connection bootstrap, not here — WAL cannot be
 -- switched inside a transaction).

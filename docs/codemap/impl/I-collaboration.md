@@ -1,4 +1,4 @@
-> **[2026-07-04 P28] PARTIALLY SUPERSEDED** — the `.tk/wiki.json` page-authoring control file (I-1/I-2/I-9) belongs to the retired wiki feature; the only JSONC control file now is `.ctx/push.jsonc` (`CTX-IMPL.md` §7). Still carried: I.0 solo-first rationale (D27), I-10 zero-egress impact brief, I-11 path-fencing + EBUSY-safe rm.
+> **[2026-07-04 P28] PARTIALLY SUPERSEDED** — the `.tk/wiki.json` page-authoring control file (I-1/I-2/I-9) belongs to the retired wiki feature; the only JSONC control file now is `.contexa/push.jsonc` (`CONTEXA-IMPL.md` §7). Still carried: I.0 solo-first rationale (D27), I-10 zero-egress impact brief, I-11 path-fencing + EBUSY-safe rm.
 
 ## 需求 I — Collaboration（协作：知识沉淀、控制文件、agent 写/人编辑往返、来源与陈旧度）
 

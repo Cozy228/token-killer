@@ -1,8 +1,8 @@
 /**
- * Shared store types — the contract 1c/1d/1e build against (CTX-IMPL §2/§3).
+ * Shared store types — the contract 1c/1d/1e build against (CONTEXA-IMPL §2/§3).
  */
 
-/** Entity kinds (CTX-IMPL §2 `entities.kind`). */
+/** Entity kinds (CONTEXA-IMPL §2 `entities.kind`). */
 export type EntityKind =
   | "symbol"
   | "file"
@@ -17,10 +17,10 @@ export type EntityKind =
   | "memory"
   | "concept";
 
-/** Claim authority ladder (CTX-IMPL §2 CHECK constraint). */
+/** Claim authority ladder (CONTEXA-IMPL §2 CHECK constraint). */
 export type Authority = "observed" | "derived" | "inferred" | "confirmed";
 
-/** Claim/link derivation method (CTX-IMPL §2 `claims.method`). */
+/** Claim/link derivation method (CONTEXA-IMPL §2 `claims.method`). */
 export type ClaimMethod =
   | "explicit-key"
   | "path-match"
@@ -34,7 +34,7 @@ export type Facet = "callers" | "callees" | "diff" | "text" | "detail" | "histor
 
 /**
  * Locator — read-through address (index-not-copy, P25①). JSON discriminated
- * union persisted in `entities.locator` (CTX-IMPL §3).
+ * union persisted in `entities.locator` (CONTEXA-IMPL §3).
  *
  * File spans are 1-based inclusive [startLine, endLine].
  */

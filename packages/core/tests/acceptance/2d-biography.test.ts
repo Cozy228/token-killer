@@ -1,7 +1,7 @@
 /**
  * Flagship B6 — symbol biography (M2-ACCEPTANCE.md "Flagship"). Closes M2, owned
  * by slice 2d, composes 2a (definition) + 2b (history) + 2c (drift) + 2d (call
- * preview). Two tiers (CTX-IMPL §10):
+ * preview). Two tiers (CONTEXA-IMPL §10):
  *
  *  • Deterministic tier — a scripted symbol with a caller, an anchored memory,
  *    and a structural edit → the biography is DRIFT-HONEST (the anchored memory
@@ -71,8 +71,8 @@ describe("acceptance: 2d flagship biography (deterministic, drift-honest)", () =
       surface: "cli",
       note: "target adds one to its argument",
       anchors: [TARGET],
-      // Slice 4: write-through is always-on; redirect the `.ctx` writer to a
-      // sandbox so this living-repo test never creates `.ctx/` in the real repo.
+      // Slice 4: write-through is always-on; redirect the `.contexa` writer to a
+      // sandbox so this living-repo test never creates `.contexa/` in the real repo.
       files: new MemoryFiles(join(root, "mem-ctx")),
     });
     expect(mem.ok).toBe(true);
@@ -131,7 +131,7 @@ describe("acceptance: 2d flagship biography (living repo — openStore)", () => 
 
   beforeAll(async () => {
     root = makeTempDir("ctx-2d-bio-live-");
-    store = openStore({ projectDir: REPO_ROOT, home: join(root, "ctx-home") });
+    store = openStore({ projectDir: REPO_ROOT, home: join(root, "contexa-home") });
     // git (symbol-level touches → openStore history) + code (symbols + call
     // edges → openStore callers). docs/memory off; the anchor is set below.
     clearScanCache();

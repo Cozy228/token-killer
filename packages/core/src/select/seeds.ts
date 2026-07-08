@@ -1,5 +1,5 @@
 /**
- * Stage 1 — seeds (CTX-IMPL §6.1).
+ * Stage 1 — seeds (CONTEXA-IMPL §6.1).
  *
  * Task mode: identifier-aware tokenization → FTS5 bm25 top-64 (scoring sums
  * only the top-3 matches per file) + NAMED-SEED INJECTION (identifier-shaped

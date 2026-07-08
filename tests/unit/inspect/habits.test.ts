@@ -8,7 +8,7 @@ import type { SourceDiscovery } from "../../../src/inspect/sources.js";
 
 let dir: string;
 beforeEach(() => {
-  dir = mkdtempSync(join(tmpdir(), "tk-habits-"));
+  dir = mkdtempSync(join(tmpdir(), "ctx-habits-"));
 });
 afterEach(() => {
   rmSync(dir, { recursive: true, force: true });

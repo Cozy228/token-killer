@@ -1,5 +1,5 @@
 /**
- * Read-through resolvers per Locator type (CTX-IMPL §3). Index-not-copy: the
+ * Read-through resolvers per Locator type (CONTEXA-IMPL §3). Index-not-copy: the
  * store holds addresses; text is read back from the source at serve time.
  *
  * Hardening (absorbed from understand-anything's file reader, per §3):
@@ -131,6 +131,6 @@ export function readGitLocator(
 }
 
 export function readSnapshotLocator(): ReadThroughResult {
-  // Network-carrier snapshots land at M4 (CTX-IMPL §9); recoverable, not an error.
+  // Network-carrier snapshots land at M4 (CONTEXA-IMPL §9); recoverable, not an error.
   return fail("unsupported", "snapshot locators land at M4");
 }

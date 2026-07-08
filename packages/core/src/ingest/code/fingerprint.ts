@@ -1,5 +1,5 @@
 /**
- * Structural fingerprint (CTX-IMPL §4 — dirty classification; reference:
+ * Structural fingerprint (CONTEXA-IMPL §4 — dirty classification; reference:
  * understand-anything `fingerprint.ts`, dependency-free TS). Slice 2c.
  *
  * A content-hash mismatch on a code file is classified NONE / COSMETIC /

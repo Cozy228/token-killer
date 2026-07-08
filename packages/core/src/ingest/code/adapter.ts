@@ -1,5 +1,5 @@
 /**
- * Code source adapter (CTX-IMPL §4 SourceAdapter, §5.2 code structure) — slice
+ * Code source adapter (CONTEXA-IMPL §4 SourceAdapter, §5.2 code structure) — slice
  * 2a foundation + slice 2c fingerprint invalidation & incremental correctness.
  *
  * 2a lands: tree-sitter symbol entities (spans + per-symbol content_hash) for

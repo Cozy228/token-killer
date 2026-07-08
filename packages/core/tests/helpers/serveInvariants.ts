@@ -121,7 +121,7 @@ export async function assertG6EgressActive(store: Store): Promise<void> {
 }
 
 /** G-7: the store's data home is a temp sandbox — never a real host config
- *  path (~/.claude, ~/.copilot, ~/.ctx). */
+ *  path (~/.claude, ~/.copilot, ~/.contexa). */
 export function assertG7Sandbox(store: Store): void {
   const real = realpathSync(store.dbPath);
   const tmpReal = realpathSync(tmpdir());

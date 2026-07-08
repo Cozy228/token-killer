@@ -10,7 +10,7 @@ import { openStore } from "../../src/store/store.ts";
 import { cleanupTempDir, makeTempDir } from "../helpers/sandbox.ts";
 
 // Slice 1c — Memory source (M1-ACCEPTANCE.md). Stores live under a temp
-// CTX_HOME sandbox (G-7); A1-import READS the real ~/.claude memory dir for THIS
+// CONTEXA_HOME sandbox (G-7); A1-import READS the real ~/.claude memory dir for THIS
 // project but writes only to the sandbox store (never under ~/.claude).
 const PKG_DIR = resolve(dirname(fileURLToPath(import.meta.url)), "../..");
 const REPO_ROOT = resolve(PKG_DIR, "../..");
@@ -35,7 +35,7 @@ describe("acceptance: 1c memory source", () => {
 
   beforeEach(() => {
     root = makeTempDir("ctx-a1-");
-    home = join(root, "ctx-home"); // sandboxed CTX_HOME (G-7)
+    home = join(root, "contexa-home"); // sandboxed CONTEXA_HOME (G-7)
   });
   afterEach(() => {
     cleanupTempDir(root);
@@ -78,20 +78,20 @@ describe("acceptance: 1c memory source", () => {
   });
 
   test("A2-remember: write + anchor resolve + recall; over-long note is guided, not written", () => {
-    // Living-repo tier: CTX-IMPL.md exists in this checkout, so the file anchor
+    // Living-repo tier: CONTEXA-IMPL.md exists in this checkout, so the file anchor
     // resolves (auto-created as a file entity — valid before docs ingest).
     const store = openStore({ projectDir: REPO_ROOT, home });
 
     const ok = remember(store, {
       surface: "cli",
       note: "test note",
-      anchors: ["file:CTX-IMPL.md"],
+      anchors: ["file:CONTEXA-IMPL.md"],
     });
     expect(ok.ok).toBe(true);
     if (!ok.ok) throw new Error("remember should succeed");
-    expect(ok.anchors).toEqual(["file:CTX-IMPL.md"]);
-    expect(store.anchorsOf(ok.entityId)).toEqual(["file:CTX-IMPL.md"]);
-    expect(store.getEntity("file:CTX-IMPL.md")?.kind).toBe("file"); // anchor materialized
+    expect(ok.anchors).toEqual(["file:CONTEXA-IMPL.md"]);
+    expect(store.anchorsOf(ok.entityId)).toEqual(["file:CONTEXA-IMPL.md"]);
+    expect(store.getEntity("file:CONTEXA-IMPL.md")?.kind).toBe("file"); // anchor materialized
 
     const back = recall(store, ok.handle);
     expect(back.ok).toBe(true);

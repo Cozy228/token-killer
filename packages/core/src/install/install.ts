@@ -1,5 +1,5 @@
 /**
- * `ctx install` host integration (CTX-IMPL §7 CLI / §9 slice 1i, P28).
+ * `ctx install` host integration (CONTEXA-IMPL §7 CLI / §9 slice 1i, P28).
  *
  * Slice 1i owns two managed writes:
  *  (a) the MCP-server registration for Claude Code → project `.mcp.json`

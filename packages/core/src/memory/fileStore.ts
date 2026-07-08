@@ -1,21 +1,21 @@
 /**
  * Committed / overlay memory file layout (slice 3 — the storage locus).
  *
- * Durable memory now lives in committed `.ctx/` files; the SQLite store is a
+ * Durable memory now lives in committed `.contexa/` files; the SQLite store is a
  * rebuildable index over them (B1). Two zones (the third — external snapshots —
  * is out of scope here):
  *
  *   ① Mainline (committed, git-synced, shared):
- *      .ctx/memory/log.md        — append-only memory entries (C1, one/line)
- *      .ctx/memory/decisions.md  — append-only lifecycle/decision log (C2)
- *      .ctx/memory/details/<ulid>.md — write-once detail sidecars (S1)
+ *      .contexa/memory/log.md        — append-only memory entries (C1, one/line)
+ *      .contexa/memory/decisions.md  — append-only lifecycle/decision log (C2)
+ *      .contexa/memory/details/<ulid>.md — write-once detail sidecars (S1)
  *   ② Overlay (gitignored, per-person, never shared — E3 landing zone):
- *      .ctx/memory.local.md      — agent remember() + host imports (needs-review)
- *      .ctx/decisions.local.md   — overlay lifecycle events
- *      .ctx/details.local/<ulid>.md — overlay detail sidecars
+ *      .contexa/memory.local.md      — agent remember() + host imports (needs-review)
+ *      .contexa/decisions.local.md   — overlay lifecycle events
+ *      .contexa/details.local/<ulid>.md — overlay detail sidecars
  *
- * Scaffold ctx writes once: `.ctx/.gitattributes` (E2 `merge=union` on the
- * append-only logs) + `.ctx/.gitignore` (the overlay + index). Concepts follow
+ * Scaffold ctx writes once: `.contexa/.gitattributes` (E2 `merge=union` on the
+ * append-only logs) + `.contexa/.gitignore` (the overlay + index). Concepts follow
  * memory (C3) — the layout is laid down; there is no authored concept write path
  * yet (recorded in the slice notes).
  *
@@ -54,7 +54,7 @@ memory/decisions.md merge=union
 
 const GITIGNORE = `# ctx personal overlay — gitignored, per-person, never shared (E3 / three-tier).
 # Nothing auto-generated (agent remember, host imports) reaches git unreviewed.
-# (The rebuildable SQLite index lives under ~/.ctx, outside the repo, so it needs
+# (The rebuildable SQLite index lives under ~/.contexa, outside the repo, so it needs
 # no pattern here; if a future index moves in-repo, add its pattern below.)
 *.local.md
 *.local.jsonc
@@ -67,26 +67,26 @@ export function ulidOf(memoryId: string): string {
 }
 
 export class MemoryFiles {
-  readonly ctxRoot: string;
+  readonly contexaRoot: string;
   /**
    * E4 per-repo opt-out (slice 5): when true, EVERY write that logically targets
    * the committed Mainline zone is redirected to the gitignored personal overlay,
    * so nothing ever creates or appends the committed logs. READS still address the
    * literal zone (mainline reads stay empty; reindex never double-counts). Set once
-   * at construction from the shared `.ctx/push.jsonc` — never re-read per write.
+   * at construction from the shared `.contexa/push.jsonc` — never re-read per write.
    */
   readonly localOnly: boolean;
 
-  constructor(ctxRoot: string, localOnly = false) {
-    this.ctxRoot = ctxRoot;
+  constructor(contexaRoot: string, localOnly = false) {
+    this.contexaRoot = contexaRoot;
     this.localOnly = localOnly;
   }
 
-  /** The `.ctx` directory under a store's current checkout root. Reads the E4
-   *  opt-out from that `.ctx`'s shared config once. */
+  /** The `.contexa` directory under a store's current checkout root. Reads the E4
+   *  opt-out from that `.contexa`'s shared config once. */
   static forStore(store: Store): MemoryFiles {
-    const ctxRoot = join(store.projectRoot, ".ctx");
-    return new MemoryFiles(ctxRoot, readMemoryOptOut(ctxRoot));
+    const contexaRoot = join(store.projectRoot, ".contexa");
+    return new MemoryFiles(contexaRoot, readMemoryOptOut(contexaRoot));
   }
 
   /** WRITE zone after the E4 opt-out: mainline → overlay when `localOnly`. Reads
@@ -99,20 +99,20 @@ export class MemoryFiles {
 
   #memoryLog(zone: MemoryZone): string {
     return zone === "mainline"
-      ? join(this.ctxRoot, "memory", "log.md")
-      : join(this.ctxRoot, "memory.local.md");
+      ? join(this.contexaRoot, "memory", "log.md")
+      : join(this.contexaRoot, "memory.local.md");
   }
 
   #decisionLog(zone: MemoryZone): string {
     return zone === "mainline"
-      ? join(this.ctxRoot, "memory", "decisions.md")
-      : join(this.ctxRoot, "decisions.local.md");
+      ? join(this.contexaRoot, "memory", "decisions.md")
+      : join(this.contexaRoot, "decisions.local.md");
   }
 
   #detailsDir(zone: MemoryZone): string {
     return zone === "mainline"
-      ? join(this.ctxRoot, "memory", "details")
-      : join(this.ctxRoot, "details.local");
+      ? join(this.contexaRoot, "memory", "details")
+      : join(this.contexaRoot, "details.local");
   }
 
   sidecarPath(zone: MemoryZone, ulid: string): string {
@@ -125,14 +125,14 @@ export class MemoryFiles {
    *  `.gitignore`, the `memory/` + `details/` dirs, and the `concepts/` layout).
    *  Never overwrites an existing file (non-destruction). */
   ensureScaffold(): void {
-    mkdirSync(join(this.ctxRoot, "memory", "details"), { recursive: true });
-    mkdirSync(join(this.ctxRoot, "concepts"), { recursive: true });
-    const attrs = join(this.ctxRoot, ".gitattributes");
+    mkdirSync(join(this.contexaRoot, "memory", "details"), { recursive: true });
+    mkdirSync(join(this.contexaRoot, "concepts"), { recursive: true });
+    const attrs = join(this.contexaRoot, ".gitattributes");
     if (!existsSync(attrs)) writeFileSync(attrs, GITATTRIBUTES, "utf8");
-    const ignore = join(this.ctxRoot, ".gitignore");
+    const ignore = join(this.contexaRoot, ".gitignore");
     if (!existsSync(ignore)) writeFileSync(ignore, GITIGNORE, "utf8");
     // C3: concepts follow memory into the file model — layout only for now.
-    const conceptsKeep = join(this.ctxRoot, "concepts", ".gitkeep");
+    const conceptsKeep = join(this.contexaRoot, "concepts", ".gitkeep");
     if (!existsSync(conceptsKeep)) writeFileSync(conceptsKeep, "", "utf8");
   }
 

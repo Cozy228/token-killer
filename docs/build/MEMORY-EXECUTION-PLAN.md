@@ -15,7 +15,7 @@
 ## Phase 1 — Research Implementation (surgical, ships correctness, no big bets)
 
 Directly implements `REPORT-canonical.md §5 "Must do now"`. **Independent of Phase 2**: it runs on the
-current storage model (memory rows in `~/.ctx/…/store.sqlite`) and fixes the live correctness defects
+current storage model (memory rows in `~/.contexa/…/store.sqlite`) and fixes the live correctness defects
 now. Each item names the research decision it answers and the E-series task that guards it.
 
 | # | Change | Surgical approach | Research decision | Eval guard |
@@ -38,7 +38,7 @@ Full spec: **`docs/build/MEMORY-SYNC-GOAL-PROMPT.md`** (unified event model + S-
 **not** re-summarize it here; this section only states its relationship to Phase 1.
 
 **What Phase 2 changes** (net-new, beyond the research): memory becomes an **immutable event log** in
-one of three zones (committed Mainline `.ctx/` / gitignored personal overlay / external snapshot); the
+one of three zones (committed Mainline `.contexa/` / gitignored personal overlay / external snapshot); the
 store becomes a rebuildable materialized view (memory leaves the index-not-copy exception); git is the
 **textual** sync layer only, with a **three-layer conflict model** (textual→git / identity→reindex /
 semantic→post-merge reconcile, E1); lifecycle mutations become committed decision events with an
@@ -50,7 +50,7 @@ overlay; host imports land in the overlay as `needs-review` and are promoted by 
 **New slice order (risk-ordered, per the revised sync prompt)** — the **event log lands before the
 storage move** so the storage swap is mechanical: (1) docs + decision record; (2) event/decision log +
 derived status **on current storage** (closes status-gate-pull); (3) storage-locus swap to committed
-`.ctx/` files + migration; (4) memory-as-dirty-source + import→overlay→confirm pipeline (closes
+`.contexa/` files + migration; (4) memory-as-dirty-source + import→overlay→confirm pipeline (closes
 import-unreachable + false CLI text); (5) personal overlay + three-tier scope; (6) collaboration eval
 (incl. the merge-clean-but-contradictory case). All slices are single-track Opus; review = Fable +
 Codex jointly, Opus applies fix rounds (maintainer-ratified 2026-07-05 — no dual-track).
@@ -60,7 +60,7 @@ Codex jointly, Opus applies fix rounds (maintainer-ratified 2026-07-05 — no du
 | Phase 1 mechanism | Phase 2 disposition |
 |---|---|
 | Status filter in `select` (item 1) | **Reused unchanged** — only the *source* of status changes (decision-log-derived instead of a mutable column). |
-| Host-import `needs-review` + mtime dirtyCheck (item 2) | **Converges** — the mtime dirtyCheck is the seed of Phase 2's file-source model; import lands as `.ctx/memory/` files. |
+| Host-import `needs-review` + mtime dirtyCheck (item 2) | **Converges** — the mtime dirtyCheck is the seed of Phase 2's file-source model; import lands as `.contexa/memory/` files. |
 | Anchor-freshness pass (item 3, **partially landed as `flagAnchorDrift` in 2c**) | **Reused + extended** with the E7 reconcile fixes (A5 `body-changed` down-rank, file a `stale-suspect` conflict, `file:`-target-removed), cross-branch semantics (S4), and the refresh-cycle trigger. |
 | `sameAsCandidate` as conflict (item 4) | **Reused** — the resolution now also appends a committed decision. |
 | Prewrite reconciliation (item 5) | **Reused** — same logic, writes a file instead of a store row. |
@@ -75,7 +75,7 @@ the swap.
 
 1. **Phase 1 ships first, independently.** It does not wait on any Phase-2 decision. It is small,
    surgical, and fixes correctness now.
-2. **Phase 2 is design-first.** Settle S1–S10 + reconcile the docs (VISION/CTX-DESIGN/CTX-IMPL +
+2. **Phase 2 is design-first.** Settle S1–S10 + reconcile the docs (VISION/CONTEXA-DESIGN/CONTEXA-IMPL +
    canonical Decision 11) **before** touching the storage layer.
 3. **Phase 2 builds on Phase 1**, reusing the table above; it must not regress the E-series that
    Phase 1 greened, and must not regress the A11 perf gates (S10).

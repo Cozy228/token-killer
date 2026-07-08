@@ -1,5 +1,5 @@
 /**
- * Reindex — rebuild the SQLite memory cache from the committed `.ctx/` files
+ * Reindex — rebuild the SQLite memory cache from the committed `.contexa/` files
  * (slice 3). The files are the append-only source of truth (B1); this module
  * repopulates the rebuildable index over them. Two entry points, both callable +
  * tested here; wiring into the refresh cold path is slice 4 (this slice does NOT
@@ -12,7 +12,7 @@
  *    drift annotations are RECOMPUTED FROM SCRATCH against the current code index
  *    (S4 §1 — the deliberate revisit of the R2-2 within-process stickiness).
  *  - `pullDeltaReindex` — process exactly the added lines from
- *    `git diff <old>..<new> -- .ctx/memory/…` (S10 #3: pulled-delta-proportional,
+ *    `git diff <old>..<new> -- .contexa/memory/…` (S10 #3: pulled-delta-proportional,
  *    safe under `merge=union`). Any non-append diff shape (a rewrite / manual
  *    conflict resolution touching existing lines) falls back to a full rebuild.
  *
@@ -690,7 +690,7 @@ export function pullDeltaReindex(
 /** Event ids committed at `tip` (both mainline logs) — the F5 purge exclusion. */
 function committedEventIds(projectRoot: string, tip: string): ReadonlySet<string> {
   const ids = new Set<string>();
-  for (const path of [".ctx/memory/log.md", ".ctx/memory/decisions.md"]) {
+  for (const path of [".contexa/memory/log.md", ".contexa/memory/decisions.md"]) {
     const text = gitShow(projectRoot, tip, path);
     if (text === undefined) continue;
     for (const raw of text.split("\n")) {
@@ -747,8 +747,8 @@ function gitDiff(projectRoot: string, oldTip: string, newTip: string): string | 
         "-U0",
         `${oldTip}..${newTip}`,
         "--",
-        ".ctx/memory/log.md",
-        ".ctx/memory/decisions.md",
+        ".contexa/memory/log.md",
+        ".contexa/memory/decisions.md",
       ],
       { cwd: projectRoot, encoding: "utf8", stdio: ["ignore", "pipe", "ignore"], timeout: 10_000 },
     );

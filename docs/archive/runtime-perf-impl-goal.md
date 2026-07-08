@@ -52,21 +52,21 @@ user's PATH length, so **field value rises with bloated corporate PATHs**).
 
 **Do:**
 1. At install, capture the absolute resolved path per program (one walk, paid once).
-2. Bake it into the wrapper env + manifest: `.cmd` `set "TK_REAL_BIN=C:\...\git.exe"`,
-   POSIX `export TK_REAL_BIN=...`; record `resolvedPath` per program in
+2. Bake it into the wrapper env + manifest: `.cmd` `set "CTX_REAL_BIN=C:\...\git.exe"`,
+   POSIX `export CTX_REAL_BIN=...`; record `resolvedPath` per program in
    `manifest.json` and bump `SHIM_MANIFEST_SCHEMA`.
-3. Runtime (`buildSpawnTarget`): if `TK_REAL_BIN` set **and** its basename-minus-ext
-   matches the requested program **and** one `existsSync(TK_REAL_BIN)` passes → spawn
+3. Runtime (`buildSpawnTarget`): if `CTX_REAL_BIN` set **and** its basename-minus-ext
+   matches the requested program **and** one `existsSync(CTX_REAL_BIN)` passes → spawn
    it directly; else fall back to today's walk. Worst case = one wasted stat.
-4. Hook path (no wrapper env): persistent `~/.token-killer/path-cache.json` keyed by
+4. Hook path (no wrapper env): persistent `~/.contexa/path-cache.json` keyed by
    `(program, hash(PATH+PATHEXT))`, revalidated with one `existsSync` per hit;
-   invalidate on miss → walk → rewrite. (Put it under `~/.token-killer` so a future
+   invalidate on miss → walk → rewrite. (Put it under `~/.contexa` so a future
    AV folder exclusion covers it.)
 
 **Bands:** pure JS + env var — identical on every band. **D2 invariant:** only bake a
 path `realBinaryPresent` proved exists — never fabricate. **Tests:** baked path used
 when valid; stale/moved path → revalidation fails → walk fallback (correct, slower
-once); PATH-reorder case documented + surfaced in `tk status`; manifest schema bump
+once); PATH-reorder case documented + surfaced in `ctx status`; manifest schema bump
 migration. **Risk:** stale baked path → covered by the revalidation stat + fallback;
 consider self-healing the manifest on fallback.
 
@@ -92,16 +92,16 @@ sites (`governance.ts`, `dataDir.ts`).
   in-process "meta ensured for this fingerprint" flag, so the per-command `open(wx)`
   stops firing.
 - (d) Single append write with one pre-serialized buffer (one open).
-- (e) Optional `TK_NO_HISTORY=1` escape hatch for latency-critical agents (documented
-  cost: `tk gain` loses those rows).
+- (e) Optional `CTX_NO_HISTORY=1` escape hatch for latency-critical agents (documented
+  cost: `ctx gain` loses those rows).
 - **Do NOT** make writes fire-and-forget-async — the process exits immediately, so
   async buys nothing; keep them awaited.
 
 **Bands:** all. **Invariant:** never silently drop the ledger-① history row (gain
 correctness); keep `fingerprintSegment` colon-neutralization for Windows paths.
 **Tests:** fingerprint computed once per command (spy/count); dir ensured once; meta
-not re-opened when present; history row still complete; `TK_NO_HISTORY` suppresses the
-row and `tk gain` is unaffected otherwise.
+not re-opened when present; history row still complete; `CTX_NO_HISTORY` suppresses the
+row and `ctx gain` is unaffected otherwise.
 
 ---
 
@@ -114,10 +114,10 @@ compile every run.
 | Band | Mechanism |
 |---|---|
 | ≥22.8 | `enableCompileCache()` — already present, no change |
-| 22.1–22.7 | set `NODE_COMPILE_CACHE=<home>/v8-cache` **in the shim wrapper env line** — zero tk code, version-agnostic (unknown env vars are inert) |
+| 22.1–22.7 | set `NODE_COMPILE_CACHE=<home>/v8-cache` **in the shim wrapper env line** — zero ctx code, version-agnostic (unknown env vars are inert) |
 | 20–22.0 | `v8-compile-cache` shim stub — **requires the CJS bundle (2.2); if 2.2 is not shipped, this rung is deferred, note it** |
 
-Point the cache dir under `~/.token-killer`. **Bands:** degrades, never errors.
+Point the cache dir under `~/.contexa`. **Bands:** degrades, never errors.
 **Note the dependency:** the 20–22.0 rung needs 2.2's CJS bundle (out of scope here) —
 ship the ≥22.8 (no-op) and 22.1–22.7 (env) rungs now; **explicitly defer the 20–22.0
 rung** with a one-line note rather than silently dropping that slice.

@@ -94,7 +94,7 @@ function allowsRtkPassthrough(commandArgs: string[], stdout: string): boolean {
     );
     if (levelNone) return true;
     // Format flags (-c/-l/-L/-o/-Z/--json) and context flags (-A/-B/-C and long
-    // forms) are genuine RTK retention paths: tk passes them through verbatim.
+    // forms) are genuine RTK retention paths: ctx passes them through verbatim.
     return args.some(
       (arg) =>
         [
@@ -109,7 +109,7 @@ function allowsRtkPassthrough(commandArgs: string[], stdout: string): boolean {
           "-Z",
           "--null",
           "--json",
-          // -q/--quiet/--silent: grep exits 0/1 with NO stdout; tk passes through (M6),
+          // -q/--quiet/--silent: grep exits 0/1 with NO stdout; ctx passes through (M6),
           // so output == raw "" is a genuine retention path, not a passthrough cheat.
           "-q",
           "--quiet",

@@ -1,5 +1,5 @@
 /**
- * Shared source-file scan (CTX-IMPL §4.2/§4.4). Factored out of the 1e docs
+ * Shared source-file scan (CONTEXA-IMPL §4.2/§4.4). Factored out of the 1e docs
  * scan so the code source (2a) and docs source share ONE gitignore-honoring
  * walk — the acceptance bar calls this "the `git ls-files` fast path (1e
  * precedent, shared scan)".

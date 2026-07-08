@@ -180,7 +180,7 @@ describe("store is a rebuildable view (slice 2)", () => {
     root = makeTempDir("ctx-rebuild-");
     const repo = makeGitFixture(root);
     clock = 1_000_000;
-    store = openStore({ projectDir: repo, home: join(root, "ctx-home"), now });
+    store = openStore({ projectDir: repo, home: join(root, "contexa-home"), now });
   });
   afterEach(() => {
     store.close();
@@ -291,7 +291,7 @@ describe("event `at` strict monotonicity across restart (R2-1)", () => {
     const root = makeTempDir("ctx-r21-");
     try {
       const repo = makeGitFixture(root);
-      const home = join(root, "ctx-home");
+      const home = join(root, "contexa-home");
       let clock = 5_000;
       const s1 = openStore({ projectDir: repo, home, now: () => clock });
       const r = remember(s1, { surface: "cli", note: "restart-order probe", now: () => clock });

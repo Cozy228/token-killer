@@ -1,5 +1,5 @@
 /**
- * Unit coverage for the extractor's subtle rules (CTX-IMPL §5.2/§3): the
+ * Unit coverage for the extractor's subtle rules (CONTEXA-IMPL §5.2/§3): the
  * callable-ancestor local filter, arrow-const de-dup, and overload
  * disambiguation. These are the edge cases the per-language acceptance fixtures
  * do not exercise.

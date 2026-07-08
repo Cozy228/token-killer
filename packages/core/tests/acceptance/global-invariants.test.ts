@@ -3,7 +3,7 @@
  * EVERY serve response, across every scenario. Slice 1g turns them into the
  * shared helpers in `tests/helpers/serveInvariants.ts`; here each G-todo is
  * flipped green against a fast, deterministic fixture store (fixed clock, temp
- * CTX_HOME sandbox), and the scenario tests (1g-serve.test) apply the same
+ * CONTEXA_HOME sandbox), and the scenario tests (1g-serve.test) apply the same
  * helpers on the living repo.
  */
 import { mkdirSync, writeFileSync } from "node:fs";
@@ -173,7 +173,7 @@ describe("acceptance: global invariants (G-1..G-7)", () => {
     await assertG6EgressActive(store);
   });
 
-  test("G-7 tests never touch real ~/.claude/~/.copilot/host configs (temp CTX_HOME/HOME only)", () => {
+  test("G-7 tests never touch real ~/.claude/~/.copilot/host configs (temp CONTEXA_HOME/HOME only)", () => {
     assertG7Sandbox(store);
   });
 });

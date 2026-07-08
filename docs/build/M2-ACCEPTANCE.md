@@ -5,7 +5,7 @@
 >
 > **Two test tiers** (both required, carried from M1):
 > 1. **Deterministic CI tier** — script-generated fixture repos in temp dirs, per-language
->    parity fixtures, golden transcripts, property tests (CTX-IMPL §10 governs). CI = 3-OS,
+>    parity fixtures, golden transcripts, property tests (CONTEXA-IMPL §10 governs). CI = 3-OS,
 >    Node 22.16 floor (verified: first 22.x whose node:sqlite compiles FTS5), full-history
 >    checkout, timing ceilings scaled by the CI runner factor (win 6× / other 2×; exact bars
 >    apply on real dev machines).
@@ -24,7 +24,7 @@
 
 G-1 budget ≤24K chars · G-2 omission counts reconcile (typed struct) · G-3 no `isError` for
 recoverable · G-4 stable section order, empty omitted · G-5 every item's handle resolves ·
-G-6 `assertNoEgress` active · G-7 temp `CTX_HOME`/HOME only, never real host configs.
+G-6 `assertNoEgress` active · G-7 temp `CONTEXA_HOME`/HOME only, never real host configs.
 
 Plus two M2-specific invariants, asserted wherever symbols appear:
 

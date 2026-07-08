@@ -60,7 +60,7 @@ describe("RTK curl behavior", () => {
   // RTK: cloud/curl_cmd.rs::test_filter_curl_long_output_truncated — a long
   // non-JSON body is cut at MAX_RESPONSE_SIZE bytes with a "... (N bytes total)"
   // marker. This is the curl compression path.
-  // H12-curl: the old `tk --raw` re-run hint is removed (ADR 0001 d6 bans it —
+  // H12-curl: the old `ctx --raw` re-run hint is removed (ADR 0001 d6 bans it —
   // re-running would re-fire a POST). Recovery is via the rawPointer snapshot the
   // gate appends when saveRaw is enabled.
   test("truncates long non-JSON bodies at 500 bytes with a size marker", async () => {
@@ -69,8 +69,8 @@ describe("RTK curl behavior", () => {
 
     expect(result.output).toMatch(/^x+\.\.\. \(1000 bytes total\)/);
     expect(result.output).toContain("bytes total");
-    // H12-curl: no tk --raw hint (re-run would re-fire a POST; recovery via snapshot).
-    expect(result.output).not.toMatch(/tk --raw/);
+    // H12-curl: no ctx --raw hint (re-run would re-fire a POST; recovery via snapshot).
+    expect(result.output).not.toMatch(/ctx --raw/);
     // RTK asserts the truncated content is < 600 chars (head 500 + small marker).
     expect(result.output.split("\n")[0]!.length).toBeLessThan(600);
 
@@ -119,7 +119,7 @@ describe("RTK curl behavior", () => {
   });
 
   // NOTE: the dual-stream failure case (stdout body + stderr diagnostic) is a
-  // DELIBERATE tk divergence from RTK — RTK's curl_cmd.rs:35-42 keeps only stderr
+  // DELIBERATE ctx divergence from RTK — RTK's curl_cmd.rs:35-42 keeps only stderr
   // when it is non-empty, dropping the stdout body. That behavior is asserted in
   // curlProductBehavior.test.ts, NOT here, because this suite must only prove
   // RTK-faithful semantics. See docs/green-test-parity-audit.md (curl divergence).
@@ -127,7 +127,7 @@ describe("RTK curl behavior", () => {
 
 // ─── Regression tests for adversarial-audit findings ───────────────────────
 
-describe("H12-curl regression: -sS keeps error diagnostics; no tk --raw hint", () => {
+describe("H12-curl regression: -sS keeps error diagnostics; no ctx --raw hint", () => {
   // H12-curl: with -sS (not bare -s), curl's connection/TLS error messages reach
   // stderr and are surfaced in the failure output.
   test("failed curl with stderr diagnostic includes the reason", async () => {
@@ -145,12 +145,12 @@ describe("H12-curl regression: -sS keeps error diagnostics; no tk --raw hint", (
     expect(result.output).not.toBe("FAILED: curl");
   });
 
-  test("truncated body has no tk --raw hint (ADR 0001 d6)", async () => {
+  test("truncated body has no ctx --raw hint (ADR 0001 d6)", async () => {
     const body = "x".repeat(1000);
     const result = await filterRtkOutput(["curl", "https://example.com/big"], body);
     expect(result.output).toContain("bytes total");
-    // H12-curl fix: no tk --raw hint (re-run would re-fire a POST).
-    expect(result.output).not.toMatch(/tk --raw/);
+    // H12-curl fix: no ctx --raw hint (re-run would re-fire a POST).
+    expect(result.output).not.toMatch(/ctx --raw/);
     // Gate ships the truncated output (not reverting to raw with digest omission).
     expect(result.output.trim()).not.toBe(body.trim());
   });

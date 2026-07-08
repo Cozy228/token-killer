@@ -1,11 +1,11 @@
 /**
- * `assertNoEgress()` — D22 / M-cross-cutting M14 (restated in CTX-IMPL §7).
+ * `assertNoEgress()` — D22 / M-cross-cutting M14 (restated in CONTEXA-IMPL §7).
  *
  * ctx spends ZERO model tokens: serving is fully deterministic (selection +
  * read-through), and any future LLM artifact runs via host re-prompt or the
  * user's subscription CLI — never a tool-embedded API key. This guard proves the
  * stance by REFUSING to run when an egress-capable model key is present in the
- * environment: it is wired at every serve + ingest entry point (CTX-IMPL §7 /
+ * environment: it is wired at every serve + ingest entry point (CONTEXA-IMPL §7 /
  * assignment 1g). We do not read the key to use it — we refuse to coexist with
  * it, so the "zero tool-embedded egress" claim is mechanically checkable.
  *

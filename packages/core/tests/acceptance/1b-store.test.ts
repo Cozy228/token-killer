@@ -10,7 +10,7 @@ import { openStore } from "../../src/store/store.ts";
 import { cleanupTempDir, git, makeGitFixture, makeTempDir } from "../helpers/sandbox.ts";
 
 // Slice 1b — Store spine (M1-ACCEPTANCE.md). All stores live under a temp
-// CTX_HOME sandbox (G-7); the living-repo assertions only READ this repo.
+// CONTEXA_HOME sandbox (G-7); the living-repo assertions only READ this repo.
 const PKG_DIR = resolve(dirname(fileURLToPath(import.meta.url)), "../..");
 const REPO_ROOT = resolve(PKG_DIR, "../..");
 const HELPERS = join(PKG_DIR, "tests", "helpers");
@@ -41,9 +41,9 @@ describe("acceptance: 1b store spine", () => {
     git(["worktree", "add", "-q", wt], repo);
     expect(resolveShard(wt).shard).toBe(resolveShard(repo).shard);
 
-    // .ctx data survives worktree deletion: write via the worktree, delete the
+    // .contexa data survives worktree deletion: write via the worktree, delete the
     // worktree, read via the main checkout.
-    const home = join(root, "ctx-home");
+    const home = join(root, "contexa-home");
     const viaWorktree = openStore({ projectDir: wt, home });
     viaWorktree.upsertEntity({
       id: "file:README.md",
@@ -112,7 +112,7 @@ describe("acceptance: 1b store spine", () => {
 
   test("A12-generations", async () => {
     const repo = makeGitFixture(root);
-    const home = join(root, "ctx-home");
+    const home = join(root, "contexa-home");
     const GENS = 40;
     const PER_GEN = 5;
     // Create the store (and run migrations) before the writer starts.
@@ -172,20 +172,20 @@ describe("acceptance: 1b store spine", () => {
   });
 
   test("A12-readthrough", () => {
-    // Living-repo tier: read-through on CTX-IMPL.md returns its exact bytes.
+    // Living-repo tier: read-through on CONTEXA-IMPL.md returns its exact bytes.
     // The store sandbox is a temp home; the project is THIS checkout (read-only).
-    const store = openStore({ projectDir: REPO_ROOT, home: join(root, "ctx-home") });
+    const store = openStore({ projectDir: REPO_ROOT, home: join(root, "contexa-home") });
     store.upsertEntity({
-      id: "file:CTX-IMPL.md",
+      id: "file:CONTEXA-IMPL.md",
       kind: "file",
-      name: "CTX-IMPL.md",
-      locator: { t: "file", path: "CTX-IMPL.md" },
+      name: "CONTEXA-IMPL.md",
+      locator: { t: "file", path: "CONTEXA-IMPL.md" },
       gen: 1,
     });
-    const result = store.readThrough("file:CTX-IMPL.md");
+    const result = store.readThrough("file:CONTEXA-IMPL.md");
     expect(result.ok).toBe(true);
     if (result.ok) {
-      expect(result.text).toBe(readFileSync(join(REPO_ROOT, "CTX-IMPL.md"), "utf8"));
+      expect(result.text).toBe(readFileSync(join(REPO_ROOT, "CONTEXA-IMPL.md"), "utf8"));
       expect(result.via).toBe("file");
     }
 
@@ -194,7 +194,9 @@ describe("acceptance: 1b store spine", () => {
       ok: false,
       reason: "traversal-rejected",
     });
-    expect(store.resolveLocator({ t: "file", path: join(REPO_ROOT, "CTX-IMPL.md") })).toMatchObject(
+    expect(
+      store.resolveLocator({ t: "file", path: join(REPO_ROOT, "CONTEXA-IMPL.md") }),
+    ).toMatchObject(
       { ok: false, reason: "traversal-rejected" }, // absolute path
     );
     expect(store.resolveLocator({ t: "file", path: "docs/../../secret" })).toMatchObject({

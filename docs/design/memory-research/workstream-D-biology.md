@@ -1,6 +1,6 @@
 # Workstream D — Biology as Constraint Check (NOT North Star)
 
-> Human/cognitive memory is used here **only to test ctx design intuitions**. A factual, auditable
+> Human/cognitive memory is used here **only to test Contexa design intuitions**. A factual, auditable
 > dev-context store has a different objective function than a brain (faithful+provenanced recall, not
 > behavioral fluency). Every point below either moves a ctx decision or is omitted. Format per point:
 > **[claim] → [supports / warns] → [ctx decision #] → [1-line implementation consequence]**.
@@ -64,7 +64,7 @@ time+use signals, not content-understanding signals, so they are computable with
 memory repeatedly served-and-not-vetoed over spaced intervals is *weakly* more likely still-valuable, and a
 `confirm`ed/`pin`ned memory is the deterministic stand-in for "salient." **But** the same evidence warns
 that raw popularity entrenches "popular-but-wrong": the testing effect only validates a memory when
-retrieval was *successful* (uncorrected), which ctx cannot observe.
+retrieval was *successful* (uncorrected), which Contexa cannot observe.
 → **SUPPORTS** a bounded tie-breaker + review-scheduling signal; **WARNS AGAINST** letting served-count
 drive primary ranking.
 → **Decision 6.**

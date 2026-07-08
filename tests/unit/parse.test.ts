@@ -3,7 +3,7 @@ import { describe, expect, test } from "vitest";
 import { parseArgv } from "../../src/parse.js";
 
 describe("parseArgv", () => {
-  test("parses tk stats flag without consuming original git flags", () => {
+  test("parses ctx stats flag without consuming original git flags", () => {
     const parsed = parseArgv(["--stats", "git", "diff", "--", "src"]);
 
     expect(parsed.mode).toBe("command");
@@ -21,7 +21,7 @@ describe("parseArgv", () => {
     expect(parseArgv(["--version"]).mode).toBe("version");
   });
 
-  test("`tk -- help` escape hatch still passes `help` through to a real program", () => {
+  test("`ctx -- help` escape hatch still passes `help` through to a real program", () => {
     const parsed = parseArgv(["--", "help"]);
     expect(parsed.mode).toBe("command");
     expect(parsed.command?.program).toBe("help");
@@ -65,7 +65,7 @@ describe("parseArgv", () => {
   });
 
   test("bare 'report' is no longer a subcommand (the report alias was removed)", () => {
-    // The detailed report now lives only at `tk gain report`; a bare `report`
+    // The detailed report now lives only at `ctx gain report`; a bare `report`
     // token is treated as an ordinary command, never the four-view report.
     const parsed = parseArgv(["report"]);
     expect(parsed.mode).toBe("command");

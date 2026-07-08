@@ -7,7 +7,7 @@ import { delimiter } from "node:path";
 // to PATH, and confirm a shimmed program resolves INTO the shim dir. This proves
 // the load-bearing assumption — that the injected PATH is actually honored —
 // rather than silently shipping a no-op shim. PASS/FAIL is reported by status
-// and consulted by `tk install` to fall back to injection when the shim is dead.
+// and consulted by `ctx install` to fall back to injection when the shim is dead.
 
 export type ProbeResult = { pass: boolean; resolved: string | null; program: string };
 
@@ -19,7 +19,7 @@ export function runInterceptionProbe(
   const env: NodeJS.ProcessEnv = {
     ...process.env,
     PATH: `${shimDir}${delimiter}${process.env.PATH ?? ""}`,
-    TK_SHIM_DIR: shimDir,
+    CTX_SHIM_DIR: shimDir,
   };
 
   let resolved: string | null = null;

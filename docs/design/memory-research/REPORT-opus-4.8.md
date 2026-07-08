@@ -22,7 +22,7 @@
 1. **What ctx memory is FOR.** The thin authoring + import layer that captures project *facts and
    experience not derivable from code/git/docs* — the "why we chose this / what bit us / what a human
    asserted" layer — as `memory` entities inside the **shared** entity/link/claim/FTS graph, where
-   every fact is **trust-or-rejectable** by both humans and agents. `from-code CTX-DESIGN.md:52`;
+   every fact is **trust-or-rejectable** by both humans and agents. `from-code CONTEXA-DESIGN.md:52`;
    memory is one of six content types, not a subsystem (`workstream-A §0,§5`).
 
 2. **What it is NOT for.** Not a chatbot's conversational memory; not an autonomous self-updating
@@ -70,9 +70,9 @@
 8. **Top design change #2 — an anchor-freshness pass (rides M2 code source).** On git/code re-ingest,
    join removed/renamed/structurally-changed anchor targets against `anchors`; flip the memory to
    `needs-review`; file a **reason-classified** `stale-suspect` conflict
-   (`target-removed·signature-changed·body-changed·referencer-changed`, `from-doc CTX-IMPL.md:285-287`);
+   (`target-removed·signature-changed·body-changed·referencer-changed`, `from-doc CONTEXA-IMPL.md:285-287`);
    exclude from push. **Never auto-delete** (reconsolidation warning, `workstream-D D-3`). This is
-   *designed* (`CTX-IMPL.md:259, 96-98, 162-165`) but unbuilt.
+   *designed* (`CONTEXA-IMPL.md:259, 96-98, 162-165`) but unbuilt.
 
 9. **Top design change #3 — status-gate the pull path + surface conflicts on serve.** `retired`
    excluded from `context()`/`search()`; `superseded` down-ranked and shown *with* its supersessor via
@@ -80,8 +80,8 @@
    all. Completes "forgetting" in the one path where it currently leaks (`workstream-A §2.8`).
 
 10. **Cross-cutting: keep the popularity signal OUT.** `served_count`/`last_served` columns exist but
-    are unwritten (`from-code CTX-IMPL.md:108-109`); the §4 design prose wants
-    `authority×usage×recency×anchor-freshness` (`from-doc CTX-DESIGN.md:143`). Adding `usage` would
+    are unwritten (`from-code CONTEXA-IMPL.md:108-109`); the §4 design prose wants
+    `authority×usage×recency×anchor-freshness` (`from-doc CONTEXA-DESIGN.md:143`). Adding `usage` would
     make *popular-but-wrong* facts more visible — the exact Decision-6 hazard (`workstream-C 4.5`,
     `workstream-D D-5`). This is the rare case where "not yet implemented" is the *safer* state:
     decline usage as a ranking input; allow it only as a bounded tie-breaker / review nudge.
@@ -92,28 +92,28 @@
 
 | # | Decision | Recommendation | Key evidence | A/T/D | Implementation impact | Conf. | What would change it |
 |---|---|---|---|---|---|---|---|
-| 1 | **Memory's job / separability** | Memory = a **thin authoring+import layer** over the shared graph (one `kind` + one lifecycle table + two writers + two rank primitives). Keep it thin; do not build a memory subsystem. | `CTX-DESIGN.md:52`; `workstream-A §0,§5`; survey "structured > vector" (C 5.1) | **Adopt** (already true) | Resist feature-creep; new memory behavior should reuse store/FTS/select/push, not fork them. | High | If memory needed retrieval semantics the shared engine cannot express (it doesn't today). |
+| 1 | **Memory's job / separability** | Memory = a **thin authoring+import layer** over the shared graph (one `kind` + one lifecycle table + two writers + two rank primitives). Keep it thin; do not build a memory subsystem. | `CONTEXA-DESIGN.md:52`; `workstream-A §0,§5`; survey "structured > vector" (C 5.1) | **Adopt** (already true) | Resist feature-creep; new memory behavior should reuse store/FTS/select/push, not fork them. | High | If memory needed retrieval semantics the shared engine cannot express (it doesn't today). |
 | 2 | **Failure priority** | Rank: **false ≥ host-echo-loop ≥ stale** dominate design; then unreviewed-import, duplicate, irrelevant-push, unanchored; **missing = least-bad**; privacy/egress catastrophic-but-construction-prevented; unbounded-growth slow/managed by lifecycle. | Code defends egress+echo+import-dedup but leaves false/stale/unreviewed **undefended** (`workstream-A §2 "defense investment"`); survey §3.2; B "echo is live" | **Adopt** | Redirect investment to false (status-gate pull, file dedup-as-conflict) + stale (anchor-freshness). | High | Evidence that agents tolerate false facts better than missing ones (unlikely for a trust tool). |
-| 3 | **Write policy** | **Manual-first** (`remember`=confirmed) + host import (inferred). **No automatic/LLM creation.** Add a **deterministic pre-write reconciliation** to `remember()` (verdict = add / supersede-candidate / dup-candidate / needs-review), so manual writes stop silently duplicating. | Capture tap is provenance-only, not an author (`CTX-DESIGN.md:204-206`); codex-memory 6-verdict twin (`workstream-B #13★`); `remember()` never dedups today (`workstream-A §8`) | **Translate** (codex-memory verdicts) / **Decline** (LLM op-selector, mem0 §2.1) | New pre-write step over `dedup.ts`+FTS in `remember.ts`; returns candidate+verdict, **never auto-applies**. | High | A deterministic auto-capture with a stacked gate (memsearch `stop.sh`, `workstream-B #7`) *could* be reconsidered post-measurement, still no-LLM. |
+| 3 | **Write policy** | **Manual-first** (`remember`=confirmed) + host import (inferred). **No automatic/LLM creation.** Add a **deterministic pre-write reconciliation** to `remember()` (verdict = add / supersede-candidate / dup-candidate / needs-review), so manual writes stop silently duplicating. | Capture tap is provenance-only, not an author (`CONTEXA-DESIGN.md:204-206`); codex-memory 6-verdict twin (`workstream-B #13★`); `remember()` never dedups today (`workstream-A §8`) | **Translate** (codex-memory verdicts) / **Decline** (LLM op-selector, mem0 §2.1) | New pre-write step over `dedup.ts`+FTS in `remember.ts`; returns candidate+verdict, **never auto-applies**. | High | A deterministic auto-capture with a stacked gate (memsearch `stop.sh`, `workstream-B #7`) *could* be reconsidered post-measurement, still no-LLM. |
 | 4 | **Lifecycle & retention** | `active`=served+push · `needs-review`=retained/retrievable/**push-excluded**/in-queue · `superseded`=kept+down-ranked+chain-shown · `retired`=kept+excluded-from-default-serve. **Forgetting = status down-rank/hide, never delete**; add a per-transition change-ledger row. | bitemporal never-delete (C 1.2, graphiti); D-1 (forgetting=reduced accessibility not erasure); provenance decline of silent deletion (`workstream-B decline`) | **Adopt/Translate** | Add `valid_to`/transition ledger; make selection status-aware (see D6). | High | — |
-| 5 | **Anchoring & freshness** | Anchors are links; freshness is **structural** (target-exists / content-hash), never inferred from relevance. Drift → reason-classified `stale-suspect` + `needs-review` + push-exclude; affects ranking, push eligibility, conflict surfacing; **not** auto-retire. | survey §3.2 (stale reads as relevant); designed ride on code invalidation (`CTX-IMPL.md:259,285-287`); D-2 cue-dependent recall; graphiti bitemporal math (adopt) vs LLM detector (decline) | **Adopt/Translate** | The M2 anchor-freshness pass (E2). Biggest missing-but-important mechanism. | High | If M2 symbol `content_hash` proves too noisy (body-changed churn) → down-rank only, defer status flip. |
-| 6 | **Retrieval & ranking** | Compete in the shared PPR+RRF pipeline at a 10% cap. Justified deterministic signals: **lexical (FTS5), graph/anchor proximity (PPR/BFS), authority (confirmed×1.3), anchor-freshness, pin/veto**. **Dangerous → refuse: served_count/usage (popularity), unbounded recency, embedding relevance.** Recency → guarded tie-breaker. Status must gate/down-rank. | `select/rank.ts` (authority×decay, RRF K=60); C 4.5/4.6/4.8 (RRF+BFS adopt, popularity decline); D-5; `served_count` unwritten (`CTX-IMPL.md:108-109`) | **Adopt** (FTS/PPR/RRF/authority) / **Translate** (freshness) / **Decline** (usage, embeddings) | Add anchor-freshness multiplier + status filter to `select/rank.ts`; keep `served_count` out. | High | Measurement showing recall too low *and* a safe precision-preserving signal exists. |
+| 5 | **Anchoring & freshness** | Anchors are links; freshness is **structural** (target-exists / content-hash), never inferred from relevance. Drift → reason-classified `stale-suspect` + `needs-review` + push-exclude; affects ranking, push eligibility, conflict surfacing; **not** auto-retire. | survey §3.2 (stale reads as relevant); designed ride on code invalidation (`CONTEXA-IMPL.md:259,285-287`); D-2 cue-dependent recall; graphiti bitemporal math (adopt) vs LLM detector (decline) | **Adopt/Translate** | The M2 anchor-freshness pass (E2). Biggest missing-but-important mechanism. | High | If M2 symbol `content_hash` proves too noisy (body-changed churn) → down-rank only, defer status flip. |
+| 6 | **Retrieval & ranking** | Compete in the shared PPR+RRF pipeline at a 10% cap. Justified deterministic signals: **lexical (FTS5), graph/anchor proximity (PPR/BFS), authority (confirmed×1.3), anchor-freshness, pin/veto**. **Dangerous → refuse: served_count/usage (popularity), unbounded recency, embedding relevance.** Recency → guarded tie-breaker. Status must gate/down-rank. | `select/rank.ts` (authority×decay, RRF K=60); C 4.5/4.6/4.8 (RRF+BFS adopt, popularity decline); D-5; `served_count` unwritten (`CONTEXA-IMPL.md:108-109`) | **Adopt** (FTS/PPR/RRF/authority) / **Translate** (freshness) / **Decline** (usage, embeddings) | Add anchor-freshness multiplier + status filter to `select/rank.ts`; keep `served_count` out. | High | Measurement showing recall too low *and* a safe precision-preserving signal exists. |
 | 7 | **Push digest** | Keep ≤1KB fixed-header + top-N **confirmed active fresh-anchored** gotchas, each a `[handle]`. Exclusions: retired, superseded, needs-review, **stale-anchor, echo-risk, restatement** (add). Push a **pointer**, not full content, where the host already loads the file. Optimize for gotchas/conventions — **not** recency-only, **not** unresolved-review-items. | `push/block.ts` ≤1KB by construction; A-MEM §4.5 over-retrieval (C 4.9); branch-manager pointer-vs-inject (`workstream-B #4`); G3/F4 restatement demotion (`FABLE-DORA-REVIEW.md:156,197,224`) | **Adopt/Translate** | `rankGotchas` gains stale/echo/restatement veto (E5); pointer split in `push/hosts.ts`. | Med-High | If a host cannot render a pointer and needs full inline content (then accept the echo cost, guard with content-hash drift). |
 | 8 | **Host composition** | Import **human-authored layers only** (Claude `CLAUDE.md`-adjacent memory dir now; Codex/Copilot follow-ons) — **never** a host's own auto-memory dir, session-replay JSONL, cloud-routed, or other projects. Imports default **`needs-review`**. Echo defense = exact-sentinel **+** import-side denylist of host auto-memory paths **+** cross-origin (paraphrase) dedup vs ctx-origin gists **+** content-hash drift on pushed blocks. | cross-host ingestion live (B); physical-separation convergence (codex+claude, `workstream-B #16`); gemini inbox Dismiss-first (#3); `sentinel.ts:8` exact-only; paraphrase forced by E6 | **Translate** (needs-review, inbox) / **Decline** (import host auto-memory, mem0 additive-never-resolve) | `claudeImporter.ts:224` active→needs-review; add denylist + cross-origin echo check; **wire import via mtime dirtyCheck** (currently dead, `workstream-A §2.1`). | High | A host guaranteeing its auto-memory is human-curated (none does today). |
-| 9 | **Human vs agent** | Agents: fast recall (10% section), `[handle]` drill-down, push gotchas at session start, provenance to reject; agents may write (`remember`). Humans (guide, **read-only**): review queue, evidence drawer, supersession timeline, stale-list, pin/veto — curation via CLI, guide never writes. **Review queues + evidence drawers > richer auto-recall.** | `CTX-DESIGN.md:181,184-187,240-241`; review-queue UX near-novel — must build fresh (`workstream-B cross-corpus`); guide unbuilt/M3 (`workstream-A §2.4`) | **Adopt** | Build the M3 guide read-only data layer (E's `EG-*`); `needs-review` currently has no producer **or** consumer. | High | — |
+| 9 | **Human vs agent** | Agents: fast recall (10% section), `[handle]` drill-down, push gotchas at session start, provenance to reject; agents may write (`remember`). Humans (guide, **read-only**): review queue, evidence drawer, supersession timeline, stale-list, pin/veto — curation via CLI, guide never writes. **Review queues + evidence drawers > richer auto-recall.** | `CONTEXA-DESIGN.md:181,184-187,240-241`; review-queue UX near-novel — must build fresh (`workstream-B cross-corpus`); guide unbuilt/M3 (`workstream-A §2.4`) | **Adopt** | Build the M3 guide read-only data layer (E's `EG-*`); `needs-review` currently has no producer **or** consumer. | High | — |
 | 10 | **Evaluation** | Deterministic **E-series** benchmark: fixture repo with seeded stale/superseded/retired/dup/echo; assert **id-level set membership** (not text overlap); `test.todo` encodes each missing mechanism; no LLM/embeddings/network. | `workstream-E` (E1-E7+EG); mem0 §3.2 (text-overlap misleads → id-level); LOCOMO/LongMemEval taxonomy (C 6.1) | **Adopt** | Land `packages/core/tests/acceptance/e-memory-quality.test.ts` + `helpers/memoryFixture.ts`. | High | — |
 
 ### Rule 9 — options considered and rejected (per decision, compact)
 
 - **D1.** Considered: memory as a standalone subsystem with its own store/ranker (mem0/letta shape). **Rejected** — duplicates the shared graph, breaks index-not-copy economy, and every such system in the corpus auto-merges (invariant-5 violation).
 - **D2.** Considered: rank privacy/egress #1 (it is catastrophic). **Rejected as the *design driver*** — it is prevented by construction (no network at write/serve, `serve/egress.ts`), so it is a standing gate, not a tradeoff axis; false/echo/stale are the live, undefended costs.
-- **D3.** Considered: (a) automatic capture from the compressor tap; (b) mem0's LLM ADD/UPDATE/DELETE selector; (c) a-mem neighbor auto-rewrite. **Rejected** — (a) tap is session-scoped, not project knowledge (`CTX-DESIGN.md:204-206`); (b)/(c) LLM-at-write + auto-resolve (invariants 1+5; reconsolidation, `workstream-D D-3`).
+- **D3.** Considered: (a) automatic capture from the compressor tap; (b) mem0's LLM ADD/UPDATE/DELETE selector; (c) a-mem neighbor auto-rewrite. **Rejected** — (a) tap is session-scoped, not project knowledge (`CONTEXA-DESIGN.md:204-206`); (b)/(c) LLM-at-write + auto-resolve (invariants 1+5; reconsolidation, `workstream-D D-3`).
 - **D4.** Considered: TTL/age-based auto-expiry; destructive merge on dedup; delete-from-index (mem0 DELETE). **Rejected** — a 2-year-old true invariant is still true (time-decay of facts is dangerous, C 1.6); merge/delete lose provenance (invariant 8, D-1).
-- **D5.** Considered: relevance/recency as the freshness proxy; boolean stale flag; auto-retire on drift. **Rejected** — stale reads as relevant (survey §3.2); boolean loses the review-queue's reason handling (`CTX-IMPL.md:285-287`); auto-retire is reconsolidation-style rewriting (D-3).
+- **D5.** Considered: relevance/recency as the freshness proxy; boolean stale flag; auto-retire on drift. **Rejected** — stale reads as relevant (survey §3.2); boolean loses the review-queue's reason handling (`CONTEXA-IMPL.md:285-287`); auto-retire is reconsolidation-style rewriting (D-3).
 - **D6.** Considered: `served_count`/usage boost (in §4 prose); embedding relevance; recency-dominant decay. **Rejected** — popularity ≠ correctness and self-reinforces (C 4.5, D-5); embeddings violate invariant 2; recency-dominant makes a recent-wrong note outrank an old-correct one (C 4.4).
 - **D7.** Considered: recency-ordered notes; surfacing unresolved review items in push; full-content inject. **Rejected** — over-retrieval harms (A-MEM §4.5); review items belong in the guide, not the always-loaded floor; full inject double-injects (echo, `workstream-B #4`).
 - **D8.** Considered: import host auto-memory dirs (Claude/Windsurf/Codex `memories/`); default imports `active`; rely on exact-sentinel alone. **Rejected** — those are the host's *own* write surface (echo, `workstream-B decline`); `active` skips review (unreviewed-import); exact-sentinel misses paraphrase (`sentinel.ts:8`, E6).
-- **D9.** Considered: a writable guide (confirm/retire from the UI); richer automatic recall over review tooling. **Rejected** — FORK-1/P23 fixed guide read-only (`CTX-DESIGN.md:240`); faithful+reviewable beats adaptive+lossy (brief bias; the evidence drawer is a zero-precedent differentiator, `workstream-B cross-corpus`).
+- **D9.** Considered: a writable guide (confirm/retire from the UI); richer automatic recall over review tooling. **Rejected** — FORK-1/P23 fixed guide read-only (`CONTEXA-DESIGN.md:240`); faithful+reviewable beats adaptive+lossy (brief bias; the evidence drawer is a zero-precedent differentiator, `workstream-B cross-corpus`).
 - **D10.** Considered: LLM-as-judge scoring; lexical F1/BLEU. **Rejected** — non-reproducible/networked (invariants 1+3); text-overlap scores "March" vs "July" as near-correct (mem0 §3.2) — must assert id-level.
 
 ---
@@ -164,7 +164,7 @@
 - **`ctx import`'s "imported automatically on cold-path sync" message is false as built**
   (`cli.ts:242-245`, `VERIFIED`). Fix the wiring or the message.
 - **`served_count`/`last_served` columns** are a latent half-feature inviting a dangerous signal
-  (`CTX-IMPL.md:108-109`) — keep unwired or repurpose as telemetry-only, explicitly.
+  (`CONTEXA-IMPL.md:108-109`) — keep unwired or repurpose as telemetry-only, explicitly.
 - **`listMemories` opens a second SQLite connection** because the `Store` interface lacks
   enumeration (`remember.ts:360-393`) — an API seam worth closing.
 
@@ -177,7 +177,7 @@
   `authority`, `status`. Unchanged from today (`from-code`).
 - **Authority.** Two tiers: `confirmed` (human/agent assertion via `remember`) and `inferred`
   (host-import / derived). Authority boosts ranking (×1.3) but is never a hard filter — evidence
-  policy is. `from-code select/rank.ts`; `from-doc CTX-DESIGN.md:124`.
+  policy is. `from-code select/rank.ts`; `from-doc CONTEXA-DESIGN.md:124`.
 - **Provenance.** Every anchor is an `anchoredTo` claim (carrier/method/authority/at) in the
   append-only ledger; every supersede/dedup is a claim+link. Add a **change-ledger row per lifecycle
   transition** (currently none, `workstream-A §1.4`) so "why/when did this become needs-review" is
@@ -189,7 +189,7 @@
   supersede). All transitions retain the row. Hosts import to `needs-review`. Anchor drift →
   `needs-review`.
 - **Freshness.** Rides the code/docs invalidation machinery (`dependency_index` + `content_hash`,
-  `CTX-IMPL.md:96-98,259`): drift → `stale-suspect` conflict
+  `CONTEXA-IMPL.md:96-98,259`): drift → `stale-suspect` conflict
   (`target-removed·signature-changed·body-changed·referencer-changed`) → down-rank + push-exclude +
   review-queue. Never wall-clock auto-expiry of facts (C 1.6).
 - **Ranking.** RRF fusion of FTS5 lexical + anchor-proximity (PPR/BFS) + anchor-freshness +
@@ -206,7 +206,7 @@
   (`workstream-B #3,#12,#14,#16`).
 - **Human review.** The read-only M3 guide: review queue (drains `needs-review`), evidence drawer
   (per-fact carrier/locus/method/authority/at), supersession timeline, stale-reference list, pin/veto
-  state. Mutations via CLI only. `from-doc CTX-DESIGN.md:181,240`.
+  state. Mutations via CLI only. `from-doc CONTEXA-DESIGN.md:181,240`.
 - **Agent retrieval.** `context()`/`search()` return status-filtered, provenance-carrying memory at a
   10% section cap with `[handle]` drill-down to `detail`; push delivers the gotcha floor at session
   start. Agents write via `remember()` (now with pre-write reconciliation).
@@ -261,11 +261,11 @@
 
 Full spec: `workstream-E-evaluation.md`. Summary of the contract:
 
-- **Harness reuse.** `openStore({projectDir, home, now})` under temp `CTX_HOME` (G-7), injected fixed
+- **Harness reuse.** `openStore({projectDir, home, now})` under temp `CONTEXA_HOME` (G-7), injected fixed
   clock, `assertNoEgress` armed, script-generated git + `seedClaudeMemory` fixtures. New suite:
   `packages/core/tests/acceptance/e-memory-quality.test.ts` + `helpers/memoryFixture.ts`. Pending
   mechanisms are `test.todo` — **the failing test IS the spec** for the missing feature.
-- **Fixture.** ~9-file synthetic service (code + docs + 2 ADRs + git history + `.ctx/push.jsonc`) +
+- **Fixture.** ~9-file synthetic service (code + docs + 2 ADRs + git history + `.contexa/push.jsonc`) +
   a fake `claudeHome` memory dir, deliberately planting: a removed anchor (`src/auth.ts` deleted in
   C2), a symbol-drift anchor (`redeliver()` signature change in C3), a superseded pair, a retired
   note, near-dup host memories (Jaccard≥0.6) + a differing-numbers negative (ADR 0011 vs 0013), a
@@ -312,10 +312,10 @@ default (EG-review). Runnable-today tests guard against regression immediately.
   — `exp(-age/90d)` memory/history only, authority ×1.3; `select/*` has no status handling (VERIFIED).
 
 **From-doc (design/spec):**
-- `CTX-DESIGN.md:52` (memory=content type), `:123-124` (soft-confidence/evidence-policy),
+- `CONTEXA-DESIGN.md:52` (memory=content type), `:123-124` (soft-confidence/evidence-policy),
   `:143-144` (push rank 4 factors — usage aspirational), `:181` (guide Knowledge page), `:204-206`
   (tap=provenance), `:240-241` (guide read-only).
-- `CTX-IMPL.md:95` (`stale-suspect` kind), `:96-98,162-165,259` (anchor invalidation ride),
+- `CONTEXA-IMPL.md:95` (`stale-suspect` kind), `:96-98,162-165,259` (anchor invalidation ride),
   `:108-109` (`served_count` columns), `:285-287` (reason classes), `:330-341` (ranking, 10% memory),
   `:540-546` (M2/M3). `FABLE-DECISION-LOG.md:131-133` (P21). `FABLE-DORA-REVIEW.md:156,197,224`
   (G3/F4 restatement). `M2-GOAL-PROMPT.md:57` (anchor-drift M2).

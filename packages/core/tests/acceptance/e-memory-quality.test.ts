@@ -58,7 +58,7 @@ describe("acceptance: E memory-quality", () => {
     repo = buildEvalRepo(root);
     claudeHome = join(root, "claude-home");
     clock = T0;
-    store = openStore({ projectDir: repo, home: join(root, "ctx-home"), now });
+    store = openStore({ projectDir: repo, home: join(root, "contexa-home"), now });
   });
   afterEach(() => {
     store.close();
@@ -258,7 +258,7 @@ describe("acceptance: E memory-quality", () => {
     const stale = remb(GIST.stale, { note: GIST.stale, anchors: ["file:src/auth.ts"] });
     setMemoryLifecycle(store, stale.handle, "needs-review");
     writeFileSync(
-      join(repo, ".ctx", "push.jsonc"),
+      join(repo, ".contexa", "push.jsonc"),
       `{ "pin": ["${stale.handle}"], "veto": [] }\n`,
       "utf8",
     );
@@ -315,7 +315,7 @@ describe("acceptance: E memory-quality", () => {
     const note = "redeliver must persist the idempotency key before dispatch";
     const mem = remb(note, { note, anchors: [symId] });
     writeFileSync(
-      join(repo, ".ctx", "push.jsonc"),
+      join(repo, ".contexa", "push.jsonc"),
       `{ "pin": ["${mem.handle}"], "veto": [] }\n`,
       "utf8",
     );

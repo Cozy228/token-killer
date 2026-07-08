@@ -1,14 +1,20 @@
 ---
-status: accepted
+status: superseded
+superseded-by: 0013-support-destination-baked-at-build
 ---
 
-# `tk support` routing is env-configured, with no baked-in destination
+# `ctx support` routing is env-configured, with no baked-in destination
 
-`tk support` ships with **no** default support address. The destination is read only from
-`TK_SUPPORT_EMAIL` / `TK_SUPPORT_TEAMS` (Teams as an Entra UPN) / `TK_SUPPORT_GITHUB` (an
+> **Superseded by [ADR 0013](0013-support-destination-baked-at-build.md).** The destination
+> is now baked at build time (the packager's identity), not read from a runtime env var, and
+> the `--email`/`--teams`/`--github` override flags are removed. ADR 0013 keeps this ADR's
+> core property — a generic public build carries no address and sends nowhere.
+
+`ctx support` ships with **no** default support address. The destination is read only from
+`CTX_SUPPORT_EMAIL` / `CTX_SUPPORT_TEAMS` (Teams as an Entra UPN) / `CTX_SUPPORT_GITHUB` (an
 `owner/repo` slug or a full repo URL for a GitHub Enterprise host). When none is set,
-`tk support` still gathers and saves the [Support bundle](../../CONTEXT.md) and copies it
-to the clipboard, then prints a hint to set the env vars — it sends nowhere. tk targets
+`ctx support` still gathers and saves the [Support bundle](../../CONTEXT.md) and copies it
+to the clipboard, then prints a hint to set the env vars — it sends nowhere. ctx targets
 enterprise-internal environments, so each deployment routes support to its own in-tenant
 identity; a `msteams:` chat deep link (`users=<UPN>`) resolves **only** for an in-tenant
 Entra UPN, so a baked consumer address could not be a reachable Teams target anyway.
@@ -27,9 +33,9 @@ Entra UPN, so a baked consumer address could not be a reachable Teams target any
 
 ## Consequences
 
-- Out of the box (no env), `tk support` reaches **no one** — it produces a saved report +
-  clipboard copy only. This intentionally reframes the feature from "reach the tk
-  maintainer" to "produce a shareable diagnostic, routed by the deployment." tk's own
+- Out of the box (no env), `ctx support` reaches **no one** — it produces a saved report +
+  clipboard copy only. This intentionally reframes the feature from "reach the ctx
+  maintainer" to "produce a shareable diagnostic, routed by the deployment." ctx's own
   author therefore does not receive field reports unless they also set the env vars.
 - No personal address is published in the package; the `src/core/config.ts` schema is left
   untouched (routing is env, not persisted config).

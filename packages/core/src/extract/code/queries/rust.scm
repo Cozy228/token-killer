@@ -1,4 +1,4 @@
-; Tier-1 Rust queries (CTX-IMPL §5.2). function_item inside an `impl` block is
+; Tier-1 Rust queries (CONTEXA-IMPL §5.2). function_item inside an `impl` block is
 ; reclassified to `method` and qualified by the impl's type (extract.ts). `///`
 ; outer doc comments precede the item.
 

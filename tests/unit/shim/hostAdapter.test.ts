@@ -36,14 +36,14 @@ describe("adapters table", () => {
 
   test("guidance-capable hosts expose a standalone guidance path; others do not", () => {
     expect(adapters["claude-code"].guidancePath("/home/u")).toBe(
-      join("/home/u", ".claude", "TK.md"),
+      join("/home/u", ".claude", "CTX.md"),
     );
     // I4: copilot-cli reads only copilot-instructions.md (no import syntax), so it
     // has NO standalone guidance file — the guide is inlined into the loader.
     expect(adapters["copilot-cli"].guidancePath("/home/u")).toBeUndefined();
     // VS Code gets the guide as a user-level always-on .instructions.md (ADR 0008).
     expect(adapters.vscode.guidancePath("/home/u")).toBe(
-      join("/home/u", ".copilot", "instructions", "token-killer.instructions.md"),
+      join("/home/u", ".copilot", "instructions", "contexa.instructions.md"),
     );
     expect(adapters.unknown.guidancePath("/home/u")).toBeUndefined();
   });
@@ -55,7 +55,7 @@ describe("adapters table", () => {
     // VS Code's user-level channel is ~/.copilot/instructions (ADR 0008), not the
     // inert <vscodeUserDir>/copilot-instructions.md.
     expect(adapters.vscode.injectionPath("/home/u", "/home/u/.config/Code/User")).toBe(
-      join("/home/u", ".copilot", "instructions", "token-killer-prefix.instructions.md"),
+      join("/home/u", ".copilot", "instructions", "contexa-prefix.instructions.md"),
     );
   });
 });

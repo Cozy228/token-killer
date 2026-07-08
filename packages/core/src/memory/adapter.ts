@@ -1,7 +1,7 @@
 /**
- * Memory `SourceAdapter` (CTX-IMPL §4/§5.6; slice-4 S10 #1/#5).
+ * Memory `SourceAdapter` (CONTEXA-IMPL §4/§5.6; slice-4 S10 #1/#5).
  *
- * Memory is a REAL dirty source now: the committed `.ctx/memory/` log + the
+ * Memory is a REAL dirty source now: the committed `.contexa/memory/` log + the
  * personal overlay files are the carrier. `dirtyCheck` is mtime-first with a
  * manifest short-circuit — an unchanged tree costs ~one `stat` per watched file
  * and reads nothing (A11: < 20 ms); only files whose own mtime advanced are
@@ -36,7 +36,7 @@ const MEMORY_SOURCE = "memory";
 const MANIFEST_META = "memory_file_manifest";
 
 /** The committed + overlay log files whose mtimes gate the dirty short-circuit
- *  (relative to `.ctx`). Sidecars always arrive with a log line, so watching the
+ *  (relative to `.contexa`). Sidecars always arrive with a log line, so watching the
  *  four logs is sufficient; a new sidecar never appears without a `+` log line. */
 const WATCHED_RELS: readonly string[] = [
   "memory/log.md", // mainline memory entries
@@ -64,11 +64,11 @@ export interface MemoryAdapterOptions {
   /** Candidate project roots to slug into a Claude project dir (default: store roots). */
   projectRoots?: string[];
   /**
-   * `.ctx` directory the write-through targets (default: `<projectRoot>/.ctx`).
+   * `.contexa` directory the write-through targets (default: `<projectRoot>/.contexa`).
    * Injected by living-repo / perf fixtures so the memory writer lands in a
-   * sandbox and never creates `.ctx/` in the real repo (the hard constraint).
+   * sandbox and never creates `.contexa/` in the real repo (the hard constraint).
    */
-  ctxRoot?: string;
+  contexaRoot?: string;
 }
 
 /** Latest mtime across the host memory dir itself and its topic files (ms, floored). */
@@ -102,16 +102,16 @@ export class MemorySourceAdapter implements SourceAdapter {
   readonly cost = 1;
   readonly #claudeHome: string | undefined;
   readonly #projectRoots: string[] | undefined;
-  readonly #ctxRoot: string | undefined;
+  readonly #contexaRoot: string | undefined;
 
   constructor(opts: MemoryAdapterOptions = {}) {
     this.#claudeHome = opts.claudeHome;
     this.#projectRoots = opts.projectRoots;
-    this.#ctxRoot = opts.ctxRoot;
+    this.#contexaRoot = opts.contexaRoot;
   }
 
-  #ctxRootFor(store: Store): string {
-    return this.#ctxRoot ?? join(store.projectRoot, ".ctx");
+  #contexaRootFor(store: Store): string {
+    return this.#contexaRoot ?? join(store.projectRoot, ".contexa");
   }
 
   #resolveHostDir(store: Store): string | undefined {
@@ -142,10 +142,10 @@ export class MemorySourceAdapter implements SourceAdapter {
   }
 
   /** Snapshot the watched files' `{mtime,size,sha}` (cold-path — reads all four). */
-  #snapshotFiles(ctxRoot: string): Record<string, FileState> {
+  #snapshotFiles(contexaRoot: string): Record<string, FileState> {
     const out: Record<string, FileState> = {};
     for (const rel of WATCHED_RELS) {
-      const path = join(ctxRoot, rel);
+      const path = join(contexaRoot, rel);
       const buf = readBytes(path);
       if (buf === undefined) continue;
       out[rel] = {
@@ -165,12 +165,12 @@ export class MemorySourceAdapter implements SourceAdapter {
    * shed). Prefix check: the old file was exactly `prev.size` bytes, so its stored
    * sha equals the sha of the new file's first `prev.size` bytes iff unchanged.
    */
-  #reindexShape(ctxRoot: string, prev: MemoryManifest): "additive" | "reset" {
+  #reindexShape(contexaRoot: string, prev: MemoryManifest): "additive" | "reset" {
     if (!prev.synced) return "additive";
     for (const rel of WATCHED_RELS) {
       const prevState = prev.files[rel];
       if (prevState === undefined) continue; // new file → pure append
-      const buf = readBytes(join(ctxRoot, rel));
+      const buf = readBytes(join(contexaRoot, rel));
       if (buf === undefined) return "reset"; // file removed → shed rows
       if (buf.length < prevState.size) return "reset"; // shrank → non-append
       if (blake2bHex(buf.subarray(0, prevState.size)) !== prevState.sha) return "reset"; // prefix changed
@@ -179,13 +179,13 @@ export class MemorySourceAdapter implements SourceAdapter {
   }
 
   async dirtyCheck(store: Store): Promise<DirtyReport> {
-    const ctxRoot = this.#ctxRootFor(store);
+    const contexaRoot = this.#contexaRootFor(store);
     const manifest = this.#readManifest(store);
     // mtime-first with a manifest short-circuit: an unchanged file (mtime matches)
     // is NEVER read; only a file whose own mtime advanced is checksummed (S10 #1).
     let fileDirty = false;
     for (const rel of WATCHED_RELS) {
-      const path = join(ctxRoot, rel);
+      const path = join(contexaRoot, rel);
       let mtime: number;
       let size: number;
       try {
@@ -220,13 +220,13 @@ export class MemorySourceAdapter implements SourceAdapter {
   }
 
   async ingest(store: Store, dirty: DirtyReport, budget: Budget): Promise<IngestResult> {
-    const ctxRoot = this.#ctxRootFor(store);
+    const contexaRoot = this.#contexaRootFor(store);
     // E4 opt-out (item 4): honor the per-repo knob on the cold-path write surface
     // so migration + import land in the overlay, never the committed zone.
-    const files = new MemoryFiles(ctxRoot, readMemoryOptOut(ctxRoot));
+    const files = new MemoryFiles(contexaRoot, readMemoryOptOut(contexaRoot));
     const prevManifest = this.#readManifest(store);
     // Shape decision reads the committed files BEFORE any write-through mutates them.
-    const shape = this.#reindexShape(ctxRoot, prevManifest);
+    const shape = this.#reindexShape(contexaRoot, prevManifest);
 
     // 1. Host auto-memory → overlay needs-review (E3), write-through (item 2).
     const importReport = importClaudeCodeMemory(store, {
@@ -253,7 +253,7 @@ export class MemorySourceAdapter implements SourceAdapter {
       (dirty.detail as { hostWatermark?: number } | undefined)?.hostWatermark ??
       (importReport.memoryDir ? latestMtimeMs(importReport.memoryDir) : prevManifest.host);
     this.#writeManifest(store, {
-      files: this.#snapshotFiles(ctxRoot),
+      files: this.#snapshotFiles(contexaRoot),
       host: hostWatermark,
       synced: true,
       reindex: { skipped: report.skipped, shadowedOverlay: report.shadowedOverlay },

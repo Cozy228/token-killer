@@ -56,7 +56,7 @@ describe("refresh orchestration (§4)", () => {
     root = makeTempDir("ctx-refresh-");
     clock = { t: 0 };
     log = [];
-    store = openStore({ projectDir: root, home: join(root, "ctx-home"), now: () => clock.t });
+    store = openStore({ projectDir: root, home: join(root, "contexa-home"), now: () => clock.t });
   });
   afterEach(() => {
     store.close();

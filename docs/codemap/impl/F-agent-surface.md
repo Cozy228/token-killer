@@ -1,4 +1,4 @@
-> **[2026-07-04 P28] PARTIALLY SUPERSEDED** — the 4-tool `tk_*` surface (F.3–F.5) is replaced by the 3-tool `context/search/remember` surface (P25②, `CTX-IMPL.md` §7). F.1/F.2 stdio/JSON-RPC transport detail remains carried reference.
+> **[2026-07-04 P28] PARTIALLY SUPERSEDED** — the 4-tool `tk_*` surface (F.3–F.5) is replaced by the 3-tool `context/search/remember` surface (P25②, `CONTEXA-IMPL.md` §7). F.1/F.2 stdio/JSON-RPC transport detail remains carried reference.
 
 ## 需求 F — Agent delivery surface（agent 如何触达工具 / 工具形态与引导）
 

@@ -4,7 +4,7 @@ Milestone acceptance bars, implementer goal prompts, and ratified decisions. Rea
 
 ## Authority docs (repo root — not here)
 
-- `CTX-DESIGN.md` · `CTX-IMPL.md` · `FABLE-DECISION-LOG.md` — the settled ctx design/impl/decisions.
+- `CONTEXA-DESIGN.md` · `CONTEXA-IMPL.md` · `FABLE-DECISION-LOG.md` — the settled Contexa design/impl/decisions.
 - `VISION.md` — the aspirational vision layer (DCI / Atlas / CodeGraph / CodeWiki vocabulary is
   intentional; it is the north star, not the shipped product's naming).
 

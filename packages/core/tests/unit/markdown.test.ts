@@ -50,9 +50,9 @@ describe("markdown extractor (pure)", () => {
       term: "Term",
       definition: "a definition",
     });
-    expect(matchGlossary("**P20 — Product name = `ctx`.**")).toEqual({
+    expect(matchGlossary("**P20 — Product name = `contexa`; CLI = `ctx`.**")).toEqual({
       term: "P20",
-      definition: "Product name = `ctx`.",
+      definition: "Product name = `contexa`; CLI = `ctx`.",
     });
     expect(matchGlossary("- **Bullet** — listed def")).toEqual({
       term: "Bullet",
@@ -96,7 +96,9 @@ describe("markdown extractor (pure)", () => {
   });
 
   test("slugify: lowercase, punctuation dropped, spaces + em-dash collapsed", () => {
-    expect(slugify("P20 — Product name = `ctx`")).toBe("p20-product-name-ctx");
+    expect(slugify("P20 — Product name = `contexa`; CLI = `ctx`")).toBe(
+      "p20-product-name-contexa-cli-ctx",
+    );
     expect(slugify("Hello, World!")).toBe("hello-world");
   });
 });

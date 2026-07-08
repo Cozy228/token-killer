@@ -1,4 +1,4 @@
-# Goal — cut tk per-command invocation latency on a slow Windows box
+# Goal — cut ctx per-command invocation latency on a slow Windows box
 
 **For:** Fable (research + plan only; do NOT implement yet).
 **Output:** a ranked, decision-complete plan (technique → expected ms → Windows/AV
@@ -34,8 +34,8 @@ to whoever has box access. Info is pre-collected below — spend your budget on 
      the experiment matrix is run somewhere other than the target box.
 
 2. **This is a DISTRIBUTED package — client Node versions are a whole unknowable
-   range, not one number.** `tk` ships to many machines; each may run Node 20, 22,
-   24, anything ≥20. The Node version on any single machine we can touch is just one
+   range, not one number.** `ctx` ships to many machines; each may run Node 22.18,
+   24, anything ≥22.18. The Node version on any single machine we can touch is just one
    sample, NOT a design input — the plan must hold across the full field. Treat this
    as a first-class design axis:
    - **Every technique must specify its upgrade/downgrade (graceful-degradation)
@@ -56,10 +56,10 @@ to whoever has box access. Info is pre-collected below — spend your budget on 
 
 ## The problem in one line
 
-`tk` is a Node CLI invoked **once per shell command** (via a PATH shim wrapper that
+`ctx` is a Node CLI invoked **once per shell command** (via a PATH shim wrapper that
 runs `node /abs/dist/cli.js <program> "$@"`). On a slow corporate **Windows 11**
 laptop with endpoint AV, each invocation pays a full Node cold-start + bundle
-load + tk's own work. Native tool ≈ 300 ms; **acceptable target 500–600 ms total**
+load + ctx's own work. Native tool ≈ 300 ms; **acceptable target 500–600 ms total**
 (lower is better). Today it's ~1300 ms.
 
 This compounds: an agent loop runs many commands, paying the fixed cost every time.
@@ -68,15 +68,15 @@ This compounds: an agent loop runs many commands, paying the fixed cost every ti
 
 ## Measured on the REAL box (2026-06-11) — variance-dominated, read the FINDINGS not the point values
 
-Source: `scripts/tk-baseline-probe.ps1` + follow-up isolation runs on the target box.
+Source: `scripts/ctx-baseline-probe.ps1` + follow-up isolation runs on the target box.
 Box: Dell Latitude 5430, i7-1265U (10C/12T), 32 GB, **Windows 11 Enterprise**,
 **CrowdStrike Falcon** active (CSFalconService/Container), Windows Defender OFF, plugged in.
 
 **⚠️ Point estimates on this box are NOT reproducible.** Across repeated median-of-9/15
 runs the SAME command swung wildly: `node -e 0` measured 532 → 651 → 925 → 1080 ms;
-`bare git status` 517 → 738 → 2712 ms; `git --version` ~417 ms; `tk git status`
+`bare git status` 517 → 738 → 2712 ms; `git --version` ~417 ms; `ctx git status`
 2020 → 2712 ms. Several runs even produced physically-impossible orderings (`--raw`
-slower than full pipeline; tk-wrapped tool faster than the bare tool) — proof the
+slower than full pipeline; ctx-wrapped tool faster than the bare tool) — proof the
 noise floor exceeds the signal. The amplifier is intermittent **CrowdStrike** scanning
 of each process spawn / file open, which hits some invocations and not others. So:
 **do not optimize against any single number; optimize the STRUCTURE that the numbers
@@ -85,9 +85,9 @@ agree on.** (Numbers retained only as ranges.)
 ### Robust findings (hold across every run despite the variance)
 1. **Every process spawn pays a large, variable AV tax (~400–1100 ms).** Even
    `git --version`, which does no FS work, costs ~400 ms; `node -e 0` 530–1080 ms.
-   This is process-creation intercepted by CrowdStrike, not anything tk does.
-2. **tk spawns TWICE per command** — its own Node (to run the bundle) **and** the
-   wrapped real tool — while the bare tool spawns once. So tk structurally pays the
+   This is process-creation intercepted by CrowdStrike, not anything ctx does.
+2. **ctx spawns TWICE per command** — its own Node (to run the bundle) **and** the
+   wrapped real tool — while the bare tool spawns once. So ctx structurally pays the
    spawn tax **~2×**. No micro-opt changes the "two spawns" structure; only removing
    the per-command Node spawn does (→ daemon).
 3. **Bundle load + compile is cheap: ~40–230 ms over the node floor.**
@@ -97,7 +97,7 @@ agree on.** (Numbers retained only as ranges.)
 4. **`resolveProgram` does up to 45 × 14 = 630 `existsSync` per command** (measured
    PATH/PATHEXT on this box), each AV-intercepted — a real structural cost, fixable by
    baking the install-time resolved path (see suspects below).
-5. **tk adds on the order of ~1–2 s per command over the bare tool**, and this
+5. **ctx adds on the order of ~1–2 s per command over the bare tool**, and this
    **compounds across an agent loop** (many commands back-to-back). The exact split
    is unrecoverable from this box's noise, but the order of magnitude and its causes
    (findings 1–4) are clear.
@@ -112,19 +112,19 @@ Run-to-run swing set aside; these are the relative orderings observed inside a r
 | R3 (git status) | 651 | 517 |
 | R4 (git --version) | 1080 | 417 |
 
-**B. R1 single-run breakdown (`tk git status` = 2660):**
+**B. R1 single-run breakdown (`ctx git status` = 2660):**
 | component | ms | share | within-run basis |
 |---|---|---|---|
 | Node start | 925 | 35% | `node -e 0` |
 | bundle + compile | 57 | 2% | `cli --version` − node |
 | git itself | 738 | 28% | bare `git status` |
-| remainder (resolve + capture/decode + history) | ~940 | 35% | tk total − above |
+| remainder (resolve + capture/decode + history) | ~940 | 35% | ctx total − above |
 
-**C. R1: the filtering path measured lower than `--raw`** — `tk git status` 2660 (full
-pipeline) vs `tk --raw git status` 3007 (skips filter). (R3 showed the opposite
+**C. R1: the filtering path measured lower than `--raw`** — `ctx git status` 2660 (full
+pipeline) vs `ctx --raw git status` 3007 (skips filter). (R3 showed the opposite
 ordering for git status; R4 `git --version`: `--raw` 1617 > non-raw 1309.)
 
-**D. R4 non-additivity:** `tk git --version` 1309 < `node -e 0` 1080 + `git --version`
+**D. R4 non-additivity:** `ctx git --version` 1309 < `node -e 0` 1080 + `git --version`
 417 = 1497. The embedded Node-start and the standalone `node -e 0` differ by ~200 ms in
 the same run.
 
@@ -138,15 +138,15 @@ the same run.
 
 ### Historical (§I5, single-shot estimate — now known to be both low and noisy)
 `docs/reports/vscode-dogfood-issues-20260611.md` §I5 estimated node 300 / bundle 180 /
-git 300 / tk-work ≈520 / total ~1300 ms. Real box: node-start and tk-work are each
+git 300 / ctx-work ≈520 / total ~1300 ms. Real box: node-start and ctx-work are each
 much higher AND swing 2–4× run-to-run; treat §I5 as a rough early sketch, not a baseline.
 
-### What's already RULED OUT for the tk-work overhead
+### What's already RULED OUT for the ctx-work overhead
 - rawStore (`src/core/rawStore.ts:25` — writes only on exit≠0 or >20000 chars)
 - session dedup (default-off)
 - chcp.com probe (`src/executor.ts` `detectWindowsLegacyLabel` — lazily spawned
   ONLY when child output fails strict UTF-8; clean `git status` is UTF-8 → never fires)
-- filter/dedup pipeline is NOT the bulk of the cost: the dominant tk overhead is in
+- filter/dedup pipeline is NOT the bulk of the cost: the dominant ctx overhead is in
   **child spawn + output capture/decode + history write**, common to both paths.
   (Caveat: `--raw` is NOT a clean control for "filter cost" — it carries its own
   capture+history overhead; see the side-finding below. So treat the filter as
@@ -161,18 +161,18 @@ much higher AND swing 2–4× run-to-run; treat §I5 as a rough early sketch, no
    *Known fix idea:* the shim already knows the real binary at install time
    (`realBinaryPresent` in `src/shim/install.ts`) — bake the resolved absolute path
    into the wrapper/manifest and pass it through, skipping the runtime walk entirely.
-   This is the single highest-confidence tk-side win.
+   This is the single highest-confidence ctx-side win.
 2. `recordHistory` append (`src/core/history.ts`) — AV-scanned file write per command.
 3. `maybeWriteProjectMeta` — AV-scanned file op.
 
 ### Side-finding (confirmed by code read): `--raw` is the HEAVIEST passthrough, not the lightest
-Observed on box: `tk --raw git --version` (~1617 ms) cost **more** than plain
-`tk git --version` (~1309 ms) — backwards, since `--raw` is sold as "no compression,
+Observed on box: `ctx --raw git --version` (~1617 ms) cost **more** than plain
+`ctx git --version` (~1309 ms) — backwards, since `--raw` is sold as "no compression,
 just run it." Root cause in `src/cli.ts:255-271` vs `executePassthrough` (`src/executor.ts`):
 
 | path | spawn | capture+decode | recordHistory | maybeSaveRawOutput | streaming |
 |---|---|---|---|---|---|
-| plain passthrough (a non-compressing `tk <tool>`) | 1, `stdio:"inherit"` | no | no | no | yes (live) |
+| plain passthrough (a non-compressing `ctx <tool>`) | 1, `stdio:"inherit"` | no | no | no | yes (live) |
 | **`--raw`** | 1, **piped** | **yes** (buffer + TextDecoder) | **yes** | **yes** (conditional) | **no** (buffers to completion) |
 
 So `--raw` adds, for ZERO compression benefit: a full in-memory capture+decode of the
@@ -184,7 +184,7 @@ AV-heavy box the extra synchronous file write alone explains the ~300 ms.
 `stdio:"inherit"` passthrough (no capture, no history) and only fall back to
 capture when accounting is genuinely requested (`--stats`/`--save-raw`). This both
 removes the overhead and restores streaming. File as its own defect; it's also one of
-the tk-side structural wins below.
+the ctx-side structural wins below.
 
 ---
 
@@ -196,18 +196,16 @@ the tk-side structural wins below.
   history, savings, rawStore, …). Management subcommands (install/inspect/optimize/
   telemetry/report/gain) are loaded with **`await import()`** (12 sites) so they stay
   off the per-command path. So **lazy-loading of subcommands is already done.**
-- **Build:** `tsdown.config.ts` → **ESM**, `platform: node`, `target: node20`,
-  chunk-split. `dist/` currently has **51 `.js` chunks**. The hot path (`tk git
+- **Build:** `tsdown.config.mjs` → **ESM**, `platform: node`, `target: node22.18`,
+  chunk-split. `dist/` currently has **51 `.js` chunks**. The hot path (`ctx git
   status`) loads only router+executor+gate+pipeline chunks, but it's still **many
   small files**, each a separate `fs.open` → separate AV scan on Windows.
-- **Shim wrapper** (`src/shim/install.ts`): POSIX `exec <tk...> <program> "$@"`;
-  Windows `.cmd` `@echo off / setlocal / set TK_SHIM_DIR / <tk...> %*`. `tk` here is
+- **Shim wrapper** (`src/shim/install.ts`): POSIX `exec <ctx...> <program> "$@"`;
+  Windows `.cmd` `@echo off / setlocal / set CTX_SHIM_DIR / <ctx...> %*`. `ctx` here is
   `node <abs>/dist/cli.js` (absolute — `node.exe` PATH lookup already avoided).
-- **`engines.node >= 20`** (dev machine happens to be on v22.22.2 — irrelevant, see
-  constraint #2). `tk` is distributed; clients span the whole ≥20 range. So
-  `enableCompileCache()` amortizes the 180 ms bundle segment only on the ≥22.8 slice
-  of the field and silently no-ops below — every technique needs this kind of
-  per-version-band behavior spelled out, not a single assumed version.
+- **`engines.node >= 22.18.0`**. `ctx` is distributed; clients can still span
+  multiple supported release lines, so techniques need per-version behavior spelled
+  out rather than a single assumed local version.
 - **Deps:** essentially zero runtime deps (self-contained bundle).
 
 ---
@@ -235,9 +233,9 @@ Per-technique: what it is / expected saving / Windows-AV caveat / effort. URLs i
 3. **`resolveProgram` path caching / bake-at-install.** Eliminate the per-command
    PATH×PATHEXT `existsSync` storm (suspect #1 above). Bake the install-time resolved
    absolute binary path into the wrapper/manifest; or cache resolution in
-   `~/.token-killer`. Est. **up to 100–250 ms** on AV-heavy PATH. Effort: low–medium.
+   `~/.contexa`. Est. **up to 100–250 ms** on AV-heavy PATH. Effort: low–medium.
 4. **AV process exclusion** (`Add-MpPreference -ExclusionProcess node.exe`, plus
-   shim dir + `~/.token-killer` folder exclusions). Zero code, **100–250 ms**, but
+   shim dir + `~/.contexa` folder exclusions). Zero code, **100–250 ms**, but
    needs admin/IT and is per-machine — document it, don't depend on it.
 
 ### Tier 2 — bigger lift, evaluate
@@ -250,19 +248,19 @@ Per-technique: what it is / expected saving / Windows-AV caveat / effort. URLs i
    start; ~111 ms vs node-SEA ~140 ms vs bare node ~300 ms, *macOS*
    [yyx990803/bun-vs-node-sea-startup](https://github.com/yyx990803/bun-vs-node-sea-startup)).
    Cross-compile `--target=bun-windows-x64`. **Caveats:** ~90 MB binary (AV first-scan
-   cost unknown — MUST measure on box); Bun≠100% Node API parity (audit tk's
+   cost unknown — MUST measure on box); Bun≠100% Node API parity (audit ctx's
    child_process/fs/net usage). Effort: medium.
 
 ### Tier 3 — architectural, only real cure for the node-start floor
-7. **Persistent daemon / nailgun model.** Long-lived tk server + thin client over a
-   Windows named pipe (`\\.\pipe\tk-daemon`); per-command cost → IPC round-trip
+7. **Persistent daemon / nailgun model.** Long-lived ctx server + thin client over a
+   Windows named pipe (`\\.\pipe\ctx-daemon`); per-command cost → IPC round-trip
    (<50 ms). **The catch:** the thin client itself must cold-start <50 ms, so it can't
    be Node — needs a Go/Rust shim (cf. Volta/fnm/esbuild-service/tsserver). High
    effort, lifecycle/versioning/multi-project-isolation complexity. This is the only
    thing that removes the 300 ms `node -e 0` floor entirely.
 
 **Hard floor reminder (from §I5):** while the shim re-invokes node per command, even
-a perfect tk pays node(300)+bundle(180)+git(300) ≈ **780 ms min** on this box. Tier-1
+a perfect ctx pays node(300)+bundle(180)+git(300) ≈ **780 ms min** on this box. Tier-1
 micro-opts shave ~150–250 ms (gets ~1300 → ~1000–1050, still above target). Hitting
 **500–600 ms total** almost certainly requires **either** AV process-exclusion
 (removes much of the amplification) **or** a Tier-3 daemon. Be honest about this in

@@ -1,5 +1,5 @@
 /**
- * Unified-diff hunk parsing for symbol-level `touches` (CTX-IMPL §5.1, slice 2b).
+ * Unified-diff hunk parsing for symbol-level `touches` (CONTEXA-IMPL §5.1, slice 2b).
  *
  * Lifts gitnexus's `parseDiffHunks` (reference:
  * `.research/gitnexus/gitnexus/src/storage/git.ts`): extract the POST-image

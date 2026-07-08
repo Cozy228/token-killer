@@ -3,14 +3,14 @@ import { describe, expect, test } from "vitest";
 import { filterRtkOutput } from "../../helpers/rtkCommandHarness.js";
 
 /**
- * tk PRODUCT behavior for curl — deliberate divergences from RTK.
+ * ctx PRODUCT behavior for curl — deliberate divergences from RTK.
  *
  * This file is NOT a migration/parity suite. RTK's curl_cmd.rs:35-42 collapses the
  * failure output to a single stream: `msg = stderr if non-empty else stdout`, so
  * when curl writes BOTH an HTTP error body (stdout) and a transport diagnostic
  * (stderr), RTK keeps only stderr and silently drops the body. For an LLM reader the
  * dropped body (API error JSON, HTML error page) is usually the most actionable
- * diagnostic, so tk intentionally preserves both streams. Asserting this divergence
+ * diagnostic, so ctx intentionally preserves both streams. Asserting this divergence
  * here — rather than in rtkCurlBehavior.test.ts — keeps the parity suite honest:
  * green over there only ever proves RTK-faithful behavior.
  *
@@ -31,7 +31,7 @@ describe("curl product behavior (diverges from RTK)", () => {
     // stderr diagnostic — the reason (RTK keeps this).
     expect(result.output).toContain("curl: (22)");
     expect(result.output).toContain("error: 429");
-    // stdout response body — the detail. RTK DROPS this; tk keeps it.
+    // stdout response body — the detail. RTK DROPS this; ctx keeps it.
     expect(result.output).toContain('"error":"rate_limited"');
     expect(result.output).toContain('"retry_after":42');
   });

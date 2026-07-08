@@ -1,4 +1,4 @@
-; Tier-1 C# queries (CTX-IMPL §5.2). Enclosing class/struct/record/namespace
+; Tier-1 C# queries (CONTEXA-IMPL §5.2). Enclosing class/struct/record/namespace
 ; supplies the qualifier via ancestry; `///` XML doc comments precede the member.
 
 ; --- definitions ---

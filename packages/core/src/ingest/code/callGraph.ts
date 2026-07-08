@@ -1,5 +1,5 @@
 /**
- * Call-site resolution → call edges (CTX-IMPL §5.2, slice 2d).
+ * Call-site resolution → call edges (CONTEXA-IMPL §5.2, slice 2d).
  *
  * 2a extracts a best-effort callee identifier per call site (`CallRecord`);
  * tree-sitter cannot resolve dispatch, so this resolver is CONSERVATIVE BY

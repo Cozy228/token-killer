@@ -7,7 +7,7 @@ import { defineHandler } from "../define.js";
 // `dotnet` proxy keeps test failures + summaries (stripping restore/build
 // boilerplate), parses TRX XML for failed test names/messages, extracts build
 // errors from binlog text while redacting sensitive env values, and summarizes
-// `dotnet format` report JSON. tk routes the four behaviors from one handler.
+// `dotnet format` report JSON. ctx routes the four behaviors from one handler.
 
 // RTK: core/utils.rs::truncate.
 function truncate(text: string, maxLen: number): string {
@@ -223,7 +223,7 @@ type FormatChange = {
 };
 type FormatEntry = { filePath?: string; changes?: FormatChange[] };
 
-// Accept tk camelCase and RTK PascalCase keys.
+// Accept ctx camelCase and RTK PascalCase keys.
 function pick<T>(obj: Record<string, unknown>, ...keys: string[]): T | undefined {
   for (const key of keys) {
     if (obj[key] !== undefined) return obj[key] as T;

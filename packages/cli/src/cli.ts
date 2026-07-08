@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 /**
- * ctx CLI entry.
+ * Contexa CLI entry.
  *
  * Slice 1d lands `ctx sync` — the all-sources orchestration entry point (P28):
  * it opens the project store, builds the source registry via the core factory,
@@ -8,7 +8,7 @@
  * path with a large budget for full catch-up (§4.4).
  *
  * Slice 1c wires the memory lifecycle surface (remember/recall/memory) to the
- * `@ctx/core` library calls. `ctx import` (network carriers) lands at M4 — a
+ * `@contexa/core` library calls. `ctx import` (network carriers) lands at M4 — a
  * stub returns the P28 success-shaped "lands at M4" notice.
  *
  * Slice 1i wires `ctx install` (managed MCP registration into project
@@ -39,7 +39,7 @@ import {
   setMemoryLifecycle,
   type MemoryStatus,
   type Store,
-} from "@ctx/core";
+} from "@contexa/core";
 import { runMcp } from "./mcp.ts";
 
 /** Cold-path budget: large enough for a full first-call catch-up (§4.4). The
@@ -56,7 +56,7 @@ export interface CliIO {
 export interface RunIo {
   out: (line: string) => void;
   err?: (line: string) => void;
-  /** Data home override ($CTX_HOME when omitted). Tests inject a sandbox. */
+  /** Data home override ($CONTEXA_HOME when omitted). Tests inject a sandbox. */
   home?: string;
   /** Project dir to resolve the shard from (defaults to cwd). */
   projectDir?: string;
@@ -244,7 +244,7 @@ function cmdPush(io: RunIo, args: ParsedArgs): number {
     return withStore(io, (store) => {
       const res = editPinVeto(store.projectRoot, sub, id, remove ? "remove" : "add");
       if (!res.ok) {
-        io.out(res.guidance ?? "could not update .ctx/push.jsonc"); // success-shaped
+        io.out(res.guidance ?? "could not update .contexa/push.jsonc"); // success-shaped
         return 0;
       }
       io.out(`${remove ? "un-" : ""}${sub} ${id} → ${res.path}`);
@@ -253,7 +253,7 @@ function cmdPush(io: RunIo, args: ParsedArgs): number {
   }
 
   // `ctx push --local`: render MY local view — the shared committed config merged
-  // with my personal overlay attention (`.ctx/push.local.jsonc`). DISPLAY ONLY,
+  // with my personal overlay attention (`.contexa/push.local.jsonc`). DISPLAY ONLY,
   // never placed into a (possibly committed) host file, so personal pins/vetoes
   // never leak into a shared artifact (slice 5, three-tier (c)).
   if (args.flags.local !== undefined) {
@@ -378,7 +378,7 @@ Commands (available now):
   recall          Expand a handle or entity id
   memory          List memory entries / lifecycle (confirm|retire|review)
   push            Render + place the ≤1KB context block (AGENTS.md + CLAUDE.md);
-                  push pin|veto <id> edits .ctx/push.jsonc; --dry-run / --if-changed
+                  push pin|veto <id> edits .contexa/push.jsonc; --dry-run / --if-changed
 
 More commands (guide/import) land in later M1 slices.
 `;

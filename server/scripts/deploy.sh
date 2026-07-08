@@ -12,6 +12,9 @@
 #     AWS_PROFILE=...                 or AWS_ACCESS_KEY_ID / AWS_SECRET_ACCESS_KEY
 #     AWS_REGION=us-east-1            (or AWS_DEFAULT_REGION, or `aws configure get region`)
 #
+#   Required for the default internal ALB front door:
+#     CERT_ARN=arn:aws:acm:...        ACM cert for the HTTPS listener
+#
 #   Optional overrides (otherwise auto-discovered):
 #     NAME_PREFIX=tk-telemetry
 #     VPC_ID=vpc-...                  (default: the account's default VPC)
@@ -20,8 +23,9 @@
 #     CREATE_INTERFACE_ENDPOINTS=true (secretsmanager + logs endpoints; set false if NAT/shared exist)
 #     DB_INSTANCE_CLASS=db.t4g.micro  DB_NAME=telemetry  DB_USERNAME=tk_ingest
 #     IMAGE_TAG=<git-sha|timestamp>
+#     INGRESS=alb|apigw               (default: alb)
 #
-# Usage:  ./deploy.sh
+# Usage:  CERT_ARN=arn:aws:acm:... ./deploy.sh
 set -euo pipefail
 
 # ---------------------------------------------------------------------------
@@ -36,6 +40,16 @@ log()  { printf '\033[0;36m[deploy]\033[0m %s\n' "$*" >&2; }
 ok()   { printf '\033[0;32m[  ok  ]\033[0m %s\n' "$*" >&2; }
 warn() { printf '\033[0;33m[ warn ]\033[0m %s\n' "$*" >&2; }
 die()  { printf '\033[0;31m[ fail ]\033[0m %s\n' "$*" >&2; exit 1; }
+
+# Source deploy.env if it exists (copy deploy.env.example and fill in values).
+# This lets you keep credentials out of the shell history.
+if [ -f "$SCRIPT_DIR/deploy.env" ]; then
+  set -a
+  # shellcheck disable=SC1090,SC1091
+  . "$SCRIPT_DIR/deploy.env"
+  set +a
+  log "sourced deploy.env"
+fi
 
 trap 'die "aborted at line $LINENO"' ERR
 
@@ -67,8 +81,8 @@ DB_USERNAME="${DB_USERNAME:-tk_ingest}"
 CREATE_INTERFACE_ENDPOINTS="${CREATE_INTERFACE_ENDPOINTS:-true}"
 TAG_SPEC="Key=Project,Value=$NAME_PREFIX"
 
-# Front door: "apigw" (private API Gateway REST, default) or "alb" (internal ALB).
-INGRESS="${INGRESS:-apigw}"
+# Front door: "alb" (internal ALB, default) or "apigw" (private API Gateway REST).
+INGRESS="${INGRESS:-alb}"
 case "$INGRESS" in apigw|alb) : ;; *) die "INGRESS must be apigw or alb (got '$INGRESS')" ;; esac
 if [ "$INGRESS" = "alb" ]; then
   LISTENER_PORT="${LISTENER_PORT:-443}"
@@ -450,6 +464,11 @@ deploy_alb() {
       --certificates "CertificateArn=$CERT_ARN" \
       --default-actions "Type=forward,TargetGroupArn=$tg_arn" >/dev/null
     log "created HTTPS:$LISTENER_PORT listener"
+  else
+    aws elbv2 modify-listener --listener-arn "$listener" \
+      --certificates "CertificateArn=$CERT_ARN" \
+      --default-actions "Type=forward,TargetGroupArn=$tg_arn" >/dev/null
+    log "updated HTTPS:$LISTENER_PORT listener"
   fi
 
   log "waiting for ALB to become active..."

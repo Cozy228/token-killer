@@ -2,9 +2,9 @@ import { createHash } from "node:crypto";
 import { accessSync, constants, existsSync, readdirSync, realpathSync, statSync } from "node:fs";
 import { delimiter, join, normalize, sep } from "node:path";
 
-// The shim places wrapper executables (a file named `git` that runs `tk git`)
-// ahead of the real tools on PATH. When `tk` then spawns the real tool it must
-// NOT re-resolve to the wrapper, or it would fork-bomb shim→tk→shim. This module
+// The shim places wrapper executables (a file named `git` that runs `ctx git`)
+// ahead of the real tools on PATH. When `ctx` then spawns the real tool it must
+// NOT re-resolve to the wrapper, or it would fork-bomb shim→ctx→shim. This module
 // is the recursion guard (ADR 0002 §4): strip the shim dir from the child PATH
 // and sentinel-check that the resolved tool does not still land in the shim dir.
 
@@ -85,10 +85,10 @@ export function stripShimDir(pathVar: string | undefined, shimDir: string | unde
 }
 
 // Fingerprint the binary-resolution environment — the shim-stripped PATH plus
-// PATHEXT — so a baked TK_REAL_BIN (2.1) is trusted ONLY while that environment is
+// PATHEXT — so a baked CTX_REAL_BIN (2.1) is trusted ONLY while that environment is
 // byte-identical to install time. If the user reorders or extends PATH (or PATHEXT)
 // after install, a DIFFERENT binary may now win the lookup; the hash changes, the
-// gate fails, and tk falls back to a live walk instead of running the stale baked
+// gate fails, and ctx falls back to a live walk instead of running the stale baked
 // path the shell would no longer pick. Pass the SAME stripped PATH both sides:
 // install hashes `stripShimDir(PATH, shimDir)`, runtime hashes the child PATH
 // `buildChildPath()` already produced — so an unchanged PATH yields a match.
@@ -161,12 +161,12 @@ export function resolveReal(program: string, strippedPath: string): string | nul
   return null;
 }
 
-// Build the child PATH for a spawned real tool: strip TK_SHIM_DIR (if set) so we
+// Build the child PATH for a spawned real tool: strip CTX_SHIM_DIR (if set) so we
 // never re-resolve to a wrapper. Returns the original PATH unchanged when no
-// shim dir is configured (the non-shim, plain-`tk` case).
+// shim dir is configured (the non-shim, plain-`ctx` case).
 export function buildChildPath(): string {
   const pathVar = process.env.PATH ?? "";
-  const shimDir = process.env.TK_SHIM_DIR;
+  const shimDir = process.env.CTX_SHIM_DIR;
   if (!shimDir) return pathVar;
   return stripShimDir(pathVar, shimDir);
 }
@@ -176,7 +176,7 @@ export function buildChildPath(): string {
 // program still exists — resolving the real tool is impossible without recursing,
 // so throw and let the caller fail toward a clear error instead of fork-bombing.
 export function assertNoRecursion(program: string, strippedPath: string): void {
-  const shimDir = process.env.TK_SHIM_DIR;
+  const shimDir = process.env.CTX_SHIM_DIR;
   if (!shimDir) return;
   if (program.includes("/") || program.includes("\\")) return;
 
@@ -189,7 +189,7 @@ export function assertNoRecursion(program: string, strippedPath: string): void {
     const resolvedCanonical = canonicalize(resolved);
     if (resolvedCanonical === target || resolvedCanonical.startsWith(target + sep)) {
       throw new ShimRecursionError(
-        `tk: refusing to run ${program}: resolved inside shim dir (${shimDir})`,
+        `ctx: refusing to run ${program}: resolved inside shim dir (${shimDir})`,
       );
     }
     return;
@@ -199,7 +199,7 @@ export function assertNoRecursion(program: string, strippedPath: string): void {
   // PATH was the wrapper and stripping it left nothing — running would recurse.
   const shimCopy = resolveReal(program, shimDir);
   if (shimCopy) {
-    throw new ShimRecursionError(`tk: cannot find real ${program} outside shim dir (${shimDir})`);
+    throw new ShimRecursionError(`ctx: cannot find real ${program} outside shim dir (${shimDir})`);
   }
   // Genuinely not found anywhere — let the spawn surface ENOENT/127 as usual.
 }

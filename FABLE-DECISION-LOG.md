@@ -110,12 +110,12 @@ changed tool contracts happens post-feature (P15②). Tool names carry NO `tk_` 
 and VS Code LM tools are namespaced by the host already, so tools are clean verbs; the product
 rename (P16③) is now actively wanted by the maintainer ("以后不要再用 TK 之类的了").
 
-**P20 — Product name = `ctx`.** `[2026-07-03]` Chosen after lore (obscure) and brain (odd) were
+**P20 — Product name = `contexa`; CLI = `ctx`.** `[2026-07-03]` Chosen after lore (obscure) and brain (odd) were
 rejected; plainest option — the product's identity IS project context. Naming system: CLI `ctx`
 (install / doctor / guide / mcp / run <cmd> / recall <handle>), MCP server `ctx` (clean-verb tools
-per P19: context/search/node/callers/remember), env `CTX_HOME`, data dir `~/.ctx/`, human surface
+per P19: context/search/node/callers/remember), env `CONTEXA_HOME`, data dir `~/.contexa/`, human surface
 `ctx guide` (codeguide subsumed), hook rewrite target `ctx run <cmd>`. Design vocabulary switches
-to `ctx` immediately; code/path/package migration = Implementation dependency (`tk` stays a compat
+to Contexa/`ctx` immediately; code/path/package migration = Implementation dependency (`tk` stays a compat
 alias in the shipping compressor line until the context-base implementation lands;
 `TOKEN_KILLER_HOME` read-only fallback).
 
@@ -150,7 +150,7 @@ LinkEdge model + three-tier linking rules (explicit-key Observed / path·symbol-
 rename tracking / semantic-proposal Inferred on-demand) + unresolved-mention-as-stale-doc-detection
 presented and not objected to — carried as design input.
 
-**P23 — CTX-DESIGN.md forks resolved.** `[2026-07-03]` FORK-1: **guide stays strictly read-only**
+**P23 — CONTEXA-DESIGN.md forks resolved.** `[2026-07-03]` FORK-1: **guide stays strictly read-only**
 (D9/D28 stance unchanged — "why should guide write?"); memory confirm/retire and push pin/veto are
 CLI operations (`ctx memory confirm|retire`, `ctx push pin|veto`) + JSONC control-file edits; the
 Knowledge page displays state and surfaces the commands. FORK-2: importer credentials are
@@ -158,7 +158,7 @@ Knowledge page displays state and surfaces the commands. FORK-2: importer creden
 gets its **own lean default budget** (≈ smallest tier, expansion handles; numbers
 measurement-gated). FORK-4: PR-discussion extraction = **thread text as searchable nodes;
 decision-node promotion only via explicit markers or On-demand LLM (Inferred)**. Design document
-`CTX-DESIGN.md` is now fork-free.
+`CONTEXA-DESIGN.md` is now fork-free.
 
 **P24 — Refresh trigger model for non-code sources = D25 generalized (query-triggered).**
 `[2026-07-03]` All local sources share the code source's pattern: query time runs a cheap
@@ -195,7 +195,7 @@ hereby considered **independently confirmed**. Divergences resolved by the maint
   still lead with Entity Biography.
 - Follow-up: implementation-level design is the next artifact; `.research/` reference projects
   (12 repos) are being mined for implementation techniques to absorb (round launched same day).
-- ⑥ **Mining round completed same day** → `CTX-IMPL.md` (implementation design + absorption
+- ⑥ **Mining round completed same day** → `CONTEXA-IMPL.md` (implementation design + absorption
   register). Maintainer stance on absorbed material: **license flags ignored entirely; all
   reference code is reference, not gold standard** — adapt/rewrite freely, our design wins on
   any disagreement.
@@ -206,7 +206,7 @@ trajectories are NOT route inputs.** `[2026-07-03]` Maintainer directive + ratif
   codebase/compressor, the June contract's slice DAG (#72–#84), and reference projects' build
   paths (the old S-order's "code source first" was codegraph inertia — rejected).
 - **Route = M1 base speaks → M2 code joins → M3 guide → M4 importers → M5 hardening**
-  (`CTX-IMPL.md` §9). M1 ships the full serving surface (3 tools + push) over the three cheap
+  (`CONTEXA-IMPL.md` §9). M1 ships the full serving surface (3 tools + push) over the three cheap
   deterministic sources (memory, git history, docs/decisions) with the FULL selection pipeline.
 - Ratified A: **code structure waits until M2** — no M1 source depends on tree-sitter; cost
   accepted (file-level touches/anchors during M1). Ratified B: **guide lands at M3**, after
@@ -215,7 +215,7 @@ trajectories are NOT route inputs.** `[2026-07-03]` Maintainer directive + ratif
   `ctx` packages are greenfield — no imports from, waiting on, or migration of the tk tree in
   M1–M5.
 
-**P27 — Scope guard: ctx serves context only; the review/verification moment is not a product
+**P27 — Scope guard: Contexa serves context only; the review/verification moment is not a product
 surface.** `[2026-07-03]` Maintainer ruling on the DORA pressure-test review
 (`docs/design/FABLE-DORA-REVIEW.md`): the product solves ONE problem — supplying developer-local, effective,
 correct context. It never judges, verifies, or reviews changes; other DORA pains are not mandates.
@@ -235,7 +235,7 @@ maintainer decisions:
   WASM ceiling is re-verified at M2 start, not carried blindly).
 - ② **`ctx install` owns host integration**: MCP-server registration (managed per-host config
   writes) + push placement; `ctx doctor` verifies. CLI verb unified to `install`
-  (CTX-IMPL had `init`; CTX-DESIGN §8 always said `install`).
+  (CONTEXA-IMPL had `init`; CONTEXA-DESIGN §8 always said `install`).
 - ③ **1c importer scope = verification-first**: official-docs pass on host memory stores (VS Code
   Copilot + Copilot CLI first, then Codex) decides which importers land in M1; Claude Code path
   is confirmed; M1 ships framework + Claude Code, others follow as independently mergeable
@@ -247,14 +247,14 @@ maintainer decisions:
   guard; Codex `~/.codex/memories/` markdown workspace (off by default) → follow-on. Push
   placement verified: root `AGENTS.md` (Codex + both Copilots) + `CLAUDE.md` (Claude Code, also
   read by both Copilots) = two managed files cover all four hosts. Facts recorded in
-  CTX-IMPL §5.6/§7.
+  CONTEXA-IMPL §5.6/§7.
 - ④ Push auto-rank is NOT a blocker: P21 already ratified the factors; initial weights =
   `constants.ts`, measurement-gated (the design-brief §4 "open" flag is stale).
-- ⑤ **M1 spec addenda written into CTX-IMPL §9**: Store interface + SourceAdapter engine pinned
-  to 1b; envelope = typed struct rendered last; facet table; `.ctx/push.jsonc` schema; docs
+- ⑤ **M1 spec addenda written into CONTEXA-IMPL §9**: Store interface + SourceAdapter engine pinned
+  to 1b; envelope = typed struct rendered last; facet table; `.contexa/push.jsonc` schema; docs
   classification rule; 3-of-5 stale classes in M1; acceptance vs generic MCP stdio fixture;
   remember() validation; pre-milestone verb stubs; shard-key/migration conventions.
-- ⑥ Carried-but-unrestated items restored into CTX-IMPL: D32 generation-identity tuple (§2),
+- ⑥ Carried-but-unrestated items restored into CONTEXA-IMPL: D32 generation-identity tuple (§2),
   D13 ignore-set (§4), D22 `assertNoEgress()` (§7), plus a **legacy read-back map** (§12) for
   D4/D16/D20/D19/D23/G/J/K specs that live only in the June corpus.
 - ⑦ **docs/codemap dispositions applied** — layered over a same-night unrequested rename pass
@@ -262,7 +262,7 @@ maintainer decisions:
   action-plan→IMPLEMENTATION.md, runbook→RUNBOOK.md, research/prompts→`archive/`; kept — git
   tracks the renames — but it did NOT absorb ctx and its new README wrongly called the June
   contract "binding"): AUTHORITY NOTE prepended to README.md; AMENDED-OVERLAY banner on
-  DESIGN.md pointing to CTX-DESIGN §9; SUPERSEDED banners on IMPLEMENTATION.md, RUNBOOK.md,
+  DESIGN.md pointing to CONTEXA-DESIGN §9; SUPERSEDED banners on IMPLEMENTATION.md, RUNBOOK.md,
   archive/prompts/codegraph-build-loop-goal.md, impl/schema-draft.sql, impl/A, impl/F (tool
   surface), impl/C (DDL), impl/E (catch-up bands), impl/I (wiki.json), A3 (ranking stance),
   A4 (tool surface). Mechanism chapters (B/D/E/G/J/K/L/M, 00-sources, A1/A2) remain
@@ -271,12 +271,12 @@ maintainer decisions:
   review) — gates rollout, not build.
 
 **P29 — Documentation strategy = reference-not-copy across doc layers.** `[2026-07-04]`
-Maintainer: do NOT duplicate the June corpus into the ctx docs — the original design keeps its
-detail. Layering: **CTX-DESIGN / CTX-IMPL = decision + route layer** (what changed, contract
+Maintainer: do NOT duplicate the June corpus into the Contexa docs — the original design keeps its
+detail. Layering: **CONTEXA-DESIGN / CONTEXA-IMPL = decision + route layer** (what changed, contract
 deltas, build route; stays lean); **`docs/codemap/` = permanent detail layer** (`DESIGN.md` =
 authoritative text of every carried D-item — no "restate until absorbed" trajectory;
 `IMPLEMENTATION.md` = live index into `impl/`; `impl/` = implementation dossiers). Mechanism =
-CTX-IMPL §12 read-back map + inline pointers; P28's three one-line restatements (D32 tuple,
+CONTEXA-IMPL §12 read-back map + inline pointers; P28's three one-line restatements (D32 tuple,
 D13 ignore-set, D22 assertNoEgress) are pointer-with-gist and are the ceiling, not a pattern to
 continue. `RUNBOOK.md`'s per-slice workflow discipline (green-before-next; priorities
 correctness > completeness > verifiability > token) is carried as the M1–M5 method template —
@@ -293,7 +293,7 @@ slice closes. Supersedes the P28-era split-assignment ledger in `docs/build/M1-G
 
 **P31 — memory ownership/sync = file-backed, git-as-sync, unified event model.** `[2026-07-05]`
 Maintainer adopts **B1**: durable memory (and concepts, C3) leave the store as source of truth and
-move into committed `.ctx/` files; `store.sqlite` becomes a rebuildable, gitignored index; **git is
+move into committed `.contexa/` files; `store.sqlite` becomes a rebuildable, gitignored index; **git is
 the sync/collaboration layer**. The load-bearing frame is a **unified event model** — every write
 (`remember`, host import, a lifecycle verb, a conflict resolution) is an immutable event landing in
 exactly one of three zones (① committed Mainline log · ② personal overlay · ③ external snapshot);
@@ -308,7 +308,7 @@ runs before the committed zone (success-shaped refusal, no LLM/network). Executi
 Fable + Codex. Full E-group (E1–E8) + the A/B/C/D rulings live in
 `docs/build/MEMORY-DECISIONS.md` (SoT); settled mechanics in `docs/build/MEMORY-SYNC-SETTLEMENTS.md`;
 work order in `docs/build/MEMORY-SYNC-GOAL-PROMPT.md`. Reconciled across VISION invariant 3,
-CTX-DESIGN §2/§3/§6/§8/§9, CTX-IMPL §2/§5.6/§7, REPORT-canonical Decision 11.
+CONTEXA-DESIGN §2/§3/§6/§8/§9, CONTEXA-IMPL §2/§5.6/§7, REPORT-canonical Decision 11.
 
 **P32 — Measurement design ratified after grilling (MEASUREMENT-DESIGN.md, Q1–Q17).** `[2026-07-06]`
 All committed recommendations confirmed by the maintainer: **B arm = pull+push** (product default;

@@ -1,4 +1,4 @@
-> **[2026-07-04 P28/P29] PARTIALLY SUPERSEDED** — the #72–#84 slice DAG and its paste-commands are retired (P26); do NOT execute those. Carried: the per-slice workflow discipline (one slice → green → next; priorities correctness > completeness > verifiability > token; paste-command format) is the method template for the M1–M5 slices (`CTX-IMPL.md` §9).
+> **[2026-07-04 P28/P29] PARTIALLY SUPERSEDED** — the #72–#84 slice DAG and its paste-commands are retired (P26); do NOT execute those. Carried: the per-slice workflow discipline (one slice → green → next; priorities correctness > completeness > verifiability > token; paste-command format) is the method template for the M1–M5 slices (`CONTEXA-IMPL.md` §9).
 
 # codemap — build runbook（切片执行手册）
 

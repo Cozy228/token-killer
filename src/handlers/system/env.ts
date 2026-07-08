@@ -229,7 +229,7 @@ function formatEnv(stdout: string): string {
   const total = vars.length;
   const shown =
     pathVars.length + langVars.length + cloudVars.length + toolVars.length + otherVars.length;
-  // RTK prints the summary only when no filter is supplied (always, for tk).
+  // RTK prints the summary only when no filter is supplied (always, for ctx).
   lines.push(`\nTotal: ${total} vars (showing ${shown} relevant)`);
 
   return `${lines.join("\n")}\n`;

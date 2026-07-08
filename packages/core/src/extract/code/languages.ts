@@ -1,9 +1,9 @@
 /**
- * Tier-1 language registry (CTX-IMPL §5.2). Pure data + lookup — importable from
+ * Tier-1 language registry (CONTEXA-IMPL §5.2). Pure data + lookup — importable from
  * the main thread, the parse worker (native type-stripping), and tests alike.
  *
  * Grammar `.wasm` files are resolved at runtime from the `tree-sitter-wasms`
- * package (a declared runtime dependency of @ctx/core); see `assets.ts`. The
+ * package (a declared runtime dependency of @contexa/core); see `assets.ts`. The
  * per-language `.scm` query files live under `queries/` and ship to `dist/` via
  * the existing copy-assets step. `tsx` reuses the TypeScript query text against
  * its own grammar (JSX nodes don't change the definition/import/call shapes).

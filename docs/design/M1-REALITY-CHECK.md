@@ -1,7 +1,7 @@
 # M1 Reality Check — 存了什么 / 输入输出 / 相对 research 是否达到或超过
 
 > 生成于 2026-07-04，针对 `feat/1.0.0` 分支的 M1 快照。所有 I/O 均在沙箱
-> `CTX_HOME` 下对**本仓库自身**（living acceptance fixture）实跑得到；所有对比结论由 6 个
+> `CONTEXA_HOME` 下对**本仓库自身**（living acceptance fixture）实跑得到；所有对比结论由 6 个
 > 子代理分别读 `packages/core/src/` 与 `.research/<project>/` 两侧真实代码产出，附 `file:line`。
 >
 > **本文与设计文档冲突时，以实测代码为准**——过程中证伪了设计文档 2 处「差异化」自我宣称，见 §4。
@@ -10,7 +10,7 @@
 
 ## 1. `sync` 到底存了什么（真实 DB，非总结）
 
-`ctx sync` 对本仓库摄取后，`~/.ctx/projects/<shard>/store.sqlite`：
+`ctx sync` 对本仓库摄取后，`~/.contexa/projects/<shard>/store.sqlite`：
 
 ```
 entities 4131   claims 5388   links 4229   conflicts 137   handles 615   memory 1
@@ -121,7 +121,7 @@ git/文件里，serve 时才回读并按 `content_hash` 校验漂移。
 输入: {"name":"search","arguments":{"query":"RRF reciprocal rank fusion"}}
 输出: # ctx · search: RRF reciprocal rank fusion — fresh
   **`matches`**
-  6. Selection Engine (`core/src/select/`) CTX-IMPL.md:312-358 [d281f3]
+  6. Selection Engine (`core/src/select/`) CONTEXA-IMPL.md:312-358 [d281f3]
   Staged ranking pipeline (lexical→anchors→expand→resolve→PPR), not … RRF fusion
       docs/adr/0025-staged-ranking-pipeline.md:1-48 [a0adc2]
   …
@@ -130,9 +130,9 @@ git/文件里，serve 时才回读并按 `content_hash` 校验漂移。
 
 ### `ctx remember`（正常 / 超长）
 ```
-输入: ctx remember "context() is the single entry point; drill via handle" --anchor file:CTX-IMPL.md
+输入: ctx remember "context() is the single entry point; drill via handle" --anchor file:CONTEXA-IMPL.md
 输出: remembered [m2c69a] — context() is the single entry point; drill via handle
-        anchors: file:CTX-IMPL.md
+        anchors: file:CONTEXA-IMPL.md
 
 输入: ctx remember <300 字>
 输出: The note is 300 chars; a memory gist is capped at 240. Split it: keep a ≤240-char

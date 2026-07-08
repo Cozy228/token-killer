@@ -2,7 +2,7 @@ import { describe, expect, test } from "vitest";
 import { personalizedPageRank, type PprEdge } from "../../src/select/ppr.ts";
 import { PPR_ALPHA, PPR_ITERATIONS } from "../../src/select/constants.ts";
 
-// §10: PPR convergence / dangling-mass properties (CTX-IMPL §6.3).
+// §10: PPR convergence / dangling-mass properties (CONTEXA-IMPL §6.3).
 
 const sum = (m: Map<string, number>): number => [...m.values()].reduce((a, b) => a + b, 0);
 

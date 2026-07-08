@@ -27,14 +27,14 @@ import type { PreflightCheck } from "../../../src/shim/preflight.js";
 
 // Unit tests for the ADR 0012 #7 delivery capability matrix. The builder is pure
 // (all signals injected), so no real PATH probe / host config is touched. The
-// persistence tests use a temp TOKEN_KILLER_HOME-style dir passed explicitly to the
+// persistence tests use a temp CONTEXA_HOME-style dir passed explicitly to the
 // read/write helpers (which all take an optional `home`), so they never touch the
-// real ~/.token-killer.
+// real ~/.contexa.
 
 let home: string;
 
 beforeEach(() => {
-  home = mkdtempSync(join(tmpdir(), "tk-cap-"));
+  home = mkdtempSync(join(tmpdir(), "ctx-cap-"));
 });
 afterEach(() => {
   rmSync(home, { recursive: true, force: true });
@@ -48,15 +48,15 @@ function baseDeps(overrides: Partial<MatrixDeps> = {}): MatrixDeps {
     env: {},
     copilotHookStatus: () => ({
       present: false,
-      path: "/h/.copilot/hooks/tk-rewrite.json",
+      path: "/h/.copilot/hooks/ctx-rewrite.json",
       managed: false,
     }),
     claudeStatus: () => ({ present: false, path: "/h/.claude/settings.json", pointsAtTk: false }),
     shimManifest: () => null,
-    shimDirPath: "/h/.token-killer/shim",
+    shimDirPath: "/h/.contexa/shim",
     shimProbe: () => ({ pass: false, resolved: null }),
     injectionPath: "/h/.copilot/copilot-instructions.md",
-    guidanceFile: "/h/.claude/TK.md",
+    guidanceFile: "/h/.claude/CTX.md",
     guidanceLoaderPath: "/h/.claude/CLAUDE.md",
     fileExists: () => false,
     historyRecords: [],
@@ -87,7 +87,7 @@ describe("buildDeliveryMatrix (live-derived)", () => {
       baseDeps({
         copilotHookStatus: () => ({
           present: true,
-          path: "/h/.copilot/hooks/tk-rewrite.json",
+          path: "/h/.copilot/hooks/ctx-rewrite.json",
           managed: true,
         }),
       }),
@@ -98,27 +98,27 @@ describe("buildDeliveryMatrix (live-derived)", () => {
     expect(tier(m, "vscode-hook").detail).toContain("shared ~/.copilot/hooks");
   });
 
-  // Issue #26: a hook that is PRESENT but not tk's (unmanaged copilot config, or a
-  // claude hook that does not point at tk) must NOT read as installed — installed
-  // means "wired to tk", not "some hook file exists". The foreign file is still shown
+  // Issue #26: a hook that is PRESENT but not ctx's (unmanaged copilot config, or a
+  // claude hook that does not point at ctx) must NOT read as installed — installed
+  // means "wired to ctx", not "some hook file exists". The foreign file is still shown
   // in the detail so it stays diagnosable.
   test("an unmanaged copilot hook is present-but-foreign: NOT installed, but disclosed", () => {
     const m = buildDeliveryMatrix(
       baseDeps({
-        copilotHookStatus: () => ({ present: true, path: "/x/tk-rewrite.json", managed: false }),
+        copilotHookStatus: () => ({ present: true, path: "/x/ctx-rewrite.json", managed: false }),
       }),
     );
     expect(tier(m, "copilot-hook").installed).toBe(false);
-    expect(tier(m, "copilot-hook").detail).toContain("NOT tk-managed");
-    expect(tier(m, "copilot-hook").detail).toContain("/x/tk-rewrite.json");
+    expect(tier(m, "copilot-hook").detail).toContain("NOT ctx-managed");
+    expect(tier(m, "copilot-hook").detail).toContain("/x/ctx-rewrite.json");
     // The VS Code row shares that file, so it is NOT installed either.
     expect(tier(m, "vscode-hook").installed).toBe(false);
-    expect(tier(m, "vscode-hook").detail).toContain("NOT tk-managed");
-    // And with no tk-managed VS Code hook, the per-host policy line is n/a (not "unknown").
+    expect(tier(m, "vscode-hook").detail).toContain("NOT ctx-managed");
+    // And with no ctx-managed VS Code hook, the per-host policy line is n/a (not "unknown").
     expect(tier(m, "vscode-hook").blockedByPolicy).toContain("n/a");
   });
 
-  test("a claude hook that does NOT point at tk is present-but-foreign: NOT installed", () => {
+  test("a claude hook that does NOT point at ctx is present-but-foreign: NOT installed", () => {
     const m = buildDeliveryMatrix(
       baseDeps({
         claudeStatus: () => ({
@@ -129,7 +129,7 @@ describe("buildDeliveryMatrix (live-derived)", () => {
       }),
     );
     expect(tier(m, "claude-hook").installed).toBe(false);
-    expect(tier(m, "claude-hook").detail).toContain("does not point at tk");
+    expect(tier(m, "claude-hook").detail).toContain("does not point at ctx");
     expect(tier(m, "claude-hook").detail).toContain("/h/.claude/settings.json");
   });
 
@@ -140,15 +140,15 @@ describe("buildDeliveryMatrix (live-derived)", () => {
       }),
     );
     expect(tier(m, "claude-hook").installed).toBe(true);
-    expect(tier(m, "claude-hook").detail).toContain("points at tk");
+    expect(tier(m, "claude-hook").detail).toContain("points at ctx");
   });
 
   test("shim installed reports probe verdict and TTY opt-in from env", () => {
     const m = buildDeliveryMatrix(
       baseDeps({
         shimManifest: () => ({ programs: ["git", "rg"], version: "0.1.0" }),
-        shimProbe: () => ({ pass: true, resolved: "/h/.token-killer/shim/git" }),
-        env: { TK_COMPRESS_TTY: "1" },
+        shimProbe: () => ({ pass: true, resolved: "/h/.contexa/shim/git" }),
+        env: { CTX_COMPRESS_TTY: "1" },
       }),
     );
     const shim = tier(m, "shim");
@@ -171,7 +171,7 @@ describe("buildDeliveryMatrix (live-derived)", () => {
   });
 
   test("injection + guidance presence is a plain file-existence read", () => {
-    const present = new Set(["/h/.copilot/copilot-instructions.md", "/h/.claude/TK.md"]);
+    const present = new Set(["/h/.copilot/copilot-instructions.md", "/h/.claude/CTX.md"]);
     const m = buildDeliveryMatrix(baseDeps({ fileExists: (p) => present.has(p) }));
     expect(tier(m, "injection").installed).toBe(true);
     expect(tier(m, "guidance").installed).toBe(true);
@@ -179,7 +179,7 @@ describe("buildDeliveryMatrix (live-derived)", () => {
 
   test("guidance counts the loader file when there is no standalone file (copilot-cli)", () => {
     // copilot-cli inlines guidance into copilot-instructions.md and has no standalone
-    // TK.md, so only the loader path exists.
+    // CTX.md, so only the loader path exists.
     const m = buildDeliveryMatrix(
       baseDeps({
         guidanceFile: undefined,
@@ -379,11 +379,11 @@ describe("renderDeliveryMatrix + installedTierIds", () => {
   test("render produces one line per tier plus the persisted summary", () => {
     const m = buildDeliveryMatrix(
       baseDeps({
-        // A tk-managed copilot hook makes the copilot + VS Code hook tiers "installed",
+        // A ctx-managed copilot hook makes the copilot + VS Code hook tiers "installed",
         // so their per-host `fired` sub-line renders (issue #26).
         copilotHookStatus: () => ({
           present: true,
-          path: "/h/.copilot/hooks/tk-rewrite.json",
+          path: "/h/.copilot/hooks/ctx-rewrite.json",
           managed: true,
         }),
         state: {

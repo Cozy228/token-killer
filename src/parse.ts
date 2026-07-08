@@ -58,19 +58,21 @@ function toCommand(tokens: string[]): ParsedCommand | undefined {
 
 // Reserved subcommands intercepted BEFORE argv[0] is treated as a program, so a
 // same-named program (e.g. a `shim`/`status` binary on PATH) can never reach the
-// command router and a tk verb can never fall through to passthrough (U2).
-// install / uninstall / status are first-class top-level verbs (U1+U2); `tk init`
-// is gone (renamed to `tk install`) and is handled with a hint in cli.ts.
+// command router and a ctx verb can never fall through to passthrough (U2).
+// install / uninstall / status are first-class top-level verbs (U1+U2); `ctx init`
+// is gone (renamed to `ctx install`) and is handled with a hint in cli.ts.
 const RESERVED_SUBCOMMANDS = new Set<ParsedArgv["mode"]>([
-  // Bare-word `help`/`version` are verbs too — without these, `tk help` fell through
-  // to the command router and tried to passthrough a `help` program (only `tk --help`
-  // worked). `tk -- help` still reaches a literal `help` program (the `--` escape hatch
+  // Bare-word `help`/`version` are verbs too — without these, `ctx help` fell through
+  // to the command router and tried to passthrough a `help` program (only `ctx --help`
+  // worked). `ctx -- help` still reaches a literal `help` program (the `--` escape hatch
   // is handled in the loop below, after this early return).
   "help",
   "version",
   "install",
   "uninstall",
-  "status",
+  // `doctor` is the diagnose+repair verb (it replaced `ctx status`, which is gone —
+  // cli.ts prints a rename hint for the old name, like it does for `ctx init`).
+  "doctor",
   "shim",
   "hook",
   "inspect",
@@ -88,8 +90,8 @@ export function parseArgv(argv: string[]): ParsedArgv {
   let index = 0;
 
   const first = argv[0];
-  // Measured savings live at `tk gain` (its own dispatcher). There is no proxy
-  // report flag anymore — `tk gain` is the one report surface.
+  // Measured savings live at `ctx gain` (its own dispatcher). There is no proxy
+  // report flag anymore — `ctx gain` is the one report surface.
   if (first !== undefined && RESERVED_SUBCOMMANDS.has(first as ParsedArgv["mode"])) {
     return { mode: first as ParsedArgv["mode"], options, subArgs: argv.slice(1) };
   }
@@ -124,7 +126,7 @@ export function parseArgv(argv: string[]): ParsedArgv {
     }
     if (token === "--session") {
       // Consume BOTH tokens so the wrapped tool never sees `--session <id>`. The
-      // value is validated; an invalid id is ignored (falls back to TK_SESSION
+      // value is validated; an invalid id is ignored (falls back to CTX_SESSION
       // below), but the tokens are still dropped from the command argv.
       const valid = sanitizeSessionId(requireValue(argv, index, token));
       if (valid) options.sessionId = valid;
@@ -155,8 +157,8 @@ export function parseArgv(argv: string[]): ParsedArgv {
     break;
   }
 
-  // Precedence: `--session` flag (set above) > `TK_SESSION` env > absent.
-  options.sessionId ??= sanitizeSessionId(process.env.TK_SESSION);
+  // Precedence: `--session` flag (set above) > `CTX_SESSION` env > absent.
+  options.sessionId ??= sanitizeSessionId(process.env.CTX_SESSION);
   return {
     mode,
     options,

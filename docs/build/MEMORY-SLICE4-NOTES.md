@@ -90,8 +90,8 @@ id has TWO create lines: one committed (mainline), one local (overlay). This is 
 - **The `files?` param stays optional in the core signatures; production always passes one.** Item 2
   says "production write paths always carry a `MemoryFiles`" — they now do (CLI, MCP serve, adapter
   import). I did NOT make the param non-optional / default-to-`forStore` internally, because the
-  living-repo tests MUST be able to redirect the writer at a sandbox `.ctx` (they read the REAL repo for
-  symbols/anchors/host-dir but must never write `.ctx/` into it). The param IS that injection seam.
+  living-repo tests MUST be able to redirect the writer at a sandbox `.contexa` (they read the REAL repo for
+  symbols/anchors/host-dir but must never write `.contexa/` into it). The param IS that injection seam.
   This is the conservative reading of "remove the default-off seam": the store-only branch is no longer
   a production mode nor a test dodge — every production surface carries a writer and every living-repo
   write test injects a sandbox writer (see Deviations). Logged so the reviewer can rule otherwise.
@@ -121,13 +121,13 @@ id has TWO create lines: one committed (mainline), one local (overlay). This is 
 - **Re-pointed MORE than the two named living-repo tests.** The work order names `2d-biography` and
   `1h-push`. Making the memory *adapter* a write-through source also meant `perf-gates`,
   `2a-code-foundation`, and `2e-perf` — which run `createDefaultRegistry()` + `RefreshEngine.refresh`
-  over `projectDir: REPO_ROOT` — would create `.ctx/` in the real repo on the cold path (I hit this: a
+  over `projectDir: REPO_ROOT` — would create `.contexa/` in the real repo on the cold path (I hit this: a
   279 KB `memory.local.md` + 99 sidecars appeared in the worktree before I fixed it). Resolution
-  ("equivalent isolation", per the hard constraint): `MemoryAdapterOptions.ctxRoot` injection, and
-  those three tests pass `memory: { ctxRoot: <temp> }` so the writer lands in a sandbox. `2d-biography`
+  ("equivalent isolation", per the hard constraint): `MemoryAdapterOptions.contexaRoot` injection, and
+  those three tests pass `memory: { contexaRoot: <temp> }` so the writer lands in a sandbox. `2d-biography`
   and `1h-push` inject a sandbox `MemoryFiles` into their direct `remember`/`import`/`confirm` calls.
   `1c-memory` also opens `REPO_ROOT` stores and calls core write paths but WITHOUT a writer, so it
-  stays store-only and never creates `.ctx/` — left as-is (safe, not a dodge; the production surfaces
+  stays store-only and never creates `.contexa/` — left as-is (safe, not a dodge; the production surfaces
   all carry a writer). `2d-callgraph`, `2b-touches`, and `2d-biography`'s ingest already ran memory off
   or built adapters without memory — untouched.
 - **Migration set bumped 3 → 4** (`004-memory-unresolved-here.sql`). Updated the two migration-set tests
@@ -164,7 +164,7 @@ id has TWO create lines: one committed (mainline), one local (overlay). This is 
 - **Overlay compaction** (drop promoted-then-shadowed overlay create lines) — optional; `shadowedOverlay`
   is the doctor visibility hook if the orphan set grows.
 - **Adapter delta-proportional pull** (thread git old/new tips into the adapter to use `pullDeltaReindex`
-  instead of a full reindex) — a perf refinement if a huge `.ctx/memory` ever makes the additive full
+  instead of a full reindex) — a perf refinement if a huge `.contexa/memory` ever makes the additive full
   reindex a cold-path cost.
 - **shallow-clone doctor check** (slice-3 D2) — still a note only.
 - **`RememberInput.surface` defaults to `"cli"` — fail-OPEN for future agent-side callers (slice-5
@@ -197,7 +197,7 @@ fixed on the same branch.
   re-hash only when both mtime and size match the manifest (the `statSync` result was already in hand),
   closing most of the same-millisecond in-place-rewrite window. Accepted bounded cost (noted per the
   reviewer): a touched-but-identical file re-hashes on every subsequent `dirtyCheck` until the next
-  `ingest` re-stamps the manifest with the new mtime — a `git pull` that rewrites `.ctx/memory` bumps
+  `ingest` re-stamps the manifest with the new mtime — a `git pull` that rewrites `.contexa/memory` bumps
   mtime once, so the re-hash is a single extra read per changed file per warm cycle, not a hot-loop cost.
 
 ### Reviewer rulings recorded
@@ -206,7 +206,7 @@ fixed on the same branch.
   surfaces always carry a writer; the param remains the sandbox-injection seam the hard constraint
   requires; no living-repo test dodges by omitting it) is fine as-is. Not to be "fixed" to non-optional.
 - **Wider test re-pointing — ACCEPTED.** Sandboxing the memory writer in `perf-gates` / `2a` / `2e`
-  (beyond the two named tests) via `MemoryAdapterOptions.ctxRoot` is the correct equivalent isolation.
+  (beyond the two named tests) via `MemoryAdapterOptions.contexaRoot` is the correct equivalent isolation.
 
 ## Codex post-merge review fixes (O-17/O-20, 2026-07-07)
 

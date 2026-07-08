@@ -90,7 +90,7 @@ describe("store-integrated read-through (drift, git, store, snapshot)", () => {
   beforeEach(() => {
     root = makeTempDir("ctx-rt-store-");
     repo = makeGitFixture(root);
-    store = openStore({ projectDir: repo, home: join(root, "ctx-home") });
+    store = openStore({ projectDir: repo, home: join(root, "contexa-home") });
   });
   afterEach(() => {
     store.close();

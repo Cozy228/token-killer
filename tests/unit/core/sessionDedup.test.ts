@@ -17,7 +17,7 @@ import type {
 } from "../../../src/types.js";
 
 const T0 = 1_700_000_000_000;
-const ENABLED = { TK_SESSION_DEDUP: "1" } as NodeJS.ProcessEnv;
+const ENABLED = { CTX_SESSION_DEDUP: "1" } as NodeJS.ProcessEnv;
 // A deterministic, >256-byte compressed output (the dedup eligibility floor).
 const OUT = `On branch main\n${"  modified:   src/file.ts\n".repeat(15)}`;
 const RAWOUT = `RAWMARK ${"abcdefgh ".repeat(60)}`;
@@ -26,13 +26,13 @@ let home: string;
 let cwd: string;
 
 beforeEach(async () => {
-  home = await mkdtemp(path.join(tmpdir(), "tk-dedup-home-"));
-  cwd = await mkdtemp(path.join(tmpdir(), "tk-dedup-cwd-"));
-  process.env.TOKEN_KILLER_HOME = home;
+  home = await mkdtemp(path.join(tmpdir(), "ctx-dedup-home-"));
+  cwd = await mkdtemp(path.join(tmpdir(), "ctx-dedup-cwd-"));
+  process.env.CONTEXA_HOME = home;
 });
 
 afterEach(async () => {
-  delete process.env.TOKEN_KILLER_HOME;
+  delete process.env.CONTEXA_HOME;
   await rm(home, { recursive: true, force: true });
   await rm(cwd, { recursive: true, force: true });
 });
@@ -121,7 +121,7 @@ describe("applySessionDedup — exact-compare hit (the core proof)", () => {
     expect(await run({ now: T0 })).toBeNull(); // first run establishes
     const hit = await run({ now: T0 + 1000 });
     expect(hit).not.toBeNull();
-    expect(hit!.output).toContain("[tk] unchanged since");
+    expect(hit!.output).toContain("[ctx] unchanged since");
     expect(hit!.output).toContain("git status");
     expect(hit!.output).toMatch(/full: \S+/);
 
@@ -196,11 +196,11 @@ describe("applySessionDedup — gates", () => {
     expect(await run({ env: {} as NodeJS.ProcessEnv, now: T0 })).toBeNull(); // establish
     const hit = await run({ env: {} as NodeJS.ProcessEnv, now: T0 + 1000 });
     expect(hit).not.toBeNull();
-    expect(hit!.output).toContain("[tk] unchanged since");
+    expect(hit!.output).toContain("[ctx] unchanged since");
   });
 
-  test("TK_SESSION_DEDUP=0 disables it — no marker, no store written", async () => {
-    const off = { TK_SESSION_DEDUP: "0" } as NodeJS.ProcessEnv;
+  test("CTX_SESSION_DEDUP=0 disables it — no marker, no store written", async () => {
+    const off = { CTX_SESSION_DEDUP: "0" } as NodeJS.ProcessEnv;
     expect(await run({ env: off, now: T0 })).toBeNull();
     expect(await run({ env: off, now: T0 + 1000 })).toBeNull();
     await expect(access(dedupStoreFile(cwd))).rejects.toBeTruthy(); // never created

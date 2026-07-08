@@ -5,14 +5,14 @@
  *
  * Two tiers per the acceptance bar:
  *  • living-repo tier — THIS token-killer checkout ingested via the REAL docs +
- *    git adapters into a temp CTX_HOME (G-7). P20 (rename→ctx) and P23/FORK-1
+ *    git adapters into a temp CONTEXA_HOME (G-7). P20 (rename→ctx) and P23/FORK-1
  *    (guide read-only) are decisions in FABLE-DECISION-LOG.md of this very repo.
  *  • deterministic fixture tier — an isolated ambiguous-name + unknown-ref +
  *    `N⇥` numbering fixture proving the serving mechanics under a fixed clock.
  *
  * ⚠ verify-at-wiring values, confirmed against this checkout on 2026-07-04:
  *  • P20 is `concept:FABLE-DECISION-LOG.md#p20`, locator FABLE-DECISION-LOG.md,
- *    line 113: "**P20 — Product name = `ctx`.** … Chosen after lore (obscure)…"
+ *    line 113: "**P20 — Product name = `contexa`; CLI = `ctx`.** … Chosen after lore (obscure)…"
  *    (`grep -n '\*\*P20' FABLE-DECISION-LOG.md` → line 113). It surfaces in the
  *    decisions section (as the top-ranked omitted item, carrying a drill handle).
  *  • P23 is `concept:FABLE-DECISION-LOG.md#p23`, line 153:
@@ -55,7 +55,7 @@ describe("acceptance: 1g mcp serve", () => {
 
   beforeAll(async () => {
     liveRoot = makeTempDir("ctx-a7-live-");
-    live = openStore({ projectDir: REPO_ROOT, home: join(liveRoot, "ctx-home") });
+    live = openStore({ projectDir: REPO_ROOT, home: join(liveRoot, "contexa-home") });
     const budget = { deadline: Number.MAX_SAFE_INTEGER, now: Date.now };
     const docs = new DocsAdapter();
     await docs.ingest(live, await docs.dirtyCheck(live), budget);
@@ -132,9 +132,9 @@ describe("acceptance: 1g mcp serve", () => {
     expect(drill.isError).toBe(false);
 
     // Full decision text via read-through — VERBATIM source, not a re-summary:
-    //  • the exact line-113 bytes appear ("Product name = `ctx`");
+    //  • the exact line-113 bytes appear ("Product name = `contexa`; CLI = `ctx`");
     //  • `N⇥` numbering (line 113, tab-prefixed) proves host-Read-tool read-back.
-    expect(drill.text).toContain("Product name = `ctx`");
+    expect(drill.text).toContain("Product name = `contexa`; CLI = `ctx`");
     expect(drill.text, "source line rendered N⇥ (line 113, tab-prefixed)").toMatch(/\n113\t/);
     // The drill resolves to the same P20 entity (round-trip, not a fresh summary).
     expect(live.resolveHandle(handle!)?.entityId).toBe(P20_ID);

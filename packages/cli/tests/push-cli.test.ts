@@ -5,7 +5,7 @@ import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, test } from "vitest";
 import { run, type RunIo } from "../src/cli.ts";
 
-// `ctx push` exercised in-process against a temp git repo + sandboxed CTX_HOME
+// `ctx push` exercised in-process against a temp git repo + sandboxed CONTEXA_HOME
 // (G-7): host instruction files are written INTO the temp project, never the
 // real repo's AGENTS.md/CLAUDE.md.
 function makeRepo(root: string): string {
@@ -26,7 +26,7 @@ function makeRepo(root: string): string {
   return repo;
 }
 
-describe("ctx CLI: push", () => {
+describe("Contexa CLI: push", () => {
   let root: string;
   let repo: string;
   let lines: string[];
@@ -36,7 +36,7 @@ describe("ctx CLI: push", () => {
     root = mkdtempSync(join(tmpdir(), "ctx-push-cli-"));
     repo = makeRepo(root);
     lines = [];
-    io = { out: (l) => lines.push(l), home: join(root, "ctx-home"), projectDir: repo };
+    io = { out: (l) => lines.push(l), home: join(root, "contexa-home"), projectDir: repo };
   });
   afterEach(() => {
     rmSync(root, { recursive: true, force: true, maxRetries: 5, retryDelay: 100 });
@@ -70,7 +70,7 @@ describe("ctx CLI: push", () => {
     expect(lines.join("\n")).toContain("unchanged");
   });
 
-  test("ctx push pin / veto edit .ctx/push.jsonc", () => {
+  test("ctx push pin / veto edit .contexa/push.jsonc", () => {
     run(["remember", "pin me"], io);
     const handle = (lines[0]?.match(/\[([^\]]+)\]/) ?? [])[1];
     expect(handle).toBeDefined();
@@ -78,13 +78,13 @@ describe("ctx CLI: push", () => {
     lines = [];
     expect(run(["push", "pin", handle as string], io)).toBe(0);
     expect(lines.join("\n")).toContain("pin");
-    const cfg = readFileSync(join(repo, ".ctx", "push.jsonc"), "utf8");
+    const cfg = readFileSync(join(repo, ".contexa", "push.jsonc"), "utf8");
     expect(cfg).toContain(handle as string);
     expect(JSON.parse(cfg).pin).toContain(handle);
 
     lines = [];
     expect(run(["push", "veto", "c1a2b3c"], io)).toBe(0);
-    const cfg2 = JSON.parse(readFileSync(join(repo, ".ctx", "push.jsonc"), "utf8"));
+    const cfg2 = JSON.parse(readFileSync(join(repo, ".contexa", "push.jsonc"), "utf8"));
     expect(cfg2.pin).toContain(handle);
     expect(cfg2.veto).toContain("c1a2b3c");
   });
@@ -106,15 +106,15 @@ describe("ctx CLI: push", () => {
     expect(existsSync(join(repo, "CLAUDE.md"))).toBe(false);
   });
 
-  test("push pin preserves the E4 commitMemory opt-out in .ctx/push.jsonc", () => {
+  test("push pin preserves the E4 commitMemory opt-out in .contexa/push.jsonc", () => {
     // Author sets the per-repo opt-out by hand, then edits a pin via the CLI.
-    mkdirSync(join(repo, ".ctx"), { recursive: true });
-    writeFileSync(join(repo, ".ctx", "push.jsonc"), `{ "commitMemory": false }`);
+    mkdirSync(join(repo, ".contexa"), { recursive: true });
+    writeFileSync(join(repo, ".contexa", "push.jsonc"), `{ "commitMemory": false }`);
     run(["remember", "pin me too"], io);
     const handle = (lines[0]?.match(/\[([^\]]+)\]/) ?? [])[1];
     lines = [];
     expect(run(["push", "pin", handle as string], io)).toBe(0);
-    const cfg = JSON.parse(readFileSync(join(repo, ".ctx", "push.jsonc"), "utf8"));
+    const cfg = JSON.parse(readFileSync(join(repo, ".contexa", "push.jsonc"), "utf8"));
     expect(cfg.commitMemory).toBe(false); // opt-out NOT erased by the pin edit
     expect(cfg.pin).toContain(handle);
   });

@@ -2,7 +2,7 @@
 //
 // Under usage-based billing the expensive unit is the round-trip: a failed
 // command the agent doesn't immediately understand costs another model turn (and
-// a full context resend) to diagnose. When a command tk wraps fails with a
+// a full context resend) to diagnose. When a command ctx wraps fails with a
 // DETERMINISTIC, pattern-matched error, we append one short fix hint so the agent
 // can act without a diagnostic round-trip.
 //
@@ -10,7 +10,7 @@
 // path = MORE round-trips):
 //   - Fire ONLY on exitCode !== 0.
 //   - Match only stable, unambiguous error strings / exit codes. Never guess.
-//   - The hint is tk-added guidance, printed by the CLI presentation layer AFTER
+//   - The hint is ctx-added guidance, printed by the CLI presentation layer AFTER
 //     the filtered output (see cli.ts runCompress). It is NOT part of the
 //     compressed output and is never counted toward savings or the quality gate,
 //     so it can never trip the inflation/omission fallback.
@@ -30,7 +30,7 @@ const RULES: HintRule[] = [
     test: (t) =>
       /\b(rejected|failed to push)\b/.test(t) &&
       /(non-fast-forward|fetch first|tip of your current branch is behind)/.test(t),
-    hint: "remote has commits your branch lacks — run `tk git pull --rebase` then push again.",
+    hint: "remote has commits your branch lacks — run `ctx git pull --rebase` then push again.",
   },
   {
     id: "git_unmerged_paths",

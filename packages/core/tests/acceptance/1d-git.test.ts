@@ -12,7 +12,7 @@ import { cleanupTempDir, makeTempDir } from "../helpers/sandbox.ts";
 // this checkout IS the fixture. Its real history is immutable, so the values
 // asserted below (⚠ verify-at-wiring) are stable once observed.
 //
-// The store lives under a temp CTX_HOME sandbox (G-7); the project is THIS
+// The store lives under a temp CONTEXA_HOME sandbox (G-7); the project is THIS
 // checkout, read-only. The git adapter walks store.projectRoot (the current
 // checkout) so read-through of the same oids resolves from the same checkout.
 const PKG_DIR = resolve(dirname(fileURLToPath(import.meta.url)), "../..");
@@ -64,7 +64,7 @@ describe("acceptance: 1d git source", () => {
 
   beforeAll(async () => {
     root = makeTempDir("ctx-1d-");
-    store = openStore({ projectDir: REPO_ROOT, home: join(root, "ctx-home") });
+    store = openStore({ projectDir: REPO_ROOT, home: join(root, "contexa-home") });
     const registry = new SourceRegistry();
     registry.register(createGitAdapter());
     const engine = new RefreshEngine(store, registry, { catchupGateMs: 600_000 });
@@ -109,7 +109,7 @@ describe("acceptance: 1d git source", () => {
       oid: "12dc67446a34689f00a2c6a464514513895540d5",
     });
 
-    // file-level `touches` includes CTX-DESIGN.md.
+    // file-level `touches` preserves the historical path recorded by the commit.
     const touched = store.linksFrom(id, "touches").map((l) => l.dst);
     expect(touched).toContain("file:CTX-DESIGN.md");
 

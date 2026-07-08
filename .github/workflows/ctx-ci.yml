@@ -1,6 +1,6 @@
 name: ctx CI
 
-# Scoped to the ctx greenfield packages so it never disturbs the legacy tk `CI`
+# Scoped to the Contexa greenfield packages so it never disturbs the legacy tk `CI`
 # workflow (.github/workflows/ci.yml). Path filters keep it quiet for tk-only
 # changes; the two workflows are independent.
 on:

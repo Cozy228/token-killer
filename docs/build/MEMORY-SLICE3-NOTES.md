@@ -8,7 +8,7 @@ archive, per the slice-1/2 precedent. -->
 
 Work order: `MEMORY-SYNC-GOAL-PROMPT.md` "Implementation slices" item 3, under
 `MEMORY-DECISIONS.md` (B1 / C1–C5 / E1–E8) and `MEMORY-SYNC-SETTLEMENTS.md`
-(S1-residual / S3 / S4 / S8 / S10). Committed `.ctx/` files become the source of
+(S1-residual / S3 / S4 / S8 / S10). Committed `.contexa/` files become the source of
 truth; the SQLite store is a rebuildable index over them. The event model (slice
 2) already existed on SQLite — this slice moved *where the events live*.
 
@@ -29,11 +29,11 @@ truth; the SQLite store is a rebuildable index over them. The event model (slice
 ## Decisions (mechanics the docs left open — I settled these)
 
 - **On-disk layout (I owned the final names, slice-1 conventions as the start):**
-  Mainline (committed) = `.ctx/memory/log.md` (C1 memory entries), `.ctx/memory/decisions.md`
-  (C2 lifecycle log), `.ctx/memory/details/<ulid>.md` (write-once sidecars). Overlay
-  (gitignored) = `.ctx/memory.local.md`, `.ctx/decisions.local.md`, `.ctx/details.local/<ulid>.md`.
-  `.ctx/.gitattributes` declares `memory/log.md merge=union` + `memory/decisions.md merge=union`
-  (E2). `.ctx/.gitignore` covers `*.local.md`, `*.local.jsonc`, `details.local/`. `.ctx/concepts/`
+  Mainline (committed) = `.contexa/memory/log.md` (C1 memory entries), `.contexa/memory/decisions.md`
+  (C2 lifecycle log), `.contexa/memory/details/<ulid>.md` (write-once sidecars). Overlay
+  (gitignored) = `.contexa/memory.local.md`, `.contexa/decisions.local.md`, `.contexa/details.local/<ulid>.md`.
+  `.contexa/.gitattributes` declares `memory/log.md merge=union` + `memory/decisions.md merge=union`
+  (E2). `.contexa/.gitignore` covers `*.local.md`, `*.local.jsonc`, `details.local/`. `.contexa/concepts/`
   laid down (C3) with a `.gitkeep` — **there is no authored concept write path yet**; the layout +
   serialization seam exist, feature deferred (recorded here per the work order).
 - **Serialization = percent-encoded key/value tokens, NOT JSONL (C2).** Every value is
@@ -42,8 +42,8 @@ truth; the SQLite store is a rebuildable index over them. The event model (slice
   `memory_events` shape + the memory-row payload (gist/detail-pointer/origin/anchors/anchored-at/
   session/valid_from-to). A `create` (`mem`) line carries the note itself; lifecycle events are `dec`
   lines. Sidecar-per-detail (S1) keyed by the memory ULID, write-once.
-- **Index location = status quo `~/.ctx/<shard>/store.sqlite` (item 7).** Nothing forced a move; the
-  index is never committed (it lives outside the repo) and is always rebuildable. The `.ctx/.gitignore`
+- **Index location = status quo `~/.contexa/<shard>/store.sqlite` (item 7).** Nothing forced a move; the
+  index is never committed (it lives outside the repo) and is always rebuildable. The `.contexa/.gitignore`
   additionally covers the overlay so no auto-generated file can reach git even if a future index moved
   in-repo.
 - **DB `memory_events` append-only triggers KEPT for normal ops + ONE sanctioned reset seam (amended by
@@ -99,8 +99,8 @@ truth; the SQLite store is a rebuildable index over them. The event model (slice
 - **Write-through is opt-in (`files?`), not always-on.** Two pre-existing living-repo acceptance tests
   open a store on the REAL token-killer repo and call the core write paths directly: `2d-biography`
   (`remember` on `REPO_ROOT`) and `1h-push` (`importClaudeCodeMemory` on `REPO_ROOT`). An always-on
-  write-through would create `.ctx/memory/…`, `.ctx/.gitattributes` and `.ctx/.gitignore` in the real
-  repo — a direct violation of the hard gotcha "never create a `.ctx/` directory or committed memory
+  write-through would create `.contexa/memory/…`, `.contexa/.gitattributes` and `.contexa/.gitignore` in the real
+  repo — a direct violation of the hard gotcha "never create a `.contexa/` directory or committed memory
   files in the token-killer repo itself." The conservative resolution (per the scope contract): the
   core write functions take an optional `MemoryFiles`; when omitted they behave exactly as slice 2
   (store-only). Production (CLI `remember` / `memory confirm|retire|review`) passes
@@ -184,7 +184,7 @@ Codex was quota-blocked; this Fable round was the deep one. 7 findings, all addr
 - **R6 (MINOR — no argument mutation).** `MemoryFiles.appendMemory` no longer writes back
   `entry.detailPointer`; it serializes a local `{ ...entry, detailPointer }` copy.
 - **R7 (MINOR — gitignore comment).** The `.gitignore` template comment no longer promises an index
-  pattern it does not list; it notes the index lives under `~/.ctx` (outside the repo) and where to add
+  pattern it does not list; it notes the index lives under `~/.contexa` (outside the repo) and where to add
   a pattern if a future index moves in-repo.
 
 ## Fable review round 2 (fixes — new commits)
@@ -265,7 +265,7 @@ are the source — the cache needed ONE sanctioned reset-rebuild seam (F5). 7 co
   the purge path a peer previously lacked). ORDERING GUARD: reset runs the catch-up export FIRST so
   genuine store-only rows are committed before the cache clears. To keep the guard from RE-EXPORTING a
   committed-then-removed row (which would undo a redaction), the pull-delta fallback passes the OLD
-  commit's event ids (`git show <oldTip>:.ctx/memory/…`) as `resetExcludeIds`: a row whose create was
+  commit's event ids (`git show <oldTip>:.contexa/memory/…`) as `resetExcludeIds`: a row whose create was
   committed and is now gone is purged, a genuinely store-only row (never committed) is preserved. Test:
   a redaction removes a committed secret line + a store-only local row exists → after the fallback the
   secret is purged AND the local row survives.
@@ -299,7 +299,7 @@ are the source — the cache needed ONE sanctioned reset-rebuild seam (F5). 7 co
 ## Open questions
 
 - None blocking. Slice-4 handoffs: (1) wire `MemoryFiles` always-on + the migration trigger into the
-  refresh cold path + `memory/adapter.ts` dirtyCheck over `.ctx/memory/`; (2) the S8a CLI-human vs
+  refresh cold path + `memory/adapter.ts` dirtyCheck over `.contexa/memory/`; (2) the S8a CLI-human vs
   MCP-agent `remember` caller-surface split (CLI-human → Mainline); (3) promote a confirmed overlay
   *create* body to Mainline (full overlay mechanics); (4) first-class `unresolved-here` rendering + the
   E4 guard on the live import/remember paths (the module is reused as-is). Slice-3 review focus (deepest

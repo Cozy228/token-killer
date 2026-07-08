@@ -1,5 +1,5 @@
 /**
- * Published-generation visibility (CTX-IMPL §2: "Selection reads links, never
+ * Published-generation visibility (CONTEXA-IMPL §2: "Selection reads links, never
  * claims; reads are `gen <= published_gen` filtered").
  *
  * Generations are per-source counters; an entity's `gen` was stamped by the
@@ -43,7 +43,7 @@ export function snapshotVisibility(store: Store): Visibility {
   };
   return {
     isVisible(entity: Entity): boolean {
-      // Generation gate (CTX-IMPL §2).
+      // Generation gate (CONTEXA-IMPL §2).
       const genOk =
         entity.kind === "file"
           ? entity.gen <= Math.max(published("git"), published("docs"), published("memory"))

@@ -9,7 +9,7 @@ import { buildCatArgs } from "../../../src/handlers/system/read.js";
 
 const repoRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "../../..");
 
-// RTK: read.rs reads the file bytes directly; tk shells to `cat`, so the real CLI
+// RTK: read.rs reads the file bytes directly; ctx shells to `cat`, so the real CLI
 // path must pass ONLY the file operands — `cat` would reject RTK's read flags
 // (--level/--max-lines/--tail-lines/--line-numbers). The migration harness only
 // exercises filter(); these assert the execute() command-rewrite parity directly.
@@ -32,8 +32,8 @@ describe("RTK read command construction (buildCatArgs)", () => {
 });
 
 // RTK: system/read.rs — apply_line_window (tail_lines/max_lines) + optional line
-// numbers over file content. tk routes `cat` here; RTK's own command is `read`,
-// and tk accepts its flags (-m/--max-lines, --tail-lines, -n). The language-aware
+// numbers over file content. ctx routes `cat` here; RTK's own command is `read`,
+// and ctx accepts its flags (-m/--max-lines, --tail-lines, -n). The language-aware
 // filter influences smart_truncate's structural retention.
 
 describe("RTK read behavior", () => {
@@ -147,8 +147,8 @@ async function readSourceFixture(): Promise<string> {
 
 // Regression tests for audit findings.
 describe("cat/read audit regressions", () => {
-  // M9-cat: real cat flags like -A must be forwarded; only tk-owned flags are stripped.
-  test("M9-cat: buildCatArgs forwards -A to real cat, strips only tk-owned flags", () => {
+  // M9-cat: real cat flags like -A must be forwarded; only ctx-owned flags are stripped.
+  test("M9-cat: buildCatArgs forwards -A to real cat, strips only ctx-owned flags", () => {
     // -A is a real cat flag (show non-printing chars); must NOT be eaten.
     expect(buildCatArgs(["-A", "file.txt"])).toEqual(["-A", "file.txt"]);
     // -b is real cat (number non-empty lines); must NOT be eaten.
@@ -157,7 +157,7 @@ describe("cat/read audit regressions", () => {
     expect(buildCatArgs(["-s", "file.txt"])).toEqual(["-s", "file.txt"]);
     // Tk flags -m and --tail-lines are stripped; -A passes through.
     expect(buildCatArgs(["-A", "-m", "10", "file.txt"])).toEqual(["-A", "file.txt"]);
-    // -l (tk level flag) and its value are stripped; file operand is kept.
+    // -l (ctx level flag) and its value are stripped; file operand is kept.
     expect(buildCatArgs(["-l", "minimal", "file.txt"])).toEqual(["file.txt"]);
   });
 });

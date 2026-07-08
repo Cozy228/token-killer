@@ -1,5 +1,5 @@
 /**
- * `.ctx/push.jsonc` pin/veto config (CTX-IMPL §7, P28 addenda).
+ * `.contexa/push.jsonc` pin/veto config (CONTEXA-IMPL §7, P28 addenda).
  *
  * Shape: `{ "pin": [ids], "veto": [ids] }`; `//` and `/* *\/` comments allowed
  * (git-shareable, hand-editable — D27/D30). Every recoverable condition is
@@ -29,7 +29,7 @@ export interface PushConfig {
    * migration, import) lands in the gitignored personal overlay instead of the
    * committed Mainline zone; nothing creates or appends the committed logs.
    * Default `true` (commit as usual). This is PROJECT TRUTH — only the shared
-   * committed `.ctx/push.jsonc` sets it; a personal overlay config never does.
+   * committed `.contexa/push.jsonc` sets it; a personal overlay config never does.
    */
   commitMemory: boolean;
   /** Success-shaped guidance for anything malformed/unknown (never thrown). */
@@ -125,7 +125,7 @@ function asIdList(value: unknown, key: string, warnings: string[]): string[] {
 }
 
 /**
- * Parse a `.ctx/push.jsonc` source string. NEVER throws: malformed input →
+ * Parse a `.contexa/push.jsonc` source string. NEVER throws: malformed input →
  * empty config + guidance. Unknown top-level keys are REJECTED with guidance
  * (the config is ignored, matching the P28 "unknown keys rejected with
  * guidance" clause) so a typo can't silently apply a half-understood file.
@@ -144,7 +144,7 @@ export function parsePushConfig(source: string): PushConfig {
       veto: [],
       commitMemory: true,
       warnings: [
-        `\`.ctx/push.jsonc\` is not valid JSON (${msg}). ` +
+        `\`.contexa/push.jsonc\` is not valid JSON (${msg}). ` +
           `Expected \`{ "pin": [ids], "veto": [ids] }\` (comments allowed). Config ignored.`,
       ],
       ok: false,
@@ -157,7 +157,7 @@ export function parsePushConfig(source: string): PushConfig {
       veto: [],
       commitMemory: true,
       warnings: [
-        `\`.ctx/push.jsonc\` must be a JSON object \`{ "pin": [ids], "veto": [ids] }\`. Config ignored.`,
+        `\`.contexa/push.jsonc\` must be a JSON object \`{ "pin": [ids], "veto": [ids] }\`. Config ignored.`,
       ],
       ok: false,
     };
@@ -173,7 +173,7 @@ export function parsePushConfig(source: string): PushConfig {
       veto: [],
       commitMemory: true,
       warnings: [
-        `\`.ctx/push.jsonc\` has unknown key(s): ${unknown.join(", ")}. ` +
+        `\`.contexa/push.jsonc\` has unknown key(s): ${unknown.join(", ")}. ` +
           `Only \`pin\`, \`veto\` and \`commitMemory\` are allowed. Config ignored — fix or remove the extra key(s).`,
       ],
       ok: false,
@@ -206,8 +206,8 @@ function asCommitMemory(value: unknown, warnings: string[]): boolean {
 
 /**
  * Deterministic three-tier merge (slice 5): the SHARED committed config
- * (`.ctx/push.jsonc`) is project truth; the PERSONAL overlay config
- * (`.ctx/*.local.*`) adds LOCAL-EFFECT-ONLY attention — extra pins/vetoes for MY
+ * (`.contexa/push.jsonc`) is project truth; the PERSONAL overlay config
+ * (`.contexa/*.local.*`) adds LOCAL-EFFECT-ONLY attention — extra pins/vetoes for MY
  * push digest only. Order is stable (shared entries first, then overlay extras)
  * so two machines with the same inputs render byte-identical output.
  *
@@ -240,14 +240,14 @@ function dedup(ids: string[]): string[] {
 
 /**
  * E4 per-repo memory opt-out, read from the SHARED committed config
- * (`<ctxRoot>/push.jsonc`). Returns `true` when the repo has opted OUT of
+ * (`<contexaRoot>/push.jsonc`). Returns `true` when the repo has opted OUT of
  * committing memory (`{ "commitMemory": false }`). Success-shaped: a missing or
- * malformed file → `false` (commit as usual). Keyed on `ctxRoot` (not
- * `projectRoot`) so a sandbox-injected `MemoryFiles` reads its OWN `.ctx` — the
+ * malformed file → `false` (commit as usual). Keyed on `contexaRoot` (not
+ * `projectRoot`) so a sandbox-injected `MemoryFiles` reads its OWN `.contexa` — the
  * living-repo tests never read the real repo's config (the hard constraint).
  */
-export function readMemoryOptOut(ctxRoot: string): boolean {
-  const path = join(ctxRoot, "push.jsonc");
+export function readMemoryOptOut(contexaRoot: string): boolean {
+  const path = join(contexaRoot, "push.jsonc");
   if (!existsSync(path)) return false;
   return parsePushConfig(readFileSync(path, "utf8")).commitMemory === false;
 }

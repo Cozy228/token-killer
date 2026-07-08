@@ -3,7 +3,7 @@
  * B1-symbols · B1-parity · B1-multibyte · B1-worker · B1-dirty and feeds the
  * G-8/G-9 assertions in global-invariants.test.ts.
  *
- * Two tiers (CTX-IMPL §10): the deterministic CI tier uses in-memory / temp-dir
+ * Two tiers (CONTEXA-IMPL §10): the deterministic CI tier uses in-memory / temp-dir
  * fixtures per tier-1 language; the living-repo tier ingests THIS checkout's
  * real `packages/core/src/` sources through the real parse worker.
  *
@@ -59,7 +59,7 @@ describe("acceptance: 2a B1-symbols + B1-dirty (living repo)", () => {
 
   beforeAll(async () => {
     root = makeTempDir("ctx-2a-live-");
-    store = openStore({ projectDir: REPO_ROOT, home: `${root}/ctx-home` });
+    store = openStore({ projectDir: REPO_ROOT, home: `${root}/contexa-home` });
     // Confirm the code source is real + dirty on a cold store, then warm ALL
     // sources (a "warm dirtyCheck" needs every cursor set — git short-circuits
     // only once its tip is stored, §4.2).
@@ -67,11 +67,11 @@ describe("acceptance: 2a B1-symbols + B1-dirty (living repo)", () => {
     const codeDirty = await codeAdapter.dirtyCheck(store);
     expect(codeDirty.source).toBe("code");
     expect(codeDirty.dirty).toBe(true); // cold store — every code file is new
-    // Slice 4: memory write-through is always-on — sandbox its `.ctx` writer so the
-    // cold path never creates `.ctx/` in the real repo (the hard constraint).
+    // Slice 4: memory write-through is always-on — sandbox its `.contexa` writer so the
+    // cold path never creates `.contexa/` in the real repo (the hard constraint).
     const engine = new RefreshEngine(
       store,
-      createDefaultRegistry({ memory: { ctxRoot: `${root}/ctx-mem` } }),
+      createDefaultRegistry({ memory: { contexaRoot: `${root}/contexa-mem` } }),
       { catchupGateMs: 600_000 },
     );
     await engine.refresh(600_000);
@@ -125,7 +125,9 @@ describe("acceptance: 2a B1-symbols + B1-dirty (living repo)", () => {
   });
 
   test("B1-dirty: warm all-source dirtyCheck <20ms; .gitignore honored (no ignored files parsed)", async () => {
-    const adapters = createDefaultRegistry({ memory: { ctxRoot: `${root}/ctx-mem` } }).list();
+    const adapters = createDefaultRegistry({
+      memory: { contexaRoot: `${root}/contexa-mem` },
+    }).list();
     // Warm the shared-scan cache (steady-state serve path), then best-of-N min.
     await Promise.all(adapters.map((a) => a.dirtyCheck(store)));
     let warm = Number.POSITIVE_INFINITY;

@@ -1,5 +1,5 @@
 /**
- * Markdown rendering of the serving surface (CTX-IMPL §7 template). The
+ * Markdown rendering of the serving surface (CONTEXA-IMPL §7 template). The
  * selection layer hands 1g a TYPED STRUCT (envelope + sections); this module is
  * the FINAL render step (P28: "markdown is the final render step"). All §7
  * shape rules live here:

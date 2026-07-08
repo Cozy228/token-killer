@@ -1,5 +1,5 @@
 /**
- * `ctx doctor` (CTX-IMPL §7 CLI / §9 slice 1i) — READ-ONLY verification.
+ * `ctx doctor` (CONTEXA-IMPL §7 CLI / §9 slice 1i) — READ-ONLY verification.
  *
  * Reports one line per check: name, pass/fail, an actionable fix. It verifies
  * the runtime (Node ≥22.5, SQLite ≥3.43), the store (openable + schema current),
@@ -44,7 +44,7 @@ export interface DoctorReport {
 export interface DoctorOptions {
   /** Repo/checkout root holding `.mcp.json`, `AGENTS.md`, `CLAUDE.md`. */
   projectRoot: string;
-  /** Data home for the store (default $CTX_HOME/~.ctx; tests MUST set — G-7). */
+  /** Data home for the store (default $CONTEXA_HOME/~.contexa; tests MUST set — G-7). */
   home?: string;
   /** Project dir to resolve the shard from (default: `projectRoot`). */
   projectDir?: string;
@@ -121,7 +121,7 @@ function checkStore(opts: DoctorOptions): DoctorCheck {
       name: "store",
       ok: false,
       detail: `store not openable (${err instanceof Error ? err.message : String(err)})`,
-      fix: "Delete `~/.ctx/projects/<shard>` and run `ctx sync` (sources are authoritative, §11).",
+      fix: "Delete `~/.contexa/projects/<shard>` and run `ctx sync` (sources are authoritative, §11).",
     };
   }
 }
@@ -186,7 +186,7 @@ function checkPush(opts: DoctorOptions): DoctorCheck {
       name: "push",
       ok: false,
       detail: `push block over ${PUSH_MAX_BYTES}B: ${oversized.join(", ")}`,
-      fix: "The push digest exceeds the 1KB budget — reduce pinned gotchas in `.ctx/push.jsonc`.",
+      fix: "The push digest exceeds the 1KB budget — reduce pinned gotchas in `.contexa/push.jsonc`.",
     };
   }
   return {
@@ -226,7 +226,7 @@ function checkEgressGuard(opts: DoctorOptions): DoctorCheck {
  * skipped + shadowedOverlay counts, sidecar dangling/orphan warnings, external
  * snapshot ages. ADVISORY — the check stays `ok` (aging items are expected and
  * never auto-expired, E8); only sidecar integrity problems flag a warning fix.
- * Read-only: opens the store, reads the `.ctx` layout, never writes / creates it.
+ * Read-only: opens the store, reads the `.contexa` layout, never writes / creates it.
  */
 export function checkMemoryOps(opts: DoctorOptions): DoctorCheck {
   // F-C4-3: genuinely read-only. `openStoreReadOnly` never mkdirs the shard, runs
@@ -258,7 +258,7 @@ export function checkMemoryOps(opts: DoctorOptions): DoctorCheck {
         detail: `memory ops unavailable (store schema ${observed} < current ${latest}; run \`ctx sync\`)`,
       };
     }
-    const files = new MemoryFiles(join(opts.projectRoot, ".ctx"));
+    const files = new MemoryFiles(join(opts.projectRoot, ".contexa"));
     const r = memoryOpsReport(store, files);
     const oldest =
       r.oldestReviewAgeMs !== undefined
@@ -269,7 +269,7 @@ export function checkMemoryOps(opts: DoctorOptions): DoctorCheck {
         ? r.snapshotAges.map((s) => `${s.carrier} ${Math.floor(s.ageMs / 86_400_000)}d`).join(", ")
         : "none";
     // E4 per-repo opt-out (slice 5 item 4) — surface the write mode.
-    const optedOut = readMemoryOptOut(join(opts.projectRoot, ".ctx"));
+    const optedOut = readMemoryOptOut(join(opts.projectRoot, ".contexa"));
     const mode = optedOut
       ? "commit-memory OFF (E4: every memory write stays in your personal overlay — never committed)"
       : "commit-memory ON";
@@ -284,7 +284,7 @@ export function checkMemoryOps(opts: DoctorOptions): DoctorCheck {
       detail,
       ...(integrityBad
         ? {
-            fix: "Sidecar integrity drift — run `ctx sync` to rebuild; a persistent dangling/orphan sidecar means a hand-edited `.ctx/memory` log (review it).",
+            fix: "Sidecar integrity drift — run `ctx sync` to rebuild; a persistent dangling/orphan sidecar means a hand-edited `.contexa/memory` log (review it).",
           }
         : {}),
     };

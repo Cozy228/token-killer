@@ -1,5 +1,5 @@
 /**
- * Pure markdown extractor (CTX-IMPL §5.3/§5.5) — deterministic, no I/O.
+ * Pure markdown extractor (CONTEXA-IMPL §5.3/§5.5) — deterministic, no I/O.
  *
  * Parses a markdown document into the raw records the docs SourceAdapter turns
  * into entities/claims/links:

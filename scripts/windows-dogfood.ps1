@@ -1,7 +1,7 @@
 #Requires -Version 7.0
 <#
 .SYNOPSIS
-  tk real-machine acceptance — ONE unified suite for an INSTALLED tk, with NO
+  ctx real-machine acceptance — ONE unified suite for an INSTALLED ctx, with NO
   coverage switches. Everything runs every time: functional surface (every command
   + options), hook protocol, compression quality, boundary conditions, fail-safe,
   performance, shim/PATH, stateful round-trips (telemetry / support / optimize apply
@@ -21,7 +21,7 @@
   achieved by opting out — it is achieved by snapshot + restore. Stateful commands
   (telemetry enable/disable, config init, optimize --apply, install/uninstall for
   every host incl. claude-code) all snapshot the real artifact, exercise it for real,
-  and restore the originally-detected state at the end. `tk support` runs with its
+  and restore the originally-detected state at the end. `ctx support` runs with its
   routing env removed so it only writes a local bundle (no mail/Teams GUI opens).
   Project-scoped optimize --apply is confined to a throwaway temp git repo.
 
@@ -29,16 +29,16 @@
   code page / GBK decode / antivirus) gate behind $IsWindows, so the rest also runs
   under pwsh on macOS/Linux for development.
 
-.PARAMETER TargetRepo      Git repo for compression cases (default: this repo, or $env:TK_ACCEPT_CWD).
+.PARAMETER TargetRepo      Git repo for compression cases (default: this repo, or $env:CTX_ACCEPT_CWD).
 .PARAMETER ReportPath      Markdown report path (default: reports\windows-dogfood-<stamp>.md).
-.PARAMETER TkCommand       Override how tk is invoked. e.g. -TkCommand tk  OR  -TkCommand node,dist\cli.js
+.PARAMETER TkCommand       Override how ctx is invoked. e.g. -TkCommand ctx  OR  -TkCommand node,dist\cli.js
 .PARAMETER PerfIterations  Samples per perf case (default 7).
 .PARAMETER TimeoutSec      Per-command timeout (default 60).
 
 .EXAMPLE
   pwsh -NoProfile -File scripts/windows-dogfood.ps1
 .EXAMPLE
-  pwsh -NoProfile -File scripts/windows-dogfood.ps1 -TkCommand tk
+  pwsh -NoProfile -File scripts/windows-dogfood.ps1 -TkCommand ctx
 #>
 [CmdletBinding()]
 param(
@@ -51,7 +51,7 @@ param(
   # GENEROUS ceiling, not the 60s default. 60s killed a healthy-but-slow scan mid-run
   # and reported an opaque exit=124 with empty output — measuring nothing. We keep a
   # ceiling (a TRUE hang must still terminate the suite) but raise it so a legitimately
-  # slow scan completes and we learn its real wall-time. Paired with TK_PROGRESS=1 so
+  # slow scan completes and we learn its real wall-time. Paired with CTX_PROGRESS=1 so
   # the dossier shows HOW FAR the scan got (file-count-bound vs one-huge-file-bound).
   [int]      $HeavyTimeoutSec = 300
 )
@@ -62,7 +62,7 @@ $script:TimeoutSec = $TimeoutSec
 $script:HeavyTimeoutSec = $HeavyTimeoutSec
 # Env that forces inspect/optimize to stream progress to STDERR even though the harness
 # pipes stdio (non-TTY). Captured into the dossier so a slow run is observable.
-$script:HeavyEnv = @{ TK_PROGRESS = "1" }
+$script:HeavyEnv = @{ CTX_PROGRESS = "1" }
 
 # ── Result model + failure dossiers ─────────────────────────────────
 # The whole point of this suite: a FAIL/WARN is useless to a remote fixer unless it
@@ -118,7 +118,7 @@ function CountBy($items, $st) { @($items | Where-Object { $_.Status -eq $st }).C
 # EMPTY ARRAY, and `-replace` maps over arrays element-wise, so it returns an empty
 # array too — then `.Trim()` throws "[System.Object[]] does not contain a method
 # named 'Trim'", an UNCAUGHT exception that aborts the whole suite. That is exactly
-# what `tk inspect --project` (no project-scoped sources → no HTML report emitted)
+# what `ctx inspect --project` (no project-scoped sources → no HTML report emitted)
 # tripped. @() + cast-to-string here keeps the absent case a clean "" so callers
 # fall into their intended "no path emitted" Warn branch.
 function Get-LabeledPath {
@@ -136,7 +136,7 @@ function Start-Proc {
     # -Stream tees the child's STDERR to this console LINE BY LINE as it arrives, while
     # still buffering it for the dossier. Heavy commands (inspect/optimize) set this so
     # a slow scan shows its live "Scanning N transcripts… / Scanned M events…" progress
-    # (TK_PROGRESS milestones) instead of a frozen console — and so a TRUE timeout still
+    # (CTX_PROGRESS milestones) instead of a frozen console — and so a TRUE timeout still
     # captures how far the scan reached. Off by default: the perf-measurement calls need
     # a clean console and precise timing, so they keep the silent buffered path.
     [switch]$Stream
@@ -151,10 +151,10 @@ function Start-Proc {
   $psi.RedirectStandardOutput = $true
   $psi.RedirectStandardError = $true
   $psi.RedirectStandardInput = $HasStdin
-  # tk emits UTF-8 (as do all UTF-8-aware agents that consume it). Without an explicit
+  # ctx emits UTF-8 (as do all UTF-8-aware agents that consume it). Without an explicit
   # encoding, .NET decodes the child's stdout/stdin using the console code page — cp936
   # on this GBK box — which mojibakes Chinese/emoji output (false "needle not found"
-  # warns). Pin UTF-8 so the harness reads what a real agent reads. (tk's OWN cp936
+  # warns). Pin UTF-8 so the harness reads what a real agent reads. (ctx's OWN cp936
   # decode happens one layer down, on the bytes IT reads from the tool it wraps.)
   $utf8 = [System.Text.UTF8Encoding]::new($false)
   $psi.StandardOutputEncoding = $utf8
@@ -164,10 +164,10 @@ function Start-Proc {
   $psi.CreateNoWindow = $true
   if ($Env) { foreach ($k in $Env.Keys) { $psi.Environment[$k] = [string]$Env[$k] } }
   # Remove inherited keys so a box-level env var can't change a command's behaviour
-  # (e.g. TK_SUPPORT_EMAIL would route `tk support` to a mail GUI instead of a file).
+  # (e.g. CTX_SUPPORT_EMAIL would route `ctx support` to a mail GUI instead of a file).
   if ($UnsetEnv) { foreach ($k in $UnsetEnv) { if ($psi.Environment.ContainsKey($k)) { [void]$psi.Environment.Remove($k) } } }
   $sw = [System.Diagnostics.Stopwatch]::StartNew()
-  # A spawn failure (bad tk resolution, ENOENT, .ps1/.cmd that can't be exec'd with
+  # A spawn failure (bad ctx resolution, ENOENT, .ps1/.cmd that can't be exec'd with
   # UseShellExecute=$false) must become a normal FAIL dossier — NOT an uncaught throw
   # that aborts the suite before the report is written. Return exit 127 with the reason.
   try { $p = [System.Diagnostics.Process]::Start($psi) }
@@ -224,7 +224,7 @@ function Start-Proc {
   $script:LastResult = $res
   $res
 }
-# Invoke tk. Redirected stdout = non-TTY, so the compress path engages naturally.
+# Invoke ctx. Redirected stdout = non-TTY, so the compress path engages naturally.
 function Invoke-Tk {
   param([string[]]$TkArgs, [hashtable]$Env, [string[]]$UnsetEnv, [string]$Stdin, [int]$Tmo = -1, [switch]$Stream)
   $hasStdin = $PSBoundParameters.ContainsKey('Stdin')
@@ -258,12 +258,12 @@ function Get-CompileCacheTier([string]$nv) {
     $p = $nv.TrimStart('v').Split('.'); $maj = [int]$p[0]; $min = [int]$p[1]
     if ($maj -gt 22 -or ($maj -eq 22 -and $min -ge 8)) { return "enableCompileCache() API (Node >=22.8)" }
     if ($maj -eq 22 -and $min -ge 1) { return "shim NODE_COMPILE_CACHE env (Node 22.1-22.7)" }
-    if ($maj -ge 20) { return "deferred — uncached compile (Node 20-22.0)" }
-    return "UNSUPPORTED Node <20"
+    if ($maj -ge 20) { return "deferred — uncached compile (Node <22.8)" }
+    return "UNSUPPORTED Node <22.18.0"
   } catch { return "unknown" }
 }
 
-# ── Resolve tk + target + report ────────────────────────────────────
+# ── Resolve ctx + target + report ────────────────────────────────────
 $ScriptDir = if ($PSScriptRoot) { $PSScriptRoot } else { Split-Path -Parent $MyInvocation.MyCommand.Path }
 $Root = Split-Path -Parent $ScriptDir
 
@@ -273,26 +273,26 @@ if ($TkCommand.Count -gt 0) {
   $script:TkBin = $TkCommand[0]
   $script:TkPre = @(if ($TkCommand.Count -gt 1) { $TkCommand[1..($TkCommand.Count - 1)] } else { @() })
 } elseif (Test-Path -LiteralPath (Join-Path $Root "dist/cli.js")) {
-  # Prefer the repo's built cli — `node` is directly spawnable. A global `tk` is
+  # Prefer the repo's built cli — `node` is directly spawnable. A global `ctx` is
   # often a .ps1/.cmd shim that Process.Start (UseShellExecute=$false) cannot exec.
   $script:TkBin = "node"
   $script:TkPre = @((Resolve-Path (Join-Path $Root "dist/cli.js")).Path)
-} elseif (Test-Cmd "tk") {
-  $tkSrc = (Get-Command tk).Source
+} elseif (Test-Cmd "ctx") {
+  $tkSrc = (Get-Command ctx).Source
   switch -regex ($tkSrc) {
     '\.ps1$' { $script:TkBin = "pwsh"; $script:TkPre = @("-NoProfile", "-File", $tkSrc) }
     '\.(cmd|bat)$' { $script:TkBin = $env:ComSpec; $script:TkPre = @("/c", $tkSrc) }
     default { $script:TkBin = $tkSrc; $script:TkPre = @() }
   }
 } else {
-  Write-Host "tk not found: install it (pnpm add -g .) or run from a built repo (pnpm build)." -ForegroundColor Red
+  Write-Host "ctx not found: install it (pnpm add -g .) or run from a built repo (pnpm build)." -ForegroundColor Red
   exit 2
 }
-# Absolutize relative cli paths NOW (CWD is still the launch dir) so tk resolves
+# Absolutize relative cli paths NOW (CWD is still the launch dir) so ctx resolves
 # even after the boundary phase runs it from temp fixture dirs.
 $script:TkPre = @($script:TkPre | ForEach-Object { if (Test-Path -LiteralPath $_ -PathType Leaf) { (Resolve-Path -LiteralPath $_).Path } else { $_ } })
 
-if (-not $TargetRepo) { $TargetRepo = if ($env:TK_ACCEPT_CWD) { $env:TK_ACCEPT_CWD } else { $Root } }
+if (-not $TargetRepo) { $TargetRepo = if ($env:CTX_ACCEPT_CWD) { $env:CTX_ACCEPT_CWD } else { $Root } }
 $TargetRepo = (Resolve-Path -LiteralPath $TargetRepo).Path
 
 $stamp = Get-Date -Format 'yyyyMMdd-HHmmss'
@@ -301,7 +301,7 @@ if (-not $ReportPath) {
   if (-not (Test-Path -LiteralPath $reportsDir)) { New-Item -ItemType Directory -Path $reportsDir -Force | Out-Null }
   $ReportPath = Join-Path $reportsDir "windows-dogfood-$stamp.md"
 }
-$TmpRoot = Join-Path ([System.IO.Path]::GetTempPath()) "tk-accept-$stamp"
+$TmpRoot = Join-Path ([System.IO.Path]::GetTempPath()) "ctx-accept-$stamp"
 New-Item -ItemType Directory -Path $TmpRoot -Force | Out-Null
 
 $nodeVer = Get-NodeVersion
@@ -315,8 +315,8 @@ foreach ($ln in ($initialStatus.AllText -split "`n")) {
 
 $EnvInfo = [ordered]@{
   "date"               = (Get-Date -Format 'yyyy-MM-dd HH:mm:ss')
-  "tk invocation"      = "$($script:TkBin) $($script:TkPre -join ' ')"
-  "tk version"         = $tkVer
+  "ctx invocation"      = "$($script:TkBin) $($script:TkPre -join ' ')"
+  "ctx version"         = $tkVer
   "OS"                 = if ($IsWindows) { "Windows" } elseif ($IsMacOS) { "macOS" } else { "Linux" }
   "OS detail"          = [System.Runtime.InteropServices.RuntimeInformation]::OSDescription
   "PowerShell"         = $PSVersionTable.PSVersion.ToString()
@@ -333,7 +333,7 @@ $EnvInfo = [ordered]@{
   "prior install host" = if ($priorHost) { $priorHost } else { "(none)" }
 }
 
-Write-Host "tk Real-Machine Acceptance (no switches — everything runs)" -ForegroundColor White
+Write-Host "ctx Real-Machine Acceptance (no switches — everything runs)" -ForegroundColor White
 $EnvInfo.GetEnumerator() | ForEach-Object { Write-Host ("  {0,-20} {1}" -f $_.Key, $_.Value) }
 
 Push-Location $TargetRepo
@@ -341,13 +341,13 @@ try {
   # ╔══ PHASE 1: Functional surface — every read-only command + key options ══╗
   Section "Functional — version / status / config / telemetry / gain (all views)"
   $r = Invoke-Tk @("--version")
-  if ($r.ExitCode -eq 0 -and $r.AllText -match '\d+\.\d+') { Pass "func" "tk --version" $r.AllText.Trim() $r.Ms } else { Fail "func" "tk --version" "exit=$($r.ExitCode)" $r.Ms }
-  $r = Invoke-Tk @("--help"); if ($r.ExitCode -eq 0 -and $r.AllText -match 'Commands:') { Pass "func" "tk --help" "" $r.Ms } else { Fail "func" "tk --help" "exit=$($r.ExitCode)" $r.Ms }
-  $r = Invoke-Tk @("status"); if ($r.ExitCode -eq 0 -and $r.AllText -match 'host') { Pass "func" "tk status" "" $r.Ms } else { Fail "func" "tk status" "exit=$($r.ExitCode)" $r.Ms }
-  $r = Invoke-Tk @("config", "show"); if ($r.ExitCode -eq 0) { Pass "func" "tk config show" "" $r.Ms } else { Fail "func" "tk config show" "exit=$($r.ExitCode)" $r.Ms }
-  $r = Invoke-Tk @("config", "path"); if ($r.ExitCode -eq 0) { Pass "func" "tk config path" $r.Stdout.Trim() $r.Ms } else { Fail "func" "tk config path" "exit=$($r.ExitCode)" $r.Ms }
-  $r = Invoke-Tk @("telemetry", "status"); if ($r.ExitCode -eq 0) { Pass "func" "tk telemetry status" "" $r.Ms } else { Fail "func" "tk telemetry status" "exit=$($r.ExitCode)" $r.Ms }
-  $r = Invoke-Tk @("telemetry", "preview"); if ($r.ExitCode -eq 0) { Pass "func" "tk telemetry preview" "" $r.Ms } else { Warn "func" "tk telemetry preview" "exit=$($r.ExitCode)" $r.Ms }
+  if ($r.ExitCode -eq 0 -and $r.AllText -match '\d+\.\d+') { Pass "func" "ctx --version" $r.AllText.Trim() $r.Ms } else { Fail "func" "ctx --version" "exit=$($r.ExitCode)" $r.Ms }
+  $r = Invoke-Tk @("--help"); if ($r.ExitCode -eq 0 -and $r.AllText -match 'Commands:') { Pass "func" "ctx --help" "" $r.Ms } else { Fail "func" "ctx --help" "exit=$($r.ExitCode)" $r.Ms }
+  $r = Invoke-Tk @("status"); if ($r.ExitCode -eq 0 -and $r.AllText -match 'host') { Pass "func" "ctx status" "" $r.Ms } else { Fail "func" "ctx status" "exit=$($r.ExitCode)" $r.Ms }
+  $r = Invoke-Tk @("config", "show"); if ($r.ExitCode -eq 0) { Pass "func" "ctx config show" "" $r.Ms } else { Fail "func" "ctx config show" "exit=$($r.ExitCode)" $r.Ms }
+  $r = Invoke-Tk @("config", "path"); if ($r.ExitCode -eq 0) { Pass "func" "ctx config path" $r.Stdout.Trim() $r.Ms } else { Fail "func" "ctx config path" "exit=$($r.ExitCode)" $r.Ms }
+  $r = Invoke-Tk @("telemetry", "status"); if ($r.ExitCode -eq 0) { Pass "func" "ctx telemetry status" "" $r.Ms } else { Fail "func" "ctx telemetry status" "exit=$($r.ExitCode)" $r.Ms }
+  $r = Invoke-Tk @("telemetry", "preview"); if ($r.ExitCode -eq 0) { Pass "func" "ctx telemetry preview" "" $r.Ms } else { Warn "func" "ctx telemetry preview" "exit=$($r.ExitCode)" $r.Ms }
   # gain — every output view must run clean (the report's four口径 live in these).
   $gainViews = @(
     @{ N = "gain --text"; A = @("gain", "--text"); Must = "" },
@@ -367,17 +367,17 @@ try {
     $ok = $r.ExitCode -eq 0 -and ($c.Must -eq "" -or $r.AllText.Contains($c.Must))
     if ($ok) { Pass "func" $c.N "" $r.Ms } else { Fail "func" $c.N "exit=$($r.ExitCode)" $r.Ms }
   }
-  # Default `tk gain` opens an HTML report whose scope line must NAME the project
-  # ("Covers token-killer"), not the ambiguous "this project". The terminal views above
+  # Default `ctx gain` opens an HTML report whose scope line must NAME the project
+  # ("Covers contexa"), not the ambiguous "this project". The terminal views above
   # never exercise that line — this is the regression guard for it. HTML is client-
-  # rendered, so assert the embedded data carries the project name; TK_NO_OPEN keeps the
+  # rendered, so assert the embedded data carries the project name; CTX_NO_OPEN keeps the
   # browser shut. Same check for inspect --project (skips cleanly when it has no sources).
   function Test-HtmlScope {
     param([string]$N, [string[]]$Cmd, [string]$ProjName, [int]$Tmo = -1, [switch]$Stream)
-    # TK_PROGRESS is harmless for the light `gain` path and lets the heavy `inspect
+    # CTX_PROGRESS is harmless for the light `gain` path and lets the heavy `inspect
     # --project` path stream progress; -Tmo lets the caller grant the heavy ceiling;
     # -Stream tees that progress to the console live (heavy inspect only).
-    $r = Invoke-Tk $Cmd -Env @{ TK_NO_OPEN = "1"; TK_PROGRESS = "1" } -Tmo $Tmo -Stream:$Stream
+    $r = Invoke-Tk $Cmd -Env @{ CTX_NO_OPEN = "1"; CTX_PROGRESS = "1" } -Tmo $Tmo -Stream:$Stream
     $htmlPath = Get-LabeledPath $r.AllText 'HTML report:'
     if ($htmlPath -and (Test-Path -LiteralPath $htmlPath)) {
       $body = Get-Content -LiteralPath $htmlPath -Raw
@@ -392,12 +392,12 @@ try {
 
   Section "Functional — inspect (one cold scan warms a cross-run cache; the rest reuse it)"
   # inspect is the heaviest command (it scans every host's transcripts). It now caches
-  # each file's extracted contribution under ~/.token-killer/inspect-cache, keyed by
+  # each file's extracted contribution under ~/.contexa/inspect-cache, keyed by
   # (path,mtime,size) — so the FIRST scan pays the full parse, and every later inspect /
   # optimize-triggered scan / --fail-on re-parses only NEW or CHANGED files. We exploit
   # that: run ONE cold scan to warm the cache, prove a second scan is much faster, then
   # let all the remaining inspect/optimize checks ride the warm cache. -Stream tees the
-  # live TK_PROGRESS milestones to this console so a slow cold scan is never a frozen
+  # live CTX_PROGRESS milestones to this console so a slow cold scan is never a frozen
   # screen. exit 2 = "no analyzable source here" (an empty box, Info not Fail); exit 1
   # is a real error -> Fail.
   function Test-Inspect {
@@ -417,7 +417,7 @@ try {
   # 0) COLD warm-up: clear the scan cache, then run the canonical machine render so this
   #    invocation pays the full parse and populates the cache. Streamed so its progress
   #    is visible live. This is the only scan expected to be slow on a populated box.
-  $cacheDir = Join-Path (Join-Path $HOME ".token-killer") "inspect-cache"
+  $cacheDir = Join-Path (Join-Path $HOME ".contexa") "inspect-cache"
   if (Test-Path -LiteralPath $cacheDir) { Remove-Item -LiteralPath $cacheDir -Recurse -Force -ErrorAction SilentlyContinue }
   $cold = Test-Inspect "inspect --json (cold scan, warms cache)" @("--json") '"schemaVersion"' -Stream
   # 1) WARM re-run: identical scan, now served from the cache. On a populated box this
@@ -457,7 +457,7 @@ try {
   }
   # 2) HTML report: default-scope (no --text/--json) MUST emit an HTML report — the
   #    surface a real user sees. Warm now, so cheap. Asserts the file is actually written
-  #    and carries report data; TK_NO_OPEN keeps the browser shut.
+  #    and carries report data; CTX_NO_OPEN keeps the browser shut.
   Test-HtmlScope "inspect --project HTML names the project" @("inspect", "--project") $projName $script:HeavyTimeoutSec -Stream
   # 3) kitchen-sink: every composable scope/advice/render flag in ONE run, plus
   #    --write-advice so its artifacts are verified here. NOTE: --since now reuses the
@@ -467,7 +467,7 @@ try {
   $ksFlags = @("--project", "--user", "--since", "7d", "--advice", "--min-confidence", "0.5",
     "--min-occurrences", "2", "--surface", "instructions", "--write-advice", "--text")
   # --write-advice intentionally suppresses the report stream (src/inspect/cli.ts), so the
-  # "Token Killer Inspect" report header never prints under this combo — assert the actual
+  # "Contexa Inspect" report header never prints under this combo — assert the actual
   # --write-advice contract instead. The dedicated artifact check below validates the files.
   $r = Test-Inspect "inspect (scope+advice+surface+write-advice, one run)" $ksFlags "Wrote advice artifacts:" -Stream
   if ($r.ExitCode -eq 0 -and $r.AllText -match 'Wrote advice artifacts:') {
@@ -508,16 +508,16 @@ try {
     # a crash. Don't render it as "exit=0" (reads as a command failure).
     else { Fail "func" $N "exit=0 but no 'debug bundle' confirmation in output" $r.Ms }
   }
-  Test-DebugBundle "tk debug" @()
-  Test-DebugBundle "tk debug --full" @("--full")
-  Test-DebugBundle "tk debug --redact" @("--redact")
+  Test-DebugBundle "ctx debug" @()
+  Test-DebugBundle "ctx debug --full" @("--full")
+  Test-DebugBundle "ctx debug --redact" @("--redact")
   # --out <path> must honor the caller-given destination (not the default reports/ dir).
   $dbgOut = Join-Path $TmpRoot "debug-custom-out.md"
   $r = Invoke-Tk @("debug", "--out", $dbgOut)
   if ($r.ExitCode -eq 0 -and (Test-Path -LiteralPath $dbgOut)) {
-    Pass "func" "tk debug --out honors custom path" $dbgOut $r.Ms
+    Pass "func" "ctx debug --out honors custom path" $dbgOut $r.Ms
     Remove-Item -LiteralPath $dbgOut -Force -ErrorAction SilentlyContinue
-  } else { Fail "func" "tk debug --out" "exit=$($r.ExitCode); file at custom path? $(Test-Path -LiteralPath $dbgOut)" $r.Ms }
+  } else { Fail "func" "ctx debug --out" "exit=$($r.ExitCode); file at custom path? $(Test-Path -LiteralPath $dbgOut)" $r.Ms }
 
   # ╔══ PHASE 2: Hook protocol (copilot / claude / check) ══╗
   Section "Hook — check (rewrite dry-run, no execution)"
@@ -542,13 +542,13 @@ try {
 
   Section "Hook — claude stdin protocol"
   $r = Invoke-Tk @("hook", "claude") -Stdin '{"tool_name":"Bash","tool_input":{"command":"git status"}}'
-  if ($r.ExitCode -eq 0 -and $r.Stdout -match 'updatedInput' -and $r.Stdout -match 'tk git status') { Pass "hook" "claude rewrite -> updatedInput" "" $r.Ms } else { Fail "hook" "claude rewrite" "exit=$($r.ExitCode)" $r.Ms }
+  if ($r.ExitCode -eq 0 -and $r.Stdout -match 'updatedInput' -and $r.Stdout -match 'ctx git status') { Pass "hook" "claude rewrite -> updatedInput" "" $r.Ms } else { Fail "hook" "claude rewrite" "exit=$($r.ExitCode)" $r.Ms }
   $r = Invoke-Tk @("hook", "claude") -Stdin 'not json'
   if ($r.ExitCode -eq 0) { Pass "hook" "claude fail-open bad json" "" $r.Ms } else { Warn "hook" "claude fail-open bad json" "exit=$($r.ExitCode)" $r.Ms }
 
   # ╔══ PHASE 3: Compression — quality bars + proxy flags ══╗
   Section "Compression — large output MUST clear the bar"
-  $minRaw = if ($env:TK_ACCEPT_MIN_RAW) { [int]$env:TK_ACCEPT_MIN_RAW } else { 1500 }
+  $minRaw = if ($env:CTX_ACCEPT_MIN_RAW) { [int]$env:CTX_ACCEPT_MIN_RAW } else { 1500 }
   function Test-Savings {
     param([string]$N, [double]$MinPct, [string[]]$Cmd)
     if (-not (Test-Cmd $Cmd[0])) { Skip "compress" $N "$($Cmd[0]) absent"; return }
@@ -574,7 +574,7 @@ try {
   $isGit = (Invoke-Tk @("git", "rev-parse", "--is-inside-work-tree")).AllText -match 'true'
   if ($isGit) {
     Test-Savings "git log -p -20" 60 @("git", "log", "-p", "-20")
-    # `git log -30` (no -p) = default block format. tk drops commit bodies + reformats
+    # `git log -30` (no -p) = default block format. ctx drops commit bodies + reformats
     # the header, so savings scale with how verbose the bodies were. A repo with terse
     # one-line commits genuinely can't reach 40% (the prior bar assumed multi-paragraph
     # bodies); 20% is the honest floor that still proves it compresses, not passes raw.
@@ -594,7 +594,7 @@ try {
   Test-Stats "pnpm --version" @("pnpm", "--version")
   Test-Stats "npx --version" @("npx", "--version")
 
-  Section "Compression — proxy flags (--raw / --max-chars / --save-raw / TK_NO_HISTORY)"
+  Section "Compression — proxy flags (--raw / --max-chars / --save-raw / CTX_NO_HISTORY)"
   if ($isGit) {
     # --raw must passthrough verbatim (no stats banner).
     $r = Invoke-Tk @("--raw", "git", "status")
@@ -613,11 +613,11 @@ try {
     # --no-save-raw is the explicit negation: no raw artifact path should be disclosed.
     $r = Invoke-Tk @("--stats", "--no-save-raw", "git", "log", "-5")
     if ($r.ExitCode -eq 0 -and $r.AllText -notmatch 'saved raw|raw output:') { Pass "compress" "--no-save-raw suppresses raw artifact" "" $r.Ms } else { Warn "compress" "--no-save-raw" "raw-path disclosure seen despite --no-save-raw" $r.Ms }
-    # TK_NO_HISTORY=1 must not append a gain row.
+    # CTX_NO_HISTORY=1 must not append a gain row.
     $before = ((Invoke-Tk @("gain", "--history")).AllText -split "`n").Count
-    Invoke-Tk @("git", "status") -Env @{ TK_NO_HISTORY = "1" } | Out-Null
+    Invoke-Tk @("git", "status") -Env @{ CTX_NO_HISTORY = "1" } | Out-Null
     $after = ((Invoke-Tk @("gain", "--history")).AllText -split "`n").Count
-    if ($after -le $before) { Pass "compress" "TK_NO_HISTORY=1 skips gain row" "rows $before -> $after" } else { Warn "compress" "TK_NO_HISTORY=1" "history grew $before -> $after" }
+    if ($after -le $before) { Pass "compress" "CTX_NO_HISTORY=1 skips gain row" "rows $before -> $after" } else { Warn "compress" "CTX_NO_HISTORY=1" "history grew $before -> $after" }
   }
 
   # ╔══ PHASE 4: Boundary conditions (real fixtures) ══╗
@@ -682,7 +682,7 @@ try {
   if ($r.ExitCode -ne 0) { Pass "boundary" "failing cmd preserves nonzero exit" "exit=$($r.ExitCode)" $r.Ms } else { Fail "boundary" "failing cmd exit" "expected nonzero, got 0" $r.Ms }
 
   # B7 unknown/unavailable program -> no fork-bomb, bounded
-  $r = Invoke-Tk @("tk-definitely-not-a-real-binary-xyz", "arg") -Tmo 15
+  $r = Invoke-Tk @("ctx-definitely-not-a-real-binary-xyz", "arg") -Tmo 15
   if ($r.TimedOut) { Fail "boundary" "unknown binary no fork-bomb" "TIMED OUT (possible loop!)" $r.Ms } else { Pass "boundary" "unknown binary bounded (no fork-bomb)" "exit=$($r.ExitCode)" $r.Ms }
 
   # B8 path with spaces
@@ -697,28 +697,28 @@ try {
   }
 
   # B9 destructive-guard probe — NON-destructive. We learned (and the dossier proves)
-  # that `tk uninstall` does NOT validate flags: `--help` and unknown flags are ignored
+  # that `ctx uninstall` does NOT validate flags: `--help` and unknown flags are ignored
   # and a REAL teardown runs. We must not trigger that here — it would uninstall the
-  # tester's tk mid-suite. So probe with --dry-run (never deletes; only plans) and
+  # tester's ctx mid-suite. So probe with --dry-run (never deletes; only plans) and
   # record the arg-validation gap as a finding. Teardown prints per-tier lines
   # ("instruction injection: removed"); a real `--help` would print usage instead.
   $r = Invoke-Tk @("uninstall", "--dry-run", "--help")
   if ($r.AllText -match 'instruction injection|usage guidance: removed') {
     Warn "boundary" "uninstall ignores --help (no arg validation)" "'uninstall --help' plans a real teardown instead of printing usage — guard with arg validation" $r.Ms
   } else { Pass "boundary" "uninstall --help prints usage (no teardown)" "" $r.Ms }
-  $r = Invoke-Tk @("uninstall", "--dry-run", "--tk-bogus-flag-xyz")
+  $r = Invoke-Tk @("uninstall", "--dry-run", "--ctx-bogus-flag-xyz")
   if ($r.ExitCode -ne 0 -and $r.AllText -match 'unknown flag|Refusing') {
     Pass "boundary" "uninstall refuses unknown flag (fail closed)" "exit=$($r.ExitCode)" $r.Ms
   } else { Warn "boundary" "uninstall accepts unknown flag" "exit=$($r.ExitCode) — unknown flag not refused (dry-run); arg validation missing" $r.Ms }
 
-  # B10 GBK / cp936 decode ladder (Windows). tk decodes the bytes IT reads from the
+  # B10 GBK / cp936 decode ladder (Windows). ctx decodes the bytes IT reads from the
   # tool it WRAPS: strict-UTF-8 first, then the legacy codepage (gb18030, a cp936
   # superset). The decode only fires for a WRAPPED tool — `cmd`/`type` are not wrapped,
-  # so the old test (`tk cmd /c type`) was correctly REFUSED by tk and never exercised
-  # the ladder at all (it tested nothing). Use git, which tk wraps: commit KNOWN cp936
-  # bytes as a blob, then `git show <rev>:<path>` — a colon-spec, which tk's show handler
+  # so the old test (`ctx cmd /c type`) was correctly REFUSED by ctx and never exercised
+  # the ladder at all (it tested nothing). Use git, which ctx wraps: commit KNOWN cp936
+  # bytes as a blob, then `git show <rev>:<path>` — a colon-spec, which ctx's show handler
   # passes through verbatim (git/show.ts isRawPassthrough), so the only transform is
-  # tk's child-output decode. Assert the Chinese needle survives in tk's UTF-8 stdout.
+  # ctx's child-output decode. Assert the Chinese needle survives in ctx's UTF-8 stdout.
   if ($IsWindows -and (Test-Cmd git)) {
     try {
       $enc936 = [System.Text.Encoding]::GetEncoding(936)
@@ -737,10 +737,10 @@ try {
 
   # ╔══ PHASE 5: Fail-safe / resilience ══╗
   Section "Fail-safe"
-  # TK_DEBUG trace goes to stderr; stdout stays clean compressed output.
+  # CTX_DEBUG trace goes to stderr; stdout stays clean compressed output.
   if ($isGit) {
-    $r = Invoke-Tk @("git", "status") -Env @{ TK_DEBUG = "1" }
-    if ($r.Stderr.Trim().Length -gt 0) { Pass "failsafe" "TK_DEBUG=1 traces to stderr" "" $r.Ms } else { Warn "failsafe" "TK_DEBUG=1 trace" "no stderr trace seen" $r.Ms }
+    $r = Invoke-Tk @("git", "status") -Env @{ CTX_DEBUG = "1" }
+    if ($r.Stderr.Trim().Length -gt 0) { Pass "failsafe" "CTX_DEBUG=1 traces to stderr" "" $r.Ms } else { Warn "failsafe" "CTX_DEBUG=1 trace" "no stderr trace seen" $r.Ms }
   }
   # Corrupt config -> real command still runs (fail-open).
   $cfgRes = Invoke-Tk @("config", "path"); $cfgPath = $cfgRes.Stdout.Trim()
@@ -758,12 +758,12 @@ try {
   function Measure-Many { param([scriptblock]$Action, [int]$N) $v = @(); for ($i = 0; $i -lt $N; $i++) { $v += (& $Action) } ; , $v }
   $coldVer = (Invoke-Tk @("--version")).Ms
   $verMs = Measure-Many { (Invoke-Tk @("--version")).Ms } $PerfIterations
-  Info "perf" "tk --version startup" ("cold={0:N0}ms p50={1:N0} p95={2:N0}" -f $coldVer, (Get-Percentile $verMs 50), (Get-Percentile $verMs 95)) (Get-Percentile $verMs 50)
+  Info "perf" "ctx --version startup" ("cold={0:N0}ms p50={1:N0} p95={2:N0}" -f $coldVer, (Get-Percentile $verMs 50), (Get-Percentile $verMs 95)) (Get-Percentile $verMs 50)
   if ($isGit) {
     $tkMs = Measure-Many { (Invoke-Tk @("git", "status")).Ms } $PerfIterations
     $rawMs = Measure-Many { (Start-Proc -File (Get-Command git).Source -PArgs @("status", "--porcelain")).Ms } $PerfIterations
     $tk50 = Get-Percentile $tkMs 50; $raw50 = Get-Percentile $rawMs 50
-    Info "perf" "tk git status vs raw" ("tk p50={0:N0}ms  raw p50={1:N0}ms  overhead={2:N0}ms (tk spawns 2x: porcelain+human)" -f $tk50, $raw50, ($tk50 - $raw50)) $tk50
+    Info "perf" "ctx git status vs raw" ("ctx p50={0:N0}ms  raw p50={1:N0}ms  overhead={2:N0}ms (ctx spawns 2x: porcelain+human)" -f $tk50, $raw50, ($tk50 - $raw50)) $tk50
     $r = Invoke-Tk @("--stats", "git", "log", "-p", "-100")
     $pct = if ($r.AllText -match 'Saved:.*\(([0-9.]+)%\)') { $Matches[1] } else { "0" }
     Info "perf" "git log -p -100 compress" ("{0:N0}ms  saved={1}%" -f $r.Ms, $pct) $r.Ms
@@ -772,15 +772,15 @@ try {
   # ╔══ PHASE 7: Shim / PATH interception (Windows-relevant) ══╗
   Section "Shim / PATH"
   $r = Invoke-Tk @("shim", "status")
-  Info "shim" "tk shim status" (($r.AllText -split "`n" | Select-Object -First 1)) $r.Ms
+  Info "shim" "ctx shim status" (($r.AllText -split "`n" | Select-Object -First 1)) $r.Ms
   # Exercise the install/uninstall SUBCOMMANDS via --dry-run so they're covered
   # without mutating host configs / PATH (real mutation is the lifecycle phase's job).
   $r = Invoke-Tk @("shim", "install", "--dry-run")
-  if ($r.ExitCode -eq 0) { Pass "shim" "tk shim install --dry-run (no mutation)" "" $r.Ms } else { Fail "shim" "tk shim install --dry-run" "exit=$($r.ExitCode)" $r.Ms }
+  if ($r.ExitCode -eq 0) { Pass "shim" "ctx shim install --dry-run (no mutation)" "" $r.Ms } else { Fail "shim" "ctx shim install --dry-run" "exit=$($r.ExitCode)" $r.Ms }
   $r = Invoke-Tk @("shim", "uninstall", "--dry-run")
-  if ($r.ExitCode -eq 0) { Pass "shim" "tk shim uninstall --dry-run (no mutation)" "" $r.Ms } else { Fail "shim" "tk shim uninstall --dry-run" "exit=$($r.ExitCode)" $r.Ms }
+  if ($r.ExitCode -eq 0) { Pass "shim" "ctx shim uninstall --dry-run (no mutation)" "" $r.Ms } else { Fail "shim" "ctx shim uninstall --dry-run" "exit=$($r.ExitCode)" $r.Ms }
   if ($IsWindows) {
-    $shimDir = Join-Path $env:USERPROFILE ".token-killer/shim"
+    $shimDir = Join-Path $env:USERPROFILE ".contexa/shim"
     if (Test-Path -LiteralPath $shimDir) {
       $probePath = "$shimDir;$env:PATH"
       $where = & cmd.exe /c "set PATH=$probePath&& where git" 2>&1 | Out-String
@@ -835,11 +835,11 @@ try {
   # `-y` skips the TTY prompts. We delete the bundle afterwards.
   function Test-Support {
     param([string]$N, [string]$Channel = "email", [string[]]$Flags, [bool]$ExpectBundle = $true)
-    $r = Invoke-Tk (@("support", $Channel, "-y") + $Flags) -UnsetEnv @("TK_SUPPORT_EMAIL", "TK_SUPPORT_TEAMS")
+    $r = Invoke-Tk (@("support", $Channel, "-y") + $Flags) -UnsetEnv @("CTX_SUPPORT_EMAIL", "CTX_SUPPORT_TEAMS")
     if (-not $ExpectBundle) {
-      # `--no-attach` means "do NOT gather the error+logs bundle" (see `tk support --help`),
+      # `--no-attach` means "do NOT gather the error+logs bundle" (see `ctx support --help`),
       # so it MUST NOT save a bundle — it opens a bare draft. Asserting the bundle line
-      # here was the harness's bug, not tk's. Assert the bare-draft contract instead.
+      # here was the harness's bug, not ctx's. Assert the bare-draft contract instead.
       if ($r.ExitCode -eq 0 -and $r.AllText -notmatch 'Saved diagnostic bundle:' -and $r.AllText -match 'BARE support draft') {
         Pass "roundtrip" $N "no bundle saved (bare draft, by design)" $r.Ms
       } else { Warn "roundtrip" $N "exit=$($r.ExitCode) — expected a bare draft with NO bundle under --no-attach" $r.Ms }
@@ -876,7 +876,7 @@ try {
         if (Test-Path -LiteralPath $bkDir) { Remove-Item -LiteralPath $bkDir -Recurse -Force -ErrorAction SilentlyContinue; Note "optimize --backup snapshot removed: $bkDir" }
       } else { Warn "roundtrip" "optimize --backup" "exit=$($r.ExitCode)" $r.Ms }
       $r = Invoke-Tk @("optimize", "context", "--project", "--apply") -Env $script:HeavyEnv -Tmo $script:HeavyTimeoutSec -Stream
-      if ($r.ExitCode -eq 0 -and $r.AllText -match 'tk optimize --apply') { Pass "roundtrip" "optimize --apply (temp repo, backs up)" "" $r.Ms } elseif ($r.TimedOut) { Fail "roundtrip" "optimize --apply" "inspect-triggered scan still running at ${script:HeavyTimeoutSec}s ceiling — see dossier" $r.Ms } else { Fail "roundtrip" "optimize --apply" "exit=$($r.ExitCode)" $r.Ms }
+      if ($r.ExitCode -eq 0 -and $r.AllText -match 'ctx optimize --apply') { Pass "roundtrip" "optimize --apply (temp repo, backs up)" "" $r.Ms } elseif ($r.TimedOut) { Fail "roundtrip" "optimize --apply" "inspect-triggered scan still running at ${script:HeavyTimeoutSec}s ceiling — see dossier" $r.Ms } else { Fail "roundtrip" "optimize --apply" "exit=$($r.ExitCode)" $r.Ms }
       $r = Invoke-Tk @("optimize", "--restore")
       if ($r.ExitCode -eq 0 -and $r.AllText -match 'restored|nothing to restore') { Pass "roundtrip" "optimize --restore reverts" "" $r.Ms } else { Warn "roundtrip" "optimize --restore" "exit=$($r.ExitCode)" $r.Ms }
     } finally { Pop-Location; Note "optimize --apply confined to temp repo (discarded)" }
@@ -898,9 +898,9 @@ try {
   $r = Invoke-Tk @("status"); if ($r.AllText -match 'installed') { Pass "lifecycle" "status after install" "" $r.Ms } else { Warn "lifecycle" "status after install" "" $r.Ms }
   $r = Invoke-Tk @("install", "--host", "vscode"); if ($r.ExitCode -eq 0) { Pass "lifecycle" "install idempotent (2nd run)" "" $r.Ms } else { Fail "lifecycle" "install idempotent" "exit=$($r.ExitCode)" $r.Ms }
   if ($IsWindows) {
-    $shimDir = Join-Path $env:USERPROFILE ".token-killer/shim"
+    $shimDir = Join-Path $env:USERPROFILE ".contexa/shim"
     if (Test-Path -LiteralPath (Join-Path $shimDir "git.cmd")) { Pass "lifecycle" "shim git.cmd written" } else { Fail "lifecycle" "shim git.cmd written" "missing" }
-    if ($vscSettings -and (Test-Path -LiteralPath $vscSettings) -and ((Get-Content -LiteralPath $vscSettings -Raw) -match 'TK_SHIM_DIR')) { Pass "lifecycle" "VS Code settings patched (TK_SHIM_DIR)" } else { Warn "lifecycle" "VS Code settings patched" "TK_SHIM_DIR not found" }
+    if ($vscSettings -and (Test-Path -LiteralPath $vscSettings) -and ((Get-Content -LiteralPath $vscSettings -Raw) -match 'CTX_SHIM_DIR')) { Pass "lifecycle" "VS Code settings patched (CTX_SHIM_DIR)" } else { Warn "lifecycle" "VS Code settings patched" "CTX_SHIM_DIR not found" }
   }
   # copilot-cli host
   $r = Invoke-Tk @("install", "--host", "copilot-cli"); if ($r.ExitCode -eq 0 -and $r.AllText -match 'Active tier: hook') { Pass "lifecycle" "install --host copilot-cli" "" $r.Ms } else { Fail "lifecycle" "install --host copilot-cli" "exit=$($r.ExitCode)" $r.Ms }
@@ -919,7 +919,7 @@ try {
   $r = Invoke-Tk @("uninstall", "--dry-run"); if ($r.ExitCode -eq 0) { Pass "lifecycle" "uninstall --dry-run" "" $r.Ms } else { Warn "lifecycle" "uninstall --dry-run" "exit=$($r.ExitCode)" $r.Ms }
   $r = Invoke-Tk @("uninstall"); if ($r.ExitCode -eq 0) { Pass "lifecycle" "uninstall" "" $r.Ms } else { Fail "lifecycle" "uninstall" "exit=$($r.ExitCode)" $r.Ms }
   if ($IsWindows) {
-    $shimDir = Join-Path $env:USERPROFILE ".token-killer/shim"
+    $shimDir = Join-Path $env:USERPROFILE ".contexa/shim"
     if (-not (Test-Path -LiteralPath $shimDir)) { Pass "lifecycle" "shim removed after uninstall" } else { Warn "lifecycle" "shim removed" "still present" }
   }
   # restore VS Code + claude settings + prior install host
@@ -931,14 +931,14 @@ try {
   $knownHosts = @('claude-code', 'copilot-cli', 'vscode', 'auto')
   if ($priorHost -and ($knownHosts -contains $priorHost)) {
     $r = Invoke-Tk @("install", "--host", $priorHost)
-    if ($r.ExitCode -eq 0) { Pass "lifecycle" "restore prior install ($priorHost)" "" $r.Ms; Note "prior install host '$priorHost' restored" } else { Warn "lifecycle" "restore prior install ($priorHost)" "exit=$($r.ExitCode) — re-run: tk install --host $priorHost" $r.Ms }
+    if ($r.ExitCode -eq 0) { Pass "lifecycle" "restore prior install ($priorHost)" "" $r.Ms; Note "prior install host '$priorHost' restored" } else { Warn "lifecycle" "restore prior install ($priorHost)" "exit=$($r.ExitCode) — re-run: ctx install --host $priorHost" $r.Ms }
   } else { Info "lifecycle" "restore prior install" "no prior real host to restore (was '$priorHost')" }
 
   # ╔══ PHASE 10: Tier-0 routing — health (agent-independent) + Copilot CLI E2E ══╗
-  Section "Tier-0 — does the agent route through tk?"
+  Section "Tier-0 — does the agent route through ctx?"
   # ── 10a) ROUTING HEALTH — agent-independent (issue #42). ──────────────────────
   # The authoritative "is the command-routing hook wired correctly?" gate. It
-  # dry-runs the rewrite decision via `tk hook check` — the SAME engine the live
+  # dry-runs the rewrite decision via `ctx hook check` — the SAME engine the live
   # hook uses (src/hook/rewrite.ts) — so a `rewrite:` verdict PROVES routing works
   # without invoking the agent or spending a token of budget. This is orthogonal to
   # agent auth/budget: it passes even when the live Copilot/VS Code call below fails
@@ -946,13 +946,13 @@ try {
   # new gain row and so conflated a mis-installed hook with an agent that simply had
   # no budget to run the wrapped command — those two are now separated.
   $hk = Invoke-Tk @("hook", "check", "git", "status")
-  if ($hk.ExitCode -eq 0 -and $hk.AllText -match '(?m)^\s*rewrite:\s*tk\b') {
-    Pass "tier0" "routing health: hook rewrites 'git status' -> tk (agent-independent)" $hk.AllText.Trim() $hk.Ms
+  if ($hk.ExitCode -eq 0 -and $hk.AllText -match '(?m)^\s*rewrite:\s*ctx\b') {
+    Pass "tier0" "routing health: hook rewrites 'git status' -> ctx (agent-independent)" $hk.AllText.Trim() $hk.Ms
   } else {
     # A non-rewrite verdict here means the rewrite engine itself is broken/mis-built —
     # a REAL routing defect, independent of any agent. Fail (not Warn) so it can't be
     # dismissed as "the agent had no budget".
-    Fail "tier0" "routing health: hook rewrites 'git status' -> tk" "expected 'rewrite: tk …', got: $($hk.AllText.Trim()) (exit=$($hk.ExitCode))" $hk.Ms $hk
+    Fail "tier0" "routing health: hook rewrites 'git status' -> ctx" "expected 'rewrite: ctx …', got: $($hk.AllText.Trim()) (exit=$($hk.ExitCode))" $hk.Ms $hk
   }
 
   # ── 10b) Copilot CLI E2E — does the agent ACTUALLY route at runtime? ──────────
@@ -971,7 +971,7 @@ try {
     Start-Sleep -Seconds 1
     $histAfter = (Invoke-Tk @("gain", "--history")).AllText
     if (($histAfter -split "`n").Count -gt $beforeLines) {
-      Pass "tier0" "Copilot CLI routed through tk (gain history grew)" "" $cp.Ms
+      Pass "tier0" "Copilot CLI routed through ctx (gain history grew)" "" $cp.Ms
     }
     elseif ($cp.ExitCode -ne 0) {
       # The AGENT call failed (exit nonzero — budget exceeded, not authed, proxy down).
@@ -982,9 +982,9 @@ try {
     }
     else {
       # Agent call SUCCEEDED (exit 0) yet no gain row appeared: the command ran but did
-      # NOT go through tk. With routing health green, this points at a delivery/PATH gap
+      # NOT go through ctx. With routing health green, this points at a delivery/PATH gap
       # at runtime (e.g. Copilot ran outside the env that carries the shim/hook).
-      Warn "tier0" "Copilot CLI ran but did not route through tk" "agent exit 0 yet no new gain row — runtime delivery/PATH gap (routing engine itself is healthy per 10a)" $cp.Ms -R $cp
+      Warn "tier0" "Copilot CLI ran but did not route through ctx" "agent exit 0 yet no new gain row — runtime delivery/PATH gap (routing engine itself is healthy per 10a)" $cp.Ms -R $cp
     }
   } else {
     Skip "tier0" "Copilot CLI E2E" "copilot not on PATH"
@@ -1028,7 +1028,7 @@ function ReproLine($d) {
 
 $md = [System.Collections.Generic.List[string]]::new()
 function L([string]$s = "") { $md.Add($s) }
-L "# tk Real-Machine Acceptance Report"
+L "# ctx Real-Machine Acceptance Report"
 L ""
 L ("**{0} pass · {1} fail · {2} warn · {3} skip · {4} info**" -f $pass, $fail, $warn, $skip, $info)
 L ""
@@ -1102,20 +1102,20 @@ L "## Manual gate — VS Code + Copilot routing (cannot be scripted)"
 L ""
 L "A headless script cannot drive the Copilot GUI. Do this once at the keyboard:"
 L ""
-L "1. ``tk install --host vscode`` then **fully quit & reopen VS Code** (integrated terminal must pick up the new PATH)."
+L "1. ``ctx install --host vscode`` then **fully quit & reopen VS Code** (integrated terminal must pick up the new PATH)."
 L "2. Open a git repo (>=20 commits) and Copilot Chat in **Agent** mode."
 L "3. Prompt: *""Summarize what changed in the last 20 commits.""* (runs ``git log``). Approve the terminal run."
-L "4. In the VS Code terminal: ``tk gain --history``."
-L "   - **PASS**: the command Copilot ran appears as a row with a savings %. Note whether ``tk status`` tier is **hook** or **shim**."
+L "4. In the VS Code terminal: ``ctx gain --history``."
+L "   - **PASS**: the command Copilot ran appears as a row with a savings %. Note whether ``ctx status`` tier is **hook** or **shim**."
 L "   - **DID NOT ENGAGE**: no new row — Copilot ran outside the integrated-terminal env. A key finding: pivot to the hook tier."
 L ""
 L "**First isolate routing from the agent (issue #42).** Before blaming the hook for a"
-L "missing gain row, run ``tk hook check ""git status""`` — it dry-runs the rewrite with"
-L "no agent and no budget. ``rewrite: tk git status`` means routing is healthy, so a"
+L "missing gain row, run ``ctx hook check ""git status""`` — it dry-runs the rewrite with"
+L "no agent and no budget. ``rewrite: ctx git status`` means routing is healthy, so a"
 L "missing gain row is an *agent* problem (no budget / not logged in / ran outside the"
 L "shimmed env), NOT a broken hook. The automated **tier0 / routing health** check above"
-L "asserts exactly this. (Opt-in: set ``TK_HOOK_BEACON=1`` to have the live hook inject a"
-L "one-line ``tk active`` beacon into the transcript on each rewrite for positive"
+L "asserts exactly this. (Opt-in: set ``CTX_HOOK_BEACON=1`` to have the live hook inject a"
+L "one-line ``ctx active`` beacon into the transcript on each rewrite for positive"
 L "confirmation; default-off keeps the wire byte-identical.)"
 L ""
 L "_Generated by scripts/windows-dogfood.ps1_"

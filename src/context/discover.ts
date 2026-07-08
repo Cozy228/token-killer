@@ -35,7 +35,7 @@ const SKIP_DIRS = new Set([
   "target",
   "coverage",
   ".next",
-  ".token-killer",
+  ".contexa",
 ]);
 
 function safeStatFile(path: string): boolean {

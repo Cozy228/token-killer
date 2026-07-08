@@ -6,7 +6,7 @@ implement it. M1 is fully merged on `feat/1.0.0`: store spine, git/docs/memory s
 selection engine, MCP serve, push, install/doctor — all M1 scenarios green, 3-OS CI green.
 
 ## Read first (in this order)
-1. `CTX-IMPL.md` — your work order: **§5.2 (code structure — your core spec)**, §3
+1. `CONTEXA-IMPL.md` — your work order: **§5.2 (code structure — your core spec)**, §3
    (identity: `sym:<repo-rel-path>#<qualified.name>[~<arity/disambig>]`; span/line = mutable
    attrs, NEVER identity), §4 (SourceAdapter + structural-fingerprint dirty classification),
    §9 M2 line, §10 testing discipline.
@@ -20,12 +20,12 @@ selection engine, MCP serve, push, install/doctor — all M1 scenarios green, 3-
    D16 SCIP consumer (`docs/codemap/impl/appendix-A1-copyable.md:480–500`),
    D23 worker numerics (`docs/codemap/impl/D-language-coverage.md`).
    Maintainer stance: reference code is REFERENCE, not gold standard — this document wins.
-4. `CTX-DESIGN.md` + `FABLE-DECISION-LOG.md` P27–P30 for product frame and scope guards.
+4. `CONTEXA-DESIGN.md` + `FABLE-DECISION-LOG.md` P27–P30 for product frame and scope guards.
 
 ## Hard guardrails (M1 set, plus what M1's build taught us)
 - **Greenfield**: work only under `packages/{core,cli}` + `docs/build/`. NEVER import from
   legacy `src/`, never modify `src/`, root configs, `server/`, or shipping tk behavior.
-- **P27 scope**: ctx serves context only — no review/verification features.
+- **P27 scope**: Contexa serves context only — no review/verification features.
 - **No egress**: `assertNoEgress()` is live in serve/ingest — your code runs under it.
 - **pnpm only**; **Node ≥22.16** (verified floor: first 22.x with FTS5 in node:sqlite);
   TypeScript, English code + comments; conventional commits, **subject starts lowercase**
@@ -42,7 +42,7 @@ selection engine, MCP serve, push, install/doctor — all M1 scenarios green, 3-
   **callee resolution never binds across languages**.
 - `.wasm`/`.scm` ship through the existing copy-assets step (1a mechanism — extend the globs
   only if a new extension appears).
-- Tests: temp `CTX_HOME`/HOME only; `TK_SHIM_DIR` unset; EBUSY-safe cleanup
+- Tests: temp `CONTEXA_HOME`/HOME only; `TK_SHIM_DIR` unset; EBUSY-safe cleanup
   (`rm({recursive,force,maxRetries:5,retryDelay:100})`); explicit spawn/worker timeouts;
   timing assertions use the CI runner factor pattern from `perf-gates.test.ts` (win 6× /
   other 2×), exact bars on dev hardware; fixture repos need real git history — CI checkout is

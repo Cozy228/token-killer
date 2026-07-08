@@ -1,5 +1,5 @@
 /**
- * Selection-engine constants (CTX-IMPL §6) — ALL tunables live here and are
+ * Selection-engine constants (CONTEXA-IMPL §6) — ALL tunables live here and are
  * envelope-disclosed (`disclosedConstants()` feeds the typed envelope struct).
  *
  * Sources: §6 pinned values (α=0.25/25 iters, RRF K=60, lean ≈1200 tokens with

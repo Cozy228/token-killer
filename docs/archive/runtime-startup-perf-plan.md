@@ -1,4 +1,4 @@
-# Plan — cut tk per-command latency on the slow Windows box
+# Plan — cut ctx per-command latency on the slow Windows box
 
 **Status:** plan only — nothing here is implemented. Companion to
 `docs/runtime-startup-perf-goal.md` (problem statement + box measurements).
@@ -18,7 +18,7 @@ ceiling now leads §0.
 
 ## 0. Executive summary
 
-**The ceiling, up front:** tk can asymptotically reach ≈ **bare tool + one
+**The ceiling, up front:** ctx can asymptotically reach ≈ **bare tool + one
 small constant**; it can never beat the bare tool. On this box the bare tool
 itself is 400–738 ms+ and jittery (it pays the same AV tax), so "500–600 ms
 total" is reachable only in good weather AND only with the daemon (possibly +
@@ -27,10 +27,10 @@ expectation below is bounded by this.
 
 The box's robust findings (stable across every noisy run): **every process
 spawn pays a variable ~400–1100 ms CrowdStrike tax** (even `git --version` ≈
-417 ms); **tk structurally spawns twice** where the bare tool spawns once
+417 ms); **ctx structurally spawns twice** where the bare tool spawns once
 (three times via the real `.cmd` shim: cmd.exe → node → tool); bundle
 load/compile is already cheap (40–230 ms over the node floor); `resolveProgram`
-does **up to 630 EDR-priced `existsSync`** per command; net, tk adds ~1–2 s
+does **up to 630 EDR-priced `existsSync`** per command; net, ctx adds ~1–2 s
 per command, exact split unrecoverable from the noise.
 
 - **Ship blind now (code-only, safe on every Node ≥20):** bake the resolved
@@ -55,7 +55,7 @@ per command, exact split unrecoverable from the noise.
   additionally needs EDR exclusion. The daemon wins big in both branches —
   M8 only sizes *how* big — and Bun/SEA stay dominated either way (they keep
   a per-command large-image spawn, the expensive kind).
-- **tk-work is the bad-weather tail, not a constant** (one run's within-run
+- **ctx-work is the bad-weather tail, not a constant** (one run's within-run
   residual was ≈ negative — walk+history+capture can cost ≈0 under good AV
   weather): Tier-1 op removal compresses the tail that an agent loop keeps
   sampling; only the daemon moves the floor.
@@ -87,9 +87,9 @@ per command, exact split unrecoverable from the noise.
 ## 1. Structural accounting (what we attack, and why not milliseconds)
 
 **Why no point values.** Repeated median-of-9/15 runs of the *same* command
-swung 2–4× (`node -e 0`: 532→651→925→1080 ms; bare git: 517→738→2712 ms; tk:
+swung 2–4× (`node -e 0`: 532→651→925→1080 ms; bare git: 517→738→2712 ms; ctx:
 2020→2712 ms) and some runs produced impossible orderings (`--raw` slower than
-the full pipeline it subsets; tk-wrapped faster than bare). The amplifier is
+the full pipeline it subsets; ctx-wrapped faster than bare). The amplifier is
 intermittent CrowdStrike interception that hits some invocations and not
 others. Consequences: (a) rank techniques by **ops removed**, which is exact
 and code-auditable; (b) box validation must **count ops** (noise-immune), with
@@ -105,7 +105,7 @@ even though absolute values swing):**
   spawn-floor prior toward the optimistic branch for the daemon's thin
   client (§4) — smaller image, smaller tax — though git's ~417 ms remains
   the cheapest spawn actually observed.
-- **B — R1's within-run shares: node 35% / bundle 2% / tool 28% / tk-work
+- **B — R1's within-run shares: node 35% / bundle 2% / tool 28% / ctx-work
   35%.** Valid as the *structure of one run*, not as reproducible absolutes —
   the legitimate within-run form of Rev 1's retired decomposition.
 - **C — `--raw` is not a clean control for filter cost** (slower than the
@@ -113,13 +113,13 @@ even though absolute values swing):**
   destroys streaming). Treat the filter as "small relative to spawn/IO," not
   measured-exonerated — and fix `--raw` itself (2.5). This supersedes Rev 1's
   `--raw`-based localization; the op inventory below rests on code audit.
-- **D — segments don't add.** R4: `tk git --version` 1309 < `node -e 0` 1080
+- **D — segments don't add.** R4: `ctx git --version` 1309 < `node -e 0` 1080
   + bare 417 = 1497; the embedded node start ran ~200 ms cheaper than the
   standalone probe in the same run. Two consequences: (i) **never size a
   saving by summing standalone segment costs** — composite A/B measurements
-  only (§6 methodology rule 4); (ii) R4's tk-work residual is ≈ *negative*:
+  only (§6 methodology rule 4); (ii) R4's ctx-work residual is ≈ *negative*:
   the entire walk+history+capture segment can cost ≈0 under good AV weather.
-  **tk-work is the bad-weather TAIL, not a constant.** Tier-1 op removal
+  **ctx-work is the bad-weather TAIL, not a constant.** Tier-1 op removal
   therefore compresses the tail — which is what an agent loop feels, since
   running many commands back-to-back samples the tail constantly — while
   only the daemon moves the floor.
@@ -127,7 +127,7 @@ even though absolute values swing):**
 **Per-command op inventory** (code-audited 2026-06-11; this is the plan's
 ground truth):
 
-| Op class | Today (shimmed `tk git status`) | Bare tool |
+| Op class | Today (shimmed `ctx git status`) | Bare tool |
 |---|---|---|
 | Process spawns | **3** — cmd.exe (`.cmd` wrapper) → node → git (2 in the goal's probe, which invoked `node cli` directly — row M9 sizes the third) | 1 |
 | PATH×PATHEXT stats | up to **630** (`resolveProgram`, `src/executor.ts:128`; runs **exactly once**, in `buildSpawnTarget`) | 0 |
@@ -140,8 +140,8 @@ filter/dedup pipeline stays exonerated (it's skipped by `--raw` and was never
 the structural cost).
 
 **Hook-delivered hosts pay double.** On Claude Code / Copilot the PreToolUse
-hook spawns `tk hook <host>` (full node start + walk), *then* the rewritten
-`tk git ...` runs — **two node spawns per command**, each paying the tax. The
+hook spawns `ctx hook <host>` (full node start + walk), *then* the rewritten
+`ctx git ...` runs — **two node spawns per command**, each paying the tax. The
 path-cache layer (2.1b) trims the walks; only the daemon (§4) removes the
 spawns.
 
@@ -170,20 +170,20 @@ verifiable later by op-count without rework. They do **not** change the floor.
 
 **Status:** implemented. Install resolves each real binary once
 (`resolveRealBinaryPath` → `resolveBinaryPath`, excluding the shim dir) and bakes
-it: wrappers gain `export TK_REAL_BIN=…` / `set "TK_REAL_BIN=…"`, the manifest
+it: wrappers gain `export CTX_REAL_BIN=…` / `set "CTX_REAL_BIN=…"`, the manifest
 records `resolvedPaths` + `pathHash` and bumps `SHIM_MANIFEST_SCHEMA` → 2. Runtime
 `buildSpawnTarget` short-circuits the PATH×PATHEXT walk via `bakedRealBin`, gated
-by a **resolution-env hash** (`TK_REAL_PATH_HASH` = `hashResolutionEnv` of the
+by a **resolution-env hash** (`CTX_REAL_PATH_HASH` = `hashResolutionEnv` of the
 shim-stripped PATH + PATHEXT, computed both at install and at runtime over the same
 `stripShimDir` output): the baked path is trusted ONLY while PATH is byte-identical
-to install — a reorder/extend changes the hash and forces a live walk, so tk never
+to install — a reorder/extend changes the hash and forces a live walk, so ctx never
 runs a stale binary the shell would no longer pick (closes the review's PATH-semantics
 gap). Plus basename-match + one `existsSync` revalidation. The hook path
-(no wrapper env) uses `~/.token-killer/path-cache.json` (`src/core/pathCache.ts`)
-keyed by `hash(PATH+PATHEXT)`, revalidated with one `existsSync` per hit. `tk
+(no wrapper env) uses `~/.contexa/path-cache.json` (`src/core/pathCache.ts`)
+keyed by `hash(PATH+PATHEXT)`, revalidated with one `existsSync` per hit. `ctx
 status` surfaces stale / PATH-reorder-shadowed baked paths. Schema-1 manifests
 still read back (resolvedPaths/pathHash absent). Self-healing manifest-on-fallback
-NOT done (the hash gate + walk fallback already keep it correct; re-run `tk install`
+NOT done (the hash gate + walk fallback already keep it correct; re-run `ctx install`
 to re-bake). Possible follow-up: on hash mismatch, fall the command-proxy path
 through the self-refreshing `path-cache` too (currently hook-only) to recover the
 speedup when the runtime PATH stably differs from install — deferred to avoid adding
@@ -194,17 +194,17 @@ binary exists via `realBinaryPresent` → `resolveProgram` at install time — a
 then throws the resolved path away. Keep it:
 
 1. Capture the absolute path per program at install (one walk, paid once).
-2. Bake it into the wrapper: `.cmd` gains `set "TK_REAL_BIN=C:\...\git.exe"`,
-   POSIX gains `export TK_REAL_BIN=...` (no-op win on POSIX but keeps wrappers
+2. Bake it into the wrapper: `.cmd` gains `set "CTX_REAL_BIN=C:\...\git.exe"`,
+   POSIX gains `export CTX_REAL_BIN=...` (no-op win on POSIX but keeps wrappers
    symmetric). Record `resolvedPath` per program in `manifest.json` (bump
    `SHIM_MANIFEST_SCHEMA`).
-3. Runtime (`buildSpawnTarget`, `src/executor.ts:178`): if `TK_REAL_BIN` is set
-   **and** `basename(TK_REAL_BIN)` minus extension equals the requested program
-   **and** one `existsSync(TK_REAL_BIN)` passes → spawn it directly. Otherwise
+3. Runtime (`buildSpawnTarget`, `src/executor.ts:178`): if `CTX_REAL_BIN` is set
+   **and** `basename(CTX_REAL_BIN)` minus extension equals the requested program
+   **and** one `existsSync(CTX_REAL_BIN)` passes → spawn it directly. Otherwise
    fall back to today's walk. Worst case is one wasted stat, never a behavior
    change.
 4. Second layer for the **hook path** (no wrapper env): a persistent cache
-   `~/.token-killer/path-cache.json` keyed by `(program, hash(PATH+PATHEXT))`,
+   `~/.contexa/path-cache.json` keyed by `(program, hash(PATH+PATHEXT))`,
    revalidated with one `existsSync` per hit. 630 stats → 1 read + 1 stat.
    Invalidate on miss → walk → rewrite.
 
@@ -214,7 +214,7 @@ PATH position — M1b measures the real share). At plausible per-stat costs of
 0.1–1.5 ms under CrowdStrike that is **~60–950 ms** — this box's noise forbids
 a tighter claim, which is exactly why the change is ranked by its monotonicity:
 it removes ops under every weather. Ordering D bounds the *good-weather* cost
-near zero (R4's whole tk-work segment ≈ 0), so read the saving as **tail
+near zero (R4's whole ctx-work segment ≈ 0), so read the saving as **tail
 compression**: little on a lucky invocation, hundreds of ms on a scanned one —
 and an agent loop samples that tail on every command. *Confidence: mechanism
 grounded; size speculative-needs-box (M1/M1b size it before any code lands).*
@@ -222,10 +222,10 @@ grounded; size speculative-needs-box (M1/M1b size it before any code lands).*
 **Node bands:** pure JS + env var — identical on every band. **Y.**
 
 **Risks.** (a) Stale baked path after the tool moves/uninstalls → caught by the
-revalidation stat, falls back to the walk (slow-but-correct once); `tk install`
+revalidation stat, falls back to the walk (slow-but-correct once); `ctx install`
 re-run refreshes; consider self-healing the manifest on fallback. (b) User
 re-orders PATH intending a *different* git → baked path "wrong" until
-re-install; document, surface in `tk status`. (c) Keep the D2 principle — only
+re-install; document, surface in `ctx status`. (c) Keep the D2 principle — only
 bake a path `realBinaryPresent` proved exists.
 
 ### 2.2 Single-file CJS bundle (collapse 51 chunks → 1)
@@ -256,14 +256,14 @@ chunk-split decision — record as an ADR with the AV file-count rationale.
 
 **Status:** ≥22.8 rung unchanged (`module.enableCompileCache()`). 22.1–22.7 rung
 shipped, with the leak fixed (review): the wrapper saves the caller's prior
-`NODE_COMPILE_CACHE` in `TK_NODE_COMPILE_CACHE_PREV` and `buildChildEnv` RESTORES
-it for every spawned real tool — so tk's cache redirect applies to tk's own node
+`NODE_COMPILE_CACHE` in `CTX_NODE_COMPILE_CACHE_PREV` and `buildChildEnv` RESTORES
+it for every spawned real tool — so ctx's cache redirect applies to ctx's own node
 process only, never leaking into npm/tsc/etc (no cache-dir pollution, no override
 of the user's own setting). 22.1–22.7 rung: every shim wrapper exports
 `NODE_COMPILE_CACHE=<home>/v8-cache`
 (`compileCacheDir`, baked in `installWrappers` → `posixWrapper`/`windowsWrapper`)
 — version-agnostic, inert on Node <22.1, and it also redirects ≥22.8's
-`enableCompileCache()` to the persistent `~/.token-killer/v8-cache` dir.
+`enableCompileCache()` to the persistent `~/.contexa/v8-cache` dir.
 `removeShimDir` drops the cache on uninstall (never `projects/`). The **20–22.0
 rung is explicitly DEFERRED** — it needs item 2.2's CJS bundle (`v8-compile-cache`
 only hooks CJS), out of scope here; that slice pays the uncached compile until 2.2
@@ -274,12 +274,12 @@ Today: `module.enableCompileCache()` in `src/cli.ts` (try/catch). Per band:
 | Band | Mechanism | Action | Effect |
 |---|---|---|---|
 | ≥22.8 | `enableCompileCache()` | none — **already working on the box** (cache files written; warm bundle segment is the cheap 40–230 ms) | full |
-| 22.1–22.7 | `NODE_COMPILE_CACHE=<home>/v8-cache` | set it **in the shim wrapper env line** — zero tk code, version-agnostic (unknown env vars are inert) | full |
+| 22.1–22.7 | `NODE_COMPILE_CACHE=<home>/v8-cache` | set it **in the shim wrapper env line** — zero ctx code, version-agnostic (unknown env vars are inert) | full |
 | 20–22.0 | `v8-compile-cache` shim | tiny CJS entry stub: `require("./v8-shim"); require("./main")` — **requires 2.2's CJS bundle** | degraded (slightly slower than native cache) |
 
 **Estimate:** ~0 ms on this box (already on the ≥22.8 row); meaningful only
 for old-Node clients elsewhere in the field (their uncached compile cost).
-Point the cache dir under `~/.token-killer` so an eventual EDR folder
+Point the cache dir under `~/.contexa` so an eventual EDR folder
 exclusion covers it. *Grounded.* **Degrades, never errors** — each rung is
 additive and inert where unsupported.
 
@@ -295,7 +295,7 @@ steady state is ZERO mkdir/command; the ENOENT path self-heals so the ledger-①
 row is never dropped. (c) project meta is written ONLY when the dir was just
 created (`appendJsonLine` returns `createdDir`), moving the `open(wx)` off the
 per-command hot path entirely. (d) one pre-serialized append per row (awaited —
-NOT fire-and-forget). (e) `TK_NO_HISTORY=1` opt-out documented in `tk --help`.
+NOT fire-and-forget). (e) `CTX_NO_HISTORY=1` opt-out documented in `ctx --help`.
 (Review correction: the original process-scoped `ensuredDirs`/`metaEnsured` Sets
 did NOT reduce per-command ops — one process per command — so they were replaced
 by the append-first + meta-on-create design above.)
@@ -306,8 +306,8 @@ project meta only when absent/changed at **install/inspect time**, not per
 command; (b) single `appendFileSync` with one pre-serialized buffer (one open);
 (c) **memoize `projectFingerprint(cwd)`** — the statSync tree-walk runs at ≥3
 call sites per command, each ~5–15 EDR-priced stats; one module-level cache
-keyed by cwd removes ⅔ of them; (d) optional `TK_NO_HISTORY=1` escape hatch
-for latency-critical agents (documented cost: `tk gain` loses those rows). Do
+keyed by cwd removes ⅔ of them; (d) optional `CTX_NO_HISTORY=1` escape hatch
+for latency-critical agents (documented cost: `ctx gain` loses those rows). Do
 **not** make writes fire-and-forget-async — the process exits immediately, so
 async buys nothing.
 
@@ -341,9 +341,9 @@ All bands, low effort, behavior change limited to `--raw` invocations.
 
 ### 3.5 EDR exclusions — biggest single lever, but IT-owned, per-machine
 
-The robust finding is a ~400–1100 ms tax on **every** spawn (×2–3 for tk) plus
+The robust finding is a ~400–1100 ms tax on **every** spawn (×2–3 for ctx) plus
 a toll on every file op. Exclusions for `node.exe` (image), the shim dir,
-`~/.token-killer`, and the PortableGit dir attack the tax at its source — the
+`~/.contexa`, and the PortableGit dir attack the tax at its source — the
 only lever that helps **all three spawns and the bare tool itself**.
 
 **Correction kept from Rev 1:** `Add-MpPreference` is Windows **Defender** API
@@ -370,7 +370,7 @@ penalized **and** the daemon is rejected. Three gates, all box-bound.
 
 Even after 2.1, the walk still runs on hook-path cache misses. Two
 refinements: probe a curated ext order (`.EXE .CMD .BAT .COM` first — covers
-every tool tk fronts) before the exotic tail, and/or replace per-file stats
+every tool ctx fronts) before the exotic tail, and/or replace per-file stats
 with one `readdirSync` per PATH dir (45 dir-reads vs 630 stats; whether EDR
 prices directory enumeration cheaper is box-testable, row M10). Keep PATHEXT
 *relative order within the probed set* to preserve Windows resolution
@@ -409,9 +409,9 @@ axis.**
 - **WSH `cscript` as a zero-distribution thin client** (signed system binary):
   no trustworthy named-pipe client API, deprecation-adjacent; the Go client
   (§4) + npm per-platform distribution is strictly better. Rejected.
-- **Wrapper-level bypass** (`.cmd` skips tk for "never compressed" commands):
+- **Wrapper-level bypass** (`.cmd` skips ctx for "never compressed" commands):
   the compress/passthrough decision depends on args + output size + TTY, which
-  the wrapper cannot know without running tk. Rejected as unsound.
+  the wrapper cannot know without running ctx. Rejected as unsound.
 
 ---
 
@@ -436,10 +436,10 @@ policy check does.
 **500–600 ms total is not reachable by any per-command-Node architecture on
 this box** — the node spawn alone ranged 530–1080 ms, and bare git itself
 ranged 517–2712 ms, so on bad-weather runs *no* architecture reaches it. The
-honest formulation: **tk total ≈ bare tool + one thin spawn + ε**, achieved by
+honest formulation: **ctx total ≈ bare tool + one thin spawn + ε**, achieved by
 removing the per-command node spawn. Two branches, decided by **M8**:
 
-- **Tiny-exe spawns cheap** (~10–50 ms): daemon overhead ≈ 30–100 ms → tk ≈
+- **Tiny-exe spawns cheap** (~10–50 ms): daemon overhead ≈ 30–100 ms → ctx ≈
   bare + ε. Target met code-only, every machine. Ordering A (the tax is
   image-dependent; node consistently outprices even git's spawn) shifts the
   prior toward this branch.
@@ -454,23 +454,23 @@ Either way the daemon dominates every code alternative *once M-pre clears it*;
 M8 decides its ceiling, not its rank. **Sizing caveat from ordering D
 (non-additivity):** the embedded
 node start ran ~200 ms cheaper than the standalone `node -e 0` probe in the
-same run — quote daemon savings only from composite A/B runs (today's tk vs
-daemon-served tk), never from segment arithmetic.
+same run — quote daemon savings only from composite A/B runs (today's ctx vs
+daemon-served ctx), never from segment arithmetic.
 
 ### Design sketch
 
 - **Thin client:** native, prebuilt — **Go** recommended (static single exe,
   trivial cross-compile, named pipes via `Microsoft/go-winio`; Rust equally
   viable — taste, not capability). Distributed like esbuild: per-platform npm
-  packages under `optionalDependencies`; `tk install` writes shim wrappers
+  packages under `optionalDependencies`; `ctx install` writes shim wrappers
   that exec the native client instead of `node cli.js` — which also deletes
   the `.cmd` → cmd.exe **third spawn** (M9). **Sign the exe** (unsigned Go
   binaries are AV false-positive bait — budget for a signing cert).
-- **Transport:** Windows named pipe `\\.\pipe\tk-<user>-<hash(TOKEN_KILLER_HOME)>`
+- **Transport:** Windows named pipe `\\.\pipe\ctx-<user>-<hash(CONTEXA_HOME)>`
   (default same-user DACL is the isolation boundary); POSIX
-  `~/.token-killer/daemon.sock`.
+  `~/.contexa/daemon.sock`.
 - **Protocol:** length-prefixed JSON frames. Request: `{argv, cwd, env-subset
-  (PATH, PATHEXT, TK_*, ComSpec, locale), stdin?}`. Response: streamed
+  (PATH, PATHEXT, CTX_*, ComSpec, locale), stdin?}`. Response: streamed
   `{stream: out|err, chunk}` frames + final `{exit}`. Client mirrors streams
   to its own stdio and exits with the code.
 - **Lifecycle:** client connects → on failure, acquires a lockfile, spawns
@@ -479,7 +479,7 @@ daemon-served tk), never from segment arithmetic.
   (today's path — the daemon is an accelerator, never a dependency). Daemon:
   pidfile, idle-exit after 30 min, exits if its bundle file's hash changes
   under it.
-- **Version/upgrade:** handshake carries tk version + bundle hash; mismatch →
+- **Version/upgrade:** handshake carries ctx version + bundle hash; mismatch →
   daemon drains in-flight requests and exits; client respawns the new one.
   The **client-Node-version axis amortizes away**: whatever Node the box has,
   its cold-start is paid once per idle window, not per command.
@@ -491,7 +491,7 @@ daemon-served tk), never from segment arithmetic.
 - **Spawn accounting:** bare tool = 1 spawn; today's shim = 3; daemon = 2
   (thin client + tool), and the surviving extra spawn is the smallest,
   signed, most reputation-cacheable image we can make. On hook-delivered
-  hosts (Claude Code/Copilot) the win **doubles**: `tk hook` calls route
+  hosts (Claude Code/Copilot) the win **doubles**: `ctx hook` calls route
   through the same client/pipe, eliminating the second per-command node spawn
   identified in §1 — no other technique touches that.
 - **Effort/risk:** high — 1–2 weeks. Risks: lifecycle bugs (stale daemon,
@@ -530,7 +530,7 @@ which also helps the bare tool the daemon can never beat — has been checked.
      the Go client lands behind the exec fallback so partial shipping is
      safe.
    - **Else (no exclusion AND no daemon) → document the hard floor
-     honestly:** tk caps at bare tool + 2 spawns − Tier-1 ops; the box's own
+     honestly:** ctx caps at bare tool + 2 spawns − Tier-1 ops; the box's own
      bare-tool latency is the wall.
 
 **Decisions safe blind:** everything in (1), dropping SEA and
@@ -559,7 +559,7 @@ only version-floor items in this plan (SEA ≥22, snapshot) are rejected ones.
    median-of-9 timing run cannot validate anything here (the goal's own
    re-measurement produced impossible orderings). Use **Process Monitor**
    (or `wpr`/ETW): filter on the process under test, count `CreateFile` /
-   `QueryAttributes…` ops against `~/.token-killer`, the PATH dirs, and
+   `QueryAttributes…` ops against `~/.contexa`, the PATH dirs, and
    `dist/`. An op-count delta (e.g. 630 stats → 1 after bake-path) is
    noise-immune and confirms the mechanism regardless of AV weather.
 2. **Timing, when taken: paired and interleaved.** Run variants A/B
@@ -570,7 +570,7 @@ only version-floor items in this plan (SEA ≥22, snapshot) are rejected ones.
    paired timing difference has a **consistent sign** — not when it hits a
    specific millisecond value.
 4. **Never size a technique by summing standalone segments.** The box showed
-   non-additivity (composite `tk git --version` ran ~200 ms *below* the sum
+   non-additivity (composite `ctx git --version` ran ~200 ms *below* the sum
    of its standalone segments in the same run). Always measure the composite
    command before/after the change.
 
@@ -589,16 +589,16 @@ function Measure-PairedMed {
 
 | Row | Setup (sketch) | Hypothesis it confirms/refutes | Gates which decision |
 |---|---|---|---|
-| **M0** | Re-run `scripts/tk-baseline-probe.ps1`, but as paired/interleaved per the methodology; capture a Process Monitor trace of one `tk git status` | Re-anchor + produce the definitive per-command **op inventory** (validates §1's table) | All rows below |
+| **M0** | Re-run `scripts/ctx-baseline-probe.ps1`, but as paired/interleaved per the methodology; capture a Process Monitor trace of one `ctx git status` | Re-anchor + produce the definitive per-command **op inventory** (validates §1's table) | All rows below |
 | **M1** | Paired: full-miss walk probe (`node -e` looping `existsSync` over PATH×PATHEXT for `zz_nonexist`) vs `node -e "0"`; **M1b**: same but probing `git` (early-exits at git's real PATH position) | The walk costs hundreds of ms worst-case; **M1b = the real per-command share**. Runs TODAY, pre-implementation. If M1b ≈ 0, 2.1's payoff is small (ship anyway — monotone) | Sizes 2.1 |
 | **M2** | Paired: `node -e` doing the 2–3 history/meta appends vs `node -e "0"`; procmon-count the opens | fs-op slimming is worth tens of ms | Sizes 2.4 |
 | **M3** | Paired: single-file build vs chunked build `--version`; procmon-count file opens (51 vs 1); separately byte-flip-rebuild each for a cold-scan pass | Warm Δ is small (bounded by the 40–230 ms segment) but cold Δ is large; opens 51→1 | Confirms 2.2; no-go only if single-file is *slower* warm |
 | **M4** | Paired per Node band: cache populated vs `NODE_DISABLE_COMPILE_CACHE=1` (≥22.8); `NODE_COMPILE_CACHE` env (22.1–22.7); CJS shim (20.x, after 2.2) | Each ladder rung produces a sign-consistent warm improvement on its band | Confirms 2.3 per band |
-| **M-pre** | **Not a timing row — policy inquiry + live tolerance check.** Ask IT whether Falcon policy permits a user-level persistent process + named pipe + custom signed exe; then run a minimal probe on the box (tiny node script serving `\\.\pipe\tk-probe` + a client) for a working day | Falcon does/doesn't allow the daemon pattern to run and stay alive (not killed, quarantined, or app-control-blocked) | **Gates all of §4, ahead of M8** — if blocked, the daemon is dead on arrival |
-| **M5** | Re-run M0 inside an IT-granted temporary CrowdStrike exclusion window (`node.exe`, `~/.token-killer`, PortableGit); ask explicitly whether the exclusion is **grantable org-wide, permanently** | The exclusion removes most of the per-spawn tax — sizes the ceiling of every non-daemon path; org-wide grantability decides §5 branch 1 (daemon moot) | Sizes 3.5; **first branch of the §5 tree**; evidence for the IT ticket |
+| **M-pre** | **Not a timing row — policy inquiry + live tolerance check.** Ask IT whether Falcon policy permits a user-level persistent process + named pipe + custom signed exe; then run a minimal probe on the box (tiny node script serving `\\.\pipe\ctx-probe` + a client) for a working day | Falcon does/doesn't allow the daemon pattern to run and stay alive (not killed, quarantined, or app-control-blocked) | **Gates all of §4, ahead of M8** — if blocked, the daemon is dead on arrival |
+| **M5** | Re-run M0 inside an IT-granted temporary CrowdStrike exclusion window (`node.exe`, `~/.contexa`, PortableGit); ask explicitly whether the exclusion is **grantable org-wide, permanently** | The exclusion removes most of the per-spawn tax — sizes the ceiling of every non-daemon path; org-wide grantability decides §5 branch 1 (daemon moot) | Sizes 3.5; **first branch of the §5 tree**; evidence for the IT ticket |
 | **M7** | Paired: Bun `--compile` hello vs node hello; first-run (cold scan of ~90 MB unsigned) noted separately | Bun's spawn is/isn't cheaper than node's under CrowdStrike | One of three gates for 3.6 |
 | **M8** | **PIVOTAL.** Paired: tiny signed static exe (2 MB Go hello, or an existing one like `fnm.exe`) vs `node -e "0"` vs `git --version` | **Small-image spawn floor**: ~10–50 ms ⇒ daemon alone reaches the target; ~300–400 ms ⇒ daemon ceiling = bare + ~400, target needs EDR exclusion on top. Prior favors the cheap branch (within-run ordering A: the tax is image-dependent — node consistently 1.3–2.6× git) | Daemon ceiling (§4); finalizes Bun & SEA demotion |
-| **M9** | Paired: `& "$env:USERPROFILE\.token-killer\shim\git.cmd" status --short` vs direct `node cli git status` | The `.cmd`→cmd.exe hop is a third taxed spawn the baseline never counted | Sizes the extra win of the native client replacing `.cmd` (§4) |
+| **M9** | Paired: `& "$env:USERPROFILE\.contexa\shim\git.cmd" status --short` vs direct `node cli git status` | The `.cmd`→cmd.exe hop is a third taxed spawn the baseline never counted | Sizes the extra win of the native client replacing `.cmd` (§4) |
 | **M10** | Paired: M1 variant using one `readdirSync` per PATH dir vs 630 stats; procmon-count both | 45 dir-reads beat 630 stats under EDR (or not) | Picks the 3.7 fallback-walk implementation |
 
 (M6/SEA intentionally omitted — rejected in 3.8; add a row only if evidence is
@@ -612,10 +612,10 @@ demanded.)
 |---|---|---|
 | Box timing validation is itself unreliable (noise > signal) | all | §6 methodology: op-counts primary, paired/interleaved timing secondary |
 | Spawn tax is image-independent → daemon ceiling = bare + ~400 ms | §4 | M8 discriminates; daemon still dominates either branch; EDR exclusion is the documented top-up |
-| Stale baked path / user re-orders PATH | 2.1 | Revalidation stat + walk fallback; `tk install` refresh; surface in `tk status` |
+| Stale baked path / user re-orders PATH | 2.1 | Revalidation stat + walk fallback; `ctx install` refresh; surface in `ctx status` |
 | ESM→CJS regressions (`import.meta`, TLA) | 2.2 | Audit + full 1554-test suite; ADR documenting the chunk-split reversal |
 | Single-file accidentally eager-loads subcommands | 2.2 | Bundle-grep CI check; two-entry fallback |
-| Cache-shim slows Node 20 edge cases | 2.3 | Stub is try/catch'd; rung independently removable |
+| Cache-shim slows Node <22.8 edge cases | 2.3 | Stub is try/catch'd; rung independently removable |
 | History batching loses rows on daemon crash | 2.4/§4 | Bounded N-row loss, flush-on-idle/exit, documented |
 | Daemon pattern itself (persistent process + pipe + custom exe) flagged/killed by Falcon | §4 | **M-pre gate before any build** — signing mitigates, only the policy check answers; exec fallback if it dies in the field |
 | Unsigned native client flagged by EDR | §4 | Code-sign; npm-distributed like esbuild; exec fallback |

@@ -14,14 +14,14 @@ import {
   resolveClaudeMemoryDir,
   setMemoryLifecycle,
   type GotchaCandidate,
-} from "@ctx/core";
+} from "@contexa/core";
 import { resolveShard } from "../../src/store/shard.ts";
 import { openStore } from "../../src/store/store.ts";
 import { cleanupTempDir, git, makeTempDir } from "../helpers/sandbox.ts";
 
 // Slice 1h — Push (M1-ACCEPTANCE §1h). Two tiers (both required):
 //  - living-repo tier: the block for THIS repo's real store (env-gated on the
-//    live Claude Code memory dir), built in a temp CTX_HOME sandbox (G-7);
+//    live Claude Code memory dir), built in a temp CONTEXA_HOME sandbox (G-7);
 //  - fixture tier: the 1000-set budget property + a deterministic pin/veto/
 //    idempotency store, both machine-independent.
 const PKG_DIR = resolve(dirname(fileURLToPath(import.meta.url)), "../..");
@@ -71,7 +71,7 @@ describe("acceptance: 1h push", () => {
 
   beforeEach(() => {
     root = makeTempDir("ctx-a9-");
-    home = join(root, "ctx-home"); // sandboxed CTX_HOME (G-7)
+    home = join(root, "contexa-home"); // sandboxed CONTEXA_HOME (G-7)
   });
   afterEach(() => {
     cleanupTempDir(root);
@@ -81,8 +81,8 @@ describe("acceptance: 1h push", () => {
     describe.skipIf(MEMORY_DIR === undefined)("living-repo tier (env-gated: live memory)", () => {
       test("the push block for THIS repo is ≤1KB, fixed header, imports gated until confirmed", () => {
         const store = openStore({ projectDir: REPO_ROOT, home });
-        // Slice 4: write-through is always-on; redirect the `.ctx` writer to a
-        // sandbox so importing THIS repo's live host memory never creates `.ctx/`
+        // Slice 4: write-through is always-on; redirect the `.contexa` writer to a
+        // sandbox so importing THIS repo's live host memory never creates `.contexa/`
         // in the real repo (the hard constraint).
         const files = new MemoryFiles(join(root, "mem-ctx"));
         const report = importClaudeCodeMemory(store, {
@@ -140,7 +140,7 @@ describe("acceptance: 1h push", () => {
     });
   });
 
-  test("A9-pin-veto: a .ctx/push.jsonc pin forces in, veto keeps out, both survive re-render", () => {
+  test("A9-pin-veto: a .contexa/push.jsonc pin forces in, veto keeps out, both survive re-render", () => {
     const repo = makeRepo(root);
     // Mutable injected clock → deterministic recency ranking (entity
     // last_verified is stamped by the STORE clock at write time).
@@ -160,8 +160,8 @@ describe("acceptance: 1h push", () => {
     expect(base.handles).toContain(m3.handle);
     expect(base.handles).not.toContain(m1.handle);
 
-    // A .ctx/push.jsonc (with comments) pins m1 and vetoes m3.
-    const cfgPath = join(repo, ".ctx", "push.jsonc");
+    // A .contexa/push.jsonc (with comments) pins m1 and vetoes m3.
+    const cfgPath = join(repo, ".contexa", "push.jsonc");
     mkdirSync(dirname(cfgPath), { recursive: true });
     writeFileSync(
       cfgPath,
@@ -200,7 +200,7 @@ describe("acceptance: 1h push", () => {
     setMemoryLifecycle(store, review.handle, "needs-review");
 
     // Pin the needs-review entry — A2: the pin may NOT force it in.
-    const cfgPath = join(repo, ".ctx", "push.jsonc");
+    const cfgPath = join(repo, ".contexa", "push.jsonc");
     mkdirSync(dirname(cfgPath), { recursive: true });
     writeFileSync(cfgPath, `{ "pin": ["${review.handle}"], "veto": [] }\n`);
     const cfg = readPushConfig(repo);

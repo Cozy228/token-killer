@@ -25,8 +25,8 @@ let home: string;
 let cwd: string;
 
 beforeEach(() => {
-  home = mkdtempSync(join(tmpdir(), "tk-hookcfg-home-"));
-  cwd = mkdtempSync(join(tmpdir(), "tk-hookcfg-proj-"));
+  home = mkdtempSync(join(tmpdir(), "ctx-hookcfg-home-"));
+  cwd = mkdtempSync(join(tmpdir(), "ctx-hookcfg-proj-"));
 });
 afterEach(() => {
   rmSync(home, { recursive: true, force: true });
@@ -36,12 +36,12 @@ afterEach(() => {
 describe("config artifact (DESIGN §3.1)", () => {
   test("matches the rtk-verified shape with a fixed command", () => {
     // Pass both command forms so the PascalCase pick is deterministic across platforms
-    // (on win32 it would otherwise default to the powershell form, not "tk hook copilot").
-    const config = buildCopilotHookConfig("tk hook copilot", "tk hook copilot");
+    // (on win32 it would otherwise default to the powershell form, not "ctx hook copilot").
+    const config = buildCopilotHookConfig("ctx hook copilot", "ctx hook copilot");
     expect(config.hooks.PreToolUse).toEqual([
-      { type: "command", command: "tk hook copilot", cwd: ".", timeout: 5 },
+      { type: "command", command: "ctx hook copilot", cwd: ".", timeout: 5 },
     ]);
-    expect(config.managedBy).toBe("token-killer");
+    expect(config.managedBy).toBe("contexa");
   });
 
   // Issue #20: the file must be conformant to BOTH host protocols. Top-level
@@ -67,11 +67,11 @@ describe("config artifact (DESIGN §3.1)", () => {
   });
 
   // Audit #13 / ADR 0005 §5: the default command resolves an ABSOLUTE node + cli
-  // path (a bare `tk` is inert on Windows PowerShell), still ending in `hook copilot`.
-  test("default command resolves absolute node + cli, not a bare `tk`", () => {
+  // path (a bare `ctx` is inert on Windows PowerShell), still ending in `hook copilot`.
+  test("default command resolves absolute node + cli, not a bare `ctx`", () => {
     const command = buildCopilotHookConfig().hooks.PreToolUse[0]!.command;
     expect(command.endsWith("hook copilot")).toBe(true);
-    expect(command.startsWith("tk ")).toBe(false);
+    expect(command.startsWith("ctx ")).toBe(false);
     expect(command).toContain(process.execPath);
   });
 
@@ -115,15 +115,15 @@ describe("config artifact (DESIGN §3.1)", () => {
 });
 
 describe("paths — user-level default, repo only under --project", () => {
-  test("user-level → ~/.copilot/hooks/tk-rewrite.json", () => {
+  test("user-level → ~/.copilot/hooks/ctx-rewrite.json", () => {
     expect(copilotHookConfigPath({ project: false, home })).toBe(
-      join(home, ".copilot", "hooks", "tk-rewrite.json"),
+      join(home, ".copilot", "hooks", "ctx-rewrite.json"),
     );
   });
 
-  test("project → <cwd>/.github/hooks/tk-rewrite.json", () => {
+  test("project → <cwd>/.github/hooks/ctx-rewrite.json", () => {
     expect(copilotHookConfigPath({ project: true, cwd })).toBe(
-      join(cwd, ".github", "hooks", "tk-rewrite.json"),
+      join(cwd, ".github", "hooks", "ctx-rewrite.json"),
     );
   });
 
@@ -131,11 +131,11 @@ describe("paths — user-level default, repo only under --project", () => {
   // itself → `$COPILOT_HOME/hooks/<file>` (do NOT append `.copilot`).
   test("user-level honors $COPILOT_HOME as the .copilot root", () => {
     const saved = process.env.COPILOT_HOME;
-    const copilotHome = mkdtempSync(join(tmpdir(), "tk-copilot-home-"));
+    const copilotHome = mkdtempSync(join(tmpdir(), "ctx-copilot-home-"));
     try {
       process.env.COPILOT_HOME = copilotHome;
       expect(copilotHookConfigPath({ project: false })).toBe(
-        join(copilotHome, "hooks", "tk-rewrite.json"),
+        join(copilotHome, "hooks", "ctx-rewrite.json"),
       );
     } finally {
       if (saved === undefined) delete process.env.COPILOT_HOME;
@@ -171,7 +171,7 @@ describe("install / plan / uninstall", () => {
     expect(existsSync(removed.path)).toBe(false);
   });
 
-  test("uninstall refuses to delete a non-tk hooks file (no marker)", () => {
+  test("uninstall refuses to delete a non-ctx hooks file (no marker)", () => {
     const path = copilotHookConfigPath({ project: false, home });
     mkdirSync(join(home, ".copilot", "hooks"), { recursive: true });
     writeFileSync(path, JSON.stringify({ hooks: { PreToolUse: [] } }));
@@ -213,7 +213,7 @@ describe("install refuses to overwrite an unmanaged config (Plan 008)", () => {
     mkdirSync(configDir(), { recursive: true });
     // Ours (carries the marker) but a stale command — the upgrade case.
     const stale = JSON.stringify({
-      managedBy: "token-killer",
+      managedBy: "contexa",
       hooks: { PreToolUse: [{ type: "command", command: "old", cwd: ".", timeout: 5 }] },
     });
     writeFileSync(path, stale);
@@ -248,7 +248,7 @@ describe("install refuses to overwrite an unmanaged config (Plan 008)", () => {
   });
 });
 
-// Issue #11: the unmanaged-guard plus an in-place truncating write could turn tk's
+// Issue #11: the unmanaged-guard plus an in-place truncating write could turn ctx's
 // OWN interrupted write into an unparseable file the guard then refuses to repair.
 // The write must be atomic (same-dir temp + rename) and revalidate ownership right
 // before replacing an existing file.
@@ -269,7 +269,7 @@ describe("atomic write + pre-replace revalidation (issue #11)", () => {
       // Make it stale so the next install plans an overwrite (would O_TRUNC in place
       // under the old code).
       const stale = JSON.stringify({
-        managedBy: "token-killer",
+        managedBy: "contexa",
         hooks: { PreToolUse: [{ type: "command", command: "old", cwd: ".", timeout: 5 }] },
       });
       writeFileSync(path, stale);
@@ -292,7 +292,7 @@ describe("atomic write + pre-replace revalidation (issue #11)", () => {
       // exactly the stale bytes) — atomicity guarantees the destination is untouched on
       // a failed swap. And no temp file is left stranded.
       expect(readFileSync(path, "utf8")).toBe(stale);
-      expect(JSON.parse(readFileSync(path, "utf8")).managedBy).toBe("token-killer");
+      expect(JSON.parse(readFileSync(path, "utf8")).managedBy).toBe("contexa");
       const leftover = readdirSync(dir).filter((f) => f.includes(".tmp"));
       expect(leftover).toEqual([]);
     },
@@ -347,7 +347,7 @@ describe("atomic write + pre-replace revalidation (issue #11)", () => {
     expect(leftover).toEqual([]);
   });
 
-  // The complementary create-window race: a MANAGED file appearing (a racing tk
+  // The complementary create-window race: a MANAGED file appearing (a racing ctx
   // install) is an accepted last-writer-wins case — the rename proceeds.
   test("a stale create plan proceeds when a managed file appeared (last-writer-wins)", () => {
     mkdirSync(configDir(), { recursive: true });
@@ -356,9 +356,9 @@ describe("atomic write + pre-replace revalidation (issue #11)", () => {
     const createPlan = planCopilotHookConfig({ project: false, home });
     expect(createPlan.action).toBe("create");
 
-    // A racing tk install wrote its own marker-bearing config first.
+    // A racing ctx install wrote its own marker-bearing config first.
     const otherManaged = JSON.stringify({
-      managedBy: "token-killer",
+      managedBy: "contexa",
       hooks: { PreToolUse: [{ type: "command", command: "other", cwd: ".", timeout: 5 }] },
     });
     writeFileSync(path, otherManaged);

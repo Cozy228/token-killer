@@ -1,5 +1,5 @@
 /**
- * SCIP pass (2e closer, CTX-IMPL §5.2 "SCIP when present"; D16 read-back
+ * SCIP pass (2e closer, CONTEXA-IMPL §5.2 "SCIP when present"; D16 read-back
  * `docs/codemap/impl/appendix-A1-copyable.md:480–500`).
  *
  * Everything downstream of tree-sitter is Derived. When an `index.scip` sits at

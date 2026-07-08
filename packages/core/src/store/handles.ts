@@ -1,5 +1,5 @@
 /**
- * Handles — the drill-down currency (CTX-IMPL §3, P25②).
+ * Handles — the drill-down currency (CONTEXA-IMPL §3, P25②).
  *
  * Two forms, both accepted by `context(handle)` / `ctx recall`:
  * - verbatim: `<entityId>` or `<entityId>!<facet>`

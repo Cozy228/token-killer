@@ -1,5 +1,5 @@
 /**
- * SourceAdapter framework (CTX-IMPL §4) — the second half of the foundation
+ * SourceAdapter framework (CONTEXA-IMPL §4) — the second half of the foundation
  * contract: 1c (memory), 1d (git), 1e (docs) implement this interface and
  * register with the registry; the refresh engine orchestrates them.
  */

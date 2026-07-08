@@ -16,8 +16,8 @@ const cli = path.join(repoRoot, "src/cli.ts");
 const tsxLoader = pathToFileURL(path.join(repoRoot, "node_modules/tsx/dist/loader.mjs")).href;
 
 // Isolate the data dir so the spawned CLI never writes history into the real
-// ~/.token-killer/.
-const tokenKillerHome = mkdtempSync(path.join(tmpdir(), "tk-rtk-home-"));
+// ~/.contexa/.
+const contexaHome = mkdtempSync(path.join(tmpdir(), "ctx-rtk-home-"));
 
 function runTk(args: string[], cwd: string, input?: string, timeout = 15000) {
   return spawnSync(process.execPath, ["--import", tsxLoader, cli, ...args], {
@@ -25,7 +25,7 @@ function runTk(args: string[], cwd: string, input?: string, timeout = 15000) {
     input,
     encoding: "utf8",
     timeout,
-    env: { ...process.env, TOKEN_KILLER_HOME: tokenKillerHome },
+    env: { ...process.env, CONTEXA_HOME: contexaHome },
   });
 }
 
@@ -54,8 +54,8 @@ async function initGitRepo(prefix: string) {
 }
 
 describe("RTK-style CLI integration parity", () => {
-  test("tk grep -r preserves real grep output without line numbers", async () => {
-    const dir = await mkdtemp(path.join(tmpdir(), "tk-rtk-grep-"));
+  test("ctx grep -r preserves real grep output without line numbers", async () => {
+    const dir = await mkdtemp(path.join(tmpdir(), "ctx-rtk-grep-"));
     try {
       await writeFile(path.join(dir, "history.ts"), "export async function recordHistory() {}\n");
       await writeFile(path.join(dir, "pipeline.ts"), "export async function runPipeline() {}\n");
@@ -73,14 +73,14 @@ describe("RTK-style CLI integration parity", () => {
     }
   });
 
-  // POSIX-only: compares tk's output byte-for-byte against the NATIVE grep, using
+  // POSIX-only: compares ctx's output byte-for-byte against the NATIVE grep, using
   // POSIX-grep-specific flags (-L/-o/-Z). Windows has no standard grep binary to
   // compare against, so this is honestly skipped there (the \0-framing emit fix it
   // guards is platform-agnostic and stays covered on Linux/macOS).
   test.runIf(process.platform !== "win32")(
-    "tk grep preserves RTK format-flag output shapes",
+    "ctx grep preserves RTK format-flag output shapes",
     async () => {
-      const dir = await mkdtemp(path.join(tmpdir(), "tk-rtk-grep-format-"));
+      const dir = await mkdtemp(path.join(tmpdir(), "ctx-rtk-grep-format-"));
       try {
         await writeFile(path.join(dir, "with-import.ts"), "import fs from 'node:fs';\n");
         await writeFile(path.join(dir, "without-import.ts"), "export const value = 1;\n");
@@ -119,8 +119,8 @@ describe("RTK-style CLI integration parity", () => {
     },
   );
 
-  test("tk git diff preserves changed lines from a real repository", async () => {
-    const dir = await initGitRepo("tk-rtk-diff-");
+  test("ctx git diff preserves changed lines from a real repository", async () => {
+    const dir = await initGitRepo("ctx-rtk-diff-");
     try {
       await writeFile(
         path.join(dir, "submit.ts"),
@@ -143,8 +143,8 @@ describe("RTK-style CLI integration parity", () => {
     }
   });
 
-  test("tk cat - preserves stdin content", async () => {
-    const dir = await mkdtemp(path.join(tmpdir(), "tk-rtk-stdin-"));
+  test("ctx cat - preserves stdin content", async () => {
+    const dir = await mkdtemp(path.join(tmpdir(), "ctx-rtk-stdin-"));
     try {
       const result = runTk(
         ["cat", "-"],
@@ -160,8 +160,8 @@ describe("RTK-style CLI integration parity", () => {
     }
   }, 8000);
 
-  test("tk diff - condenses piped unified diff", async () => {
-    const dir = await mkdtemp(path.join(tmpdir(), "tk-rtk-diff-stdin-"));
+  test("ctx diff - condenses piped unified diff", async () => {
+    const dir = await mkdtemp(path.join(tmpdir(), "ctx-rtk-diff-stdin-"));
     try {
       const input = [
         "diff --git a/src/main.ts b/src/main.ts",

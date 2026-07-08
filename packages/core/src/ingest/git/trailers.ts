@@ -1,5 +1,5 @@
 /**
- * Trailer & issue-key extraction from a commit message (CTX-IMPL §5.1). These
+ * Trailer & issue-key extraction from a commit message (CONTEXA-IMPL §5.1). These
  * are explicit references the author wrote — recorded as `explicit-key` claims
  * (authority Observed). Issue/PR entities themselves are network-carrier
  * territory (GitHub/Jira, M4); 1d records the reference as a claim on the commit

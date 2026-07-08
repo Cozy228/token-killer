@@ -7,8 +7,8 @@ archive per the slice-1/2/3/4 precedent. Crosses a session boundary → a file. 
 **Authority (read first, do not relitigate):** `MEMORY-SYNC-GOAL-PROMPT.md` ("Implementation
 slices" item 5 + hard invariants + acceptance bar), `MEMORY-DECISIONS.md` (E3, E4 — `--local` →
 overlay + the per-repo opt-out knob, D27/D30 push shared config), `MEMORY-SYNC-SETTLEMENTS.md`
-(the S8 write-surface matrix; the zone table rows for `.ctx/push.jsonc` = three-tier (b) and
-`.ctx/*.local.*` = three-tier (c)), `MEMORY-SLICE4-NOTES.md` (Decisions + Open questions — the
+(the S8 write-surface matrix; the zone table rows for `.contexa/push.jsonc` = three-tier (b) and
+`.contexa/*.local.*` = three-tier (c)), `MEMORY-SLICE4-NOTES.md` (Decisions + Open questions — the
 `surface` fail-open advisory and the D2 handoff), repo `OPEN.md` O-17/O-18.
 
 **Precondition:** the O-17 Codex post-merge review of slices 3+4 has run
@@ -26,9 +26,9 @@ explicitly waived — do not build on an unreviewed base.
    default — every caller must state its surface, so a future agent-side caller cannot fail open
    into the committed zone. Compile-time enforcement (type), plus the existing runtime routing.
    Update all callers; store-only unit fixtures pick the surface they mean to test.
-3. **Three-tier push config.** Shared committed `.ctx/push.jsonc` (project presentation: pins /
+3. **Three-tier push config.** Shared committed `.contexa/push.jsonc` (project presentation: pins /
    vetoes — D27/D30, three-tier (b)) merged with a personal overlay config file per the
-   `.ctx/*.local.*` convention (three-tier (c)). Merge semantics: project truth stays shared and
+   `.contexa/*.local.*` convention (three-tier (c)). Merge semantics: project truth stays shared and
    committed; the personal layer adds LOCAL-EFFECT-ONLY attention (extra pins/vetoes for MY push
    digest) and never mutates the shared file. Deterministic merge, no write path from the
    personal layer into the committed file. Reuse the existing push-config reader seam
@@ -62,8 +62,8 @@ the same committed config + different personal overlays render the SAME shared p
 different local views; opt-out repo performs zero committed-zone writes across remember /
 confirm / migration / import while staying fully functional locally; `surface` required
 compiles/behaves across all callers; shallow-clone doctor warning fires on a shallow fixture.
-HARD CONSTRAINT unchanged: never create `.ctx/` in the token-killer repo — living-repo tests
-keep their sandbox writers/`ctxRoot` injection. All three suites green before merge.
+HARD CONSTRAINT unchanged: never create `.contexa/` in the token-killer repo — living-repo tests
+keep their sandbox writers/`contexaRoot` injection. All three suites green before merge.
 
 ## Execution model
 

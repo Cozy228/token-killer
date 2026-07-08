@@ -1,4 +1,4 @@
-// Cost-tips habit analyzer — tk's answer to Copilot CLI's `/chronicle cost tips`.
+// Cost-tips habit analyzer — ctx's answer to Copilot CLI's `/chronicle cost tips`.
 // Where the opportunity scan asks "which commands/tools are expensive?", this asks
 // "what about HOW the user drives the agent costs tokens?" — the habits chronicle
 // looks at: per-session tool-call depth (continuation steps), turn count, and prompt

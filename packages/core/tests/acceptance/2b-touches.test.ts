@@ -1,6 +1,6 @@
 /**
  * Slice 2b — Symbol-level touches + history (M2-ACCEPTANCE.md "2b"). Flips the
- * 2a-wired todos green. Two tiers (CTX-IMPL §10):
+ * 2a-wired todos green. Two tiers (CONTEXA-IMPL §10):
  *
  *  • Living-repo tier — THIS checkout's real M1 history over
  *    `packages/core/src/`. The ⚠ verify-at-wiring edges below were confirmed
@@ -35,7 +35,7 @@ const STORE_TS = "packages/core/src/store/store.ts";
 //   9a2d90e modified store.ts (hunks [72-77],[214],[226-232],[676-690]) — those
 //   overlap Store/SqliteStore/getEntity/entitiesByName/entityFromRow but NOT
 //   openStore [664,674] at HEAD → symbol-level precision, not whole-file.
-//   12dc674 touched CTX-DESIGN.md (a non-code file → file-level touch survives).
+//   12dc674 touched CONTEXA-DESIGN.md (a non-code file → file-level touch survives).
 const ADD_COMMIT = "commit:be6c2d442a3d";
 const MOD_COMMIT = "commit:9a2d90ea8b16";
 const DOC_COMMIT = "commit:12dc67446a34";
@@ -51,7 +51,7 @@ describe("acceptance: 2b symbol-level touches + history (living repo)", () => {
 
   beforeAll(async () => {
     root = makeTempDir("ctx-2b-live-");
-    store = openStore({ projectDir: REPO_ROOT, home: join(root, "ctx-home") });
+    store = openStore({ projectDir: REPO_ROOT, home: join(root, "contexa-home") });
     // git (symbol-level touches) + code (persists the HEAD sym entities the
     // touch links resolve to). docs/memory off — irrelevant to this scenario.
     const registry = createDefaultRegistry({
@@ -95,7 +95,7 @@ describe("acceptance: 2b symbol-level touches + history (living repo)", () => {
 
     // Fallback kept: a non-code file (no symbols) still gets the file-level link.
     const docTouches = store.linksFrom(DOC_COMMIT, "touches").map((l) => l.dst);
-    expect(docTouches, "file-level touch survives for a non-code file").toContain(
+    expect(docTouches, "file-level touch preserves the commit's historical path").toContain(
       "file:CTX-DESIGN.md",
     );
     expect(docTouches.every((d) => d.startsWith("file:") || d.startsWith("sym:"))).toBe(true);
@@ -190,7 +190,7 @@ describe("acceptance: 2b symbol-level touches + history (deterministic fixtures)
   beforeEach(async () => {
     root = makeTempDir("ctx-2b-fix-");
     repo = makeGitFixture(root); // one prior commit: README.md
-    store = openStore({ projectDir: repo, home: join(root, "ctx-home") });
+    store = openStore({ projectDir: repo, home: join(root, "contexa-home") });
 
     c1 = commit(
       repo,
@@ -242,7 +242,7 @@ describe("acceptance: 2b symbol-level touches + history (deterministic fixtures)
   test("B2-touches: symbol-level touches are resumable across a budget interruption (no double-append)", async () => {
     // A fresh store: split the 5-commit history into two batches, trip the budget
     // after the first, then resume — the touches must not double-append.
-    const store2 = openStore({ projectDir: repo, home: join(root, "ctx-home-2") });
+    const store2 = openStore({ projectDir: repo, home: join(root, "contexa-home-2") });
     try {
       const adapter = createGitAdapter({
         symbolTouches: true,

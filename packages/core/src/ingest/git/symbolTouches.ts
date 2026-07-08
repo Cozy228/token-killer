@@ -1,5 +1,5 @@
 /**
- * Symbol-level `touches` + symbol rename chains (CTX-IMPL §5.1, slice 2b).
+ * Symbol-level `touches` + symbol rename chains (CONTEXA-IMPL §5.1, slice 2b).
  *
  * Upgrades the git source's file-level `touches` to SYMBOL level. For each
  * commit×code-file the diff modifies, the `--unified=0` post-image hunk ranges

@@ -22,9 +22,9 @@ function options(cwd: string): TkOptions {
 
 describe("pipeline fallback", () => {
   test("falls back to generic raw-preserving output when a handler filter throws", async () => {
-    const dir = await mkdtemp(path.join(tmpdir(), "tk-fallback-"));
-    const tkHome = path.join(dir, "token-killer-data");
-    process.env.TOKEN_KILLER_HOME = tkHome;
+    const dir = await mkdtemp(path.join(tmpdir(), "ctx-fallback-"));
+    const tkHome = path.join(dir, "contexa-data");
+    process.env.CONTEXA_HOME = tkHome;
     const command: ParsedCommand = {
       program: "custom",
       args: [],
@@ -59,7 +59,7 @@ describe("pipeline fallback", () => {
       const rawLog = await readFile(resolveStoredPath(result.rawOutputPath!), "utf8");
       expect(rawLog).toContain("ERROR retained fallback line");
     } finally {
-      delete process.env.TOKEN_KILLER_HOME;
+      delete process.env.CONTEXA_HOME;
       await rm(dir, { recursive: true, force: true });
     }
   });
@@ -69,11 +69,11 @@ describe("pipeline fallback", () => {
     // and that throw escapes, cli.ts's fail-open catch re-spawns the command —
     // double-executing side effects. runPipeline must swallow the failure so the
     // command runs exactly once and its output survives.
-    const dir = await mkdtemp(path.join(tmpdir(), "tk-c6-"));
+    const dir = await mkdtemp(path.join(tmpdir(), "ctx-c6-"));
     // A FILE where a directory is needed: every write under it fails with ENOTDIR.
     const blocker = path.join(dir, "blocker");
     await writeFile(blocker, "x");
-    process.env.TOKEN_KILLER_HOME = path.join(blocker, "home");
+    process.env.CONTEXA_HOME = path.join(blocker, "home");
 
     let executions = 0;
     const raw: RawResult = {
@@ -109,7 +109,7 @@ describe("pipeline fallback", () => {
       expect(result.filtered.output).toContain("match line");
       expect(result.filtered.exitCode).toBe(0);
     } finally {
-      delete process.env.TOKEN_KILLER_HOME;
+      delete process.env.CONTEXA_HOME;
       await rm(dir, { recursive: true, force: true });
     }
   });

@@ -9,14 +9,14 @@ import {
 
 describe("handles (§3: deterministic short form, two accepted forms)", () => {
   test("candidate is a pure function: kind initial + blake2b prefix", () => {
-    const a = shortHandleCandidate("file:CTX-IMPL.md", undefined, HANDLE_MIN_LEN);
-    const b = shortHandleCandidate("file:CTX-IMPL.md", undefined, HANDLE_MIN_LEN);
+    const a = shortHandleCandidate("file:CONTEXA-IMPL.md", undefined, HANDLE_MIN_LEN);
+    const b = shortHandleCandidate("file:CONTEXA-IMPL.md", undefined, HANDLE_MIN_LEN);
     expect(a).toBe(b);
     expect(a).toMatch(/^f[0-9a-f]{5}$/);
     // facet participates in the hash
-    expect(shortHandleCandidate("file:CTX-IMPL.md", "text", 5)).not.toBe(a);
+    expect(shortHandleCandidate("file:CONTEXA-IMPL.md", "text", 5)).not.toBe(a);
     // longer prefix extends, same head
-    const bumped = shortHandleCandidate("file:CTX-IMPL.md", undefined, 6);
+    const bumped = shortHandleCandidate("file:CONTEXA-IMPL.md", undefined, 6);
     expect(bumped.startsWith(a)).toBe(true);
     expect(bumped).toHaveLength(7); // initial + 6 hex
   });
@@ -29,14 +29,14 @@ describe("handles (§3: deterministic short form, two accepted forms)", () => {
   });
 
   test("parseHandle accepts verbatim, verbatim!facet, short, [short]", () => {
-    expect(parseHandle("file:CTX-IMPL.md")).toEqual({
+    expect(parseHandle("file:CONTEXA-IMPL.md")).toEqual({
       form: "verbatim",
-      key: "file:CTX-IMPL.md",
+      key: "file:CONTEXA-IMPL.md",
       facet: undefined,
     });
-    expect(parseHandle("file:CTX-IMPL.md!text")).toEqual({
+    expect(parseHandle("file:CONTEXA-IMPL.md!text")).toEqual({
       form: "verbatim",
-      key: "file:CTX-IMPL.md",
+      key: "file:CONTEXA-IMPL.md",
       facet: "text",
     });
     expect(parseHandle("[f4a7c2]")).toEqual({ form: "short", key: "f4a7c2", facet: undefined });

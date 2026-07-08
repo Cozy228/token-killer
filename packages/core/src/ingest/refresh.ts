@@ -1,5 +1,5 @@
 /**
- * Refresh orchestration (CTX-IMPL §4, P24/D25 semantics, no daemon).
+ * Refresh orchestration (CONTEXA-IMPL §4, P24/D25 semantics, no daemon).
  *
  * - Serve path calls `refresh(budgetMs)` before selection.
  * - First call per engine (per process) is gated on catch-up but TIME-BOXED

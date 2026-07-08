@@ -2,7 +2,7 @@
 
 > Scope: the actually-implemented memory behavior on `feat/1.0.0` (M1 built, M2 slice 2a merged),
 > read directly from `packages/core/src/**` + `packages/cli/src/**`, cross-checked against the
-> authority trio (`CTX-DESIGN.md`, `CTX-IMPL.md`, `FABLE-DECISION-LOG.md`), the acceptance bars
+> authority trio (`CONTEXA-DESIGN.md`, `CONTEXA-IMPL.md`, `FABLE-DECISION-LOG.md`), the acceptance bars
 > (`docs/build/M1-ACCEPTANCE.md`, `M2-*`), and `docs/design/M1-REALITY-CHECK.md`.
 >
 > Every claim is labelled `[from-code]` (read in a source file), `[from-doc]` (design/spec text
@@ -20,7 +20,7 @@ layers (`remember()` for manual notes, `importClaudeCodeMemory()` for host impor
 the same generic selection engine that ranks code/docs/history. `[from-code]` The store *is* the
 source of truth for memory gist/detail (the sole index-not-copy exception), so memory rows carry
 `locator:{t:'store'}` and are the only content that is copied-in rather than addressed by
-locator. `[from-code CTX-IMPL.md:135-136; store.ts:629-643]` Everything memory "does" beyond
+locator. `[from-code CONTEXA-IMPL.md:135-136; store.ts:629-643]` Everything memory "does" beyond
 storage is assembled from shared primitives — there is almost no memory-specific machinery.
 
 ---
@@ -29,7 +29,7 @@ storage is assembled from shared primitives — there is almost no memory-specif
 
 ### 1.1 The data model `[from-code]`
 - `memory` is an `EntityKind` (`store/types.ts:6-18`). A memory entity id is `mem:<ulid>`
-  (`memory/ulid.ts:66-68`, id scheme `CTX-IMPL.md:160`).
+  (`memory/ulid.ts:66-68`, id scheme `CONTEXA-IMPL.md:160`).
 - The lifecycle side table (`store/migrations/001-init.sql:54-64`):
   `memory(entity_id PK→entities.id, gist, detail?, origin, session_ref?, authority, status
   DEFAULT 'active', served_count DEFAULT 0, last_served)`.
@@ -126,7 +126,7 @@ paraphrase echo is explicitly out of M1 scope** (`sentinel.ts:5-11`).
   (`rank.ts:76`), scores each `authorityBoost(confirmed×1.3) × timeDecay(decayBasis)`
   (`rank.ts:39-46`), applies pin/veto with **veto winning** (`rank.ts:59-71`), pins render first.
   It reuses the *selection* primitives (`select/rank.ts`) — one scale for push and pull.
-- `push/config.ts`: `.ctx/push.jsonc = {pin,veto}`; comments allowed; unknown keys / malformed →
+- `push/config.ts`: `.contexa/push.jsonc = {pin,veto}`; comments allowed; unknown keys / malformed →
   empty config + guidance, never throws (`config.ts:121-172`).
 - `push/hosts.ts`: idempotent placement into the two-file floor `AGENTS.md` + `CLAUDE.md`
   (`hosts.ts:26`), byte-preserving around the managed block, refuses to write outside project root
@@ -158,11 +158,11 @@ The `RefreshEngine` only ingests sources whose dirty check is true (`refresh.ts:
   memory ingest.
 - `M1-REALITY-CHECK.md:16,73-77` corroborates: after `ctx sync` on this repo, `memory 1` (only the
   one manually-remembered note) and `memory: clean (behind 0, gen 0)`.
-- Design intent: `CTX-IMPL.md:199` "memory = always clean" + `adapter.ts:5-6,21` "cold-path host
+- Design intent: `CONTEXA-IMPL.md:199` "memory = always clean" + `adapter.ts:5-6,21` "cold-path host
   import" — the intent is that install/sync *do* import; no code wires that cold path.
 
 ### 2.2 Push ranking is missing two of four ratified factors `[from-code + from-doc, HIGH]`
-P21 (`FABLE-DECISION-LOG.md:131-133`) and `CTX-DESIGN.md:143-144` ratify push rank =
+P21 (`FABLE-DECISION-LOG.md:131-133`) and `CONTEXA-DESIGN.md:143-144` ratify push rank =
 **authority × usage × recency × anchor-freshness**. Code (`push/rank.ts:39-46`) computes only
 **authority × recency**. Missing:
 - **usage** (`served_count`/`lastServedAt`): the columns exist (`001-init.sql:62-63`) and are read
@@ -179,13 +179,13 @@ P21 (`FABLE-DECISION-LOG.md:131-133`) and `CTX-DESIGN.md:143-144` ratify push ra
   for memory (`select/rank.ts:43-52`) uses the newest `anchoredTo` claim's **write timestamp**
   (`c.at`), NOT whether the anchor target still resolves or changed. So "recency" = when the anchor
   was authored, never anchor liveness. `[from-code]`
-- This is a **known-deferred M2 item**, not an oversight: `CTX-IMPL.md:540-544` and
+- This is a **known-deferred M2 item**, not an oversight: `CONTEXA-IMPL.md:540-544` and
   `docs/build/M2-GOAL-PROMPT.md:57` (slice 2c) put "memory-anchor invalidation (anchor-drift →
   needs-review with signature/body-changed reason classes)" and the "anchor-drift test" in M2.
   Combined with §2.1, **memory receives no freshness treatment of any kind in M1**. `[inferred]`
 
 ### 2.4 `ctx guide` (the entire human review surface) is not built `[from-code + from-doc]`
-- `CTX-DESIGN.md:169-187` / `CTX-IMPL.md:428-435` design a read-only Hono web app whose
+- `CONTEXA-DESIGN.md:169-187` / `CONTEXA-IMPL.md:428-435` design a read-only Hono web app whose
   **Knowledge page = memory browser + review queue (`needs-review` entries) + push pin/veto state +
   stale-references list**.
 - Code: `ctx guide` is not a command; `cli.ts` HELP says "guide/import land in later M1 slices"
@@ -194,9 +194,9 @@ P21 (`FABLE-DECISION-LOG.md:131-133`) and `CTX-DESIGN.md:143-144` ratify push ra
 - Consequence for Decision 9: `needs-review` has no producer AND no consumer UI today.
 
 ### 2.5 Additional host importers (Codex, VS Code Copilot) not built `[from-doc]`
-`CTX-IMPL.md:293-303` + P28③ (`FABLE-DECISION-LOG.md:239-249`) scope VS Code Copilot and Codex
+`CONTEXA-IMPL.md:293-303` + P28③ (`FABLE-DECISION-LOG.md:239-249`) scope VS Code Copilot and Codex
 importers as independently-mergeable follow-ons; only Claude Code exists in code. "cross-host
-dedup" (`CTX-DESIGN.md:163`, `CTX-IMPL.md:304`) therefore cannot happen — the only dedup that runs
+dedup" (`CONTEXA-DESIGN.md:163`, `CONTEXA-IMPL.md:304`) therefore cannot happen — the only dedup that runs
 is **within a single Claude import batch** (`claudeImporter.ts:236-263`).
 
 ### 2.6 `human-note` origin + `session_ref` auto-capture unimplemented `[from-code]`
@@ -204,8 +204,8 @@ is **within a single Claude import batch** (`claudeImporter.ts:236-263`).
   `001-init.sql:58`); no code path emits it (grep: 2 matches, both declarations). Human notes are
   in practice `remember()` with default Confirmed authority.
 - `session_ref` is accepted by `remember()`/`writeMemory` but the CLI/MCP never populate it; the
-  design source (compressor capture tap contributing `sessionRef`, `CTX-DESIGN.md:204-206`,
-  `CTX-IMPL.md:473-474`) is the off-critical-path adjacent track, not built.
+  design source (compressor capture tap contributing `sessionRef`, `CONTEXA-DESIGN.md:204-206`,
+  `CONTEXA-IMPL.md:473-474`) is the off-critical-path adjacent track, not built.
 
 ### 2.7 `sameAsCandidate` dedup proposals are never surfaced `[from-code, MEDIUM]`
 The importer emits `sameAsCandidate` as a claim+link (`claudeImporter.ts:244-261`) but **never
@@ -214,7 +214,7 @@ calls `addConflict`** — the only `addConflict` caller is docs stale-suspect
 (`engine.ts:113-138`), so a near-duplicate proposal is an invisible low-confidence link, shown to
 neither push nor pull. `sameAsCandidate` is a declared `ConflictKind` (`store/types.ts:115`) that
 memory never files. `[from-code]` Design intent was "conflict surfacing"/"鉴真 reuse" for dedup
-(`CTX-DESIGN.md:163`, P16②).
+(`CONTEXA-DESIGN.md:163`, P16②).
 
 ### 2.8 Lifecycle status does NOT gate the pull/serve path `[from-code, HIGH — subtle]`
 `setMemoryStatus` only ever moves a row to `superseded` (via supersede) or to
@@ -224,7 +224,7 @@ engine (`seeds.ts`, `engine.ts`, `sections.ts`) filters memory **only by
 `gen<=published_gen`** (`visibility.ts:44-52`), never by `status`. A `retired` or `superseded`
 memory keeps its published `gen`, stays FTS-indexed, and therefore **remains retrievable by
 `context()`/`search()`**. "Forgetting" today = hidden from the list + push, **not** from pull.
-`[from-code; inferred consequence]` (Design intent `CTX-DESIGN.md:123-124`: "confidence stays a
+`[from-code; inferred consequence]` (Design intent `CONTEXA-DESIGN.md:123-124`: "confidence stays a
 soft factor … the only hard filter remains explicit user evidence-policy" — status was never
 specified as a serve filter, so this is under-specified rather than contradicted.)
 
@@ -239,7 +239,7 @@ specified as a serve filter, so this is under-specified rather than contradicted
 | **No LLM / no embeddings / no network at write or serve** | Structural: nothing in `memory/`, `push/`, `select/` imports a model client; dedup is Jaccard/entropy (`dedup.ts`), ranking is arithmetic (`select/rank.ts`). `[from-code + inferred]` |
 | **Gist ≤240 chars** | `remember()` pre-check (`remember.ts:138`) + store `RangeError` backstop (`store.ts:337-343`). |
 | **Push block ≤1KB** | By construction in `renderPushBlock` (`block.ts:94-102`); property test over 1000 sets incl. multibyte (`1h-push.test.ts:102-124`). |
-| **Index-not-copy, with memory as the sole exception** | Non-memory entities store `locator` only; memory gist/detail live in the row (`store.ts:629-643`, `CTX-IMPL.md:135-136`). |
+| **Index-not-copy, with memory as the sole exception** | Non-memory entities store `locator` only; memory gist/detail live in the row (`store.ts:629-643`, `CONTEXA-IMPL.md:135-136`). |
 | **Claims append-only** | No update/delete claim API on the `Store` interface (`store.ts:79-80`). |
 | **Paths persisted project-relative; no write escapes project root** | `scrubToProjectRelative` (`store.ts:135-142`); push placement guard (`hosts.ts:69-74`); anchor path-traversal guard (`remember.ts:122`). |
 | **Readers see only published generations** | `gen<=published_gen` everywhere reads (`visibility.ts`, `remember.ts:377`). |
@@ -273,7 +273,7 @@ specified as a serve filter, so this is under-specified rather than contradicted
   ≤1KB floor, with "discoverability demotion (G3)" as an open action
   (`docs/design/FABLE-DORA-REVIEW.md:156,197,224`). Directly informs Decision 7. `[from-doc]`
 - **M2-deferred memory work**: anchor-invalidation → needs-review, `signature/body-changed` reason
-  classes (`M2-GOAL-PROMPT.md:57`, `CTX-IMPL.md:540-544`). `[from-doc]`
+  classes (`M2-GOAL-PROMPT.md:57`, `CONTEXA-IMPL.md:540-544`). `[from-doc]`
 - **Host-import default status** is an explicitly open research question, not a settled code fact:
   `MEMORY-RESEARCH-GOAL-PROMPT.md:99` "Should host-imported memory default to `needs-review`
   instead of `active`?" Code chose `active`. `[from-doc]`

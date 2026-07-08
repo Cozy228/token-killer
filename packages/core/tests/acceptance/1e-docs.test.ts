@@ -7,7 +7,7 @@ import { openStore, type Store } from "../../src/store/store.ts";
 import { cleanupTempDir, makeTempDir } from "../helpers/sandbox.ts";
 
 // Slice 1e — Docs/decisions source (M1-ACCEPTANCE.md). The token-killer repo is
-// the living acceptance fixture; the store lives under a temp CTX_HOME (G-7) and
+// the living acceptance fixture; the store lives under a temp CONTEXA_HOME (G-7) and
 // only READS this checkout. Ingest runs once and all four scenarios read it.
 //
 // ⚠ verify-at-wiring values, confirmed against this checkout on 2026-07-04:
@@ -24,7 +24,7 @@ import { cleanupTempDir, makeTempDir } from "../helpers/sandbox.ts";
 const PKG_DIR = resolve(dirname(fileURLToPath(import.meta.url)), "../..");
 const REPO_ROOT = resolve(PKG_DIR, "../..");
 
-const MENTION_SRC = "file:CTX-IMPL.md";
+const MENTION_SRC = "file:CONTEXA-IMPL.md";
 const MENTION_DST = "file:docs/codemap/impl/D-language-coverage.md";
 
 describe("acceptance: 1e docs/decisions source", () => {
@@ -33,7 +33,7 @@ describe("acceptance: 1e docs/decisions source", () => {
 
   beforeAll(async () => {
     root = makeTempDir("ctx-a5-");
-    store = openStore({ projectDir: REPO_ROOT, home: join(root, "ctx-home") });
+    store = openStore({ projectDir: REPO_ROOT, home: join(root, "contexa-home") });
     const adapter = new DocsAdapter();
     const dirty = await adapter.dirtyCheck(store);
     expect(dirty.source).toBe("docs");
@@ -57,8 +57,8 @@ describe("acceptance: 1e docs/decisions source", () => {
     const decisionOrSection = count(
       "SELECT COUNT(*) n FROM entities WHERE kind IN ('decision','doc_section') AND json_extract(locator,'$.path') LIKE 'docs/adr/%'",
     );
-    // Observed 2026-07-04: 41 decisions, 173 decision/doc_section.
-    expect(decisions).toBe(41);
+    // Observed 2026-07-08 after merging origin/main: 44 decisions.
+    expect(decisions).toBe(44);
     expect(decisionOrSection).toBeGreaterThanOrEqual(40);
 
     // Frontmatter fields THAT ACTUALLY EXIST: `status` on 12 files, all "accepted";
@@ -74,9 +74,9 @@ describe("acceptance: 1e docs/decisions source", () => {
         "SELECT DISTINCT json_extract(attrs,'$.\"fm:status\"') s FROM entities WHERE kind='decision' AND json_extract(attrs,'$.\"fm:status\"') IS NOT NULL",
       )
       .all() as Array<{ s: string }>;
-    expect(withStatus).toBe(12);
+    expect(withStatus).toBe(14);
     expect(withDate).toBe(0);
-    expect(statuses.map((r) => r.s)).toEqual(["accepted"]);
+    expect(statuses.map((r) => r.s)).toEqual(["accepted", "superseded"]);
 
     // Every ADR decision carries a heading-derived title and the disclosed
     // classification rule (P28 provenance): path-convention for docs/adr/.
@@ -92,12 +92,15 @@ describe("acceptance: 1e docs/decisions source", () => {
   });
 
   test("A5-mention", () => {
-    // CTX-IMPL.md's backticked `docs/codemap/impl/D-language-coverage.md` (with a
+    // CONTEXA-IMPL.md's backticked `docs/codemap/impl/D-language-coverage.md` (with a
     // trailing `:618` and a bare form) resolves by exact path-match to the file
     // entity, producing a Derived `references` link.
     const links = store.linksFrom(MENTION_SRC, "references");
     const link = links.find((l) => l.dst === MENTION_DST);
-    expect(link, "expected a references link CTX-IMPL.md → D-language-coverage.md").toBeDefined();
+    expect(
+      link,
+      "expected a references link CONTEXA-IMPL.md → D-language-coverage.md",
+    ).toBeDefined();
     expect(link?.method).toBe("path-match");
     expect(link?.confidence).toBe(1.0); // exact relative path = tier-1
 

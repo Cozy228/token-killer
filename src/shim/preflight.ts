@@ -8,7 +8,7 @@ import { readInstalledCopilotHookCommands } from "../hook/install.js";
 import { normalizeStdin } from "../hook/normalize.js";
 import type { Host } from "./detect.js";
 
-// Windows preflight for `tk status` (issue #23, report §8 / §10 P0-5). On a
+// Windows preflight for `ctx status` (issue #23, report §8 / §10 P0-5). On a
 // stock Windows box the documented Copilot-CLI hook requirements are easy to get
 // subtly wrong (no PowerShell 7+, a non-absolute hook command that PowerShell
 // can't resolve, the hooks dir never loaded, the shell tool named `powershell`
@@ -16,7 +16,7 @@ import type { Host } from "./detect.js";
 // a "successful" install never compresses anything.
 //
 // Every probe is best-effort and DEGRADES to a "not found / unavailable" line —
-// `tk status` must stay total (never throw), and the section runs on ALL
+// `ctx status` must stay total (never throw), and the section runs on ALL
 // platforms (it just reports "not found" off Windows), which also makes it
 // deterministically unit-testable on macOS/Linux.
 
@@ -41,12 +41,12 @@ export type PreflightDeps = {
   existsSync: (path: string) => boolean;
   env: NodeJS.ProcessEnv;
   platform: NodeJS.Platform;
-  // EVERY command baked into the INSTALLED tk-managed Copilot hook config (empty when
+  // EVERY command baked into the INSTALLED ctx-managed Copilot hook config (empty when
   // none is installed). hookCommandPathCheck validates the paths each embeds — the ones
   // the host actually executes, including the native powershell/bash entries — not the
   // current process (issue #23 §1).
   installedHookCommands: () => string[];
-  // Runs tk's real hook pipeline on a synthetic powershell event and reports whether it
+  // Runs ctx's real hook pipeline on a synthetic powershell event and reports whether it
   // rewrote (issue #23 §2). Injected so the matrix tests are deterministic; production
   // wires `defaultProtocolProbe` (the real in-process pipeline).
   protocolProbe: () => ProtocolProbeResult;
@@ -65,7 +65,7 @@ export function runPreflightCommand(cmd: string, args: string[]): RunResult {
   try {
     // On Windows, run through the shell so PATHEXT resolves `copilot.cmd` / `.ps1`
     // npm shims — a no-shell spawnSync("copilot") returns ENOENT for those (Node
-    // won't exec a `.cmd` directly), which is exactly why `tk status` reported
+    // won't exec a `.cmd` directly), which is exactly why `ctx status` reported
     // "version not found" on Windows while `copilot --version` worked in the user's
     // shell. cmd/args here are a fixed allowlist (copilot/claude/code/pwsh +
     // --version), never user input, so shell use carries no injection risk.
@@ -91,7 +91,7 @@ export function runPreflightCommand(cmd: string, args: string[]): RunResult {
 // win32 for PATHEXT, fold stderr, ok iff exit 0, total/never-rejects). It exists so
 // the independent version probes can run CONCURRENTLY: on Windows each `--version`
 // is a shell-resolved Node CLI cold-start under EDR — multiple seconds apiece — so
-// running them serially (the sync gatherPreflight order) makes `tk status` pay their
+// running them serially (the sync gatherPreflight order) makes `ctx status` pay their
 // SUM. Overlapping them pays only the MAX. A timeout kills the child and degrades to
 // not-found, exactly like the sync path.
 export function runPreflightCommandAsync(cmd: string, args: string[]): Promise<RunResult> {
@@ -179,10 +179,10 @@ function defaultWhich(
   }
 }
 
-// The result of running tk's REAL hook pipeline on a synthetic event (issue #23 §2).
+// The result of running ctx's REAL hook pipeline on a synthetic event (issue #23 §2).
 export type ProtocolProbeResult = { rewrote: boolean; got: string | null };
 
-// Drive a synthetic Copilot-CLI `powershell` host event through tk's actual protocol
+// Drive a synthetic Copilot-CLI `powershell` host event through ctx's actual protocol
 // pipeline (normalizeStdin → decide → toHostOutput) and report whether it still emits
 // a rewrite. This proves the WIRE PATH works — dialect detection, the rewrite decision,
 // and the host-output shaping — not merely that a hooks dir exists or a shell resolves.
@@ -204,7 +204,7 @@ export function defaultProtocolProbe(): ProtocolProbeResult {
     const ev = normalizeStdin(wire);
     const out = toHostOutput(ev, decide(ev)) as { modifiedArgs?: { command?: string } } | null;
     const got = out?.modifiedArgs?.command ?? null;
-    return { rewrote: got === "tk git status", got };
+    return { rewrote: got === "ctx git status", got };
   } catch {
     return { rewrote: false, got: null };
   }
@@ -264,7 +264,7 @@ export function parsePwshVersion(raw: string): PwshVersion {
 
 // --- the checks ------------------------------------------------------------
 
-// Best-effort version string for the SELECTED host's own CLI (issue #26). `tk install`
+// Best-effort version string for the SELECTED host's own CLI (issue #26). `ctx install`
 // records the host version it chose — NOT always Copilot's. Each host reports its
 // version through a different command; an absent binary, a spawn failure, or a host with
 // no CLI version probe (unknown) all degrade to `undefined` (honest "not recorded"),
@@ -377,8 +377,8 @@ export function parseHookCommandPaths(command: string): { node?: string; cli?: s
 }
 
 function hookCommandPathCheck(deps: PreflightDeps): PreflightCheck {
-  // Validate EVERY command BAKED INTO THE INSTALLED tk-managed hook config — the node +
-  // cli paths the host will actually execute — NOT the current `tk status` process's own
+  // Validate EVERY command BAKED INTO THE INSTALLED ctx-managed hook config — the node +
+  // cli paths the host will actually execute — NOT the current `ctx status` process's own
   // paths (which trivially exist and prove nothing). The dual-schema config bakes the
   // command in three host-executed places (PreToolUse.command + the native
   // powershell/bash entries); validating only one missed a stale native path (issue #23
@@ -386,12 +386,12 @@ function hookCommandPathCheck(deps: PreflightDeps): PreflightCheck {
   // and is exactly the failure this check must surface (ADR 0005 §5 / audit #13).
   const commands = deps.installedHookCommands();
   if (commands.length === 0) {
-    // No tk-managed hook installed — there is no baked command to validate. Honest
+    // No ctx-managed hook installed — there is no baked command to validate. Honest
     // "not applicable" rather than a false-green from the running process's paths.
     return {
       name: "Hook command path",
       ok: "warn",
-      detail: "no tk-managed hook config installed (run `tk install`)",
+      detail: "no ctx-managed hook config installed (run `ctx install`)",
     };
   }
   // Validate each distinct installed command; a single stale path anywhere makes that
@@ -417,7 +417,7 @@ function hookCommandPathCheck(deps: PreflightDeps): PreflightCheck {
   return {
     name: "Hook command path",
     ok: false,
-    detail: `missing ${problems.join("; ")} — baked hook path is stale, hook would be inert; re-run \`tk install\``,
+    detail: `missing ${problems.join("; ")} — baked hook path is stale, hook would be inert; re-run \`ctx install\``,
   };
 }
 
@@ -445,7 +445,7 @@ function hooksDirCheck(deps: PreflightDeps): PreflightCheck {
     ok: present ? true : "warn",
     detail: present
       ? `present: ${dir} (host load not confirmable from CLI — see Hook protocol self-probe)`
-      : `absent: ${dir} (run \`tk install\`)`,
+      : `absent: ${dir} (run \`ctx install\`)`,
   };
 }
 
@@ -474,7 +474,7 @@ function shellToolNameCheck(deps: PreflightDeps): PreflightCheck {
 
 // Protocol self-probe (issue #23 §2). The dir/shell checks above prove the hook is
 // WIRED and a shell exists; this proves the wire PATH still PRODUCES a rewrite by
-// driving a synthetic powershell event through tk's real normalize→decide→toHostOutput
+// driving a synthetic powershell event through ctx's real normalize→decide→toHostOutput
 // pipeline. It catches a "looks installed but silently stopped rewriting" regression
 // that existence checks structurally cannot. A non-rewrite is a `warn` (the env may
 // just lack git), never a hard FAIL — the hook itself is still fail-open.
@@ -485,7 +485,7 @@ function hookProtocolSelfProbe(deps: PreflightDeps): PreflightCheck {
     return {
       name,
       ok: true,
-      detail: "powershell event rewrites end-to-end: `git status` -> `tk git status`",
+      detail: "powershell event rewrites end-to-end: `git status` -> `ctx git status`",
     };
   }
   return {
@@ -509,7 +509,7 @@ export function gatherPreflight(deps: PreflightDeps = defaultPreflightDeps()): P
   ];
 }
 
-// Production entry for `tk status`: run the two independent version probes
+// Production entry for `ctx status`: run the two independent version probes
 // (copilot/pwsh --version) CONCURRENTLY, then evaluate the synchronous check matrix
 // against the pre-warmed results — no probe is skipped, only overlapped. The sync
 // gatherPreflight(deps) stays the unit-tested core (tests inject fake runs); this
@@ -522,7 +522,7 @@ export async function gatherPreflightConcurrent(): Promise<PreflightCheck[]> {
   return gatherPreflight(defaultPreflightDeps(prewarmed));
 }
 
-// Format the checks for `tk status` to print. A small glyph carries the verdict
+// Format the checks for `ctx status` to print. A small glyph carries the verdict
 // (ok / warn / fail) so the section scans at a glance; ASCII-only for Windows
 // consoles that mangle box-drawing/emoji.
 function glyph(ok: PreflightVerdict): string {

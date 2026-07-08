@@ -1,5 +1,5 @@
 /**
- * Selection engine orchestration (CTX-IMPL §6, slice 1f): LIBRARY calls only —
+ * Selection engine orchestration (CONTEXA-IMPL §6, slice 1f): LIBRARY calls only —
  * `select()` and `search()` return typed structs; the MCP tools + markdown
  * envelope render are slice 1g.
  *
@@ -491,7 +491,7 @@ function renderFacet(ctx: Ctx, entity: Entity, facet: Facet): FacetResult {
         // Gate on published visibility: a link may point at an entity written by
         // an in-progress (unpublished) generation, or at a retired symbol whose
         // entity is kept for history — neither belongs in a served drill-down
-        // (generation isolation, CTX-IMPL §2 — #2).
+        // (generation isolation, CONTEXA-IMPL §2 — #2).
         if (e && ctx.visibility.isVisible(e)) neighbors.push(e);
       }
       neighbors.sort((a, b) => (a.name < b.name ? -1 : a.name > b.name ? 1 : a.id < b.id ? -1 : 1));

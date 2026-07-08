@@ -14,7 +14,7 @@ import {
   SUBTOKEN_WEIGHT,
 } from "../../src/select/constants.ts";
 
-// §10: tokenizer table-driven cases (CTX-IMPL §6.1, codegraph query-utils rules).
+// §10: tokenizer table-driven cases (CONTEXA-IMPL §6.1, codegraph query-utils rules).
 
 describe("select/tokenize: identifier shape + distinctiveness", () => {
   const shaped: Array<[string, boolean]> = [

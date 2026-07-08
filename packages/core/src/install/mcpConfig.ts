@@ -4,7 +4,7 @@
  * Surface choice (disclosed per assignment): ctx registers into the project's
  * root `.mcp.json`, NOT the user-level `~/.claude.json`. Rationale:
  *  - ctx is a project-local context tool; the registration belongs with the
- *    project and is git-shareable (same stance as `.ctx/push.jsonc`, D27/D30);
+ *    project and is git-shareable (same stance as `.contexa/push.jsonc`, D27/D30);
  *  - it is a purely additive JSON merge, local to the checkout (§11 rollback);
  *  - G-7 becomes structurally trivial — every install write lands under the
  *    project root, so tests never go near the real `~/.claude`.

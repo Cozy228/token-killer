@@ -184,7 +184,7 @@ describe("H5: compactUnifiedDiff retains semantic metadata lines", () => {
   });
 });
 
-// RTK: diff_cmd.rs compute_diff invariants mapped to tk's LCS differ. tk uses LCS
+// RTK: diff_cmd.rs compute_diff invariants mapped to ctx's LCS differ. ctx uses LCS
 // rather than RTK's Jaccard-similarity modification detection, so similarity_* do
 // not map; the anti-truncation invariants do.
 describe("RTK diff compute (LCS) anti-truncation", () => {

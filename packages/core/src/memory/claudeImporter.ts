@@ -1,5 +1,5 @@
 /**
- * Claude Code host memory importer (CTX-IMPL §5.6; P28 official-docs verified).
+ * Claude Code host memory importer (CONTEXA-IMPL §5.6; P28 official-docs verified).
  *
  * Source layout (confirmed official): `~/.claude/projects/<project-slug>/memory/`
  * with a `MEMORY.md` index + one markdown file per topic. Each topic file =

@@ -5,9 +5,9 @@ import { dirname, join } from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
 import { spawnSync } from "node:child_process";
 
-// Sandboxed end-to-end for `tk shim install|status|uninstall` (the top-level shim
-// surface; `tk install` wires it as part of its tier ladder). We point HOME at a
-// temp dir so the installer writes ~/.token-killer/shim and ~/.zshrc INSIDE the
+// Sandboxed end-to-end for `ctx shim install|status|uninstall` (the top-level shim
+// surface; `ctx install` wires it as part of its tier ladder). We point HOME at a
+// temp dir so the installer writes ~/.contexa/shim and ~/.zshrc INSIDE the
 // sandbox — never the real config.
 
 const repoRoot = join(dirname(fileURLToPath(import.meta.url)), "../../..");
@@ -28,13 +28,13 @@ function runTg(args: string[]) {
       // this the RC patch + shim land in the REAL profile, not the sandbox.
       USERPROFILE: home,
       SHELL: "/bin/zsh",
-      TOKEN_KILLER_HOME: join(home, ".token-killer"),
+      CONTEXA_HOME: join(home, ".contexa"),
     },
   });
 }
 
 beforeEach(() => {
-  home = mkdtempSync(join(tmpdir(), "tk-shim-cli-"));
+  home = mkdtempSync(join(tmpdir(), "ctx-shim-cli-"));
   writeFileSync(join(home, ".zshrc"), "export FOO=1\n");
 });
 
@@ -42,11 +42,11 @@ afterEach(() => {
   rmSync(home, { recursive: true, force: true });
 });
 
-describe("tk shim install/status/uninstall", () => {
+describe("ctx shim install/status/uninstall", () => {
   test("install writes wrappers + manifest and patches the RC, then uninstall reverts", () => {
     const shimGit = join(
       home,
-      ".token-killer",
+      ".contexa",
       "shim",
       process.platform === "win32" ? "git.cmd" : "git",
     );
@@ -55,8 +55,8 @@ describe("tk shim install/status/uninstall", () => {
     const install = runTg(["shim", "install"]);
     expect(install.status).toBe(0);
     expect(existsSync(shimGit)).toBe(true);
-    expect(existsSync(join(home, ".token-killer", "shim", "manifest.json"))).toBe(true);
-    expect(readFileSync(rc, "utf8")).toContain("token-killer shim");
+    expect(existsSync(join(home, ".contexa", "shim", "manifest.json"))).toBe(true);
+    expect(readFileSync(rc, "utf8")).toContain("contexa shim");
     // The probe should PASS: a shimmed `git` resolves into the shim dir.
     expect(install.stdout).toContain("probe");
 
@@ -66,7 +66,7 @@ describe("tk shim install/status/uninstall", () => {
 
     const uninstall = runTg(["shim", "uninstall"]);
     expect(uninstall.status).toBe(0);
-    expect(existsSync(join(home, ".token-killer", "shim"))).toBe(false);
+    expect(existsSync(join(home, ".contexa", "shim"))).toBe(false);
     // RC restored byte-identically.
     expect(readFileSync(rc, "utf8")).toBe("export FOO=1\n");
   });
@@ -82,7 +82,7 @@ describe("tk shim install/status/uninstall", () => {
     expect(result.status).toBe(0);
     expect(result.stdout).toContain("[dry-run]");
     // Nothing written: no shim dir, RC left byte-identical.
-    expect(existsSync(join(home, ".token-killer", "shim"))).toBe(false);
+    expect(existsSync(join(home, ".contexa", "shim"))).toBe(false);
     expect(readFileSync(join(home, ".zshrc"), "utf8")).toBe("export FOO=1\n");
   });
 
@@ -92,6 +92,6 @@ describe("tk shim install/status/uninstall", () => {
     expect(dry.status).toBe(0);
     expect(dry.stdout).toContain("[dry-run]");
     // Still installed — dry-run removed nothing.
-    expect(existsSync(join(home, ".token-killer", "shim"))).toBe(true);
+    expect(existsSync(join(home, ".contexa", "shim"))).toBe(true);
   });
 });

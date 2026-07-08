@@ -1,4 +1,4 @@
-; Tier-1 TypeScript / TSX queries (CTX-IMPL §5.2). Seeded from
+; Tier-1 TypeScript / TSX queries (CONTEXA-IMPL §5.2). Seeded from
 ; tree-sitter-analyzer's typescript module, pruned to our uniform capture
 ; vocabulary: @def.<kind> on the definition node + @name on its identifier;
 ; @import (+ @import.source); @call (+ @call.name). Locals/nested defs are

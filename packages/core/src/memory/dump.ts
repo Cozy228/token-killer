@@ -1,7 +1,7 @@
 /**
  * E6 — canonical logical dump of the memory index.
  *
- * "Same committed `.ctx/` content → identical `store.sqlite` bytes" is physically
+ * "Same committed `.contexa/` content → identical `store.sqlite` bytes" is physically
  * unachievable (page allocation, insertion order, FTS internals), so the
  * determinism acceptance is CANONICAL LOGICAL EQUALITY: a normalized dump with
  * rows in deterministic order compares equal across machines / fresh clones.

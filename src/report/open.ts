@@ -1,4 +1,4 @@
-// Write a generated HTML report to ~/.token-killer/reports/ and (best-effort)
+// Write a generated HTML report to ~/.contexa/reports/ and (best-effort)
 // open it in the default browser. Opening is fire-and-forget and never throws —
 // a headless/agent/CI environment simply gets the path printed instead.
 
@@ -6,11 +6,11 @@ import { spawn } from "node:child_process";
 import { chmodSync, mkdirSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 
-import { tokenKillerHome } from "../core/dataDir.js";
+import { contexaHome } from "../core/dataDir.js";
 import { renderReportHtml, type ReportDoc } from "./html.js";
 
 function reportsDir(): string {
-  return join(tokenKillerHome(), "reports");
+  return join(contexaHome(), "reports");
 }
 
 function stamp(nowMs: number): string {
@@ -20,9 +20,9 @@ function stamp(nowMs: number): string {
 export function writeReport(doc: ReportDoc, nowMs: number): string {
   const dir = reportsDir();
   // Owner-only (0700 dir / 0600 file): this directory is shared with the
-  // `tk support` diagnostic bundle (src/support/report.ts), which carries command
+  // `ctx support` diagnostic bundle (src/support/report.ts), which carries command
   // lines, command output, and host config. The mkdir mode only applies on
-  // creation, so chmod the dir explicitly to retroactively tighten one a prior tk
+  // creation, so chmod the dir explicitly to retroactively tighten one a prior ctx
   // version created 0755 (world-listable). POSIX modes are no-ops on Windows.
   mkdirSync(dir, { recursive: true, mode: 0o700 });
   chmodSync(dir, 0o700);
@@ -31,10 +31,10 @@ export function writeReport(doc: ReportDoc, nowMs: number): string {
   return path;
 }
 
-// Open a file in the OS default handler. Detached + unref so tk never waits on or
-// is held open by the browser. Suppressed under TK_NO_OPEN (tests / headless).
+// Open a file in the OS default handler. Detached + unref so ctx never waits on or
+// is held open by the browser. Suppressed under CTX_NO_OPEN (tests / headless).
 export function openInBrowser(path: string): boolean {
-  if (process.env.TK_NO_OPEN) return false;
+  if (process.env.CTX_NO_OPEN) return false;
   try {
     const [cmd, args] =
       process.platform === "darwin"

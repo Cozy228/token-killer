@@ -4,13 +4,13 @@
 > implementable spec for a **minimal, deterministic, local** memory-quality benchmark — the eval
 > doubles as the written contract for the not-yet-built mechanisms it exercises.
 >
-> **Invariants respected (from-doc, `MEMORY-RESEARCH-GOAL-PROMPT.md:40-41`, `CTX-DESIGN.md`):**
+> **Invariants respected (from-doc, `MEMORY-RESEARCH-GOAL-PROMPT.md:40-41`, `CONTEXA-DESIGN.md`):**
 > no LLM / no embeddings / no network at write, serve, **or eval** time; one local SQLite+FTS5
 > store per project; index-not-copy except memory/concepts; provenance per fact; conflicts
 > surfaced not averaged. Every assertion below is a fixed input → exact expected value on a real
 > `ctx` API — **no model-graded scoring anywhere**.
 >
-> **Determinism contract (matches the M1/M2 harness):** temp `CTX_HOME` sandbox (G-7), injected
+> **Determinism contract (matches the M1/M2 harness):** temp `CONTEXA_HOME` sandbox (G-7), injected
 > clock `now: () => number` (never `Date.now`), script-generated git + host-memory fixtures,
 > `assertNoEgress` active (G-6). Every test carries a **failure label** from the fixed vocabulary:
 > `false · stale · missing · duplicate · irrelevant-push · unanchored · unreviewed-import ·
@@ -67,7 +67,7 @@ idempotency / config validation, cf. `global-invariants.test.ts:39-48`) so seeds
 ├── decisions/
 │   ├── 0001-idempotent-retry.md   # ADR-style, status: accepted
 │   └── 0002-strict-config.md      # ADR-style, status: accepted
-└── .ctx/
+└── .contexa/
     └── push.jsonc         # { "pin": [...], "veto": [...] }  (E5 pin/veto variant)
 
 <tmp>/claude-home/.claude/projects/<slug>/memory/     # fake claudeHome (G-7), slug = claudeProjectSlug(repo)
@@ -179,7 +179,7 @@ symbol-target variant is `test.todo`.
 ## 3. Task suite — E1..E7
 
 Each task: **input → expected → failure-label → pass/fail (real-API assertion) → runnable today?**
-Assertion sketches use the verified imports (`@ctx/core` / `../../src/...`), `must()` unwrap helper
+Assertion sketches use the verified imports (`@contexa/core` / `../../src/...`), `must()` unwrap helper
 (`1h-push.test.ts:217`), fixed clock, sandbox store.
 
 ### E1 — recall precision  ·  label: `missing`  ·  **runnable today** (`from-code`)
@@ -209,7 +209,7 @@ Assertion sketches use the verified imports (`@ctx/core` / `../../src/...`), `mu
 - **Input.** `G_stale` anchored to `file:src/auth.ts` (resolves today, `remember.ts:123`). Then
   commit C2 deletes `src/auth.ts`; re-run git + code ingest (`createGitAdapter`, `createCodeAdapter`)
   and the memory anchor-freshness pass.
-- **Expected (intended contract, `from-doc` `CTX-IMPL.md:284-286`, `M2-ACCEPTANCE.md:72-75`):** when
+- **Expected (intended contract, `from-doc` `CONTEXA-IMPL.md:284-286`, `M2-ACCEPTANCE.md:72-75`):** when
   an anchor **target is removed / renamed / structurally changed**, ctx (a) transitions the anchored
   memory to `needs-review`, (b) records a `stale-suspect` **conflict** whose reason claim's `object`
   is one of `{ target-removed, signature-changed, body-changed, referencer-changed }` (never
@@ -281,7 +281,7 @@ Assertion sketches use the verified imports (`@ctx/core` / `../../src/...`), `mu
   contains the two **active confirmed** gotchas; **excludes** retired + superseded (today,
   `rank.ts:76`) and — per Decision 7 exclusion rules (`from-doc`
   `MEMORY-RESEARCH-GOAL-PROMPT.md:92`) — stale-anchored + echo-risk (**pending**). Pin/veto via
-  `.ctx/push.jsonc` survives re-render (A9-pin-veto).
+  `.contexa/push.jsonc` survives re-render (A9-pin-veto).
 - **Pass/fail assertion.**
   ```ts
   const b = buildPushBlock(store, { now, maxGotchas: 6 });
@@ -304,7 +304,7 @@ Assertion sketches use the verified imports (`@ctx/core` / `../../src/...`), `mu
   its gist appears in the current pushed digest.
 - **Expected — sentinel (today, `from-code` `claudeImporter.ts:185/202`, A1-echo).** No imported
   entity's gist/detail/name contains `ctx:managed`; the pure-sentinel file is skipped (`skipped ≥ 1`).
-- **Expected — paraphrase (pending, `inferred`; `CTX-IMPL.md` M1 bar = exact match only,
+- **Expected — paraphrase (pending, `inferred`; `CONTEXA-IMPL.md` M1 bar = exact match only,
   `sentinel.ts:9`).** `paraphrase.md` restates a **ctx-origin** gist without the sentinel; the
   intended contract is that it is recognized as an echo and is **not** admitted as an independent
   active memory — either skipped, or imported+`sameAsCandidate`-linked to `G_active1` and set
@@ -334,7 +334,7 @@ Assertion sketches use the verified imports (`@ctx/core` / `../../src/...`), `mu
   `authority` (`confirmed` for `remember`, `inferred` for import — `remember.ts:207`,
   `claudeImporter.ts:224`), a `status`, its `anchors`, and — for each anchor — a backing **claim**
   disclosing `carrier / method / authority / at` (the evidence drawer, `from-doc`
-  `CTX-IMPL.md:431`).
+  `CONTEXA-IMPL.md:431`).
 - **Pass/fail assertion.**
   ```ts
   const row = store.getMemory(G_active2.entityId);
@@ -364,8 +364,8 @@ re-statused, never deleted → `unbounded-growth` guarded while provenance is pr
 
 ## 4. Human-guide review scenarios (Decision 9)
 
-`ctx guide` is **strictly read-only** (FORK-1/P23, `from-doc` `CTX-DESIGN.md:240`,
-`CTX-IMPL.md:431`). No guide code exists yet (`grep` for `guide/review queue/drawer` in
+`ctx guide` is **strictly read-only** (FORK-1/P23, `from-doc` `CONTEXA-DESIGN.md:240`,
+`CONTEXA-IMPL.md:431`). No guide code exists yet (`grep` for `guide/review queue/drawer` in
 `packages/core/src` = 0 hits, `from-code`), so these scenarios assert on the **data layer that backs
 the guide** today, and mark the loopback/HTML render `pending impl`. Each names exactly what a human
 reviewer must see and how to assert it deterministically.
@@ -373,7 +373,7 @@ reviewer must see and how to assert it deterministically.
 ### EG-review — the review queue  ·  label: `unreviewed-import`
 - **Sees.** Every `needs-review` memory (host-import-unconfirmed under Decision 8, + anchor-drifted
   from E2), each shown with its literal remediation command `ctx memory confirm <id>` /
-  `ctx memory retire <id>` (`from-doc` `CTX-DESIGN.md:181`).
+  `ctx memory retire <id>` (`from-doc` `CONTEXA-DESIGN.md:181`).
 - **Assert (data layer, today).**
   ```ts
   const queue = listMemories(store, { status: "needs-review" });
@@ -387,7 +387,7 @@ reviewer must see and how to assert it deterministically.
 
 ### EG-drawer — the evidence drawer  ·  label: `unanchored`
 - **Sees.** For any one served fact: `carrier · locus · method · authority · at` of each backing
-  claim, plus anchors and lifecycle status (`from-doc` `CTX-IMPL.md:431`).
+  claim, plus anchors and lifecycle status (`from-doc` `CONTEXA-IMPL.md:431`).
 - **Assert (today).** assemble from `store.claimsFor(id)` + `store.getClaim` + `store.anchorsOf`
   (same primitives as E7); expect the assembled drawer to be non-empty for every rendered handle in
   an E1 `context()` response.
@@ -395,7 +395,7 @@ reviewer must see and how to assert it deterministically.
 
 ### EG-stale-list — the stale-reference list  ·  label: `stale`
 - **Sees.** All open `stale-suspect` conflicts, reason-classified (dead doc mentions **and**
-  drifted memory anchors), the "free 鉴真 win" (`from-doc` `CTX-DESIGN.md:181`).
+  drifted memory anchors), the "free 鉴真 win" (`from-doc` `CONTEXA-DESIGN.md:181`).
 - **Assert (today for mentions, `from-code` `1e-docs.test.ts:111-135`; anchor rows pending E2).**
   ```ts
   const list = store.conflicts("open").filter((c) => c.kind === "stale-suspect");
@@ -407,8 +407,8 @@ reviewer must see and how to assert it deterministically.
 
 ### EG-readonly — guide never writes  ·  label: (invariant guard)
 - **Contract.** The guide surface **displays** lifecycle/pin-veto state and **surfaces commands**;
-  mutation happens only through `setMemoryLifecycle` (library/CLI) and `.ctx/push.jsonc` edits
-  (`from-doc` `CTX-DESIGN.md:240-241`). The eval encodes: every guide data function is pure-read;
+  mutation happens only through `setMemoryLifecycle` (library/CLI) and `.contexa/push.jsonc` edits
+  (`from-doc` `CONTEXA-DESIGN.md:240-241`). The eval encodes: every guide data function is pure-read;
   the only mutators in the memory surface are `remember`, `setMemoryLifecycle`, `writeMemory`,
   `setMemoryStatus`, importer, `placePushBlock` — none reachable from a guide request handler.
 - **Assert (pending).** once `guide/` exists, a structural test that its request handlers import no
@@ -427,7 +427,7 @@ and their assertions ARE the acceptance bar for it.
 | **E5** stale + echo exclusion from push | `rankGotchas` must also veto stale-anchored + echo-risk memories (today filters `status=active` only — `rank.ts:76`). Depends on E2 + E6. | Decision 7 (`MEMORY-RESEARCH-GOAL-PROMPT.md:92`) |
 | **E6** paraphrase-echo prevention | **Cross-origin echo detection**: run `fuzzyDuplicate` (or a pushed-gist ledger match) between an incoming host gist and ctx-origin (`remember` + previously-pushed) gists; on match, do not admit an independent active memory (skip or `sameAsCandidate`+`needs-review`). Today dedup is *within-host only* (`claudeImporter.ts:238`); echo strip is *exact sentinel only* (`sentinel.ts:9`). | Decision 8 (`MEMORY-RESEARCH-GOAL-PROMPT.md:97`) |
 | **E7** drawer API (ergonomic) | `memoryProvenance(store, id)` assembling `{origin, authority, status, anchors, claims[]}`. Data already present; helper missing (non-blocking — primitives assert today). | Decision 9 |
-| **EG-review / EG-drawer / EG-stale-list / EG-readonly** | `ctx guide` loopback (Hono + bearer) with **read-only** data endpoints: review queue, evidence drawer, stale-reference list. No `guide/` code today. | M3 (`CTX-IMPL.md:546`) |
+| **EG-review / EG-drawer / EG-stale-list / EG-readonly** | `ctx guide` loopback (Hono + bearer) with **read-only** data endpoints: review queue, evidence drawer, stale-reference list. No `guide/` code today. | M3 (`CONTEXA-IMPL.md:546`) |
 | **Decision 8 default** | host-import memory default `status: needs-review` instead of `active` (`claudeImporter.ts:224` writes `active`). Would populate EG-review and change E5 (imports not pushed until confirmed). | open decision |
 
 **Runnable TODAY (no new mechanism):** E1, E3, E4, E7 (primitive level), E0; the sentinel half of

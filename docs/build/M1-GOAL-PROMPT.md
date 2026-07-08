@@ -4,31 +4,31 @@ You are an implementing agent for **ctx** M1 ("the base speaks"). You build assi
 green against a reviewer-owned acceptance bar. You do not change the design; you implement it.
 
 ## Read first (in this order)
-1. `CTX-IMPL.md` — your work order: §1 layout, §2 DDL, §3 identity/handles, §4 ingest, §5
+1. `CONTEXA-IMPL.md` — your work order: §1 layout, §2 DDL, §3 identity/handles, §4 ingest, §5
    extractors, §6 selection, §7 serving, **§9 build route M1 + spec addenda (P28)**, §10 testing,
    §12 legacy read-back map.
 2. `docs/build/M1-ACCEPTANCE.md` — the acceptance bar (reviewer-owned; you make it green, you
    never weaken it; ⚠ verify-at-wiring values must be confirmed against the repo, not guessed).
-3. `CTX-DESIGN.md` + `FABLE-DECISION-LOG.md` P27–P29 — product frame and scope guards.
+3. `CONTEXA-DESIGN.md` + `FABLE-DECISION-LOG.md` P27–P29 — product frame and scope guards.
 4. When a spec detail is missing, check the §12 read-back map into `docs/codemap/impl/` BEFORE
    inventing (P29: detail layer lives there; reference, never restate).
 
 ## Hard guardrails
 - **Greenfield**: work only under `packages/{core,cli}` + `docs/build/`. NEVER import from the
   legacy `src/` tree, never modify `src/`, root configs, `server/`, or shipping tk behavior.
-- **P27 scope**: ctx serves context only — no review/verification features.
+- **P27 scope**: Contexa serves context only — no review/verification features.
 - **No egress**: no network calls in any code path; `assertNoEgress()` active in serve/ingest.
 - **pnpm only** (never npm/npx); Node ≥22.5; TypeScript; English code + comments;
   conventional commits (`feat(core): …`, scope per package).
 - Packages: placeholder names + `"private": true` (P13 naming pending).
-- Tests never touch real `~/.claude`/`~/.copilot`/host config — temp `CTX_HOME`/HOME only.
+- Tests never touch real `~/.claude`/`~/.copilot`/host config — temp `CONTEXA_HOME`/HOME only.
   Run suites with `TK_SHIM_DIR` unset (known leak breaks spawn tests). Temp-dir cleanup uses
   `rm({recursive,force,maxRetries:5,retryDelay:100})` (Windows EBUSY). Spawn tests get explicit
   timeouts (CI cold-start).
 
 ## Workflow (RUNBOOK method template, carried per P29)
 - **Acceptance-first**: slice 1a wires ALL acceptance scenarios as `test.todo` skeletons; each
-  later slice flips its own scenarios green. A slice is DONE when: its CTX-IMPL §9 "Lands" row is
+  later slice flips its own scenarios green. A slice is DONE when: its CONTEXA-IMPL §9 "Lands" row is
   implemented, its acceptance scenarios pass, unit/property tests pass, `pnpm -r typecheck && pnpm -r test`
   green.
 - **One slice → green → request review → next.** Never start the next slice on an unreviewed one

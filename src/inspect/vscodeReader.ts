@@ -35,9 +35,66 @@ function firstString(obj: Record<string, unknown>, keys: string[]): string | und
 
 // Carried across the lines of one transcript file so each tool record can be
 // tagged with the session id declared once on the `session.start` event.
-export type VscodeReadCtx = { session?: string };
+//
+// `copilot` flips on when the file is a Copilot CLI event log (its session.start
+// declares producer "copilot-agent"). The Copilot stream is richer than VS Code's:
+// a tool call spans an `assistant.message` (name + args), a `tool.execution_start`
+// (name + args) and a `tool.execution_complete` (RESULT + success). We pair them by
+// `toolCallId` and emit ONE enriched record from the completion — so output volume
+// and failure are captured — instead of the input-only record VS Code transcripts
+// allow. `pendingArgs` holds each call's arguments until its completion arrives.
+export type VscodeReadCtx = {
+  session?: string;
+  copilot?: boolean;
+  // Per-call name + arguments remembered from the request / start event, keyed by
+  // toolCallId — `tool.execution_complete` carries NEITHER (only result + success).
+  pending?: Map<string, { name?: string; args?: unknown }>;
+};
 
 type FlatRecord = Record<string, unknown>;
+
+function rememberCall(
+  ctx: VscodeReadCtx,
+  callId: string | undefined,
+  name: string | undefined,
+  args: unknown,
+): void {
+  if (!callId) return;
+  const map = (ctx.pending ??= new Map());
+  const prev = map.get(callId) ?? {};
+  map.set(callId, { name: name ?? prev.name, args: args ?? prev.args });
+}
+
+// Copilot `tool.execution_complete`: the authoritative tool record — carries the
+// result (output volume) and success flag, but NOT the tool name or arguments. We
+// graft on the name + args remembered from the matching start/request so the single
+// record has BOTH input and output.
+function fromCopilotToolComplete(
+  data: Record<string, unknown>,
+  timestamp: string | undefined,
+  ctx: VscodeReadCtx,
+): FlatRecord[] {
+  const callId = firstString(data, ["toolCallId", "tool_call_id", "id"]);
+  const pending = callId ? ctx.pending?.get(callId) : undefined;
+  if (callId) ctx.pending?.delete(callId);
+  const name = firstString(data, ["toolName", "name", "tool"]) ?? pending?.name;
+  if (!name) return [];
+  const args = pending?.args;
+  // result is `{ content, detailedContent }`; content is the model-visible output.
+  const result = isObject(data.result)
+    ? (data.result.content ?? data.result.detailedContent ?? data.result)
+    : data.result;
+  const rec: FlatRecord = {
+    tool_name: name,
+    tool_input: args ?? {},
+    tool_response: result,
+    // success === false ⇒ failure; isFailure() reads this top-level flag.
+    isError: data.success === false,
+  };
+  if (timestamp) rec.timestamp = timestamp;
+  if (ctx.session) rec.sessionId = ctx.session;
+  return [rec];
+}
 
 function fromTranscriptEvent(
   type: string,
@@ -46,11 +103,48 @@ function fromTranscriptEvent(
   ctx: VscodeReadCtx,
 ): FlatRecord[] {
   // The session id is declared once, on session.start; remember it for later events.
+  // Copilot's session.start also names the producer — the dialect signal we branch on.
   if (type === "session.start") {
     const sid = firstString(data, ["sessionId", "session_id"]);
     if (sid) ctx.session = sid;
+    if (data.producer === "copilot-agent" || typeof data.copilotVersion === "string") {
+      ctx.copilot = true;
+    }
     return [];
   }
+
+  // Copilot dialect: pair start/complete by toolCallId; the completion is the record.
+  if (ctx.copilot) {
+    if (type === "tool.execution_start") {
+      rememberCall(
+        ctx,
+        firstString(data, ["toolCallId", "tool_call_id", "id"]),
+        firstString(data, ["toolName", "name", "tool"]),
+        data.arguments,
+      );
+      return [];
+    }
+    if (type === "tool.execution_complete") {
+      return fromCopilotToolComplete(data, timestamp, ctx);
+    }
+    if (type === "assistant.message" && Array.isArray(data.toolRequests)) {
+      // Stash each request's name + args (the start event may be absent), but DON'T
+      // emit: the matching tool.execution_complete is the record so output isn't lost.
+      for (const tr of data.toolRequests) {
+        if (isObject(tr)) {
+          rememberCall(
+            ctx,
+            firstString(tr, ["toolCallId", "tool_call_id", "id"]),
+            firstString(tr, ["name", "toolName", "tool"]),
+            tr.arguments,
+          );
+        }
+      }
+      return [];
+    }
+    return [];
+  }
+
   const requests = data.toolRequests;
   if (!Array.isArray(requests)) return [];
   const out: FlatRecord[] = [];

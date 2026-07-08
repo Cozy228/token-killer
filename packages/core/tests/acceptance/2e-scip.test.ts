@@ -3,7 +3,7 @@
  * todos green. Spec read-back: `docs/codemap/impl/appendix-A1-copyable.md:480–500`
  * (streaming consumer, position encodings, fail-open rollback).
  *
- * Deterministic CI tier (CTX-IMPL §10): a scripted TS project + a hand-built
+ * Deterministic CI tier (CONTEXA-IMPL §10): a scripted TS project + a hand-built
  * `index.scip` (real protobuf wire bytes via the inverse encoder in
  * tests/helpers/scipFixture.ts — construction documented there). The fixture is
  * self-contained + full-depth-safe (no network, no scip-typescript toolchain).

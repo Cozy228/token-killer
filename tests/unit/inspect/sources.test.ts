@@ -14,7 +14,7 @@ import { vscodeUserDir } from "../../../src/shim/hostConfig.js";
 let home: string;
 
 beforeEach(() => {
-  home = mkdtempSync(join(tmpdir(), "tk-inspect-src-"));
+  home = mkdtempSync(join(tmpdir(), "ctx-inspect-src-"));
 });
 afterEach(() => {
   rmSync(home, { recursive: true, force: true });
@@ -56,12 +56,58 @@ describe("discoverSources — copilot-cli", () => {
     expect(discoverSources("copilot-cli", home).found).toBe(false);
   });
 
-  test("finds session-state jsonl under ~/.copilot", () => {
+  test("finds flat-layout jsonl under ~/.copilot/history (older builds)", () => {
     mkdirSync(join(home, ".copilot", "history"), { recursive: true });
     writeFileSync(join(home, ".copilot", "history", "h.jsonl"), "{}\n");
     const d = discoverSources("copilot-cli", home);
     expect(d.found).toBe(true);
     expect(d.transcriptFiles.some((f) => f.endsWith("h.jsonl"))).toBe(true);
+  });
+
+  // Modern layout (copilot ≥1.0): ONE dir per session, each holding events.jsonl.
+  test("finds per-session events.jsonl under session-state/<id>/ as session files", () => {
+    const sid = "8eb01199-fdf2-45bc-82b9-f7b28ee95d60";
+    mkdirSync(join(home, ".copilot", "session-state", sid), { recursive: true });
+    writeFileSync(
+      join(home, ".copilot", "session-state", sid, "events.jsonl"),
+      '{"type":"session.start","data":{}}\n',
+    );
+    const d = discoverSources("copilot-cli", home);
+    expect(d.found).toBe(true);
+    // events.jsonl counts as a SESSION file (each dir = one session), not a transcript.
+    expect(d.sessionFiles.some((f) => f.endsWith("events.jsonl"))).toBe(true);
+  });
+
+  test("counts one session file per session-state subdir", () => {
+    for (const sid of ["aaa", "bbb", "ccc"]) {
+      mkdirSync(join(home, ".copilot", "session-state", sid), { recursive: true });
+      writeFileSync(join(home, ".copilot", "session-state", sid, "events.jsonl"), "{}\n");
+    }
+    const d = discoverSources("copilot-cli", home);
+    expect(d.sessionFiles.filter((f) => f.endsWith("events.jsonl"))).toHaveLength(3);
+  });
+
+  // Official: COPILOT_HOME replaces the ENTIRE ~/.copilot path. A decoy under the
+  // default ~/.copilot must be ignored when COPILOT_HOME points elsewhere.
+  test("honors COPILOT_HOME as the config root (official override of ~/.copilot)", () => {
+    const copilotHome = mkdtempSync(join(tmpdir(), "ctx-copilot-home-"));
+    mkdirSync(join(home, ".copilot", "session-state", "decoy"), { recursive: true });
+    writeFileSync(join(home, ".copilot", "session-state", "decoy", "events.jsonl"), "{}\n");
+    mkdirSync(join(copilotHome, "session-state", "real"), { recursive: true });
+    writeFileSync(join(copilotHome, "session-state", "real", "events.jsonl"), "{}\n");
+
+    process.env.COPILOT_HOME = copilotHome;
+    try {
+      const d = discoverSources("copilot-cli", home);
+      expect(d.found).toBe(true);
+      expect(d.sessionFiles).toHaveLength(1); // only the COPILOT_HOME one, not the decoy
+      expect(d.sessionFiles[0]).toContain(copilotHome);
+      expect(d.sessionFiles[0]).not.toContain(join(home, ".copilot"));
+      expect(discoverHosts(home, "linux")[1]!.dir).toBe(copilotHome);
+    } finally {
+      delete process.env.COPILOT_HOME;
+      rmSync(copilotHome, { recursive: true, force: true });
+    }
   });
 });
 

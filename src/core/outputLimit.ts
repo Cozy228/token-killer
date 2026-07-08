@@ -13,13 +13,13 @@ export function limitLines(text: string, maxLines: number): string {
   const trailingNl = lines.length > 0 && lines[lines.length - 1] === "";
   const content = trailingNl ? lines.slice(0, -1) : lines;
   if (content.length <= maxLines) return text;
-  return `${content.slice(0, maxLines).join("\n")}\n[tk] output limited to ${maxLines} of ${content.length} lines by --max-lines\n`;
+  return `${content.slice(0, maxLines).join("\n")}\n[ctx] output limited to ${maxLines} of ${content.length} lines by --max-lines\n`;
 }
 
 export function limitChars(text: string, maxChars: number): string {
   if (!Number.isFinite(maxChars) || maxChars <= 0) return text;
   if (text.length <= maxChars) return text;
-  return `${text.slice(0, maxChars)}\n[tk] output limited to ${maxChars} of ${text.length} chars by --max-chars\n`;
+  return `${text.slice(0, maxChars)}\n[ctx] output limited to ${maxChars} of ${text.length} chars by --max-chars\n`;
 }
 
 // Apply the user's opt-in caps to a final output string: lines first, then a hard char

@@ -1,9 +1,9 @@
-// Slice 1 — `tk hook copilot` dispatcher (DESIGN §3.1, §3.8).
+// Slice 1 — `ctx hook copilot` dispatcher (DESIGN §3.1, §3.8).
 //
 // The configured command the host invokes (mirrors RTK's `rtk hook copilot`).
 // It reads a hook payload from stdin, normalizes it, dispatches by event, and for
-// `preToolUse` either rewrites a shell command (prepend `tk`) or governs a direct
-// tool. It ONLY prepends `tk`; the proxy compresses. No `modifiedResult`, ever.
+// `preToolUse` either rewrites a shell command (prepend `ctx`) or governs a direct
+// tool. It ONLY prepends `ctx`; the proxy compresses. No `modifiedResult`, ever.
 //
 // Fail-open (DESIGN §3.6, CONTEXT.md → Fail-open): any internal error (or a plain
 // allow) emits NOTHING on stdout — the host then runs the call unchanged, exactly
@@ -24,9 +24,9 @@ import { rewriteBeacon } from "./beacon.js";
 
 const ALLOW: Decision = { decision: "allow" };
 
-// Ground-truth reason the host shows for an auto-rewrite (tk analogue of RTK's
+// Ground-truth reason the host shows for an auto-rewrite (ctx analogue of RTK's
 // "RTK auto-rewrite"; verified live against `rtk hook copilot`).
-export const COPILOT_REWRITE_REASON = "tk auto-rewrite";
+export const COPILOT_REWRITE_REASON = "ctx auto-rewrite";
 
 // The normalized lifecycle event → the host's hookEventName spelling. Only
 // PreToolUse is contract-verified (ADR 0005, hookCommandTypes.ts); the rest reuse
@@ -59,14 +59,14 @@ function hostFields(d: Decision): HostFields | null {
       if (!d.rewritten_command) return null;
       // "allow" (not RTK's "ask") is what makes the rewrite TRANSPARENT — no
       // confirmation prompt per command ("ask" surfaced a prompt for
-      // `tk git status --short`). Separately, the rewrite carrier (updatedInput /
+      // `ctx git status --short`). Separately, the rewrite carrier (updatedInput /
       // modifiedArgs) must preserve the FULL original tool input and overwrite only
       // `command`: VS Code's run_in_terminal validates the input against its schema,
       // so emitting `{ command }` alone drops required fields (`explanation`, `goal`,
       // `mode`, …) and VS Code SILENTLY IGNORES the rewrite. Both pieces are applied
       // in toHostOutput below; here we only carry the rewritten command forward.
-      // Issue #42: optionally attach a one-line "tk active" beacon (opt-in via
-      // TK_HOOK_BEACON) so a transcript can positively confirm the hook fired,
+      // Issue #42: optionally attach a one-line "ctx active" beacon (opt-in via
+      // CTX_HOOK_BEACON) so a transcript can positively confirm the hook fired,
       // independent of any later gain row. Default-off ⇒ field omitted ⇒ wire
       // byte-identical, so the transparent-rewrite contract is unchanged.
       return {
@@ -88,7 +88,7 @@ function hostFields(d: Decision): HostFields | null {
   }
 }
 
-// ADR 0005: emit the shape the real host actually reads. tk's old
+// ADR 0005: emit the shape the real host actually reads. ctx's old
 // `{ decision, rewritten_command }` was read by NO host, so the hook was inert.
 // VS Code Copilot Chat (snake_case `tool_name`/`tool_input` dialect) reads
 // `hookSpecificOutput.{permissionDecision, permissionDecisionReason, updatedInput,
@@ -152,7 +152,7 @@ export function decide(ev: ToolEvent): Decision {
 function decidePreTool(ev: ToolEvent): Decision {
   if (isShellExecution(ev)) {
     // ADR 0009: carry the host session id (normalize.ts parses it) through the
-    // rewritten command so the separate `tk` subprocess stamps session_id.
+    // rewritten command so the separate `ctx` subprocess stamps session_id.
     const r = rewriteCommand(ev.command ?? "", ev.session);
     switch (r.decision) {
       case "rewrite":
@@ -178,7 +178,7 @@ export function decideFromStdin(raw: string): Decision {
   } catch (error) {
     // Fail-open: a malformed/truncated payload is handled by allowing the tool.
     // Persist the reason to errors.log UNCONDITIONALLY (reconstructable after the
-    // fact — TK_DEBUG can't be set retroactively, and Copilot CLI's preToolUse
+    // fact — CTX_DEBUG can't be set retroactively, and Copilot CLI's preToolUse
     // denial message carries no hook output). stderr IS surfaced here: Copilot CLI's
     // docs designate stderr a results-neutral debug/log channel, so it's safe and
     // gives the user the reason in the host's own logs without breaking fail-open.
@@ -258,7 +258,7 @@ async function recordFailureMetric(ev: ToolEvent): Promise<void> {
     });
   } catch (error) {
     process.stderr.write(
-      `tk hook copilot: failure-metric write skipped: ${error instanceof Error ? error.message : String(error)}\n`,
+      `ctx hook copilot: failure-metric write skipped: ${error instanceof Error ? error.message : String(error)}\n`,
     );
   }
 }
@@ -280,12 +280,12 @@ async function recordGovernanceMetric(ev: ToolEvent, decision: Decision): Promis
     });
   } catch (error) {
     process.stderr.write(
-      `tk hook copilot: governance-metric write skipped: ${error instanceof Error ? error.message : String(error)}\n`,
+      `ctx hook copilot: governance-metric write skipped: ${error instanceof Error ? error.message : String(error)}\n`,
     );
   }
 }
 
-// Runtime entry for `tk hook copilot`. Reads stdin, emits exactly one protocol
+// Runtime entry for `ctx hook copilot`. Reads stdin, emits exactly one protocol
 // JSON object on stdout, exits 0 (fail-open — never block the tool call).
 export async function runHookCopilot(): Promise<number> {
   let raw = "";
@@ -303,7 +303,7 @@ export async function runHookCopilot(): Promise<number> {
     decision = decide(ev);
   } catch (error) {
     process.stderr.write(
-      `tk hook copilot: ${error instanceof Error ? error.message : String(error)}\n`,
+      `ctx hook copilot: ${error instanceof Error ? error.message : String(error)}\n`,
     );
     ev = null;
     decision = ALLOW;

@@ -69,7 +69,7 @@ const PROBLEM_RE =
 const BOX_PREFIX_RE = /^[│├└─\s]+/;
 
 // RTK: pnpm_cmd.rs::extract_list_text (Tier 2) — recover the dependency listing from the
-// human reporter. tk additionally strips box-drawing prefixes so real `pnpm list` tree
+// human reporter. ctx additionally strips box-drawing prefixes so real `pnpm list` tree
 // output is parsed (RTK skips those lines entirely and loses every dep), and captures
 // npm problem lines (invalid/unmet peer/missing) into an additive Problems section.
 function extractListText(text: string): { state?: DependencyState; problems: string[] } {

@@ -1,4 +1,4 @@
-> **[2026-07-04 P28] SUPERSEDED** — the retrieval pipeline and constants here are replaced by `CTX-IMPL.md` §6 (seeds → expansion depth ≤2/cap 512 → PPR α=0.25/25 iters → RRF K=60 → sections/projection); the ONE-BACKEND-CLI-hub framing is amended by P16/P10. On conflict CTX-IMPL wins.
+> **[2026-07-04 P28] SUPERSEDED** — the retrieval pipeline and constants here are replaced by `CONTEXA-IMPL.md` §6 (seeds → expansion depth ≤2/cap 512 → PPR α=0.25/25 iters → RRF K=60 → sections/projection); the ONE-BACKEND-CLI-hub framing is amended by P16/P10. On conflict CONTEXA-IMPL wins.
 
 ## 需求 A — Core method（这份"智能"是什么形态）
 

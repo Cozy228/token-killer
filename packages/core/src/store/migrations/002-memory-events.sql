@@ -5,7 +5,7 @@
 --
 -- Shape follows the C2 committed-log line grammar (who / when / verdict / reason
 -- / refs) plus the claims table's carrier/locus/method/authority provenance
--- vocabulary, so slice 3's move to `.ctx/memory/decisions.md` is mechanical.
+-- vocabulary, so slice 3's move to `.contexa/memory/decisions.md` is mechanical.
 -- The event log is the SOURCE of derived status; `memory.status` is a rebuildable
 -- CACHE of the E2/E5 fold over these events (S10 #4). This table is APPEND-ONLY:
 -- the triggers below hard-block any UPDATE or DELETE (non-destruction invariant).

@@ -5,7 +5,7 @@
 >
 > **Two test tiers** (both required):
 > 1. **Deterministic CI tier** — script-generated fixture repos in temp dirs, golden transcripts,
->    property tests (CTX-IMPL §10 governs; unchanged).
+>    property tests (CONTEXA-IMPL §10 governs; unchanged).
 > 2. **Living-repo acceptance tier (this file)** — the token-killer repo itself is the primary
 >    acceptance fixture: real git history (incl. the 2026-07-04 `docs/codemap/` renames), 40+ ADRs
 >    in `docs/adr/`, `FABLE-DECISION-LOG.md` (P1–P29), live Claude Code memory for this project.
@@ -26,19 +26,19 @@
 - G-5 Every rendered item carries a resolvable handle (`ctx recall <handle>` round-trips).
 - G-6 No egress: acceptance runs with network access asserted unused (`assertNoEgress` active).
 - G-7 Tests NEVER touch the real `~/.claude`/`~/.copilot`/host configs — writes go to a temp
-  `CTX_HOME`/HOME sandbox (this repo's own history: a dev `doctor --fix` once corrupted the real
+  `CONTEXA_HOME`/HOME sandbox (this repo's own history: a dev `doctor --fix` once corrupted the real
   hook config).
 
 ## Scenarios
 
 ### 1b — Store spine
 - **A12-shard**: opening the store from a git worktree of this repo resolves the SAME shard as
-  the main checkout; `.ctx` data survives worktree deletion.
+  the main checkout; `.contexa` data survives worktree deletion.
 - **A12-handles**: the short handle for a fixed entity id is identical across two separate
   processes (determinism); collision bump extends prefix length.
 - **A12-generations**: concurrent writer + reader — reader always sees a complete published
   generation (never a torn one); lease steal works after TTL expiry.
-- **A12-readthrough**: `locator` read-through on `CTX-IMPL.md` returns exact bytes; traversal
+- **A12-readthrough**: `locator` read-through on `CONTEXA-IMPL.md` returns exact bytes; traversal
   attempts (`../`, absolute path) are rejected.
 
 ### 1c — Memory source
@@ -46,8 +46,8 @@
   yields ≥5 memory entities, all `origin=host-import:claude-code`, `authority=inferred`, gists
   ≤240 chars; ⚠ verify entity count floor at wiring.
 - **A1-echo**: no imported entity's text contains the ctx push sentinel (`ctx:managed:begin`).
-- **A2-remember**: `remember("test note", anchors:["file:CTX-IMPL.md"])` → entity written,
-  anchor resolved to `file:CTX-IMPL.md`, recall returns the gist; a 300-char note → success-shaped
+- **A2-remember**: `remember("test note", anchors:["file:CONTEXA-IMPL.md"])` → entity written,
+  anchor resolved to `file:CONTEXA-IMPL.md`, recall returns the gist; a 300-char note → success-shaped
   guidance (not an exception), nothing written.
 - **A2-supersede**: second entry with `supersedes` → old entry `status=superseded`, kept, linked.
 
@@ -55,8 +55,8 @@
 - **A3-rename**: the rename `docs/codemap/codemap-contract.md → docs/codemap/DESIGN.md`
   (commit `28318c3`) produces a `rename-tracked` link between the two file entities; the old
   path's history is reachable from the new entity.
-- **A3-commit**: `context(ref:"commit:12dc674")` cites "add ctx design and implementation
-  documents" and file-level `touches` including `CTX-DESIGN.md`; message text read back via git
+- **A3-commit**: `context(ref:"commit:12dc674")` cites "add Contexa design and implementation
+  documents" and file-level `touches` including `CONTEXA-DESIGN.md`; message text read back via git
   locator (not stored).
 - **A4-cochange**: co-change over the default window yields ≥1 link with support ≥3;
   ⚠ verify the actual top pair at wiring (candidates: codemap doc pairs) and assert that pair.
@@ -67,7 +67,7 @@
 - **A5-adr**: `docs/adr/` yields ≥40 decision/doc_section entities; ⚠ verify at wiring whether
   ADRs carry frontmatter (`status/date`) — assert whichever fields actually exist, plus
   heading-derived titles.
-- **A5-mention**: CTX-IMPL.md's backticked mention of `docs/codemap/impl/D-language-coverage.md`
+- **A5-mention**: CONTEXA-IMPL.md's backticked mention of `docs/codemap/impl/D-language-coverage.md`
   resolves to a `references` link (path-match, Derived).
 - **A5-stale**: ≥1 `stale-suspect` conflict exists with a reason class ∈ {target-removed,
   never-resolved} (⚠ verify a concrete dead reference at wiring — the 2026-07-04 renames make
@@ -77,7 +77,7 @@
 
 ### 1f — Selection engine
 - **A6-search**: `search("verification tax")` top-5 includes a `docs/design/FABLE-DORA-REVIEW.md`
-  section; `search("RRF")` top-5 includes CTX-IMPL §6.
+  section; `search("RRF")` top-5 includes CONTEXA-IMPL §6.
 - **A6-named-seed**: query containing the exact token `assertNoEgress` force-includes its
   entity even if FTS bm25 would cut it.
 - **A6-decay**: for two otherwise-equal memory entities, the more recently-anchored one ranks
@@ -95,7 +95,7 @@
 ### 1h — Push
 - **A9-budget**: rendered push block for this repo ≤1KB including the 2-line fixed header;
   property test across 1000 random memory sets never exceeds.
-- **A9-pin-veto**: `.ctx/push.jsonc` pin forces an entry in; veto keeps it out; both survive
+- **A9-pin-veto**: `.contexa/push.jsonc` pin forces an entry in; veto keeps it out; both survive
   re-render.
 - **A9-idempotent**: re-render with unchanged inputs → byte-identical block (no-op guard);
   sentinel block replaceable without touching surrounding file content.

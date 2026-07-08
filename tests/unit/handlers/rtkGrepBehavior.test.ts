@@ -17,7 +17,7 @@ import { parseLevel, stripLevelFlags } from "../../../src/handlers/common/level.
 
 describe("RTK grep command construction", () => {
   // RTK: grep_cmd.rs::run — RTK searches with `-nH` so output is `file:line:content`.
-  // tk forces `-n -H` on grep invocations so a raw `grep -r` (no line numbers) can
+  // ctx forces `-n -H` on grep invocations so a raw `grep -r` (no line numbers) can
   // be grouped instead of passed through verbatim.
   test("forces -n -H so grep output is groupable", () => {
     expect(buildGrepArgs("grep", ["-r", "import", "src/"])).toEqual([
@@ -72,7 +72,7 @@ describe("RTK grep command construction", () => {
   // Piped to a non-TTY, rg OMITS line numbers by default, so its raw output is
   // unparseable and falls back to passthrough (0% saved). Forcing -n -H
   // --no-heading restores `file:line:content` — parity with RTK's real behavior
-  // (grep_cmd.rs re-invokes the search itself). tk does NOT add --no-ignore-vcs
+  // (grep_cmd.rs re-invokes the search itself). ctx does NOT add --no-ignore-vcs
   // (deliberate divergence — see docs/align-rtk-divergences.md).
   test("forces -n -H --no-heading so rg output is groupable", () => {
     expect(buildGrepArgs("rg", ["export", "src/"])).toEqual([
@@ -208,7 +208,7 @@ describe("RTK grep behavior", () => {
   };
 
   // ADR 0001 divergence: RTK always caps each file at grep_max_per_file (25) and
-  // appends a `[+N more]` overflow marker. tk only caps OVER budget; below budget
+  // appends a `[+N more]` overflow marker. ctx only caps OVER budget; below budget
   // it groups by file losslessly with NO `[+N more]`. (Over budget it now ships the
   // capped digest — searchLike declares the omission — see the over-budget test
   // below.) So this exercises the grouped path: every match is kept, grouped by
@@ -234,7 +234,7 @@ describe("RTK grep behavior", () => {
     });
   });
 
-  // rg piped to a non-TTY omits line numbers; tk forces -nH so the SAME grouping
+  // rg piped to a non-TTY omits line numbers; ctx forces -nH so the SAME grouping
   // machinery compresses rg exactly like grep — lossless, no overflow marker.
   test("groups rg matches by file losslessly under the cap", async () => {
     const result = await filterRtkOutput(["rg", "submitOrder", "src"], underCapMatches());
@@ -299,7 +299,7 @@ describe("RTK grep --level dial + lossless dedup", () => {
   // before searchLike declared the reduction the gate sniffed it as UNDECLARED and
   // reverted the whole listing back to raw (0% saved). Now searchLike declares a
   // `digest`, so the capped group SHIPS COMPRESSED even under saveRaw:false (the
-  // harness default) — recovery is re-execution (`tk --raw`), not a raw snapshot.
+  // harness default) — recovery is re-execution (`ctx --raw`), not a raw snapshot.
   test("over-budget balanced ships the capped digest, never reverts to raw", async () => {
     // 30 distinct-content matches in one file > the 25 per-file cap → `[+5 more]`.
     const stdout = `${Array.from(
@@ -416,10 +416,10 @@ describe("RTK grep level/-- parsing (edge cases)", () => {
 // --- Parser/helper unit dimensions (RTK grep_cmd.rs internal #[test]s) ---
 //
 // Architecture note: RTK parse_match_line keys off a NUL separator because RTK
-// invokes rg with `-0`; tk filters the user's already-colon-separated output, so
-// tk parses `file:line:content`. The RTK NUL-only cases (Windows drive paths,
+// invokes rg with `-0`; ctx filters the user's already-colon-separated output, so
+// ctx parses `file:line:content`. The RTK NUL-only cases (Windows drive paths,
 // filenames containing `:digits:`) are specific to that NUL contract and do not
-// apply to tk's colon input. The applicable invariants are ported below.
+// apply to ctx's colon input. The applicable invariants are ported below.
 describe("RTK grep parse_match_line (colon-adapted)", () => {
   // RTK: test_parse_match_line_simple
   test("parses a simple file:line:content line", () => {
@@ -521,7 +521,7 @@ describe("RTK grep has_format_flag", () => {
 });
 
 describe("RTK grep groupGrepOutput fallback", () => {
-  // tk adaptation: lines that never parse (no -n line numbers) cannot be grouped,
+  // ctx adaptation: lines that never parse (no -n line numbers) cannot be grouped,
   // so the grouper signals passthrough rather than dropping content.
   test("returns null when no line parses as a match", () => {
     const raw =
@@ -614,7 +614,7 @@ describe("M7-grep regression: 80-char truncation triggers recovery hint", () => 
 });
 
 // `rg -rn` is the grep-recursive muscle-memory slip: rg parses `-r` as
-// `--replace` and rewrites every match with `n`. tk runs rg verbatim but flags it.
+// `--replace` and rewrites every match with `n`. ctx runs rg verbatim but flags it.
 describe("rg --replace footgun detection", () => {
   test("flags the clustered `-rn` form (replace value = n)", () => {
     expect(detectReplaceFootgun("rg", ["-rn", "tokenBudget", "src/"])).toBe("n");

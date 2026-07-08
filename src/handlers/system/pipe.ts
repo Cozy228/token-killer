@@ -3,7 +3,7 @@ import { defineHandler } from "../define.js";
 import { type LadderResult, overBudgetLadder } from "../common/budget.js";
 
 // RTK: system/pipe_cmd.rs — `rtk pipe [filter]` reads stdin and runs a named or
-// auto-detected filter over arbitrary piped command output. In tk the command is
+// auto-detected filter over arbitrary piped command output. In ctx the command is
 // invoked as `pipe <cmd> <args...>` and the filtered content is raw.stdout/stderr.
 //
 // This port faithfully reproduces the logic that lives inside pipe_cmd.rs itself:
@@ -175,7 +175,7 @@ function autoDetectFilter(input: string): PipeFilter {
   return identityFilter;
 }
 
-// RTK: in tk, raw.stdout/stderr is the piped content. The first arg (if present)
+// RTK: in ctx, raw.stdout/stderr is the piped content. The first arg (if present)
 // is treated as the explicit filter name (RTK's `rtk pipe <filter>`); when absent
 // or not a locally-ported name, fall back to auto-detection.
 function pipeContent(raw: RawResult): string {

@@ -109,14 +109,14 @@ describe("acceptance: perf gates", () => {
 
   beforeAll(async () => {
     liveRoot = makeTempDir("ctx-a11-");
-    home = join(liveRoot, "ctx-home");
+    home = join(liveRoot, "contexa-home");
     store = openStore({ projectDir: REPO_ROOT, home });
-    // Memory write-through is always-on (slice 4). Redirect its `.ctx` writer to a
-    // sandbox so the cold-path host-import + reindex never create `.ctx/` in the
-    // real repo (the hard constraint). Same ctxRoot in the warm A11-dirty check.
+    // Memory write-through is always-on (slice 4). Redirect its `.contexa` writer to a
+    // sandbox so the cold-path host-import + reindex never create `.contexa/` in the
+    // real repo (the hard constraint). Same contexaRoot in the warm A11-dirty check.
     engine = new RefreshEngine(
       store,
-      createDefaultRegistry({ memory: { ctxRoot: join(liveRoot, "ctx-mem") } }),
+      createDefaultRegistry({ memory: { contexaRoot: join(liveRoot, "contexa-mem") } }),
       { catchupGateMs: 600_000 },
     );
     await engine.refresh(600_000); // cold-path full catch-up over this repo
@@ -131,9 +131,9 @@ describe("acceptance: perf gates", () => {
 
   test("A11-dirty", async () => {
     // Warm all-source dirtyCheck: cursors are set, so every adapter short-circuits.
-    // Same sandbox ctxRoot as the cold-path build so the memory manifest matches.
+    // Same sandbox contexaRoot as the cold-path build so the memory manifest matches.
     const adapters = createDefaultRegistry({
-      memory: { ctxRoot: join(liveRoot, "ctx-mem") },
+      memory: { contexaRoot: join(liveRoot, "contexa-mem") },
     }).list();
     const min = await bestOfAsync(16, () => Promise.all(adapters.map((a) => a.dirtyCheck(store))));
     // Recorded observed (this worktree): ~9 ms. Target: <20 ms → MEETS.
@@ -219,7 +219,7 @@ describe("acceptance: perf gates", () => {
         }
       }, 0);
     const contentBytes = tracked + gitBytes;
-    const fullCheckout = dirBytes(REPO_ROOT, (name) => name === ".ctx");
+    const fullCheckout = dirBytes(REPO_ROOT, (name) => name === ".contexa");
 
     const pctContent = (storeBytes / contentBytes) * 100;
     const pctCheckout = (storeBytes / fullCheckout) * 100;

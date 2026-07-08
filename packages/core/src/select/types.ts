@@ -1,5 +1,5 @@
 /**
- * Selection-engine typed structs (CTX-IMPL §6 + P28 addendum: "envelope is an
+ * Selection-engine typed structs (CONTEXA-IMPL §6 + P28 addendum: "envelope is an
  * internal TYPED STRUCT; markdown is the final render step" — slice 1g renders,
  * this layer only builds the struct. §10's budget/omission property tests
  * target these types, never a rendered string).

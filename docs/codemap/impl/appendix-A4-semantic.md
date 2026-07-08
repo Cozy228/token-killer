@@ -1,4 +1,4 @@
-> **[2026-07-04 P28] SUPERSEDED** — the 4-tool + QueryPlan external surface is replaced by the 3-tool surface (P25②); QueryPlan internals survive inside `context()`'s code section. Rest distilled into `CTX-IMPL.md` §12.
+> **[2026-07-04 P28] SUPERSEDED** — the 4-tool + QueryPlan external surface is replaced by the 3-tool surface (P25②); QueryPlan internals survive inside `context()`'s code section. Rest distilled into `CONTEXA-IMPL.md` §12.
 
 # 附录 A4:语义 / 领域 / 业务逻辑层的吸收(2026-06-21,来自 `Token-killer-Research.md` Part 3–4)
 

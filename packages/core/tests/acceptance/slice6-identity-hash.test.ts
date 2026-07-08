@@ -104,7 +104,7 @@ describe("slice 6 — item 1: identity dedup derived at reindex (D1)", () => {
     afterEach(() => cleanupTempDir(root));
 
     test("two near-identical committed memories → open sameAsCandidate; peer == fresh clone (E6)", () => {
-      const files = new MemoryFiles(join(repo, ".ctx"));
+      const files = new MemoryFiles(join(repo, ".contexa"));
       files.appendMemory(
         "mainline",
         memEntry({
@@ -124,9 +124,9 @@ describe("slice 6 — item 1: identity dedup derived at reindex (D1)", () => {
       const peer = openStore({ projectDir: repo, home: join(root, "peer"), now });
       const clone = openStore({ projectDir: repo, home: join(root, "clone"), now });
       try {
-        reindexMemoryFromFiles(peer, new MemoryFiles(join(repo, ".ctx")));
-        reindexMemoryFromFiles(peer, new MemoryFiles(join(repo, ".ctx")));
-        reindexMemoryFromFiles(clone, new MemoryFiles(join(repo, ".ctx")));
+        reindexMemoryFromFiles(peer, new MemoryFiles(join(repo, ".contexa")));
+        reindexMemoryFromFiles(peer, new MemoryFiles(join(repo, ".contexa")));
+        reindexMemoryFromFiles(clone, new MemoryFiles(join(repo, ".contexa")));
 
         expect(openConflicts(peer, "sameAsCandidate")).toHaveLength(1);
         // Surfaced, never auto-merged: both memories remain, both active.
@@ -141,7 +141,7 @@ describe("slice 6 — item 1: identity dedup derived at reindex (D1)", () => {
     });
 
     test("a human dismiss (committed decision) folds the derived conflict + survives reindex", () => {
-      const ctx = join(repo, ".ctx");
+      const ctx = join(repo, ".contexa");
       const files = new MemoryFiles(ctx);
       files.appendMemory(
         "mainline",
@@ -240,7 +240,7 @@ describe("slice 6 — item 2: content-hash anchor baseline (O-18)", () => {
     }
 
     test("body-changed re-derives at full reindex + on a fresh clone; legacy anchor does not", () => {
-      const files = new MemoryFiles(join(repo, ".ctx"));
+      const files = new MemoryFiles(join(repo, ".contexa"));
       // Anchored with a committed baseline hash h1 (arity 2).
       files.appendMemory(
         "mainline",
@@ -262,15 +262,19 @@ describe("slice 6 — item 2: content-hash anchor baseline (O-18)", () => {
       );
 
       // Peer: the symbol's body changed (same arity 2, new hash h2).
-      const peer = reindexWithSymbol(join(root, "peer"), new MemoryFiles(join(repo, ".ctx")), {
+      const peer = reindexWithSymbol(join(root, "peer"), new MemoryFiles(join(repo, ".contexa")), {
         hash: "h2",
         arity: 2,
       });
       // Fresh clone: same committed files, same current code → same derivation.
-      const clone = reindexWithSymbol(join(root, "clone"), new MemoryFiles(join(repo, ".ctx")), {
-        hash: "h2",
-        arity: 2,
-      });
+      const clone = reindexWithSymbol(
+        join(root, "clone"),
+        new MemoryFiles(join(repo, ".contexa")),
+        {
+          hash: "h2",
+          arity: 2,
+        },
+      );
       try {
         expect(peer.getMemory("mem:01BODYCHANGED000000000A")?.driftReason).toBe("body-changed");
         // body-changed = down-rank only (A5): status stays active, not needs-review.
@@ -287,7 +291,7 @@ describe("slice 6 — item 2: content-hash anchor baseline (O-18)", () => {
     });
 
     test("signature-changed (arity differs) flips to needs-review at reindex", () => {
-      const files = new MemoryFiles(join(repo, ".ctx"));
+      const files = new MemoryFiles(join(repo, ".contexa"));
       files.appendMemory(
         "mainline",
         memEntry({
@@ -297,7 +301,7 @@ describe("slice 6 — item 2: content-hash anchor baseline (O-18)", () => {
           anchorSigs: { "sym:src/x.ts#f": { h: "h1", a: 2 } },
         }),
       );
-      const store = reindexWithSymbol(join(root, "home"), new MemoryFiles(join(repo, ".ctx")), {
+      const store = reindexWithSymbol(join(root, "home"), new MemoryFiles(join(repo, ".contexa")), {
         hash: "h9",
         arity: 3, // arity changed → signature-changed
       });
@@ -315,7 +319,7 @@ describe("slice 6 — item 2: content-hash anchor baseline (O-18)", () => {
       // Author a memory anchored to a present symbol so the create carries the
       // baseline hash h1; the confirm later clears a target-removed drift.
       const authoring = openStore({ projectDir: repo, home: join(root, "author"), now });
-      const files = new MemoryFiles(join(repo, ".ctx"));
+      const files = new MemoryFiles(join(repo, ".contexa"));
       try {
         const cgen = authoring.beginGeneration("code");
         authoring.upsertEntity({
@@ -342,7 +346,7 @@ describe("slice 6 — item 2: content-hash anchor baseline (O-18)", () => {
       commitAll(repo, "add anchored memory");
 
       const memId = parseMemory(
-        new MemoryFiles(join(repo, ".ctx")).memoryLines("mainline")[0]!,
+        new MemoryFiles(join(repo, ".contexa")).memoryLines("mainline")[0]!,
       )!.memoryId;
 
       // The symbol is removed → target-removed drift → the human confirms (records
@@ -351,9 +355,14 @@ describe("slice 6 — item 2: content-hash anchor baseline (O-18)", () => {
       try {
         s1.beginGeneration("code");
         s1.publishGeneration("code"); // code index published, symbol absent
-        reindexMemoryFromFiles(s1, new MemoryFiles(join(repo, ".ctx")));
+        reindexMemoryFromFiles(s1, new MemoryFiles(join(repo, ".contexa")));
         expect(s1.getMemory(memId)?.driftReason).toBe("target-removed");
-        const res = setMemoryLifecycle(s1, memId, "active", new MemoryFiles(join(repo, ".ctx")));
+        const res = setMemoryLifecycle(
+          s1,
+          memId,
+          "active",
+          new MemoryFiles(join(repo, ".contexa")),
+        );
         expect(res.ok).toBe(true);
       } finally {
         s1.close();
@@ -366,7 +375,7 @@ describe("slice 6 — item 2: content-hash anchor baseline (O-18)", () => {
       try {
         s2.beginGeneration("code");
         s2.publishGeneration("code");
-        reindexMemoryFromFiles(s2, new MemoryFiles(join(repo, ".ctx")));
+        reindexMemoryFromFiles(s2, new MemoryFiles(join(repo, ".contexa")));
         expect(s2.getMemory(memId)?.status).toBe("active");
         expect(s2.getMemory(memId)?.driftReason).toBeUndefined();
       } finally {
@@ -388,7 +397,7 @@ describe("slice 6 — item 2: content-hash anchor baseline (O-18)", () => {
           gen: g,
         });
         s3.publishGeneration("code");
-        reindexMemoryFromFiles(s3, new MemoryFiles(join(repo, ".ctx")));
+        reindexMemoryFromFiles(s3, new MemoryFiles(join(repo, ".contexa")));
         expect(s3.getMemory(memId)?.driftReason).toBe("body-changed");
       } finally {
         s3.close();
@@ -408,7 +417,7 @@ describe("slice 6 — item 3: two-working-copy collaboration eval", () => {
     root = makeTempDir("ctx-s6-i3-");
     repoA = makeGitFixture(root);
     // Lay down the committed scaffold (.gitattributes merge=union) once.
-    new MemoryFiles(join(repoA, ".ctx")).ensureScaffold();
+    new MemoryFiles(join(repoA, ".contexa")).ensureScaffold();
     commitAll(repoA, "ctx scaffold");
   });
   afterEach(() => cleanupTempDir(root));
@@ -427,7 +436,7 @@ describe("slice 6 — item 3: two-working-copy collaboration eval", () => {
     // same fact — the case git cannot test. Post-merge reindex files the identity
     // conflict.
     git(["checkout", "-q", "-b", "branch-a"], repoA);
-    new MemoryFiles(join(repoA, ".ctx")).appendMemory(
+    new MemoryFiles(join(repoA, ".contexa")).appendMemory(
       "mainline",
       memEntry({
         memoryId: "mem:01BRANCHAMEM0000000000A",
@@ -438,7 +447,7 @@ describe("slice 6 — item 3: two-working-copy collaboration eval", () => {
 
     git(["checkout", "-q", "main"], repoA);
     git(["checkout", "-q", "-b", "branch-b"], repoA);
-    new MemoryFiles(join(repoA, ".ctx")).appendMemory(
+    new MemoryFiles(join(repoA, ".contexa")).appendMemory(
       "mainline",
       memEntry({
         memoryId: "mem:01BRANCHBMEM0000000000B",
@@ -452,15 +461,15 @@ describe("slice 6 — item 3: two-working-copy collaboration eval", () => {
     git(["merge", "-q", "--no-edit", "branch-b"], repoA); // clean union merge
 
     // Both branches' lines survive the clean union merge (ids are percent-encoded).
-    const log = readFileSync(join(repoA, ".ctx/memory/log.md"), "utf8");
+    const log = readFileSync(join(repoA, ".contexa/memory/log.md"), "utf8");
     expect(log).toContain("01BRANCHAMEM0000000000A");
     expect(log).toContain("01BRANCHBMEM0000000000B");
 
     const peer = openStore({ projectDir: repoA, home: join(root, "peer"), now });
     const clone = openStore({ projectDir: repoA, home: join(root, "clone-store"), now });
     try {
-      reindexMemoryFromFiles(peer, new MemoryFiles(join(repoA, ".ctx")));
-      reindexMemoryFromFiles(clone, new MemoryFiles(join(repoA, ".ctx")));
+      reindexMemoryFromFiles(peer, new MemoryFiles(join(repoA, ".contexa")));
+      reindexMemoryFromFiles(clone, new MemoryFiles(join(repoA, ".contexa")));
       expect(openConflicts(peer, "sameAsCandidate")).toHaveLength(1);
       expect(dumpJson(peer)).toBe(dumpJson(clone)); // E6
     } finally {
@@ -470,7 +479,7 @@ describe("slice 6 — item 3: two-working-copy collaboration eval", () => {
   });
 
   test("(b) convergence: A commits a memory + a resolution, B pulls, both reindex to logical equality", () => {
-    const filesA = new MemoryFiles(join(repoA, ".ctx"));
+    const filesA = new MemoryFiles(join(repoA, ".contexa"));
     filesA.appendMemory(
       "mainline",
       memEntry({
@@ -487,7 +496,7 @@ describe("slice 6 — item 3: two-working-copy collaboration eval", () => {
     );
     const a = openStore({ projectDir: repoA, home: join(root, "a-store"), now });
     try {
-      reindexMemoryFromFiles(a, new MemoryFiles(join(repoA, ".ctx")));
+      reindexMemoryFromFiles(a, new MemoryFiles(join(repoA, ".contexa")));
       const c = openConflicts(a, "sameAsCandidate")[0]!;
       resolveConflictViaEvent(
         a,
@@ -496,7 +505,7 @@ describe("slice 6 — item 3: two-working-copy collaboration eval", () => {
         c.b,
         "dismiss",
         "cli",
-        new MemoryFiles(join(repoA, ".ctx")),
+        new MemoryFiles(join(repoA, ".contexa")),
         "mainline",
       );
     } finally {
@@ -508,8 +517,8 @@ describe("slice 6 — item 3: two-working-copy collaboration eval", () => {
     const aFinal = openStore({ projectDir: repoA, home: join(root, "a-final"), now });
     const b = openStore({ projectDir: repoB, home: join(root, "b-store"), now });
     try {
-      reindexMemoryFromFiles(aFinal, new MemoryFiles(join(repoA, ".ctx")));
-      reindexMemoryFromFiles(b, new MemoryFiles(join(repoB, ".ctx")));
+      reindexMemoryFromFiles(aFinal, new MemoryFiles(join(repoA, ".contexa")));
+      reindexMemoryFromFiles(b, new MemoryFiles(join(repoB, ".contexa")));
       // B pulled the memory AND the resolution: the conflict is dismissed on both.
       expect(openConflicts(b, "sameAsCandidate")).toHaveLength(0);
       expect(b.conflicts("dismissed").filter((x) => x.kind === "sameAsCandidate")).toHaveLength(1);
@@ -522,7 +531,7 @@ describe("slice 6 — item 3: two-working-copy collaboration eval", () => {
   });
 
   test("(c) overlay-never-committed: a --local note on A never reaches B via any git operation", () => {
-    const localFiles = new MemoryFiles(join(repoA, ".ctx"));
+    const localFiles = new MemoryFiles(join(repoA, ".contexa"));
     const a = openStore({ projectDir: repoA, home: join(root, "a-local"), now });
     try {
       const r = remember(a, {
@@ -536,17 +545,17 @@ describe("slice 6 — item 3: two-working-copy collaboration eval", () => {
       a.close();
     }
     // The overlay file exists but is gitignored; commit everything trackable.
-    expect(existsSync(join(repoA, ".ctx/memory.local.md"))).toBe(true);
+    expect(existsSync(join(repoA, ".contexa/memory.local.md"))).toBe(true);
     commitAll(repoA, "whatever is trackable");
     // git must refuse to track the overlay (it is gitignored).
-    const tracked = git(["ls-files", ".ctx"], repoA);
+    const tracked = git(["ls-files", ".contexa"], repoA);
     expect(tracked).not.toContain("memory.local.md");
 
     const repoB = cloneRepo("repoB");
-    expect(existsSync(join(repoB, ".ctx/memory.local.md"))).toBe(false);
+    expect(existsSync(join(repoB, ".contexa/memory.local.md"))).toBe(false);
     const b = openStore({ projectDir: repoB, home: join(root, "b-local"), now });
     try {
-      reindexMemoryFromFiles(b, new MemoryFiles(join(repoB, ".ctx")));
+      reindexMemoryFromFiles(b, new MemoryFiles(join(repoB, ".contexa")));
       expect(b.allMemories()).toHaveLength(0); // the --local note never crossed
     } finally {
       b.close();
@@ -554,7 +563,7 @@ describe("slice 6 — item 3: two-working-copy collaboration eval", () => {
   });
 
   test("(d) secret-guard-effective: a secret-shaped note never enters the committed zone or B", () => {
-    const files = new MemoryFiles(join(repoA, ".ctx"));
+    const files = new MemoryFiles(join(repoA, ".contexa"));
     const a = openStore({ projectDir: repoA, home: join(root, "a-secret"), now });
     try {
       const r = remember(a, {
@@ -569,19 +578,19 @@ describe("slice 6 — item 3: two-working-copy collaboration eval", () => {
       a.close();
     }
     // The committed mainline log never carries the secret.
-    const mainlineLog = join(repoA, ".ctx/memory/log.md");
+    const mainlineLog = join(repoA, ".contexa/memory/log.md");
     if (existsSync(mainlineLog)) {
       expect(readFileSync(mainlineLog, "utf8")).not.toContain("sk-ABCDEFGHIJKLMNOPQRSTUVWXYZ");
     }
     commitAll(repoA, "trackable only");
     const repoB = cloneRepo("repoB");
-    const clonedLog = join(repoB, ".ctx/memory/log.md");
+    const clonedLog = join(repoB, ".contexa/memory/log.md");
     if (existsSync(clonedLog)) {
       expect(readFileSync(clonedLog, "utf8")).not.toContain("sk-ABCDEFGHIJKLMNOPQRSTUVWXYZ");
     }
     const b = openStore({ projectDir: repoB, home: join(root, "b-secret"), now });
     try {
-      reindexMemoryFromFiles(b, new MemoryFiles(join(repoB, ".ctx")));
+      reindexMemoryFromFiles(b, new MemoryFiles(join(repoB, ".contexa")));
       // The secret never reached the peer's committed zone.
       for (const m of b.allMemories()) {
         expect(m.gist).not.toContain("sk-ABCDEFGHIJKLMNOPQRSTUVWXYZ");
@@ -594,7 +603,7 @@ describe("slice 6 — item 3: two-working-copy collaboration eval", () => {
   test("(e) E5 decision-collision: retire on one branch + supersede on another → later wins + contradiction", () => {
     // A shared committed memory M; branch A retires it, branch B supersedes it. The
     // decision log union-merges cleanly; the fold sees BOTH terminal dispositions.
-    const files = new MemoryFiles(join(repoA, ".ctx"));
+    const files = new MemoryFiles(join(repoA, ".contexa"));
     files.appendMemory(
       "mainline",
       memEntry({ memoryId: "mem:01COLLIDEMEM000000000AA", gist: "a fact two people will judge" }),
@@ -607,7 +616,7 @@ describe("slice 6 — item 3: two-working-copy collaboration eval", () => {
     commitAll(repoA, "shared memory M + replacement");
 
     git(["checkout", "-q", "-b", "retire-branch"], repoA);
-    new MemoryFiles(join(repoA, ".ctx")).appendDecision("mainline", {
+    new MemoryFiles(join(repoA, ".contexa")).appendDecision("mainline", {
       eventId: "01RETIREDEC0000000000000A",
       at: (clock += 1000),
       memoryId: "mem:01COLLIDEMEM000000000AA",
@@ -622,7 +631,7 @@ describe("slice 6 — item 3: two-working-copy collaboration eval", () => {
 
     git(["checkout", "-q", "main"], repoA);
     git(["checkout", "-q", "-b", "supersede-branch"], repoA);
-    new MemoryFiles(join(repoA, ".ctx")).appendDecision("mainline", {
+    new MemoryFiles(join(repoA, ".contexa")).appendDecision("mainline", {
       eventId: "01SUPERSEDEDEC000000000ZB", // later ULID than the retire (total order)
       at: (clock += 1000),
       memoryId: "mem:01COLLIDEMEM000000000AA",
@@ -641,7 +650,7 @@ describe("slice 6 — item 3: two-working-copy collaboration eval", () => {
 
     const store = openStore({ projectDir: repoA, home: join(root, "collide"), now });
     try {
-      reindexMemoryFromFiles(store, new MemoryFiles(join(repoA, ".ctx")));
+      reindexMemoryFromFiles(store, new MemoryFiles(join(repoA, ".contexa")));
       // A contradiction conflict is filed (surfaced, never auto-merged)…
       expect(openConflicts(store, "contradiction")).toHaveLength(1);
       // …and the later-by-total-order decision (supersede) wins for derived status.
@@ -668,7 +677,7 @@ describe("slice 6 — item 4: opt-out repo excludes overlay-kept notes from its 
   test("an opt-out repo's overlay-redirected note is excluded; a peer's shared digest is unchanged", () => {
     // Opt-out repo: `localOnly` redirects the mainline write to the overlay; the
     // note stays active + origin `remember` (an ordinary note kept local).
-    const optOutFiles = new MemoryFiles(join(repo, ".ctx"), true);
+    const optOutFiles = new MemoryFiles(join(repo, ".contexa"), true);
     const optOut = openStore({ projectDir: repo, home: join(root, "optout"), now });
     try {
       const r = remember(optOut, {
@@ -678,7 +687,7 @@ describe("slice 6 — item 4: opt-out repo excludes overlay-kept notes from its 
         now,
       });
       expect(r.ok && r.committedZoneDisabled).toBe(true);
-      reindexMemoryFromFiles(optOut, new MemoryFiles(join(repo, ".ctx"), true));
+      reindexMemoryFromFiles(optOut, new MemoryFiles(join(repo, ".contexa"), true));
       const m = optOut.allMemories()[0]!;
       expect(m.originZone).toBe("overlay");
       // Item 4: an overlay-kept note is excluded from the locally-placed push digest.
@@ -691,7 +700,7 @@ describe("slice 6 — item 4: opt-out repo excludes overlay-kept notes from its 
     // (a peer's shared digest is unchanged: overlay provenance never enters).
     mkdirSync(join(root, "normal"), { recursive: true });
     const normalRepo = makeGitFixture(join(root, "normal"));
-    const normalFiles = new MemoryFiles(join(normalRepo, ".ctx"));
+    const normalFiles = new MemoryFiles(join(normalRepo, ".contexa"));
     const normal = openStore({ projectDir: normalRepo, home: join(root, "normal-home"), now });
     try {
       const r = remember(normal, {
@@ -701,7 +710,7 @@ describe("slice 6 — item 4: opt-out repo excludes overlay-kept notes from its 
         now,
       });
       expect(r.ok).toBe(true);
-      reindexMemoryFromFiles(normal, new MemoryFiles(join(normalRepo, ".ctx")));
+      reindexMemoryFromFiles(normal, new MemoryFiles(join(normalRepo, ".contexa")));
       const m = normal.allMemories()[0]!;
       expect(m.originZone).toBe("mainline");
       expect(rankGotchas(normal).map((g) => g.entityId)).toContain(m.entityId);
@@ -740,12 +749,12 @@ describe("slice 6 — review round 1", () => {
       });
     }
     store.publishGeneration("code");
-    reindexMemoryFromFiles(store, new MemoryFiles(join(repo, ".ctx")));
+    reindexMemoryFromFiles(store, new MemoryFiles(join(repo, ".contexa")));
     return store;
   }
 
   test("S6-R1: a confirmed present-target drift stays active across reindex (same machine + fresh clone)", () => {
-    const files = new MemoryFiles(join(repo, ".ctx"));
+    const files = new MemoryFiles(join(repo, ".contexa"));
     files.appendMemory(
       "mainline",
       memEntry({
@@ -763,9 +772,9 @@ describe("slice 6 — review round 1", () => {
       expect(a.getMemory(memId)?.driftReason).toBe("signature-changed");
       expect(a.getMemory(memId)?.status).toBe("needs-review");
       // The human confirms — records confirmSigs {h1, a:3} in the committed dec.
-      expect(setMemoryLifecycle(a, memId, "active", new MemoryFiles(join(repo, ".ctx"))).ok).toBe(
-        true,
-      );
+      expect(
+        setMemoryLifecycle(a, memId, "active", new MemoryFiles(join(repo, ".contexa"))).ok,
+      ).toBe(true);
       expect(a.getMemory(memId)?.status).toBe("active");
       // A later full reindex on the SAME machine must NOT re-undo the confirm.
       const g = a.beginGeneration("code");
@@ -779,7 +788,7 @@ describe("slice 6 — review round 1", () => {
         gen: g,
       });
       a.publishGeneration("code");
-      reindexMemoryFromFiles(a, new MemoryFiles(join(repo, ".ctx")));
+      reindexMemoryFromFiles(a, new MemoryFiles(join(repo, ".contexa")));
       expect(a.getMemory(memId)?.driftReason).toBeUndefined();
       expect(a.getMemory(memId)?.status).toBe("active");
     } finally {
@@ -796,7 +805,7 @@ describe("slice 6 — review round 1", () => {
   });
 
   test("S6-R1: a target that changes AGAIN after the confirm re-derives drift on both machines", () => {
-    const files = new MemoryFiles(join(repo, ".ctx"));
+    const files = new MemoryFiles(join(repo, ".contexa"));
     files.appendMemory(
       "mainline",
       memEntry({
@@ -809,7 +818,7 @@ describe("slice 6 — review round 1", () => {
     const memId = "mem:01CONFIRMAGAIN00000000A";
     const a = reindexWithSymbol(join(root, "a"), { hash: "h1", arity: 3 });
     try {
-      setMemoryLifecycle(a, memId, "active", new MemoryFiles(join(repo, ".ctx")));
+      setMemoryLifecycle(a, memId, "active", new MemoryFiles(join(repo, ".contexa")));
       expect(a.getMemory(memId)?.status).toBe("active");
     } finally {
       a.close();
@@ -829,7 +838,7 @@ describe("slice 6 — review round 1", () => {
   });
 
   test("S6-R2: an opt-out remember is push-excluded with NO reindex in between", () => {
-    const optOutFiles = new MemoryFiles(join(repo, ".ctx"), true);
+    const optOutFiles = new MemoryFiles(join(repo, ".contexa"), true);
     const store = openStore({ projectDir: repo, home: join(root, "optout"), now });
     try {
       const r = remember(store, {
@@ -849,7 +858,7 @@ describe("slice 6 — review round 1", () => {
   });
 
   test("S6-R2: a confirm-promoted mcp note is immediately push-eligible without a reindex", () => {
-    const files = new MemoryFiles(join(repo, ".ctx"));
+    const files = new MemoryFiles(join(repo, ".contexa"));
     const store = openStore({ projectDir: repo, home: join(root, "promote"), now });
     try {
       const r = remember(store, {
@@ -862,7 +871,7 @@ describe("slice 6 — review round 1", () => {
       const id = r.ok ? r.entityId : "";
       expect(store.getMemory(id)?.originZone).toBe("overlay");
       // Human confirm promotes the create to Mainline → immediately eligible.
-      const res = setMemoryLifecycle(store, id, "active", new MemoryFiles(join(repo, ".ctx")));
+      const res = setMemoryLifecycle(store, id, "active", new MemoryFiles(join(repo, ".contexa")));
       expect(res.ok && res.promoted).toBe(true);
       expect(store.getMemory(id)?.originZone).toBe("mainline");
       expect(rankGotchas(store).map((g) => g.entityId)).toContain(id);
@@ -887,7 +896,7 @@ describe("slice 6 — Codex review round", () => {
 
   test("C6-1: target-removed suppression is per-anchor — a LATER removal of a different anchor still flags", () => {
     const head = currentHeadCommit(repo)!;
-    const ctx = join(repo, ".ctx");
+    const ctx = join(repo, ".contexa");
     const memId = "mem:01TWOANCHORS0000000000A";
     new MemoryFiles(ctx).appendMemory(
       "mainline",
@@ -949,7 +958,7 @@ describe("slice 6 — Codex review round", () => {
   });
 
   test("C6-2: a supersede pair does not seed an identity conflict", () => {
-    const ctx = join(repo, ".ctx");
+    const ctx = join(repo, ".contexa");
     const files = new MemoryFiles(ctx);
     files.appendMemory(
       "mainline",
@@ -994,8 +1003,8 @@ describe("slice 6 — Codex review round", () => {
   });
 
   test("C6-3: an additive reindex does not re-file identity from a stale (files-absent) row", () => {
-    const ctx = join(repo, ".ctx");
-    const log = join(repo, ".ctx/memory/log.md");
+    const ctx = join(repo, ".contexa");
+    const log = join(repo, ".contexa/memory/log.md");
     const m1 = memEntry({
       memoryId: "mem:01STALEROW00000000000AA",
       gist: "the reindex derives identity candidates from the committed memory bytes",
@@ -1037,7 +1046,7 @@ describe("slice 6 — Codex review round", () => {
 
   test("C6-4: the pull-delta path files + folds identity across two working copies", () => {
     // repoA base: scaffold + M1 committed.
-    new MemoryFiles(join(repo, ".ctx")).appendMemory(
+    new MemoryFiles(join(repo, ".contexa")).appendMemory(
       "mainline",
       memEntry({
         memoryId: "mem:01PULLDELTA0000000000AA",
@@ -1054,20 +1063,20 @@ describe("slice 6 — Codex review round", () => {
     const oldTip = currentHeadCommit(repoB)!;
     const b = openStore({ projectDir: repoB, home: join(root, "b"), now });
     try {
-      reindexMemoryFromFiles(b, new MemoryFiles(join(repoB, ".ctx")));
+      reindexMemoryFromFiles(b, new MemoryFiles(join(repoB, ".contexa")));
       expect(openConflicts(b, "sameAsCandidate")).toHaveLength(0);
 
       // A commits a near-duplicate memory + a dismiss resolution.
       const a = openStore({ projectDir: repo, home: join(root, "a"), now });
       try {
-        new MemoryFiles(join(repo, ".ctx")).appendMemory(
+        new MemoryFiles(join(repo, ".contexa")).appendMemory(
           "mainline",
           memEntry({
             memoryId: "mem:01PULLDELTA0000000000BB",
             gist: "the push digest reads the shared config merged with a personal overlay",
           }),
         );
-        reindexMemoryFromFiles(a, new MemoryFiles(join(repo, ".ctx")));
+        reindexMemoryFromFiles(a, new MemoryFiles(join(repo, ".contexa")));
         const c = openConflicts(a, "sameAsCandidate")[0]!;
         resolveConflictViaEvent(
           a,
@@ -1076,7 +1085,7 @@ describe("slice 6 — Codex review round", () => {
           c.b,
           "dismiss",
           "cli",
-          new MemoryFiles(join(repo, ".ctx")),
+          new MemoryFiles(join(repo, ".contexa")),
           "mainline",
         );
       } finally {
@@ -1087,7 +1096,7 @@ describe("slice 6 — Codex review round", () => {
       // B pulls, then runs the DELTA reindex path over the pulled commits.
       git(["pull", "-q", "--no-edit", "origin", "main"], repoB);
       const newTip = currentHeadCommit(repoB)!;
-      const res = pullDeltaReindex(b, new MemoryFiles(join(repoB, ".ctx")), {
+      const res = pullDeltaReindex(b, new MemoryFiles(join(repoB, ".contexa")), {
         projectRoot: repoB,
         oldTip,
         newTip,
@@ -1101,7 +1110,7 @@ describe("slice 6 — Codex review round", () => {
       // E6: dump equals a fresh clone that full-reindexes the same committed bytes.
       const fresh = openStore({ projectDir: repoB, home: join(root, "fresh"), now });
       try {
-        reindexMemoryFromFiles(fresh, new MemoryFiles(join(repoB, ".ctx")));
+        reindexMemoryFromFiles(fresh, new MemoryFiles(join(repoB, ".contexa")));
         expect(dumpJson(b)).toBe(dumpJson(fresh));
       } finally {
         fresh.close();
@@ -1211,7 +1220,7 @@ describe("memory tail — item 1(b): within-branch ↔ reindex drift convergence
 
     // (ii) reindex: the committed memory carries an arity-1 baseline; the current
     // code index carries `f` at arity 2 → presentTargetDrift → signature-changed.
-    const files = new MemoryFiles(join(repo, ".ctx"));
+    const files = new MemoryFiles(join(repo, ".contexa"));
     files.appendMemory(
       "mainline",
       memEntry({
@@ -1221,7 +1230,7 @@ describe("memory tail — item 1(b): within-branch ↔ reindex drift convergence
         anchorSigs: { "sym:src/x.ts#f": { h: "h1", a: 1 } },
       }),
     );
-    const rx = reindexWithSymbol(join(root, "rx"), new MemoryFiles(join(repo, ".ctx")), {
+    const rx = reindexWithSymbol(join(root, "rx"), new MemoryFiles(join(repo, ".contexa")), {
       hash: "h2",
       arity: 2,
     });
@@ -1273,7 +1282,7 @@ describe("memory tail — item 1(b): within-branch ↔ reindex drift convergence
     // ancestor of HEAD) and the current code index does NOT carry that file entity
     // → classifyAbsentAnchor → target-removed.
     const head = currentHeadCommit(repo)!;
-    const files = new MemoryFiles(join(repo, ".ctx"));
+    const files = new MemoryFiles(join(repo, ".contexa"));
     files.appendMemory(
       "mainline",
       memEntry({
@@ -1283,7 +1292,11 @@ describe("memory tail — item 1(b): within-branch ↔ reindex drift convergence
         anchoredAt: head,
       }),
     );
-    const rx = reindexWithSymbol(join(root, "rx"), new MemoryFiles(join(repo, ".ctx")), "absent");
+    const rx = reindexWithSymbol(
+      join(root, "rx"),
+      new MemoryFiles(join(repo, ".contexa")),
+      "absent",
+    );
     let rxTriple: ReturnType<typeof driftTriple>;
     try {
       rxTriple = driftTriple(rx, "mem:01CONVTARGETREMOVED0000A");
@@ -1321,8 +1334,8 @@ describe("memory tail — item 2: recomputeDriftAtReindex sheds stale additive r
   }
 
   test("an additive reindex does not re-file drift from a stale (files-absent) row; peer == fresh clone (E6)", () => {
-    const ctx = join(repo, ".ctx");
-    const log = join(repo, ".ctx/memory/log.md");
+    const ctx = join(repo, ".contexa");
+    const log = join(repo, ".contexa/memory/log.md");
     const head = currentHeadCommit(repo)!;
     const m1 = memEntry({
       memoryId: "mem:01DRIFTSTALEROW00000AAAA",

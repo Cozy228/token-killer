@@ -118,7 +118,7 @@ function findRoot(command: ParsedCommand): string {
   return first && first !== "." ? cleanPath(first) : "";
 }
 
-// RTK: system/find_cmd.rs default max_results (parse_find_args → 50). tk filters
+// RTK: system/find_cmd.rs default max_results (parse_find_args → 50). ctx filters
 // the real find's output rather than re-walking the filesystem, so it caps the
 // grouped listing at the same budget and reports the remainder as "+N more".
 

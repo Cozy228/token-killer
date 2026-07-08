@@ -7,12 +7,12 @@
 > `dora-2025.txt` / `dora-roi-2026.txt` (verification-tax mitigations, context-layer roadmap,
 > internal-data capabilities checked at source). Delegation to an uncontaminated agent was the
 > honest implementation of the "do not peek" rule, since the reviewing session itself carries
-> design memory. Sections 2–8 were then written against `CTX-DESIGN.md`, `CTX-IMPL.md`,
+> design memory. Sections 2–8 were then written against `CONTEXA-DESIGN.md`, `CONTEXA-IMPL.md`,
 > `FABLE-DECISION-LOG.md` (P9–P26), and `PROJECT-CONTEXT-PACK.md` §9 (P1–P8).
 > Evidence tiers are binding throughout; nothing below rests on a MISQUOTED / UNVERIFIABLE /
 > do-not-cite figure.
 >
-> **Maintainer ruling 2026-07-03 (P27, post-review)**: ctx serves context only — the
+> **Maintainer ruling 2026-07-03 (P27, post-review)**: Contexa serves context only — the
 > review/verification moment is NOT a product surface, and other DORA pains are not mandates
 > ("the product solves one problem"). G1 is **rejected**, FORK-C is resolved-out, and §5.1 is
 > softened accordingly; markers below. G2–G6 and the alignment ledger are unaffected.
@@ -21,7 +21,7 @@
 
 # Section 1 — First-Principles Derivation from the DORA Evidence Base
 
-*(Derived with the ctx design documents unopened. Self-contained.)*
+*(Derived with the Contexa design documents unopened. Self-contained.)*
 
 ## 1a. Force Map
 
@@ -137,7 +137,7 @@ Derivation frame: the North Star fixes the *what* (developer-local, effective, c
 - **Force**: F3 — verification tax is the #1 barrier to ROI (DORA ROI p. 40, [SURVEY]; converging [TELEMETRY]). DORA's own mitigation list draws the causal arrow this product rides (better context → better initial quality), but the *review side* of the same tax is unserved.
 - **Current assumption**: context is consumed at task-start (generation) or exploration (understanding). `context(ref|task|handle)` has no change-set mode; the moment where the org bleeds — a human or agent *reviewing* an AI-authored change — gets no first-class brief. PR ingestion waits until M4, and nothing serves the local uncommitted diff.
 - **Proposed change**: add a **change-set ref mode** to `context()` — `context(ref: <commit|pr|working-diff>)` renders "what this change touches": linked decisions it may violate, conventions (memory) on the touched entities, co-change expectations ("files that historically move with these didn't move"), open conflicts. All machinery exists (touches edges, conflicts, links, co-change); this is a projection recipe, not new infrastructure. File-level lands with M1's git source; symbol-level sharpens at M2.
-- **Surface**: CTX-DESIGN §4 (ref modes), CTX-IMPL §6 (seeds = changed entities), §7 (schema), M1g/M2. **Level**: design change (surface addition; no new tool — D17 discipline intact, though see FORK-C).
+- **Surface**: CONTEXA-DESIGN §4 (ref modes), CONTEXA-IMPL §6 (seeds = changed entities), §7 (schema), M1g/M2. **Level**: design change (surface addition; no new tool — D17 discipline intact, though see FORK-C).
 - **Capability-state**: Required (if adopted).
 - **Confirm/reject**: in internal A/B, do review-moment `context()` calls happen, and do they reduce correction rounds / review latency? Reject if neither humans nor agents consult context at review time.
 
@@ -146,7 +146,7 @@ Derivation frame: the North Star fixes the *what* (developer-local, effective, c
 - **Force**: F7 (perception inverts reality, [EXPERIMENT]) + T7 (framework vacuum → self-instrumented A/B is the only CFO-legible proof) + the project's own P5.
 - **Current assumption**: P15② "features before measurement" executed as "all instrumentation lands at M5". *Inference*: once colleagues adopt at M1, the pre-adoption baseline (review latency, correction rounds, token spend per task on target repos) is gone; post-hoc A/B then needs holdout arms, which are organizationally harder and statistically weaker.
 - **Proposed change**: one cheap, record-only **baseline capture on target repos BEFORE M1 rollout** (counters only, no judgment — consistent with the record-don't-judge discipline). M5 keeps the analysis harness; this only moves the *recording start* ahead of adoption.
-- **Surface**: CTX-IMPL §9 (a pre-M1 action + M5 scope note); reshapes open item O1. **Level**: decision sharpening (P15② stands; its timing corollary gains one exception) + implementation.
+- **Surface**: CONTEXA-IMPL §9 (a pre-M1 action + M5 scope note); reshapes open item O1. **Level**: decision sharpening (P15② stands; its timing corollary gains one exception) + implementation.
 - **Capability-state**: Required capability; the ordering itself is an Implementation dependency.
 - **Confirm/reject**: confirmed if baseline data is later load-bearing in the internal value story; rejected if the org accepts holdout-arm A/B instead.
 
@@ -155,7 +155,7 @@ Derivation frame: the North Star fixes the *what* (developer-local, effective, c
 - **Force**: F4 — LLM-generated context that duplicates the discoverable *reduced* success in 5/8 settings and raised cost 20–23% (AGENTbench, [ACADEMIC, verified]). The push block is a machine-curated context file injected into every session — structurally the AGENTbench object.
 - **Current assumption**: P21's auto-rank (authority × usage × recency × anchor-freshness) implicitly yields high-gain gists. But host-imported gists are LLM distillations; nothing demotes a restatement gist ("this project uses React/pnpm") that any agent discovers in seconds, and such gists can occupy the ≤1KB floor.
 - **Proposed change**: add a **discoverability demotion** to push ranking (heuristic: gists whose content trivially matches greppable facts — manifest entries, file names, obvious identifiers — rank down), plus a push-on/off arm in the A/B harness.
-- **Surface**: CTX-IMPL §7 push builder; P21 curation policy detail. **Level**: implementation (P17/P21 decisions stand; only the ranking gains a factor).
+- **Surface**: CONTEXA-IMPL §7 push builder; P21 curation policy detail. **Level**: implementation (P17/P21 decisions stand; only the ranking gains a factor).
 - **Capability-state**: Required (ranking factor); any LLM-assisted gain check stays On-demand.
 - **Confirm/reject**: AGENTbench-style eval on internal repos — push-on must beat push-off on task success/cost. Neutral-or-negative → tighten curation before widening rollout.
 
@@ -164,7 +164,7 @@ Derivation frame: the North Star fixes the *what* (developer-local, effective, c
 - **Force**: F2 qualitative — the missed context is "buried in disparate systems" (DORA 2025 p. 85, [SURVEY qualitative]).
 - **Current assumption**: M1's decisions type = local ADR/design docs + commit trailers; PR discussions and Jira arrive at M4. In orgs where decisions live in PR threads (common), the M1 acceptance test ("why was X changed" in one call) passes on fixture repos and underdelivers on real target repos.
 - **Proposed change**: **audit where decisions actually live in 2–3 internal target repos** before freezing the M3/M4 boundary. Feeds FORK-B.
-- **Surface**: CTX-IMPL §9 route ordering. **Level**: implementation route (conditional).
+- **Surface**: CONTEXA-IMPL §9 route ordering. **Level**: implementation route (conditional).
 - **Capability-state**: Implementation dependency.
 - **Confirm/reject**: the audit itself is the test.
 
@@ -173,7 +173,7 @@ Derivation frame: the North Star fixes the *what* (developer-local, effective, c
 - **Force**: R1/R2 ([ACADEMIC] + [SURVEY qualitative]) — within a budgeted response, bytes restating signatures an agent can Read compete with bytes only ctx has (decisions/memory/conflicts).
 - **Current assumption**: lean defaults give code the largest single share (30%) vs decisions 15% / history 15% / memory 10%. Mitigants already present: render tiers, omit-with-handle, marginal-utility borrowing.
 - **Proposed change**: treat the cap constants as **measurement-gated tunables** with an explicit invisible-first weighting arm in the ablation harness.
-- **Surface**: CTX-IMPL §6 (`select/constants.ts`). **Level**: implementation (constants only).
+- **Surface**: CONTEXA-IMPL §6 (`select/constants.ts`). **Level**: implementation (constants only).
 - **Capability-state**: Required constants; values measurement-gated (the FORK-3 pattern, applied to caps).
 - **Confirm/reject**: drill-down rate + task outcomes across weighting arms.
 
@@ -182,7 +182,7 @@ Derivation frame: the North Star fixes the *what* (developer-local, effective, c
 - **Force**: F8 — the value gap is largest on legacy code ([ACADEMIC via DORA]); F1 — the amplifier needs substrate. Day-1 on an old, ADR-less repo, the base holds git history + co-change only; memory and decisions accrue slowly.
 - **Current assumption**: value ramps with accumulation; carrier absence is disclosed, but nothing *accelerates* the ramp on the highest-value target.
 - **Proposed change**: a documented **onboarding/backfill flow** — `ctx init` surfaces the options: import GitHub PR history, run On-demand Inferred decision proposals over commit/PR text (validator-loop pattern already specced), seed conventions via `remember()` in the first week. Framing: adoption asset, not new machinery.
-- **Surface**: CTX-IMPL §7 (init/doctor), docs. **Level**: implementation/documentation.
+- **Surface**: CONTEXA-IMPL §7 (init/doctor), docs. **Level**: implementation/documentation.
 - **Capability-state**: On-demand.
 - **Confirm/reject**: time-to-first-useful-answer measured on the oldest internal target repo.
 
@@ -218,7 +218,7 @@ Derivation frame: the North Star fixes the *what* (developer-local, effective, c
 |---|---|---|
 | **Build an AI review bot** | F3 is the #1 pain; DORA's mitigation #2 is literally "use AI to assist code review" | North star is context, not review automation; the category is crowded vendor territory; ctx's differentiated move is the reviewer's *context brief* (G1) — supplying the evidence, not the judgment |
 | **Expand push into a "project brief"** (in-effect decisions, hot areas, architecture summary) | F2 headline: "give AI internal data"; more standing context feels like more value | The AGENTbench-condemned shape ([ACADEMIC]): standing injected context with low information gain reduces success and raises cost; P17's digest-only restraint is the evidence-correct call — T1 says access-by-default, push-by-exception |
-| **Add LLM-authored wiki/prose generation** | The whole wiki reference cohort does it; "docs for AI" is the hype default | X2: restatement context measurably hurts; CTX-IMPL already names "LLM prose with decorative citations" as the cohort failure mode; On-demand Inferred + validator loop stays the ceiling |
+| **Add LLM-authored wiki/prose generation** | The whole wiki reference cohort does it; "docs for AI" is the hype default | X2: restatement context measurably hurts; CONTEXA-IMPL already names "LLM prose with decorative citations" as the cohort failure mode; On-demand Inferred + validator loop stays the ceiling |
 | **Cite headline waste numbers** ("42% avoidable", "62% re-sent", "10–100x agents-vs-chat") in the internal story | They are viral and CFO-scary | §4/§5 verification: PARTIALLY CONFIRMED / UNVERIFIABLE / converging-estimate; the honesty moat forbids exactly this; use own-measured deltas instead (G2) |
 | **Add a daemon/resident process for fresher context** | "Freshness is first-class" (R4) seems to demand it | No force demands sub-query-latency freshness; P24's query-time dirty checks + cold-path catch-up satisfy R4/B3; the 0.3.2 daemon rejection (complexity/reliability/security) stands unpressured |
 | **Aggressive memory auto-expiry** | The auto-memory failure-mode discourse (crowding, contradictions, no expiry) | Evidence is [ANECDOTE/first-party issue] tier; P21 already answers each documented mode (anchor-invalidation → needs-review, review queue, decay-in-ranking, explicit supersede, never-destructive); auto-delete on weak evidence would violate the design's own conservatism |

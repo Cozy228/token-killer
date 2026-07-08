@@ -1,5 +1,5 @@
 /**
- * Connection bootstrap over node:sqlite (CTX-IMPL §2 notes).
+ * Connection bootstrap over node:sqlite (CONTEXA-IMPL §2 notes).
  *
  * PRAGMA order is load-bearing: `busy_timeout` MUST be set first (before
  * `journal_mode`) so the WAL switch itself waits instead of failing under a

@@ -1,5 +1,5 @@
 /**
- * Stage 4 — sections + marginal-utility borrowing (CTX-IMPL §6.4).
+ * Stage 4 — sections + marginal-utility borrowing (CONTEXA-IMPL §6.4).
  *
  * Bucket ranked candidates by content type; per-section caps = fixed shares of
  * the tier budget (lean ≈1200 tokens; wide = 3× same percentages, P28).
@@ -129,14 +129,12 @@ export function assembleSections(
   const buckets = new Map<SectionName, PendingItem[]>();
   for (const name of SECTION_ORDER) buckets.set(name, []);
   if (subject) {
-    buckets
-      .get("subject")!
-      .push({
-        entity: subject,
-        score: Number.POSITIVE_INFINITY,
-        section: "subject",
-        maxTier: "full",
-      });
+    buckets.get("subject")!.push({
+      entity: subject,
+      score: Number.POSITIVE_INFINITY,
+      section: "subject",
+      maxTier: "full",
+    });
   }
   for (const c of candidates) {
     if (subject && c.entity.id === subject.id) continue;

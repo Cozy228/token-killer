@@ -1,6 +1,6 @@
 /**
  * `ctx sync` CLI test (slice 1d). Drives the registry-generic refresh engine
- * over a script-generated fixture repo in a temp CTX_HOME sandbox (G-7). No real
+ * over a script-generated fixture repo in a temp CONTEXA_HOME sandbox (G-7). No real
  * host state is touched; git spawns carry explicit timeouts.
  */
 import { execFileSync } from "node:child_process";
@@ -8,7 +8,7 @@ import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, test } from "vitest";
-import { openStore } from "@ctx/core";
+import { openStore } from "@contexa/core";
 import { runSync, run } from "../src/cli.ts";
 
 function git(args: string[], cwd: string): void {
@@ -38,7 +38,7 @@ describe("ctx sync", () => {
     writeFileSync(join(repo, "a.ts"), "export const a = 1;\n");
     git(["add", "a.ts"], repo);
     git(["commit", "-q", "-m", "feat: add a"], repo);
-    home = join(root, "ctx-home");
+    home = join(root, "contexa-home");
   });
   afterEach(() => {
     rmSync(root, { recursive: true, force: true, maxRetries: 5, retryDelay: 100 });

@@ -1,4 +1,4 @@
-# Token Killer Product Principles
+# Contexa Product Principles
 
 > 产品心智层：为什么这么压、压到哪为止、如何判断是否压对了。
 > 实现细节（命令族策略表、quality gate 机制、parser tier、delivery policy）见 [DESIGN.md](./DESIGN.md)，本文不复制规则，避免两份事实源 drift。
@@ -13,13 +13,13 @@
 
 ## Positioning statements
 
-这几句是 `tk` 的产品定位语，DESIGN.md 没有，刻意保留在产品层：
+这几句是 `ctx` 的产品定位语，DESIGN.md 没有，刻意保留在产品层：
 
-- **`tk` 是证据投影器，不是摘要器。** 面向人的摘要可以省细节；面向 agent 的输出不能省可行动事实。不要问"这段输出大意是什么"，要问"agent 下一步需要哪些证据"。
+- **`ctx` 是证据投影器，不是摘要器。** 面向人的摘要可以省细节；面向 agent 的输出不能省可行动事实。不要问"这段输出大意是什么"，要问"agent 下一步需要哪些证据"。
 - **只删壳，不删证据。** 可删：ANSI 码、进度条、spinner、重复空行、装饰边框、wrapper 噪音、passed test 冗长列表、完全重复日志、确定性无关目录（如 `node_modules`）。不可删：错误细节、文件路径、行号、diff hunk、匹配行、SQL rows、stderr 语义、failing assertion、crash reason、dependency conflict。
 - **0% savings 不是失败，错压才是失败。** 高 savings + 错内容，比 0 savings 更危险。
 - **不给 agent 制造幻觉上下文。** `+N more` / `truncated` / `omitted` / "只展示部分结果" 这类"假完整"输出被禁止——agent 没看到被省的内容，却以为掌握了全局。
-- **质量门是护城河，不是实现细节。** `tk` 与 RTK 的关键区别不是"谁更会压"，而是 `tk` 有自动回退（Safe Compression Gate）。RTK 容易高 savings 但错。这是核心卖点。
+- **质量门是护城河，不是实现细节。** `ctx` 与 RTK 的关键区别不是"谁更会压"，而是 `ctx` 有自动回退（Safe Compression Gate）。RTK 容易高 savings 但错。这是核心卖点。
 
 ## North-star metric
 

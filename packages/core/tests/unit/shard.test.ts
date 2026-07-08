@@ -1,7 +1,7 @@
 import { mkdirSync } from "node:fs";
 import { join, sep } from "node:path";
 import { afterEach, beforeEach, describe, expect, test } from "vitest";
-import { ctxHome, resolveShard, SHARD_HEX_LEN, storePath } from "../../src/store/shard.ts";
+import { contexaHome, resolveShard, SHARD_HEX_LEN, storePath } from "../../src/store/shard.ts";
 import { cleanupTempDir, git, makeGitFixture, makeTempDir } from "../helpers/sandbox.ts";
 
 describe("shard placement (worktree-aware, P28 addenda)", () => {
@@ -58,11 +58,11 @@ describe("shard placement (worktree-aware, P28 addenda)", () => {
     expect(resolveShard(a).shard).not.toBe(resolveShard(bRoot).shard);
   });
 
-  test("store path layout + CTX_HOME override", () => {
+  test("store path layout + CONTEXA_HOME override", () => {
     expect(storePath("abc123def456", "/data/ctx")).toBe(
       join("/data/ctx", "projects", "abc123def456", "store.sqlite"),
     );
-    expect(ctxHome({ CTX_HOME: "/custom" })).toBe("/custom");
-    expect(ctxHome({})).toContain(".ctx");
+    expect(contexaHome({ CONTEXA_HOME: "/custom" })).toBe("/custom");
+    expect(contexaHome({})).toContain(".contexa");
   });
 });

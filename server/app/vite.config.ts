@@ -8,7 +8,7 @@ export default defineConfig({
   build: {
     ssr: "src/index.ts",
     outDir: "dist",
-    target: "node20",
+    target: "node22.18",
     minify: false,
     emptyOutDir: true,
     // Single-file output: app deps (hono/zod) bundle in; pg + AWS SDK stay

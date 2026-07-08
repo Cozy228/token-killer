@@ -136,7 +136,7 @@ describe("memory: Claude importer (synthetic dir — deterministic tier)", () =>
   beforeEach(() => {
     root = makeTempDir("ctx-imp-");
     repo = makeGitFixture(root);
-    home = join(root, "ctx-home");
+    home = join(root, "contexa-home");
     claudeHome = join(root, "fake-home");
     store = openStore({ projectDir: repo, home });
     seedClaudeMemory(claudeHome, store.projectRoot, {
@@ -282,7 +282,7 @@ describe("memory: remember / recall / lifecycle", () => {
   beforeEach(() => {
     root = makeTempDir("ctx-rem-");
     repo = makeGitFixture(root);
-    store = openStore({ projectDir: repo, home: join(root, "ctx-home") });
+    store = openStore({ projectDir: repo, home: join(root, "contexa-home") });
   });
   afterEach(() => {
     store.close();

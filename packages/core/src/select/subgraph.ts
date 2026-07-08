@@ -1,5 +1,5 @@
 /**
- * Stage 2 — subgraph extraction (CTX-IMPL §6.2): frontier expansion over
+ * Stage 2 — subgraph extraction (CONTEXA-IMPL §6.2): frontier expansion over
  * `links` (ALL predicates, both directions — the walk is undirected), depth ≤2,
  * node cap 512, frontier priority = parent score × edge confidence.
  *

@@ -1,5 +1,5 @@
 /**
- * Default source registry (CTX-IMPL §4). `ctx sync` and the serve path build the
+ * Default source registry (CONTEXA-IMPL §4). `ctx sync` and the serve path build the
  * registry through this factory and hand it to the RefreshEngine, which iterates
  * whatever is registered — the orchestration is source-generic, never git-only
  * (P28: `ctx sync` = all-sources entry point). M1 registers git (1d), docs (1e),

@@ -23,20 +23,20 @@ function wire(payload: Record<string, unknown>) {
 }
 
 describe("decide — preToolUse terminal rewrite", () => {
-  test("CLI bash git status → rewrite tk git status", () => {
+  test("CLI bash git status → rewrite ctx git status", () => {
     const d = pre({ toolName: "bash", toolArgs: JSON.stringify({ command: "git status" }) });
     expect(d.decision).toBe("rewrite");
-    expect(d.rewritten_command).toBe("tk git status");
+    expect(d.rewritten_command).toBe("ctx git status");
   });
 
   test("VS Code run_in_terminal npm test → rewrite", () => {
     const d = pre({ tool_name: "run_in_terminal", tool_input: { command: "npm test" } });
     expect(d.decision).toBe("rewrite");
-    expect(d.rewritten_command).toBe("tk npm test");
+    expect(d.rewritten_command).toBe("ctx npm test");
   });
 
-  test("already-tk command → allow (pass)", () => {
-    const d = pre({ toolName: "bash", toolArgs: JSON.stringify({ command: "tk git status" }) });
+  test("already-ctx command → allow (pass)", () => {
+    const d = pre({ toolName: "bash", toolArgs: JSON.stringify({ command: "ctx git status" }) });
     expect(d.decision).toBe("allow");
   });
 
@@ -99,7 +99,7 @@ describe("toHostOutput — emits the shape the real host reads (ADR 0005)", () =
       permissionDecision: "allow",
       permissionDecisionReason: COPILOT_REWRITE_REASON,
       updatedInput: {
-        command: "tk git status",
+        command: "ctx git status",
         explanation: "Check repo",
         goal: "Inspect tree",
         mode: "sync",
@@ -116,7 +116,7 @@ describe("toHostOutput — emits the shape the real host reads (ADR 0005)", () =
     expect(out).toEqual({
       permissionDecision: "allow",
       permissionDecisionReason: COPILOT_REWRITE_REASON,
-      modifiedArgs: { command: "tk git status" },
+      modifiedArgs: { command: "ctx git status" },
     });
     expect("hookSpecificOutput" in out).toBe(false);
   });
@@ -136,7 +136,7 @@ describe("toHostOutput — emits the shape the real host reads (ADR 0005)", () =
       }),
     }) as Record<string, unknown>;
     expect(out.modifiedArgs).toEqual({
-      command: "tk git status",
+      command: "ctx git status",
       description: "check repo status",
       initial_wait: 30,
       mode: "sync",

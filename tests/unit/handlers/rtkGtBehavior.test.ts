@@ -42,7 +42,7 @@ describe("RTK gt behavior", () => {
   });
 
   // ADR 0001 decision 2: RTK's MAX_LOG_ENTRIES (15) cap + "... +N more entries"
-  // marker is REMOVED. Within budget tk keeps every entry, strips every author
+  // marker is REMOVED. Within budget ctx keeps every entry, strips every author
   // email, and emits NO fake overflow marker.
   test("keeps every entry, strips emails, no fake marker", async () => {
     const lines: string[] = [];

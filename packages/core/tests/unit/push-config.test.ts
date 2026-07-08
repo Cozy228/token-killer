@@ -9,7 +9,7 @@ import {
   stripJsonComments,
 } from "../../src/push/config.ts";
 
-// §10 unit — .ctx/push.jsonc JSONC parsing edge cases (P28: comments allowed;
+// §10 unit — .contexa/push.jsonc JSONC parsing edge cases (P28: comments allowed;
 // unknown keys rejected with guidance; every failure success-shaped, never a throw).
 describe("push config: JSONC parsing", () => {
   test("empty / whitespace source → clean empty config", () => {
@@ -123,17 +123,17 @@ describe("push config: E4 opt-out reader (readMemoryOptOut)", () => {
   });
 
   test("missing config → not opted out; malformed → not opted out (success-shaped)", () => {
-    const ctxRoot = join(root, ".ctx");
-    expect(readMemoryOptOut(ctxRoot)).toBe(false); // no file
-    mkdirSync(ctxRoot, { recursive: true });
-    writeFileSync(join(ctxRoot, "push.jsonc"), "{ not json");
-    expect(readMemoryOptOut(ctxRoot)).toBe(false);
+    const contexaRoot = join(root, ".contexa");
+    expect(readMemoryOptOut(contexaRoot)).toBe(false); // no file
+    mkdirSync(contexaRoot, { recursive: true });
+    writeFileSync(join(contexaRoot, "push.jsonc"), "{ not json");
+    expect(readMemoryOptOut(contexaRoot)).toBe(false);
   });
 
   test("`commitMemory: false` in the SHARED config → opted out", () => {
-    const ctxRoot = join(root, ".ctx");
-    mkdirSync(ctxRoot, { recursive: true });
-    writeFileSync(join(ctxRoot, "push.jsonc"), `{ "commitMemory": false }`);
-    expect(readMemoryOptOut(ctxRoot)).toBe(true);
+    const contexaRoot = join(root, ".contexa");
+    mkdirSync(contexaRoot, { recursive: true });
+    writeFileSync(join(contexaRoot, "push.jsonc"), `{ "commitMemory": false }`);
+    expect(readMemoryOptOut(contexaRoot)).toBe(true);
   });
 });

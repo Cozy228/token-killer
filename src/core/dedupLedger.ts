@@ -1,7 +1,7 @@
 // ADR 0009 — the dedup accounting ledger. Dedup hits are recorded in a DEDICATED
 // `dedup-events.jsonl` per project, NEVER in history.jsonl, so a dedup saving can
 // never be summed into ledger ① (filter savings) by applyRecord or any other
-// history consumer. `tk gain` reads this and renders a separate "Session dedup"
+// history consumer. `ctx gain` reads this and renders a separate "Session dedup"
 // line — mirroring VS Code PR #315905's `cacheHit` field, which is reported apart
 // from compression savings. Append-only, fail-open: accounting never breaks the
 // hot path, and a missing/corrupt file reads as zero events.
@@ -10,7 +10,7 @@ import type { Dirent } from "node:fs";
 import { mkdir, readFile, readdir, writeFile } from "node:fs/promises";
 import path from "node:path";
 
-import { dedupEventsFile, tokenKillerHome } from "./dataDir.js";
+import { dedupEventsFile, contexaHome } from "./dataDir.js";
 import { parseJsonl } from "./jsonl.js";
 
 export type DedupEvent = {
@@ -53,7 +53,7 @@ export async function readDedupEvents(cwd: string): Promise<DedupEvent[]> {
 // User-level read: every project's dedup-events.jsonl. Best-effort — an unreadable
 // directory or corrupt file is skipped, never thrown (mirrors listProjectHistories).
 export async function listAllDedupEvents(): Promise<DedupEvent[]> {
-  const projectsDir = path.join(tokenKillerHome(), "projects");
+  const projectsDir = path.join(contexaHome(), "projects");
   let entries: Dirent[];
   try {
     entries = await readdir(projectsDir, { withFileTypes: true });
@@ -95,7 +95,7 @@ export function summarizeDedup(events: DedupEvent[]): DedupSummary {
   return { hits: events.length, saved_tokens: saved, by_command };
 }
 
-// Most-recent-first events for `tk gain --history` (labeled as dedup rows).
+// Most-recent-first events for `ctx gain --history` (labeled as dedup rows).
 export function recentDedupEvents(events: DedupEvent[], n: number): DedupEvent[] {
   return [...events].sort((a, b) => b.ts.localeCompare(a.ts)).slice(0, n);
 }

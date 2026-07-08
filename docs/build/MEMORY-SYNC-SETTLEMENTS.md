@@ -10,8 +10,8 @@
 > contradicts a ruling. Constraints = the invariants + the rulings, **not** the current implementation.
 >
 > **Frame.** The **unified event model** (sync prompt): every write is an immutable event landing in
-> exactly one of three zones — ① committed Mainline log (`.ctx/`, git-synced), ② personal overlay
-> (gitignored, per-person), ③ external snapshot (`~/.ctx/…/snapshots/`, dated cache of an external
+> exactly one of three zones — ① committed Mainline log (`.contexa/`, git-synced), ② personal overlay
+> (gitignored, per-person), ③ external snapshot (`~/.contexa/…/snapshots/`, dated cache of an external
 > system-of-record). Status is a deterministic fold over events in total order `(timestamp, ULID)`;
 > `store.sqlite` is a rebuildable materialized view.
 
@@ -31,7 +31,7 @@ interleaving.
 **Options (diverge first):**
 1. **Sidecar file per detail** — the log stays one physical line per entry (C1); the entry line
    carries an inline pointer token (`detail:<ulid>`, plain ASCII — final grammar is slice-3-owned)
-   to a separate write-once file `.ctx/memory/details/<ulid>.md` holding the multi-line body.
+   to a separate write-once file `.contexa/memory/details/<ulid>.md` holding the multi-line body.
 2. **Fenced continuation** — the entry line is followed, in the *same* log file, by a fenced
    (```` ``` ````) block of detail lines.
 3. **Inline-escaped single line** — gist + detail encoded on one physical line with `\n` escapes,
@@ -45,7 +45,7 @@ event → a new entry → a new sidecar, per Decision 5's append-only rule), so 
 interleaved by union merge, and two peers cannot collide on it. Arbitrarily large detail is allowed
 without bloating the log line. Sidecars are never deleted (non-destruction invariant). For a zone-2
 (overlay) entry the sidecar lives under the gitignored overlay path; for a Mainline entry it lives
-under committed `.ctx/memory/details/`.
+under committed `.contexa/memory/details/`.
 
 **Integrity — dangling pointers & orphan sidecars.** The entry line and its sidecar are separate git
 objects, so partial staging, a crash, or a manual conflict resolution can leave a pointer without its
@@ -79,7 +79,7 @@ E6 (determinism = canonical logical equality). Non-destruction invariant. Preser
 
 **Options (diverge first):**
 1. **One-shot export + reindex, id-keyed & idempotent** — a cold-path exporter reads the M1
-   `memory` rows, emits committed `.ctx/memory/` log entries + detail sidecars + synthesized
+   `memory` rows, emits committed `.contexa/memory/` log entries + detail sidecars + synthesized
    decision-log events (to replay non-`active` status), then the store reverts to a pure index
    rebuilt from the files.
 2. **Lazy dual-read migration** — keep the store as source of truth, migrate entries to files on
@@ -91,7 +91,7 @@ E6 (determinism = canonical logical equality). Non-destruction invariant. Preser
 Mechanics:
 - **Trigger.** First post-upgrade cold path (`ctx sync` / `install` / `doctor`) detects the migration
   is due via a `meta` marker (bumped `schema_version` / `memory_migrated_at` unset) with store memory
-  present and `.ctx/memory/` absent-or-partial.
+  present and `.contexa/memory/` absent-or-partial.
 - **Export per row, preserving everything.** For each `memory` row: emit one append-only log entry
   keyed by its existing `mem:<ulid>` (the ULID **is** the id — stable, preserved); write a detail
   sidecar (S1) when `detail` is present; emit anchor lines; carry `authority` and provenance claims
@@ -187,7 +187,7 @@ imports → overlay), E4 (secret guard), VISION invariant 4 (server never durabl
 
 **Categories:** **①** derived-from-committed-source (SoT = git; store = deterministic cache; never
 synced; regenerated locally; `store.sqlite` gitignored). **②** authored-local (SoT = committed
-`.ctx/` files; git + PR; conflicts per the E1 three-layer model). **③** external system-of-record
+`.contexa/` files; git + PR; conflicts per the E1 three-layer model). **③** external system-of-record
 (SoT = the external system; ctx holds a dated local snapshot; re-imported per person, never
 committed; freshness = snapshot age). Plus two non-category rows the frame requires: **overlay** =
 zone 2 (gitignored, per-person, never synced) and **push target** (an output surface, not a source).
@@ -214,10 +214,10 @@ never synced," not "the file never moves."
 | `remember()` **via CLI** (human-authored) | Memory/experience | **②** | committed | git + PR; E1 three-layer conflict | human at the CLI → E3 satisfied; E4 "defaults to Mainline" applies to this surface (`--local` → overlay) |
 | `remember()` **via MCP** (agent-authored) | Memory/experience | **overlay → ② on confirm** | overlay (zone 2) | lands as `needs-review`; human confirmation promotes to a committed ② event | E3: agent-authored is auto-generated → never enters git unreviewed (same pipeline as host imports); ruling A4 keeps lifecycle human/CLI-only |
 | human notes (`remember` human-authored) | Memory/experience | **②** | committed | git + PR | human-authored → satisfies E3 directly; committed |
-| concepts (glossary/definition entities) | Domain/doc knowledge | **②** | committed | git + PR | C3: concepts follow memory out of index-not-copy into committed `.ctx/concepts/` |
+| concepts (glossary/definition entities) | Domain/doc knowledge | **②** | committed | git + PR | C3: concepts follow memory out of index-not-copy into committed `.contexa/concepts/` |
 | host auto-memory dirs (Claude / Codex / Copilot `memories/`) | Memory/experience | **overlay → ② on confirm** | overlay (zone 2) | imports land per-person in the overlay as `needs-review`; **confirmation** produces a committed ② event | E3: committed = human-authored **or human-confirmed**; auto-generated notes never enter git unreviewed (closes echo loop + privacy hole) |
-| `.ctx/push.jsonc` (push pin/veto) | — (project presentation) | **②** | committed | git-synced shared config (D27/D30) | three-tier (b): project presentation is shared, committed |
-| personal overlay files (`.ctx/*.local.*`) | my-view attention · unconfirmed imports · session/task memory | **overlay** | zone 2 | gitignored; **never synced** | three-tier (c) personal attention + E3 import landing; deliberately divergent |
+| `.contexa/push.jsonc` (push pin/veto) | — (project presentation) | **②** | committed | git-synced shared config (D27/D30) | three-tier (b): project presentation is shared, committed |
+| personal overlay files (`.contexa/*.local.*`) | my-view attention · unconfirmed imports · session/task memory | **overlay** | zone 2 | gitignored; **never synced** | three-tier (c) personal attention + E3 import landing; deliberately divergent |
 | host instruction files (AGENTS.md / CLAUDE.md) | — | **push TARGET, not a source** | — | ctx *writes* a managed block; **excluded from ingest** (echo prevention) | it is an output surface, not a content source; ingesting it would re-import ctx's own push (echo) |
 | `store.sqlite` / `ledgers.sqlite` | — (the index itself) | **① by construction** | cache | gitignored; rebuildable | not a carrier; the derived index — commit sources, gitignore the index (src/ vs dist/) |
 
@@ -281,21 +281,21 @@ equality), the M1 first-call catch-up gate (D25 refresh-trigger model). Mechanic
 `dependency_index` and the generation/cursor machinery already in the schema.
 
 1. **Memory dirty-check = mtime-first + manifest short-circuit.** Store a manifest in `meta`/`cursors`
-   = `{ .ctx/memory tree mtime, entry count, aggregate hash }`. Dirty-check compares the directory
+   = `{ .contexa/memory tree mtime, entry count, aggregate hash }`. Dirty-check compares the directory
    mtime to the stored value: **unchanged tree → one `stat` (< 1 ms), no file reads.** On a
    dir-mtime advance: `stat` each file, checksum **only** files whose own mtime advanced
-   (mtime-first, checksum-on-change). Unchanged `.ctx/memory/` ≈ one stat ≪ 20 ms.
+   (mtime-first, checksum-on-change). Unchanged `.contexa/memory/` ≈ one stat ≪ 20 ms.
 2. **Anchor re-verification is change-set-bounded.** On code reindex, the reverse `dependency_index`
    (indexed by changed symbol id) yields exactly the anchored memories touching the changed set — an
    indexed lookup keyed by the changed-symbol set, **never** a scan over all memory. Cost =
    `O(changed anchors)`, not `O(all memory)`. Asserted at scale (N memories, k changed → k re-checks).
 3. **Reindex on `git pull` is pulled-delta-proportional.** Reindex processes exactly the **added
-   lines** from `git diff <old-tip>..<new-tip> -- .ctx/` (and their detail sidecars), not the whole
-   `.ctx/memory/`. This is delta-proportional by construction and is safe under `merge=union`, where
+   lines** from `git diff <old-tip>..<new-tip> -- .contexa/` (and their detail sidecars), not the whole
+   `.contexa/memory/`. This is delta-proportional by construction and is safe under `merge=union`, where
    a byte-offset or last-ULID cursor is NOT: a union merge can insert lines *before* any byte cursor,
    and pulled events can carry ULIDs *older* than local writes — both cursors would silently skip
    events. If the diff is any non-append shape (a rewrite, a manual conflict resolution touching
-   existing lines), fall back to a **full ULID-set reconciliation scan** of `.ctx/memory/` (correct,
+   existing lines), fall back to a **full ULID-set reconciliation scan** of `.contexa/memory/` (correct,
    rare). Cost ∝ pulled lines in the common append case.
 4. **Status fold is cached in the index, never replayed per query.** The derived status (E2/E5 fold
    over the decision log) is materialized in the rebuildable index's `memory.status` column; queries
@@ -309,7 +309,7 @@ equality), the M1 first-call catch-up gate (D25 refresh-trigger model). Mechanic
    serves the cached generation (E6 canonical) with zero re-parse.
 
 **A11 not regressed:** dirty is dominated by ~one stat on an unchanged tree (< 20 ms); serve is
-single indexed reads with no log replay and no full scan (< 150 ms), on a large `.ctx/memory/`
+single indexed reads with no log replay and no full scan (< 150 ms), on a large `.contexa/memory/`
 fixture.
 
 ---
@@ -331,8 +331,8 @@ contradicted. Relocated here from the removed root `implementation-notes.md` (jo
   MCP = agent-authored → overlay `needs-review` → committed on human confirm (E3 + A4). Preserves E3.
 - **S3 migration runs the E4 guard on export** (pre-guard store memory not silently committed) and
   writes the `meta` marker **last** for idempotent + resumable behavior.
-- **Repo `.ctx/` layout named concretely** (`.ctx/memory/*.md`, `.ctx/memory/details/`,
-  `.ctx/memory/decisions.md`, `.ctx/concepts/`, `.ctx/push.jsonc`, `.ctx/*.local.*`,
+- **Repo `.contexa/` layout named concretely** (`.contexa/memory/*.md`, `.contexa/memory/details/`,
+  `.contexa/memory/decisions.md`, `.contexa/concepts/`, `.contexa/push.jsonc`, `.contexa/*.local.*`,
   `.gitattributes merge=union`) — implementer conventions for slice 3, not rulings; slice 3 owns the
   final names.
 
@@ -345,4 +345,4 @@ contradicted. Relocated here from the removed root `implementation-notes.md` (jo
 - `docs/reference/` is untracked at the repo root (pre-existing, out of scope) — left untouched.
 
 **Open questions:**
-- None blocking. Exact on-disk names under `.ctx/` are conventions owned by slice 3 (storage swap).
+- None blocking. Exact on-disk names under `.contexa/` are conventions owned by slice 3 (storage swap).

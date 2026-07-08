@@ -65,7 +65,7 @@ describe("push rank: determinism + reuse of selection primitives", () => {
 
   beforeEach(() => {
     root = makeTempDir("ctx-rank-");
-    home = join(root, "ctx-home");
+    home = join(root, "contexa-home");
     const repo = makeGitFixture(root);
     // Fixed store clock so last_verified (and thus recency) is deterministic.
     store = openStore({ projectDir: repo, home, now: () => 1_600_000_000_000 });

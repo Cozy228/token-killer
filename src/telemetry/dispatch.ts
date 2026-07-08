@@ -1,17 +1,19 @@
 // Slice 4 — cold-path telemetry trigger (ADR 0004 §5). Called ONLY at the end of
-// `tk inspect` and `tk gain` — NEVER from `tk <cmd>` (the hot path is sacred). Any
+// `ctx inspect` and `ctx gain` — NEVER from `ctx <cmd>` (the hot path is sacred). Any
 // error here is swallowed: telemetry must never change a command's behavior or exit
 // code. `now`/`runId`/`send`/`endpoint` are injectable so tests stay deterministic.
+
+import { randomUUID } from "node:crypto";
 
 import { readConfig } from "../core/config.js";
 import type { HistoryRecord } from "../core/history.js";
 import { writeTelemetryExport } from "../inspect/persist.js";
 import { VERSION } from "../version.js";
 import { buildTelemetry, buildTelemetryFromRollup, type InspectAggregates } from "./build.js";
-import type { MergedRollup } from "../core/rollup.js";
+import { loadCachedProjectRollups, mergeRollups, type MergedRollup } from "../core/rollup.js";
 import { TELEMETRY_ENDPOINT } from "./endpoint.js";
 import { sendTelemetry } from "./send.js";
-import { deviceHash, loadOrCreateState, setLastSentAt } from "./state.js";
+import { deviceHash, loadOrCreateState, peekLastSentAt, setLastSentAt } from "./state.js";
 
 const WINDOW_MS = 23 * 60 * 60 * 1000; // ≤1 attempt per 23h
 
@@ -87,10 +89,72 @@ export function runColdPathTelemetry(params: DispatchParams): void {
   }
 }
 
+// Opportunistic HOT-PATH flush (ADR 0004 Decision 6 amendment). Fires at the tail of a
+// normal `ctx <cmd>` compress run — AFTER the compressed result is already on stdout, and
+// NEVER on --raw / passthrough / hook paths. It exists so installs that rarely run the cold
+// path (`ctx inspect` / `ctx gain`) still report at most once per 23h. It stays USER-LEVEL by
+// merging the already-built per-project CACHED rollups via `loadCachedProjectRollups` — a
+// READ-ONLY load that (unlike the cold path's `listProjectRollups`) never opens history.jsonl or
+// rebuilds a rollup, so the hot path stays cheap and a project with history but no built rollup
+// yet contributes nothing until a cold path seeds it. Shares the SAME 23h `lastSentAt` throttle, so the combined
+// hot+cold cadence stays ≤ once/23h. Best-effort and non-blocking: every error is swallowed,
+// the send socket is unref'd, and an empty cache simply sends nothing.
+export async function runHotPathTelemetryFlush(
+  now: Date = new Date(),
+  deps: { endpoint?: string; send?: SendFn } = {},
+): Promise<void> {
+  try {
+    const endpoint = deps.endpoint ?? TELEMETRY_ENDPOINT;
+    // Generic/dev build bakes "" ⇒ inert; bail before ANY I/O (≈zero hot-path cost). The
+    // caller also gates the dynamic import on this, so the module never even loads there.
+    if (!endpoint) return;
+
+    let config;
+    try {
+      config = readConfig();
+    } catch {
+      return; // a broken config never triggers a send
+    }
+    if (!config.telemetry) return; // network upload not opted in
+
+    // 23h throttle (shared with the cold path), checked NON-destructively: the dominant
+    // steady-state exit is this single small read. peekLastSentAt never creates state.
+    const lastSentAt = peekLastSentAt();
+    if (lastSentAt && now.getTime() - new Date(lastSentAt).getTime() < WINDOW_MS) return;
+
+    // Merge the CACHED per-project rollups (user-level, like the cold path) — NEVER read raw
+    // history or rebuild a rollup here — and do it BEFORE touching state: an opted-in install
+    // whose projects have never run the cold path has no cached rollups yet, so we return here
+    // without ever minting telemetry state (keeps the hot path side-effect-free and preserves
+    // "ctx <cmd> doesn't touch telemetry state"). The next cold-path run seeds the cache.
+    const rollups = await loadCachedProjectRollups();
+    if (rollups.length === 0) return;
+    const rollup = mergeRollups(rollups);
+
+    // A send is actually happening now: materialize state (mints the salt once) and stamp
+    // BEFORE dispatch so a down endpoint is never retried within the window.
+    const state = loadOrCreateState(now);
+    setLastSentAt(now);
+    const payload = buildTelemetryFromRollup({
+      rollup,
+      version: VERSION,
+      deviceHash: deviceHash(state),
+      firstSeenAt: state.firstSeenAt,
+      now,
+      runId: randomUUID(),
+    });
+    const send = deps.send ?? sendTelemetry;
+    // Fire-and-forget; the socket is unref'd in send.ts so it never holds the process open.
+    void send(endpoint, `${JSON.stringify(payload)}\n`).catch(() => {});
+  } catch {
+    // The hot-path flush must never throw or change the command's behavior / exit code.
+  }
+}
+
 function writeLocalAndWarn(body: string): void {
   try {
     const path = writeTelemetryExport(body);
-    process.stderr.write(`tk: telemetry send unavailable; kept local export: ${path}\n`);
+    process.stderr.write(`ctx: telemetry send unavailable; kept local export: ${path}\n`);
   } catch {
     // best-effort
   }

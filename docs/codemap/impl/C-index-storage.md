@@ -1,4 +1,4 @@
-> **[2026-07-04 P28] PARTIALLY SUPERSEDED** — the D18 DDL/table naming here (nodes/edges/fact_claims/…) is replaced by `CTX-IMPL.md` §2 (entities/claims/links/conflicts/memory/handles). Carried facts that survive: sha256 content_hash; embeddings = Unsupported. The engines band is amended to ≥22.5 no-ceiling (P28).
+> **[2026-07-04 P28] PARTIALLY SUPERSEDED** — the D18 DDL/table naming here (nodes/edges/fact_claims/…) is replaced by `CONTEXA-IMPL.md` §2 (entities/claims/links/conflicts/memory/handles). Carried facts that survive: sha256 content_hash; embeddings = Unsupported. The engines band is amended to ≥22.5 no-ceiling (P28).
 
 ## 需求 C — Index base & storage（索引底座与存储）
 

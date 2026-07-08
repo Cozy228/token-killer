@@ -43,7 +43,7 @@ function post(body: unknown) {
 describe("POST /v1/telemetry", () => {
   beforeEach(() => vi.clearAllMocks());
 
-  it("accepts a valid v2 payload", async () => {
+  it("accepts a valid v1 payload", async () => {
     const res = await post(valid);
     expect(res.status).toBe(202);
     expect(insertEvent).toHaveBeenCalledOnce();
@@ -63,7 +63,7 @@ describe("POST /v1/telemetry", () => {
   });
 
   it("rejects the wrong schema version", async () => {
-    const res = await post({ ...valid, schema: "1" });
+    const res = await post({ ...valid, schema: "2" });
     expect(res.status).toBe(400);
   });
 

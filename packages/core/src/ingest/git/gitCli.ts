@@ -1,5 +1,5 @@
 /**
- * Hardened `git` subprocess helpers for the git source adapter (CTX-IMPL §5.1).
+ * Hardened `git` subprocess helpers for the git source adapter (CONTEXA-IMPL §5.1).
  *
  * Carrier is the local `git` binary — no native dependency, no network. Every
  * call is local-only (log / rev-list / rev-parse over the on-disk object store);

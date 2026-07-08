@@ -11,8 +11,8 @@
  *     remember/confirm/migration/import, fully functional locally;
  *   - doctor surfaces the opt-out mode + a shallow-clone advisory (warn, never fail).
  *
- * Sandbox git repo under a temp CTX_HOME (G-7); no network, no LLM. Writers are
- * injected at a sandbox `.ctx` — the token-killer repo is never touched.
+ * Sandbox git repo under a temp CONTEXA_HOME (G-7); no network, no LLM. Writers are
+ * injected at a sandbox `.contexa` — the token-killer repo is never touched.
  */
 import { existsSync, mkdirSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
@@ -38,22 +38,22 @@ function setup(root: string): { repo: string; store: Store; home: string; emptyH
   writeFileSync(join(repo, "README.md"), "# fixture\n");
   git(["add", "-A"], repo);
   git(["commit", "-q", "-m", "init"], repo);
-  const home = join(root, "ctx-home");
+  const home = join(root, "contexa-home");
   const store = openStore({ projectDir: repo, home });
   const emptyHome = join(root, "empty-claude");
   mkdirSync(emptyHome, { recursive: true });
   return { repo, store, home, emptyHome };
 }
 
-/** Write the SHARED committed push config (`.ctx/push.jsonc`). */
+/** Write the SHARED committed push config (`.contexa/push.jsonc`). */
 function writeSharedConfig(repo: string, json: string): void {
-  mkdirSync(join(repo, ".ctx"), { recursive: true });
-  writeFileSync(join(repo, ".ctx", "push.jsonc"), json);
+  mkdirSync(join(repo, ".contexa"), { recursive: true });
+  writeFileSync(join(repo, ".contexa", "push.jsonc"), json);
 }
-/** Write the PERSONAL overlay push config (`.ctx/push.local.jsonc`). */
+/** Write the PERSONAL overlay push config (`.contexa/push.local.jsonc`). */
 function writeLocalConfig(repo: string, json: string): void {
-  mkdirSync(join(repo, ".ctx"), { recursive: true });
-  writeFileSync(join(repo, ".ctx", "push.local.jsonc"), json);
+  mkdirSync(join(repo, ".contexa"), { recursive: true });
+  writeFileSync(join(repo, ".contexa", "push.local.jsonc"), json);
 }
 
 describe("acceptance: slice 5 — personal overlay + three-tier scope", () => {
@@ -196,8 +196,8 @@ describe("acceptance: slice 5 — personal overlay + three-tier scope", () => {
     importClaudeCodeMemory(store, { claudeHome: emptyHome, files });
 
     // ZERO committed-zone writes: the committed logs were never created/appended.
-    expect(existsSync(join(repo, ".ctx", "memory", "log.md"))).toBe(false);
-    expect(existsSync(join(repo, ".ctx", "memory", "decisions.md"))).toBe(false);
+    expect(existsSync(join(repo, ".contexa", "memory", "log.md"))).toBe(false);
+    expect(existsSync(join(repo, ".contexa", "memory", "decisions.md"))).toBe(false);
     expect(files.readMemories("mainline")).toHaveLength(0);
     expect(files.readDecisions("mainline")).toHaveLength(0);
 
@@ -260,8 +260,8 @@ describe("acceptance: slice 5 — personal overlay + three-tier scope", () => {
 
     // Pre-fix the confirm promoted the create to mainline log.md + wrote a mainline
     // confirm dec. The committed files must never carry this id.
-    expect(existsSync(join(repo, ".ctx", "memory", "log.md"))).toBe(false);
-    expect(existsSync(join(repo, ".ctx", "memory", "decisions.md"))).toBe(false);
+    expect(existsSync(join(repo, ".contexa", "memory", "log.md"))).toBe(false);
+    expect(existsSync(join(repo, ".contexa", "memory", "decisions.md"))).toBe(false);
     expect(files.readMemories("mainline")).toHaveLength(0);
     expect(files.readDecisions("mainline")).toHaveLength(0);
     // The confirm dec lives in the personal overlay.
@@ -284,7 +284,7 @@ describe("acceptance: slice 5 — personal overlay + three-tier scope", () => {
     catchUpStoreOnlyEvents(store, files);
 
     // Both land in the OVERLAY; the committed mainline log is never created.
-    expect(existsSync(join(repo, ".ctx", "memory", "log.md"))).toBe(false);
+    expect(existsSync(join(repo, ".contexa", "memory", "log.md"))).toBe(false);
     expect(files.readMemories("mainline")).toHaveLength(0);
     const overlay = files.readMemories("overlay");
     const localRow = overlay.find((m) => m.gist === "files-less local scratch");
@@ -295,7 +295,7 @@ describe("acceptance: slice 5 — personal overlay + three-tier scope", () => {
 
     // A fresh reindex preserves the zones; the push digest excludes both.
     const fresh = openStore({ projectDir: repo, home: join(root, "fresh-home") });
-    reindexMemoryFromFiles(fresh, new MemoryFiles(join(repo, ".ctx")));
+    reindexMemoryFromFiles(fresh, new MemoryFiles(join(repo, ".contexa")));
     const gists = rankGotchas(fresh).map((g) => g.gist);
     expect(gists).not.toContain("files-less local scratch");
     expect(gists).not.toContain("files-less agent proposal");

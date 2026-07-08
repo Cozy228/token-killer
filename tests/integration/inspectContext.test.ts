@@ -1,4 +1,4 @@
-// Slice 1 integration — static-context analyzers wired into the one `tk inspect`
+// Slice 1 integration — static-context analyzers wired into the one `ctx inspect`
 // (goal §"CLI contract", ADR 0003). Verifies scope axes, removed-flag handling,
 // and per-scope bucket persistence.
 
@@ -25,8 +25,8 @@ let home: string;
 let project: string;
 
 beforeEach(() => {
-  home = mkdtempSync(path.join(tmpdir(), "tk-ctx-home-"));
-  project = mkdtempSync(path.join(tmpdir(), "tk-ctx-proj-"));
+  home = mkdtempSync(path.join(tmpdir(), "ctx-ctx-home-"));
+  project = mkdtempSync(path.join(tmpdir(), "ctx-ctx-proj-"));
 });
 afterEach(() => {
   rmSync(home, { recursive: true, force: true });
@@ -50,12 +50,12 @@ function runTk(args: string[], cwd = project) {
       USERPROFILE: home,
       // Windows VS Code source discovery resolves via APPDATA — sandbox it too.
       APPDATA: path.join(home, "AppData", "Roaming"),
-      TOKEN_KILLER_HOME: path.join(home, ".token-killer"),
+      CONTEXA_HOME: path.join(home, ".contexa"),
     },
   });
 }
 
-describe("tk inspect — static context wiring", () => {
+describe("ctx inspect — static context wiring", () => {
   test("--project --text surfaces static findings and exits 0", () => {
     write(project, ".github/copilot-instructions.md", "# Copilot\nproject rules\n");
     write(project, "AGENTS.md", "---\nbroken yaml\n---\n# Agents\n");
@@ -78,11 +78,11 @@ describe("tk inspect — static context wiring", () => {
     ).toBe(true);
   });
 
-  test("persists a project-scope bucket to ~/.token-killer/projects/<fp>/inspect/latest.json", () => {
+  test("persists a project-scope bucket to ~/.contexa/projects/<fp>/inspect/latest.json", () => {
     write(project, "AGENTS.md", "# Agents\n");
     const r = runTk(["inspect", "--project", "--text"]);
     expect(r.status).toBe(0);
-    const projectsDir = path.join(home, ".token-killer", "projects");
+    const projectsDir = path.join(home, ".contexa", "projects");
     expect(existsSync(projectsDir)).toBe(true);
     // Find the single bucket dir.
     const buckets = readdirSync(projectsDir);

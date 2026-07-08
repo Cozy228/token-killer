@@ -8,13 +8,13 @@ facets + B6 biography, SCIP) are fully merged on `feat/1.0.0`, 3-OS CI green. **
 of `context()` — a live, read-only web guide over the SAME graph, with per-fact provenance.**
 
 ## Read first (in this order)
-1. `CTX-IMPL.md` — **§7 Guide impl (the Hono loopback + bearer token + evidence-drawer + ONE-render-
+1. `CONTEXA-IMPL.md` — **§7 Guide impl (the Hono loopback + bearer token + evidence-drawer + ONE-render-
    path + snapshot-export spec)**; §6 selection + §7 serving (the guide's projections REUSE the same
    selection/provenance, never a parallel path); §9 M3 line; §10 testing; §12 read-back map.
 2. `docs/build/M3-ACCEPTANCE.md` — the acceptance bar (reviewer-owned; you make it green, you never
    weaken it): **G-provenance · G-readonly · G-loopback · G-one-render-path** + scenarios **C1–C9** +
    the ⚠ verify-at-wiring rule (record observed value + the producing command).
-3. `CTX-DESIGN.md` §6 Human Surface (the six-page set + "read-only = *non-mutating*") + §8 process model.
+3. `CONTEXA-DESIGN.md` §6 Human Surface (the six-page set + "read-only = *non-mutating*") + §8 process model.
 4. The merged M2 serve/select code — the Entity Biography IS the human twin of `context(ref)`; study
    `packages/core/src/serve/serve.ts` + `packages/core/src/select/` so the guide projects from the
    SAME engine + provenance, never re-implements selection.
@@ -46,7 +46,7 @@ of `context()` — a live, read-only web guide over the SAME graph, with per-fac
   conventional commits, **lowercase subject** (commitlint); existing `.wasm`/`.scm`/`.sql` asset step
   untouched (guide assets ship via Vite).
 - Tests: Playwright browser smoke (headless on CI) + deterministic component/projection unit tests +
-  golden JSON-projection transcripts; temp `CTX_HOME`/HOME only; `TK_SHIM_DIR` unset; EBUSY-safe
+  golden JSON-projection transcripts; temp `CONTEXA_HOME`/HOME only; `TK_SHIM_DIR` unset; EBUSY-safe
   cleanup; generous serve/browser timeouts (M2's CI lesson: shared runners are slow, hooks must be
   generous); the fixture store is self-contained (do NOT pin assertions to THIS repo's live content).
 

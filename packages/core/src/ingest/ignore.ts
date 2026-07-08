@@ -1,5 +1,5 @@
 /**
- * D13 default ignore-set (CTX-IMPL §4.4, seeded from
+ * D13 default ignore-set (CONTEXA-IMPL §4.4, seeded from
  * `docs/codemap/impl/D-language-coverage.md:618`, itself lifted VERBATIM from
  * codegraph's `src/extraction/index.ts:117-158`).
  *

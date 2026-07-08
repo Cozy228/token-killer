@@ -1,4 +1,4 @@
--- [2026-07-04 P28] SUPERSEDED by CTX-IMPL.md §2 DDL (entities/claims/links/conflicts/memory/anchors/fts/handles/cursors/generations/meta). Kept for archaeology only.
+-- [2026-07-04 P28] SUPERSEDED by CONTEXA-IMPL.md §2 DDL (entities/claims/links/conflicts/memory/anchors/fts/handles/cursors/generations/meta). Kept for archaeology only.
 
 -- codemap serving-tier schema — DRAFT for Slice 1 (#73 → src/codemap/db/schema.sql)
 -- Authority: ADR 0041 (+ A2/A3/C5–C9 verbatim base). node:sqlite DatabaseSync.

@@ -1,4 +1,4 @@
-// Slice 4–5 — `tk inspect` entry (inspect-v1-design.md "Inspect Flags", "Exit
+// Slice 4–5 — `ctx inspect` entry (inspect-v1-design.md "Inspect Flags", "Exit
 // Codes"). Read-only session scanner + advice generation.
 //
 // Exit codes: 0 ok (incl. warnings) · 1 user-input/config error · 2 no major
@@ -30,9 +30,11 @@ import { emitHtmlReport } from "../report/open.js";
 import { analyzeHabits, type FileHabitExtract, type HabitStats } from "./habits.js";
 import { buildReport, renderJson, renderMarkdown } from "./report.js";
 import { computeFootprint } from "./footprint.js";
+import { analyzeSessionTokens, type SessionTokenDetail } from "./sessionTokens.js";
+import { estimateSavings } from "./savings.js";
 import { makeFileCache } from "./fileCache.js";
 import { makeDiskExtractCache, pruneCache } from "./extractCache.js";
-import { tokenKillerHome } from "../core/dataDir.js";
+import { contexaHome } from "../core/dataDir.js";
 import { makeProgressReporter } from "./progress.js";
 import {
   parseSince,
@@ -44,6 +46,7 @@ import {
 import { inspectSinglePass } from "./passes.js";
 import { discoverHost, discoverHosts, hostFound, mergeHosts, type InputType } from "./sources.js";
 import { persistScopeBuckets, runStaticContext } from "./staticContext.js";
+import { readOptimizeActions } from "./optimizeActions.js";
 import { buildInspectAggregates } from "./telemetry.js";
 import { runtimeFindings, type Finding } from "./unified.js";
 
@@ -66,7 +69,7 @@ type InspectArgs = {
   surface?: string;
   failOn?: FailOnSeverity;
   // Internal: skip the runtime scan (transcripts + habits) and analyze only the
-  // static-context surfaces. `tk optimize` triggers inspect this way when it will
+  // static-context surfaces. `ctx optimize` triggers inspect this way when it will
   // consume nothing but static findings — so a first-time, no-bucket optimize never
   // pays for a multi-minute transcript scan it then discards (issue #41). Not part
   // of the public flag surface; no HTML/JSON report is meaningful for it.
@@ -172,12 +175,14 @@ export function runInspect(
   try {
     opts = parseInspectArgs(argv);
   } catch (error) {
-    process.stderr.write(`tk inspect: ${error instanceof Error ? error.message : String(error)}\n`);
+    process.stderr.write(
+      `ctx inspect: ${error instanceof Error ? error.message : String(error)}\n`,
+    );
     return 3;
   }
 
   if (opts.error) {
-    process.stderr.write(`tk inspect: ${opts.error}\n`);
+    process.stderr.write(`ctx inspect: ${opts.error}\n`);
     return 1;
   }
 
@@ -187,7 +192,9 @@ export function runInspect(
   try {
     telemetryExport = readConfig().telemetryExport;
   } catch (error) {
-    process.stderr.write(`tk inspect: ${error instanceof Error ? error.message : String(error)}\n`);
+    process.stderr.write(
+      `ctx inspect: ${error instanceof Error ? error.message : String(error)}\n`,
+    );
     return 1;
   }
 
@@ -196,7 +203,7 @@ export function runInspect(
     const duration = parseSince(opts.since);
     if (duration === undefined) {
       process.stderr.write(
-        `tk inspect: invalid --since '${opts.since}' (expected e.g. 7d, 24h, 30m)\n`,
+        `ctx inspect: invalid --since '${opts.since}' (expected e.g. 7d, 24h, 30m)\n`,
       );
       return 1;
     }
@@ -209,7 +216,7 @@ export function runInspect(
   if (opts.scopeProject) scopes.push("project");
   if (scopes.length === 0) scopes.push("user");
 
-  // Progress is a no-op unless STDERR is an interactive TTY (and TK_NO_PROGRESS is
+  // Progress is a no-op unless STDERR is an interactive TTY (and CTX_NO_PROGRESS is
   // unset). It writes only to STDERR, so the report / JSON on STDOUT stays clean.
   const progress = makeProgressReporter();
 
@@ -217,13 +224,17 @@ export function runInspect(
     // Runtime analysis (orthogonal to scope).
     let result: ScanResult | undefined;
     let habits: HabitStats | undefined;
+    // Measured token detail (ground truth from hosts that record it, e.g. Copilot
+    // CLI's session.shutdown). Computed inside the discovery block where the file
+    // cache is warm, attached to the report below.
+    let sessionTokens: SessionTokenDetail | undefined;
     // `--static-only` (optimize's scoped trigger, issue #41): skip host discovery,
     // the transcript scan, and habit extraction entirely — analyze only the static
     // context surfaces below. `result`/`habits` stay undefined, which the report and
     // exit-code logic already treat as "no runtime data".
     let hostsLabel = opts.inputType as string;
     if (!opts.staticOnly) {
-      // Host selection: an explicit --input-type scans just that host; otherwise tk
+      // Host selection: an explicit --input-type scans just that host; otherwise ctx
       // scans EVERY known host (vscode + copilot-cli) and merges, so a user driving
       // either is covered without a flag. The host list is shown with the resolved
       // directory so the run reveals WHERE it looked, not only which host.
@@ -268,10 +279,10 @@ export function runInspect(
         // Cross-invocation per-file extract caches (keyed by path+mtime+size). After the
         // first scan, an unchanged transcript is served from a tiny pre-extracted record
         // instead of being re-parsed — so a repeated inspect / optimize-triggered scan /
-        // --fail-on only pays for NEW or CHANGED files. Best-effort + TK_NO_SCAN_CACHE
+        // --fail-on only pays for NEW or CHANGED files. Best-effort + CTX_NO_SCAN_CACHE
         // kill-switch live inside the cache; a miss/failure silently falls back to a live
         // parse. Prune stale entries once per run so the dir can't grow without bound.
-        const cacheRoot = join(tokenKillerHome(), "inspect-cache");
+        const cacheRoot = join(contexaHome(), "inspect-cache");
         pruneCache(cacheRoot, nowMs);
         const scanCache = makeDiskExtractCache<FileScanExtract>(cacheRoot, "scan");
         // Separate namespace for the per-event stream the windowed/session scan slices
@@ -324,11 +335,14 @@ export function runInspect(
           progress.phase("Analyzing usage habits…");
         }
         progress.phase(`Analyzed habits across ${habits.sessions} active session(s).`);
+        // Measured token detail — reuses the warm file cache so session files are
+        // not re-read. Undefined when no session recorded usage (e.g. VS Code-only).
+        sessionTokens = analyzeSessionTokens(discovery, fileCache);
       } else {
         progress.done();
         const where = hosts.map((h) => `${h.inputType} (${relHome(h.dir)})`).join(", ");
         process.stderr.write(
-          `tk inspect: no session sources found in ${where} (this is normal if the host stores transcripts elsewhere).\n`,
+          `ctx inspect: no session sources found in ${where} (this is normal if the host stores transcripts elsewhere).\n`,
         );
       }
     } // end if (!opts.staticOnly)
@@ -353,7 +367,7 @@ export function runInspect(
     if (runtimeEmpty && staticEmpty) {
       progress.done();
       process.stderr.write(
-        "tk inspect: no major source analyzable (no runtime session events and no static-context files found).\n",
+        "ctx inspect: no major source analyzable (no runtime session events and no static-context files found).\n",
       );
       return 2;
     }
@@ -374,7 +388,7 @@ export function runInspect(
     const rtFindings = runtimeFindings(result, habits, mcp);
     const unifiedFindings: Finding[] = [...rtFindings, ...staticFindings];
 
-    // Persist the per-scope unified Finding[] buckets that `tk optimize context`
+    // Persist the per-scope unified Finding[] buckets that `ctx optimize context`
     // consumes (ADR 0003). Runtime findings are written into each produced bucket.
     persistScopeBuckets({
       scopes,
@@ -414,6 +428,7 @@ export function runInspect(
     report.static_context = { files_scanned: sc.result.files_scanned, findings: staticFindings };
     report.findings = unifiedFindings;
     report.footprint = footprint;
+    if (sessionTokens) report.session_tokens = sessionTokens;
     // Reflect EVERY host scanned (e.g. "vscode + copilot-cli"), not just the
     // representative one ScanResult carries.
     report.inputType = hostsLabel;
@@ -437,6 +452,10 @@ export function runInspect(
       process.stdout.write(`Wrote advice artifacts:\n${written.map((p) => `  ${p}`).join("\n")}\n`);
     }
 
+    // Optimizer deltas (ledger ②) for the inspect telemetry block — always the user
+    // bucket (telemetry is user-level), matching loadLedgers' user-scope convention.
+    const optimizeActions = readOptimizeActions({ scope: "user" });
+
     // Telemetry export: allow-listed aggregates only (config-gated, no CLI flag). No
     // endpoint in the generic package → write locally + warn; never fail the run.
     if (telemetryExport && result) {
@@ -450,11 +469,11 @@ export function runInspect(
         firstSeenAt: state.firstSeenAt,
         now: new Date(nowMs),
         runId: randomUUID(),
-        inspect: buildInspectAggregates(result, findings),
+        inspect: buildInspectAggregates(result, findings, optimizeActions),
       });
       const path = writeTelemetryExport(`${JSON.stringify(telemetry, null, 2)}\n`);
       process.stderr.write(
-        `tk inspect: no telemetry endpoint configured; wrote local export: ${path}\n`,
+        `ctx inspect: no telemetry endpoint configured; wrote local export: ${path}\n`,
       );
     }
 
@@ -471,8 +490,8 @@ export function runInspect(
         emitHtmlReport(
           {
             kind: "inspect",
-            title: "Your token-saving opportunities",
-            subtitle: "Where your AI setup wastes tokens, and how to fix it.",
+            title: "Your AI session report",
+            subtitle: "What your past sessions spent on tokens — and where you can save.",
             generatedAt: new Date(nowMs).toISOString(),
             data: {
               scope: scopes.includes("project") ? "project" : "user",
@@ -481,18 +500,34 @@ export function runInspect(
               project: scopes.includes("project") ? basename(cwd) : undefined,
               files_scanned: sc.result.files_scanned,
               sessions_analyzed: result?.session_inventory ?? 0,
+              tool_event_count: result?.tool_event_count ?? 0,
+              // Measured token analysis (ground truth from session.shutdown).
+              session_tokens: sessionTokens,
+              // Per-tool/command breakdown (the "by tool" detail of the analysis).
+              opportunities: result?.opportunities ?? [],
               footprint,
-              findings: unifiedFindings.map((f) => ({
-                severity: f.severity,
-                type: f.type,
-                file: (f as { file?: string }).file,
-                start_line: (f as { start_line?: number }).start_line,
-                // Runtime findings carry an actionable `where` instead of a file.
-                where: (f as { where?: string }).where,
-                evidence: f.evidence,
-                recommendation: f.recommendation,
-                fix_class: f.fix_class,
-              })),
+              findings: unifiedFindings.map((f) => {
+                // Estimated saving for every fix — graded grounded (real figure) vs
+                // rough (coarse per-type default) so the report never fakes precision.
+                const sv = estimateSavings({
+                  type: f.type,
+                  evidence: f.evidence,
+                  metrics: (f as { metrics?: { total_output_tokens?: number } }).metrics,
+                });
+                return {
+                  severity: f.severity,
+                  type: f.type,
+                  file: (f as { file?: string }).file,
+                  start_line: (f as { start_line?: number }).start_line,
+                  // Runtime findings carry an actionable `where` instead of a file.
+                  where: (f as { where?: string }).where,
+                  evidence: f.evidence,
+                  recommendation: f.recommendation,
+                  fix_class: f.fix_class,
+                  est_savings_tokens: sv.tokens,
+                  est_savings_grounded: sv.grounded,
+                };
+              }),
             },
           },
           nowMs,
@@ -508,7 +543,7 @@ export function runInspect(
       records: listProjectHistoriesSync(),
       now: new Date(nowMs),
       runId: randomUUID(),
-      inspect: result ? buildInspectAggregates(result, findings) : undefined,
+      inspect: result ? buildInspectAggregates(result, findings, optimizeActions) : undefined,
     });
 
     // --fail-on: opt-in non-zero exit (4, never reuses 2) when any finding is at
@@ -524,7 +559,7 @@ export function runInspect(
   } catch (error) {
     progress.done();
     process.stderr.write(
-      `tk inspect: internal error: ${error instanceof Error ? error.message : String(error)}\n`,
+      `ctx inspect: internal error: ${error instanceof Error ? error.message : String(error)}\n`,
     );
     return 3;
   }

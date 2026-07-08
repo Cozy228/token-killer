@@ -16,7 +16,7 @@ export type PromptThresholds = {
   blockTokens: number;
 };
 
-// Defaults mirror DESIGN §12.2 (no config loader exists yet; `tk config init` is
+// Defaults mirror DESIGN §12.2 (no config loader exists yet; `ctx config init` is
 // planned). Callers may override for tests / future config wiring.
 export const DEFAULT_PROMPT_THRESHOLDS: PromptThresholds = {
   warnTokens: 4000,

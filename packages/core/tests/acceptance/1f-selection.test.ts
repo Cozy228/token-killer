@@ -11,7 +11,7 @@ import { cleanupTempDir, makeTempDir } from "../helpers/sandbox.ts";
 
 // Slice 1f — Selection engine (M1-ACCEPTANCE.md A6-*). Each scenario combines:
 //  • the living-repo tier — the token-killer repo ingested via the REAL git +
-//    docs adapters into a temp CTX_HOME (G-7: no real host state touched);
+//    docs adapters into a temp CONTEXA_HOME (G-7: no real host state touched);
 //  • a deterministic fixture tier where the MECHANISM needs isolation
 //    (named-seed force-inclusion beyond bm25 cutoffs; decay direction under a
 //    fixed injected clock).
@@ -20,11 +20,11 @@ import { cleanupTempDir, makeTempDir } from "../helpers/sandbox.ts";
 //  • "verification tax" (the phrase) occurs in docs/design/FABLE-DORA-REVIEW.md
 //    and docs/build/M1-ACCEPTANCE.md only:
 //      $ grep -rli "verification tax" --include="*.md" .
-//  • "RRF" occurs in CTX-IMPL.md (§6, twice) + ADR 0025 + codemap docs/archive
+//  • "RRF" occurs in CONTEXA-IMPL.md (§6, twice) + ADR 0025 + codemap docs/archive
 //    research files; the §6 section entity is
-//    doc:CTX-IMPL.md#…/6-selection-engine-coresrcselect (asserted by locator
+//    doc:CONTEXA-IMPL.md#…/6-selection-engine-coresrcselect (asserted by locator
 //    path + name match, not a hardcoded slug).
-//  • `assertNoEgress` appears in DOC TEXT of CTX-IMPL.md (§7, §12 table) and
+//  • `assertNoEgress` appears in DOC TEXT of CONTEXA-IMPL.md (§7, §12 table) and
 //    docs/build/M1-ACCEPTANCE.md (G-6, A6-named-seed). The FUNCTION does not
 //    exist in code yet (it lands with 1g), so the living-repo assertion targets
 //    those doc sections via the named-seed index — the fixture tier proves the
@@ -40,7 +40,7 @@ describe("acceptance: 1f selection engine", () => {
 
   beforeAll(async () => {
     liveRoot = makeTempDir("ctx-a6-live-");
-    live = openStore({ projectDir: REPO_ROOT, home: join(liveRoot, "ctx-home") });
+    live = openStore({ projectDir: REPO_ROOT, home: join(liveRoot, "contexa-home") });
     const budget = { deadline: Number.MAX_SAFE_INTEGER, now: Date.now };
     const docs = new DocsAdapter();
     await docs.ingest(live, await docs.dirtyCheck(live), budget);
@@ -78,14 +78,14 @@ describe("acceptance: 1f selection engine", () => {
         .join("\n")}`,
     ).toBe(true);
 
-    // search("RRF") → the CTX-IMPL section entity covering §6 in the top-5.
+    // search("RRF") → the CONTEXA-IMPL section entity covering §6 in the top-5.
     const rrf = search(live, { query: "RRF" });
     const rrfTop5 = rrf.items.slice(0, 5);
     expect(
       rrfTop5.some(
         (i) =>
           i.kind === "doc_section" &&
-          i.locator?.startsWith("CTX-IMPL.md") &&
+          i.locator?.startsWith("CONTEXA-IMPL.md") &&
           /selection engine/i.test(i.name),
       ),
       `top-5 for "RRF" was:\n${rrfTop5
@@ -166,12 +166,12 @@ describe("acceptance: 1f selection engine", () => {
     const carriers = liveResult.items.filter(
       (i) =>
         i.named &&
-        (i.locator?.startsWith("CTX-IMPL.md") === true ||
+        (i.locator?.startsWith("CONTEXA-IMPL.md") === true ||
           i.locator?.startsWith("docs/build/M1-ACCEPTANCE.md") === true),
     );
     expect(
       carriers.length,
-      `expected named-seed hits from CTX-IMPL.md / M1-ACCEPTANCE.md; got:\n${liveResult.items
+      `expected named-seed hits from CONTEXA-IMPL.md / M1-ACCEPTANCE.md; got:\n${liveResult.items
         .map((i) => `  named=${i.named} ${i.kind} ${i.locator ?? i.entityId}`)
         .join("\n")}`,
     ).toBeGreaterThanOrEqual(1);

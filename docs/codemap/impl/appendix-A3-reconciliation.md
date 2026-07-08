@@ -1,4 +1,4 @@
-> **[2026-07-04 P28] PARTIALLY SUPERSEDED** — the ranking stance (staged cascade, anti-RRF, ~lines 22–40) is overridden by `CTX-IMPL.md` §6 (RRF K=60 fusion). Still carried: `EvidenceBackedFlowProjection` (~219–249) as D4 reference.
+> **[2026-07-04 P28] PARTIALLY SUPERSEDED** — the ranking stance (staged cascade, anti-RRF, ~lines 22–40) is overridden by `CONTEXA-IMPL.md` §6 (RRF K=60 fusion). Still carried: `EvidenceBackedFlowProjection` (~219–249) as D4 reference.
 
 # 附录 A3：对照 GitNexus 技术细节 / Token-killer-Research 的补充(2026-06-21)
 

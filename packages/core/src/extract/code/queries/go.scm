@@ -1,4 +1,4 @@
-; Tier-1 Go queries (CTX-IMPL §5.2). Method receivers become the qualifier
+; Tier-1 Go queries (CONTEXA-IMPL §5.2). Method receivers become the qualifier
 ; (`Type.Method`) in extract.ts. struct/interface type specs map to the class
 ; kind.
 

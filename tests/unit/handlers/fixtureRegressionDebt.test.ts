@@ -66,7 +66,7 @@ describe("fixture-backed regression debt", () => {
       "-b",
     ]);
 
-    expect(result.output).toContain("token-killer-node-cli");
+    expect(result.output).toContain("contexa-node-cli");
     expect(result.output).toContain("tests/helpers/fixtureCases.ts");
     expect(result.output).not.toContain("Branch: unknown");
   });

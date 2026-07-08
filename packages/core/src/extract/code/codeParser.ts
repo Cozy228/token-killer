@@ -1,5 +1,5 @@
 /**
- * Parse-worker manager (CTX-IMPL §5.2; ports codegraph's main-thread worker
+ * Parse-worker manager (CONTEXA-IMPL §5.2; ports codegraph's main-thread worker
  * lifecycle + D23 numerics). Owns exactly ONE recyclable worker (never a
  * cpus()-sized pool — N isolates multiply the per-isolate WASM heap pressure
  * that is already near the recycle threshold, and multiply the Windows AV spawn

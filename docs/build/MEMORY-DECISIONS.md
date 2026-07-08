@@ -9,7 +9,7 @@
 ## Root
 
 - **B1 — ADOPT the file-backed / git-as-sync re-architecture. ✅ yes.** Durable memory becomes committed
-  `.ctx/memory/` files; the SQLite store becomes a rebuildable index; git is the sync/collaboration/
+  `.contexa/memory/` files; the SQLite store becomes a rebuildable index; git is the sync/collaboration/
   conflict layer. **Memory (and concepts, per C3) leave the index-not-copy exception** — this is a
   ratified invariant change. *Gates: C1–C5.*
 
@@ -40,7 +40,7 @@
 | ID | Decision | Ruling |
 |---|---|---|
 | **D1** | VISION ↔ ctx "naming drift" | **Non-issue, closed.** `VISION.md` is the aspirational **vision** layer; its vocabulary (DCI / Atlas / CodeGraph / CodeWiki) is intentional and is *not* a naming conflict with the shipped `ctx` product. No reconciliation needed. |
-| **D2** | Home of the "project context, not assistant memory" thesis | **Elevate it in `CTX-DESIGN.md §1` (the shipped-product design), where it already lives as "the moat."** Not VISION (per D1, VISION is aspiration, not competitive positioning). |
+| **D2** | Home of the "project context, not assistant memory" thesis | **Elevate it in `CONTEXA-DESIGN.md §1` (the shipped-product design), where it already lives as "the moat."** Not VISION (per D1, VISION is aspiration, not competitive positioning). |
 | **D3** | Canonical Decision 11 (collaboration & sync) | **Add it** to `REPORT-canonical.md` + the new committed-sync invariant. |
 | **D4** | Docs navigation index | **Add one** (`docs/build/README.md`) so the memory line (research → decisions → execution plan → sync prompt) is navigable. |
 
@@ -71,8 +71,8 @@
   by this file.
 - **Canonical** (`REPORT-canonical.md`): add Decision 11 + invariant (D3); §0 divergences D0-b/D0-c
   resolved by A1/A2.
-- **CTX-DESIGN.md**: §1 elevate the moat (D2); §3 memory+concepts join index-not-copy indexing
-  `.ctx/memory/`, `store.sqlite` gitignored, add the S8 per-carrier matrix, `valid_from/to` in schema;
+- **CONTEXA-DESIGN.md**: §1 elevate the moat (D2); §3 memory+concepts join index-not-copy indexing
+  `.contexa/memory/`, `store.sqlite` gitignored, add the S8 per-carrier matrix, `valid_from/to` in schema;
   §6 guide framing; §8 sync mechanism + three-tier scope; §9 register; new invariant.
 - **Code** (later): A1/A2/A5 → select+push; A6 → Store interface; A7 → keep usage out; C1–C5 →
   file-backed storage + decision log + bitemporal columns.

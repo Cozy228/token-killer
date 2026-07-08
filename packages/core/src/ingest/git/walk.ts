@@ -1,6 +1,6 @@
 /**
  * Parse `git log -z -M --name-status` into structured commit records
- * (CTX-IMPL §5.1). The message body is parsed transiently for trailers/keys and
+ * (CONTEXA-IMPL §5.1). The message body is parsed transiently for trailers/keys and
  * FTS indexing — it is never persisted (index-not-copy, P25①); the commit
  * entity's locator is `{t:'git',oid}` and the message is read back on demand.
  *
@@ -57,7 +57,7 @@ function parseNameStatus(block: string): FileChange[] {
     .split("\0")
     .filter((t) => t.length > 0);
   const files: FileChange[] = [];
-  for (let i = 0; i < tokens.length; ) {
+  for (let i = 0; i < tokens.length;) {
     const raw = tokens[i]!;
     const letter = raw[0] as FileChangeStatus;
     if (STATUS_TWO_PATH.has(letter)) {
@@ -120,7 +120,7 @@ export function walkCommits(root: string, since: string | undefined): CommitReco
 
 /**
  * Walk the co-change window: the last `windowCommits` commits from HEAD
- * (CTX-IMPL §5.1 default 500). Order is irrelevant to pair counting.
+ * (CONTEXA-IMPL §5.1 default 500). Order is irrelevant to pair counting.
  */
 export function walkWindow(root: string, windowCommits: number): CommitRecord[] {
   const raw = rawLog(root, [

@@ -1,4 +1,4 @@
-> **[2026-07-04 P28] PARTIALLY SUPERSEDED** — graduated 1s/2s catch-up bands → `CTX-IMPL.md` §4 flat 3s gate; PARTIAL/UNKNOWN/SYNC_REQUIRED vocabulary → structured envelope fields. Still carried: fingerprint DDL, scan-cost numbers, and the D32/ADR-0040 generation-identity tuple (~line 73).
+> **[2026-07-04 P28] PARTIALLY SUPERSEDED** — graduated 1s/2s catch-up bands → `CONTEXA-IMPL.md` §4 flat 3s gate; PARTIAL/UNKNOWN/SYNC_REQUIRED vocabulary → structured envelope fields. Still carried: fingerprint DDL, scan-cost numbers, and the D32/ADR-0040 generation-identity tuple (~line 73).
 
 ## 需求 E — Freshness / incremental（新鲜度 / 增量）
 

@@ -1,5 +1,5 @@
 /**
- * Parse worker (CTX-IMPL §5.2; ports codegraph `parse-worker.ts`). Runs on a
+ * Parse worker (CONTEXA-IMPL §5.2; ports codegraph `parse-worker.ts`). Runs on a
  * `worker_threads.Worker`, owns one `CodeParserCore`, and parses/extracts one
  * file at a time. Isolation is the point: a WASM memory fault poisons every
  * later parse, so on the D23 OOM signature we `process.exit(1)` and let the

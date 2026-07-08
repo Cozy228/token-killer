@@ -19,6 +19,7 @@ function opp(over: Partial<Opportunity> & { key: string; category: ToolCategory 
     avg_output_chars: Math.round(outChars / count),
     max_output_chars: over.max_output_chars ?? outChars,
     total_input_chars: over.total_input_chars ?? 100,
+    total_input_tokens: over.total_input_tokens ?? 25,
     max_input_chars: over.max_input_chars ?? 50,
     success_count: over.success_count ?? count,
     failure_count: over.failure_count ?? 0,
@@ -98,7 +99,7 @@ describe("runtimeFindings — aggregation (no per-tool dump)", () => {
     expect(delivery.length).toBe(1);
     expect(delivery[0].fix_class).toBe("delivery");
     expect(delivery[0].evidence).toContain("19 shell command(s)"); // 8+6+5
-    expect(delivery[0].where).toContain("tk install");
+    expect(delivery[0].where).toContain("ctx install");
   });
 
   test("repeated failures roll up and name the top offenders", () => {

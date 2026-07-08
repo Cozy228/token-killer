@@ -86,19 +86,19 @@ export function git(args: string[], cwd: string): RunResult {
 
 /**
  * Invoke the `ctx` CLI from source (verified recipe, see recon). Module
- * resolution for `@ctx/core` is anchored to CLI_ENTRY's location, so cwd is free
+ * resolution for `@contexa/core` is anchored to CLI_ENTRY's location, so cwd is free
  * to be the sandbox — which is how `ctx sync` learns its projectDir.
  */
 export function runCtx(
   args: string[],
-  opts: { cwd: string; ctxHome: string; home?: string; env?: NodeJS.ProcessEnv } = {
+  opts: { cwd: string; contexaHome: string; home?: string; env?: NodeJS.ProcessEnv } = {
     cwd: WORKSPACE,
-    ctxHome: "",
+    contexaHome: "",
   },
 ): RunResult {
   const env: NodeJS.ProcessEnv = {
     ...(opts.env ?? process.env),
-    CTX_HOME: opts.ctxHome,
+    CONTEXA_HOME: opts.contexaHome,
   };
   if (opts.home !== undefined) env.HOME = opts.home;
   return run("node", ["--import", `file://${TSX_LOADER}`, CLI_ENTRY, ...args], {

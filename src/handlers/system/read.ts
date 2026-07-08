@@ -12,7 +12,7 @@ import { type CompressionLevel, parseLevel } from "../common/level.js";
 // RTK: system/read.rs — read a file (here, the bytes a `cat <file>` produced),
 // apply a language-aware filter level, then a line window (max_lines/tail_lines),
 // optionally adding line numbers. Defaults (level=none, no window, no numbers)
-// return the content unchanged, matching read.rs::run with no flags. tk routes
+// return the content unchanged, matching read.rs::run with no flags. ctx routes
 // `cat` here; RTK's own command is `read`, so we accept its flags too.
 
 // RTK: core/filter.rs::FilterLevel — none (NoFilter), minimal (strip comments),
@@ -278,7 +278,7 @@ function commentPatterns(lang: Language): CommentPatterns {
   }
 }
 
-// RTK: read.rs detects language from the file's extension (stdin → Unknown). tk's
+// RTK: read.rs detects language from the file's extension (stdin → Unknown). ctx's
 // `cat` may receive several operands; mirror RTK's single-file model by keying off
 // the first real file operand's extension (the common single-file case).
 function detectLanguage(files: string[]): Language {
@@ -415,36 +415,36 @@ function applyLevelFilter(content: string, level: ReadLevel, lang: Language): st
   return filtered;
 }
 
-// RTK: read.rs reads the file bytes directly; tk shells to the system `cat`, so
+// RTK: read.rs reads the file bytes directly; ctx shells to the system `cat`, so
 // execute() must pass ONLY the file operands (and stdin `-`) — never RTK's read
 // flags (--level/--max-lines/--tail-lines/--line-numbers), which `cat` would
 // reject. The filter still windows from the user's ORIGINAL args (see formatRead),
 // so the RTK semantics are applied to `cat`'s raw bytes.
 //
 // M9-cat: non-RTK flags (e.g. `-A`, `-b`, `-s`, `-e`, `-t`, `-v`) must be
-// forwarded to the real `cat`. Only the tk-owned flags are stripped.
+// forwarded to the real `cat`. Only the ctx-owned flags are stripped.
 export function buildCatArgs(args: string[]): string[] {
   // Tk-owned flags that consume the NEXT token as their value: skip flag + value.
-  const TK_VALUE_FLAGS = new Set(["--level", "-l", "--max-lines", "-m", "--tail-lines"]);
+  const CTX_VALUE_FLAGS = new Set(["--level", "-l", "--max-lines", "-m", "--tail-lines"]);
   // Tk-owned boolean flags (no following value): skip the flag alone.
-  const TK_BOOL_FLAGS = new Set(["--line-numbers", "-n"]);
+  const CTX_BOOL_FLAGS = new Set(["--line-numbers", "-n"]);
   // Tk-owned inline-value flag prefixes (--flag=value form): skip the whole token.
-  const TK_FLAG_PREFIXES = ["--level=", "--max-lines=", "--tail-lines="];
+  const CTX_FLAG_PREFIXES = ["--level=", "--max-lines=", "--tail-lines="];
 
   const out: string[] = [];
   for (let i = 0; i < args.length; i += 1) {
     const arg = args[i]!;
     // Flags that consume the NEXT token as their value.
-    if (TK_VALUE_FLAGS.has(arg)) {
+    if (CTX_VALUE_FLAGS.has(arg)) {
       i += 1; // skip the value token (--level minimal, -m 50, etc.)
       continue;
     }
-    // Boolean tk flags — skip the flag but NOT the next token.
-    if (TK_BOOL_FLAGS.has(arg)) {
+    // Boolean ctx flags — skip the flag but NOT the next token.
+    if (CTX_BOOL_FLAGS.has(arg)) {
       continue;
     }
     // Flags with inline values (--level=aggressive, etc.).
-    if (TK_FLAG_PREFIXES.some((p) => arg.startsWith(p))) {
+    if (CTX_FLAG_PREFIXES.some((p) => arg.startsWith(p))) {
       continue;
     }
     // Everything else — file operands, stdin `-`, and real cat flags — is forwarded.
@@ -478,13 +478,13 @@ export const readHandler: CommandHandler = {
   name: "read",
   traits: { structural: true, ladder: true, cacheable: true, ttlClass: "fast" },
   programs: ["cat"],
-  // tk maps `cat` onto RTK read semantics (system/read.rs); `read`/`type`/`less`
+  // ctx maps `cat` onto RTK read semantics (system/read.rs); `read`/`type`/`less`
   // stay on the existing read-like handler, which owns stdin/multi-file execution.
   matches(command) {
     return command.program === "cat";
   },
   execute(command) {
-    // RTK: read.rs reads the file directly. tk shells to `cat`, passing only the
+    // RTK: read.rs reads the file directly. ctx shells to `cat`, passing only the
     // file operands so RTK's read flags never reach the system binary; the filter
     // re-derives the window from the user's original args.
     const args = buildCatArgs(command.args);

@@ -21,7 +21,7 @@ function resolveExitCode(code: number | null, signal: NodeJS.Signals | null): nu
   return 1;
 }
 
-// tk pipes the child's stdout/stderr and must turn those raw bytes back into a
+// ctx pipes the child's stdout/stderr and must turn those raw bytes back into a
 // string. The bytes are in whatever encoding the child chose, which on Windows
 // is per-tool: git and the Node/Rust toolchain emit UTF-8, but tools that follow
 // the locale code page (Python, pre-JDK18 Java, cmd builtins like `dir`) emit
@@ -35,7 +35,7 @@ function resolveExitCode(code: number | null, signal: NodeJS.Signals | null): nu
 // lossy UTF-8 — never worse than a hardcoded toString("utf8"). (RTK never fixed
 // this: it decodes child output with from_utf8_lossy — mojibake without a crash
 // — and its POSIX-UTF-8 home turf never triggers it.)
-let legacyDecoder: TextDecoder | null | undefined;
+let legacyDecoder: InstanceType<typeof TextDecoder> | null | undefined;
 
 // Map the active Windows console code page to its encoding label. Resolved once,
 // lazily — only the first time a buffer fails strict UTF-8 — so the common
@@ -69,7 +69,7 @@ function detectWindowsLegacyLabel(): string | null {
   }
 }
 
-function getLegacyDecoder(): TextDecoder | null {
+function getLegacyDecoder(): InstanceType<typeof TextDecoder> | null {
   if (legacyDecoder !== undefined) return legacyDecoder;
   if (process.platform !== "win32") return (legacyDecoder = null);
   const label = detectWindowsLegacyLabel();
@@ -135,16 +135,16 @@ export function trimIncompleteUtf8Tail(buf: Buffer): Buffer {
   return buf; // all of the last <=3 bytes are continuations: not a split lead
 }
 
-// Build the env passed to a spawned real tool. When TK_SHIM_DIR is set (running
+// Build the env passed to a spawned real tool. When CTX_SHIM_DIR is set (running
 // behind the shim) the child PATH has the shim dir stripped so the real tool —
 // not the wrapper — is resolved, and the sentinel hard-errors if the only
 // reachable copy still lives in the shim dir (recursion guard, ADR 0002 §4).
-// Without TK_SHIM_DIR this is a no-op and plain `tk` behaves exactly as before.
+// Without CTX_SHIM_DIR this is a no-op and plain `ctx` behaves exactly as before.
 function buildChildEnv(
   program: string,
   extraEnv?: Record<string, string>,
 ): Record<string, string | undefined> | undefined {
-  const shimDir = process.env.TK_SHIM_DIR;
+  const shimDir = process.env.CTX_SHIM_DIR;
   if (!shimDir) {
     return extraEnv ? { ...process.env, ...extraEnv } : undefined;
   }
@@ -160,17 +160,17 @@ function buildChildEnv(
 }
 
 // Undo the wrapper's NODE_COMPILE_CACHE injection (2.3) for the spawned REAL tool. The
-// wrapper points tk's OWN node at ~/.token-killer/v8-cache, but a child Node tool (tsc,
-// npm, …) must not inherit it — that would pollute tk's cache dir with the child's
+// wrapper points ctx's OWN node at ~/.contexa/v8-cache, but a child Node tool (tsc,
+// npm, …) must not inherit it — that would pollute ctx's cache dir with the child's
 // bytecode AND override the user's own NODE_COMPILE_CACHE. The wrapper saved the
-// caller's original value in TK_NODE_COMPILE_CACHE_PREV; restore it (or remove
+// caller's original value in CTX_NODE_COMPILE_CACHE_PREV; restore it (or remove
 // NODE_COMPILE_CACHE when the caller had none), then drop the bookkeeping var. Node's
 // spawn omits any env key whose value is undefined, so unsetting is clean. A no-op when
-// the var is absent (plain `tk`, or a wrapper built before 2.3's restore).
+// the var is absent (plain `ctx`, or a wrapper built before 2.3's restore).
 function restoreInjectedCompileCache(env: Record<string, string | undefined>): void {
-  const prev = env.TK_NODE_COMPILE_CACHE_PREV;
+  const prev = env.CTX_NODE_COMPILE_CACHE_PREV;
   if (prev === undefined) return;
-  env.TK_NODE_COMPILE_CACHE_PREV = undefined;
+  env.CTX_NODE_COMPILE_CACHE_PREV = undefined;
   env.NODE_COMPILE_CACHE = prev === "" ? undefined : prev;
 }
 
@@ -214,11 +214,11 @@ export function resolveBinaryPath(
   return resolveReal(program, pathValue ?? "") ?? undefined;
 }
 
-// A baked, validated real-binary path (TK_REAL_BIN, exported by the shim wrapper at
+// A baked, validated real-binary path (CTX_REAL_BIN, exported by the shim wrapper at
 // install time) lets buildSpawnTarget skip the per-command PATH×PATHEXT walk — the
 // install paid that walk once (2.1). We trust it only after THREE cheap guards so it
 // can never run a binary the shell would no longer pick: (1) the resolution-env hash
-// (TK_REAL_PATH_HASH) must equal a fresh hash of the CURRENT stripped PATH+PATHEXT —
+// (CTX_REAL_PATH_HASH) must equal a fresh hash of the CURRENT stripped PATH+PATHEXT —
 // if the user reordered/extended PATH since install a different binary may now win, so
 // this rejects the baked path and forces a live walk; (2) the baked file's basename
 // (minus extension) must equal the requested program, rejecting a leftover var from a
@@ -226,13 +226,13 @@ export function resolveBinaryPath(
 // binary. Any guard failing returns undefined and the caller falls back to today's
 // walk — never a behavior change. Skipped entirely for an explicit-path program.
 function bakedRealBin(program: string, pathValue: string | undefined): string | undefined {
-  const baked = process.env.TK_REAL_BIN;
+  const baked = process.env.CTX_REAL_BIN;
   if (!baked) return undefined;
   if (program.includes("\\") || program.includes("/")) return undefined;
   // PATH-equality gate: only trust the baked path while the resolution environment is
-  // byte-identical to install time. A bare TK_REAL_BIN with no/mismatched hash is NOT
+  // byte-identical to install time. A bare CTX_REAL_BIN with no/mismatched hash is NOT
   // trusted (conservative); the walk fallback stays correct.
-  const bakedHash = process.env.TK_REAL_PATH_HASH;
+  const bakedHash = process.env.CTX_REAL_PATH_HASH;
   if (!bakedHash || bakedHash !== hashResolutionEnv(pathValue ?? "")) return undefined;
   const stem = basename(baked, extname(baked));
   const matches =
@@ -243,17 +243,17 @@ function bakedRealBin(program: string, pathValue: string | undefined): string | 
 }
 
 // True when `program` is backed by a real executable reachable on the child
-// PATH. tk wraps real tools; it must never claim a command whose binary is
+// PATH. ctx wraps real tools; it must never claim a command whose binary is
 // absent. On a stock Windows box `cat`/`ls`/`wc`/`env` are not executables —
 // PowerShell aliases them to cmdlets — so intercepting them (hook rewrite or
 // shim wrapper) only breaks what the shell would otherwise have run. The check
-// is Windows-only: off Windows tk's handled tools are present and resolveProgram
+// is Windows-only: off Windows ctx's handled tools are present and resolveProgram
 // is a no-op, so this returns true without touching the filesystem, leaving
 // POSIX behavior (and every existing test) unchanged.
 export function isProgramAvailable(program: string): boolean {
   if (process.platform !== "win32") return true;
-  const childPath = process.env.TK_SHIM_DIR ? buildChildPath() : process.env.PATH;
-  // 2.1 item 4: the hook path has no baked TK_REAL_BIN wrapper env, so memoize the
+  const childPath = process.env.CTX_SHIM_DIR ? buildChildPath() : process.env.PATH;
+  // 2.1 item 4: the hook path has no baked CTX_REAL_BIN wrapper env, so memoize the
   // PATH×PATHEXT walk across invocations (revalidated with one existsSync per hit).
   return resolveCachedBinary(program, childPath) !== undefined;
 }
@@ -290,18 +290,18 @@ function cmdQuote(token: string): string {
 // immune to the cross-arg-pair case that defeats per-token quoting, and immune
 // to quote state.
 //
-// The variable defaults to TK_PCT. But the parent env may already bind TK_PCT
-// to something other than `%`; rewriting `%`→`%TK_PCT%` would then expand to
+// The variable defaults to CTX_PCT. But the parent env may already bind CTX_PCT
+// to something other than `%`; rewriting `%`→`%CTX_PCT%` would then expand to
 // the user's value and CORRUPT the argument — the exact silent corruption this
-// plan removes. So when TK_PCT is taken we probe TK_PCT_1, TK_PCT_2, … for the
+// plan removes. So when CTX_PCT is taken we probe CTX_PCT_1, CTX_PCT_2, … for the
 // first name that is free (unset, or already exactly `%`) in the env the child
 // will actually receive, and use that. Only if every probed name is taken
 // (within PCT_NAME_PROBE_LIMIT — practically never) do we fail closed: the
 // caller surfaces a clear error naming the offending argument and spawns
 // nothing, rather than emitting a corruptible line.
-const PCT_ENV_BASE = "TK_PCT";
+const PCT_ENV_BASE = "CTX_PCT";
 const PCT_ENV_VALUE = "%";
-// 16 probes (TK_PCT plus TK_PCT_1..TK_PCT_15). Reaching this bound means the
+// 16 probes (CTX_PCT plus CTX_PCT_1..CTX_PCT_15). Reaching this bound means the
 // parent env binds all 16 names to non-`%` values — effectively impossible in
 // practice; the fail-closed branch exists only so we never emit a corruptible
 // line if it somehow happens.
@@ -309,16 +309,16 @@ const PCT_NAME_PROBE_LIMIT = 16;
 
 // Raised by buildSpawnTarget when a `%`-bearing win32 batch line cannot be
 // safely neutralized because no collision-free indirection variable is
-// available. tk fails closed: it must never spawn a command line cmd.exe would
+// available. ctx fails closed: it must never spawn a command line cmd.exe would
 // expand. Callers surface the message and exit non-zero (consistent with the
 // ShimRecursionError fail path); nothing is spawned.
 export class PercentNeutralizeError extends Error {
   constructor(offendingArg: string) {
     super(
-      `tk: refusing to run a batch command — cannot safely neutralize cmd.exe ` +
+      `ctx: refusing to run a batch command — cannot safely neutralize cmd.exe ` +
         `%-expansion in argument ${JSON.stringify(offendingArg)} ` +
         `(no collision-free indirection variable available; ` +
-        `unset TK_PCT or TK_PCT_1..TK_PCT_${PCT_NAME_PROBE_LIMIT - 1})`,
+        `unset CTX_PCT or CTX_PCT_1..CTX_PCT_${PCT_NAME_PROBE_LIMIT - 1})`,
     );
     this.name = "PercentNeutralizeError";
   }
@@ -334,19 +334,19 @@ const CMD_LINE_LIMIT = 8191;
 // batch line past cmd.exe's command-line limit. Each literal `%` expands to
 // `%NAME%` (+ several chars), so a command that fits comfortably under the limit
 // before neutralization can cross it after — cmd would then truncate or reject
-// the line, i.e. tk-induced breakage of a command that runs natively. We fail
+// the line, i.e. ctx-induced breakage of a command that runs natively. We fail
 // closed: same pre-spawn synchronous throw as ShimRecursionError /
 // PercentNeutralizeError; nothing is spawned. The guard is scoped to the
-// neutralized path ONLY — a line that is already over-long without tk's rewrite
+// neutralized path ONLY — a line that is already over-long without ctx's rewrite
 // keeps native behavior (cmd's own concern, out of scope).
 export class PercentLineLengthError extends Error {
   constructor(neutralizedLength: number, originalLength: number) {
     super(
-      `tk: refusing to run a batch command — neutralizing cmd.exe %-expansion ` +
+      `ctx: refusing to run a batch command — neutralizing cmd.exe %-expansion ` +
         `would inflate the command line to ${neutralizedLength} chars, past ` +
         `cmd.exe's ${CMD_LINE_LIMIT}-char limit (original ${originalLength} chars; ` +
-        `each literal % expands to %TK_PCT%). Running this %-bearing command ` +
-        `through tk is unsafe; run it directly instead.`,
+        `each literal % expands to %CTX_PCT%). Running this %-bearing command ` +
+        `through ctx is unsafe; run it directly instead.`,
     );
     this.name = "PercentLineLengthError";
   }
@@ -362,8 +362,8 @@ function isPctNameFree(name: string): boolean {
   return existing === undefined || existing === PCT_ENV_VALUE;
 }
 
-// Pick the first collision-free indirection name: TK_PCT, then TK_PCT_1,
-// TK_PCT_2, … up to the probe limit. Returns undefined when all are taken, which
+// Pick the first collision-free indirection name: CTX_PCT, then CTX_PCT_1,
+// CTX_PCT_2, … up to the probe limit. Returns undefined when all are taken, which
 // drives the fail-closed branch.
 function pickPctName(): string | undefined {
   if (isPctNameFree(PCT_ENV_BASE)) return PCT_ENV_BASE;
@@ -378,7 +378,7 @@ function neutralizePercent(token: string, pctName: string): string {
   return token.replace(/%/g, `%${pctName}%`);
 }
 
-// Merge a spawn target's `extraEnv` (currently only TK_PCT=%) over the child
+// Merge a spawn target's `extraEnv` (currently only CTX_PCT=%) over the child
 // env a caller already computed. When neither is set we return `env` unchanged
 // so the %-free / non-Windows / non-shim path stays byte-identical (the child
 // keeps inheriting process.env implicitly via spawn). When extraEnv is present
@@ -399,7 +399,7 @@ export function mergeSpawnEnv(
 // all non-Windows — spawns directly with the resolved path.
 //
 // `extraEnv`, when present, MUST be merged over the child env by the caller
-// (see executeCommand / executePassthrough). It carries TK_PCT=% for the
+// (see executeCommand / executePassthrough). It carries CTX_PCT=% for the
 // %-neutralization above; it is only set on the win32 batch path and only when
 // the line actually contains `%`.
 export function buildSpawnTarget(
@@ -419,9 +419,9 @@ export function buildSpawnTarget(
     const hasPercent = tokens.some((t) => t.includes("%"));
 
     if (hasPercent) {
-      // Pick a collision-free indirection name. TK_PCT is preferred but the
+      // Pick a collision-free indirection name. CTX_PCT is preferred but the
       // parent env may already bind it to a non-`%` value; we then fall through
-      // to TK_PCT_1, TK_PCT_2, … The chosen name's binding can't be clobbered by
+      // to CTX_PCT_1, CTX_PCT_2, … The chosen name's binding can't be clobbered by
       // merge order: extraEnv wins in mergeSpawnEnv.
       const pctName = pickPctName();
       if (pctName === undefined) {
@@ -487,8 +487,18 @@ export function executeCommand(
   // some commands with a stable locale (e.g. ls runs under LC_ALL=C so English
   // month names parse) — handlers pass that through here.
   extraEnv?: Record<string, string>,
+  // forwardStdin (default true) wires the parent's stdin into the child via the
+  // pipe below. Search-like handlers set it FALSE: ripgrep with no path operand
+  // searches the cwd UNLESS its stdin is a readable pipe/file, and the pipe we'd
+  // otherwise hand it is empty in every non-interactive run — so rg read EOF and
+  // reported a false "0 matches" for any pathless `ctx rg PATTERN` (the dogfood
+  // "glob bug": `-g`/`--glob` is passed INSTEAD of a path). 'ignore' gives the
+  // child a /dev/null stdin (a char device, not a pipe), so it recurses the cwd
+  // exactly as a direct invocation would.
+  options?: { forwardStdin?: boolean },
 ): Promise<RawResult> {
   const started = Date.now();
+  const forwardStdin = options?.forwardStdin ?? true;
   const env = buildChildEnv(command.program, extraEnv);
   const target = buildSpawnTarget(command.program, command.args, env?.PATH ?? process.env.PATH);
   const spawnEnv = mergeSpawnEnv(env, target.extraEnv);
@@ -499,6 +509,9 @@ export function executeCommand(
       shell: false,
       windowsHide: true,
       windowsVerbatimArguments: target.windowsVerbatimArguments,
+      // stdout/stderr are always piped (ctx captures + compresses them). stdin is
+      // forwarded only when forwardStdin; otherwise the child gets /dev/null.
+      stdio: forwardStdin ? ["pipe", "pipe", "pipe"] : ["ignore", "pipe", "pipe"],
       ...(spawnEnv ? { env: spawnEnv } : {}),
     });
 
@@ -589,7 +602,7 @@ export function executeCommand(
         command: command.displayCommand,
         stdout: decodeChildOutput(stdoutBuf),
         stderr: truncated
-          ? `${stderrText}\n[tk] output exceeded ${Math.floor(
+          ? `${stderrText}\n[ctx] output exceeded ${Math.floor(
               MAX_CAPTURE_BYTES / (1024 * 1024),
             )}MB capture cap — truncated]\n`
           : stderrText,

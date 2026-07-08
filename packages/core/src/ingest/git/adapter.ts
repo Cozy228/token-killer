@@ -1,5 +1,5 @@
 /**
- * Git source adapter (CTX-IMPL §4 SourceAdapter, §5.1 extractor rules).
+ * Git source adapter (CONTEXA-IMPL §4 SourceAdapter, §5.1 extractor rules).
  *
  * Lands (§9 slice 1d): a `git` cursor, commit entities (locator {t:'git',oid} —
  * message read back on demand, never stored), file-level `touches`, rename

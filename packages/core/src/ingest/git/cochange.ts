@@ -1,5 +1,5 @@
 /**
- * Co-change analytics (CTX-IMPL §5.1) — greenfield (no reference project mines
+ * Co-change analytics (CONTEXA-IMPL §5.1) — greenfield (no reference project mines
  * this). Over a sliding window (default last 500 commits) count how often each
  * unordered file pair changes in the same commit; pairs with support ≥ 3 become
  * `co-changed` links. Confidence = P(B|A) taken as the max of both directions

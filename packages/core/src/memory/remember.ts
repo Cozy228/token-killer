@@ -1,5 +1,5 @@
 /**
- * `remember()` / `recall()` + memory lifecycle (CTX-IMPL §5.6, §7; P28 addenda).
+ * `remember()` / `recall()` + memory lifecycle (CONTEXA-IMPL §5.6, §7; P28 addenda).
  *
  * Every recoverable condition is SUCCESS-SHAPED (a returned value carrying
  * guidance), never a thrown error (§7 serving rule / G-3):
@@ -76,7 +76,7 @@ export interface RememberInput {
   /**
    * Committed / overlay file writer. Production write paths (CLI, MCP `serve.ts`)
    * always pass one; write-through is always-on there (slice 4). Kept injectable
-   * so store-only unit fixtures and living-repo tests can redirect the `.ctx`
+   * so store-only unit fixtures and living-repo tests can redirect the `.contexa`
    * writer at a sandbox and never touch the real repo (the hard constraint).
    */
   files?: MemoryFiles;

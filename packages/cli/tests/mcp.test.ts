@@ -2,9 +2,9 @@
  * Generic MCP stdio client fixture (M1 acceptance): spawn `ctx mcp`, speak
  * JSON-RPC 2.0 over stdio (newline-delimited), and exercise initialize →
  * tools/list → tools/call for each of the three tools. This is the CI-side
- * proxy for a real host (hosts are not installable in CI, CTX-IMPL §9).
+ * proxy for a real host (hosts are not installable in CI, CONTEXA-IMPL §9).
  *
- * Sandbox discipline: temp CTX_HOME, a script-generated fixture repo as cwd,
+ * Sandbox discipline: temp CONTEXA_HOME, a script-generated fixture repo as cwd,
  * egress keys scrubbed from the child env (the server refuses to start with one
  * set, M14), explicit spawn + per-request timeouts (CI cold-start tax),
  * cleanup with retries (Windows EBUSY).
@@ -17,7 +17,7 @@ import { fileURLToPath } from "node:url";
 import { afterAll, beforeAll, describe, expect, test } from "vitest";
 
 const CLI = resolve(dirname(fileURLToPath(import.meta.url)), "../src/cli.ts");
-// Spawn from the package dir so the child resolves `tsx`/`@ctx/core` via the
+// Spawn from the package dir so the child resolves `tsx`/`@contexa/core` via the
 // workspace node_modules; the fixture repo is passed with `--project`.
 const PKG_DIR = resolve(dirname(fileURLToPath(import.meta.url)), "..");
 // --experimental-sqlite: flag-gated on Node 22.5–22.12, an accepted no-op later.
@@ -128,7 +128,7 @@ describe("ctx mcp — generic stdio client fixture", () => {
     git(["commit", "-q", "-m", "docs: add idempotency decision"]);
 
     // Scrub egress keys (M14: the server refuses to start with one set).
-    const env: NodeJS.ProcessEnv = { ...process.env, CTX_HOME: join(root, "ctx-home") };
+    const env: NodeJS.ProcessEnv = { ...process.env, CONTEXA_HOME: join(root, "contexa-home") };
     delete env.ANTHROPIC_API_KEY;
     delete env.OPENAI_API_KEY;
     delete env.TK_SHIM_DIR; // known leak breaks spawn tests

@@ -1,4 +1,4 @@
-// Server-side mirror of the client's TelemetryPayload v2 (see
+// Server-side mirror of the client's TelemetryPayload v1 (see
 // ../../../src/telemetry/build.ts in the CLI repo). The client enforces an
 // allow-list when BUILDING the payload; we re-validate on INGEST and `.strip()`
 // any unknown keys so the database only ever stores known, typed fields.

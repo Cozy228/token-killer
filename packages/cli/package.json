@@ -1,8 +1,8 @@
 {
-  "name": "@ctx/cli",
+  "name": "@contexa/cli",
   "version": "0.0.0",
   "private": true,
-  "description": "ctx CLI (`ctx` bin): install/doctor/mcp/guide/import/remember/recall/memory/push/sync. Placeholder name until P13 naming lands.",
+  "description": "Contexa CLI (`ctx` bin): install/doctor/mcp/guide/import/remember/recall/memory/push/sync. Placeholder name until P13 naming lands.",
   "bin": {
     "ctx": "./dist/cli.js"
   },
@@ -16,7 +16,7 @@
     "test": "vitest run --config vitest.config.ts"
   },
   "dependencies": {
-    "@ctx/core": "workspace:*"
+    "@contexa/core": "workspace:*"
   },
   "devDependencies": {
     "@types/node": "^25.9.3",

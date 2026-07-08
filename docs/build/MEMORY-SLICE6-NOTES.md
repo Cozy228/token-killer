@@ -129,8 +129,8 @@ Codex-fix section). Built directly on `feat/1.0.0 @ 387bbb2` (O-17/O-20 fixes me
 ## Self-verification (acceptance walk)
 
 Ran all three suites in the worktree:
-- core: `pnpm --filter @ctx/core test` → **442 passed | 2 todo (444)**, 48 files.
-- cli: `pnpm --filter @ctx/cli test` → **23 passed (5 files)**.
+- core: `pnpm --filter @contexa/core test` → **442 passed | 2 todo (444)**, 48 files.
+- cli: `pnpm --filter @contexa/cli test` → **23 passed (5 files)**.
 - product (root): `pnpm test:product` → **1896 passed | 4 skipped (1900)**.
 - typecheck: `tsc --noEmit` green for both `packages/core` and `packages/cli`.
 - Red→green proven for the two new mechanisms: disabling `recomputeIdentityAtReindex` → the two item-1
@@ -245,8 +245,8 @@ four (disabling each fix reds its matching test).
 `setMemoryLifecycle` (packages/core/src/memory/remember.ts) defaulted `zone = "mainline"` and only
 redirected to the overlay for the confirm→active path (promotion / secret-divert / unpromoted) and
 for `--local` / E4 opt-out notes. A `retire` / `review` (and any non-confirm verb) on an OVERLAY-ONLY
-row — e.g. an unconfirmed mcp import that lives only in `.ctx/memory.local.md` — still wrote its `dec`
-line to the COMMITTED `.ctx/memory/decisions.md`, so peers saw a fold-inert dangling mainline dec
+row — e.g. an unconfirmed mcp import that lives only in `.contexa/memory.local.md` — still wrote its `dec`
+line to the COMMITTED `.contexa/memory/decisions.md`, so peers saw a fold-inert dangling mainline dec
 referencing a `mem:` id no peer has (the D3 class, closed for confirm by slice 4 and for `--local`/
 secret by F-E/F-G, but NOT for the non-confirm verbs).
 

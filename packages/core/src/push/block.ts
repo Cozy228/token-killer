@@ -1,5 +1,5 @@
 /**
- * Push block builder (CTX-IMPL §7).
+ * Push block builder (CONTEXA-IMPL §7).
  *
  * Renders the sentinel-wrapped managed block that ctx writes into a host's
  * always-loaded instruction file (root `AGENTS.md` / `CLAUDE.md`). Shape:

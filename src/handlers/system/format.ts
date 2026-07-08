@@ -18,7 +18,7 @@ function matchesFormat(command: ParsedCommand): boolean {
 }
 
 // RTK: system/format_cmd.rs::detect_formatter — if the first arg is a known
-// formatter name, use it; otherwise auto-detect. In tk there is no project-file
+// formatter name, use it; otherwise auto-detect. In ctx there is no project-file
 // probing at filter time, so we honour the explicit formatter arg and default to
 // prettier (RTK's package.json detection branch / JS-stack default).
 function detectFormatter(args: string[]): string {

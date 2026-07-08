@@ -1,5 +1,5 @@
 /**
- * Shared tree-sitter engine (CTX-IMPL §5.2). Runs in whatever thread owns it —
+ * Shared tree-sitter engine (CONTEXA-IMPL §5.2). Runs in whatever thread owns it —
  * the parse worker in production, or in-process for unit tests and the no-worker
  * fallback. Holds the grammar/parser/query caches and the D23 parser-recycle
  * counter. No `worker_threads`, no store, no I/O beyond asset reads.

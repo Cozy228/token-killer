@@ -1,5 +1,5 @@
 /**
- * Unit coverage for the shared-scan cache (CTX-IMPL §4.2). Docs (1e) and code
+ * Unit coverage for the shared-scan cache (CONTEXA-IMPL §4.2). Docs (1e) and code
  * (2a) share ONE `git ls-files` spawn per refresh cycle — the cache is what
  * keeps the warm all-source dirtyCheck under the 20ms A11 bar.
  */

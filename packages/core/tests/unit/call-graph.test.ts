@@ -1,5 +1,5 @@
 /**
- * Unit — the per-language callee-resolution registry (2d, CTX-IMPL §5.2). The
+ * Unit — the per-language callee-resolution registry (2d, CONTEXA-IMPL §5.2). The
  * {local, project, builtin, unknown} outcome matrix and THE load-bearing rule
  * (callee resolution NEVER binds across languages) are pinned here as pure
  * functions, no store required.

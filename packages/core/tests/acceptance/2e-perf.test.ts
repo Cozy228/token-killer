@@ -90,14 +90,14 @@ describe("acceptance: 2e perf gates (M2 re-record)", () => {
 
   beforeAll(async () => {
     liveRoot = makeTempDir("ctx-b7-");
-    store = openStore({ projectDir: REPO_ROOT, home: join(liveRoot, "ctx-home") });
+    store = openStore({ projectDir: REPO_ROOT, home: join(liveRoot, "contexa-home") });
     // The REAL serve registry (symbolTouches on) — the store a `ctx sync` leaves.
     clearScanCache();
     const registry = createDefaultRegistry({
       code: { inProcess: true },
       git: { symbolTouches: true },
-      // Slice 4: sandbox memory's `.ctx` writer off the real repo (hard constraint).
-      memory: { ctxRoot: join(liveRoot, "ctx-mem") },
+      // Slice 4: sandbox memory's `.contexa` writer off the real repo (hard constraint).
+      memory: { contexaRoot: join(liveRoot, "contexa-mem") },
     });
     const engine = new RefreshEngine(store, registry, { catchupGateMs: 600_000 });
     await engine.refresh(600_000);
@@ -115,7 +115,7 @@ describe("acceptance: 2e perf gates (M2 re-record)", () => {
     const adapters = createDefaultRegistry({
       code: { inProcess: true },
       git: { symbolTouches: true },
-      memory: { ctxRoot: join(liveRoot, "ctx-mem") },
+      memory: { contexaRoot: join(liveRoot, "contexa-mem") },
     }).list();
     clearScanCache();
     const min = await bestOfAsync(16, () => Promise.all(adapters.map((a) => a.dirtyCheck(store))));
@@ -175,7 +175,7 @@ describe("acceptance: 2e perf gates (M2 re-record)", () => {
 
   test("B7-parse: cold full-parse of packages/ TS bounded + recorded", async () => {
     const parseRoot = makeTempDir("ctx-b7-parse-");
-    const parseStore = openStore({ projectDir: REPO_ROOT, home: join(parseRoot, "ctx-home") });
+    const parseStore = openStore({ projectDir: REPO_ROOT, home: join(parseRoot, "contexa-home") });
     try {
       const adapter = new CodeSourceAdapter({ inProcess: true });
       clearScanCache();

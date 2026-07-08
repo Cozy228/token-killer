@@ -1,6 +1,6 @@
 /**
- * Test sandbox helpers (G-7: never touch real ~/.claude, ~/.copilot or ~/.ctx —
- * every store opens under a temp CTX_HOME passed explicitly as `home`).
+ * Test sandbox helpers (G-7: never touch real ~/.claude, ~/.copilot or ~/.contexa —
+ * every store opens under a temp CONTEXA_HOME passed explicitly as `home`).
  */
 import { execFileSync } from "node:child_process";
 import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
@@ -32,7 +32,7 @@ export function git(args: string[], cwd: string): string {
   }).trim();
 }
 
-/** Script-generated fixture repo (CTX-IMPL §10) with one commit. */
+/** Script-generated fixture repo (CONTEXA-IMPL §10) with one commit. */
 export function makeGitFixture(root: string): string {
   const repo = join(root, "repo");
   git(["init", "-q", "-b", "main", repo], root);

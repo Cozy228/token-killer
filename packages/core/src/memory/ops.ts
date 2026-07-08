@@ -5,8 +5,8 @@
  * queue (A3 imports can flood it), so operators get the signal without any
  * auto-expiry (non-destruction, E8).
  *
- * Everything here is a store read + a `.ctx` file read — no LLM, no network, no
- * git spawn, no writes (never creates `.ctx/`). The reindex counts (`skipped`,
+ * Everything here is a store read + a `.contexa` file read — no LLM, no network, no
+ * git spawn, no writes (never creates `.contexa/`). The reindex counts (`skipped`,
  * `shadowedOverlay`) come from the manifest the memory adapter persisted at its
  * last cold-path ingest, so doctor need not reindex to report them.
  */
@@ -54,7 +54,7 @@ function readManifestCounts(store: Store): { skipped: number; shadowedOverlay: n
 
 /**
  * Build the read-only E8 report. `now` is injected (fixed-clock tests); defaults
- * to the wall clock. `files` reads the committed/overlay `.ctx` layout — absent
+ * to the wall clock. `files` reads the committed/overlay `.contexa` layout — absent
  * files read as empty (never a throw, never a create).
  */
 export function memoryOpsReport(

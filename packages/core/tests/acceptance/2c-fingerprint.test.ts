@@ -3,7 +3,7 @@
  * (M2-ACCEPTANCE.md "2c"). Owns B3-cosmetic · B3-drift · B3-boundary ·
  * B3-shadow · B3-shrink.
  *
- * Deterministic CI tier (CTX-IMPL §10): script-generated fixture repos in temp
+ * Deterministic CI tier (CONTEXA-IMPL §10): script-generated fixture repos in temp
  * dirs — a cosmetic-vs-structural edit, an (import-based) barrel re-export, a
  * same-basename/different-ext shadow, and a truncated-extraction simulation. The
  * living-repo ⚠ evidence (a real symbol + the fingerprint on real content) is

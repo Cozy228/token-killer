@@ -1,5 +1,5 @@
 /**
- * Forward-only SQL migrations (CTX-IMPL §2 notes + §9 P28 addenda):
+ * Forward-only SQL migrations (CONTEXA-IMPL §2 notes + §9 P28 addenda):
  * files named `NNN-<name>.sql`, applied in ascending NNN order, one transaction
  * each; `meta.schema_version` = highest applied NNN. Never a down migration —
  * rollback story is delete-the-store + resync (§11, sources are authoritative).

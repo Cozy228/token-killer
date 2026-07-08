@@ -8,7 +8,7 @@
  * G-7 is structural here (this repo's own history: a dev `doctor --fix` once
  * corrupted the real hook config). Every write lands under a temp `projectRoot`
  * inside a `mkdtemp` sandbox, and the store opens under a temp `home`; NOTHING
- * in this file names, reads, or writes the real `~/.claude`/`~/.copilot`/`~/.ctx`.
+ * in this file names, reads, or writes the real `~/.claude`/`~/.copilot`/`~/.contexa`.
  * The install/doctor core API only accepts explicit `projectRoot`/`home`, so a
  * real-HOME write is not merely avoided — it is not expressible.
  */
@@ -41,7 +41,7 @@ describe("acceptance: 1i install/doctor", () => {
     root = makeTempDir("ctx-1i-");
     projectRoot = join(root, "project");
     mkdirSync(projectRoot, { recursive: true });
-    home = join(root, "ctx-home");
+    home = join(root, "contexa-home");
   });
   afterEach(() => {
     cleanupTempDir(root);

@@ -1,5 +1,5 @@
 /**
- * Git extractor unit + property tests (CTX-IMPL §5.1, §10). Fixture repos are
+ * Git extractor unit + property tests (CONTEXA-IMPL §5.1, §10). Fixture repos are
  * script-generated into temp dirs (Windows EBUSY cleanup); all git spawns carry
  * explicit timeouts via the sandbox helper. No real host state is touched (G-7).
  */
@@ -115,7 +115,7 @@ describe("git adapter over fixture repos (§5.1)", () => {
   beforeEach(() => {
     root = makeTempDir("ctx-gitx-");
     repo = makeGitFixture(root); // one commit: README.md
-    store = openStore({ projectDir: repo, home: join(root, "ctx-home") });
+    store = openStore({ projectDir: repo, home: join(root, "contexa-home") });
   });
   afterEach(() => {
     store.close();

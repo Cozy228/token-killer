@@ -2,7 +2,7 @@ import type { ParsedCommand } from "../../types.js";
 import { rawText } from "../base.js";
 import { defineHandler } from "../define.js";
 
-// tk-only handler: rtk has no terraform support, so this is a pure addition rather
+// ctx-only handler: rtk has no terraform support, so this is a pure addition rather
 // than an RTK port. Both subcommands are noise filters (retention-first): they drop
 // progress/banner lines that carry no decision value and keep the full actionable
 // body — no summarization, no "+N more" omission markers.

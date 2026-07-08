@@ -1,4 +1,4 @@
-> **[2026-07-04 P28] SUPERSEDED** — execution-loop prompt bound to the retired slice DAG. Do NOT run; build route = `CTX-IMPL.md` §9 M1–M5.
+> **[2026-07-04 P28] SUPERSEDED** — execution-loop prompt bound to the retired slice DAG. Do NOT run; build route = `CONTEXA-IMPL.md` §9 M1–M5.
 
 # Build-Loop Goal — implement codemap-action-plan-20260620.md to completion
 

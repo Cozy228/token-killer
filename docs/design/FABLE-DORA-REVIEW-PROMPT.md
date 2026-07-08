@@ -40,9 +40,9 @@ so plainly and show the reasoning.
   `dora-2025.txt`, `dora-roi-2026.txt` (full extractions), and the two PDFs.
 
 **Object under review (do NOT open until you have finished Section 1):**
-- `CTX-DESIGN.md` — the current design (§1 product def, §2 sources, §3 store, §4 serving,
+- `CONTEXA-DESIGN.md` — the current design (§1 product def, §2 sources, §3 store, §4 serving,
   §5 extractors, §6 guide, §7 compressor, §8 delivery, §9 contract-amendment register, §10 forks).
-- `CTX-IMPL.md` — the current implementation plan (DDL, identity/handles, ingest, selection,
+- `CONTEXA-IMPL.md` — the current implementation plan (DDL, identity/handles, ingest, selection,
   serving surface, §9 build route M1–M5, §12 absorption register).
 - `FABLE-DECISION-LOG.md` — decisions **P9–P26** (the live decision surface).
 - `PROJECT-CONTEXT-PACK.md` §9 — decisions **P1–P8** (frozen factual snapshot; do not append).
@@ -55,7 +55,7 @@ read there as a *hypothesis to test*, never as authority.
 ## Anti-anchoring discipline (the spine of this task)
 
 1. **Derive before you read.** Produce **Section 1 (Independent Derivation)** using ONLY the DORA
-   material and the North Star — with the ctx design/impl/decision docs still unopened. Do not
+   material and the North Star — with the Contexa design/impl/decision docs still unopened. Do not
    peek. This mirrors the from-scratch re-derivation the maintainer ran as P25; its value is
    entirely in being uncontaminated by the current design.
 2. **No echo.** Do NOT assume any prior analysis of this report exists, and do not try to reconstruct
@@ -100,7 +100,7 @@ read there as a *hypothesis to test*, never as authority.
 
 ### Section 1 — Independent Derivation (design docs UNOPENED)
 Derived from DORA + the North Star only. This section must be self-contained and must not reference
-any ctx design detail (you have not read them yet).
+any Contexa design detail (you have not read them yet).
 
 - **1a. Force map.** The durable forces the evidence proves about AI-assisted development — what
   developers/enterprises actually need most, ranked. Each force: one line, the driving DORA
@@ -115,7 +115,7 @@ any ctx design detail (you have not read them yet).
   (e.g. more context vs. context that adds cost/noise), name the tension and how an ideal tool would
   resolve it.
 
-> Stop and finish 1a–1c before opening `CTX-DESIGN.md` / `CTX-IMPL.md` / `FABLE-DECISION-LOG.md`.
+> Stop and finish 1a–1c before opening `CONTEXA-DESIGN.md` / `CONTEXA-IMPL.md` / `FABLE-DECISION-LOG.md`.
 
 ### Section 2 — Alignment Ledger (brief)
 Now read the current artifacts. List, tersely, where the current design/impl/decisions already
@@ -126,8 +126,8 @@ evidence tier. Purpose: prevent re-litigating what is already right. Do not pad 
 DORA-proven forces the current state under-serves, ignores, or solves weakly. For each:
 - The force + driving DORA finding + evidence tier.
 - The current assumption or gap it exposes.
-- The proposed change, mapped to a **specific** surface: design section (`CTX-DESIGN §x`), impl
-  slice (`CTX-IMPL §/Mx-slice`), or decision (`Pn` / `Dn`).
+- The proposed change, mapped to a **specific** surface: design section (`CONTEXA-DESIGN §x`), impl
+  slice (`CONTEXA-IMPL §/Mx-slice`), or decision (`Pn` / `Dn`).
 - **Level**: is this a *design* change, an *implementation* change, or a *decision* to reopen?
 - Capability-state of the proposed capability (Terminology Law).
 - What would confirm or reject that this change is worth making.
@@ -162,7 +162,7 @@ Be explicit about uncertainty; do not manufacture convergence.
 ---
 
 ## Strict rules
-- Do not treat `CTX-DESIGN.md` / `CTX-IMPL.md` / the decision log as correct by default.
+- Do not treat `CONTEXA-DESIGN.md` / `CONTEXA-IMPL.md` / the decision log as correct by default.
 - Do not treat any Pn/Dn/ADR as binding truth; challenge on evidence.
 - Do not invent DORA findings; cite the synthesis (and verify against the source txt when in doubt).
 - Do not recommend on MISQUOTED / UNVERIFIABLE / "do-not-cite" figures.

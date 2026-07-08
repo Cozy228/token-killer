@@ -1,5 +1,5 @@
 /**
- * Stage 5 — projection primitives (CTX-IMPL §6.5): kind-specific compact
+ * Stage 5 — projection primitives (CONTEXA-IMPL §6.5): kind-specific compact
  * renders at three tiers (full → skeleton → line+handle), token estimate =
  * chars/4, semantic-boundary content (whole tiers only — an item is never cut
  * mid-tier; a tier that doesn't fit demotes to the next one).

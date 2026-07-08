@@ -1,5 +1,5 @@
 /**
- * Docs / decisions SourceAdapter (CTX-IMPL §4/§5.3/§5.5, slice 1e).
+ * Docs / decisions SourceAdapter (CONTEXA-IMPL §4/§5.3/§5.5, slice 1e).
  *
  * Lands: markdown/frontmatter/ADR/glossary extraction, two-tier mention
  * resolution, link layer v1 (explicit-key + path-match), and reason-classified

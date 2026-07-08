@@ -6,7 +6,7 @@ import { afterEach, beforeEach, describe, expect, test } from "vitest";
 import { run, type RunIo } from "../src/cli.ts";
 
 // The CLI `run()` is exercised in-process against a temp git repo + sandboxed
-// CTX_HOME (G-7); no host config is touched, no subprocess spawn needed.
+// CONTEXA_HOME (G-7); no host config is touched, no subprocess spawn needed.
 function makeRepo(root: string): string {
   const repo = join(root, "repo");
   const g = (args: string[]) =>
@@ -25,7 +25,7 @@ function makeRepo(root: string): string {
   return repo;
 }
 
-describe("ctx CLI: memory lifecycle", () => {
+describe("Contexa CLI: memory lifecycle", () => {
   let root: string;
   let repo: string;
   let lines: string[];
@@ -35,7 +35,7 @@ describe("ctx CLI: memory lifecycle", () => {
     root = mkdtempSync(join(tmpdir(), "ctx-cli-"));
     repo = makeRepo(root);
     lines = [];
-    io = { out: (l) => lines.push(l), home: join(root, "ctx-home"), projectDir: repo };
+    io = { out: (l) => lines.push(l), home: join(root, "contexa-home"), projectDir: repo };
   });
   afterEach(() => {
     rmSync(root, { recursive: true, force: true, maxRetries: 5, retryDelay: 100 });

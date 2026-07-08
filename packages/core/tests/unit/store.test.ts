@@ -13,7 +13,7 @@ describe("Store (SQLite spine)", () => {
   beforeEach(() => {
     root = makeTempDir("ctx-store-");
     repo = makeGitFixture(root);
-    home = join(root, "ctx-home"); // G-7: sandboxed CTX_HOME, never the real one
+    home = join(root, "contexa-home"); // G-7: sandboxed CONTEXA_HOME, never the real one
     clock = { t: 1_000_000 };
     store = openStore({ projectDir: repo, home, now: () => clock.t });
   });

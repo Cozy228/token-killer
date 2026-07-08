@@ -25,7 +25,7 @@ catches the agent's `run_in_terminal` at the protocol layer even when PATH injec
 taken effect (fresh terminal, RC not sourced), and it can run direct-tool governance on the
 primary host.
 
-The 2026-06-15 research confirmed both host protocols and the remaining tk-side gaps
+The 2026-06-15 research confirmed both host protocols and the remaining ctx-side gaps
 (issues #19, #20, #22, #23, #26).
 
 ## Decision
@@ -51,10 +51,10 @@ The 2026-06-15 research confirmed both host protocols and the remaining tk-side 
    and silently ignores the rewrite, so the tier no-ops without #19. This closes ADR 0005 §6's
    protocol-conformance prerequisite for the VS Code rewrite path.
 
-5. **No double-compression — two existing guards.** The hook skips already-`tk` commands
-   (`rewrite.ts` eligibility, "already a tk command"); the shim never wraps `tk` (`NEVER_WRAP`,
-   `programs.ts`) and strips `TK_SHIM_DIR` from the child PATH (`path.ts`). A hook rewrite of
-   `git status` → `tk git status` therefore cannot be re-intercepted by the shim. A round-trip
+5. **No double-compression — two existing guards.** The hook skips already-`ctx` commands
+   (`rewrite.ts` eligibility, "already a ctx command"); the shim never wraps `ctx` (`NEVER_WRAP`,
+   `programs.ts`) and strips `CTX_SHIM_DIR` from the child PATH (`path.ts`). A hook rewrite of
+   `git status` → `ctx git status` therefore cannot be re-intercepted by the shim. A round-trip
    regression test pins this.
 
 6. **`modifiedResult` result compression is out of scope here.** VS Code cannot (`modifiedResult`
@@ -64,7 +64,7 @@ The 2026-06-15 research confirmed both host protocols and the remaining tk-side 
 
 7. **Delivery state becomes a capability matrix (#26).** Because a host can now hold multiple live
    tiers, the single "active tier" (`selectTier`) is no longer a faithful description of installed
-   state. `tk status` reports a per-host matrix {hook installed/fired/blocked-by-policy, shim
+   state. `ctx status` reports a per-host matrix {hook installed/fired/blocked-by-policy, shim
    installed/probe/TTY, instructions}, plus last-verified + host version. `selectTier` is retained
    for preference ordering; it no longer implies the other tiers are absent.
 
@@ -76,7 +76,7 @@ The 2026-06-15 research confirmed both host protocols and the remaining tk-side 
   enhancement that covers the gap where PATH injection hasn't taken effect, plus direct-tool
   governance on the primary host.
 - **A separate VS Code hook file/writer.** Rejected — VS Code and Copilot CLI read the same locations
-  (0005 §5 corollary); one marker-guarded `tk-rewrite.json` + one uninstall path is simpler and
+  (0005 §5 corollary); one marker-guarded `ctx-rewrite.json` + one uninstall path is simpler and
   already exists.
 
 ## Consequences
@@ -85,11 +85,11 @@ The 2026-06-15 research confirmed both host protocols and the remaining tk-side 
   `supportedTiers`; `tests/unit/shim/hostAdapter.test.ts` (asserts `vscode.installHook` undefined)
   flips. `src/shim/init.ts` `runInstall` installs hook+shim additively for VS Code (reuse the
   existing additive block).
-- Shared file: both `copilot-cli` and `vscode` adapters write `~/.copilot/hooks/tk-rewrite.json`;
+- Shared file: both `copilot-cli` and `vscode` adapters write `~/.copilot/hooks/ctx-rewrite.json`;
   marker-guarded uninstall already removes it once. Documented so no one assumes a separate VS Code
   file.
 - Depends on #19 (prerequisite) and #20 (the conformant dual-schema config the VS Code hook reuses).
-- `tk status` / delivery state move to the capability matrix (#26); `selectTier` stays for ordering only.
+- `ctx status` / delivery state move to the capability matrix (#26); `selectTier` stays for ordering only.
 - Docs: CONTEXT.md *Delivery* exclusivity sentence amended; DESIGN.md "VS Code uses the shim / hook is
   Copilot-CLI-only" statements annotated; ADR 0002 and 0005 annotated. The full descriptive rewrite of
   DESIGN.md §3 lands with the #22 implementation.

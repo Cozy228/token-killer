@@ -1,4 +1,4 @@
-; Tier-1 JavaScript / JSX queries (CTX-IMPL §5.2). Same capture vocabulary as
+; Tier-1 JavaScript / JSX queries (CONTEXA-IMPL §5.2). Same capture vocabulary as
 ; typescript.scm; no type-only nodes.
 
 ; --- definitions ---
