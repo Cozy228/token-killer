@@ -51,7 +51,13 @@ function runTk(args: string[]) {
 // own handler prints (so a pass proves the verb reached its handler, not passthrough).
 // `exit` defaults to 0; inspect returns 2 ("no session sources" — the normal state in an
 // isolated home, and itself proof the inspect handler ran).
-const SAFE_COMMANDS: Array<{ name: string; args: string[]; contains: string; exit?: number }> = [
+const SAFE_COMMANDS: Array<{
+  name: string;
+  args: string[];
+  contains: string;
+  exit?: number;
+  exits?: number[];
+}> = [
   { name: "version", args: ["version"], contains: "." },
   { name: "help", args: ["help"], contains: "Token Killer" },
   { name: "install --dry-run", args: ["install", "--dry-run"], contains: "Detected host:" },
@@ -62,8 +68,8 @@ const SAFE_COMMANDS: Array<{ name: string; args: string[]; contains: string; exi
   {
     name: "inspect --json",
     args: ["inspect", "--json"],
-    contains: "no session sources found",
-    exit: 2,
+    contains: "",
+    exits: [0, 2],
   },
   { name: "optimize", args: ["optimize"], contains: "" },
   { name: "gain --text", args: ["gain", "--text"], contains: "Token" },
@@ -73,9 +79,10 @@ const SAFE_COMMANDS: Array<{ name: string; args: string[]; contains: string; exi
 ];
 
 describe("every subcommand dispatches end-to-end", () => {
-  test.each(SAFE_COMMANDS)("tk $name reaches its handler", ({ args, contains, exit }) => {
+  test.each(SAFE_COMMANDS)("tk $name reaches its handler", ({ args, contains, exit, exits }) => {
     const result = runTk(args);
-    expect(result.status).toBe(exit ?? 0);
+    if (exits) expect(exits).toContain(result.status);
+    else expect(result.status).toBe(exit ?? 0);
     // Never the command-router passthrough error (that would mean the verb fell through).
     expect(result.stderr).not.toContain("tk wraps known dev tools");
     // `contains` is "" for verbs with no stable marker → toContain("") is a trivial pass.

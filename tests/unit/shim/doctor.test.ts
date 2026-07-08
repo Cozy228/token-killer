@@ -28,6 +28,10 @@ function bucket(name: string, files: Record<string, string>): void {
   for (const [k, v] of Object.entries(files)) writeFileSync(join(dir, k), v);
 }
 
+function fingerprintBucket(fingerprint: string, files: Record<string, string>): void {
+  bucket(fingerprintSegment(fingerprint), files);
+}
+
 async function capture(fn: () => Promise<unknown>): Promise<string> {
   const lines: string[] = [];
   const spy = vi.spyOn(process.stdout, "write").mockImplementation((chunk: unknown) => {
@@ -56,21 +60,21 @@ afterEach(() => {
 
 describe("runDoctor", () => {
   test("read-only reports an orphan bucket and mutates nothing", async () => {
-    bucket("repo:aaaaaaaaaaaa", { "history.jsonl": '{"command":"x"}\n' });
+    fingerprintBucket("repo:aaaaaaaaaaaa", { "history.jsonl": '{"command":"x"}\n' });
     const output = await capture(() => runDoctor([]));
     expect(output).toContain("Records health:");
     expect(output).toContain("orphan bucket");
     expect(output).toContain("Run `tk doctor --fix");
     // No archive, original bucket intact.
-    expect(existsSync(join(projectsDir(), "repo:aaaaaaaaaaaa"))).toBe(true);
+    expect(existsSync(join(projectsDir(), fingerprintSegment("repo:aaaaaaaaaaaa")))).toBe(true);
     expect(existsSync(join(projectsDir(), "archived"))).toBe(false);
   });
 
   test("--fix archives an unresolved orphan and preserves its tokens", async () => {
-    bucket("repo:bbbbbbbbbbbb", { "history.jsonl": '{"command":"o"}\n' });
+    fingerprintBucket("repo:bbbbbbbbbbbb", { "history.jsonl": '{"command":"o"}\n' });
     const output = await capture(() => runDoctor(["--fix"]));
     expect(output).toContain("archived 1 unresolved orphan");
-    expect(existsSync(join(projectsDir(), "repo:bbbbbbbbbbbb"))).toBe(false);
+    expect(existsSync(join(projectsDir(), fingerprintSegment("repo:bbbbbbbbbbbb")))).toBe(false);
     expect(existsSync(join(projectsDir(), "archived", "history.jsonl"))).toBe(true);
   });
 

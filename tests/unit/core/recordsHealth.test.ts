@@ -19,6 +19,7 @@ import {
 
 // recordsHealth keys everything off TOKEN_KILLER_HOME (via tokenKillerHome), so each
 // test points it at a throwaway store and builds the exact bucket layout it asserts.
+const posixTest = process.platform === "win32" ? test.skip : test;
 
 let home: string;
 let prevHome: string | undefined;
@@ -35,6 +36,10 @@ function makeBucket(dirName: string, files: Record<string, string>): string {
     writeFileSync(join(dir, name), content);
   }
   return dir;
+}
+
+function makeFingerprintBucket(fingerprint: string, files: Record<string, string>): string {
+  return makeBucket(fingerprintSegment(fingerprint), files);
 }
 
 function historyLines(n: number): string {
@@ -64,7 +69,7 @@ describe("diagnoseRecords", () => {
   });
 
   test("a labelled bucket with a fresh rollup is healthy", () => {
-    makeBucket("repo:aaaaaaaaaaaa", {
+    makeFingerprintBucket("repo:aaaaaaaaaaaa", {
       "history.jsonl": historyLines(3),
       "rollup.json": JSON.stringify({ version: 1, source_lines: 3 }),
       "meta.json": JSON.stringify({ label: "my-project" }),
@@ -80,7 +85,7 @@ describe("diagnoseRecords", () => {
   });
 
   test("a bucket with history but no meta is an orphan shown as a bare hash", () => {
-    makeBucket("repo:bbbbbbbbbbbb", { "history.jsonl": historyLines(2) });
+    makeFingerprintBucket("repo:bbbbbbbbbbbb", { "history.jsonl": historyLines(2) });
     const report = diagnoseRecords();
     expect(report.orphanBuckets).toHaveLength(1);
     expect(report.orphanBuckets[0].displayName).toBe("bbbbbbbb");
@@ -88,7 +93,7 @@ describe("diagnoseRecords", () => {
   });
 
   test("a meta label that is itself a hash counts as junk → orphan", () => {
-    makeBucket("repo:cccccccccccc", {
+    makeFingerprintBucket("repo:cccccccccccc", {
       "history.jsonl": historyLines(1),
       "meta.json": JSON.stringify({ label: "cccccccc" }),
     });
@@ -99,7 +104,7 @@ describe("diagnoseRecords", () => {
 
   test("a meta label that is a flattened absolute path is junk → orphan", () => {
     // The legacy bug: a data-dir path leaked into the name slot. Must not render verbatim.
-    makeBucket("repo:cafecafecafe", {
+    makeFingerprintBucket("repo:cafecafecafe", {
       "history.jsonl": historyLines(3),
       "meta.json": JSON.stringify({ label: "-Users-ziyu-Workspace-token-killer" }),
     });
@@ -107,7 +112,7 @@ describe("diagnoseRecords", () => {
     expect(report.orphanBuckets).toHaveLength(1);
     expect(report.buckets[0].badMeta).toBe(true);
     // A normal dash-cased project name is NOT mistaken for a flattened path.
-    makeBucket("repo:beadbeadbead", {
+    makeFingerprintBucket("repo:beadbeadbead", {
       "history.jsonl": historyLines(1),
       "meta.json": JSON.stringify({ label: "atlas-agent-e2e" }),
     });
@@ -115,7 +120,7 @@ describe("diagnoseRecords", () => {
   });
 
   test("a rollup whose source_lines mismatch history is stale", () => {
-    makeBucket("repo:dddddddddddd", {
+    makeFingerprintBucket("repo:dddddddddddd", {
       "history.jsonl": historyLines(5),
       "rollup.json": JSON.stringify({ version: 1, source_lines: 2 }),
       "meta.json": JSON.stringify({ label: "stale-one" }),
@@ -123,7 +128,7 @@ describe("diagnoseRecords", () => {
     expect(diagnoseRecords().staleRollups.map((b) => b.rollup)).toEqual(["stale"]);
   });
 
-  test("repo: and repo- dirs of the same hash form one duplicate group", () => {
+  posixTest("repo: and repo- dirs of the same hash form one duplicate group", () => {
     makeBucket("repo:eeeeeeeeeeee", { "history.jsonl": historyLines(1) });
     makeBucket("repo-eeeeeeeeeeee", { "history.jsonl": historyLines(1) });
     const report = diagnoseRecords();
@@ -134,8 +139,8 @@ describe("diagnoseRecords", () => {
 });
 
 describe("mergeDuplicateBuckets", () => {
-  test("merges the dash-spelled dir into the canonical one and removes it", () => {
-    makeBucket("repo:ffffffffffff", { "history.jsonl": '{"command":"keep"}\n' });
+  posixTest("merges the dash-spelled dir into the canonical one and removes it", () => {
+    makeFingerprintBucket("repo:ffffffffffff", { "history.jsonl": '{"command":"keep"}\n' });
     makeBucket("repo-ffffffffffff", { "history.jsonl": '{"command":"merged"}\n' });
 
     const result = mergeDuplicateBuckets();
@@ -173,7 +178,7 @@ describe("recoverOrphanNames", () => {
 
   test("an orphan with no matching repo stays unmatched", () => {
     const scanRoot = mkdtemp("tk-scan-empty-");
-    makeBucket("repo:111111111111", { "history.jsonl": historyLines(1) });
+    makeFingerprintBucket("repo:111111111111", { "history.jsonl": historyLines(1) });
     const result = recoverOrphanNames(scanRoot);
     expect(result.recovered).toHaveLength(0);
     expect(result.unmatched).toBe(1);
@@ -183,8 +188,10 @@ describe("recoverOrphanNames", () => {
 
 describe("archiveUnresolvedOrphans", () => {
   test("folds orphan history into one archived bucket and deletes the hash dirs", () => {
-    makeBucket("repo:222222222222", { "history.jsonl": '{"command":"o1"}\n' });
-    makeBucket("repo:333333333333", { "history.jsonl": '{"command":"o2a"}\n{"command":"o2b"}\n' });
+    makeFingerprintBucket("repo:222222222222", { "history.jsonl": '{"command":"o1"}\n' });
+    makeFingerprintBucket("repo:333333333333", {
+      "history.jsonl": '{"command":"o2a"}\n{"command":"o2b"}\n',
+    });
 
     const result = archiveUnresolvedOrphans();
     expect(result.archived).toBe(2);
@@ -197,20 +204,22 @@ describe("archiveUnresolvedOrphans", () => {
     expect(JSON.parse(readFileSync(join(archiveDir, "meta.json"), "utf8")).label).toBe("archived");
 
     // The hash-named dirs are gone; the archived bucket is no longer an orphan.
-    expect(existsSync(join(projectsDir(), "repo:222222222222"))).toBe(false);
-    expect(existsSync(join(projectsDir(), "repo:333333333333"))).toBe(false);
+    expect(existsSync(join(projectsDir(), fingerprintSegment("repo:222222222222")))).toBe(false);
+    expect(existsSync(join(projectsDir(), fingerprintSegment("repo:333333333333")))).toBe(false);
     expect(diagnoseRecords().orphanBuckets).toHaveLength(0);
   });
 });
 
 describe("pruneEmptyBuckets", () => {
   test("removes directories with no history/dedup/governance data", () => {
-    makeBucket("repo:444444444444", { "meta.json": JSON.stringify({ label: "dead" }) });
-    makeBucket("repo:555555555555", { "history.jsonl": historyLines(1) });
+    makeFingerprintBucket("repo:444444444444", {
+      "meta.json": JSON.stringify({ label: "dead" }),
+    });
+    makeFingerprintBucket("repo:555555555555", { "history.jsonl": historyLines(1) });
     const result = pruneEmptyBuckets();
     expect(result.pruned).toBe(1);
-    expect(existsSync(join(projectsDir(), "repo:444444444444"))).toBe(false);
-    expect(existsSync(join(projectsDir(), "repo:555555555555"))).toBe(true);
+    expect(existsSync(join(projectsDir(), fingerprintSegment("repo:444444444444")))).toBe(false);
+    expect(existsSync(join(projectsDir(), fingerprintSegment("repo:555555555555")))).toBe(true);
   });
 });
 
