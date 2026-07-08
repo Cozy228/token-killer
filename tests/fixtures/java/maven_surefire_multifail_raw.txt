@@ -1,0 +1,17 @@
+[INFO] --- maven-surefire-plugin:3.2.5:test (default-test) @ order-service ---
+[INFO] Running com.example.OrderServiceTest
+[ERROR] Tests run: 3, Failures: 2, Errors: 1, Skipped: 0, Time elapsed: 0.220 s <<< FAILURE! -- in com.example.OrderServiceTest
+[ERROR] com.example.OrderServiceTest.preventsDuplicateSubmit -- Time elapsed: 0.021 s <<< FAILURE!
+[ERROR] java.lang.AssertionError: duplicate order should be blocked
+[ERROR]     at com.example.OrderServiceTest.preventsDuplicateSubmit(OrderServiceTest.java:82)
+[ERROR]     at org.junit.jupiter.api.AssertionUtils.fail(AssertionUtils.java:55)
+[ERROR] com.example.OrderServiceTest.rejectsEmptyCart -- Time elapsed: 0.019 s <<< FAILURE!
+[ERROR] java.lang.AssertionError: empty cart should be rejected
+[ERROR]     at com.example.OrderServiceTest.rejectsEmptyCart(OrderServiceTest.java:101)
+[ERROR]     at org.junit.jupiter.api.AssertionUtils.fail(AssertionUtils.java:55)
+[ERROR] com.example.OrderServiceTest.loadsCatalog -- Time elapsed: 0.042 s <<< ERROR!
+[ERROR] java.lang.IllegalStateException: catalog seed missing
+[ERROR]     at com.example.OrderService.loadCatalog(OrderService.java:44)
+[ERROR]     at java.base/jdk.internal.reflect.DirectMethodHandleAccessor.invoke(DirectMethodHandleAccessor.java:103)
+[ERROR] Tests run: 3, Failures: 2, Errors: 1, Skipped: 0
+[INFO] BUILD FAILURE

@@ -1,0 +1,14 @@
+[INFO] Scanning for projects...
+[INFO]
+[INFO] --- maven-compiler-plugin:3.13.0:compile (default-compile) @ order-service ---
+[INFO] Compiling 12 source files with javac [debug release 21] to target/classes
+[ERROR] /tmp/order-service/src/main/java/com/example/OrderService.java:[42,18] cannot find symbol
+[ERROR]   symbol:   method submitOrder(com.example.Order)
+[ERROR]   location: variable client of type com.example.OrderClient
+[ERROR] /tmp/order-service/src/main/java/com/example/OrderController.java:[88,24] incompatible types: java.lang.String cannot be converted to int
+[ERROR]   required: int
+[ERROR]   found:    java.lang.String
+[WARNING] /tmp/order-service/src/main/java/com/example/LegacyApi.java:[12,8] deprecated item is not annotated with @Deprecated
+[WARNING] /tmp/order-service/src/main/java/com/example/OtherLegacyApi.java:[18,8] deprecated item is not annotated with @Deprecated
+[ERROR] Failed to execute goal org.apache.maven.plugins:maven-compiler-plugin:3.13.0:compile (default-compile) on project order-service: Compilation failure
+[INFO] BUILD FAILURE

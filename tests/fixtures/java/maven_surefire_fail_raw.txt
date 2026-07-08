@@ -1,0 +1,23 @@
+[INFO] Scanning for projects...
+[INFO]
+[INFO] --- maven-surefire-plugin:3.2.5:test (default-test) @ order-service ---
+[INFO] Running com.example.OrderServiceTest
+[ERROR] Tests run: 2, Failures: 1, Errors: 0, Skipped: 0, Time elapsed: 0.134 s <<< FAILURE! -- in com.example.OrderServiceTest
+[ERROR] com.example.OrderServiceTest.preventsDuplicateSubmit -- Time elapsed: 0.012 s <<< FAILURE!
+[ERROR] java.lang.AssertionError: expected:<1> but was:<2>
+[ERROR]     at com.example.OrderServiceTest.preventsDuplicateSubmit(OrderServiceTest.java:82)
+[ERROR]     at org.junit.jupiter.api.AssertionUtils.fail(AssertionUtils.java:55)
+[ERROR]     at org.apache.maven.surefire.junitplatform.JUnitPlatformProvider.invokeAllTests(JUnitPlatformProvider.java:150)
+[INFO]
+[INFO] Results:
+[INFO]
+[ERROR] Failures:
+[ERROR]   OrderServiceTest.preventsDuplicateSubmit:82 expected:<1> but was:<2>
+[INFO]
+[ERROR] Tests run: 2, Failures: 1, Errors: 0, Skipped: 0
+[ERROR] There are test failures.
+[ERROR]
+[ERROR] Please refer to /tmp/order-service/target/surefire-reports for the individual test results.
+[ERROR] Failed to execute goal org.apache.maven.plugins:maven-surefire-plugin:3.2.5:test (default-test) on project order-service: There are test failures.
+[INFO] BUILD FAILURE
+[INFO] Total time:  3.013 s
