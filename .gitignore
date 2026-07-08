@@ -5,6 +5,10 @@ rtk/
 headroom/
 ztk/
 
+# Local research and measurement scratch space
+.research/
+tools/measurement/.work/
+
 # Pack artifacts (regenerate with `pnpm pack`)
 *.tgz
 

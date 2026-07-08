@@ -43,6 +43,7 @@ row when done.
 | 011  | Create reports/ dir + HTML reports owner-only (0700/0600) | P2 | S | — | [#13](https://github.com/Cozy228/token-killer/issues/13) | DONE |
 | 012  | Estimate tokens via an index loop (drop per-codepoint allocation) | P3 | S | — | [#14](https://github.com/Cozy228/token-killer/issues/14) | DONE |
 | 013  | `tk gain`: rtk-parity terminal output + landing-page report narrative | P2 | M | — | [#35](https://github.com/Cozy228/token-killer/issues/35) | IN PROGRESS |
+| 014  | Rename Token Killer (`tk`) to Contexa (`ctx`) from the 0.3.2 baseline | P1 | L | PR #57 green | — | TODO |
 
 Status values: TODO | IN PROGRESS | DONE | BLOCKED (with one-line reason) | REJECTED (with one-line rationale)
 
