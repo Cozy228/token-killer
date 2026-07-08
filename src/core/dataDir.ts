@@ -1,4 +1,4 @@
-import { createHash } from "node:crypto";
+import { hash } from "node:crypto";
 import { chmodSync, mkdirSync, readFileSync, realpathSync, statSync } from "node:fs";
 import os from "node:os";
 import path from "node:path";
@@ -115,7 +115,7 @@ function projectAnchor(cwd: string): string {
 export function projectFingerprint(cwd: string): string {
   const cached = fingerprintCache.get(cwd);
   if (cached !== undefined) return cached;
-  const fingerprint = `repo:${createHash("sha256").update(projectAnchor(cwd)).digest("hex").slice(0, 12)}`;
+  const fingerprint = `repo:${hash("sha256", projectAnchor(cwd), "hex").slice(0, 12)}`;
   fingerprintCache.set(cwd, fingerprint);
   return fingerprint;
 }
