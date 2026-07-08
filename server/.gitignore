@@ -3,6 +3,9 @@ node_modules/
 dist/
 *.log
 
+# deploy secrets (copy deploy.env.example → deploy.env and fill in)
+deploy.env
+
 # terraform
 .terraform/
 .terraform.lock.hcl
