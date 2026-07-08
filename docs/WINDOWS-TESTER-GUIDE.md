@@ -18,7 +18,7 @@ There are two things we'd love from you, and they share one setup:
 
 ### Install — pick the path that matches how you got the code
 
-**Option A — from source** (company Windows PC with Node 20+ and git)
+**Option A — from source** (company Windows PC with Node 22.18.0+ and git)
 
 The Windows fixes live on the **`contexa-node-cli`** branch — *not* `main` — so a source
 clone must check that branch out (and that branch must be pushed/current on the remote first).
@@ -30,7 +30,7 @@ cd contexa
 git checkout contexa-node-cli
 
 # 2. Install deps + build
-corepack enable              # enables pnpm (ships with Node 20+); skip if pnpm already present
+corepack enable              # enables pnpm (ships with Node 22.18.0+); skip if pnpm already present
 pnpm install
 pnpm build                   # produces dist\cli.js
 node dist\cli.js --version   # expect 0.1.0

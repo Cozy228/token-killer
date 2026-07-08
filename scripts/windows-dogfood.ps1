@@ -258,8 +258,8 @@ function Get-CompileCacheTier([string]$nv) {
     $p = $nv.TrimStart('v').Split('.'); $maj = [int]$p[0]; $min = [int]$p[1]
     if ($maj -gt 22 -or ($maj -eq 22 -and $min -ge 8)) { return "enableCompileCache() API (Node >=22.8)" }
     if ($maj -eq 22 -and $min -ge 1) { return "shim NODE_COMPILE_CACHE env (Node 22.1-22.7)" }
-    if ($maj -ge 20) { return "deferred — uncached compile (Node 20-22.0)" }
-    return "UNSUPPORTED Node <20"
+    if ($maj -ge 20) { return "deferred — uncached compile (Node <22.8)" }
+    return "UNSUPPORTED Node <22.18.0"
   } catch { return "unknown" }
 }
 

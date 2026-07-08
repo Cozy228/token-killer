@@ -6,7 +6,7 @@ How to install `ctx` for end users and publish the package to a private npm regi
 
 | Requirement | Version |
 |---|---|
-| Node.js | 20 or later |
+| Node.js | 22.18.0 or later |
 | Package manager | pnpm (development) or npm (install) |
 
 ## End-user install

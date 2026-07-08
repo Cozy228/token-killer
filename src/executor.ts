@@ -35,7 +35,7 @@ function resolveExitCode(code: number | null, signal: NodeJS.Signals | null): nu
 // lossy UTF-8 — never worse than a hardcoded toString("utf8"). (RTK never fixed
 // this: it decodes child output with from_utf8_lossy — mojibake without a crash
 // — and its POSIX-UTF-8 home turf never triggers it.)
-let legacyDecoder: TextDecoder | null | undefined;
+let legacyDecoder: InstanceType<typeof TextDecoder> | null | undefined;
 
 // Map the active Windows console code page to its encoding label. Resolved once,
 // lazily — only the first time a buffer fails strict UTF-8 — so the common
@@ -69,7 +69,7 @@ function detectWindowsLegacyLabel(): string | null {
   }
 }
 
-function getLegacyDecoder(): TextDecoder | null {
+function getLegacyDecoder(): InstanceType<typeof TextDecoder> | null {
   if (legacyDecoder !== undefined) return legacyDecoder;
   if (process.platform !== "win32") return (legacyDecoder = null);
   const label = detectWindowsLegacyLabel();

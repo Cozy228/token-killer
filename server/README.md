@@ -74,7 +74,7 @@ because enterprise pipelines usually standardize on ECR. Pick one:
   ```
 - **Zip alternative (simpler).** Drop `pnpm build`'s `dist/` + the pruned
   `node_modules` into a zip and switch `lambda.tf` to
-  `filename`/`handler = "index.handler"`/`runtime = "nodejs20.x"`. No ECR, no
+  `filename`/`handler = "index.handler"`/`runtime = "nodejs22.x"`. No ECR, no
   Docker.
 
 ## Front door: internal ALB (default) or API Gateway

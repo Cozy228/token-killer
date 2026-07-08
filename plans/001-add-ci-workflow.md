@@ -49,10 +49,10 @@ an automatic gate.
   - `tests/smoke/smoke.sh` — end-to-end exercise of tk commands; exit code = number of failures.
 - `package.json:29` defines `"typecheck": "tsc --noEmit"` (verified green at the
   planned-at commit).
-- `package.json:6` pins `"packageManager": "pnpm@11.5.0"` — use this via corepack
+- `package.json:6` pins `"packageManager": "pnpm@11.10.0"` — use this via corepack
   or `pnpm/action-setup` (which reads the `packageManager` field when no version
   is given).
-- `package.json:38-40` requires `"node": ">=20"`.
+- `package.json:38-40` requires `"node": ">=22.18.0"`.
 - There is **no `.github/` directory** (verified: `ls -d .github` → not found).
 - The repo's commit style is conventional commits (e.g. `fix(spawn): …`,
   `docs: …` — see `git log --oneline`).

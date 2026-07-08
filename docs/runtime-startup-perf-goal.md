@@ -34,8 +34,8 @@ to whoever has box access. Info is pre-collected below — spend your budget on 
      the experiment matrix is run somewhere other than the target box.
 
 2. **This is a DISTRIBUTED package — client Node versions are a whole unknowable
-   range, not one number.** `ctx` ships to many machines; each may run Node 20, 22,
-   24, anything ≥20. The Node version on any single machine we can touch is just one
+   range, not one number.** `ctx` ships to many machines; each may run Node 22.18,
+   24, anything ≥22.18. The Node version on any single machine we can touch is just one
    sample, NOT a design input — the plan must hold across the full field. Treat this
    as a first-class design axis:
    - **Every technique must specify its upgrade/downgrade (graceful-degradation)
@@ -196,18 +196,16 @@ the ctx-side structural wins below.
   history, savings, rawStore, …). Management subcommands (install/inspect/optimize/
   telemetry/report/gain) are loaded with **`await import()`** (12 sites) so they stay
   off the per-command path. So **lazy-loading of subcommands is already done.**
-- **Build:** `tsdown.config.ts` → **ESM**, `platform: node`, `target: node20`,
+- **Build:** `tsdown.config.mjs` → **ESM**, `platform: node`, `target: node22.18`,
   chunk-split. `dist/` currently has **51 `.js` chunks**. The hot path (`ctx git
   status`) loads only router+executor+gate+pipeline chunks, but it's still **many
   small files**, each a separate `fs.open` → separate AV scan on Windows.
 - **Shim wrapper** (`src/shim/install.ts`): POSIX `exec <ctx...> <program> "$@"`;
   Windows `.cmd` `@echo off / setlocal / set CTX_SHIM_DIR / <ctx...> %*`. `ctx` here is
   `node <abs>/dist/cli.js` (absolute — `node.exe` PATH lookup already avoided).
-- **`engines.node >= 20`** (dev machine happens to be on v22.22.2 — irrelevant, see
-  constraint #2). `ctx` is distributed; clients span the whole ≥20 range. So
-  `enableCompileCache()` amortizes the 180 ms bundle segment only on the ≥22.8 slice
-  of the field and silently no-ops below — every technique needs this kind of
-  per-version-band behavior spelled out, not a single assumed version.
+- **`engines.node >= 22.18.0`**. `ctx` is distributed; clients can still span
+  multiple supported release lines, so techniques need per-version behavior spelled
+  out rather than a single assumed local version.
 - **Deps:** essentially zero runtime deps (self-contained bundle).
 
 ---

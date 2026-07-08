@@ -615,7 +615,7 @@ demanded.)
 | Stale baked path / user re-orders PATH | 2.1 | Revalidation stat + walk fallback; `ctx install` refresh; surface in `ctx status` |
 | ESM→CJS regressions (`import.meta`, TLA) | 2.2 | Audit + full 1554-test suite; ADR documenting the chunk-split reversal |
 | Single-file accidentally eager-loads subcommands | 2.2 | Bundle-grep CI check; two-entry fallback |
-| Cache-shim slows Node 20 edge cases | 2.3 | Stub is try/catch'd; rung independently removable |
+| Cache-shim slows Node <22.8 edge cases | 2.3 | Stub is try/catch'd; rung independently removable |
 | History batching loses rows on daemon crash | 2.4/§4 | Bounded N-row loss, flush-on-idle/exit, documented |
 | Daemon pattern itself (persistent process + pipe + custom exe) flagged/killed by Falcon | §4 | **M-pre gate before any build** — signing mitigates, only the policy check answers; exec fallback if it dies in the field |
 | Unsigned native client flagged by EDR | §4 | Code-sign; npm-distributed like esbuild; exec fallback |

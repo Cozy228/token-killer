@@ -7,15 +7,14 @@ const { version } = JSON.parse(
   readFileSync(new URL("./package.json", import.meta.url), "utf8"),
 );
 
-// Plain .mjs (not .ts): tsdown loads a .ts config via native TS type-stripping on
-// Node 22+, but on Node 20 it falls back to `unrun` (not installed) and the build
-// errors with "Failed to import module 'unrun'". A .mjs config is loaded by native
-// `import` on every supported Node, so the build works on the whole `engines` range.
+// Plain .mjs (not .ts): tsdown loads this through native `import`, keeping the
+// config independent of TypeScript config-loader behavior across supported Node
+// versions.
 export default defineConfig({
   entry: ["src/cli.ts"],
   format: ["esm"],
   platform: "node",
-  target: "node20",
+  target: "node22.18",
   outDir: "dist",
   clean: true,
   fixedExtension: false,
