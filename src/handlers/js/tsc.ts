@@ -15,8 +15,8 @@ type TscIssue = {
 // option"). Modelled on mypy.ts filelessErrors bucket.
 type FilelessDiagnostic = { code: string; message: string; notes: string[] };
 
-// tk divergence (recorded in docs/align-rtk-divergences.md): RTK's tsc_cmd.rs emits
-// a 39-char box-drawing separator under the summary line. tk drops this decorative
+// ctx divergence (recorded in docs/align-rtk-divergences.md): RTK's tsc_cmd.rs emits
+// a 39-char box-drawing separator under the summary line. ctx drops this decorative
 // rule for tsc so that `npx tsc`, which re-dispatches through this same filter, stays
 // within its tighter output budget. No tsc assertion pins the separator (unlike
 // mypy/pip/format, which keep theirs), and dropping it only improves compression.

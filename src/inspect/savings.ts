@@ -5,10 +5,10 @@
 //     count, or a runtime output volume). Shown as "est.".
 //   - grounded:false — a coarse per-type default used when the finding states no
 //     measurable figure. Shown as "rough" so it's never mistaken for a measurement.
-// tk's rule is measured-not-fabricated; the coarse tier keeps that honest by labelling
+// ctx's rule is measured-not-fabricated; the coarse tier keeps that honest by labelling
 // itself rather than masquerading as a real number.
 
-// Conservative lossless-compression ratio for raw command output routed through tk.
+// Conservative lossless-compression ratio for raw command output routed through ctx.
 const COMMAND_COMPRESS_RATIO = 0.5;
 // Rough tokens-per-character (English prose / code average).
 const CHARS_PER_TOKEN = 4;

@@ -67,7 +67,7 @@ export type ScanOptions = {
   // in the same run is not read from disk again.
   fileCache?: FileCache;
   // Cross-invocation cache of each file's pre-extracted scan contribution, keyed by
-  // (path, mtime, size). Lets a repeated `tk inspect` re-parse only NEW/CHANGED files.
+  // (path, mtime, size). Lets a repeated `ctx inspect` re-parse only NEW/CHANGED files.
   // Only consulted when no per-event filter is active (no `sinceMs` / `session`), since
   // the cached payload is the file's FULL, unfiltered aggregation.
   scanCache?: ExtractCache<FileScanExtract>;

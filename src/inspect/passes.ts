@@ -1,6 +1,6 @@
 // Issue #39 — single-pass inspect scan + habits.
 //
-// A cold `tk inspect` used to walk every transcript / session file TWICE: once in
+// A cold `ctx inspect` used to walk every transcript / session file TWICE: once in
 // scan() and once in analyzeHabits(). The in-run FileCache dedups the READ, but each
 // file was still JSON.parsed twice (once per analyzer). On AV-heavy boxes the parse
 // (and the second open, when the file is over the FileCache budget) is the dominant

@@ -1,8 +1,8 @@
 """
-terminal-bench precision runner for tk (token-killer) benchmark sessions.
+terminal-bench precision runner for ctx (contexa) benchmark sessions.
 
-Ported alongside rtk/scripts/benchmark-sessions/lib/runner.py and adapted to tk
-conventions (tk ON/OFF groups). Runs the terminal-bench harness on a VM and
+Ported alongside rtk/scripts/benchmark-sessions/lib/runner.py and adapted to ctx
+conventions (ctx ON/OFF groups). Runs the terminal-bench harness on a VM and
 parses its JSON results into a structured TbResult consumed by runner.py.
 """
 

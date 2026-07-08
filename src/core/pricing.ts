@@ -1,5 +1,5 @@
 // Shared pricing (ADR 0004 §4). The default constant is Claude Sonnet 4.6 input
-// $/Mtok — the headline standard. BOTH `tk gain --quota` and the telemetry
+// $/Mtok — the headline standard. BOTH `ctx gain --quota` and the telemetry
 // `estimated_savings_usd_30d` field import from here — there is no second price
 // path. The constant and the table are documented in docs/TELEMETRY.md. Unknown/
 // typo model names fall back to the default constant, never an error.
@@ -7,7 +7,7 @@
 // AI Credits口径 (VS Code / GitHub Copilot, 2026-06-01 usage-based billing): usage
 // is metered in GitHub AI Credits where 1 credit = $0.01 USD, computed from token
 // consumption at each model's listed API rate. So Credits is a re-denomination of
-// USD (×100). tk saves INPUT/context tokens (it compresses tool output that would
+// USD (×100). ctx saves INPUT/context tokens (it compresses tool output that would
 // otherwise enter the model's context), so saved tokens are priced at the INPUT
 // rate, then converted to credits.
 

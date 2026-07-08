@@ -19,7 +19,7 @@ describe("failureHint", () => {
       stderr:
         "! [rejected]        main -> main (non-fast-forward)\nerror: failed to push some refs",
     });
-    expect(failureHint(r, cmd)).toContain("tk git pull --rebase");
+    expect(failureHint(r, cmd)).toContain("ctx git pull --rebase");
   });
 
   test("unmerged paths", () => {
@@ -30,7 +30,10 @@ describe("failureHint", () => {
 
   test("not a git repository", () => {
     expect(
-      failureHint(raw({ stderr: "fatal: not a git repository (or any parent)", exitCode: 128 }), cmd),
+      failureHint(
+        raw({ stderr: "fatal: not a git repository (or any parent)", exitCode: 128 }),
+        cmd,
+      ),
     ).toContain("not inside a git repository");
   });
 
@@ -55,7 +58,10 @@ describe("failureHint", () => {
 
   test("unknown deterministic-free failure → undefined (never guesses)", () => {
     expect(
-      failureHint(raw({ exitCode: 1, stderr: "TypeError: cannot read property foo of undefined" }), cmd),
+      failureHint(
+        raw({ exitCode: 1, stderr: "TypeError: cannot read property foo of undefined" }),
+        cmd,
+      ),
     ).toBeUndefined();
   });
 });

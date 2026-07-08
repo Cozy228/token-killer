@@ -12,8 +12,8 @@ import {
   uninstallClaudeHook,
 } from "../../../src/hook/claudeInstall.js";
 
-// A fixed absolute-form tk command so tests don't depend on process.argv[1].
-const TK_CMD = "/usr/bin/node /opt/tk/dist/cli.js hook claude";
+// A fixed absolute-form ctx command so tests don't depend on process.argv[1].
+const CTX_CMD = "/usr/bin/node /opt/ctx/dist/cli.js hook claude";
 
 let home: string;
 function settings() {
@@ -28,7 +28,7 @@ function readSettings() {
 }
 
 beforeEach(() => {
-  home = mkdtempSync(join(tmpdir(), "tk-claude-"));
+  home = mkdtempSync(join(tmpdir(), "ctx-claude-"));
 });
 afterEach(() => {
   rmSync(home, { recursive: true, force: true });
@@ -36,10 +36,10 @@ afterEach(() => {
 
 describe("patchClaudeSettings — pure patcher", () => {
   test("empty settings → appends a Bash PreToolUse group", () => {
-    const { settings, action } = patchClaudeSettings({}, TK_CMD);
+    const { settings, action } = patchClaudeSettings({}, CTX_CMD);
     expect(action).toBe("append");
     expect(settings.hooks?.PreToolUse).toEqual([
-      { matcher: "Bash", hooks: [{ type: "command", command: TK_CMD }] },
+      { matcher: "Bash", hooks: [{ type: "command", command: CTX_CMD }] },
     ]);
   });
 
@@ -49,16 +49,16 @@ describe("patchClaudeSettings — pure patcher", () => {
         PreToolUse: [{ matcher: "Bash", hooks: [{ type: "command", command: "rtk hook claude" }] }],
       },
     };
-    const { settings, action } = patchClaudeSettings(base, TK_CMD);
+    const { settings, action } = patchClaudeSettings(base, CTX_CMD);
     expect(action).toBe("replace");
-    expect(settings.hooks?.PreToolUse?.[0]?.hooks?.[0]?.command).toBe(TK_CMD);
+    expect(settings.hooks?.PreToolUse?.[0]?.hooks?.[0]?.command).toBe(CTX_CMD);
     // exactly one group — no duplicate appended
     expect(settings.hooks?.PreToolUse).toHaveLength(1);
   });
 
   test("idempotent — already pointing at our command → unchanged", () => {
-    const base = patchClaudeSettings({}, TK_CMD).settings;
-    const { action } = patchClaudeSettings(base, TK_CMD);
+    const base = patchClaudeSettings({}, CTX_CMD).settings;
+    const { action } = patchClaudeSettings(base, CTX_CMD);
     expect(action).toBe("unchanged");
   });
 
@@ -68,7 +68,7 @@ describe("patchClaudeSettings — pure patcher", () => {
         PreToolUse: [{ matcher: "Bash", hooks: [{ type: "command", command: "rtk hook claude" }] }],
       },
     };
-    patchClaudeSettings(base, TK_CMD);
+    patchClaudeSettings(base, CTX_CMD);
     expect(base.hooks.PreToolUse[0].hooks[0].command).toBe("rtk hook claude");
   });
 
@@ -84,26 +84,26 @@ describe("patchClaudeSettings — pure patcher", () => {
         ],
       },
     };
-    const { settings } = patchClaudeSettings(base, TK_CMD);
+    const { settings } = patchClaudeSettings(base, CTX_CMD);
     expect(settings.statusLine).toEqual(base.statusLine);
     expect(settings.enabledPlugins).toEqual(base.enabledPlugins);
     expect(settings.env).toEqual(base.env);
     // the non-Bash group is untouched; the Bash group is retargeted
     expect(settings.hooks?.PreToolUse?.[0]).toEqual(base.hooks.PreToolUse[0]);
-    expect(settings.hooks?.PreToolUse?.[1]?.hooks?.[0]?.command).toBe(TK_CMD);
+    expect(settings.hooks?.PreToolUse?.[1]?.hooks?.[0]?.command).toBe(CTX_CMD);
   });
 });
 
 describe("installClaudeHook — against a temp settings.json", () => {
   test("fresh install creates the file with a Bash PreToolUse hook", () => {
-    const plan = installClaudeHook({ home }, TK_CMD);
+    const plan = installClaudeHook({ home }, CTX_CMD);
     expect(plan.action).toBe("create");
-    expect(readSettings().hooks.PreToolUse[0].hooks[0].command).toBe(TK_CMD);
+    expect(readSettings().hooks.PreToolUse[0].hooks[0].command).toBe(CTX_CMD);
   });
 
   test("idempotent re-install → unchanged, no rewrite", () => {
-    installClaudeHook({ home }, TK_CMD);
-    expect(installClaudeHook({ home }, TK_CMD).action).toBe("unchanged");
+    installClaudeHook({ home }, CTX_CMD);
+    expect(installClaudeHook({ home }, CTX_CMD).action).toBe("unchanged");
   });
 
   test("replaces rtk entry in place and preserves other keys byte-equivalent", () => {
@@ -115,27 +115,27 @@ describe("installClaudeHook — against a temp settings.json", () => {
       statusLine: { type: "command", command: "sh /x/statusline.sh" },
       enabledPlugins: { "codex@openai-codex": true },
     });
-    const plan = installClaudeHook({ home }, TK_CMD);
+    const plan = installClaudeHook({ home }, CTX_CMD);
     expect(plan.action).toBe("replace");
     expect(plan.previousCommand).toBe("rtk hook claude");
     const after = readSettings();
-    expect(after.hooks.PreToolUse[0].hooks[0].command).toBe(TK_CMD);
+    expect(after.hooks.PreToolUse[0].hooks[0].command).toBe(CTX_CMD);
     expect(after.statusLine).toEqual({ type: "command", command: "sh /x/statusline.sh" });
     expect(after.enabledPlugins).toEqual({ "codex@openai-codex": true });
     expect(after.env).toEqual({});
   });
 
   test("plan (dry-run) does not write", () => {
-    const plan = planClaudeHookInstall({ home }, TK_CMD);
+    const plan = planClaudeHookInstall({ home }, CTX_CMD);
     expect(plan.action).toBe("create");
     expect(existsSync(plan.path)).toBe(false);
   });
 });
 
 describe("uninstallClaudeHook", () => {
-  test("removes only tk's entry and drops the emptied Bash group", () => {
-    installClaudeHook({ home }, TK_CMD);
-    const r = uninstallClaudeHook({ home }, TK_CMD);
+  test("removes only ctx's entry and drops the emptied Bash group", () => {
+    installClaudeHook({ home }, CTX_CMD);
+    const r = uninstallClaudeHook({ home }, CTX_CMD);
     expect(r.removed).toBe(true);
     expect(readSettings().hooks.PreToolUse).toEqual([]);
   });
@@ -146,11 +146,11 @@ describe("uninstallClaudeHook", () => {
       hooks: {
         PreToolUse: [
           { matcher: "Read", hooks: [{ type: "command", command: "keep me" }] },
-          { matcher: "Bash", hooks: [{ type: "command", command: TK_CMD }] },
+          { matcher: "Bash", hooks: [{ type: "command", command: CTX_CMD }] },
         ],
       },
     });
-    const r = uninstallClaudeHook({ home }, TK_CMD);
+    const r = uninstallClaudeHook({ home }, CTX_CMD);
     expect(r.removed).toBe(true);
     const after = readSettings();
     expect(after.statusLine).toEqual({ type: "command", command: "sh s.sh" });
@@ -165,55 +165,55 @@ describe("uninstallClaudeHook", () => {
         PreToolUse: [{ matcher: "Bash", hooks: [{ type: "command", command: "rtk hook claude" }] }],
       },
     });
-    const r = uninstallClaudeHook({ home }, TK_CMD);
+    const r = uninstallClaudeHook({ home }, CTX_CMD);
     expect(r.removed).toBe(false);
     expect(readSettings().hooks.PreToolUse[0].hooks[0].command).toBe("rtk hook claude");
   });
 
-  test("removes a legacy bare `tk hook claude` entry", () => {
+  test("removes a legacy bare `ctx hook claude` entry", () => {
     writeSettings({
       hooks: {
-        PreToolUse: [{ matcher: "Bash", hooks: [{ type: "command", command: "tk hook claude" }] }],
+        PreToolUse: [{ matcher: "Bash", hooks: [{ type: "command", command: "ctx hook claude" }] }],
       },
     });
-    const r = uninstallClaudeHook({ home }, TK_CMD);
+    const r = uninstallClaudeHook({ home }, CTX_CMD);
     expect(r.removed).toBe(true);
   });
 
   test("missing file → nothing to remove (no throw)", () => {
-    expect(uninstallClaudeHook({ home }, TK_CMD).removed).toBe(false);
+    expect(uninstallClaudeHook({ home }, CTX_CMD).removed).toBe(false);
   });
 });
 
 describe("claudeHookStatus", () => {
   test("absent → not present", () => {
-    expect(claudeHookStatus({ home }, TK_CMD).present).toBe(false);
+    expect(claudeHookStatus({ home }, CTX_CMD).present).toBe(false);
   });
 
-  test("present + points at tk after install", () => {
-    installClaudeHook({ home }, TK_CMD);
-    const s = claudeHookStatus({ home }, TK_CMD);
+  test("present + points at ctx after install", () => {
+    installClaudeHook({ home }, CTX_CMD);
+    const s = claudeHookStatus({ home }, CTX_CMD);
     expect(s.present).toBe(true);
     expect(s.pointsAtTk).toBe(true);
   });
 
-  test("present but NOT tk when only rtk is wired", () => {
+  test("present but NOT ctx when only rtk is wired", () => {
     writeSettings({
       hooks: {
         PreToolUse: [{ matcher: "Bash", hooks: [{ type: "command", command: "rtk hook claude" }] }],
       },
     });
-    const s = claudeHookStatus({ home }, TK_CMD);
+    const s = claudeHookStatus({ home }, CTX_CMD);
     expect(s.present).toBe(true);
     expect(s.pointsAtTk).toBe(false);
   });
 
-  // Regression: a hook installed by the GLOBAL tk binary (`node /abs/bin/tk hook
+  // Regression: a hook installed by the GLOBAL ctx binary (`node /abs/bin/ctx hook
   // claude`) must read as pointsAtTk EVEN WHEN the status probe runs from a
-  // different tk (a dev checkout, or after an nvm node upgrade), where the exact
-  // command no longer matches. The `tk` binary sits behind a `/` separator, which
-  // the old whitespace-only boundary missed → a healthy install reported "NOT tk".
-  test("points at tk for an absolute global-binary hook under a different ourCommand", () => {
+  // different ctx (a dev checkout, or after an nvm node upgrade), where the exact
+  // command no longer matches. The `ctx` binary sits behind a `/` separator, which
+  // the old whitespace-only boundary missed → a healthy install reported "NOT ctx".
+  test("points at ctx for an absolute global-binary hook under a different ourCommand", () => {
     writeSettings({
       hooks: {
         PreToolUse: [
@@ -223,7 +223,7 @@ describe("claudeHookStatus", () => {
               {
                 type: "command",
                 command:
-                  "/home/u/.nvm/versions/node/v22/bin/node /home/u/.nvm/versions/node/v22/bin/tk hook claude",
+                  "/home/u/.nvm/versions/node/v22/bin/node /home/u/.nvm/versions/node/v22/bin/ctx hook claude",
               },
             ],
           },
@@ -236,7 +236,7 @@ describe("claudeHookStatus", () => {
     expect(s.pointsAtTk).toBe(true);
   });
 
-  test("points at tk for a quoted Windows tk.cmd hook", () => {
+  test("points at ctx for a quoted Windows ctx.cmd hook", () => {
     writeSettings({
       hooks: {
         PreToolUse: [
@@ -245,19 +245,19 @@ describe("claudeHookStatus", () => {
             hooks: [
               {
                 type: "command",
-                command: '"C:\\Users\\x\\AppData\\Roaming\\npm\\tk.cmd" hook claude',
+                command: '"C:\\Users\\x\\AppData\\Roaming\\npm\\ctx.cmd" hook claude',
               },
             ],
           },
         ],
       },
     });
-    const s = claudeHookStatus({ home }, TK_CMD);
+    const s = claudeHookStatus({ home }, CTX_CMD);
     expect(s.pointsAtTk).toBe(true);
   });
 
   // The broadened boundary must still reject a foreign `rtk` at an absolute path.
-  test("NOT tk for an absolute-path foreign rtk hook", () => {
+  test("NOT ctx for an absolute-path foreign rtk hook", () => {
     writeSettings({
       hooks: {
         PreToolUse: [
@@ -268,7 +268,7 @@ describe("claudeHookStatus", () => {
         ],
       },
     });
-    const s = claudeHookStatus({ home }, TK_CMD);
+    const s = claudeHookStatus({ home }, CTX_CMD);
     expect(s.present).toBe(true);
     expect(s.pointsAtTk).toBe(false);
   });

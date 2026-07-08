@@ -17,16 +17,16 @@ import { recordHistory } from "../../../src/core/history.js";
 import { historyFile } from "../../../src/core/dataDir.js";
 import type { FilteredResult, RawResult, TkOptions } from "../../../src/types.js";
 
-const previousHome = process.env.TOKEN_KILLER_HOME;
+const previousHome = process.env.CONTEXA_HOME;
 
 afterEach(() => {
-  if (previousHome === undefined) delete process.env.TOKEN_KILLER_HOME;
-  else process.env.TOKEN_KILLER_HOME = previousHome;
+  if (previousHome === undefined) delete process.env.CONTEXA_HOME;
+  else process.env.CONTEXA_HOME = previousHome;
 });
 
 async function withHome<T>(fn: (home: string) => Promise<T>): Promise<T> {
-  const home = await mkdtemp(path.join(tmpdir(), "tk-rollup-"));
-  process.env.TOKEN_KILLER_HOME = home;
+  const home = await mkdtemp(path.join(tmpdir(), "ctx-rollup-"));
+  process.env.CONTEXA_HOME = home;
   try {
     return await fn(home);
   } finally {
@@ -190,7 +190,7 @@ describe("rollup", () => {
       await writeFile(historyFile(home), "not-json-garbage\n", { flag: "a" });
 
       // Keyed on the physical line count (3), not the parsed-record count (2):
-      // otherwise the cache key never matches and every `tk gain` rebuilds forever.
+      // otherwise the cache key never matches and every `ctx gain` rebuilds forever.
       const rollup = await ensureProjectRollup(home);
       expect(rollup.source_lines).toBe(3);
 

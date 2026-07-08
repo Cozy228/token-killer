@@ -9,7 +9,7 @@ import { renderStaticContextSection } from "../../../src/context/report.js";
 let root: string;
 
 beforeEach(() => {
-  root = mkdtempSync(join(tmpdir(), "tk-ctx-analyzer-"));
+  root = mkdtempSync(join(tmpdir(), "ctx-ctx-analyzer-"));
 });
 afterEach(() => {
   rmSync(root, { recursive: true, force: true });

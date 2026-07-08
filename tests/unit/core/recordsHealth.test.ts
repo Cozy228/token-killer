@@ -17,7 +17,7 @@ import {
   recoverOrphanNames,
 } from "../../../src/core/recordsHealth.js";
 
-// recordsHealth keys everything off TOKEN_KILLER_HOME (via tokenKillerHome), so each
+// recordsHealth keys everything off CONTEXA_HOME (via contexaHome), so each
 // test points it at a throwaway store and builds the exact bucket layout it asserts.
 const posixTest = process.platform === "win32" ? test.skip : test;
 
@@ -49,14 +49,14 @@ function historyLines(n: number): string {
 }
 
 beforeEach(() => {
-  prevHome = process.env.TOKEN_KILLER_HOME;
-  home = mkdtempSync(join(tmpdir(), "tk-records-"));
-  process.env.TOKEN_KILLER_HOME = home;
+  prevHome = process.env.CONTEXA_HOME;
+  home = mkdtempSync(join(tmpdir(), "ctx-records-"));
+  process.env.CONTEXA_HOME = home;
   resetFingerprintCacheForTests();
 });
 afterEach(() => {
-  if (prevHome === undefined) delete process.env.TOKEN_KILLER_HOME;
-  else process.env.TOKEN_KILLER_HOME = prevHome;
+  if (prevHome === undefined) delete process.env.CONTEXA_HOME;
+  else process.env.CONTEXA_HOME = prevHome;
   rmSync(home, { recursive: true, force: true });
 });
 
@@ -106,7 +106,7 @@ describe("diagnoseRecords", () => {
     // The legacy bug: a data-dir path leaked into the name slot. Must not render verbatim.
     makeFingerprintBucket("repo:cafecafecafe", {
       "history.jsonl": historyLines(3),
-      "meta.json": JSON.stringify({ label: "-Users-ziyu-Workspace-token-killer" }),
+      "meta.json": JSON.stringify({ label: "-Users-ziyu-Workspace-contexa" }),
     });
     const report = diagnoseRecords();
     expect(report.orphanBuckets).toHaveLength(1);
@@ -157,7 +157,7 @@ describe("mergeDuplicateBuckets", () => {
 describe("recoverOrphanNames", () => {
   test("matches an orphan bucket to a real repo by fingerprint and writes its name", () => {
     // A real repo under the scan root: its fingerprint must equal the orphan bucket's.
-    const scanRoot = mkdtemp("tk-scan-");
+    const scanRoot = mkdtemp("ctx-scan-");
     const repoDir = join(scanRoot, "cool-repo");
     mkdirSync(join(repoDir, ".git"), { recursive: true });
     const fingerprint = projectFingerprint(repoDir);
@@ -177,7 +177,7 @@ describe("recoverOrphanNames", () => {
   });
 
   test("an orphan with no matching repo stays unmatched", () => {
-    const scanRoot = mkdtemp("tk-scan-empty-");
+    const scanRoot = mkdtemp("ctx-scan-empty-");
     makeFingerprintBucket("repo:111111111111", { "history.jsonl": historyLines(1) });
     const result = recoverOrphanNames(scanRoot);
     expect(result.recovered).toHaveLength(0);

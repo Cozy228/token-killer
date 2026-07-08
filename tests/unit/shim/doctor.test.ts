@@ -10,9 +10,9 @@ import {
 } from "../../../src/core/dataDir.js";
 import { runDoctor } from "../../../src/shim/doctor.js";
 
-// In-process orchestration tests for `tk doctor`. gatherStatus() spawns the host
+// In-process orchestration tests for `ctx doctor`. gatherStatus() spawns the host
 // `--version` probes (absent on the test box → fast fail) and writes only into the
-// throwaway TOKEN_KILLER_HOME, so these stay hermetic. The records-store assertions
+// throwaway CONTEXA_HOME, so these stay hermetic. The records-store assertions
 // are the point: read-only never mutates; --fix archives orphans; the `status` alias
 // is read-only even with --fix.
 
@@ -47,14 +47,14 @@ async function capture(fn: () => Promise<unknown>): Promise<string> {
 }
 
 beforeEach(() => {
-  prevHome = process.env.TOKEN_KILLER_HOME;
-  home = mkdtempSync(join(tmpdir(), "tk-doctor-"));
-  process.env.TOKEN_KILLER_HOME = home;
+  prevHome = process.env.CONTEXA_HOME;
+  home = mkdtempSync(join(tmpdir(), "ctx-doctor-"));
+  process.env.CONTEXA_HOME = home;
   resetFingerprintCacheForTests();
 });
 afterEach(() => {
-  if (prevHome === undefined) delete process.env.TOKEN_KILLER_HOME;
-  else process.env.TOKEN_KILLER_HOME = prevHome;
+  if (prevHome === undefined) delete process.env.CONTEXA_HOME;
+  else process.env.CONTEXA_HOME = prevHome;
   rmSync(home, { recursive: true, force: true });
 });
 
@@ -64,7 +64,7 @@ describe("runDoctor", () => {
     const output = await capture(() => runDoctor([]));
     expect(output).toContain("Records health:");
     expect(output).toContain("orphan bucket");
-    expect(output).toContain("Run `tk doctor --fix");
+    expect(output).toContain("Run `ctx doctor --fix");
     // No archive, original bucket intact.
     expect(existsSync(join(projectsDir(), fingerprintSegment("repo:aaaaaaaaaaaa")))).toBe(true);
     expect(existsSync(join(projectsDir(), "archived"))).toBe(false);
@@ -79,7 +79,7 @@ describe("runDoctor", () => {
   });
 
   test("--fix with a scan root recovers a real project name instead of archiving", async () => {
-    const scanRoot = mkdtempSync(join(tmpdir(), "tk-scan-"));
+    const scanRoot = mkdtempSync(join(tmpdir(), "ctx-scan-"));
     const repoDir = join(scanRoot, "named-repo");
     mkdirSync(join(repoDir, ".git"), { recursive: true });
     const seg = fingerprintSegment(projectFingerprint(repoDir));

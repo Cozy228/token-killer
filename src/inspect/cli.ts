@@ -1,4 +1,4 @@
-// Slice 4–5 — `tk inspect` entry (inspect-v1-design.md "Inspect Flags", "Exit
+// Slice 4–5 — `ctx inspect` entry (inspect-v1-design.md "Inspect Flags", "Exit
 // Codes"). Read-only session scanner + advice generation.
 //
 // Exit codes: 0 ok (incl. warnings) · 1 user-input/config error · 2 no major
@@ -34,7 +34,7 @@ import { analyzeSessionTokens, type SessionTokenDetail } from "./sessionTokens.j
 import { estimateSavings } from "./savings.js";
 import { makeFileCache } from "./fileCache.js";
 import { makeDiskExtractCache, pruneCache } from "./extractCache.js";
-import { tokenKillerHome } from "../core/dataDir.js";
+import { contexaHome } from "../core/dataDir.js";
 import { makeProgressReporter } from "./progress.js";
 import {
   parseSince,
@@ -69,7 +69,7 @@ type InspectArgs = {
   surface?: string;
   failOn?: FailOnSeverity;
   // Internal: skip the runtime scan (transcripts + habits) and analyze only the
-  // static-context surfaces. `tk optimize` triggers inspect this way when it will
+  // static-context surfaces. `ctx optimize` triggers inspect this way when it will
   // consume nothing but static findings — so a first-time, no-bucket optimize never
   // pays for a multi-minute transcript scan it then discards (issue #41). Not part
   // of the public flag surface; no HTML/JSON report is meaningful for it.
@@ -175,12 +175,14 @@ export function runInspect(
   try {
     opts = parseInspectArgs(argv);
   } catch (error) {
-    process.stderr.write(`tk inspect: ${error instanceof Error ? error.message : String(error)}\n`);
+    process.stderr.write(
+      `ctx inspect: ${error instanceof Error ? error.message : String(error)}\n`,
+    );
     return 3;
   }
 
   if (opts.error) {
-    process.stderr.write(`tk inspect: ${opts.error}\n`);
+    process.stderr.write(`ctx inspect: ${opts.error}\n`);
     return 1;
   }
 
@@ -190,7 +192,9 @@ export function runInspect(
   try {
     telemetryExport = readConfig().telemetryExport;
   } catch (error) {
-    process.stderr.write(`tk inspect: ${error instanceof Error ? error.message : String(error)}\n`);
+    process.stderr.write(
+      `ctx inspect: ${error instanceof Error ? error.message : String(error)}\n`,
+    );
     return 1;
   }
 
@@ -199,7 +203,7 @@ export function runInspect(
     const duration = parseSince(opts.since);
     if (duration === undefined) {
       process.stderr.write(
-        `tk inspect: invalid --since '${opts.since}' (expected e.g. 7d, 24h, 30m)\n`,
+        `ctx inspect: invalid --since '${opts.since}' (expected e.g. 7d, 24h, 30m)\n`,
       );
       return 1;
     }
@@ -212,7 +216,7 @@ export function runInspect(
   if (opts.scopeProject) scopes.push("project");
   if (scopes.length === 0) scopes.push("user");
 
-  // Progress is a no-op unless STDERR is an interactive TTY (and TK_NO_PROGRESS is
+  // Progress is a no-op unless STDERR is an interactive TTY (and CTX_NO_PROGRESS is
   // unset). It writes only to STDERR, so the report / JSON on STDOUT stays clean.
   const progress = makeProgressReporter();
 
@@ -230,7 +234,7 @@ export function runInspect(
     // exit-code logic already treat as "no runtime data".
     let hostsLabel = opts.inputType as string;
     if (!opts.staticOnly) {
-      // Host selection: an explicit --input-type scans just that host; otherwise tk
+      // Host selection: an explicit --input-type scans just that host; otherwise ctx
       // scans EVERY known host (vscode + copilot-cli) and merges, so a user driving
       // either is covered without a flag. The host list is shown with the resolved
       // directory so the run reveals WHERE it looked, not only which host.
@@ -275,10 +279,10 @@ export function runInspect(
         // Cross-invocation per-file extract caches (keyed by path+mtime+size). After the
         // first scan, an unchanged transcript is served from a tiny pre-extracted record
         // instead of being re-parsed — so a repeated inspect / optimize-triggered scan /
-        // --fail-on only pays for NEW or CHANGED files. Best-effort + TK_NO_SCAN_CACHE
+        // --fail-on only pays for NEW or CHANGED files. Best-effort + CTX_NO_SCAN_CACHE
         // kill-switch live inside the cache; a miss/failure silently falls back to a live
         // parse. Prune stale entries once per run so the dir can't grow without bound.
-        const cacheRoot = join(tokenKillerHome(), "inspect-cache");
+        const cacheRoot = join(contexaHome(), "inspect-cache");
         pruneCache(cacheRoot, nowMs);
         const scanCache = makeDiskExtractCache<FileScanExtract>(cacheRoot, "scan");
         // Separate namespace for the per-event stream the windowed/session scan slices
@@ -338,7 +342,7 @@ export function runInspect(
         progress.done();
         const where = hosts.map((h) => `${h.inputType} (${relHome(h.dir)})`).join(", ");
         process.stderr.write(
-          `tk inspect: no session sources found in ${where} (this is normal if the host stores transcripts elsewhere).\n`,
+          `ctx inspect: no session sources found in ${where} (this is normal if the host stores transcripts elsewhere).\n`,
         );
       }
     } // end if (!opts.staticOnly)
@@ -363,7 +367,7 @@ export function runInspect(
     if (runtimeEmpty && staticEmpty) {
       progress.done();
       process.stderr.write(
-        "tk inspect: no major source analyzable (no runtime session events and no static-context files found).\n",
+        "ctx inspect: no major source analyzable (no runtime session events and no static-context files found).\n",
       );
       return 2;
     }
@@ -384,7 +388,7 @@ export function runInspect(
     const rtFindings = runtimeFindings(result, habits, mcp);
     const unifiedFindings: Finding[] = [...rtFindings, ...staticFindings];
 
-    // Persist the per-scope unified Finding[] buckets that `tk optimize context`
+    // Persist the per-scope unified Finding[] buckets that `ctx optimize context`
     // consumes (ADR 0003). Runtime findings are written into each produced bucket.
     persistScopeBuckets({
       scopes,
@@ -469,7 +473,7 @@ export function runInspect(
       });
       const path = writeTelemetryExport(`${JSON.stringify(telemetry, null, 2)}\n`);
       process.stderr.write(
-        `tk inspect: no telemetry endpoint configured; wrote local export: ${path}\n`,
+        `ctx inspect: no telemetry endpoint configured; wrote local export: ${path}\n`,
       );
     }
 
@@ -555,7 +559,7 @@ export function runInspect(
   } catch (error) {
     progress.done();
     process.stderr.write(
-      `tk inspect: internal error: ${error instanceof Error ? error.message : String(error)}\n`,
+      `ctx inspect: internal error: ${error instanceof Error ? error.message : String(error)}\n`,
     );
     return 3;
   }

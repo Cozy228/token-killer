@@ -8,18 +8,18 @@ import { dirname, join } from "node:path";
 //  - shell RC (~/.zshrc, ~/.bashrc): a guarded, idempotent, byte-identically
 //    removable block. For Copilot CLI and plain terminals.
 //  - VS Code user settings.json: terminal.integrated.env.{osx,linux,windows}
-//    PATH prepend + TK_SHIM_DIR. Non-interactive run_in_terminal shells skip RC,
+//    PATH prepend + CTX_SHIM_DIR. Non-interactive run_in_terminal shells skip RC,
 //    so VS Code MUST use terminal.integrated.env (lesson from the hook round).
 
 // ---------------------------------------------------------------------------
 // Shell RC block
 // ---------------------------------------------------------------------------
 
-const RC_START = "# >>> token-killer shim >>>";
-const RC_END = "# <<< token-killer shim <<<";
+const RC_START = "# >>> contexa shim >>>";
+const RC_END = "# <<< contexa shim <<<";
 // Matches the block plus the single bordering newlines patchRc writes, so
 // unpatch is byte-identical to the pre-patch state.
-const RC_BLOCK_RE = /\n?# >>> token-killer shim >>>[\s\S]*?# <<< token-killer shim <<<\n?/;
+const RC_BLOCK_RE = /\n?# >>> contexa shim >>>[\s\S]*?# <<< contexa shim <<<\n?/;
 
 function shQuote(value: string): string {
   return `'${value.replace(/'/g, `'\\''`)}'`;
@@ -28,8 +28,8 @@ function shQuote(value: string): string {
 export function rcBlock(shimDir: string): string {
   return [
     RC_START,
-    `export TK_SHIM_DIR=${shQuote(shimDir)}`,
-    `export PATH="$TK_SHIM_DIR:$PATH"`,
+    `export CTX_SHIM_DIR=${shQuote(shimDir)}`,
+    `export PATH="$CTX_SHIM_DIR:$PATH"`,
     RC_END,
   ].join("\n");
 }
@@ -87,9 +87,9 @@ export function vscodeSettingsPath(
 }
 
 // Pure transform of a parsed settings object. Prepends shimDir to the per-OS
-// terminal env PATH (via VS Code's ${env:PATH} substitution), sets TK_SHIM_DIR,
+// terminal env PATH (via VS Code's ${env:PATH} substitution), sets CTX_SHIM_DIR,
 // and opts this terminal in to TTY compression (R1). VS Code Copilot's agent runs
-// run_in_terminal in a ConPTY (stdout.isTTY=true), so without TK_COMPRESS_TTY the
+// run_in_terminal in a ConPTY (stdout.isTTY=true), so without CTX_COMPRESS_TTY the
 // gate would pass every agent command through raw; setting it here — alongside the
 // shim PATH the agent terminal inherits — is what makes the agent's output actually
 // compress. Idempotent: an existing shimDir entry is removed before prepending, so
@@ -110,8 +110,8 @@ export function applyVscodeEnv(
     .filter((entry) => entry !== "" && entry !== shimDir)
     .join(delim);
   env.PATH = rest ? `${shimDir}${delim}${rest}` : shimDir;
-  env.TK_SHIM_DIR = shimDir;
-  env.TK_COMPRESS_TTY = "1";
+  env.CTX_SHIM_DIR = shimDir;
+  env.CTX_COMPRESS_TTY = "1";
 
   return { ...settings, [key]: env };
 }
@@ -128,8 +128,8 @@ export function removeVscodeEnv(
   const env = { ...(settings[key] as Record<string, string> | undefined) };
   if (Object.keys(env).length === 0) return settings;
 
-  delete env.TK_SHIM_DIR;
-  delete env.TK_COMPRESS_TTY;
+  delete env.CTX_SHIM_DIR;
+  delete env.CTX_COMPRESS_TTY;
   if (typeof env.PATH === "string") {
     const rest = env.PATH.split(delim)
       .filter((entry) => entry !== "" && entry !== shimDir)
@@ -152,7 +152,7 @@ export function removeVscodeEnv(
 // VS Code's settings.json is JSONC — comments and trailing commas are legal and
 // common. `parseJsonc` tolerates them (a strict `JSON.parse` here was the root
 // cause of "settings.json could not be parsed", which silently aborted the shim
-// PATH + TK_COMPRESS_TTY injection). Genuinely malformed JSON still throws and the
+// PATH + CTX_COMPRESS_TTY injection). Genuinely malformed JSON still throws and the
 // caller surfaces a "patch manually" message rather than risk corrupting the file.
 export function readSettings(settingsPath: string): Record<string, unknown> {
   if (!existsSync(settingsPath)) return {};
@@ -171,7 +171,7 @@ export function writeSettings(settingsPath: string, settings: Record<string, unk
 // after snapshotting the original next to it, so the change is recoverable.
 export function backupSettings(settingsPath: string): string {
   const original = readFileSync(settingsPath, "utf8");
-  const backupPath = `${settingsPath}.tk-backup`;
+  const backupPath = `${settingsPath}.ctx-backup`;
   writeFileAtomicSync(backupPath, original);
   return backupPath;
 }

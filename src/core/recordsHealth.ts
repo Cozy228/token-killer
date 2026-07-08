@@ -1,11 +1,11 @@
-// Records health — the data-store half of `tk doctor`. Diagnoses and (under
-// `--fix`) repairs the per-project metrics store under ~/.token-killer/projects/*.
+// Records health — the data-store half of `ctx doctor`. Diagnoses and (under
+// `--fix`) repairs the per-project metrics store under ~/.contexa/projects/*.
 //
 // The store is keyed by an irreversible fingerprint (`repo:<sha>` = a one-way hash
 // of the repo-root path; see dataDir.ts). The DISPLAY name a report shows lives in a
 // sibling meta.json (`{label}`), self-healed on every command — but ONLY for the repo
 // you are currently in. Buckets you never revisit can therefore drift into two bad
-// states that `tk gain --user` then renders verbatim:
+// states that `ctx gain --user` then renders verbatim:
 //   - ORPHAN: no usable meta.json → gain falls back to a bare hash ("a47085322e05").
 //   - DUPLICATE: the SAME repo split across a `repo:<sha>` and a `repo-<sha>` dir (a
 //     store copied between POSIX and Windows, where the colon is path-illegal).
@@ -15,7 +15,7 @@
 // bucket so reports never show a hash — the token TOTALS are preserved (the rows are
 // merged, not dropped), only the hash-named directories are removed.
 //
-// Every function is fail-open and keyed off TOKEN_KILLER_HOME (via tokenKillerHome),
+// Every function is fail-open and keyed off CONTEXA_HOME (via contexaHome),
 // so a test sets that env and operates on a temp store.
 
 import {
@@ -36,7 +36,7 @@ import {
   projectFingerprint,
   projectLabel,
   projectMetaFileForFingerprint,
-  tokenKillerHome,
+  contexaHome,
 } from "./dataDir.js";
 
 // The synthetic bucket unmatched orphans are folded into. Not a `repo:` hash, so it
@@ -87,7 +87,7 @@ export type RecordsReport = {
 };
 
 function projectsDir(): string {
-  return path.join(tokenKillerHome(), "projects");
+  return path.join(contexaHome(), "projects");
 }
 
 // `repo-<sha>` (Windows-stored, colon→dash) folds back to the canonical `repo:<sha>`.
@@ -256,7 +256,7 @@ export function diagnoseRecords(): RecordsReport {
   };
 }
 
-// --- repairs (only called under `tk doctor --fix`) -------------------------
+// --- repairs (only called under `ctx doctor --fix`) -------------------------
 
 // Concatenate src's content onto dst, guaranteeing a newline boundary so the last
 // row of src and the first row of dst never fuse into one corrupt JSONL line.

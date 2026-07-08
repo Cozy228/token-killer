@@ -19,10 +19,10 @@ import {
 } from "../../../src/support/send.js";
 
 const orig = {
-  TK_NO_OPEN: process.env.TK_NO_OPEN,
-  TK_SUPPORT_EMAIL: process.env.TK_SUPPORT_EMAIL,
-  TK_SUPPORT_TEAMS: process.env.TK_SUPPORT_TEAMS,
-  TK_SUPPORT_GITHUB: process.env.TK_SUPPORT_GITHUB,
+  CTX_NO_OPEN: process.env.CTX_NO_OPEN,
+  CTX_SUPPORT_EMAIL: process.env.CTX_SUPPORT_EMAIL,
+  CTX_SUPPORT_TEAMS: process.env.CTX_SUPPORT_TEAMS,
+  CTX_SUPPORT_GITHUB: process.env.CTX_SUPPORT_GITHUB,
   platform: process.platform,
 };
 
@@ -62,50 +62,50 @@ beforeEach(() => {
 });
 
 afterEach(() => {
-  restoreEnv("TK_NO_OPEN", orig.TK_NO_OPEN);
-  restoreEnv("TK_SUPPORT_EMAIL", orig.TK_SUPPORT_EMAIL);
-  restoreEnv("TK_SUPPORT_TEAMS", orig.TK_SUPPORT_TEAMS);
-  restoreEnv("TK_SUPPORT_GITHUB", orig.TK_SUPPORT_GITHUB);
+  restoreEnv("CTX_NO_OPEN", orig.CTX_NO_OPEN);
+  restoreEnv("CTX_SUPPORT_EMAIL", orig.CTX_SUPPORT_EMAIL);
+  restoreEnv("CTX_SUPPORT_TEAMS", orig.CTX_SUPPORT_TEAMS);
+  restoreEnv("CTX_SUPPORT_GITHUB", orig.CTX_SUPPORT_GITHUB);
   setPlatform(orig.platform);
 });
 
 // The destination is baked at build time (ADR 0013). Under vitest there is no
-// tsdown `define`, so resolveDestination falls back to the TK_SUPPORT_* env var —
+// tsdown `define`, so resolveDestination falls back to the CTX_SUPPORT_* env var —
 // these tests drive that test-mode fallback, which mirrors what a build bakes.
 describe("resolveDestination — build-time baked destination (ADR 0013)", () => {
   test("resolves the matching baked value for the channel", () => {
-    delete process.env.TK_SUPPORT_EMAIL;
-    process.env.TK_SUPPORT_TEAMS = "u@tenant.com";
+    delete process.env.CTX_SUPPORT_EMAIL;
+    process.env.CTX_SUPPORT_TEAMS = "u@tenant.com";
     expect(resolveDestination("teams")).toBe("u@tenant.com");
     expect(resolveDestination("email")).toBeUndefined();
   });
 
   test("undefined when this build baked no destination for the channel", () => {
-    delete process.env.TK_SUPPORT_EMAIL;
-    delete process.env.TK_SUPPORT_TEAMS;
-    delete process.env.TK_SUPPORT_GITHUB;
+    delete process.env.CTX_SUPPORT_EMAIL;
+    delete process.env.CTX_SUPPORT_TEAMS;
+    delete process.env.CTX_SUPPORT_GITHUB;
     expect(resolveDestination("email")).toBeUndefined();
     expect(resolveDestination("teams")).toBeUndefined();
     expect(resolveDestination("github")).toBeUndefined();
   });
 
   test("a blank/whitespace baked value counts as unset", () => {
-    process.env.TK_SUPPORT_EMAIL = "   ";
+    process.env.CTX_SUPPORT_EMAIL = "   ";
     expect(resolveDestination("email")).toBeUndefined();
   });
 
   test("github routes through the baked GitHub destination", () => {
-    process.env.TK_SUPPORT_GITHUB = "env-owner/env-repo";
+    process.env.CTX_SUPPORT_GITHUB = "env-owner/env-repo";
     expect(resolveDestination("github")).toBe("env-owner/env-repo");
   });
 });
 
 describe("buildMailto", () => {
   test("keeps the structural @ literal (RFC 6068 §2), encodes subject + CRLF body, one raw & separator", () => {
-    const uri = buildMailto("ops@corp.com", "tk report & logs", "line1\nline2 & more");
+    const uri = buildMailto("ops@corp.com", "ctx report & logs", "line1\nline2 & more");
     // RFC 6068 §2: the addr-spec `@` is structural and stays literal (NOT %40).
     expect(uri.startsWith("mailto:ops@corp.com?")).toBe(true);
-    expect(uri).toContain("subject=tk%20report%20%26%20logs");
+    expect(uri).toContain("subject=ctx%20report%20%26%20logs");
     // RFC 6068 §5: body line breaks MUST be CRLF → %0D%0A (not a bare %0A).
     expect(uri).toContain("body=line1%0D%0Aline2%20%26%20more");
     // Exactly one raw `&` — the field separator; subject/body `&` are encoded.
@@ -160,9 +160,9 @@ describe("githubRepoBase", () => {
 
 describe("buildGithubIssueUrl", () => {
   test("builds an issues/new URL from a slug with one raw & separating title/body", () => {
-    const uri = buildGithubIssueUrl("acme/widget", "tk report & logs", "line1\nline2 & more");
+    const uri = buildGithubIssueUrl("acme/widget", "ctx report & logs", "line1\nline2 & more");
     expect(uri.startsWith("https://github.com/acme/widget/issues/new?")).toBe(true);
-    expect(uri).toContain("title=tk%20report%20%26%20logs");
+    expect(uri).toContain("title=ctx%20report%20%26%20logs");
     expect(uri).toContain("body=line1%0Aline2%20%26%20more");
     // Exactly one raw `&` — the field separator; title/body `&` are encoded.
     expect(uri.split("&")).toHaveLength(2);
@@ -183,14 +183,14 @@ describe("buildGithubIssueUrl", () => {
 });
 
 describe("openExternal", () => {
-  test("no-op + false under TK_NO_OPEN, never spawns", async () => {
-    process.env.TK_NO_OPEN = "1";
+  test("no-op + false under CTX_NO_OPEN, never spawns", async () => {
+    process.env.CTX_NO_OPEN = "1";
     expect(await openExternal("mailto:x@y.z?subject=a&body=b")).toBe(false);
     expect(spawnMock).not.toHaveBeenCalled();
   });
 
   test("Windows uses rundll32 (NOT cmd) and the &-bearing URI reaches argv intact", async () => {
-    delete process.env.TK_NO_OPEN;
+    delete process.env.CTX_NO_OPEN;
     setPlatform("win32");
     const uri = "msteams:/l/chat/0/0?users=a%40b.com&message=hi%20there";
     expect(await openExternal(uri)).toBe(true);
@@ -205,7 +205,7 @@ describe("openExternal", () => {
   });
 
   test("macOS uses `open` with the raw URI", async () => {
-    delete process.env.TK_NO_OPEN;
+    delete process.env.CTX_NO_OPEN;
     setPlatform("darwin");
     expect(await openExternal("mailto:x@y.z")).toBe(true);
     const [cmd, args] = spawnMock.mock.calls[0]!;
@@ -214,7 +214,7 @@ describe("openExternal", () => {
   });
 
   test("Linux uses xdg-open with the raw URI", async () => {
-    delete process.env.TK_NO_OPEN;
+    delete process.env.CTX_NO_OPEN;
     setPlatform("linux");
     expect(await openExternal("mailto:x@y.z")).toBe(true);
     const [cmd, args] = spawnMock.mock.calls[0]!;
@@ -223,14 +223,14 @@ describe("openExternal", () => {
   });
 
   test("resolves FALSE on async spawn failure (missing opener) so the caller can print the URI", async () => {
-    delete process.env.TK_NO_OPEN;
+    delete process.env.CTX_NO_OPEN;
     setPlatform("darwin");
     spawnMock.mockReturnValueOnce(fakeChild({ event: "error" })); // emits 'error'
     expect(await openExternal("mailto:x@y.z")).toBe(false);
   });
 
   test("resolves FALSE on a non-zero exit (no handler for the scheme) so the caller prints the URI", async () => {
-    delete process.env.TK_NO_OPEN;
+    delete process.env.CTX_NO_OPEN;
     setPlatform("linux");
     // xdg-open exits 3 when no handler is registered — must NOT be reported as opened.
     spawnMock.mockReturnValueOnce(fakeChild({ event: "exit", code: 3, signal: null }));
@@ -238,7 +238,7 @@ describe("openExternal", () => {
   });
 
   test("Windows treats a clean exit as success even with a non-zero code (rundll32 codes are unreliable)", async () => {
-    delete process.env.TK_NO_OPEN;
+    delete process.env.CTX_NO_OPEN;
     setPlatform("win32");
     spawnMock.mockReturnValueOnce(fakeChild({ event: "exit", code: 1, signal: null }));
     expect(await openExternal("mailto:x@y.z")).toBe(true);
@@ -246,21 +246,21 @@ describe("openExternal", () => {
 });
 
 describe("copyToClipboard — presence-gated, best-effort", () => {
-  test("no-op + false under TK_NO_OPEN", () => {
-    process.env.TK_NO_OPEN = "1";
+  test("no-op + false under CTX_NO_OPEN", () => {
+    process.env.CTX_NO_OPEN = "1";
     expect(copyToClipboard("hi")).toBe(false);
     expect(spawnSyncMock).not.toHaveBeenCalled();
   });
 
   test("returns false when no clipboard tool is present (spawn errors on every candidate)", () => {
-    delete process.env.TK_NO_OPEN;
+    delete process.env.CTX_NO_OPEN;
     spawnSyncMock.mockReturnValue({ error: new Error("spawn ENOENT") });
     expect(copyToClipboard("hi")).toBe(false);
     expect(spawnSyncMock).toHaveBeenCalled();
   });
 
   test("macOS selects pbcopy, returns true, and pipes the text on stdin", () => {
-    delete process.env.TK_NO_OPEN;
+    delete process.env.CTX_NO_OPEN;
     setPlatform("darwin");
     spawnSyncMock.mockReturnValue({ status: 0, signal: null, error: undefined });
     expect(copyToClipboard("payload")).toBe(true);
@@ -270,7 +270,7 @@ describe("copyToClipboard — presence-gated, best-effort", () => {
   });
 
   test("Windows selects clip", () => {
-    delete process.env.TK_NO_OPEN;
+    delete process.env.CTX_NO_OPEN;
     setPlatform("win32");
     spawnSyncMock.mockReturnValue({ status: 0, signal: null, error: undefined });
     expect(copyToClipboard("x")).toBe(true);
@@ -278,7 +278,7 @@ describe("copyToClipboard — presence-gated, best-effort", () => {
   });
 
   test("Linux falls back from xclip to wl-copy when the first tool is absent", () => {
-    delete process.env.TK_NO_OPEN;
+    delete process.env.CTX_NO_OPEN;
     setPlatform("linux");
     spawnSyncMock
       .mockReturnValueOnce({ error: new Error("spawn ENOENT") }) // xclip absent
@@ -290,7 +290,7 @@ describe("copyToClipboard — presence-gated, best-effort", () => {
   });
 
   test("a signal-killed tool (status=null, no error) is NOT reported as success", () => {
-    delete process.env.TK_NO_OPEN;
+    delete process.env.CTX_NO_OPEN;
     setPlatform("darwin");
     spawnSyncMock.mockReturnValue({ status: null, signal: "SIGTERM", error: undefined });
     expect(copyToClipboard("x")).toBe(false);

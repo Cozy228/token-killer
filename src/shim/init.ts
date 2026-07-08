@@ -2,7 +2,7 @@ import { existsSync, readdirSync, rmSync } from "node:fs";
 import { homedir } from "node:os";
 import { join } from "node:path";
 
-import { tokenKillerHome } from "../core/dataDir.js";
+import { contexaHome } from "../core/dataDir.js";
 import { detectHost, gatherDetectEnv, selectTier, type Host } from "./detect.js";
 import { adapters } from "./hostAdapter.js";
 import { vscodeUserDir } from "./hostConfig.js";
@@ -34,14 +34,14 @@ import {
   updateDeliveryState,
 } from "./capability.js";
 
-// The install / uninstall / status surface (U1+U2, ADR 0002 §5). `tk install`
+// The install / uninstall / status surface (U1+U2, ADR 0002 §5). `ctx install`
 // auto-detects the host and wires the highest available delivery tier (Copilot
 // CLI → hook seam; VS Code → shim; neither / shim probe FAIL → instruction
-// injection). `tk uninstall` removes what tk wrote (and, with --purge-data, the
-// metrics data). `tk status` reports the install without writing. These are
-// first-class top-level verbs so a tk verb can never fall through to passthrough
-// (the U2 bug that ran Bandizip's uninstaller); `tk init` was the old name and is
-// gone (cli.ts prints a rename hint). The shim tier has its own `tk shim` surface.
+// injection). `ctx uninstall` removes what ctx wrote (and, with --purge-data, the
+// metrics data). `ctx status` reports the install without writing. These are
+// first-class top-level verbs so a ctx verb can never fall through to passthrough
+// (the U2 bug that ran Bandizip's uninstaller); `ctx init` was the old name and is
+// gone (cli.ts prints a rename hint). The shim tier has its own `ctx shim` surface.
 
 function out(line: string): void {
   process.stdout.write(`${line}\n`);
@@ -51,7 +51,7 @@ function err(line: string): void {
   process.stderr.write(`${line}\n`);
 }
 
-// Hosts that have any guidance to clean on uninstall — a standalone TK.md file
+// Hosts that have any guidance to clean on uninstall — a standalone CTX.md file
 // (claude-code, vscode) OR an inlined loader block (copilot-cli, claude-code).
 // Derived from the guidance module rather than the adapter's `guidancePath()`
 // alone, because copilot-cli now writes ONLY the inlined block (no standalone
@@ -60,7 +60,7 @@ const guidanceHosts: Host[] = (Object.keys(adapters) as Host[]).filter(
   (host) => Boolean(guidanceFilePath(host)) || Boolean(guidanceLoader(host)),
 );
 
-// Drop the tk usage guidance (TK.md) and wire it into the host's auto-loaded
+// Drop the ctx usage guidance (CTX.md) and wire it into the host's auto-loaded
 // instructions so the agent reads it. Hosts without a guidance home are a no-op.
 function writeGuidanceStep(host: Host, dryRun: boolean, ponytail: boolean): void {
   if (dryRun) {
@@ -86,10 +86,10 @@ function injectionTarget(host: Host): string {
 }
 
 // ---------------------------------------------------------------------------
-// tk doctor (install section) — installation-safe. Reports host / tier signals
+// ctx doctor (install section) — installation-safe. Reports host / tier signals
 // without installing or repairing hooks/shims, then refreshes the delivery
 // verification timestamp. Split into gather (returns the live matrix so
-// `tk doctor --fix` can decide which tiers to re-install) + render (prints it).
+// `ctx doctor --fix` can decide which tiers to re-install) + render (prints it).
 // Consumed by src/shim/doctor.ts.
 // ---------------------------------------------------------------------------
 
@@ -139,7 +139,7 @@ export function renderStatusReport(s: StatusGather): void {
 }
 
 // ---------------------------------------------------------------------------
-// tk uninstall
+// ctx uninstall
 // ---------------------------------------------------------------------------
 
 type UninstallArgs = {
@@ -151,10 +151,10 @@ type UninstallArgs = {
 };
 
 const UNINSTALL_USAGE = [
-  "tk uninstall [--project] [--purge-data] [--dry-run]",
+  "ctx uninstall [--project] [--purge-data] [--dry-run]",
   "",
-  "  --project      Remove only this repo's tk artifacts (leave user-level intact)",
-  "  --purge-data   Also delete measured savings under ~/.token-killer (off by default)",
+  "  --project      Remove only this repo's ctx artifacts (leave user-level intact)",
+  "  --purge-data   Also delete measured savings under ~/.contexa (off by default)",
   "  --dry-run      Report what would be removed without deleting",
   "  --help         Show this usage",
 ].join("\n");
@@ -167,7 +167,7 @@ function parseUninstallArgs(argv: string[]): UninstallArgs {
     else if (token === "--purge-data") args.purgeData = true;
     else if (token === "--help" || token === "-h") args.help = true;
     else {
-      // `tk uninstall` is DESTRUCTIVE. An unrecognized flag (a `--help` typo, a stray
+      // `ctx uninstall` is DESTRUCTIVE. An unrecognized flag (a `--help` typo, a stray
       // rtk-style `-g`, a half-typed switch) must NOT fall through into a real
       // teardown — fail closed: record the first bad token and let runUninstall refuse.
       args.error = `unknown flag '${token}'`;
@@ -184,8 +184,8 @@ export function runUninstall(argv: string[]): number {
     return 0;
   }
   if (opts.error) {
-    err(`tk uninstall: ${opts.error}`);
-    err("Refusing to uninstall on an unrecognized flag. Run `tk uninstall --help` for usage.");
+    err(`ctx uninstall: ${opts.error}`);
+    err("Refusing to uninstall on an unrecognized flag. Run `ctx uninstall --help` for usage.");
     return 1;
   }
   if (opts.dryRun) {
@@ -197,19 +197,19 @@ export function runUninstall(argv: string[]): number {
   if (opts.project) uninstallProject();
   else uninstallUser();
   // --purge-data is honored last, after the artifacts are gone (G2). Without it,
-  // `tk uninstall` PRESERVES all metrics — uninstalling delivery must not silently
+  // `ctx uninstall` PRESERVES all metrics — uninstalling delivery must not silently
   // wipe a user's measured savings history.
   if (opts.purgeData) purgeData();
   return 0;
 }
 
-// Remove what tk installed at the user level. Marker-guarded — only files tk
+// Remove what ctx installed at the user level. Marker-guarded — only files ctx
 // wrote are removed. The user and project installs are independent, so this must
 // never touch the repo's own artifacts.
 function uninstallUser(): void {
   const removedClaude = uninstallClaudeHook({});
   out(
-    `claude-code settings hook: ${removedClaude.removed ? `removed tk entry from ${removedClaude.path}` : "nothing to remove"}`,
+    `claude-code settings hook: ${removedClaude.removed ? `removed ctx entry from ${removedClaude.path}` : "nothing to remove"}`,
   );
   const removedHook = uninstallCopilotHookConfig({ project: false });
   out(
@@ -219,7 +219,7 @@ function uninstallUser(): void {
   const host = detectHost(gatherDetectEnv());
   unwriteInjection(injectionTarget(host));
   out(`instruction injection: removed`);
-  // Remove the usage guidance (TK.md) + its loader reference for any host that
+  // Remove the usage guidance (CTX.md) + its loader reference for any host that
   // has one. detectHost may differ from the install-time host, so clear all.
   for (const guidanceHost of guidanceHosts) {
     unwriteGuidance(guidanceHost);
@@ -244,7 +244,7 @@ function uninstallProject(): void {
 function uninstallUserDryRun(): void {
   const claude = claudeHookStatus({});
   out(
-    `[dry-run] claude-code settings hook: ${claude.present ? `would remove tk entry from ${claude.path}` : "nothing to remove"}`,
+    `[dry-run] claude-code settings hook: ${claude.present ? `would remove ctx entry from ${claude.path}` : "nothing to remove"}`,
   );
   const hook = copilotHookConfigStatus({ project: false });
   out(
@@ -277,11 +277,11 @@ function uninstallProjectDryRun(): void {
   );
 }
 
-// G2: delete the per-project metrics tree (`~/.token-killer/projects/`) and the
+// G2: delete the per-project metrics tree (`~/.contexa/projects/`) and the
 // home dir if removal leaves it empty. Off by default — only `--purge-data` calls
 // this. Never throws: a partial/failed delete must not break the uninstall.
 function purgeData(): void {
-  const home = tokenKillerHome();
+  const home = contexaHome();
   const projects = join(home, "projects");
   if (existsSync(projects)) {
     rmSync(projects, { recursive: true, force: true });
@@ -300,14 +300,14 @@ function purgeData(): void {
 }
 
 function reportPurgeDryRun(): void {
-  const projects = join(tokenKillerHome(), "projects");
+  const projects = join(contexaHome(), "projects");
   out(
     `[dry-run] metrics data: ${existsSync(projects) ? `would remove ${projects}` : "nothing to remove"}`,
   );
 }
 
 // ---------------------------------------------------------------------------
-// tk install
+// ctx install
 // ---------------------------------------------------------------------------
 
 type InstallArgs = {
@@ -320,7 +320,7 @@ type InstallArgs = {
 };
 
 const INSTALL_USAGE = [
-  "tk install [--host auto|claude-code|copilot-cli|vscode] [--project] [--ponytail] [--dry-run]",
+  "ctx install [--host auto|claude-code|copilot-cli|vscode] [--project] [--ponytail] [--dry-run]",
   "",
   "  --host <h>     Force the host instead of auto-detecting",
   "  --project      Wire this repo only (project-level injection), not the user level",
@@ -365,14 +365,14 @@ function parseInstallArgs(argv: string[]): InstallArgs {
       args.help = true;
     }
     // Other unknown tokens (e.g. a stray `-g` from rtk muscle memory) are ignored —
-    // install is non-destructive and every tk write is user-level, so there is no
+    // install is non-destructive and every ctx write is user-level, so there is no
     // global/local switch to honor.
   }
   return args;
 }
 
 // Persist what this install wired (ADR 0012 #7). Best-effort and NEVER changes
-// install behavior — it only records state for `tk status` to display. Called once,
+// install behavior — it only records state for `ctx status` to display. Called once,
 // just before a successful (non-dry-run) install returns; the dry-run path records
 // nothing (it wrote nothing).
 //
@@ -393,7 +393,7 @@ export function runInstall(argv: string[]): number {
     return 0;
   }
   if (opts.error) {
-    err(`tk install: ${opts.error}`);
+    err(`ctx install: ${opts.error}`);
     return 1;
   }
   const env = gatherDetectEnv();
@@ -499,7 +499,7 @@ export function runInstall(argv: string[]): number {
   if (adapter.supportedTiers.includes("shim")) {
     const probe = installShim({ rc: false, vscode: true });
     if (selectTier(adapter.supportedTiers, hookForLadder, probe.pass) === "shim") {
-      // The usage guide is delivery-tier-independent — it teaches how to use tk
+      // The usage guide is delivery-tier-independent — it teaches how to use ctx
       // well, not how commands are routed. VS Code's tier is the shim, so without
       // this its users (who have a user-level guidance home) got no guide at all.
       writeGuidanceStep(host, false, opts.ponytail);

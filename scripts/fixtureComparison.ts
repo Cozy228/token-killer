@@ -33,7 +33,7 @@ export type FixtureComparisonCase = {
   fixture: string;
   command: string[];
   exitCode?: number;
-  /** tk-only handler with no rtk filter: report rtk as raw passthrough (0% savings). */
+  /** ctx-only handler with no rtk filter: report rtk as raw passthrough (0% savings). */
   rtkUnsupported?: boolean;
   /** rtk wrapper invocation (command/file/dir input) instead of stdin — see runRtkWrapperFixture. */
   rtkWrapper?: RtkWrapperSpec;
@@ -316,7 +316,7 @@ export function runRtkWrapperFixture(
     return run([...spec.sub, fixturePath], `rtk ${spec.sub.join(" ")} ${fixture}`);
   }
   // dir-package: rtk deps scans a directory; stage the fixture as its package.json.
-  const dir = mkdtempSync(path.join(os.tmpdir(), "tk-deps-"));
+  const dir = mkdtempSync(path.join(os.tmpdir(), "ctx-deps-"));
   try {
     copyFileSync(fixturePath, path.join(dir, "package.json"));
     return run(

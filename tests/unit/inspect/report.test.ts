@@ -74,11 +74,11 @@ describe("renderMarkdown", () => {
       buildReport(scanResult, GENERATED, undefined, [
         {
           type: "delivery",
-          title: "Install the Token Killer shim",
+          title: "Install the Contexa shim",
           detail: "x",
           occurrences: 6,
           confidence: 0.9,
-          recommendation: "Run `tk install` and restart VS Code.",
+          recommendation: "Run `ctx install` and restart VS Code.",
         },
       ]),
     );
@@ -86,7 +86,7 @@ describe("renderMarkdown", () => {
     // report, AFTER the "Where your tokens go" analysis they're derived from.
     expect(md).toContain("## What to do");
     expect(md.indexOf("## Where your tokens go")).toBeLessThan(md.indexOf("## What to do"));
-    expect(md).toContain("Run `tk install`");
+    expect(md).toContain("Run `ctx install`");
   });
 
   test("honestly reports when sessions were found but nothing was readable", () => {
@@ -178,7 +178,7 @@ describe("renderMarkdown — Where your tokens go (measured analysis)", () => {
       {
         id: "a1",
         title: "Install the shim",
-        recommendation: "Run tk install",
+        recommendation: "Run ctx install",
         severity: "warn",
         confidence: 0.9,
         evidence: "x",

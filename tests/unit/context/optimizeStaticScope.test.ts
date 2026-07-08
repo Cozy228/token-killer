@@ -1,4 +1,4 @@
-// Issue #41 — `tk optimize` triggers inspect ONLY for the static-context findings
+// Issue #41 — `ctx optimize` triggers inspect ONLY for the static-context findings
 // it consumes, so a first-time / no-bucket optimize never pays for the transcript
 // scan + habit extraction it would discard. These tests pin: (1) no transcript
 // scan runs on the optimize-triggered path, (2) the static findings produced by
@@ -88,15 +88,15 @@ beforeEach(() => {
   scanSpy.mockClear();
   habitsSpy.mockClear();
   singlePassSpy.mockClear();
-  root = mkdtempSync(join(tmpdir(), "tk-opt-static-"));
+  root = mkdtempSync(join(tmpdir(), "ctx-opt-static-"));
   home = join(root, "home");
   cwd = join(root, "repo");
   mkdirSync(home, { recursive: true });
   mkdirSync(cwd, { recursive: true });
-  process.env.TOKEN_KILLER_HOME = join(home, ".token-killer");
+  process.env.CONTEXA_HOME = join(home, ".contexa");
 });
 afterEach(() => {
-  delete process.env.TOKEN_KILLER_HOME;
+  delete process.env.CONTEXA_HOME;
   rmSync(root, { recursive: true, force: true });
   vi.restoreAllMocks();
 });
@@ -161,7 +161,7 @@ describe("optimize triggers a static-only inspect (#41)", () => {
     expect(singlePassSpy).toHaveBeenCalled(); // a full inspect DOES run the single-pass scan
 
     // Wipe the bucket; re-derive via the static-only path.
-    rmSync(join(home, ".token-killer"), { recursive: true, force: true });
+    rmSync(join(home, ".contexa"), { recursive: true, force: true });
     scanSpy.mockClear();
     singlePassSpy.mockClear();
     const sScoped = silenceStdout();
@@ -217,6 +217,6 @@ describe("optimize triggers a static-only inspect (#41)", () => {
 
     const out = errs.join("");
     expect(out).toContain("no prior inspect");
-    expect(out).toContain("tk inspect");
+    expect(out).toContain("ctx inspect");
   });
 });

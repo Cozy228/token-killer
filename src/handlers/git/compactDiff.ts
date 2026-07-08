@@ -131,7 +131,7 @@ function renderSummary(files: DiffFileBlock[]): string {
 
 // ADR 0001 finding #6: diff hunks are location-class and are never capped. The
 // old fixed `maxHunkLines=100` / 500-line hard-stop (which dropped unique changed
-// lines) and the banned `tk --raw` recovery pointer are removed. Below the token
+// lines) and the banned `ctx --raw` recovery pointer are removed. Below the token
 // budget the full condensed diff is emitted; over budget step 1 drops context
 // (keeps every changed line); if still over, step 2 is a per-file count summary.
 // The recovery snapshot pointer is appended by makeFilteredResult.

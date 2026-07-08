@@ -1,12 +1,12 @@
 #!/usr/bin/env node
 // I5 — shim startup cost. Every shimmed command re-invokes node and loads this
-// bundle, so the hot path (`tk git status`) must pull in ONLY the compression
+// bundle, so the hot path (`ctx git status`) must pull in ONLY the compression
 // machinery (router + executor + gate + pipeline). The management subcommands
 // (install/inspect/optimize/telemetry/report/…) are loaded with `await import()`
 // the moment they're actually requested, keeping them off the per-command path.
 // Compile-cache ladder (2.3) — persist V8's compiled bytecode across invocations:
 //  - Node ≥22.8: `module.enableCompileCache()` (this call). When the shim wrapper
-//    exported NODE_COMPILE_CACHE (2.3) it lands in ~/.token-killer/v8-cache; else
+//    exported NODE_COMPILE_CACHE (2.3) it lands in ~/.contexa/v8-cache; else
 //    Node's default temp dir.
 //  - Node 22.1–22.7: the shim wrapper sets NODE_COMPILE_CACHE, which Node honors
 //    WITHOUT this API — zero code here, it just works when shimmed.
@@ -35,47 +35,47 @@ import type {
 
 function help(): string {
   return [
-    "tk — Token Killer: a CLI proxy that compresses dev-command output so coding",
-    "agents spend far fewer tokens. Wrap any command, or manage tk's delivery and reports.",
+    "ctx — Contexa: a CLI proxy that compresses dev-command output so coding",
+    "agents spend far fewer tokens. Wrap any command, or manage ctx's delivery and reports.",
     "",
     "Usage:",
-    "  tk [flags] <command...>     Run a command through tk and compress its output",
-    "  tk <subcommand> [options]   Manage delivery, inspect savings, configure tk",
+    "  ctx [flags] <command...>     Run a command through ctx and compress its output",
+    "  ctx <subcommand> [options]   Manage delivery, inspect savings, configure ctx",
     "",
     "Commands:",
-    "  install     Install tk delivery into your agent host (hook / shim / injection)",
-    "  uninstall   Remove everything tk installed (optionally purge measured data)",
+    "  install     Install ctx delivery into your agent host (hook / shim / injection)",
+    "  uninstall   Remove everything ctx installed (optionally purge measured data)",
     "  doctor      Diagnose install + metrics health; --fix repairs and normalizes them",
     "  hook        Agent-host hook runtime: decide command rewrites & governance",
     "  inspect     Scan your AI setup for token-saving opportunities (opens an HTML report)",
-    "  debug       Bundle tk's own diagnostics into one self-contained markdown report",
+    "  debug       Bundle ctx's own diagnostics into one self-contained markdown report",
     "  optimize    Apply the context-file optimizations that inspect found",
     "  gain        Show measured token savings (opens an HTML report)",
-    "  config      Manage the tk config file",
+    "  config      Manage the ctx config file",
     "  telemetry   Opt-in, anonymous network telemetry controls",
     "  support     Send a diagnostic report (recent error + logs) to the maintainer",
     "",
-    "Run `tk <command> --help`-style usage is summarized below.",
+    "Run `ctx <command> --help`-style usage is summarized below.",
     "",
-    "tk install [--host auto|claude-code|copilot-cli|vscode] [--project] [--dry-run]",
+    "ctx install [--host auto|claude-code|copilot-cli|vscode] [--project] [--dry-run]",
     "  Auto-detects the host and wires the best delivery tier (hook > shim > injection),",
-    "  and drops a usage guide (TK.md) referenced from the host's agent instructions.",
-    "  For VS Code it also writes TK_COMPRESS_TTY=1 into the integrated-terminal env so",
+    "  and drops a usage guide (CTX.md) referenced from the host's agent instructions.",
+    "  For VS Code it also writes CTX_COMPRESS_TTY=1 into the integrated-terminal env so",
     "  the agent's commands compress even though they run in a TTY.",
     "  --host <h>     Force the host instead of auto-detecting (claude-code patches",
     "                 ~/.claude/settings.json's PreToolUse Bash hook)",
     "  --project      Also write project-level instructions into the current repo",
     "  --dry-run      Preview what would change without writing",
     "",
-    "tk uninstall [--project] [--purge-data] [--dry-run]",
-    "  Remove everything tk installed (hook config, shim, injection, TK.md). Preserves",
+    "ctx uninstall [--project] [--purge-data] [--dry-run]",
+    "  Remove everything ctx installed (hook config, shim, injection, CTX.md). Preserves",
     "  your measured-savings data by default.",
-    "  --purge-data   Also delete ~/.token-killer/projects/ (your metrics history)",
+    "  --purge-data   Also delete ~/.contexa/projects/ (your metrics history)",
     "  --project      Remove only the current repo's artifacts (not the user install)",
     "  --dry-run      Report what would be removed without deleting",
     "",
-    "tk doctor [--fix] [scan-root]",
-    "  Diagnose tk's health and (with --fix) repair it. Read-only by default — it prints",
+    "ctx doctor [--fix] [scan-root]",
+    "  Diagnose ctx's health and (with --fix) repair it. Read-only by default — it prints",
     "  the install matrix (detected host, hook/shim/injection/guidance) AND the metrics",
     "  store health (rollup freshness, duplicate/empty/orphan project buckets), marking",
     "  each fixable item as 'would fix'.",
@@ -86,23 +86,23 @@ function help(): string {
     "                 buckets by fingerprint match. Unmatched orphans are folded into one",
     "                 'archived' bucket (token totals preserved, hash-named dirs removed).",
     "",
-    "tk hook <copilot|claude|check <command...>>",
+    "ctx hook <copilot|claude|check <command...>>",
     "  copilot                Hook runtime: read a tool event on stdin, emit a rewrite/governance decision",
     "  claude                 Hook runtime: Claude Code PreToolUse Bash hook — emit a command rewrite",
     "  check <command...>     Dry-run: show how a command would be rewritten (no execution)",
-    "  TK_DEBUG=1             Trace the hook runtime (stdin size, decision + why, what was emitted)",
-    "                         to stderr AND append it to $TOKEN_KILLER_HOME/debug.log for live",
+    "  CTX_DEBUG=1             Trace the hook runtime (stdin size, decision + why, what was emitted)",
+    "                         to stderr AND append it to $CONTEXA_HOME/debug.log for live",
     "                         `tail -f`. stdout stays clean. Same switch the compress path uses.",
     '                         If the host reports "hook errored", check',
-    "                         $TOKEN_KILLER_HOME/errors.log — fatal crashes are logged there",
-    "                         unconditionally (no TK_DEBUG needed).",
+    "                         $CONTEXA_HOME/errors.log — fatal crashes are logged there",
+    "                         unconditionally (no CTX_DEBUG needed).",
     "",
-    "tk inspect [--text] [--json] [--since 7d] [--session <id>] [--input-type vscode|copilot-cli]",
+    "ctx inspect [--text] [--json] [--since 7d] [--session <id>] [--input-type vscode|copilot-cli]",
     "           [--advice] [--write-advice] [--min-confidence n] [--min-occurrences n]",
     "           [--project|--user] [--surface instructions|prompts|agents|skills] [--fail-on info|warn|error]",
     "  Read-only scan of your AI setup for missed token savings; ranks the opportunities.",
     "  Opens a single-file HTML report in your browser by default.",
-    "  Shows per-phase progress on stderr when interactive (TK_NO_PROGRESS=1 to silence).",
+    "  Shows per-phase progress on stderr when interactive (CTX_NO_PROGRESS=1 to silence).",
     "  --text                       Print the report to the terminal instead of opening HTML",
     "  --json                       Output JSON instead",
     "  --since <window>             Only sessions newer than e.g. 7d, 24h, 30m",
@@ -116,16 +116,16 @@ function help(): string {
     "  --surface <s>                Restrict to one surface (instructions|prompts|agents|skills)",
     "  --fail-on <severity>         Exit non-zero when a finding reaches info|warn|error",
     "",
-    "tk debug [--out <path>] [--full] [--redact]",
+    "ctx debug [--out <path>] [--full] [--redact]",
     "  Run once on a tester's machine to produce ONE self-contained markdown bundle",
-    "  diagnosing tk itself (version stamp, delivery health, command history, anomaly",
-    "  payloads, usage aggregates, debug.log + host configs). Reviews tk, not your agent",
+    "  diagnosing ctx itself (version stamp, delivery health, command history, anomaly",
+    "  payloads, usage aggregates, debug.log + host configs). Reviews ctx, not your agent",
     "  history (that's `inspect`). No network, no telemetry — writes only the --out file.",
     "  --out <path>   Destination (default: reports/debug-<ts>.md)",
     "  --full         Attach every row's payload, not just anomalies'",
     "  --redact       Length/label only — no command text, payload bytes, or config bodies",
     "",
-    "tk optimize [--apply] [--backup [files...]] [--restore]",
+    "ctx optimize [--apply] [--backup [files...]] [--restore]",
     "            [--surface <name>] [--project|--user]",
     "  Applies the context-file optimizations inspect found (including token-lean VS Code",
     "  settings). Read-only unless --apply. Scope is git-aware: outside a git repo it works",
@@ -140,7 +140,7 @@ function help(): string {
     "  --surface <name>       Restrict to one surface (instructions|prompts|agents|skills)",
     "  --project | --user     Force a single scope instead of the git-aware default",
     "",
-    "tk gain [--user] [--text] [--json] [--csv]",
+    "ctx gain [--user] [--text] [--json] [--csv]",
     "        [--daily|--weekly|--monthly|--all] [--graph] [--history [n]] [--failures] [--quota [-t <model>]]",
     "  Measured token savings. Defaults to the current project; --user aggregates all.",
     "  Opens a single-file HTML report in your browser by default — the four views side by side",
@@ -154,27 +154,27 @@ function help(): string {
     "    --failures      Show the failure breakdown (terminal output)",
     "    --quota [-t m]  Show quota usage; -t overrides the pricing model (terminal output)",
     "",
-    "tk config <init|show|path>",
+    "ctx config <init|show|path>",
     "  init    Create the config file from the template",
     "  show    Print the current config as JSON",
     "  path    Print the config file path",
     "",
-    "tk telemetry <enable|disable|status|preview>",
+    "ctx telemetry <enable|disable|status|preview>",
     "  enable     Opt in to anonymous network telemetry uploads",
     "  disable    Opt out of network uploads",
     "  status     Show consent state and anonymous device id (no network check)",
     "  preview    Print the exact payload that would be sent (sends nothing)",
     "",
-    "tk support [email|teams|github] [--no-attach] [--redact] [-y]",
+    "ctx support [email|teams|github] [--no-attach] [--redact] [-y]",
     "  Gather the recent error + logs into one shareable report and open your mail",
     "  client (mailto:), Microsoft Teams (msteams: scheme), or a GitHub issue draft to",
     "  send it. Nothing is sent automatically — you review and send by hand; the report",
-    "  is saved under ~/.token-killer/reports/. The destination is fixed at build time",
-    "  (ADR 0013) — `tk support` reaches whoever packaged this build. If this build baked",
-    "  no destination, tk saves the bundle and copies it to your clipboard, then prints a",
+    "  is saved under ~/.contexa/reports/. The destination is fixed at build time",
+    "  (ADR 0013) — `ctx support` reaches whoever packaged this build. If this build baked",
+    "  no destination, ctx saves the bundle and copies it to your clipboard, then prints a",
     "  hint — it sends nowhere.",
     "",
-    "Flags for `tk <command...>` (the compression proxy):",
+    "Flags for `ctx <command...>` (the compression proxy):",
     "  --raw                 Print raw stdout/stderr (no compression)",
     "  --stats               Append a token-savings summary (and the saved raw-output path)",
     "  --max-lines <n>       Limit compressed output to n lines",
@@ -182,9 +182,9 @@ function help(): string {
     "  --save-raw            Always save the raw output",
     "  --no-save-raw         Never save the raw output",
     "  --help                Show this help",
-    "  --version             Show the tk version",
-    "  TK_NO_HISTORY=1       Skip writing the measured-savings history row (lowest",
-    "                        per-command latency; `tk gain` will not see those commands)",
+    "  --version             Show the ctx version",
+    "  CTX_NO_HISTORY=1       Skip writing the measured-savings history row (lowest",
+    "                        per-command latency; `ctx gain` will not see those commands)",
     "",
   ].join("\n");
 }
@@ -237,7 +237,7 @@ async function main(): Promise<number> {
     return (await import("./shim/init.js")).runUninstall(parsed.subArgs ?? []);
   }
   // `doctor` diagnoses (and with --fix repairs) both the install and the metrics
-  // store. It replaced `tk status` (now a rename hint in the passthrough block below).
+  // store. It replaced `ctx status` (now a rename hint in the passthrough block below).
   if (parsed.mode === "doctor") {
     return (await import("./shim/doctor.js")).runDoctor(parsed.subArgs ?? []);
   }
@@ -269,19 +269,19 @@ async function main(): Promise<number> {
     return (await import("./support/cli.js")).runSupport(parsed.subArgs ?? []);
   }
   if (!parsed.command) {
-    // Bare `tk` typed by a curious user → the full command list (like `--help`),
-    // so someone who just types `tk` lands on the command list.
+    // Bare `ctx` typed by a curious user → the full command list (like `--help`),
+    // so someone who just types `ctx` lands on the command list.
     //
-    // But `tk <flags>` with no command to run — overwhelmingly `cmd | tk --max-lines N`,
-    // where an agent expected tk to compress piped input (it does not; ADR 0007) — must
+    // But `ctx <flags>` with no command to run — overwhelmingly `cmd | ctx --max-lines N`,
+    // where an agent expected ctx to compress piped input (it does not; ADR 0007) — must
     // NOT dump the ~20-line banner. A token saver that answers a misuse with a wall of
     // help text is self-defeating (seen 66× across the atlas dogfooding sessions): the
     // banner is pure wasted context and the piped command's output is already gone.
     // Emit one diagnostic line (stderr, like the rg -r advisory) and stop.
     if (argv.length > 0) {
       process.stderr.write(
-        "tk: no command given — run `tk <command>` (e.g. `tk rg foo src/`); " +
-          "piping `… | tk` is not supported (tk wraps a command, it does not read stdin).\n",
+        "ctx: no command given — run `ctx <command>` (e.g. `ctx rg foo src/`); " +
+          "piping `… | ctx` is not supported (ctx wraps a command, it does not read stdin).\n",
       );
       return 0;
     }
@@ -376,35 +376,35 @@ async function main(): Promise<number> {
   ]);
   const handler = routeSpecific(command);
 
-  // Passthrough hardening (U2). A DIRECT `tk <x>` — the shell did NOT resolve a
-  // real tool through the shim, so TK_SHIM_DIR is unset — may run a binary only
-  // when `<x>` is something tk genuinely fronts: a routable handler, or a known
+  // Passthrough hardening (U2). A DIRECT `ctx <x>` — the shell did NOT resolve a
+  // real tool through the shim, so CTX_SHIM_DIR is unset — may run a binary only
+  // when `<x>` is something ctx genuinely fronts: a routable handler, or a known
   // shimmable dev tool (covers probe forms like `git --version`). An unknown word
   // is NEVER auto-spawned on PATH — that is the bug that ran Bandizip's
-  // `uninstall.EXE`. Shim-invoked passthrough (TK_SHIM_DIR set — the shell already
+  // `uninstall.EXE`. Shim-invoked passthrough (CTX_SHIM_DIR set — the shell already
   // resolved a real tool the user ran) stays transparent and UNCHANGED, so it
   // still covers shimmable tools without a specific handler (e.g. curl). `--raw`
   // (handled above) is the explicit escape hatch to force-run anything.
-  const shimInvoked = Boolean(process.env.TK_SHIM_DIR);
+  const shimInvoked = Boolean(process.env.CTX_SHIM_DIR);
   if (!shimInvoked && !handler && !isShimmableProgram(command.program)) {
     if (command.program === "init") {
-      process.stderr.write("tk: `tk init` was renamed to `tk install` (see `tk --help`).\n");
+      process.stderr.write("ctx: `ctx init` was renamed to `ctx install` (see `ctx --help`).\n");
     } else if (command.program === "status") {
-      process.stderr.write("tk: `tk status` was renamed to `tk doctor` (see `tk --help`).\n");
+      process.stderr.write("ctx: `ctx status` was renamed to `ctx doctor` (see `ctx --help`).\n");
     } else {
       process.stderr.write(
-        `tk: unknown command "${command.program}" — tk wraps known dev tools; ` +
-          `use \`tk --raw ${command.displayCommand}\` to run it anyway\n`,
+        `ctx: unknown command "${command.program}" — ctx wraps known dev tools; ` +
+          `use \`ctx --raw ${command.displayCommand}\` to run it anyway\n`,
       );
     }
     return 1;
   }
 
   // Shim gate (ADR 0002 §2-3, R1): compress only on a specific match AND a
-  // non-interactive command AND either non-TTY stdout or an opted-in TK_COMPRESS_TTY
+  // non-interactive command AND either non-TTY stdout or an opted-in CTX_COMPRESS_TTY
   // terminal. Everything else passes through to the real tool with inherited stdio.
   // The gate decision (+reason) is the single most diagnostic event in the system —
-  // trace it so `TK_DEBUG` answers "why wasn't this compressed?" from debug.log
+  // trace it so `CTX_DEBUG` answers "why wasn't this compressed?" from debug.log
   // alone, on the exact (VS Code) path where stderr is invisible (D1).
   const isTTY = Boolean(process.stdout.isTTY);
   const decision = gateDecision(command, isTTY, handler);
@@ -445,7 +445,7 @@ async function main(): Promise<number> {
     return exitCode;
   } catch (error) {
     // The fail-open is silent by design (never surface compression noise to the
-    // agent). TK_DEBUG opens a window into WHY a command fell back to passthrough
+    // agent). CTX_DEBUG opens a window into WHY a command fell back to passthrough
     // — essential for diagnosing platform-specific compress-path failures. Routed
     // through the dual-sink tkDebug so it also lands in debug.log, not just the
     // stderr the VS Code agent can't see (D1).
@@ -490,7 +490,7 @@ async function runCompress(
     const filtered = result.filtered;
 
     // Compress succeeded — trace the savings to the same dual sink as the gate
-    // decision (D1), so a live `TK_DEBUG` session shows route → outcome in one log.
+    // decision (D1), so a live `CTX_DEBUG` session shows route → outcome in one log.
     tkDebug("compress", {
       handler: filtered.handler,
       rawTokens: filtered.rawTokens,
@@ -515,8 +515,8 @@ async function failOpenPassthrough(command: ParsedCommand, error: unknown): Prom
   } catch {
     // Passthrough is also impossible (e.g. the real tool only exists inside the
     // shim dir — true recursion). Surface the original error and exit non-zero
-    // with a deterministic code, never an unhandled rejection. This is tk's OWN
-    // failure (the wrapped tool never ran), so nudge toward `tk support`.
+    // with a deterministic code, never an unhandled rejection. This is ctx's OWN
+    // failure (the wrapped tool never ran), so nudge toward `ctx support`.
     const { emitSupportHintOnce } = await import("./hook/debug.js");
     process.stderr.write(`${error instanceof Error ? error.message : String(error)}\n`);
     emitSupportHintOnce();
@@ -527,12 +527,12 @@ async function failOpenPassthrough(command: ParsedCommand, error: unknown): Prom
 try {
   process.exitCode = await main();
 } catch (error) {
-  // A throw here means tk exited non-zero — for a hook invocation the host swallows
+  // A throw here means ctx exited non-zero — for a hook invocation the host swallows
   // stderr and surfaces only "PreToolUse hook errored". Persist the reason to
-  // errors.log (unconditionally, not gated on TK_DEBUG) so there is a breadcrumb to
+  // errors.log (unconditionally, not gated on CTX_DEBUG) so there is a breadcrumb to
   // read after the fact. logFatalError also writes stderr, so this replaces the bare
   // stderr write above.
   const { logFatalError } = await import("./hook/debug.js");
-  logFatalError(`tk ${process.argv.slice(2).join(" ")}`, error);
+  logFatalError(`ctx ${process.argv.slice(2).join(" ")}`, error);
   process.exitCode = 1;
 }

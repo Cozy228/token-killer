@@ -145,7 +145,7 @@ function buildPytestSummary(
   head += `\n${PYTEST_SEPARATOR}\n`;
 
   // Expected-failure outcomes — every line kept in full (ADR 0001: no MAX_XFAIL
-  // cap, no char truncation, no banned `tk --raw` hint).
+  // cap, no char truncation, no banned `ctx --raw` hint).
   const renderXfail = (): string => {
     if (xfailLines.length === 0) return "";
     let out = "\nExpected-failure outcomes:\n";

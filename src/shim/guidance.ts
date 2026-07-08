@@ -5,65 +5,65 @@ import { dirname, join } from "node:path";
 import type { Host } from "./detect.js";
 import { applyInjectionBlock, removeInjectionBlock } from "./injection.js";
 
-// Usage guidance tk drops at `tk install` so the agent SPENDS FEWER TOKENS — not
-// just the transparent `tk <cmd>` rewrite the hook/shim already does, but the
+// Usage guidance ctx drops at `ctx install` so the agent SPENDS FEWER TOKENS — not
+// just the transparent `ctx <cmd>` rewrite the hook/shim already does, but the
 // agent-actionable habits the research (docs/reports/token-optimization-best-practices)
 // found move the needle most: prefer a tool's native terse form, and read/search with
 // the agent's own bounded tools instead of shelling out (orientation is where most
 // tokens leak). This file is the INPUT-side lever (tokens the agent reads); the
 // output-side lever (writing less code, billed ~4×) lives in the separate PONYTAIL.md
-// so the two can be kept or dropped independently and don't repeat each other. TK.md
-// always ships; PONYTAIL.md is OPT-IN (`tk install --ponytail`) — see below.
+// so the two can be kept or dropped independently and don't repeat each other. CTX.md
+// always ships; PONYTAIL.md is OPT-IN (`ctx install --ponytail`) — see below.
 // This file is AGENT-facing — every line is a habit the model can act on. Human-only
-// surfaces (the `tk gain`/`tk inspect` analytics) are NOT here; they belong on the
-// CLI, not in always-on resident context. Written as a dedicated, tk-owned `TK.md`
+// surfaces (the `ctx gain`/`ctx inspect` analytics) are NOT here; they belong on the
+// CLI, not in always-on resident context. Written as a dedicated, ctx-owned `CTX.md`
 // so it never tangles with the user's own CLAUDE.md content.
 
-const GUIDANCE_FILENAME = "TK.md";
+const GUIDANCE_FILENAME = "CTX.md";
 
-// A second standalone file: the "lazy senior dev" coding doctrine. tk's token
-// lever is two-sided — TK.md cuts the tokens the agent READS (tool output);
+// A second standalone file: the "lazy senior dev" coding doctrine. ctx's token
+// lever is two-sided — CTX.md cuts the tokens the agent READS (tool output);
 // PONYTAIL.md cuts the tokens the agent WRITES (over-built code, billed ~4×).
 // Verbatim from ponytail (github.com/DietrichGebert/ponytail, MIT). Kept as its
 // own file so a user can delete one lever without losing the other.
 //
 // OPT-IN, not default: the coding doctrine is an opinionated behavior change
 // (YAGNI/deletion-over-addition/`ponytail:` comments), heavier than the neutral
-// terse-form habits in TK.md. So `tk install` ships TK.md alone; PONYTAIL.md is
-// written + imported ONLY with `tk install --ponytail`. Toggle off (a plain re-install)
+// terse-form habits in CTX.md. So `ctx install` ships CTX.md alone; PONYTAIL.md is
+// written + imported ONLY with `ctx install --ponytail`. Toggle off (a plain re-install)
 // removes any PONYTAIL.md a prior --ponytail install left, so on-disk state and the
 // loader's @imports never drift apart. The flag flows in as GuidanceOptions.ponytail.
 export type GuidanceOptions = { ponytail?: boolean };
 const LAZY_FILENAME = "PONYTAIL.md";
-const VSCODE_LAZY_FILENAME = "token-killer-lazy.instructions.md";
+const VSCODE_LAZY_FILENAME = "contexa-lazy.instructions.md";
 
 // VS Code Copilot auto-loads a user-level `.instructions.md` from the user
 // profile (`~/.copilot/instructions`) across all workspaces (verified against the
 // VS Code custom-instructions docs, ADR 0008). Unlike claude-code (which pulls
-// TK.md in via an `@import` VS Code does NOT expand) the file IS the loaded
-// instruction, so tk writes the full guide inlined, under an `applyTo: '**'`
+// CTX.md in via an `@import` VS Code does NOT expand) the file IS the loaded
+// instruction, so ctx writes the full guide inlined, under an `applyTo: '**'`
 // always-on frontmatter.
-const VSCODE_GUIDANCE_FILENAME = "token-killer.instructions.md";
+const VSCODE_GUIDANCE_FILENAME = "contexa.instructions.md";
 
-// Self-contained guidance doc. The whole file is tk's — overwritten on re-init,
+// Self-contained guidance doc. The whole file is ctx's — overwritten on re-init,
 // deleted on uninstall — so it needs no inline markers.
 export function guidanceDoc(): string {
   return `${[
-    "# Token Killer — usage guide",
+    "# Contexa — usage guide",
     "",
-    "_`tk` runs the real tool and compresses its output (60–90% on common dev commands,",
-    "transparently). Routing more through tk = fewer tokens read._",
+    "_`ctx` runs the real tool and compresses its output (60–90% on common dev commands,",
+    "transparently). Routing more through ctx = fewer tokens read._",
     "",
-    "## Route output-heavy commands through tk",
+    "## Route output-heavy commands through ctx",
     "",
     "| Instead of | Run | Note |",
     "|---|---|---|",
-    "| `cat <file>` | `tk read --max-lines 200 <file>` | `--level aggressive` = symbol outline |",
-    "| `grep`/`rg <pattern>` | `tk rg <pattern> <path>` | auto-caps; `--level minimal` lossless, `--raw` verbatim |",
-    "| `ls -R` / `tree` | `tk tree <path>` | auto-caps; `-L <n>` shallower |",
-    "| any high-output cmd | `tk <cmd>` | build/test/log/`docker`/`kubectl`/`gh` … |",
+    "| `cat <file>` | `ctx read --max-lines 200 <file>` | `--level aggressive` = symbol outline |",
+    "| `grep`/`rg <pattern>` | `ctx rg <pattern> <path>` | auto-caps; `--level minimal` lossless, `--raw` verbatim |",
+    "| `ls -R` / `tree` | `ctx tree <path>` | auto-caps; `-L <n>` shallower |",
+    "| any high-output cmd | `ctx <cmd>` | build/test/log/`docker`/`kubectl`/`gh` … |",
     "",
-    "## Prefer native terse forms (tk passes these through unchanged)",
+    "## Prefer native terse forms (ctx passes these through unchanged)",
     "",
     "| Instead of | Use | Gives |",
     "|---|---|---|",
@@ -78,7 +78,7 @@ export function guidanceDoc(): string {
 }
 
 // The "lazy senior dev" coding doctrine, verbatim from ponytail (MIT). Cuts the
-// agent's own output tokens (over-built code) — the other half of tk's lever.
+// agent's own output tokens (over-built code) — the other half of ctx's lever.
 export function ponytailDoc(): string {
   return `${[
     "<!-- Lazy senior dev mode — verbatim from ponytail (github.com/DietrichGebert/ponytail), MIT. -->",
@@ -111,10 +111,10 @@ export function ponytailDoc(): string {
 }
 
 // Dedicated guidance file per host — written ONLY for hosts that actually read a
-// standalone file: claude-code pulls ~/.claude/TK.md in via `@import`; vscode's
+// standalone file: claude-code pulls ~/.claude/CTX.md in via `@import`; vscode's
 // `.instructions.md` IS the auto-loaded file. copilot-cli has NO standalone file
 // (I4): it has no import syntax, so the guidance is inlined into its loader
-// (copilot-instructions.md, see guidanceLoader) and a separate ~/.copilot/TK.md was
+// (copilot-instructions.md, see guidanceLoader) and a separate ~/.copilot/CTX.md was
 // dead weight the host never loaded. Other hosts have no stable home for it.
 export function guidanceFilePath(host: Host, home = homedir()): string | undefined {
   if (host === "claude-code") return join(home, ".claude", GUIDANCE_FILENAME);
@@ -134,7 +134,7 @@ export function guidanceFileContent(host: Host): string {
   return guidanceDoc();
 }
 
-// Same standalone-file rule as TK.md, for the PONYTAIL.md doctrine file:
+// Same standalone-file rule as CTX.md, for the PONYTAIL.md doctrine file:
 // claude-code reads it via `@import`, vscode auto-loads the `.instructions.md`,
 // copilot-cli has no import syntax so it is inlined into the loader instead.
 export function lazyFilePath(host: Host, home = homedir()): string | undefined {
@@ -149,9 +149,9 @@ export function lazyFileContent(host: Host): string {
 }
 
 // The auto-loaded instructions file that must reference the guidance so the agent
-// actually reads it, plus the body to inject under tk's guarded markers:
+// actually reads it, plus the body to inject under ctx's guarded markers:
 //   - claude-code reads ~/.claude/CLAUDE.md and supports `@file` imports → a one
-//     line `@TK.md` pulls the dedicated file in.
+//     line `@CTX.md` pulls the dedicated file in.
 //   - copilot-cli reads ~/.copilot/copilot-instructions.md but has NO import
 //     syntax → inline the full guidance so it is actually loaded.
 export function guidanceLoader(
@@ -165,7 +165,7 @@ export function guidanceLoader(
       : [`@${GUIDANCE_FILENAME}`];
     return {
       path: join(home, ".claude", "CLAUDE.md"),
-      body: ["## Token Killer", "", ...imports].join("\n"),
+      body: ["## Contexa", "", ...imports].join("\n"),
     };
   }
   if (host === "copilot-cli") {
@@ -200,7 +200,7 @@ export function writeGuidance(
 
   // PONYTAIL.md is opt-in (--ponytail). When NOT opted in, actively remove any file a
   // prior --ponytail install wrote so on-disk state matches the loader's @imports
-  // (which guidanceLoader is dropping this run). The whole file is tk-owned.
+  // (which guidanceLoader is dropping this run). The whole file is ctx-owned.
   const lazyPath = lazyFilePath(host, home);
   if (lazyPath) {
     if (opts.ponytail) {

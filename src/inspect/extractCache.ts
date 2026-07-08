@@ -1,7 +1,7 @@
-// Cross-invocation, per-file extraction cache for `tk inspect`.
+// Cross-invocation, per-file extraction cache for `ctx inspect`.
 //
 // The scan + habits analyzers parse every transcript / session file line-by-line —
-// the dominant cost of `tk inspect`. Within ONE run the FileCache dedups the *read*;
+// the dominant cost of `ctx inspect`. Within ONE run the FileCache dedups the *read*;
 // this cache dedups the *parse* ACROSS runs. After the first scan, an unchanged file
 // is served from a tiny pre-extracted record instead of being re-parsed — so repeated
 // `inspect` / `optimize` (which triggers inspect) / `--fail-on` runs only pay for
@@ -12,7 +12,7 @@
 //  • Keyed strictly on (path, mtimeMs, size, SCHEMA_VERSION). Any mismatch is a miss.
 //  • Best-effort: every disk op is wrapped — a read/parse/write failure falls back to
 //    a live parse, never throws. A corrupt entry is a miss, not an error.
-//  • Kill-switch: `TK_NO_SCAN_CACHE` (any non-empty, non-"0" value) disables it.
+//  • Kill-switch: `CTX_NO_SCAN_CACHE` (any non-empty, non-"0" value) disables it.
 //  • Bounded: entries older than MAX_AGE_MS are pruned opportunistically so the dir
 //    can't grow without limit as transcript files come and go.
 
@@ -52,7 +52,7 @@ export function makeNoopCache<T>(): ExtractCache<T> {
 }
 
 export function cacheDisabled(env: NodeJS.ProcessEnv = process.env): boolean {
-  const v = env.TK_NO_SCAN_CACHE;
+  const v = env.CTX_NO_SCAN_CACHE;
   return Boolean(v) && v !== "0";
 }
 
@@ -85,7 +85,7 @@ export function makeDiskExtractCache<T>(
     try {
       mkdirSync(dir, { recursive: true, mode: 0o700 });
       // The dir can hold command/tool labels (sanitized) — keep it owner-only, and
-      // retroactively tighten one an older tk version may have created world-listable.
+      // retroactively tighten one an older ctx version may have created world-listable.
       chmodSync(dir, 0o700);
       ready = true;
     } catch {

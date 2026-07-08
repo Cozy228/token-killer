@@ -179,7 +179,7 @@ describe("RTK gh behavior", () => {
   });
 
   // ADR 0001 decision 2: RTK's CAP_LIST (20) + "  … +N more" cap is REMOVED. Within
-  // budget tk reshapes the JSON into the compact "Pull Requests\n  [open] #N ..."
+  // budget ctx reshapes the JSON into the compact "Pull Requests\n  [open] #N ..."
   // view and lists EVERY PR with NO fake overflow marker.
   test("reshapes a PR list in full with no fake overflow marker", async () => {
     const prs = Array.from({ length: 20 }, (_, i) => ({
@@ -234,10 +234,10 @@ describe("RTK gh behavior", () => {
     const result = await filterRtkOutput(
       ["gh", "repo", "view"],
       JSON.stringify({
-        name: "token-killer",
+        name: "contexa",
         owner: { login: "Cozy228" },
         description: "",
-        url: "https://github.com/Cozy228/token-killer",
+        url: "https://github.com/Cozy228/contexa",
         stargazerCount: 7,
         forkCount: 2,
         isPrivate: false,
@@ -246,16 +246,16 @@ describe("RTK gh behavior", () => {
 
     expectRtkParity(result, {
       critical: [
-        "Cozy228/token-killer",
+        "Cozy228/contexa",
         "[public]",
         "7 stars | 2 forks",
-        "https://github.com/Cozy228/token-killer",
+        "https://github.com/Cozy228/contexa",
       ],
       exact: [
-        "Cozy228/token-killer",
+        "Cozy228/contexa",
         "  [public]",
         "  7 stars | 2 forks",
-        "  https://github.com/Cozy228/token-killer",
+        "  https://github.com/Cozy228/contexa",
       ].join("\n"),
     });
   });

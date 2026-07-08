@@ -1,4 +1,4 @@
-// `tk debug` markdown renderer (docs/debug-command-goal.md §render). PURE: takes a
+// `ctx debug` markdown renderer (docs/debug-command-goal.md §render). PURE: takes a
 // DebugBundle and returns one self-contained markdown document. Section order is by
 // diagnostic value (delivery health before raw usage). The volume gate lives here —
 // the full command list is one summary line per row (never truncated), anomaly rows
@@ -86,7 +86,7 @@ function renderExec(e: ExecProbe): string {
 function renderEnv(b: DebugBundle): string {
   const e = b.env;
   const rows: Array<[string, string | undefined]> = [
-    ["tk version", e.version],
+    ["ctx version", e.version],
     ["platform / arch", `${e.platform} / ${e.arch}`],
     ["node", e.nodeVersion],
     ["shell", e.shell],
@@ -95,7 +95,7 @@ function renderEnv(b: DebugBundle): string {
     ["locale", e.locale],
     ["LANG/LC_*", e.lang],
     ["windows codepage", e.windowsCodepage],
-    ["TOKEN_KILLER_HOME", e.tokenKillerHome],
+    ["CONTEXA_HOME", e.contexaHome],
     ["cli path", e.cliPath],
     ["node execPath", e.execPath],
   ];
@@ -111,8 +111,8 @@ function renderEnv(b: DebugBundle): string {
     body,
     "",
     "> `detected host` is inferred from env (e.g. `CLAUDECODE`/`TERM_PROGRAM`). Running",
-    "> `tk debug` from inside an agent shell can pin it to that agent regardless of the",
-    '> host you meant to test — read it as "the host tk would target here", not ground truth.',
+    "> `ctx debug` from inside an agent shell can pin it to that agent regardless of the",
+    '> host you meant to test — read it as "the host ctx would target here", not ground truth.',
   ].join("\n");
 }
 
@@ -123,25 +123,25 @@ function renderDelivery(b: DebugBundle): string {
 
   if (!d.anyWired) {
     lines.push(
-      "> ⚠️ **tk is NOT wired into any host.** No claude/copilot hook, no shim on PATH, no instruction injection were found. tk only runs when invoked explicitly as `tk <cmd>`. This is *not wired*, distinct from *installed but broken* below.",
+      "> ⚠️ **ctx is NOT wired into any host.** No claude/copilot hook, no shim on PATH, no instruction injection were found. ctx only runs when invoked explicitly as `ctx <cmd>`. This is *not wired*, distinct from *installed but broken* below.",
       "",
     );
   } else if (d.brokenHook) {
     lines.push(
-      `> 🔴 **tk is wired but INSTALLED-BUT-BROKEN.** The claude-code hook points at tk, but the binary it names failed to run (\`${d.claudeHook.exec.detail}\`). The hook crashes on every tool call (non-blocking), so NOTHING is compressed even though the wiring looks correct. Fix the binary path (re-run \`tk install\`) — this is *not* a healthy install.`,
+      `> 🔴 **ctx is wired but INSTALLED-BUT-BROKEN.** The claude-code hook points at ctx, but the binary it names failed to run (\`${d.claudeHook.exec.detail}\`). The hook crashes on every tool call (non-blocking), so NOTHING is compressed even though the wiring looks correct. Fix the binary path (re-run \`ctx install\`) — this is *not* a healthy install.`,
       "",
     );
   } else {
-    lines.push("> tk delivery is wired into at least one tier (details below).", "");
+    lines.push("> ctx delivery is wired into at least one tier (details below).", "");
   }
 
   lines.push(
     "### Hook tiers",
     "",
-    `- **claude-code hook**: ${d.claudeHook.present ? (d.claudeHook.pointsAtTk ? "present, points at tk ✅" : "present, but NOT tk ⚠️") : "absent"} — \`${scrubHome(d.claudeHook.path)}\``,
+    `- **claude-code hook**: ${d.claudeHook.present ? (d.claudeHook.pointsAtTk ? "present, points at ctx ✅" : "present, but NOT ctx ⚠️") : "absent"} — \`${scrubHome(d.claudeHook.path)}\``,
     `  - expected command: \`${scrubHome(d.claudeHook.command)}\``,
     `  - binary runs: ${renderExec(d.claudeHook.exec)}`,
-    `- **copilot-cli hook**: ${d.copilotHook.present ? (d.copilotHook.managed ? "present, managed by tk ✅" : "present, NOT managed by tk ⚠️") : "absent"} — \`${scrubHome(d.copilotHook.path)}\``,
+    `- **copilot-cli hook**: ${d.copilotHook.present ? (d.copilotHook.managed ? "present, managed by ctx ✅" : "present, NOT managed by ctx ⚠️") : "absent"} — \`${scrubHome(d.copilotHook.path)}\``,
     `- **instruction injection**: ${d.injection.present ? "present ✅" : "absent"} — \`${scrubHome(d.injection.path)}\``,
     "",
     "### Shim tier",
@@ -151,7 +151,7 @@ function renderDelivery(b: DebugBundle): string {
     `- on PATH: ${d.shim.onPath ? `yes (position ${d.shim.pathPosition}${d.shim.firstOnPath ? ", first" : ", NOT first ⚠️"})` : "no"}`,
     `- interception probe: ${d.shim.probe.pass ? "PASS ✅" : "FAIL ⚠️"}${d.shim.probe.resolved ? ` → \`${scrubHome(d.shim.probe.resolved)}\`` : ""}`,
     "",
-    "### Rewrite engine probe (`tk hook check`)",
+    "### Rewrite engine probe (`ctx hook check`)",
     "",
     "| command | decision | detail |",
     "| --- | --- | --- |",
@@ -303,8 +303,8 @@ function renderAggregates(b: DebugBundle): string {
     "## 5. Usage aggregation",
     "",
     "_Scope: live aggregation over ALL project fingerprints (de-fragmented). To",
-    "reconcile with the CLI, compare `tk gain --user` (the cross-project view), not the",
-    "default project-scoped `tk gain`; labels here come from live `summarize`, so they",
+    "reconcile with the CLI, compare `ctx gain --user` (the cross-project view), not the",
+    "default project-scoped `ctx gain`; labels here come from live `summarize`, so they",
     "may differ from a stale `gain` rollup cache._",
     "",
     `- commands: **${s.commands}** · raw **${s.raw_tokens}** → out **${s.output_tokens}** tok · saved **${s.saved_tokens}** (${s.savings_pct}%)`,
@@ -351,11 +351,11 @@ function renderArtifacts(b: DebugBundle): string {
 
 export function renderDebug(b: DebugBundle): string {
   const header = [
-    "# tk debug bundle",
+    "# ctx debug bundle",
     "",
-    `Generated ${b.generatedAt} · tk ${b.env.version}${b.redacted ? " · **REDACTED** (length/label only)" : ""}${b.full ? " · full payloads" : ""}`,
+    `Generated ${b.generatedAt} · ctx ${b.env.version}${b.redacted ? " · **REDACTED** (length/label only)" : ""}${b.full ? " · full payloads" : ""}`,
     "",
-    "> Self-contained diagnostic of tk on this machine. Acceptance: a reviewer with",
+    "> Self-contained diagnostic of ctx on this machine. Acceptance: a reviewer with",
     "> ONLY this bundle + the source tree at this version should be able to locate",
     "> most problems. No network was touched producing it.",
     "",

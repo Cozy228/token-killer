@@ -68,7 +68,7 @@ export function rawText(raw: RawResult): string {
 // ls/tree path is not yet ladder-converted, so it still needs the net.)
 
 // Detects content-omission markers in a handler's output. ADR 0001 retires this
-// prose-sniffing for `tk`'s own handlers (they now *declare* omission, see
+// prose-sniffing for `ctx`'s own handlers (they now *declare* omission, see
 // makeFilteredResult); it is kept as the defense against UNDECLARED omission — a
 // foreign passthrough or a not-yet-converted handler that still ships a `+N more`
 // — where revert-to-raw is the safe net. The earlier regex anchored a fixed noun
@@ -220,9 +220,9 @@ export async function makeFilteredResult(
     omissionField = { kind: omission!.kind, rawPointer: undefined };
   } else if (declared && !replacementNeedsRecovery) {
     // Decision 6: the inline recovery pointer names the persisted snapshot FILE
-    // path — never a `tk --raw` re-run (which can drift / re-fire a mutation).
+    // path — never a `ctx --raw` re-run (which can drift / re-fire a mutation).
     if (rawOutputPath) {
-      // Show an ABSOLUTE path: the agent's cwd is the project, not ~/.token-killer, so
+      // Show an ABSOLUTE path: the agent's cwd is the project, not ~/.contexa, so
       // the home-relative stored form would `cat`-fail (H20). The result FIELD keeps
       // the relative form for home-relocatability; only the printed pointer resolves.
       limited = `${limited.replace(/\n+$/, "")}\n[full output: ${resolveStoredPath(rawOutputPath)}]\n`;

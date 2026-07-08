@@ -20,15 +20,15 @@ let home: string;
 let cwd: string;
 
 beforeEach(async () => {
-  home = await mkdtemp(path.join(tmpdir(), "tk-dedup-pipe-home-"));
-  cwd = await mkdtemp(path.join(tmpdir(), "tk-dedup-pipe-cwd-"));
-  process.env.TOKEN_KILLER_HOME = home;
-  process.env.TK_SESSION_DEDUP = "1";
+  home = await mkdtemp(path.join(tmpdir(), "ctx-dedup-pipe-home-"));
+  cwd = await mkdtemp(path.join(tmpdir(), "ctx-dedup-pipe-cwd-"));
+  process.env.CONTEXA_HOME = home;
+  process.env.CTX_SESSION_DEDUP = "1";
 });
 
 afterEach(async () => {
-  delete process.env.TOKEN_KILLER_HOME;
-  delete process.env.TK_SESSION_DEDUP;
+  delete process.env.CONTEXA_HOME;
+  delete process.env.CTX_SESSION_DEDUP;
   vi.restoreAllMocks();
   await rm(home, { recursive: true, force: true });
   await rm(cwd, { recursive: true, force: true });
@@ -98,7 +98,7 @@ describe("runPipeline + session dedup — wiring & separated accounting", () => 
 
     // First emits the full compressed output; the repeat emits the recoverable marker.
     expect(first.filtered.output).toBe(OUT);
-    expect(second.filtered.output).toContain("[tk] unchanged since");
+    expect(second.filtered.output).toContain("[ctx] unchanged since");
     expect(second.filtered.output).toMatch(/full: \S+/);
 
     // Ledger ① recorded the first run only — the dedup hit is NOT a second ① row.
@@ -113,7 +113,7 @@ describe("runPipeline + session dedup — wiring & separated accounting", () => 
     expect(events[0]!.handler).toBe("git-status");
   });
 
-  test("`tk gain` reports dedup on a separate line, never summed into ① commands", async () => {
+  test("`ctx gain` reports dedup on a separate line, never summed into ① commands", async () => {
     const handler = stubHandler();
     await runPipeline(handler, command(), options()).then((r) => r.commit());
     await runPipeline(handler, command(), options()).then((r) => r.commit());
@@ -165,7 +165,7 @@ describe("runPipeline — accounting deferred to commit() (ordering invariant)",
   test("a commit() dedup-upsert failure is absorbed — never throws, output stays intact", async () => {
     const handler = stubHandler();
     // The MISS decision captures `dedupStoreFile(cwd)` (= projectDataDir/dedup.json)
-    // NOW, while TOKEN_KILLER_HOME is still valid — Codex's finding was that switching
+    // NOW, while CONTEXA_HOME is still valid — Codex's finding was that switching
     // the home AFTER this point leaves the captured path writable, so the upsert
     // SUCCEEDS and only recordHistory observes the break. To genuinely fail the dedup
     // write we sabotage the captured path itself, after the decision.

@@ -4,29 +4,29 @@ status: accepted
 
 # Pipe-tail compression investigated and declined
 
-A proposal (`/tmp/tk-handoff-pipeline-compression.md`) argued that since piped
-commands account for ~67% of agent Bash output bytes and tk leaves the pipe
-**tail** raw, tk should grow a "filter-mode" path that rewrites `cmd | grep X`
-into `cmd | tk grep X` and compresses the tail. We measured 85 real Claude Code
+A proposal (`/tmp/ctx-handoff-pipeline-compression.md`) argued that since piped
+commands account for ~67% of agent Bash output bytes and ctx leaves the pipe
+**tail** raw, ctx should grow a "filter-mode" path that rewrites `cmd | grep X`
+into `cmd | ctx grep X` and compresses the tail. We measured 85 real Claude Code
 sessions (2026-06-05…06-08) before building anything. **The evidence says the
 safe, lossless payback is under 1% of total tokens, so we are not building it.**
 
 ## Context
 
 Delivery in these sessions is the **hook** (`~/.claude/settings.json` PreToolUse →
-`tk hook claude` → `src/hook/rewrite.ts`), **not the shim** (no shim dir on PATH,
-`TK_SHIM_DIR` empty). `rewriteCommand` **deliberately never rewrites the
+`ctx hook claude` → `src/hook/rewrite.ts`), **not the shim** (no shim dir on PATH,
+`CTX_SHIM_DIR` empty). `rewriteCommand` **deliberately never rewrites the
 right-hand side of a `|`** (`rewrite.ts`: `if (seg.precededBy === "|") return
 seg`) — the original guardrail against wrapping an unsafe tail like `| xargs rm`.
 So every pipe tail (`head`, `tail`, `grep`, `sort`, …) reaches the agent raw **by
-design**, while the pipe **head** (`tk git diff | head`) is rewritten and
+design**, while the pipe **head** (`ctx git diff | head`) is rewritten and
 compressed.
 
 The handoff's two technical premises were both wrong against the code:
-- "tk needs a new filter-mode execution path to feed a tail stdin" — false.
+- "ctx needs a new filter-mode execution path to feed a tail stdin" — false.
   `executor.ts` already pipes `process.stdin` into every spawned child, and
   `readLike`/`diff` already read stdin. The execution layer supports it today;
-  only the rewrite does not emit `tk <tail>`.
+  only the rewrite does not emit `ctx <tail>`.
 - "pipes run raw" — half true. The tail is raw; the **head is already
   compressed**, which is the load-bearing fact for the follow-up below.
 
@@ -47,7 +47,7 @@ Why `head`/`tail` — the 46% — is a dead end:
   bytes are 2.5%. The content is source / diffs / docs / logs — incompressible
   prose the agent **deliberately bounded** with `-N`. Its upstream is dominated by
   `cd …; for f in …; do echo "=== $f ==="; grep …; done | head` — composite shell
-  scripts, not single tool invocations tk can route.
+  scripts, not single tool invocations ctx can route.
 - **Lossy here is forbidden.** Dropping lines from `cat goal.md | head -80`
   deletes content the agent explicitly asked to see — the recovery-less
   fake-complete `PRINCIPLES.md` forbids.
@@ -59,8 +59,8 @@ the RHS of `|`. The compressible mass the proposal targeted is mostly
 incompressible prose the agent already bounded; the only handler-backed slice
 (`grep`) is ~0.6% and is a small wiring fix, not a new architecture.
 
-This also corrects a measurement myth: tk's low compression footprint in these
-sessions (~8–12% of results carry a compression signature) is **not** tk failing
+This also corrects a measurement myth: ctx's low compression footprint in these
+sessions (~8–12% of results carry a compression signature) is **not** ctx failing
 to fire. It is the ceiling of compressible content — most agent output is prose,
 and the largest savings come from **guidance** steering the agent to native terse
 forms (`git --stat`/`--short`/`--oneline`, the `Read` tool over `cat | head`), not
@@ -70,7 +70,7 @@ from the compressor.
 
 1. **Left-segment lossy compression is a live correctness bug (separate track).**
    Because the hook rewrites the pipe head, `git diff | grep -c '^+'` greps the
-   **compacted** diff and miscounts; any `cmd | <filter>` where `cmd` has a tk
+   **compacted** diff and miscounts; any `cmd | <filter>` where `cmd` has a ctx
    handler feeds the filter lossy data. The fix is to **not compress a segment
    whose stdout flows into a downstream pipe stage** (only the final stage's
    stdout reaches the agent). Tracked independently of this decision.

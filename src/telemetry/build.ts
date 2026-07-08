@@ -25,7 +25,7 @@ const DAY_MS = 86_400_000;
 const LOW_SAVINGS_PCT = 20;
 
 // Optional inspect-derived aggregates (ADR 0004 §5): present only on an
-// `tk inspect`-triggered build (they require a fresh scan), absent on `tk gain`.
+// `ctx inspect`-triggered build (they require a fresh scan), absent on `ctx gain`.
 export type InspectAggregates = {
   tool_category_counts: Record<string, number>;
   recommendation_type_counts: Record<string, number>;
@@ -36,7 +36,7 @@ export type InspectAggregates = {
   // chars only (no token field on Opportunity), so both legs are chars for symmetry.
   io_chars_by_category: Record<string, { input: number; output: number }>;
   // Optimize before/after token totals grouped by exposure class (always-on / path-scoped
-  // / on-invocation) — the MEASURED context-footprint reduction `tk optimize` achieved
+  // / on-invocation) — the MEASURED context-footprint reduction `ctx optimize` achieved
   // (ledger ②, user bucket). Token counts only, keyed by exposure category — never a
   // surface name, path, or hash. Empty {} when no optimize actions have been applied.
   optimize_tokens_by_exposure: Record<string, { before: number; after: number }>;
@@ -92,7 +92,7 @@ export type TelemetryPayload = {
   savings_pct: number;
   top_handlers: string[]; // names only, ≤5
   top_commands: string[]; // redacted stems (program + subcommand), no args/paths, ≤5
-  // quality (tk's differentiator over RTK)
+  // quality (ctx's differentiator over RTK)
   quality_status_counts: Record<string, number>;
   fallback_count: number;
   parse_failure_24h: number;

@@ -1,4 +1,4 @@
-// `tk support` — assemble the shareable diagnostic. We REUSE `tk debug`'s collector
+// `ctx support` — assemble the shareable diagnostic. We REUSE `ctx debug`'s collector
 // and renderer rather than re-deriving them: collectDebugBundle already gathers
 // version/platform/delivery health/command history/recent failures/debug.log/host
 // configs, and renderDebug emits one home-scrubbed markdown document. The one gap is
@@ -9,7 +9,7 @@ import { mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { homedir } from "node:os";
 import { join } from "node:path";
 
-import { tokenKillerHome } from "../core/dataDir.js";
+import { contexaHome } from "../core/dataDir.js";
 import { collectDebugBundle } from "../debug/collect.js";
 import { renderDebug } from "../debug/render.js";
 import { errorLogPath } from "../hook/debug.js";
@@ -20,7 +20,7 @@ const ERRORS_TAIL_LINES = 50;
 
 // The support-boundary home scrubber. renderDebug scrubs the paths IT formats
 // (env/config/artifact paths) but NOT command text or anomaly snapshot payloads —
-// fine for `tk debug` (a local file), but `tk support` SENDS the bundle, so the
+// fine for `ctx debug` (a local file), but `ctx support` SENDS the bundle, so the
 // whole document and summary are scrubbed here before anything leaves the machine.
 // Kept local (mirrors render.ts's private one) rather than widening render.ts's
 // export surface — Plan 009 scopes render.ts as untouched. Idempotent: re-scrubbing
@@ -105,7 +105,7 @@ export async function buildSupportReport(opts: {
   // travels in the mailto body / Teams pointer (both leave the machine).
   const summary = scrubHome(
     [
-      `tk ${e.version} · ${e.platform}/${e.arch} · node ${e.nodeVersion} · host ${e.detectedHost}`,
+      `ctx ${e.version} · ${e.platform}/${e.arch} · node ${e.nodeVersion} · host ${e.detectedHost}`,
       `delivery: ${deliveryState}`,
       `recent delivery failures: ${d.recentFailures.length}`,
       `last error: ${opts.redact ? "(redacted)" : lastError}`,
@@ -115,10 +115,10 @@ export async function buildSupportReport(opts: {
   return { markdown, summary };
 }
 
-// Write the report to ~/.token-killer/reports/support-<ts>.md (reuse the reports/
+// Write the report to ~/.contexa/reports/support-<ts>.md (reuse the reports/
 // dir + ISO-flattened stamp convention from src/report/open.ts). Returns the path.
 export function writeSupportBundle(markdown: string, nowMs: number): string {
-  const dir = join(tokenKillerHome(), "reports");
+  const dir = join(contexaHome(), "reports");
   // Owner-only: the bundle holds commands, output, logs, and host config, so it must
   // not be world-readable on a shared host (matches rawStore.ts's 0700/0600).
   mkdirSync(dir, { recursive: true, mode: 0o700 });

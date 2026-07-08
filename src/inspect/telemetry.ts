@@ -1,5 +1,5 @@
 // Inspect-derived telemetry aggregates (ADR 0004 §5). These are the OPTIONAL extras
-// on a telemetry payload — present only on an `tk inspect`-triggered build, since
+// on a telemetry payload — present only on an `ctx inspect`-triggered build, since
 // they need a fresh scan. They contain ONLY anonymized aggregate counts: tool
 // categories, recommendation types, and source coverage — never raw evidence,
 // paths, sessions, repo names, or command examples.

@@ -14,7 +14,7 @@ let home: string;
 let cwd: string;
 
 beforeEach(() => {
-  root = mkdtempSync(join(tmpdir(), "tk-footprint-"));
+  root = mkdtempSync(join(tmpdir(), "ctx-footprint-"));
   home = join(root, "home");
   cwd = join(root, "repo");
   mkdirSync(home, { recursive: true });

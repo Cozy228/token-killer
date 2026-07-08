@@ -6,7 +6,7 @@ import { makeFilteredResult, rawText } from "../base.js";
 // RTK: main.rs Npx dispatch — `npx <tool> …` re-dispatches to the handler that owns
 // <tool> (tsc → TypeScript filter, eslint → lint filter, prisma/next/prettier/
 // playwright → their filters), falling back to a raw npm exec for unknown tools.
-// tk generalizes this: strip the `npx` prefix, re-route the inner command through
+// ctx generalizes this: strip the `npx` prefix, re-route the inner command through
 // the normal handler table, and delegate filtering to whichever handler matches.
 function innerCommand(command: ParsedCommand): ParsedCommand {
   const inner = command.args;

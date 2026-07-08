@@ -62,22 +62,22 @@ executes). Two findings update that premise:
 
 4. **New capability to capture — governance + recovery hints now reach the primary host.**
    Previously assumed Copilot-CLI-only. Now available on VS Code, non-invasively and
-   fail-open, **without depending on the model choosing tk**:
+   fail-open, **without depending on the model choosing ctx**:
    - **PreToolUse governance** — `permissionDecision: deny|ask` + reason on expensive
      direct reads/searches (node_modules, lockfiles, huge files, full-repo grep). Prevents
      waste it cannot compress.
    - **PostToolUse `additionalContext`** — recovery hints injected same-turn (VS Code
      ≥1.118, [vscode#311138](https://github.com/microsoft/vscode/issues/311138)).
-   These are the actionable expansion of `tk hook copilot` to VS Code.
+   These are the actionable expansion of `ctx hook copilot` to VS Code.
 
 5. **Transparent terminal rewrite via PreToolUse `updatedInput` is a CANDIDATE tier —
    runtime honor-test now PASSED (2026-06-06).** The open question "does VS Code actually
    honor `updatedInput`" is resolved **YES**. Isolated probe on cozyultra (VS Code Copilot
-   Chat Agent mode, GitHub-format `.github/hooks/tk-probe.json`, absolute node path)
+   Chat Agent mode, GitHub-format `.github/hooks/ctx-probe.json`, absolute node path)
    rewrote every `run_in_terminal` command (`git status`, `cd … && git status`, `dir`) to
-   `echo TK_UPDATEDINPUT_HONORED` via `hookSpecificOutput.updatedInput`. Runtime proof: the
+   `echo CTX_UPDATEDINPUT_HONORED` via `hookSpecificOutput.updatedInput`. Runtime proof: the
    Copilot agent's own transcript reasoning (`…workspaceStorage\…\GitHub.copilot-chat\
-   transcripts\fa8c6303-…jsonl`, entry 8) reads *"it's showing TK_UPDATEDINPUT_HONORED,
+   transcripts\fa8c6303-…jsonl`, entry 8) reads *"it's showing CTX_UPDATEDINPUT_HONORED,
    which could point to a bug"* — i.e. the executed command was the rewritten one, not the
    agent's requested `git status`. The probe log confirms the emitted union JSON. So
    transparent terminal-command rewrite via hook IS viable on VS Code. It still does **not**
@@ -86,17 +86,17 @@ executes). Two findings update that premise:
 
    Two corollaries proven in the same run:
    - **Config format `{type:"command", command:"…"}` IS accepted by VS Code Copilot Chat**
-     (the real `~/.copilot/hooks/tk-rewrite.json` fired — its error proves execution). The
+     (the real `~/.copilot/hooks/ctx-rewrite.json` fired — its error proves execution). The
      spike §1.5 worry that the validator requires `bash`/`powershell` keys does not apply to
      VS Code; it is a Copilot-CLI concern. VS Code also loads user-level `~/.copilot/hooks/`
      in addition to workspace `.github/hooks/` (both fired; user saw 3 hooks in `/hooks`).
-   - **Bare `tk` in the hook command fails** with `CommandNotFoundException` — `tk` is not on
+   - **Bare `ctx` in the hook command fails** with `CommandNotFoundException` — `ctx` is not on
      the hook subprocess's PowerShell PATH. This is the live manifestation of the install bug
      in Consequences below: the probe worked **only** because it used an absolute node path.
-     `tk init` must write an absolute executable path, never bare `tk`.
+     `ctx init` must write an absolute executable path, never bare `ctx`.
 
-6. **Prerequisite bug: tk's hook stdout protocol is non-conformant.** `src/hook/copilot.ts`
-   `toProtocol()` emits tk's invented shape `{ decision, rewritten_command, reason,
+6. **Prerequisite bug: ctx's hook stdout protocol is non-conformant.** `src/hook/copilot.ts`
+   `toProtocol()` emits ctx's invented shape `{ decision, rewritten_command, reason,
    additional_context }`. No real host reads this: VS Code expects
    `hookSpecificOutput.{permissionDecision, updatedInput, additionalContext}`; Copilot CLI
    expects `permissionDecision` + `modifiedArgs` (applied only when permissionDecision is
@@ -121,13 +121,13 @@ executes). Two findings update that premise:
   snake_case `tool_name`/`tool_input` → `hookSpecificOutput` with `permissionDecision` +
   `updatedInput`; Copilot CLI camelCase `toolName`/`toolArgs` → `permissionDecision` +
   `modifiedArgs`). Without it, point 6 means the hook is inert on real hosts.
-- **Governance + error-hint events become VS Code-eligible** in `tk init` host wiring
+- **Governance + error-hint events become VS Code-eligible** in `ctx init` host wiring
   (write `.claude/settings.local.json` or `.github/hooks`, absolute node path, streamed
   stdin, `powershell` value starting with `&`, `bash` plain — the config bugs the spike
   already diagnosed).
 - **Spike backlog:** ~~one clean `updatedInput` honor-test on VS Code~~ DONE 2026-06-06 —
-  honored (point 5). Remaining: ship the host-protocol adapter + absolute-path `tk init` so
-  the real hook stops emitting the tk-invented shape and stops calling bare `tk`.
+  honored (point 5). Remaining: ship the host-protocol adapter + absolute-path `ctx init` so
+  the real hook stops emitting the ctx-invented shape and stops calling bare `ctx`.
 - **Preview-risk mitigation:** a CI probe that diffs `hookCommandTypes.ts` and alerts if
   `modifiedResult` ever appears (would reopen direct-tool output compression on VS Code).
 - DESIGN §3.3 / §13.1 / §66 reason text updates; ADR 0002 premise annotated as amended.

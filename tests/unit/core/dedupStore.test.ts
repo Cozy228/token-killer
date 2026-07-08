@@ -18,7 +18,7 @@ import type { ParsedCommand } from "../../../src/types.js";
 let dir: string;
 
 beforeEach(async () => {
-  dir = await mkdtemp(path.join(tmpdir(), "tk-dedupstore-"));
+  dir = await mkdtemp(path.join(tmpdir(), "ctx-dedupstore-"));
 });
 
 afterEach(async () => {

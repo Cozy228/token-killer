@@ -231,7 +231,7 @@ export const psqlHandler = defineHandler({
 
   format: (raw: RawResult, _command, options: TkOptions) => {
     // RTK: cloud/psql_cmd.rs::run uses RunOptions::stdout_only() — only stdout is
-    // filtered. tk's rawText merges stdout+stderr; on the success path stderr is
+    // filtered. ctx's rawText merges stdout+stderr; on the success path stderr is
     // empty, matching RTK. The filter operates on the merged raw text.
     const { text, omission } = filterPsqlOutput(rawText(raw));
     return { output: text, omission };

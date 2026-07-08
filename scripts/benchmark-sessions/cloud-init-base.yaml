@@ -1,10 +1,10 @@
 #cloud-config
-# Base cloud-init for tk (token-killer) benchmark-session VMs — Ubuntu 24.04.
+# Base cloud-init for ctx (contexa) benchmark-session VMs — Ubuntu 24.04.
 #
 # Default startup config used by scripts/benchmark-sessions/lib/runner.py when no
 # explicit cloud-init is provided. Installs Node.js, pnpm, git, and the Claude
-# Code CLI so both "tk ON" and "tk OFF" VMs can run benchmark sessions. The ON
-# VMs additionally run setup-tk.sh to build/enable tk and its rewrite hook.
+# Code CLI so both "ctx ON" and "ctx OFF" VMs can run benchmark sessions. The ON
+# VMs additionally run setup-ctx.sh to build/enable ctx and its rewrite hook.
 
 package_update: true
 package_upgrade: false
@@ -35,4 +35,4 @@ runcmd:
   - touch /home/ubuntu/.cloud-init-complete
   - chown ubuntu:ubuntu /home/ubuntu/.cloud-init-complete
 
-final_message: "tk benchmark-session VM ready in $UPTIME seconds"
+final_message: "ctx benchmark-session VM ready in $UPTIME seconds"

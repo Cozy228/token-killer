@@ -1,7 +1,7 @@
 // Zero-dependency JSONC reader. VS Code writes settings.json as JSONC: `//` and
 // `/* */` comments and trailing commas are legal there, so a strict `JSON.parse`
 // throws on a perfectly valid user file. Every settings.json reader in this repo
-// must go through `parseJsonc` so `tk install` / `tk optimize` / the TTY gate can
+// must go through `parseJsonc` so `ctx install` / `ctx optimize` / the TTY gate can
 // patch a commented settings.json instead of bailing with "could not be parsed".
 //
 // The scan is string-aware (commas/slashes inside string values are never touched)

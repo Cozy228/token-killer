@@ -43,15 +43,15 @@ function writeProject(fp: string, lines: string[]): string {
 }
 
 beforeEach(() => {
-  saved.TOKEN_KILLER_HOME = process.env.TOKEN_KILLER_HOME;
+  saved.CONTEXA_HOME = process.env.CONTEXA_HOME;
   saved.HOME = process.env.HOME;
   saved.USERPROFILE = process.env.USERPROFILE;
   saved.APPDATA = process.env.APPDATA;
   saved.CLAUDECODE = process.env.CLAUDECODE;
   saved.CLAUDE_CODE_ENTRYPOINT = process.env.CLAUDE_CODE_ENTRYPOINT;
-  tkHome = mkdtempSync(path.join(tmpdir(), "tk-debug-home-"));
-  fakeHome = mkdtempSync(path.join(tmpdir(), "tk-debug-fakehome-"));
-  process.env.TOKEN_KILLER_HOME = tkHome;
+  tkHome = mkdtempSync(path.join(tmpdir(), "ctx-debug-home-"));
+  fakeHome = mkdtempSync(path.join(tmpdir(), "ctx-debug-fakehome-"));
+  process.env.CONTEXA_HOME = tkHome;
   process.env.HOME = fakeHome;
   // Windows: homedir() reads USERPROFILE and vscodeUserDir reads APPDATA — sandbox
   // both so wired-detection never sees the runner's real install.
@@ -146,15 +146,15 @@ describe("collectDebugBundle — delivery & redaction", () => {
 
 describe("tokenizeCommand", () => {
   test("splits on whitespace and honors quoted paths with spaces", () => {
-    expect(tokenizeCommand('"/a b/node" "/c d/tk" hook claude')).toEqual([
+    expect(tokenizeCommand('"/a b/node" "/c d/ctx" hook claude')).toEqual([
       "/a b/node",
-      "/c d/tk",
+      "/c d/ctx",
       "hook",
       "claude",
     ]);
-    expect(tokenizeCommand("node /abs/bin/tk hook claude")).toEqual([
+    expect(tokenizeCommand("node /abs/bin/ctx hook claude")).toEqual([
       "node",
-      "/abs/bin/tk",
+      "/abs/bin/ctx",
       "hook",
       "claude",
     ]);
@@ -169,8 +169,8 @@ describe("probeHookBinary — does the wired binary actually run", () => {
   });
 
   test("dangling binary path → ran but BROKEN (MODULE_NOT_FOUND)", () => {
-    // `node /no/such/tk --version` after stripping the trailing `hook claude`.
-    const p = probeHookBinary(`${process.execPath} /no/such/dir/tk hook claude`);
+    // `node /no/such/ctx --version` after stripping the trailing `hook claude`.
+    const p = probeHookBinary(`${process.execPath} /no/such/dir/ctx hook claude`);
     expect(p.ran).toBe(true);
     expect(p.ok).toBe(false);
     expect(p.detail.toLowerCase()).toMatch(/cannot find module|no such file/);

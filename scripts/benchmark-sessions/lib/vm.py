@@ -1,12 +1,12 @@
 """
-Cloud VM pool management for tk (token-killer) benchmark sessions.
+Cloud VM pool management for ctx (contexa) benchmark sessions.
 
-Ported alongside rtk/scripts/benchmark-sessions/lib/runner.py and adapted to tk
-conventions (VM naming uses a "tk-bench" prefix; ON/OFF groups). Uses
-`gcloud compute` to provision a pool of ephemeral VMs, half running tk ON and
-half running tk OFF, then tears them down.
+Ported alongside rtk/scripts/benchmark-sessions/lib/runner.py and adapted to ctx
+conventions (VM naming uses a "ctx-bench" prefix; ON/OFF groups). Uses
+`gcloud compute` to provision a pool of ephemeral VMs, half running ctx ON and
+half running ctx OFF, then tears them down.
 
-VM naming: ``{PREFIX}-{group}-{index}`` (e.g. ``tk-bench-on-0``). The ``-on-`` /
+VM naming: ``{PREFIX}-{group}-{index}`` (e.g. ``ctx-bench-on-0``). The ``-on-`` /
 ``-off-`` infixes are what runner.py uses to split the pool into groups.
 """
 
@@ -16,12 +16,12 @@ import asyncio
 import os
 from pathlib import Path
 
-VM_PREFIX = "tk-bench"
-ZONE = os.environ.get("TK_BENCH_ZONE", "us-central1-a")
-MACHINE_TYPE = os.environ.get("TK_BENCH_MACHINE_TYPE", "e2-standard-4")
-IMAGE_FAMILY = os.environ.get("TK_BENCH_IMAGE_FAMILY", "ubuntu-2404-lts-amd64")
-IMAGE_PROJECT = os.environ.get("TK_BENCH_IMAGE_PROJECT", "ubuntu-os-cloud")
-SSH_USER = os.environ.get("TK_BENCH_SSH_USER", "ubuntu")
+VM_PREFIX = "ctx-bench"
+ZONE = os.environ.get("CTX_BENCH_ZONE", "us-central1-a")
+MACHINE_TYPE = os.environ.get("CTX_BENCH_MACHINE_TYPE", "e2-standard-4")
+IMAGE_FAMILY = os.environ.get("CTX_BENCH_IMAGE_FAMILY", "ubuntu-2404-lts-amd64")
+IMAGE_PROJECT = os.environ.get("CTX_BENCH_IMAGE_PROJECT", "ubuntu-os-cloud")
+SSH_USER = os.environ.get("CTX_BENCH_SSH_USER", "ubuntu")
 
 
 async def _run(*args: str) -> tuple[int, str, str]:

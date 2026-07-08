@@ -46,7 +46,7 @@ describe("RTK prettier behavior", () => {
   });
 
   // ADR 0001 decision 2: RTK's MAX_PRETTIER_FILES (10) cap + "... +N more files"
-  // marker is REMOVED. Within budget tk lists EVERY file under the summary with NO
+  // marker is REMOVED. Within budget ctx lists EVERY file under the summary with NO
   // "+N more" marker — here 10 files, all listed, chatter stripped.
   test("lists every file with no fake overflow marker", async () => {
     const lines = ["Checking formatting..."];

@@ -1,7 +1,7 @@
 // ADR 0009 — the session dedup stage, slotted into runPipeline after compression
 // and before emit/record. Mirrors ztk's proxy_session.zig::applySession spine
 // (run + compress → hash the compressed output → dedup only on a fresh exact
-// match), with tk's four divergences: a rawStore recovery pointer, a per-project
+// match), with ctx's four divergences: a rawStore recovery pointer, a per-project
 // store, separated accounting, and exit-code identity. Default-on; a no-op unless
 // enabled AND the command is eligible. Every step is fail-open: any uncertainty
 // emits the full output.
@@ -39,11 +39,11 @@ import { calculateSavings, estimateTokens } from "./savings.js";
 const MIN_DEDUP_BYTES = 256;
 
 // ADR 0009: session dedup ships **default-ON** (it is lossless + recoverable). It is
-// disabled only by an explicit opt-out — `TK_SESSION_DEDUP=0` (env), `sessionDedup:
+// disabled only by an explicit opt-out — `CTX_SESSION_DEDUP=0` (env), `sessionDedup:
 // false` (config), or `--raw`. A non-empty env value is the override; an empty/unset
 // value falls through to the config, whose absence is the default (on).
 export function sessionDedupEnabled(env: NodeJS.ProcessEnv = process.env): boolean {
-  const v = env.TK_SESSION_DEDUP;
+  const v = env.CTX_SESSION_DEDUP;
   if (v !== undefined && v.trim() !== "") {
     const s = v.trim().toLowerCase();
     return !(s === "0" || s === "false" || s === "off" || s === "no");
@@ -71,7 +71,7 @@ function shortCmd(normCmd: string): string {
 
 // The one-line marker the model sees on a hit: names the command + when it last
 // differed, says whether it was this session or just this project, and carries the
-// rawStore recovery pointer. Unmistakably a tk marker; ends with a newline.
+// rawStore recovery pointer. Unmistakably a ctx marker; ends with a newline.
 export function buildMarker(opts: {
   normCmd: string;
   lastDifferedAt: number;
@@ -79,9 +79,9 @@ export function buildMarker(opts: {
   sameSession: boolean;
 }): string {
   const where = opts.sameSession ? "in this session" : "here";
-  // Show an ABSOLUTE pointer: the agent's cwd is the project, not ~/.token-killer, so a
+  // Show an ABSOLUTE pointer: the agent's cwd is the project, not ~/.contexa, so a
   // home-relative path would `cat`-fail (H20). The stored entry keeps the relative form.
-  return `[tk] unchanged since ${formatClock(opts.lastDifferedAt)} — same as the earlier \`${shortCmd(
+  return `[ctx] unchanged since ${formatClock(opts.lastDifferedAt)} — same as the earlier \`${shortCmd(
     opts.normCmd,
   )}\` ${where}; full: ${resolveStoredPath(opts.rawPointer)}\n`;
 }

@@ -1,6 +1,6 @@
 // Single-file HTML report renderer (no external deps, no network, renders from a
-// file:// URL). Serves both `tk gain` and `tk inspect`: data is injected as a JSON
-// blob and a small vanilla renderer draws it. These reports are also tk's product
+// file:// URL). Serves both `ctx gain` and `ctx inspect`: data is injected as a JSON
+// blob and a small vanilla renderer draws it. These reports are also ctx's product
 // showcase, so they double as a face for the tool — not just a log dump. The
 // audience is a TECHNICAL end user: every field gets a plain-language label and a
 // one-line explanation — precise and concrete, not dumbed down. The honesty model
@@ -83,7 +83,7 @@ body { margin: 0; background: var(--bg); color: var(--ink); font-family: var(--s
 .pagehead { margin-bottom: 40px; }
 .pagehead > .lbl { color: var(--indigo); }
 .pagehead h1 { font-family: var(--serif); font-size: 2.4rem; font-weight: 600; letter-spacing: -0.02em; margin: 0.4rem 0 0; }
-.pagehead h1 .tk { color: var(--slate300); font-weight: 500; }
+.pagehead h1 .ctx { color: var(--slate300); font-weight: 500; }
 .pagehead .sub { color: var(--slate500); font-size: 0.95rem; margin-top: 0.55rem; }
 .meta { color: var(--faint); font-size: 0.8rem; margin-top: 16px; padding-top: 14px; border-top: 1px solid var(--border); }
 .meta b { color: var(--slate600); font-weight: 500; }
@@ -239,7 +239,7 @@ th[title] { text-decoration: underline dotted; text-decoration-color: var(--slat
 
 .foot { margin-top: 60px; color: var(--faint); font-size: 0.78rem; }
 
-/* Narrative eyebrow (rtk "01 — the problem" parity, tk palette) */
+/* Narrative eyebrow (rtk "01 — the problem" parity, ctx palette) */
 .eyebrow { font-size: 0.62rem; letter-spacing: 0.14em; text-transform: uppercase; font-weight: 700; color: var(--indigo); margin-bottom: 6px; }
 
 /* "The problem" — a connected stat ledger; every number is measured from the
@@ -295,7 +295,7 @@ th[title] { text-decoration: underline dotted; text-decoration-color: var(--slat
 `;
 
 const SCRIPT = String.raw`
-const DOC = window.__TK_REPORT__;
+const DOC = window.__CTX_REPORT__;
 const root = document.getElementById("app");
 const nf = new Intl.NumberFormat("en-US");
 const n = (x) => (typeof x === "number" && isFinite(x) ? nf.format(Math.round(x)) : "—");
@@ -324,7 +324,7 @@ ${PROMPT_MODEL_SRC}
 
 const EXPOSURE_PLAIN = { "always-on": "loads into every session", "on-invocation": "loads only when used" };
 const FIXCLASS_PLAIN = {
-  safe_mechanical: { t: "tk can apply this for you", auto: true, tip: "A safe, mechanical edit tk can apply automatically with tk optimize --apply." },
+  safe_mechanical: { t: "ctx can apply this for you", auto: true, tip: "A safe, mechanical edit ctx can apply automatically with ctx optimize --apply." },
   suggested_diff: { t: "Manual edit", auto: false, tip: "A concrete edit to make by hand (or hand to your agent via Copy as prompt)." },
   advisory: { t: "Review suggestion", auto: false, tip: "A judgement call to review — no automatic fix." },
   delivery: { t: "Setup step", auto: false, tip: "A one-time setup action (install a shim / hook), not a file edit." },
@@ -360,13 +360,13 @@ function renderProblem(m, L) {
   const bars = raw > 0
     ? '<p class="eyebrow diff-lbl">See the difference</p>' +
       '<div class="diffbox">' +
-      '<div class="diffrow"><span class="dl">Output without tk</span><span class="diffbar raw" style="width:' + w(raw) + '%"></span><span class="dv">' + cmp(raw) + '</span></div>' +
+      '<div class="diffrow"><span class="dl">Output without ctx</span><span class="diffbar raw" style="width:' + w(raw) + '%"></span><span class="dv">' + cmp(raw) + '</span></div>' +
       '<div class="diffrow"><span class="dl">Sent to the model</span><span class="diffbar sent" style="width:' + w(sent) + '%"></span><span class="dv cut">' + cmp(sent) + ' &middot; &minus;' + pct(m.savings_pct) + '</span></div>' +
       '</div>'
     : '';
   const tiles = [
     { cls: "", tag: "Redundant noise", num: pct(m.savings_pct), unit: "",
-      p: "of that raw output was boilerplate Token Killer stripped before it ever reached the model." },
+      p: "of that raw output was boilerplate Contexa stripped before it ever reached the model." },
     { cls: "est", tag: "Spend avoided", num: creditStr ? creditStr : (usd || "—"),
       unit: creditStr ? "AI Credits" : "",
       p: "estimated model spend on that raw output" + (creditStr && usd ? " (" + usd + ")" : "") +
@@ -374,7 +374,7 @@ function renderProblem(m, L) {
   ];
   return '<div class="section"><p class="eyebrow">The problem</p>' +
     '<h2>What that command output was costing you</h2>' +
-    '<p class="exp">Every command your agent runs dumps its output into the context window. Here is what that cost, and what Token Killer cut before it reached the model.</p>' +
+    '<p class="exp">Every command your agent runs dumps its output into the context window. Here is what that cost, and what Contexa cut before it reached the model.</p>' +
     bars +
     '<div class="problem">' +
     tiles.map((t) => '<div class="pstat ' + t.cls + '"><p class="ptag">' + esc(t.tag) + '</p>' +
@@ -425,7 +425,7 @@ function renderTrend(ts) {
     '<div class="trendview" data-trendview="' + k + '"' + (k === first ? "" : ' style="display:none"') + '>' + view(sets[k]) + '</div>').join("");
   return '<div class="section" id="trend"><p class="eyebrow">Real-world savings</p>' +
     '<h2>Your savings over time</h2>' +
-    '<p class="exp">Daily, weekly, and monthly token savings from your own runs, the same data as <span class="num">tk gain --daily / --weekly / --monthly</span>.</p>' +
+    '<p class="exp">Daily, weekly, and monthly token savings from your own runs, the same data as <span class="num">ctx gain --daily / --weekly / --monthly</span>.</p>' +
     '<div class="trendtabs">' + btns + '</div>' + panels + '</div>';
 }
 
@@ -453,14 +453,14 @@ function renderGain(L) {
       h += '<p class="lbl kick xref">at ' + esc(xr.model) + ' rates ($' + xr.price_per_mtok + ' / 1M): ≈ ' + n(xr.estimated_savings_ai_credits) + ' AI Credits (' + (money(xr.estimated_savings_usd) || '') + ')</p>';
     }
     h += '<div class="big">' + n(m.saved_tokens) + '<small>tokens saved (measured)</small></div>';
-    h += '<div class="lead">Token Killer trimmed your command output by <b>' + pct(m.savings_pct) + '</b> before it reached the model, across <b>' + n(m.commands) + '</b> commands.</div>';
-    h += '<div class="ba"><span>Output without tk: <span class="n">' + n(m.raw_tokens) + '</span> tokens</span>' +
+    h += '<div class="lead">Contexa trimmed your command output by <b>' + pct(m.savings_pct) + '</b> before it reached the model, across <b>' + n(m.commands) + '</b> commands.</div>';
+    h += '<div class="ba"><span>Output without ctx: <span class="n">' + n(m.raw_tokens) + '</span> tokens</span>' +
       '<span>Sent to the model: <span class="n">' + n(m.output_tokens) + '</span> tokens</span>' +
       '<span>Avg saved per command: <span class="n">' + n(m.avg_savings_per_command) + '</span></span></div>';
     h += '</section>';
     out.push(h);
 
-    // Narrative arc (tk-honest): one "problem" section that shows the raw→sent
+    // Narrative arc (ctx-honest): one "problem" section that shows the raw→sent
     // difference and frames its cost — no duplicate before/after section.
     out.push(renderProblem(m, L));
 
@@ -468,7 +468,7 @@ function renderGain(L) {
     if (bh.length) {
       const max = Math.max.apply(null, bh.map((h2) => h2.saved || 0).concat([1]));
       out.push('<div class="section"><h2>Where the savings came from</h2>' +
-        '<p class="exp">The commands whose output Token Killer compressed the most.</p>' +
+        '<p class="exp">The commands whose output Contexa compressed the most.</p>' +
         '<div class="panel"><table><thead><tr><th>Command</th><th>Share of savings</th><th class="r">Tokens saved</th><th class="r">Reduced by</th><th class="r">Times run</th></tr></thead><tbody>' +
         bh.map((h2) =>
           '<tr><td class="num">' + esc(h2.handler) + '</td>' +
@@ -488,7 +488,7 @@ function renderGain(L) {
   const od = L.optimizer_deltas || { surfaces: [] };
   let c2 = '';
   if (!od.surfaces || !od.surfaces.length) {
-    c2 = '<p class="naline">No files optimized yet. Run <span class="num">tk optimize --apply</span> to slim oversized config files.</p>';
+    c2 = '<p class="naline">No files optimized yet. Run <span class="num">ctx optimize --apply</span> to slim oversized config files.</p>';
   } else {
     c2 = od.surfaces.map((s) =>
       '<div class="delta"><div class="nm">' + esc(SURFACE_NAMES[s.surface] || s.surface) + '</div>' +
@@ -506,7 +506,7 @@ function renderGain(L) {
     '<div class="kv"><span class="k">Large prompts flagged</span><span class="v">' + n(g.suggested_large_prompts) + '</span></div>' +
     '<div class="est-num">≈ ' + n(g.avoided_tokens_estimate) + ' tokens</div>' +
     '<div class="est-cap">roughly what those actions would have cost (an estimate, not measured savings)</div>';
-  cards.push(cardHtml("est", "Wasteful actions you avoided", "When a huge read, search, or prompt was about to run, Token Killer blocked or flagged it. This is an estimate of what they would have cost.", c3));
+  cards.push(cardHtml("est", "Wasteful actions you avoided", "When a huge read, search, or prompt was about to run, Contexa blocked or flagged it. This is an estimate of what they would have cost.", c3));
 
   out.push('<div class="cards">' + cards.join("") + '</div>');
 
@@ -514,7 +514,7 @@ function renderGain(L) {
   const q = L.quality_guardrails || {};
   if (!isNa(q)) {
     out.push('<div class="section"><h2>Was the compression safe?</h2>' +
-      '<p class="exp">Token Killer should never break a command or hide important output. These are the safety checks.</p>' +
+      '<p class="exp">Contexa should never break a command or hide important output. These are the safety checks.</p>' +
       '<div class="card"><div class="kv"><span class="k">Fell back to full output (safety fallback, never truncated)</span><span class="v">' + ratePlain(q.fallback_rate) + '</span></div>' +
       '<div class="kv"><span class="k">Commands that failed</span><span class="v">' + ratePlain(q.failure_rate) + '</span></div>' +
       '<div class="kv"><span class="k">Optimizations later reverted</span><span class="v">' + n(q.findings_reverted) + '</span></div></div></div>');
@@ -570,7 +570,7 @@ function th(label, tip, right) {
 
 // Plain-language descriptions of each per-tool flag (shown on hover).
 const FLAG_TIPS = {
-  compressible: "tk can losslessly compress this command's output — route it through the tk shim",
+  compressible: "ctx can losslessly compress this command's output — route it through the ctx shim",
   large: "at least one call returned very large output (an output hotspot)",
   deny: "targets a dependency dir, build output, or lockfile — low-signal, high-token",
 };
@@ -739,7 +739,7 @@ function renderInspect(D) {
   // 1 · The analysis FIRST: where your tokens actually went (measured + detail).
   out.push(renderTokenAnalysis(D));
 
-  // 2 · Standing per-session config cost (tk's estimate of YOUR configurable surfaces).
+  // 2 · Standing per-session config cost (ctx's estimate of YOUR configurable surfaces).
   out.push(renderFootprint(D.footprint));
 
   // 3 · The optimizations that fall out of the analysis above — LAST. The findings
@@ -824,7 +824,7 @@ function groupItemHtml(type, items, grp) {
     '<div class="actions">' +
     '<button class="copybtn" type="button" data-prompt="' + esc(buildAllPrompt(items)) + '">Copy all ' + items.length + ' as a prompt</button>' +
     '<span class="ahint">paste into your coding agent to apply all ' + items.length + '</span>' +
-    (auto ? '<span class="cmd">or run <code>tk optimize --apply</code></span>' : '') +
+    (auto ? '<span class="cmd">or run <code>ctx optimize --apply</code></span>' : '') +
     '</div>';
   // Estimated saving for a grouped card = the sum across its instances; grounded only
   // when EVERY instance is grounded (a mixed group reads as rough).
@@ -866,7 +866,7 @@ function itemHtml(f, grp) {
     '<div class="actions">' +
     '<button class="copybtn" type="button" data-prompt="' + esc(buildPrompt(f)) + '">Copy as prompt</button>' +
     '<span class="ahint">paste into your coding agent to apply this fix</span>' +
-    (auto ? '<span class="cmd">or run <code>tk optimize --apply</code></span>' : '') +
+    (auto ? '<span class="cmd">or run <code>ctx optimize --apply</code></span>' : '') +
     '</div>';
   return '<div class="item"><div class="ititle"><span class="glyph" style="color:' + color + '">●</span>' +
     '<span class="pt">' + esc(problem) + '</span>' + tag + '</div>' +
@@ -920,30 +920,30 @@ export function renderReportHtml(doc: ReportDoc): string {
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>${escapeHtml(doc.title)} — Token Killer</title>
+<title>${escapeHtml(doc.title)} — Contexa</title>
 <style>${STYLE}</style>
 </head>
 <body>
 <div class="wrap">
   <header class="pagehead">
     <p class="lbl">${escapeHtml(kicker)}</p>
-    <h1>${escapeHtml(doc.title)} <span class="tk">/ tk</span></h1>
+    <h1>${escapeHtml(doc.title)} <span class="ctx">/ ctx</span></h1>
     <div class="sub">${escapeHtml(doc.subtitle)}</div>
     <div class="meta" id="meta"></div>
   </header>
   <main id="app"></main>
-  <div class="foot">Generated by Token Killer on ${escapeHtml(doc.generatedAt)}. This report was built on your machine; nothing was uploaded.</div>
+  <div class="foot">Generated by Contexa on ${escapeHtml(doc.generatedAt)}. This report was built on your machine; nothing was uploaded.</div>
 </div>
-<script>window.__TK_REPORT__ = ${embed(doc)};</script>
+<script>window.__CTX_REPORT__ = ${embed(doc)};</script>
 <script>
 (function () {
-  var d = window.__TK_REPORT__;
+  var d = window.__CTX_REPORT__;
   var meta = document.getElementById("meta");
   // Escape every interpolated value before innerHTML. scope/since are enum/ISO today,
   // but the meta block must not be the one place an unescaped value could inject (L9).
   function esc(s){return String(s).replace(/[&<>"']/g,function(c){return {'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c];});}
   var bits = [];
-  // Name the project for project-scoped reports ("Covers token-killer"); fall back
+  // Name the project for project-scoped reports ("Covers contexa"); fall back
   // to "this project" if the name is missing. User scope covers every project.
   var scopeLabel = d.data && d.data.scope === "user" ? "all your projects" : d.data && d.data.scope === "project" ? (d.data.project || "this project") : d.data && d.data.scope;
   if (scopeLabel) bits.push('<span>Covers <b>' + esc(scopeLabel) + '</b></span>');

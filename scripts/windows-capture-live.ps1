@@ -12,7 +12,7 @@
 #   $env:HTTPS_PROXY='http://127.0.0.1:7890'; $env:HTTP_PROXY=$env:HTTPS_PROXY ).
 #
 # Usage (on the box):
-#   cd C:\Users\cozy2\workspace\token-killer
+#   cd C:\Users\cozy2\workspace\contexa
 #   pwsh -NoProfile -File scripts\windows-capture-live.ps1
 #   pwsh -NoProfile -File scripts\windows-capture-live.ps1 -Prompt "Run: git log --oneline -3"
 
@@ -25,7 +25,7 @@ $ErrorActionPreference = 'Stop'
 
 $repo    = Split-Path -Parent $PSScriptRoot
 $cli     = Join-Path $repo 'dist\cli.js'
-$cfgPath = Join-Path $env:USERPROFILE '.copilot\hooks\tk-rewrite.json'
+$cfgPath = Join-Path $env:USERPROFILE '.copilot\hooks\ctx-rewrite.json'
 $capDir  = Join-Path $repo 'reports\windows-live-captures'
 $teeCmd  = Join-Path $capDir 'tee-hook.cmd'
 

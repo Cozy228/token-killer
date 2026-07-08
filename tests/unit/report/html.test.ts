@@ -10,7 +10,7 @@ import { writeReport, openInBrowser, emitHtmlReport } from "../../../src/report/
 const GAIN: ReportDoc = {
   kind: "gain",
   title: "Your token savings",
-  subtitle: "How much Token Killer saved you.",
+  subtitle: "How much Contexa saved you.",
   generatedAt: "2026-06-06T00:00:00.000Z",
   data: {
     scope: "user",
@@ -79,7 +79,7 @@ describe("renderReportHtml", () => {
   test("produces one self-contained HTML doc with no external resources", () => {
     const html = renderReportHtml(GAIN);
     expect(html.startsWith("<!doctype html>")).toBe(true);
-    expect(html).toContain("window.__TK_REPORT__");
+    expect(html).toContain("window.__CTX_REPORT__");
     // No network: no external src/href to http(s) or CDN.
     expect(html).not.toMatch(/<(script|link)[^>]+(src|href)=["']https?:/i);
   });
@@ -253,8 +253,8 @@ describe("renderReportHtml", () => {
     // The copied payload is an agent instruction, not the human label.
     expect(html).toContain("data-prompt=");
     // The agent is told to snapshot before editing and not to run restore itself.
-    expect(html).toContain("tk optimize --backup");
-    expect(html).toContain("tk optimize --restore");
+    expect(html).toContain("ctx optimize --backup");
+    expect(html).toContain("ctx optimize --restore");
   });
 
   test("the report SCRIPT carries the prompt model so prompts build client-side", () => {
@@ -284,8 +284,8 @@ describe("renderReportHtml", () => {
     expect(p).toContain("  How:");
     expect(p).toContain("delete the losing side");
     // ...keeps the reversible-edit framing for file findings...
-    expect(p).toContain("tk optimize --backup AGENTS.md");
-    expect(p).toContain("tk optimize --restore");
+    expect(p).toContain("ctx optimize --backup AGENTS.md");
+    expect(p).toContain("ctx optimize --restore");
     // ...and drops the old generic labels.
     expect(p).not.toContain("Change to make:");
     expect(p).not.toContain("Problem:");
@@ -327,7 +327,7 @@ describe("renderReportHtml", () => {
     });
     expect(p).toContain("Prune the MCP servers configured at: your MCP server config");
     expect(p).toContain("prefer it over the equivalent MCP server");
-    expect(p).not.toContain("tk optimize --backup");
+    expect(p).not.toContain("ctx optimize --backup");
     expect(p).not.toContain("Step 1");
   });
 
@@ -388,7 +388,7 @@ describe("renderReportHtml", () => {
     expect(all).toContain("Resolve the contradictory instructions detected at AGENTS.md (line 4)");
     expect(all).toContain("Prune the MCP servers configured at: your MCP server config");
     // A file is present → the snapshot framing leads.
-    expect(all).toContain("tk optimize --backup AGENTS.md");
+    expect(all).toContain("ctx optimize --backup AGENTS.md");
   });
 
   test("escapes a </script> breakout attempt in the data", () => {
@@ -422,12 +422,12 @@ describe("renderReportHtml", () => {
 describe("writeReport + openInBrowser", () => {
   let home: string;
   beforeEach(() => {
-    home = mkdtempSync(join(tmpdir(), "tk-report-"));
-    process.env.TOKEN_KILLER_HOME = join(home, ".token-killer");
+    home = mkdtempSync(join(tmpdir(), "ctx-report-"));
+    process.env.CONTEXA_HOME = join(home, ".contexa");
   });
   afterEach(() => {
-    delete process.env.TOKEN_KILLER_HOME;
-    delete process.env.TK_NO_OPEN;
+    delete process.env.CONTEXA_HOME;
+    delete process.env.CTX_NO_OPEN;
     rmSync(home, { recursive: true, force: true });
     vi.restoreAllMocks();
   });
@@ -435,23 +435,23 @@ describe("writeReport + openInBrowser", () => {
   test("writeReport writes a self-contained file under reports/", () => {
     const path = writeReport(GAIN, 0);
     expect(existsSync(path)).toBe(true);
-    expect(path).toContain(join(".token-killer", "reports"));
+    expect(path).toContain(join(".contexa", "reports"));
     expect(path.endsWith(".html")).toBe(true);
     expect(readFileSync(path, "utf8")).toContain("<!doctype html>");
   });
 
-  test("openInBrowser is suppressed under TK_NO_OPEN", () => {
-    process.env.TK_NO_OPEN = "1";
+  test("openInBrowser is suppressed under CTX_NO_OPEN", () => {
+    process.env.CTX_NO_OPEN = "1";
     expect(openInBrowser("/tmp/whatever.html")).toBe(false);
   });
 
   test("emitHtmlReport writes the file and prints its path", () => {
-    process.env.TK_NO_OPEN = "1";
+    process.env.CTX_NO_OPEN = "1";
     const out = vi.spyOn(process.stdout, "write").mockReturnValue(true);
     const path = emitHtmlReport(INSPECT, 0);
     expect(existsSync(path)).toBe(true);
     expect(out).toHaveBeenCalled();
-    const dir = join(process.env.TOKEN_KILLER_HOME!, "reports");
+    const dir = join(process.env.CONTEXA_HOME!, "reports");
     expect(readdirSync(dir).length).toBe(1);
   });
 });

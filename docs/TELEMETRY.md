@@ -1,6 +1,6 @@
-# Token Killer Telemetry
+# Contexa Telemetry
 
-Token Killer ships **no telemetry by default**. Nothing leaves your machine unless you
+Contexa ships **no telemetry by default**. Nothing leaves your machine unless you
 explicitly opt in *and* you are running an enterprise build whose operator baked in an
 endpoint. This document is the exact, field-by-field contract — what is collected, what
 can never be collected, how consent works, and how to delete your data.
@@ -9,16 +9,16 @@ Decided in [ADR 0004](./adr/0004-opt-in-network-telemetry-and-gain-parity.md).
 
 ## Two independent opt-ins
 
-Consent lives in `~/.token-killer/config.jsonc` (create it with `tk config init`). There
+Consent lives in `~/.contexa/config.jsonc` (create it with `ctx config init`). There
 are **two separate flags; neither implies the other**:
 
 | Flag | Default | Effect |
 |---|---|---|
-| `telemetryExport` | `false` | Write the aggregate payload to a **local file** (`~/.token-killer/advice/telemetry-export.json`). Never leaves the machine. |
+| `telemetryExport` | `false` | Write the aggregate payload to a **local file** (`~/.contexa/advice/telemetry-export.json`). Never leaves the machine. |
 | `telemetry` | `false` | Opt in to **network upload** over the build-time endpoint. |
 
 Creating the config file is **not** itself opt-in — both flags default to `false`. You opt
-in by editing the file to `true`, or with `tk telemetry enable` (which sets `telemetry:
+in by editing the file to `true`, or with `ctx telemetry enable` (which sets `telemetry:
 true` while preserving `telemetryExport`).
 
 Network upload happens only when **`telemetry: true` AND a non-empty build-time endpoint**
@@ -27,8 +27,8 @@ inert: an opted-in generic build writes the local file and warns, sending nothin
 
 ## When it sends
 
-A send is attempted **only at the end of `tk inspect` and `tk gain`** — the cold paths.
-It is **never** reachable from `tk <command>`; the hot path is sacred and a telemetry
+A send is attempted **only at the end of `ctx inspect` and `ctx gain`** — the cold paths.
+It is **never** reachable from `ctx <command>`; the hot path is sacred and a telemetry
 error can never change a command's behavior or exit code.
 
 At most **one attempt per 23 hours**. `lastSentAt` is stamped *before* dispatch, so a down
@@ -58,7 +58,7 @@ surface even when rows contain it.
 - `top_commands` — redacted command **stems** (program + subcommand), ≤5. Example:
   `git diff src/secret.ts` → `git diff`; args, paths, flags, and URLs are stripped.
 
-**Quality** (Token Killer's differentiator)
+**Quality** (Contexa's differentiator)
 - `quality_status_counts` — counts over the four real statuses: `passed`, `inflated`,
   `empty_output`, `failure`
 - `fallback_count` — rows whose handler is the error-fallback
@@ -74,12 +74,12 @@ surface even when rows contain it.
   `src/core/pricing.ts`: default **$3 / Mtok** (Claude Sonnet 4.6 input), with a `model →
   input $/Mtok` table (`opus` $5, `sonnet` $3, `haiku` $1, `claude-fable-5` $10,
   `gpt-5.5` $5, `gpt-5.5-pro` $30, plus full model ids). This is a labeled **estimate**
-  (`estimate_kind: "heuristic"` in `tk gain --quota`), never a measured token count.
+  (`estimate_kind: "heuristic"` in `ctx gain --quota`), never a measured token count.
 - `estimated_savings_ai_credits_30d` — the same figure expressed in **GitHub AI Credits**
   (1 credit = $0.01, the 2026-06 VS Code / Copilot usage-based unit), i.e. `usd × 100`. AI
   Credits is the headline value unit; USD is retained alongside.
 
-**Optional inspect aggregates** (present only on an `tk inspect`-triggered build, which has
+**Optional inspect aggregates** (present only on an `ctx inspect`-triggered build, which has
 a fresh scan)
 - `inspect.tool_category_counts`, `inspect.recommendation_type_counts`,
   `inspect.source_coverage`
@@ -95,7 +95,7 @@ The allow-list is exhaustive; everything else is structurally impossible:
 
 ## Pricing reference
 
-`src/core/pricing.ts` is the single source for both `tk gain --quota` and
+`src/core/pricing.ts` is the single source for both `ctx gain --quota` and
 `estimated_savings_usd_30d`:
 
 - Default constant: **$3 / Mtok** (Claude Sonnet 4.6 input) — used for any row with no
@@ -104,7 +104,7 @@ The allow-list is exhaustive; everything else is structurally impossible:
 - Model table: `opus` → $5, `sonnet` → $3, `haiku` → $1, `claude-fable-5` → $10,
   `gpt-5.5` → $5, `gpt-5.5-pro` → $30 (and the corresponding full model ids).
   Unknown/typo names fall back to the default — never an error.
-- **AI Credits**: tk saves INPUT/context tokens, priced at the input rate, then converted
+- **AI Credits**: ctx saves INPUT/context tokens, priced at the input rate, then converted
   to GitHub AI Credits (`1 credit = $0.01`). AI Credits is the headline value unit; USD is
   retained. Token estimation itself is a calibrated, segmented heuristic (`src/core/tokens.ts`,
   refit by `pnpm calibrate-tokens`), not a real tokenizer — the value figures are estimates,
@@ -113,11 +113,11 @@ The allow-list is exhaustive; everything else is structurally impossible:
 ## Consent commands
 
 ```bash
-tk config init                # create config.jsonc (both consents default false)
-tk telemetry enable           # set telemetry: true (network upload)
-tk telemetry disable          # set telemetry: false
-tk telemetry status           # show both consents, device_hash, first/last-sent
-tk telemetry preview          # print the EXACT payload that would be POSTed (never sends)
+ctx config init                # create config.jsonc (both consents default false)
+ctx telemetry enable           # set telemetry: true (network upload)
+ctx telemetry disable          # set telemetry: false
+ctx telemetry status           # show both consents, device_hash, first/last-sent
+ctx telemetry preview          # print the EXACT payload that would be POSTed (never sends)
 ```
 
 `enable`/`disable`/`status`/`preview` **never send**. `preview` prints exactly what a send
@@ -126,14 +126,14 @@ would POST.
 ## Data controller & deletion
 
 For an enterprise build, the **data controller is the operator** who built the package with
-their `TK_TELEMETRY_ENDPOINT` and to whom the opted-in payloads are uploaded. The generic
+their `CTX_TELEMETRY_ENDPOINT` and to whom the opted-in payloads are uploaded. The generic
 build uploads to no one.
 
 To stop and erase:
 
-1. `tk telemetry disable` (or set `telemetry: false`) — stops all uploads.
-2. Delete `~/.token-killer/telemetry-state.json` by hand to reset the `device_hash`
-   (device-reset is no longer a user-facing `tk telemetry` subcommand — ADR 0006).
+1. `ctx telemetry disable` (or set `telemetry: false`) — stops all uploads.
+2. Delete `~/.contexa/telemetry-state.json` by hand to reset the `device_hash`
+   (device-reset is no longer a user-facing `ctx telemetry` subcommand — ADR 0006).
    The next run that you opt back into will generate a fresh, unlinkable id.
 
 Server-side deletion of already-uploaded payloads is the operator's responsibility; contact

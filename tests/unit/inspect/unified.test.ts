@@ -99,7 +99,7 @@ describe("runtimeFindings — aggregation (no per-tool dump)", () => {
     expect(delivery.length).toBe(1);
     expect(delivery[0].fix_class).toBe("delivery");
     expect(delivery[0].evidence).toContain("19 shell command(s)"); // 8+6+5
-    expect(delivery[0].where).toContain("tk install");
+    expect(delivery[0].where).toContain("ctx install");
   });
 
   test("repeated failures roll up and name the top offenders", () => {

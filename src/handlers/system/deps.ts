@@ -8,7 +8,7 @@ import { makeFilteredResult, rawText } from "../base.js";
 // (Cargo.toml, package.json, requirements.txt, pyproject.toml, go.mod) and emits a
 // compact per-ecosystem summary, dropping raw JSON/TOML noise.
 //
-// tk divergence from RTK (recorded in docs/align-rtk-divergences.md): the handler's
+// ctx divergence from RTK (recorded in docs/align-rtk-divergences.md): the handler's
 // execute/filter split means filter summarizes the single manifest captured on
 // stdin/stdout rather than re-scanning every manifest in a directory, and the
 // Node.js section renders dev deps as "Dev (N):" with versions (RTK uses

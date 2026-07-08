@@ -1,7 +1,7 @@
 <#
-  tk-baseline-probe.ps1
+  ctx-baseline-probe.ps1
   ---------------------------------------------------------------------------
-  Collects REFERENCE baseline numbers for tk runtime startup on a Windows box.
+  Collects REFERENCE baseline numbers for ctx runtime startup on a Windows box.
 
   PURPOSE: feed one real (corporate-AV) data point + magnitudes into a perf
   optimization plan. These numbers are REFERENCE ONLY — a single machine's
@@ -11,12 +11,12 @@
 
   WHERE TO RUN: PowerShell on the TARGET box (Windows PowerShell 5.1 or
   PowerShell 7; VS Code integrated terminal is fine if its profile is
-  PowerShell). Self-contained — resolves real git/tk by absolute path, so it
-  does NOT depend on whether the tk shim is active in this shell.
+  PowerShell). Self-contained — resolves real git/ctx by absolute path, so it
+  does NOT depend on whether the ctx shim is active in this shell.
 
   USAGE:
-    powershell -ExecutionPolicy Bypass -File tk-baseline-probe.ps1
-  Writes a report to %USERPROFILE%\tk-baseline-<host>-<timestamp>.txt and
+    powershell -ExecutionPolicy Bypass -File ctx-baseline-probe.ps1
+  Writes a report to %USERPROFILE%\ctx-baseline-<host>-<timestamp>.txt and
   prints its path at the end. Paste that file back.
 #>
 
@@ -40,7 +40,7 @@ function Med([string]$label, [scriptblock]$cmd, [int]$n = 9) {
   Log ('{0,-26} median {1,7:N0} ms   (min {2,6:N0} / max {3,6:N0}, n={4})' -f $label, $median, $min, $max, $n)
 }
 
-Section "tk baseline probe"
+Section "ctx baseline probe"
 Log "generated (local time): $(Get-Date -Format o)"
 Log "script version: 1"
 
@@ -59,7 +59,7 @@ try {
 } catch { Log "machine info ERROR: $($_.Exception.Message)" }
 
 # --------------------------------------------------------------------------
-Section "2. Node / tk install facts"
+Section "2. Node / ctx install facts"
 # NOTE: this machine's Node version is ONE SAMPLE of the distributed field, not
 # a design input — used only to interpret which Node band these timings sit in.
 try { Log "node --version  : $(node --version 2>&1)" } catch { Log "node --version ERROR" }
@@ -69,27 +69,27 @@ try {
 } catch { Log "compileCache probe ERROR: $($_.Exception.Message)" }
 
 $home2 = $env:USERPROFILE
-$manifestPath = Join-Path $home2 '.token-killer\shim\manifest.json'
+$manifestPath = Join-Path $home2 '.contexa\shim\manifest.json'
 $node = 'node'; $cli = $null; $shimDir = $null
 if (Test-Path $manifestPath) {
   try {
     $m = Get-Content $manifestPath -Raw | ConvertFrom-Json
-    $node = $m.tk.bin
-    $cli = $m.tk.args[0]
+    $node = $m.ctx.bin
+    $cli = $m.ctx.args[0]
     $shimDir = $m.dir
-    Log "manifest schema : $($m.schema)   tk version: $($m.version)   installedAt: $($m.installedAt)"
+    Log "manifest schema : $($m.schema)   ctx version: $($m.version)   installedAt: $($m.installedAt)"
     Log "shim dir        : $shimDir"
     Log "shim programs   : $($m.programs -join ', ')"
-    Log "tk node bin     : $node"
-    Log "tk cli entry    : $cli"
+    Log "ctx node bin     : $node"
+    Log "ctx cli entry    : $cli"
   } catch { Log "manifest parse ERROR: $($_.Exception.Message)" }
 } else {
   Log "manifest NOT found at $manifestPath — shim not installed?"
-  # fall back to resolving cli via global tk if present
+  # fall back to resolving cli via global ctx if present
   try {
-    $tkCmd = (Get-Command tk -ErrorAction Stop).Source
-    Log "global tk       : $tkCmd"
-  } catch { Log "global tk       : NOT on PATH" }
+    $tkCmd = (Get-Command ctx -ErrorAction Stop).Source
+    Log "global ctx       : $tkCmd"
+  } catch { Log "global ctx       : NOT on PATH" }
 }
 
 # dist chunk count + total size (AV file-count argument for single-file bundle)
@@ -114,11 +114,11 @@ Log ''
 Log "PATH (one per line):"
 $i = 0; foreach ($p in $pathEntries) { $i++; Log ("  [{0,2}] {1}" -f $i, $p) }
 
-# resolve real git (NOT the tk shim wrapper) for an honest bare-git baseline
+# resolve real git (NOT the ctx shim wrapper) for an honest bare-git baseline
 $realGit = $null
 try {
   $cands = where.exe git 2>$null
-  $realGit = $cands | Where-Object { $_ -notmatch '\.token-killer' } | Select-Object -First 1
+  $realGit = $cands | Where-Object { $_ -notmatch '\.contexa' } | Select-Object -First 1
 } catch {}
 if (-not $realGit) { $realGit = 'git' }
 Log ''
@@ -143,14 +143,14 @@ Section "5. Segment baselines (medians replace the single-shot I5 numbers)"
 Log "cwd: $(Get-Location)"
 if (-not (Test-Path .git) -and -not (git rev-parse --git-dir 2>$null)) {
   Log "WARNING: cwd is not a git repo — 'git status' timings will not be representative."
-  Log "         Re-run from inside a real repo (e.g. the tk source checkout)."
+  Log "         Re-run from inside a real repo (e.g. the ctx source checkout)."
 }
 Log ''
 Med 'node -e 0 (cold floor)'      { node -e "0" }
 if ($cli) {
   Med 'node cli --version'        { & $node $cli --version }
-  Med 'tk git status'             { & $node $cli git status }
-  Med 'tk --raw git status'       { & $node $cli --raw git status }
+  Med 'ctx git status'             { & $node $cli git status }
+  Med 'ctx --raw git status'       { & $node $cli --raw git status }
 }
 Med 'bare git status --short'     { & $realGit status --short }
 
@@ -174,13 +174,13 @@ if ($cli) {
   Remove-Item Env:\NODE_COMPILE_CACHE -ErrorAction SilentlyContinue
   Remove-Item $cold -Recurse -Force -ErrorAction SilentlyContinue
 } else {
-  Log "skipped — tk cli entry not resolved."
+  Log "skipped — ctx cli entry not resolved."
 }
 
 # --------------------------------------------------------------------------
 Section "Done"
 $stamp = Get-Date -Format 'yyyyMMdd-HHmmss'
-$out = Join-Path $home2 ("tk-baseline-$env:COMPUTERNAME-$stamp.txt")
+$out = Join-Path $home2 ("ctx-baseline-$env:COMPUTERNAME-$stamp.txt")
 $script:lines | Out-File -FilePath $out -Encoding utf8
 Write-Host ''
 Write-Host "Report written to: $out" -ForegroundColor Green

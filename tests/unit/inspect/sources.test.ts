@@ -14,7 +14,7 @@ import { vscodeUserDir } from "../../../src/shim/hostConfig.js";
 let home: string;
 
 beforeEach(() => {
-  home = mkdtempSync(join(tmpdir(), "tk-inspect-src-"));
+  home = mkdtempSync(join(tmpdir(), "ctx-inspect-src-"));
 });
 afterEach(() => {
   rmSync(home, { recursive: true, force: true });
@@ -90,7 +90,7 @@ describe("discoverSources — copilot-cli", () => {
   // Official: COPILOT_HOME replaces the ENTIRE ~/.copilot path. A decoy under the
   // default ~/.copilot must be ignored when COPILOT_HOME points elsewhere.
   test("honors COPILOT_HOME as the config root (official override of ~/.copilot)", () => {
-    const copilotHome = mkdtempSync(join(tmpdir(), "tk-copilot-home-"));
+    const copilotHome = mkdtempSync(join(tmpdir(), "ctx-copilot-home-"));
     mkdirSync(join(home, ".copilot", "session-state", "decoy"), { recursive: true });
     writeFileSync(join(home, ".copilot", "session-state", "decoy", "events.jsonl"), "{}\n");
     mkdirSync(join(copilotHome, "session-state", "real"), { recursive: true });

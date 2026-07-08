@@ -89,7 +89,7 @@ describe("RTK glab behavior", () => {
   });
 
   // ADR 0001 decision 2: RTK's CAP_LIST (20) + "  … +N more" cap is REMOVED. Within
-  // budget tk reshapes the JSON into the compact "Merge Requests\n  [open] !iid ..."
+  // budget ctx reshapes the JSON into the compact "Merge Requests\n  [open] !iid ..."
   // view and lists EVERY MR with NO fake overflow marker.
   test("reshapes an MR list in full with no fake overflow marker", async () => {
     const mrs = Array.from({ length: 20 }, (_, i) => ({

@@ -1,13 +1,13 @@
 // Slice 3 — Copilot hook config writer (DESIGN §3.1).
 //
-// This is NOT an installer command — installation is `tk install`'s job (there is no
-// `tk hook install`). This module is the config-writing routine that
-// `tk install --host copilot-cli` calls. It writes the host hook config that points
-// PreToolUse at `tk hook copilot`; the proxy does the compression.
+// This is NOT an installer command — installation is `ctx install`'s job (there is no
+// `ctx hook install`). This module is the config-writing routine that
+// `ctx install --host copilot-cli` calls. It writes the host hook config that points
+// PreToolUse at `ctx hook copilot`; the proxy does the compression.
 //
 // Scope (DESIGN §15, §3.0): user-level by default — `~/.copilot/hooks/
-// tk-rewrite.json`. The repo is written ONLY under `--project`
-// (`<cwd>/.github/hooks/tk-rewrite.json`). The file is dedicated and carries a
+// ctx-rewrite.json`. The repo is written ONLY under `--project`
+// (`<cwd>/.github/hooks/ctx-rewrite.json`). The file is dedicated and carries a
 // marker so uninstall removes only our file, never a user's.
 
 import {
@@ -24,14 +24,14 @@ import { homedir } from "node:os";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 
-const CONFIG_FILENAME = "tk-rewrite.json";
+const CONFIG_FILENAME = "ctx-rewrite.json";
 
-// ADR 0005 §5 / audit #13: the hook config must NOT hardcode a bare `tk hook
-// copilot`. A bare `tk` is PATH-dependent and fails on Windows PowerShell with
+// ADR 0005 §5 / audit #13: the hook config must NOT hardcode a bare `ctx hook
+// copilot`. A bare `ctx` is PATH-dependent and fails on Windows PowerShell with
 // CommandNotFoundException (the spike only worked with an absolute node path), so a
 // hook installed there is inert. Resolve the absolute node executable + the running
 // cli.js at install time instead. `process.argv[1]` is the script node executed for
-// `tk install`; fall back to this module's own bundled path.
+// `ctx install`; fall back to this module's own bundled path.
 function quoteArg(p: string): string {
   return /\s/.test(p) ? `"${p}"` : p;
 }
@@ -68,7 +68,7 @@ export function resolveHookCommandPowershell(subcommand: string = "copilot"): st
 
 // Marker proving the file is ours (recoverable/marker-based). Sits beside `hooks`;
 // the host ignores unknown top-level keys.
-const MARKER = "token-killer";
+const MARKER = "contexa";
 
 export type CopilotHookConfig = {
   version: number;
@@ -172,7 +172,7 @@ function isManaged(path: string): boolean {
   }
 }
 
-// Compute what install WOULD do without writing — backs `tk install --dry-run`.
+// Compute what install WOULD do without writing — backs `ctx install --dry-run`.
 export function planCopilotHookConfig(loc: ConfigLocation): HookConfigPlan {
   const path = copilotHookConfigPath(loc);
   const contents = serialize(buildCopilotHookConfig());
@@ -221,7 +221,7 @@ export function installCopilotHookConfig(
       //     unguarded and renamed unconditionally.)
       // A destination that now exists AND lacks our marker is the user's — never
       // replace it. The complementary races are intentionally allowed: a managed
-      // file appearing (a racing tk install) proceeds with the rename, consistent
+      // file appearing (a racing ctx install) proceeds with the rename, consistent
       // with accepted last-writer-wins semantics between managed owners; and an
       // `overwrite` target deleted in the window simply renames as a plain create.
       if (existsSync(plan.path) && !isManaged(plan.path)) {
@@ -251,7 +251,7 @@ export function uninstallCopilotHookConfig(loc: ConfigLocation): {
   const path = copilotHookConfigPath(loc);
   if (!isManaged(path)) return { path, removed: false };
   rmSync(path, { force: true });
-  // The `hooks/` dir is tk-dedicated (it holds only this config), so drop it once
+  // The `hooks/` dir is ctx-dedicated (it holds only this config), so drop it once
   // empty rather than leaving an empty `.github/hooks/` behind. Best-effort; the
   // shared parent (`.github/` / `~/.copilot/`) is never touched.
   removeDirIfEmpty(dirname(path));
@@ -275,11 +275,11 @@ export function copilotHookConfigStatus(loc: ConfigLocation): {
   return { path, present: existsSync(path), managed: isManaged(path) };
 }
 
-// Read EVERY hook command actually baked into the installed (tk-managed) Copilot
+// Read EVERY hook command actually baked into the installed (ctx-managed) Copilot
 // config. Preflight validates the on-disk paths the host will REALLY execute, not the
 // current process's paths (issue #23: a stale baked node/cli path — after a node
 // upgrade, an nvm switch, or a moved install — is the failure the check must catch;
-// the running `tk status` process's own paths trivially exist and prove nothing).
+// the running `ctx status` process's own paths trivially exist and prove nothing).
 //
 // The dual-schema config carries the command in THREE places the host may execute:
 // `hooks.PreToolUse[0].command` (VS Code path) and the native Copilot CLI entry's
@@ -287,7 +287,7 @@ export function copilotHookConfigStatus(loc: ConfigLocation): {
 // the native commands the host runs on Windows (issue #23 §1), so a stale native path
 // would pass preflight while the real executed hook is inert. We return the DISTINCT
 // non-empty command strings across all three so preflight can validate each one.
-// Empty when the config is absent, not tk-managed, unreadable, or carries no command.
+// Empty when the config is absent, not ctx-managed, unreadable, or carries no command.
 export function readInstalledCopilotHookCommands(loc: ConfigLocation): string[] {
   const path = copilotHookConfigPath(loc);
   if (!isManaged(path)) return [];

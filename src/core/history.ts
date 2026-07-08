@@ -11,7 +11,7 @@ import {
   projectLabel,
   projectMetaFile,
   projectMetaFileForFingerprint,
-  tokenKillerHome,
+  contexaHome,
 } from "./dataDir.js";
 export type ProjectMeta = { label: string };
 
@@ -39,21 +39,21 @@ export type HistoryRecord = {
   // ToolEvent.model). The shell command-proxy path has no model and leaves it absent;
   // absent rows price at the default constant. Never inferred — absent is honest.
   model?: string;
-  // ADR 0009: best-effort agent session id (from `--session <id>` / `TK_SESSION`).
+  // ADR 0009: best-effort agent session id (from `--session <id>` / `CTX_SESSION`).
   // Honest-absent like `model` — only stamped when the delivery surface supplied it.
   session_id?: string;
 };
 
-// 2.4e — opt-out for latency-critical agents. Set TK_NO_HISTORY=1 to skip the history
-// row entirely (documented cost: `tk gain` will not see those commands). Any value
+// 2.4e — opt-out for latency-critical agents. Set CTX_NO_HISTORY=1 to skip the history
+// row entirely (documented cost: `ctx gain` will not see those commands). Any value
 // other than unset/""/"0"/"false" enables it.
 function historyDisabled(): boolean {
-  const v = process.env.TK_NO_HISTORY;
+  const v = process.env.CTX_NO_HISTORY;
   return v !== undefined && v !== "" && v !== "0" && v.toLowerCase() !== "false";
 }
 
 // Append one JSONL row with a single pre-serialized write (2.4d). APPEND-FIRST: each
-// tk command is a fresh process, so a process-scoped "already ensured" memo would
+// ctx command is a fresh process, so a process-scoped "already ensured" memo would
 // never hit — the mkdir would still fire every command. Instead we just append; only
 // when the dir does not yet exist (ENOENT — the project's first-ever row, or after a
 // deletion) do we pay one mkdir and retry. In steady state (dir present on disk) this
@@ -102,7 +102,7 @@ export async function recordHistory(
 // A `--raw` passthrough that STREAMS via stdio:"inherit" (the light path) captures
 // no bytes, so it has no honest size to record. We persist only what we genuinely
 // know — exit code and wall-clock duration — and OMIT every byte/token field rather
-// than fabricate zeros that would read as "tk measured 0 bytes" (it measured none).
+// than fabricate zeros that would read as "ctx measured 0 bytes" (it measured none).
 // The read boundary (`coerceHistorySizes`) fills the absent fields with 0 so every
 // numeric consumer still aggregates safely; the on-disk row stays honest.
 type RawLiteRecord = Omit<
@@ -152,7 +152,7 @@ export function coerceHistorySizes(record: HistoryRecord): HistoryRecord {
 }
 
 // Keep the project's display label (repo-root basename only — never the full path)
-// for `tk gain --user` (ADR 0004 §3) current and SELF-HEALING. The label is anchored
+// for `ctx gain --user` (ADR 0004 §3) current and SELF-HEALING. The label is anchored
 // identically to the fingerprint (projectLabel), so a repo entered first from a
 // subdir/worktree no longer gets named after that subdir. Read-then-write-if-stale:
 // in the steady state (label already correct) this is a single small read and no
@@ -236,12 +236,12 @@ function parseHistoryLines(text: string): HistoryRecord[] {
 }
 
 // User-level read (ADR 0004 §3): enumerate every project's history.jsonl under
-// ~/.token-killer/projects/*/. Best-effort — an unreadable directory or a corrupt
+// ~/.contexa/projects/*/. Best-effort — an unreadable directory or a corrupt
 // file is skipped, never thrown. `gain --user` and the telemetry builder both feed
 // the rows into the pure aggregate.ts helpers. Each row still carries its own
 // project_fingerprint for grouping.
 export async function listProjectHistories(): Promise<HistoryRecord[]> {
-  const projectsDir = path.join(tokenKillerHome(), "projects");
+  const projectsDir = path.join(contexaHome(), "projects");
   let entries: Dirent[];
   try {
     entries = await readdir(projectsDir, { withFileTypes: true });
@@ -266,7 +266,7 @@ export async function listProjectHistories(): Promise<HistoryRecord[]> {
 // Synchronous twin of listProjectHistories, for sync callers (the inspect runtime
 // stays synchronous). Same best-effort contract: unreadable stores are skipped.
 export function listProjectHistoriesSync(): HistoryRecord[] {
-  const projectsDir = path.join(tokenKillerHome(), "projects");
+  const projectsDir = path.join(contexaHome(), "projects");
   let entries: Dirent[];
   try {
     entries = readdirSync(projectsDir, { withFileTypes: true });

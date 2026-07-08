@@ -1,4 +1,4 @@
-// `tk optimize` — the downstream CONSUMER of inspect (goal §"Slice 5").
+// `ctx optimize` — the downstream CONSUMER of inspect (goal §"Slice 5").
 // Reads inspect's persisted per-scope bucket (project by default; user for
 // --surface skills user-level work), filters to source = static_context, and
 // plans patches. Default mode is read-only; it triggers a full inspect when the
@@ -106,7 +106,7 @@ async function defaultTriggerInspect(
   cwd: string,
   nowMs: number,
 ): Promise<void> {
-  // Dynamic import avoids a static inspect↔context cycle. `tk optimize` consumes
+  // Dynamic import avoids a static inspect↔context cycle. `ctx optimize` consumes
   // ONLY static-context findings, so we trigger a `--static-only` inspect: it skips
   // the transcript scan + habit extraction the bucket's static surfaces don't need,
   // sparing a first-time, no-bucket optimize a multi-minute cold scan it discards
@@ -142,7 +142,7 @@ export async function runOptimize(
 ): Promise<number> {
   const args = parseOptimizeArgs(argv);
   if (args.error) {
-    process.stderr.write(`tk optimize: ${args.error}\n`);
+    process.stderr.write(`ctx optimize: ${args.error}\n`);
     return 1;
   }
 
@@ -180,9 +180,9 @@ export async function runOptimize(
       if (!bucket) {
         // Bucket absent → trigger a static-only inspect for this scope, then re-read.
         // Tell the user why first: this scoped scan only analyzes context files (run
-        // `tk inspect` for the full session report with transcript/habit findings).
+        // `ctx inspect` for the full session report with transcript/habit findings).
         process.stderr.write(
-          `tk optimize: no prior inspect for the ${scope} scope; scanning context files to find optimizations (run \`tk inspect\` first for the full session report).\n`,
+          `ctx optimize: no prior inspect for the ${scope} scope; scanning context files to find optimizations (run \`ctx inspect\` first for the full session report).\n`,
         );
         await trigger(scope, home, cwd, nowMs);
         bucket = readInspectBucket(bucketRef);
@@ -196,7 +196,7 @@ export async function runOptimize(
     return 0;
   } catch (error) {
     process.stderr.write(
-      `tk optimize: internal error: ${error instanceof Error ? error.message : String(error)}\n`,
+      `ctx optimize: internal error: ${error instanceof Error ? error.message : String(error)}\n`,
     );
     return 3;
   }
@@ -223,7 +223,7 @@ function printDryRun(
   bucketRef: ScopeBucket,
 ): void {
   const out: string[] = [];
-  out.push(`# tk optimize (preview, scope = ${scope})`);
+  out.push(`# ctx optimize (preview, scope = ${scope})`);
   out.push(`Reading findings from: ${inspectBucketPath(bucketRef)}`);
   out.push(`Static-context findings: ${findings.length}`);
   out.push("");
@@ -266,7 +266,7 @@ function renderOutcome(
   if (outcome.status === "hash_mismatch") {
     return [
       head,
-      "  (file changed since inspect — re-run `tk inspect` before optimizing; stale diff suppressed)",
+      "  (file changed since inspect — re-run `ctx inspect` before optimizing; stale diff suppressed)",
     ];
   }
   if (outcome.status === "skipped") {

@@ -1,13 +1,13 @@
-// Slice 3b — telemetry machine state (ADR 0004 §1). `~/.token-killer/
+// Slice 3b — telemetry machine state (ADR 0004 §1). `~/.contexa/
 // telemetry-state.json` is INTERNAL, never hand-edited. It holds a once-generated
 // device salt; `device_hash = sha256(deviceSalt)` is the per-install anonymous id.
-// `tk telemetry purge` deletes this file (resetting the device_hash).
+// `ctx telemetry purge` deletes this file (resetting the device_hash).
 
 import { createHash, randomBytes } from "node:crypto";
 import { chmodSync, existsSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 
-import { ensureTokenKillerHome, tokenKillerHome } from "../core/dataDir.js";
+import { ensureContexaHome, contexaHome } from "../core/dataDir.js";
 
 export type TelemetryState = {
   deviceSalt: string; // 64 hex, generated once
@@ -16,7 +16,7 @@ export type TelemetryState = {
 };
 
 export function stateFile(): string {
-  return join(tokenKillerHome(), "telemetry-state.json");
+  return join(contexaHome(), "telemetry-state.json");
 }
 
 function generateSalt(): string {
@@ -25,7 +25,7 @@ function generateSalt(): string {
 
 function writeState(state: TelemetryState): void {
   const file = stateFile();
-  ensureTokenKillerHome();
+  ensureContexaHome();
   writeFileSync(file, `${JSON.stringify(state, null, 2)}\n`, { mode: 0o600 });
   chmodSync(file, 0o600);
 }
@@ -66,7 +66,7 @@ export function deviceHash(state: TelemetryState): string {
 // this to check the 23h window cheaply: a missing / corrupt / never-sent state reads as null.
 // Unlike loadOrCreateState it has NO side effect — it must never mint a device salt on the
 // hot path for an opted-in user who has nothing to send yet (keeps the telemetry dir pristine
-// and preserves the "tk <cmd> doesn't touch telemetry state" invariant when no rollup exists).
+// and preserves the "ctx <cmd> doesn't touch telemetry state" invariant when no rollup exists).
 export function peekLastSentAt(): string | null {
   try {
     const file = stateFile();

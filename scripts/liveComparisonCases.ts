@@ -75,7 +75,11 @@ export function skipReason(testCase: LiveComparisonCase): string | null {
     return "eslint not available";
   }
 
-  if (testCase.command[0] === "vitest" && !commandAvailable("vitest") && !commandAvailable("pnpm")) {
+  if (
+    testCase.command[0] === "vitest" &&
+    !commandAvailable("vitest") &&
+    !commandAvailable("pnpm")
+  ) {
     return "vitest not available";
   }
 
@@ -190,8 +194,13 @@ export function buildRtkArgv(command: string[]): string[] {
   }
 }
 
-export function createDiffFixture(): { dir: string; oldPath: string; newPath: string; cleanup: () => void } {
-  const dir = mkdtempSync(path.join(tmpdir(), "tk-compare-diff-"));
+export function createDiffFixture(): {
+  dir: string;
+  oldPath: string;
+  newPath: string;
+  cleanup: () => void;
+} {
+  const dir = mkdtempSync(path.join(tmpdir(), "ctx-compare-diff-"));
   const oldPath = path.join(dir, "old.ts");
   const newPath = path.join(dir, "new.ts");
   writeFileSync(oldPath, "export const value = 1;\n", "utf8");
@@ -412,7 +421,7 @@ export const liveComparisonCases: LiveComparisonCase[] = [
 ];
 
 export function createDockerComposeFixture(): { dir: string; cleanup: () => void } {
-  const dir = mkdtempSync(path.join(tmpdir(), "tk-compare-docker-"));
+  const dir = mkdtempSync(path.join(tmpdir(), "ctx-compare-docker-"));
   writeFileSync(
     path.join(dir, "docker-compose.yml"),
     [
@@ -456,9 +465,9 @@ export function createTscErrorFixture(): {
   filePath: string;
   cleanup: () => void;
 } {
-  const dir = mkdtempSync(path.join(tmpdir(), "tk-compare-tsc-"));
+  const dir = mkdtempSync(path.join(tmpdir(), "ctx-compare-tsc-"));
   const filePath = path.join(dir, "broken.ts");
-  writeFileSync(filePath, "const value: number = \"wrong\";\nexport { value };\n", "utf8");
+  writeFileSync(filePath, 'const value: number = "wrong";\nexport { value };\n', "utf8");
   return {
     dir,
     filePath,

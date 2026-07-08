@@ -1,5 +1,5 @@
-// `tk debug` data collection (docs/debug-command-goal.md §collect). Gathers a
-// self-contained diagnostic snapshot of tk-on-this-machine so a reviewer with ONLY
+// `ctx debug` data collection (docs/debug-command-goal.md §collect). Gathers a
+// self-contained diagnostic snapshot of ctx-on-this-machine so a reviewer with ONLY
 // the bundle + the source tree can locate most problems. Pure-ish: it does I/O
 // reads (history, governance, host configs, raw snapshots) and one best-effort local
 // probe (the shim interception spawn + chcp), but never touches the network and
@@ -26,7 +26,7 @@ import {
   type GainSummary,
   type LabelRollup,
 } from "../core/aggregate.js";
-import { resolveStoredPath, tokenKillerHome } from "../core/dataDir.js";
+import { resolveStoredPath, contexaHome } from "../core/dataDir.js";
 import { listProjectHistories, type HistoryRecord } from "../core/history.js";
 import {
   listProjectGovernance,
@@ -50,7 +50,7 @@ import { runInterceptionProbe, type ProbeResult } from "../shim/probe.js";
 import { VERSION } from "../version.js";
 
 // A raw passthrough this big is a missed-handler opportunity worth surfacing as an
-// anomaly even though it "passed" — the reviewer wants to know tk shipped 2k+ tokens
+// anomaly even though it "passed" — the reviewer wants to know ctx shipped 2k+ tokens
 // uncompressed (no handler / fell through the gate).
 export const LARGE_RAW_TOKENS = 2000;
 
@@ -72,7 +72,7 @@ export type FileCapture = {
 export type RewriteProbe = { command: string; decision: string; detail?: string };
 
 // The result of actually RUNNING the binary a wired hook points at. `pointsAtTk`
-// only proves the settings string looks like tk; it says nothing about whether the
+// only proves the settings string looks like ctx; it says nothing about whether the
 // referenced binary still exists or loads. A dangling path (nvm node bumped, `npm
 // rm -g`), a corrupt dist, or the wrong node makes the hook crash on every tool
 // call while still reading as "wired" — the "installed but broken" case the spec
@@ -104,7 +104,7 @@ export type DebugBundle = {
     locale?: string;
     lang?: string;
     windowsCodepage?: string;
-    tokenKillerHome: string;
+    contexaHome: string;
     cliPath: string;
     execPath: string;
   };
@@ -130,7 +130,7 @@ export type DebugBundle = {
     rewriteProbes: RewriteProbe[];
     recentFailures: HistoryRecord[];
     anyWired: boolean;
-    // A hook is wired (string matches tk) but the binary it points at failed to run
+    // A hook is wired (string matches ctx) but the binary it points at failed to run
     // — installed-but-broken. The headline distinguishes this from a clean "wired".
     brokenHook: boolean;
   };
@@ -168,7 +168,7 @@ async function loadFile(path: string, redact: boolean): Promise<FileCapture> {
   }
 }
 
-// A row is anomalous when tk did something the reviewer should look at: the filter
+// A row is anomalous when ctx did something the reviewer should look at: the filter
 // threw (fallback), the quality gate flagged it (inflated/empty_output/failure), the
 // tool failed (exit≠0), the output INFLATED (saved<0), or a big raw passthrough slid
 // by uncompressed. quality_status absent ⇒ a legacy un-gated pass (not anomalous).
@@ -278,7 +278,7 @@ function collectEnv(host: Host): DebugBundle["env"] {
     locale,
     lang: process.env.LANG ?? process.env.LC_ALL ?? process.env.LC_CTYPE,
     windowsCodepage: detectCodepage(),
-    tokenKillerHome: tokenKillerHome(),
+    contexaHome: contexaHome(),
     cliPath: process.argv[1] ?? "(unknown)",
     execPath: process.execPath,
   };
@@ -360,18 +360,18 @@ async function collectHostConfigs(
 ): Promise<Array<{ label: string } & FileCapture>> {
   const targets: Array<{ label: string; path: string }> = [
     { label: "claude-code settings.json", path: claudeSettingsPath({}) },
-    { label: "copilot tk-rewrite.json", path: copilotHookConfigPath({ project: false }) },
+    { label: "copilot ctx-rewrite.json", path: copilotHookConfigPath({ project: false }) },
     { label: "instruction injection", path: injectionTarget(host) },
   ];
   const claudeGuidance = guidanceFilePath("claude-code");
-  if (claudeGuidance) targets.push({ label: "claude-code TK.md", path: claudeGuidance });
+  if (claudeGuidance) targets.push({ label: "claude-code CTX.md", path: claudeGuidance });
   const copilotGuidance = guidanceFilePath("copilot-cli");
-  if (copilotGuidance) targets.push({ label: "copilot-cli TK.md", path: copilotGuidance });
+  if (copilotGuidance) targets.push({ label: "copilot-cli CTX.md", path: copilotGuidance });
 
   const out: Array<{ label: string } & FileCapture> = [];
   for (const t of targets) {
     const capture = await loadFile(t.path, redact);
-    // Only include artifacts that actually exist on disk — an absent TK.md/injection
+    // Only include artifacts that actually exist on disk — an absent CTX.md/injection
     // is normal (tier not used) and listing it as "unavailable" is noise. Hook
     // configs are always listed (present-or-absent IS the diagnostic).
     if (

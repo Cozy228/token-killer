@@ -78,7 +78,7 @@ function actionLines(report: Report): string[] {
   });
   if (advice.length > ACTIONS_TOP) {
     out.push("");
-    out.push(`_+${advice.length - ACTIONS_TOP} more — see \`tk inspect --advice\`._`);
+    out.push(`_+${advice.length - ACTIONS_TOP} more — see \`ctx inspect --advice\`._`);
   }
   out.push("");
   return out;
@@ -94,18 +94,18 @@ function couldNotReadSessions(report: Report): string[] {
   const hasCopilot = report.inputType.includes("copilot");
   const inputHint =
     hasVscode && hasCopilot
-      ? "tk checked both VS Code and the Copilot CLI — if you drive the agent from another host, its transcripts live elsewhere."
+      ? "ctx checked both VS Code and the Copilot CLI — if you drive the agent from another host, its transcripts live elsewhere."
       : hasVscode
-        ? "If you drive the agent from the Copilot CLI instead, run `tk inspect --input-type copilot-cli`."
-        : "If you use VS Code Copilot instead, run `tk inspect --input-type vscode`.";
+        ? "If you drive the agent from the Copilot CLI instead, run `ctx inspect --input-type copilot-cli`."
+        : "If you use VS Code Copilot instead, run `ctx inspect --input-type vscode`.";
   return [
     "## Couldn't read your agent activity",
     "",
     `Found ${report.session_inventory} session(s) but extracted **0 tool actions** from them — so there's nothing to analyze yet.`,
     "",
-    "This usually means the transcripts live somewhere tk didn't look, or in a format it doesn't recognize. What to try:",
+    "This usually means the transcripts live somewhere ctx didn't look, or in a format it doesn't recognize. What to try:",
     `- ${inputHint}`,
-    "- Run the agent through a turn that uses terminal/file tools, then re-run `tk inspect`.",
+    "- Run the agent through a turn that uses terminal/file tools, then re-run `ctx inspect`.",
     "- If this persists, the host changed its on-disk format — please file an issue with your host + version.",
     "",
   ];
@@ -129,7 +129,7 @@ function shortCategory(c: string): string {
   return CATEGORY_SHORT[c] ?? c;
 }
 
-// Per-tool flags surfaced in the breakdown (what tk can act on).
+// Per-tool flags surfaced in the breakdown (what ctx can act on).
 function oppFlags(o: Opportunity): string {
   const f: string[] = [];
   if (o.compressible) f.push("compressible");
@@ -251,7 +251,7 @@ function tokensGoLines(report: Report): string[] {
 // where your tokens go (measured + per-tool detail) → repo context → finally "What to
 // do" (the optimization points), which cite the analysis above.
 export function renderMarkdown(report: Report): string {
-  const lines: string[] = ["# Token Killer Inspect", ""];
+  const lines: string[] = ["# Contexa Inspect", ""];
 
   // Honest diagnostic: sessions discovered but nothing readable came out of them.
   if (report.session_inventory > 0 && report.tool_event_count === 0) {
@@ -269,7 +269,7 @@ export function renderMarkdown(report: Report): string {
     lines.push(`- Records skipped (no reliable timestamp): ${report.unknown_time_records}`);
   }
   if (report.coverage_errors > 0) {
-    lines.push(`- Files tk could not read/parse: ${report.coverage_errors}`);
+    lines.push(`- Files ctx could not read/parse: ${report.coverage_errors}`);
   }
   lines.push("");
 

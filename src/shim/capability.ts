@@ -3,7 +3,7 @@ import { homedir } from "node:os";
 import { join } from "node:path";
 
 import { writeFileAtomicSync } from "../core/atomicWrite.js";
-import { ensureTokenKillerHome, tokenKillerHome } from "../core/dataDir.js";
+import { ensureContexaHome, contexaHome } from "../core/dataDir.js";
 import { listProjectHistoriesSync } from "../core/history.js";
 import { claudeHookStatus } from "../hook/claudeInstall.js";
 import { copilotHookConfigStatus } from "../hook/install.js";
@@ -24,7 +24,7 @@ import { runInterceptionProbe, type ProbeResult } from "./probe.js";
 //     (installed / shim probe / TTY opt-in / injection / guidance) by CALLING the
 //     existing status helpers — never re-implementing their logic; and
 //   - PERSISTED for the few facts that are NOT observable after the fact (which
-//     host `tk install` chose, which tiers it wired, the host version at install,
+//     host `ctx install` chose, which tiers it wired, the host version at install,
 //     when it was installed, and when status last verified) in a small tolerant
 //     `delivery-state.json`.
 //
@@ -66,9 +66,9 @@ export type DeliveryMatrix = {
 };
 
 // --- persisted delivery state --------------------------------------------
-// Small state file `~/.token-killer/delivery-state.json`. Written by `tk install`
+// Small state file `~/.contexa/delivery-state.json`. Written by `ctx install`
 // (records the host it chose + the tiers it wired + the host version + when), and
-// its `lastVerified` refreshed by `tk status` (status just verified the live
+// its `lastVerified` refreshed by `ctx status` (status just verified the live
 // matrix). BOTH read and write are total: a missing/corrupt file reads as an empty
 // default and a write failure is swallowed — neither install nor status may break
 // because of this bookkeeping file.
@@ -85,14 +85,14 @@ export type DeliveryState = {
   lastVerified?: string;
 };
 
-export function deliveryStatePath(home: string = tokenKillerHome()): string {
+export function deliveryStatePath(home: string = contexaHome()): string {
   return join(home, "delivery-state.json");
 }
 
 // Read the persisted state. NEVER throws: a missing file, a parse error, or a
 // shape mismatch all degrade to an empty default so callers can treat "no state"
 // and "unreadable state" identically.
-export function readDeliveryState(home: string = tokenKillerHome()): DeliveryState {
+export function readDeliveryState(home: string = contexaHome()): DeliveryState {
   const empty: DeliveryState = { version: 1 };
   try {
     const text = readFileSync(deliveryStatePath(home), "utf8");
@@ -114,10 +114,10 @@ export function readDeliveryState(home: string = tokenKillerHome()): DeliverySta
 // Write the persisted state. Best-effort: a write failure (read-only home, full
 // disk, a race) is swallowed — recording delivery bookkeeping must never break the
 // install/status it rode in on. Mode 0600 (the file records only the chosen host +
-// tier names + a version string; still owner-only by default like other tk state).
-export function writeDeliveryState(state: DeliveryState, home: string = tokenKillerHome()): void {
+// tier names + a version string; still owner-only by default like other ctx state).
+export function writeDeliveryState(state: DeliveryState, home: string = contexaHome()): void {
   try {
-    ensureTokenKillerHome(home);
+    ensureContexaHome(home);
     writeFileAtomicSync(deliveryStatePath(home), `${JSON.stringify(state, null, 2)}\n`, 0o600);
   } catch {
     // best-effort — never break install/status because of bookkeeping
@@ -129,7 +129,7 @@ export function writeDeliveryState(state: DeliveryState, home: string = tokenKil
 // facts. Best-effort (delegates to writeDeliveryState).
 export function updateDeliveryState(
   patch: Partial<DeliveryState>,
-  home: string = tokenKillerHome(),
+  home: string = contexaHome(),
 ): DeliveryState {
   const next: DeliveryState = { ...readDeliveryState(home), ...patch, version: 1 };
   writeDeliveryState(next, home);
@@ -142,7 +142,7 @@ export function updateDeliveryState(
 // captures install INTENT for hosts whose tiers are not all live-probeable).
 export function recordInstall(
   params: { host: Host; tiers: string[]; hostVersion?: string },
-  home: string = tokenKillerHome(),
+  home: string = contexaHome(),
 ): void {
   const now = new Date().toISOString();
   writeDeliveryState(
@@ -171,11 +171,11 @@ export function hostVersionFromPreflight(checks: PreflightCheck[]): string | und
 }
 
 // Is the shim PATH-injection terminal opted in to TTY compression? VS Code's
-// agent runs in a ConPTY (isTTY=true), so without TK_COMPRESS_TTY the gate passes
+// agent runs in a ConPTY (isTTY=true), so without CTX_COMPRESS_TTY the gate passes
 // agent output through raw — surface it so a "shim installed" with no TTY opt-in is
 // visibly inert for the agent.
 function ttyOptIn(env: NodeJS.ProcessEnv): boolean {
-  return env.TK_COMPRESS_TTY === "1";
+  return env.CTX_COMPRESS_TTY === "1";
 }
 
 // Best-effort "last hook activity". HONEST and NO HOT-PATH WRITE: the hook runtime
@@ -237,27 +237,27 @@ export type MatrixDeps = {
   state: DeliveryState;
 };
 
-// Per-tier detail strings. "installed" is reserved for the WIRED-TO-TK case; a file
+// Per-tier detail strings. "installed" is reserved for the WIRED-TO-CTX case; a file
 // that is present but foreign (unmanaged Copilot config, a Claude hook that does not
-// point at tk) is shown as "present, NOT …" so it is diagnosable without being
-// misreported as an active tk tier (issue #26).
+// point at ctx) is shown as "present, NOT …" so it is diagnosable without being
+// misreported as an active ctx tier (issue #26).
 function copilotDetail(copilot: { present: boolean; path: string; managed: boolean }): string {
   if (!copilot.present) return `absent: ${copilot.path}`;
   if (copilot.managed) return `installed: ${copilot.path}`;
-  return `present, NOT tk-managed (not wired to tk): ${copilot.path}`;
+  return `present, NOT ctx-managed (not wired to ctx): ${copilot.path}`;
 }
 
 function claudeDetail(claude: { present: boolean; path: string; pointsAtTk: boolean }): string {
   if (!claude.present) return `absent: ${claude.path}`;
-  if (claude.pointsAtTk) return `installed (points at tk): ${claude.path}`;
-  return `present, NOT tk (does not point at tk): ${claude.path}`;
+  if (claude.pointsAtTk) return `installed (points at ctx): ${claude.path}`;
+  return `present, NOT ctx (does not point at ctx): ${claude.path}`;
 }
 
 function vscodeHookDetail(copilot: { present: boolean; path: string; managed: boolean }): string {
   const policy = "blocked-by-policy: unknown (VS Code policy not introspectable from CLI)";
   if (!copilot.present) return `absent: ${copilot.path}`;
   if (copilot.managed) return `installed (shared ~/.copilot/hooks): ${copilot.path}; ${policy}`;
-  return `present, NOT tk-managed (shared ~/.copilot/hooks): ${copilot.path}`;
+  return `present, NOT ctx-managed (shared ~/.copilot/hooks): ${copilot.path}`;
 }
 
 // Pure: build the matrix from injected signals. Never throws (each field is a
@@ -275,17 +275,17 @@ export function buildDeliveryMatrix(deps: MatrixDeps): DeliveryMatrix {
   // the underlying ledger is shared and not host-attributed.
   const fired = firedDetail(deps.historyRecords);
 
-  // "Installed" means tk's hook is actually WIRED TO TK, not merely that some hook
+  // "Installed" means ctx's hook is actually WIRED TO CTX, not merely that some hook
   // file/entry exists at the path (issue #26). A present-but-unmanaged Copilot config,
-  // or a Claude hook that does not point at tk, is a FOREIGN hook: it does not deliver
-  // tk, so marking it installed would mask that tk is not wired. The detail still
+  // or a Claude hook that does not point at ctx, is a FOREIGN hook: it does not deliver
+  // ctx, so marking it installed would mask that ctx is not wired. The detail still
   // surfaces the foreign file (see *Detail helpers) so it stays diagnosable.
   const copilotInstalled = copilot.present && copilot.managed;
   const claudeInstalled = claude.present && claude.pointsAtTk;
-  // VS Code's hook IS the shared ~/.copilot/hooks/tk-rewrite.json (the copilot writer's
+  // VS Code's hook IS the shared ~/.copilot/hooks/ctx-rewrite.json (the copilot writer's
   // file — ADR 0012 §3 corollary). A pure Copilot-CLI box also has the file but it is
   // the copilot tier, not a VS Code one. It is "installed" only when that shared file
-  // is tk-managed; the row is shown whenever the file is present (managed or not) so a
+  // is ctx-managed; the row is shown whenever the file is present (managed or not) so a
   // coexisting VS Code + Copilot box can still see and diagnose it.
   const vscodeHookInstalled = copilotInstalled;
 
@@ -312,10 +312,10 @@ export function buildDeliveryMatrix(deps: MatrixDeps): DeliveryMatrix {
       fired,
       // Only the VS Code hook can be revoked by org policy (a Preview capability), and
       // that is not introspectable from the CLI — honest per-host "unknown" when the hook
-      // is tk-managed, "n/a" otherwise.
+      // is ctx-managed, "n/a" otherwise.
       blockedByPolicy: vscodeHookInstalled
         ? "unknown (VS Code policy not introspectable from CLI)"
-        : "n/a (no tk-managed VS Code hook)",
+        : "n/a (no ctx-managed VS Code hook)",
     },
     {
       tier: "shim",
@@ -373,7 +373,7 @@ function guidanceDetail(deps: MatrixDeps): string {
   return `absent: ${where}`;
 }
 
-// Production wiring: resolve every dep from the real helpers. `tk status` calls
+// Production wiring: resolve every dep from the real helpers. `ctx status` calls
 // this. `preflight` is passed IN (status already gathered it for its Windows
 // section) so `copilot --version` is not spawned twice (decision #7).
 export function gatherDeliveryMatrix(params: {
@@ -383,7 +383,7 @@ export function gatherDeliveryMatrix(params: {
   env?: NodeJS.ProcessEnv;
   shimProbe?: ProbeResult;
 }): DeliveryMatrix {
-  const home = params.home ?? tokenKillerHome();
+  const home = params.home ?? contexaHome();
   const env = params.env ?? process.env;
   const dir = shimDir(home);
   return buildDeliveryMatrix({
@@ -407,7 +407,7 @@ export function gatherDeliveryMatrix(params: {
 
 // --- rendering -------------------------------------------------------------
 
-// Format the matrix as scannable lines for `tk status`. Each tier is one
+// Format the matrix as scannable lines for `ctx status`. Each tier is one
 // `[installed/absent] <label>: <detail>` row; the persisted summary
 // (host/version/installed-at/last-verified) plus the honest fired / policy lines
 // follow. ASCII-only for Windows consoles.
@@ -432,7 +432,7 @@ export function renderDeliveryMatrix(matrix: DeliveryMatrix): string[] {
   return lines;
 }
 
-// The tier ids `tk install` should record for a host, mirroring runInstall's tier
+// The tier ids `ctx install` should record for a host, mirroring runInstall's tier
 // ladder so the persisted state reflects install intent. Pure; no I/O.
 export function installedTierIds(host: Host): string[] {
   if (host === "claude-code") return ["claude-hook", "guidance"];

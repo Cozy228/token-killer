@@ -8,7 +8,7 @@ import { rewriteCommand } from "../../../src/hook/rewrite.js";
 import { readHistory, recordHistory } from "../../../src/core/history.js";
 import type { FilteredResult, RawResult, TkOptions } from "../../../src/types.js";
 
-const ENV_KEY = "TK_SESSION";
+const ENV_KEY = "CTX_SESSION";
 let savedEnv: string | undefined;
 
 beforeEach(() => {
@@ -45,7 +45,7 @@ describe("parse — --session flag", () => {
     expect(parsed.command?.displayCommand).toBe("git status");
   });
 
-  test("falls back to TK_SESSION env when the flag is absent", () => {
+  test("falls back to CTX_SESSION env when the flag is absent", () => {
     process.env[ENV_KEY] = "envid";
     const parsed = parseArgv(["git", "status"]);
     expect(parsed.options.sessionId).toBe("envid");
@@ -74,17 +74,17 @@ describe("rewrite — --session injection", () => {
   test("injects the flag when a valid session is supplied", () => {
     const r = rewriteCommand("git status", "abc");
     expect(r.decision).toBe("rewrite");
-    expect(r.rewritten).toBe("tk --session abc git status");
+    expect(r.rewritten).toBe("ctx --session abc git status");
   });
 
   test("no session ⇒ byte-identical to today's rewrite", () => {
-    expect(rewriteCommand("git status").rewritten).toBe("tk git status");
-    expect(rewriteCommand("git status", undefined).rewritten).toBe("tk git status");
+    expect(rewriteCommand("git status").rewritten).toBe("ctx git status");
+    expect(rewriteCommand("git status", undefined).rewritten).toBe("ctx git status");
   });
 
   test("injects the flag on each eligible segment of a chain", () => {
     const r = rewriteCommand("git status && tsc --noEmit", "abc");
-    expect(r.rewritten).toBe("tk --session abc git status && tk --session abc tsc --noEmit");
+    expect(r.rewritten).toBe("ctx --session abc git status && ctx --session abc tsc --noEmit");
   });
 
   test("a pipe is fully passed — the producer is not rewritten even with a session (C1)", () => {
@@ -96,12 +96,12 @@ describe("rewrite — --session injection", () => {
   test("a session with shell metacharacters injects NO flag (sanitizer)", () => {
     const r = rewriteCommand("git status", "abc; rm -rf /");
     expect(r.decision).toBe("rewrite");
-    expect(r.rewritten).toBe("tk git status");
+    expect(r.rewritten).toBe("ctx git status");
   });
 
-  test("an already-tk segment is left untouched (idempotent, no double --session)", () => {
-    expect(rewriteCommand("tk git status", "abc").decision).toBe("pass");
-    expect(rewriteCommand("tk --session abc git status", "abc").decision).toBe("pass");
+  test("an already-ctx segment is left untouched (idempotent, no double --session)", () => {
+    expect(rewriteCommand("ctx git status", "abc").decision).toBe("pass");
+    expect(rewriteCommand("ctx --session abc git status", "abc").decision).toBe("pass");
   });
 });
 
@@ -110,13 +110,13 @@ describe("recordHistory — session_id stamping", () => {
   let cwd: string;
 
   beforeEach(async () => {
-    home = await mkdtemp(path.join(tmpdir(), "tk-carrier-home-"));
-    cwd = await mkdtemp(path.join(tmpdir(), "tk-carrier-cwd-"));
-    process.env.TOKEN_KILLER_HOME = home;
+    home = await mkdtemp(path.join(tmpdir(), "ctx-carrier-home-"));
+    cwd = await mkdtemp(path.join(tmpdir(), "ctx-carrier-cwd-"));
+    process.env.CONTEXA_HOME = home;
   });
 
   afterEach(async () => {
-    delete process.env.TOKEN_KILLER_HOME;
+    delete process.env.CONTEXA_HOME;
     await rm(home, { recursive: true, force: true });
     await rm(cwd, { recursive: true, force: true });
   });

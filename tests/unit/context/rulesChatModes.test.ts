@@ -13,7 +13,7 @@ let cwd: string;
 
 beforeEach(() => {
   registerAllRules();
-  root = mkdtempSync(join(tmpdir(), "tk-ctx-modes-"));
+  root = mkdtempSync(join(tmpdir(), "ctx-ctx-modes-"));
   home = join(root, "home");
   cwd = join(root, "repo");
   mkdirSync(home, { recursive: true });

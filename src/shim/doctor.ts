@@ -1,11 +1,11 @@
-// `tk doctor` — diagnose (and with --fix repair) BOTH halves of a tk install:
+// `ctx doctor` — diagnose (and with --fix repair) BOTH halves of a ctx install:
 //   1. delivery: the install matrix (hook / shim / injection / guidance) — reuses the
 //      status gather so a broken tier is re-installed via the existing installer.
 //   2. records: the per-project metrics store (rollup freshness, duplicate/empty/orphan
 //      buckets) — reuses core/recordsHealth so reports never show a bare-hash project.
 //
 // Read-only by default (it prints "would fix …"); `--fix` applies repairs. This verb
-// replaced `tk status` (cli.ts prints a rename hint for the old name).
+// replaced `ctx status` (cli.ts prints a rename hint for the old name).
 
 import { existsSync } from "node:fs";
 
@@ -29,9 +29,9 @@ function out(line = ""): void {
 }
 
 const USAGE = [
-  "tk doctor [--fix] [scan-root]",
+  "ctx doctor [--fix] [scan-root]",
   "",
-  "  Diagnose tk's install + metrics health. Read-only by default.",
+  "  Diagnose ctx's install + metrics health. Read-only by default.",
   "  --fix        Repair broken delivery tiers and normalize the metrics store",
   "  scan-root    Optional dir to scan for git repos; recovers real names for orphan",
   "               buckets. Unmatched orphans are archived (token totals preserved).",
@@ -70,16 +70,16 @@ const HOST_LABEL: Record<HostDiscovery["inputType"], string> = {
   "copilot-cli": "Copilot CLI",
 };
 
-// Diagnose each agent host's SESSION-DATA ROOT — the directory `tk inspect` reads to
+// Diagnose each agent host's SESSION-DATA ROOT — the directory `ctx inspect` reads to
 // find missed token-saving opportunities (VS Code's user-storage chatSessions, Copilot
-// CLI's ~/.copilot/session-state). tk cannot repair a host's own data, so this is
-// REPORT-ONLY: it surfaces WHERE tk looks and whether anything is there, so a "no
+// CLI's ~/.copilot/session-state). ctx cannot repair a host's own data, so this is
+// REPORT-ONLY: it surfaces WHERE ctx looks and whether anything is there, so a "no
 // opportunities" inspect result can be told apart from "the root is missing/empty/wrong"
 // (the actual misconfiguration). Reuses inspect's discovery so doctor and inspect can
 // never disagree about which roots are scanned.
 function renderSessionData(hosts: HostDiscovery[]): void {
   out();
-  out("  Session data roots (read by `tk inspect`):");
+  out("  Session data roots (read by `ctx inspect`):");
   for (const h of hosts) {
     const label = HOST_LABEL[h.inputType];
     if (hostFound(h)) {
@@ -164,7 +164,7 @@ function repairInstalls(status: StatusGather): void {
   const host = status.matrix.installedHost;
   if (!host) {
     out(
-      "    install: no prior install recorded — run `tk install` first (doctor won't auto-install)",
+      "    install: no prior install recorded — run `ctx install` first (doctor won't auto-install)",
     );
     return;
   }
@@ -226,7 +226,7 @@ export async function runDoctor(argv: string[] = []): Promise<number> {
   const status = await gatherStatus();
   renderStatusReport(status);
 
-  // 2. Host session-data roots — the inputs `tk inspect` reads (report-only).
+  // 2. Host session-data roots — the inputs `ctx inspect` reads (report-only).
   renderSessionData(discoverHosts());
 
   // 3. Records section.
@@ -236,7 +236,7 @@ export async function runDoctor(argv: string[] = []): Promise<number> {
   if (!fix) {
     if (anyInstallOrRecordIssue(status, report)) {
       out();
-      out("  Run `tk doctor --fix [scan-root]` to apply the repairs above.");
+      out("  Run `ctx doctor --fix [scan-root]` to apply the repairs above.");
     }
     return 0;
   }
@@ -247,6 +247,6 @@ export async function runDoctor(argv: string[] = []): Promise<number> {
   repairInstalls(status);
   await repairRecords(args.scanRoot);
   out();
-  out("  Done. Run `tk gain --user` to see the normalized report.");
+  out("  Done. Run `ctx gain --user` to see the normalized report.");
   return 0;
 }

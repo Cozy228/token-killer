@@ -3,21 +3,21 @@ status: accepted
 supersedes: none
 ---
 
-# `tk doctor` — one diagnose+repair verb; `tk status` removed (rename hint)
+# `ctx doctor` — one diagnose+repair verb; `ctx status` removed (rename hint)
 
-`tk status` only ever *reported* (the install matrix + a refreshed verification
-timestamp). Repair lived elsewhere (`tk install` re-run) and the metrics store had no
+`ctx status` only ever *reported* (the install matrix + a refreshed verification
+timestamp). Repair lived elsewhere (`ctx install` re-run) and the metrics store had no
 health surface at all — a project bucket whose `meta.json` drifted showed up in
-`tk gain --user` as a bare hash (`a47085322e05`) or a stale/wrong name, with no command
-to fix it. `tk doctor` unifies *diagnose* and *repair* across BOTH halves of an install:
+`ctx gain --user` as a bare hash (`a47085322e05`) or a stale/wrong name, with no command
+to fix it. `ctx doctor` unifies *diagnose* and *repair* across BOTH halves of an install:
 
 - **delivery** — the per-tier capability matrix (hook / shim / injection / guidance).
-- **records** — the metrics store under `~/.token-killer/projects/*` (rollup freshness,
+- **records** — the metrics store under `~/.contexa/projects/*` (rollup freshness,
   duplicate `repo:`/`repo-` buckets, empty dirs, and orphan/junk-named project buckets).
 
 Read-only by default (it prints each fixable finding as `would fix …`); `--fix` applies
-repairs. `tk status` is **removed**: the dispatcher prints a rename hint (`tk status` →
-`tk doctor`, mirroring the `tk init` → `tk install` hint) rather than carrying a permanent
+repairs. `ctx status` is **removed**: the dispatcher prints a rename hint (`ctx status` →
+`ctx doctor`, mirroring the `ctx init` → `ctx install` hint) rather than carrying a permanent
 alias, so there is exactly one health verb.
 
 ## Project identity is irreversible — so name recovery is best-effort
@@ -49,36 +49,36 @@ bucket satisfies both — hashes gone, totals intact, directories cleaned up.
 - Only **pure-hash, never-successfully-named** buckets are archived. A bucket that already has
   a usable label (an active project, self-healed) is never touched, so a live project can't be
   swept into `archived` just because it wasn't under the scan root.
-- Read-only `tk doctor` is the preview gate: it lists exactly what `--fix` would archive/merge
+- Read-only `ctx doctor` is the preview gate: it lists exactly what `--fix` would archive/merge
   before anything is written.
 - `--fix` never AUTO-installs a host that was never set up — it only re-runs the installer for
   the host recorded in `delivery-state.json` when a tier it wired has gone missing.
 - Every repair is fail-open and best-effort; a failure leaves the (already-correct) source of
-  truth (`history.jsonl`) untouched and degrades to "rebuild on next `tk gain`".
+  truth (`history.jsonl`) untouched and degrades to "rebuild on next `ctx gain`".
 
 ## Considered options
 
-- **Keep `status` read-only; add separate `tk repair` / `tk rebuild` / `tk normalize`.**
-  Rejected: fragments one mental model ("is my tk healthy?") across several verbs and a bigger
+- **Keep `status` read-only; add separate `ctx repair` / `ctx rebuild` / `ctx normalize`.**
+  Rejected: fragments one mental model ("is my ctx healthy?") across several verbs and a bigger
   flag surface. The user explicitly wanted cohesion and a minimal surface.
-- **Auto-fix on a bare `tk doctor`.** Rejected: violates tk's safe-default convention
+- **Auto-fix on a bare `ctx doctor`.** Rejected: violates ctx's safe-default convention
   (`optimize`, `uninstall` are read-only until a flag) and would mutate the store with no
   preview.
-- **`tk doctor` + `--fix` + optional `scan-root` positional (chosen).** One verb, one flag,
+- **`ctx doctor` + `--fix` + optional `scan-root` positional (chosen).** One verb, one flag,
   one optional positional. Read-only previews; `--fix` repairs; the scan root unlocks name
-  recovery. `tk status` is removed (rename hint), so there is one health verb, not two.
+  recovery. `ctx status` is removed (rename hint), so there is one health verb, not two.
 
 ## Consequences
 
-- New surface: `tk doctor [--fix] [scan-root]`. `tk status` is removed; the dispatcher
-  prints a rename hint for the old name (like `tk init`), and a `status` program can no
-  longer be shadowed by a tk verb.
+- New surface: `ctx doctor [--fix] [scan-root]`. `ctx status` is removed; the dispatcher
+  prints a rename hint for the old name (like `ctx init`), and a `status` program can no
+  longer be shadowed by a ctx verb.
 - New module `src/core/recordsHealth.ts` owns store diagnosis + repair primitives
   (`diagnoseRecords`, `mergeDuplicateBuckets`, `recoverOrphanNames`, `archiveUnresolvedOrphans`,
   `pruneEmptyBuckets`, `rebuildAllRollups`); `src/shim/doctor.ts` orchestrates and renders.
   `runStatus` was split into `gatherStatus()` + `renderStatusReport()` so doctor reuses the
   matrix programmatically (`tiers[].installed`) to decide tier repair.
-- A synthetic `archived` bucket may appear in `tk gain --user`. It carries the preserved token
+- A synthetic `archived` bucket may appear in `ctx gain --user`. It carries the preserved token
   totals of unrecoverable projects and is never re-flagged as an orphan.
 - `ensureProjectMeta` is now exported from `core/history.ts` so doctor can force-heal the
   current repo's name.

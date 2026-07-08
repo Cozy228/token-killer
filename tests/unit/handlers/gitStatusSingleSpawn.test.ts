@@ -4,7 +4,7 @@ import path from "node:path";
 
 import { afterEach, beforeEach, describe, expect, test, vi } from "vitest";
 
-// Issue #40: `tk git status` must spawn the underlying git ONCE on the common
+// Issue #40: `ctx git status` must spawn the underlying git ONCE on the common
 // clean/dirty path. The second human `git status` capture is reserved for the
 // in-progress-operation case, detected by cheap `.git/` probes. These tests pin
 // the spawn count and the detached/in-progress recovery, plus the standalone
@@ -37,7 +37,7 @@ describe("issue #40: git status helpers", () => {
   const realCwd = process.cwd();
 
   beforeEach(async () => {
-    repo = await mkdtemp(path.join(tmpdir(), "tk-gitstatus-"));
+    repo = await mkdtemp(path.join(tmpdir(), "ctx-gitstatus-"));
   });
 
   afterEach(async () => {
@@ -54,7 +54,7 @@ describe("issue #40: git status helpers", () => {
     });
 
     test("follows a linked-worktree .git file to its per-worktree git dir", async () => {
-      const wt = await mkdtemp(path.join(tmpdir(), "tk-wt-"));
+      const wt = await mkdtemp(path.join(tmpdir(), "ctx-wt-"));
       const perWorktree = path.join(repo, ".git", "worktrees", "wt");
       await writeFile(path.join(wt, ".git"), `gitdir: ${perWorktree}\n`);
       expect(resolveGitDir(wt)).toBe(perWorktree);
@@ -62,7 +62,7 @@ describe("issue #40: git status helpers", () => {
     });
 
     test("returns undefined outside any repo", async () => {
-      const plain = await mkdtemp(path.join(tmpdir(), "tk-nogit-"));
+      const plain = await mkdtemp(path.join(tmpdir(), "ctx-nogit-"));
       expect(resolveGitDir(plain)).toBeUndefined();
       await rm(plain, { recursive: true, force: true });
     });
@@ -116,7 +116,7 @@ describe("issue #40: gitStatusHandler.execute spawn count", () => {
   const realCwd = process.cwd();
 
   beforeEach(async () => {
-    repo = await mkdtemp(path.join(tmpdir(), "tk-gitstatus-exec-"));
+    repo = await mkdtemp(path.join(tmpdir(), "ctx-gitstatus-exec-"));
     await mkdir(path.join(repo, ".git"));
     await writeFile(path.join(repo, ".git", "HEAD"), "ref: refs/heads/main\n");
     process.chdir(repo);

@@ -1,4 +1,4 @@
-// `tk support` — channel builders + OS openers + clipboard. Zero-dep, NO HTTP and
+// `ctx support` — channel builders + OS openers + clipboard. Zero-dep, NO HTTP and
 // no runtime dependency (the whole project is strictly zero-dep, Node ≥20).
 //
 // The opener deliberately does NOT reuse src/report/open.ts's Windows branch. That
@@ -12,7 +12,7 @@
 // directly, exactly as openInBrowser does for files.
 //
 // ADR 0013: the support destination is BAKED AT BUILD TIME, not configured at
-// runtime — `tk support` reaches whoever PACKAGED this build (the maintainer), so a
+// runtime — `ctx support` reaches whoever PACKAGED this build (the maintainer), so a
 // per-distribution identity is fixed by the packager, never retargeted by an end
 // user. Mirrors the telemetry-endpoint build arg (src/telemetry/endpoint.ts).
 
@@ -21,12 +21,12 @@ import { spawn, spawnSync } from "node:child_process";
 export type SupportChannel = "email" | "teams" | "github";
 
 // Build-time destination constants — replaced by tsdown's `define` with
-// JSON.stringify(process.env.TK_SUPPORT_* ?? "") at build (see tsdown.config.mjs). A
+// JSON.stringify(process.env.CTX_SUPPORT_* ?? "") at build (see tsdown.config.mjs). A
 // generic build bakes "" ⇒ that channel has no destination and degrades to
 // save+clipboard. An enterprise build bakes the maintainer's address/UPN/repo.
-declare const __TK_SUPPORT_EMAIL__: string | undefined;
-declare const __TK_SUPPORT_TEAMS__: string | undefined;
-declare const __TK_SUPPORT_GITHUB__: string | undefined;
+declare const __CTX_SUPPORT_EMAIL__: string | undefined;
+declare const __CTX_SUPPORT_TEAMS__: string | undefined;
+declare const __CTX_SUPPORT_GITHUB__: string | undefined;
 
 // The raw baked value for a channel. Under tsx/vitest there is no `define`, so the
 // identifier is undefined and we honor the env var ONLY THEN (local runs + tests can
@@ -35,18 +35,18 @@ declare const __TK_SUPPORT_GITHUB__: string | undefined;
 // and an installed CLI can never be retargeted by a runtime env export.
 function bakedDestination(kind: SupportChannel): string {
   if (kind === "email") {
-    return typeof __TK_SUPPORT_EMAIL__ !== "undefined"
-      ? (__TK_SUPPORT_EMAIL__ ?? "")
-      : (process.env.TK_SUPPORT_EMAIL ?? "");
+    return typeof __CTX_SUPPORT_EMAIL__ !== "undefined"
+      ? (__CTX_SUPPORT_EMAIL__ ?? "")
+      : (process.env.CTX_SUPPORT_EMAIL ?? "");
   }
   if (kind === "teams") {
-    return typeof __TK_SUPPORT_TEAMS__ !== "undefined"
-      ? (__TK_SUPPORT_TEAMS__ ?? "")
-      : (process.env.TK_SUPPORT_TEAMS ?? "");
+    return typeof __CTX_SUPPORT_TEAMS__ !== "undefined"
+      ? (__CTX_SUPPORT_TEAMS__ ?? "")
+      : (process.env.CTX_SUPPORT_TEAMS ?? "");
   }
-  return typeof __TK_SUPPORT_GITHUB__ !== "undefined"
-    ? (__TK_SUPPORT_GITHUB__ ?? "")
-    : (process.env.TK_SUPPORT_GITHUB ?? "");
+  return typeof __CTX_SUPPORT_GITHUB__ !== "undefined"
+    ? (__CTX_SUPPORT_GITHUB__ ?? "")
+    : (process.env.CTX_SUPPORT_GITHUB ?? "");
 }
 
 // Resolve where a support report is routed for a channel, from the build-time baked
@@ -87,7 +87,7 @@ export function buildMailto(to: string, subject: string, body: string): string {
 }
 
 // msteams: SCHEME deep link (NOT the https://teams.microsoft.com/l/... form): the
-// scheme launches the Teams app directly and is reliably registered in tk's
+// scheme launches the Teams app directly and is reliably registered in ctx's
 // enterprise target environment. `users` resolves an in-tenant Entra UPN; `message`
 // is a SHORT pointer only — the full report travels via the clipboard.
 export function buildTeamsDeepLink(upn: string, message: string): string {
@@ -124,10 +124,10 @@ export function buildGithubIssueUrl(repo: string, title: string, body: string): 
 // Fail-fast budget for the launcher to exit. open/xdg-open/rundll32 dispatch the URI
 // and exit promptly; a no-handler FAILURE exits fast too. A child still alive after
 // this almost certainly launched (a slow handler app, not a failure), so we assume
-// success and detach rather than hang tk.
+// success and detach rather than hang ctx.
 export const OPEN_EXIT_TIMEOUT_MS = 2000;
 
-// Open a mailto:/msteams: URI in the OS handler. Honors TK_NO_OPEN (tests /
+// Open a mailto:/msteams: URI in the OS handler. Honors CTX_NO_OPEN (tests /
 // headless / CI). Windows uses rundll32 — NOT cmd /c start (see file header).
 // Resolves to the REAL outcome: we await the launcher's EXIT (not just `spawn`),
 // because `open`/`xdg-open` exit NON-ZERO (fast) when no handler is registered for the
@@ -135,10 +135,10 @@ export const OPEN_EXIT_TIMEOUT_MS = 2000;
 // caller's manual-URI fallback (review #12). rundll32's exit code is unreliable on
 // Windows (often 0 regardless), so there a clean spawn+exit counts as success. These
 // are launcher processes that exit after dispatching — awaiting exit does NOT block on
-// the mail client / Teams. Best-effort: resolves false under TK_NO_OPEN, on a
+// the mail client / Teams. Best-effort: resolves false under CTX_NO_OPEN, on a
 // missing/denied opener (ENOENT via `error`), or on a non-zero exit; never rejects.
 export function openExternal(uri: string): Promise<boolean> {
-  if (process.env.TK_NO_OPEN) return Promise.resolve(false);
+  if (process.env.CTX_NO_OPEN) return Promise.resolve(false);
   return new Promise((resolve) => {
     let settled = false;
     let timer: ReturnType<typeof setTimeout> | undefined;
@@ -158,7 +158,7 @@ export function openExternal(uri: string): Promise<boolean> {
       const child = spawn(cmd, [...args], { stdio: "ignore", detached: true });
       timer = setTimeout(() => {
         child.unref();
-        settle(true); // launched but slow to exit — assume success, don't hang tk
+        settle(true); // launched but slow to exit — assume success, don't hang ctx
       }, OPEN_EXIT_TIMEOUT_MS);
       timer.unref?.();
       child.once("error", () => settle(false)); // ENOENT / permission denied
@@ -177,10 +177,10 @@ export function openExternal(uri: string): Promise<boolean> {
 // Best-effort clipboard copy, presence-gated: only a tool that actually exists on
 // this box runs, so a host without one degrades cleanly (returns false) instead of
 // throwing. A missing binary surfaces as a spawn `error` (ENOENT), which we skip to
-// try the next candidate. Also honors TK_NO_OPEN so the whole external-side-effect
+// try the next candidate. Also honors CTX_NO_OPEN so the whole external-side-effect
 // surface (open + clipboard) is suppressed under the same gate the suite relies on.
 export function copyToClipboard(text: string): boolean {
-  if (process.env.TK_NO_OPEN) return false;
+  if (process.env.CTX_NO_OPEN) return false;
   const candidates: ReadonlyArray<readonly [string, string[]]> =
     process.platform === "darwin"
       ? [["pbcopy", []]]

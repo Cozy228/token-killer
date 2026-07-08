@@ -1,11 +1,11 @@
 /**
- * Test helpers for tk (token-killer) integration testing.
+ * Test helpers for ctx (contexa) integration testing.
  *
- * Ported from rtk/scripts/benchmark/lib/test.ts and adapted to tk conventions:
- * binary renamed rtk -> tk (TK_BIN), behavior otherwise identical.
+ * Ported from rtk/scripts/benchmark/lib/test.ts and adapted to ctx conventions:
+ * binary renamed rtk -> ctx (CTX_BIN), behavior otherwise identical.
  */
 
-import { vmExec, TK_BIN } from "./vm";
+import { vmExec, CTX_BIN } from "./vm";
 
 export type TestStatus = "PASS" | "FAIL" | "SKIP";
 
@@ -91,7 +91,7 @@ export async function testCmd(
 }
 
 /**
- * Test token savings: compare raw command output vs tk filtered output.
+ * Test token savings: compare raw command output vs ctx filtered output.
  */
 export async function testSavings(
   name: string,
@@ -100,10 +100,10 @@ export async function testSavings(
   targetPct: number,
 ): Promise<TestResult> {
   const raw = await vmExec(rawCmd);
-  const tk = await vmExec(tkCmd);
+  const ctx = await vmExec(tkCmd);
 
   const rawSize = raw.stdout.length;
-  const tkSize = tk.stdout.length;
+  const tkSize = ctx.stdout.length;
 
   if (rawSize === 0) {
     const result: TestResult = {
@@ -136,12 +136,9 @@ export async function testSavings(
 /**
  * Test rewrite engine: input -> expected output.
  */
-export async function testRewrite(
-  input: string,
-  expected: string,
-): Promise<TestResult> {
+export async function testRewrite(input: string, expected: string): Promise<TestResult> {
   const escaped = input.replace(/'/g, "'\\''");
-  const { stdout } = await vmExec(`${TK_BIN} rewrite '${escaped}'`);
+  const { stdout } = await vmExec(`${CTX_BIN} rewrite '${escaped}'`);
   const actual = stdout.trim();
 
   let status: TestStatus;

@@ -1,10 +1,10 @@
-// `tk support` — one command to produce a shareable diagnostic (recent error +
+// `ctx support` — one command to produce a shareable diagnostic (recent error +
 // logs, auto-gathered and saved) and route it to the maintainer via the user's mail
 // client (mailto:) or Microsoft Teams (msteams: scheme). NO SMTP/HTTP, no auto-send:
 // the user always reviews and sends by hand. The destination is BAKED AT BUILD TIME
-// (ADR 0013) — `tk support` reaches whoever packaged this build; the end user picks
+// (ADR 0013) — `ctx support` reaches whoever packaged this build; the end user picks
 // only the channel, never the address. When this build baked no destination for the
-// chosen channel, tk still gathers + saves the bundle and copies it to the clipboard,
+// chosen channel, ctx still gathers + saves the bundle and copies it to the clipboard,
 // then prints a hint, sending nowhere.
 //
 // Lazily imported from src/cli.ts so the compression hot path never loads it (I5).
@@ -36,19 +36,19 @@ function err(line: string): void {
 
 function usage(): string {
   return [
-    "tk support [email|teams|github] [--no-attach] [--redact] [-y]",
+    "ctx support [email|teams|github] [--no-attach] [--redact] [-y]",
     "  Produce a shareable diagnostic (recent error + logs) and open your mail client",
     "  (mailto:), Microsoft Teams (msteams: scheme), or a GitHub issue draft to send it.",
     "  Nothing is sent automatically — you review and send/submit by hand. The full",
-    "  report is saved to ~/.token-killer/reports/.",
+    "  report is saved to ~/.contexa/reports/.",
     "",
     "  email | teams | github  Channel to reach support through (prompted if omitted in a TTY)",
     "  --no-attach             Do NOT gather the error + logs bundle (send a bare message)",
     "  --redact                Lengths/labels only — no command text, output bytes, or config bodies",
     "  -y, --yes               Skip the interactive prompts (use the channel + attach defaults)",
     "",
-    "  The destination is fixed at build time (ADR 0013): `tk support` reaches whoever",
-    "  packaged this build. If this build baked no destination for the chosen channel, tk",
+    "  The destination is fixed at build time (ADR 0013): `ctx support` reaches whoever",
+    "  packaged this build. If this build baked no destination for the chosen channel, ctx",
     "  saves the bundle, copies it to your clipboard, and prints a hint — it sends nowhere.",
     "",
   ].join("\n");
@@ -106,12 +106,12 @@ function disclose(attach: boolean, redact: boolean): void {
   if (redact) {
     out("  • lengths and labels only — NO command text, output bytes, or config bodies\n");
   } else {
-    out("  • the shell commands you ran through tk + their output\n");
-    out("  • tk's own logs and recent errors\n");
+    out("  • the shell commands you ran through ctx + their output\n");
+    out("  • ctx's own logs and recent errors\n");
     out("  • your host config and environment (home dir scrubbed)\n");
     out("  • NO chat prompts\n");
   }
-  out("You review it and send it by hand — tk sends nothing automatically.\n\n");
+  out("You review it and send it by hand — ctx sends nothing automatically.\n\n");
 }
 
 function emailBody(report: SupportReport | undefined, bundlePath: string | undefined): string {
@@ -155,7 +155,7 @@ function githubIssueBody(
 export async function runSupport(argv: string[]): Promise<number> {
   const parsed = parseArgs(argv);
   if ("error" in parsed) {
-    err(`tk support: ${parsed.error}\n`);
+    err(`ctx support: ${parsed.error}\n`);
     return 1;
   }
   if (parsed.help) {
@@ -176,7 +176,7 @@ export async function runSupport(argv: string[]): Promise<number> {
       channel =
         answer === "2" ? "teams" : answer === "3" ? "github" : answer === "1" ? "email" : undefined;
       if (!channel) {
-        err("tk support: no channel selected\n");
+        err("ctx support: no channel selected\n");
         return 1;
       }
     }
@@ -215,14 +215,14 @@ export async function runSupport(argv: string[]): Promise<number> {
     }
     out(
       `This build has no ${channel} support destination — it was not configured when ` +
-        "tk was packaged. The report is saved (and copied) for you to send by hand. " +
+        "ctx was packaged. The report is saved (and copied) for you to send by hand. " +
         "Nothing was sent.\n",
     );
     return 0;
   }
 
   if (channel === "email") {
-    const uri = buildMailto(destination, "tk support report", emailBody(report, bundlePath));
+    const uri = buildMailto(destination, "ctx support report", emailBody(report, bundlePath));
     const opened = await openExternal(uri);
     if (!opened) out(`Open this link to email support:\n${uri}\n`);
     if (bundlePath) out(`Attach this file to the email: ${bundlePath}\n`);
@@ -231,8 +231,8 @@ export async function runSupport(argv: string[]): Promise<number> {
     // with a short pointer (the scheme's `message=` is a pointer, not the payload).
     const copied = report ? copyToClipboard(report.markdown) : false;
     const pointer = report
-      ? `tk support report — ${report.summary.split("\n")[0]}`
-      : "tk support report";
+      ? `ctx support report — ${report.summary.split("\n")[0]}`
+      : "ctx support report";
     const uri = buildTeamsDeepLink(destination, pointer);
     const opened = await openExternal(uri);
     if (!opened) out(`Open this link to message support on Teams:\n${uri}\n`);
@@ -250,7 +250,7 @@ export async function runSupport(argv: string[]): Promise<number> {
     const copied = report ? copyToClipboard(report.markdown) : false;
     const uri = buildGithubIssueUrl(
       destination,
-      "tk support report",
+      "ctx support report",
       githubIssueBody(report, bundlePath),
     );
     const opened = await openExternal(uri);

@@ -1,4 +1,4 @@
-// `tk gain` — RTK-parity savings analytics (ADR 0004 §4). Cold path, read-only,
+// `ctx gain` — RTK-parity savings analytics (ADR 0004 §4). Cold path, read-only,
 // fail-open: a missing or corrupt store yields an empty section, never a crash.
 // Reads the incremental rollup cache (history.jsonl remains the source of truth).
 
@@ -257,7 +257,7 @@ export async function runGain(
 ): Promise<number> {
   const args = parseGainArgs(argv);
   if (args.error) {
-    process.stderr.write(`tk gain: ${args.error}\n`);
+    process.stderr.write(`ctx gain: ${args.error}\n`);
     return 1;
   }
 
@@ -444,7 +444,7 @@ async function renderText(ctx: GainContext, args: GainArgs, now: Date): Promise<
   if (buckets) {
     // Focused period view (rtk `gain --weekly` parity): lead with just the breakdown
     // table — its TOTAL row is the summary. The headline/by-command/dedup/per-project
-    // blocks belong to the default `tk gain --text`, not a period drill-down.
+    // blocks belong to the default `ctx gain --text`, not a period drill-down.
     sections.push(renderBuckets(args.bucketing, buckets));
   } else {
     const summary = rollupToGainSummary(ctx.rollup);
@@ -471,7 +471,7 @@ async function renderText(ctx: GainContext, args: GainArgs, now: Date): Promise<
 }
 
 // The stored quality_status values are accurate for the gate's internal logic but
-// read as alarming in a user-facing summary: `inflated` does NOT mean tk shipped
+// read as alarming in a user-facing summary: `inflated` does NOT mean ctx shipped
 // bloated output — it means the gate caught a compression that would have grown or
 // dropped content and REVERTED to raw (the safe, correct output went out). Relabel
 // for display only; the JSON/telemetry surfaces keep the raw status names.
@@ -516,10 +516,10 @@ function renderByCommand(byHandler: GainSummary["by_handler"]): string {
 
 function renderSummary(s: GainSummary, scope: string): string {
   // Headline block — rtk-parity labels (Input/Output tokens, Tokens saved) plus the
-  // 24-cell efficiency meter. No exec-time line: tk's rollup stores no per-command
+  // 24-cell efficiency meter. No exec-time line: ctx's rollup stores no per-command
   // duration and we never fabricate one.
   const head = [
-    `📊 Token Killer — Token Savings (${scope})`,
+    `📊 Contexa — Token Savings (${scope})`,
     RULE_DOUBLE,
     "",
     `Total commands:   ${grp(s.commands)}`,
@@ -560,7 +560,7 @@ async function renderPerProject(projects: ProjectRollup[]): Promise<string> {
 // rtk-parity period breakdown: a fixed-width table (Period · Cmds · Input · Output
 // · Saved · Save%) bracketed by a ═ title rule and a ─ rule above a TOTAL row.
 // Output = Input − Saved (saved_tokens = raw − output, so this is exact). No Time
-// column: tk's rollup stores no per-bucket duration and we never fabricate one.
+// column: ctx's rollup stores no per-bucket duration and we never fabricate one.
 function renderBuckets(bucketing: Bucketing, buckets: TimeBucket[]): string {
   // rtk-parity title: single-letter prefix + "<Period> Breakdown (N <plural>)".
   const meta = {

@@ -3,12 +3,12 @@ import { existsSync, readFileSync, renameSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 
 import { resolveBinaryPath } from "../executor.js";
-import { ensureTokenKillerHome, tokenKillerHome } from "./dataDir.js";
+import { ensureContexaHome, contexaHome } from "./dataDir.js";
 
 // Persistent memo of the Windows PATH×PATHEXT walk for the HOOK path (2.1 item 4).
-// The shim wrapper bakes TK_REAL_BIN so the command-proxy path skips the walk, but a
+// The shim wrapper bakes CTX_REAL_BIN so the command-proxy path skips the walk, but a
 // hook invocation has no wrapper env — so it would re-walk PATH on every tool event.
-// We cache the resolved path under ~/.token-killer (so a future AV folder exclusion
+// We cache the resolved path under ~/.contexa (so a future AV folder exclusion
 // covers it), keyed by a hash of (PATH + PATHEXT): any PATH change opens a fresh
 // namespace, and stale entries are simply never read. Every hit is revalidated with
 // ONE existsSync, so a moved/uninstalled binary falls back to a fresh walk.
@@ -25,7 +25,7 @@ type CacheShape = Record<string, Record<string, string>>;
 const FIELD_SEP = String.fromCharCode(0);
 
 function cacheFile(): string {
-  return join(tokenKillerHome(), "path-cache.json");
+  return join(contexaHome(), "path-cache.json");
 }
 
 // One namespace per (PATH, PATHEXT). A NUL separator keeps the two fields unambiguous.
@@ -45,7 +45,7 @@ function readCache(): CacheShape {
 
 function writeCache(cache: CacheShape): void {
   try {
-    const file = join(ensureTokenKillerHome(), "path-cache.json");
+    const file = join(ensureContexaHome(), "path-cache.json");
     // Write-then-rename so a concurrent reader (or a crash) never sees a torn file.
     const tmp = `${file}.${process.pid}.tmp`;
     writeFileSync(tmp, JSON.stringify(cache), { mode: 0o600 });

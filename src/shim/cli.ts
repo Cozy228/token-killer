@@ -32,8 +32,8 @@ function err(line: string): void {
 }
 
 export type InstallShimOptions = {
-  // Which host configs to patch. `tk shim install` patches both available
-  // surfaces; `tk install` patches the one for the detected host.
+  // Which host configs to patch. `ctx shim install` patches both available
+  // surfaces; `ctx install` patches the one for the detected host.
   rc?: boolean;
   vscode?: boolean;
   quiet?: boolean;
@@ -75,9 +75,9 @@ export function installShim(opts: InstallShimOptions = {}): ProbeResult {
   }
 
   installWrappers({ programs: installed, installedAt: Date.now(), version: VERSION });
-  log(`token-killer shim installed: ${dir}`);
+  log(`contexa shim installed: ${dir}`);
   log(`  wrappers: ${wrapperList}`);
-  // Honest disclosure, not a silent drop: list the tools tk did NOT wrap because
+  // Honest disclosure, not a silent drop: list the tools ctx did NOT wrap because
   // no binary was found on PATH (on stock Windows `cat`/`ls`/… are shell aliases).
   if (skipped.length > 0) {
     log(`  skipped ${skipped.length} not on PATH: ${skipped.join(", ")}`);
@@ -105,7 +105,7 @@ export function installShim(opts: InstallShimOptions = {}): ProbeResult {
     } catch {
       err(`  VS Code settings.json is not valid JSON; patch it manually:`);
       err(
-        `    "terminal.integrated.env.*": { "TK_SHIM_DIR": "${dir}", "TK_COMPRESS_TTY": "1", "PATH": "${dir}${delimiter}\${env:PATH}" }`,
+        `    "terminal.integrated.env.*": { "CTX_SHIM_DIR": "${dir}", "CTX_COMPRESS_TTY": "1", "PATH": "${dir}${delimiter}\${env:PATH}" }`,
       );
       emitSupportHintOnce();
     }
@@ -146,11 +146,11 @@ function uninstall(dryRun: boolean): number {
       }
     } catch {
       err(
-        `  VS Code settings.json could not be parsed; remove the TK_SHIM_DIR/PATH keys manually.`,
+        `  VS Code settings.json could not be parsed; remove the CTX_SHIM_DIR/PATH keys manually.`,
       );
     }
   }
-  out(`token-killer shim removed: ${dir}`);
+  out(`contexa shim removed: ${dir}`);
   return 0;
 }
 
@@ -164,7 +164,7 @@ function status(opts: ShimStatusOptions = {}): number {
   const pathEntries = (process.env.PATH ?? "").split(delimiter);
   const index = pathEntries.indexOf(dir);
 
-  out(`token-killer shim status`);
+  out(`contexa shim status`);
   out(`  dir:            ${dir}${existsSync(dir) ? "" : " (not installed)"}`);
   out(
     `  manifest:       ${manifest ? `v${manifest.version} schema ${manifest.schema}, ${manifest.programs.length} programs` : "absent"}`,
@@ -175,8 +175,8 @@ function status(opts: ShimStatusOptions = {}): number {
   // Baked real-binary paths (2.1). Each was resolved once at install so the runtime
   // skips the per-command PATH walk. Re-validate here (status is not a hot path):
   //  - stale    = the baked binary moved/was uninstalled → runtime falls back to a walk
-  //  - shadowed = PATH was reordered so a DIFFERENT binary now wins; tk still runs the
-  //               baked one, so re-run `tk install` to re-bake against the new PATH.
+  //  - shadowed = PATH was reordered so a DIFFERENT binary now wins; ctx still runs the
+  //               baked one, so re-run `ctx install` to re-bake against the new PATH.
   const baked = Object.entries(manifest?.resolvedPaths ?? {});
   if (baked.length > 0) {
     let stale = 0;
@@ -191,7 +191,7 @@ function status(opts: ShimStatusOptions = {}): number {
     }
     const flags: string[] = [];
     if (stale > 0) flags.push(`${stale} stale (binary moved)`);
-    if (shadowed > 0) flags.push(`${shadowed} shadowed by PATH reorder — re-run \`tk install\``);
+    if (shadowed > 0) flags.push(`${shadowed} shadowed by PATH reorder — re-run \`ctx install\``);
     out(
       `  baked paths:    ${baked.length}${flags.length > 0 ? ` (${flags.join("; ")})` : " all valid"}`,
     );
@@ -207,7 +207,7 @@ function status(opts: ShimStatusOptions = {}): number {
 export function runShim(argv: string[], opts: { statusProbe?: ProbeResult } = {}): number {
   const dryRun = argv.includes("--dry-run");
   // The subcommand is the first non-flag token, so `--dry-run` can appear in any
-  // position (e.g. `tk shim install --dry-run`).
+  // position (e.g. `ctx shim install --dry-run`).
   const sub = argv.find((token) => !token.startsWith("-"));
   switch (sub) {
     case "install":
@@ -218,7 +218,7 @@ export function runShim(argv: string[], opts: { statusProbe?: ProbeResult } = {}
     case undefined:
       return status({ probe: opts.statusProbe });
     default:
-      err(`tk shim: unknown subcommand '${sub}' (expected install | uninstall | status)`);
+      err(`ctx shim: unknown subcommand '${sub}' (expected install | uninstall | status)`);
       return 1;
   }
 }

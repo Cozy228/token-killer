@@ -1,9 +1,9 @@
 """
-End-to-end benchmark-session orchestrator for tk (token-killer).
+End-to-end benchmark-session orchestrator for ctx (contexa).
 
-Ported from rtk/scripts/benchmark-sessions/lib/runner.py and adapted to tk
-conventions: setup_rtk -> setup_tk, setup-rtk.sh -> setup-tk.sh,
-rtk_db -> tk_db, "RTK ON/OFF" -> "TK ON/OFF". Orchestration flow is otherwise
+Ported from rtk/scripts/benchmark-sessions/lib/runner.py and adapted to ctx
+conventions: setup_rtk -> setup_tk, setup-rtk.sh -> setup-ctx.sh,
+rtk_db -> tk_db, "RTK ON/OFF" -> "CTX ON/OFF". Orchestration flow is otherwise
 identical.
 """
 
@@ -97,7 +97,7 @@ async def run_benchmark(
     )
 
     try:
-        _print_step(1, total_steps, f"Creating {vms * 2} VMs ({vms} TK ON + {vms} TK OFF)")
+        _print_step(1, total_steps, f"Creating {vms * 2} VMs ({vms} CTX ON + {vms} CTX OFF)")
         vm_names = await create_vm_pool(vms, cloud_init)
         print(f"  VMs ready: {', '.join(vm_names)}")
 
@@ -111,12 +111,12 @@ async def run_benchmark(
         ))
         print("  Codebases deployed")
 
-        _print_step(3, total_steps, "Configuring tk on ON VMs")
-        setup_script = ROOT_DIR / "setup-tk.sh"
+        _print_step(3, total_steps, "Configuring ctx on ON VMs")
+        setup_script = ROOT_DIR / "setup-ctx.sh"
         on_vms = [n for n in vm_names if "-on-" in n]
         off_vms = [n for n in vm_names if "-off-" in n]
         await asyncio.gather(*(setup_tk(vm, setup_script) for vm in on_vms))
-        print(f"  tk configured on {len(on_vms)} VMs")
+        print(f"  ctx configured on {len(on_vms)} VMs")
 
         _print_step(4, total_steps, f"Running Claude sessions (timeout: {task.timeout_minutes}min)")
         results = await run_all_sessions(vm_names, task, api_key, output_dir)

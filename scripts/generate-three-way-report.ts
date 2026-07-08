@@ -55,7 +55,7 @@ export type CaseResult = {
   exitCode: number;
   savingsGap: number;
   raw: RowStats;
-  tk: RowStats;
+  ctx: RowStats;
   rtk: RowStats;
   rawText: string;
   tkText: string;
@@ -73,7 +73,7 @@ function resolveTkBin(): string {
     accessSync(built, constants.R_OK);
     return built;
   } catch {
-    throw new Error("tk binary not found. Run: pnpm build");
+    throw new Error("ctx binary not found. Run: pnpm build");
   }
 }
 
@@ -157,8 +157,8 @@ function displayTgText(result: CaseResult): string {
   return result.tkText;
 }
 
-function savingsGap(result: Pick<CaseResult, "tk" | "rtk">): number {
-  return Math.abs(result.tk.savingsPct - result.rtk.savingsPct);
+function savingsGap(result: Pick<CaseResult, "ctx" | "rtk">): number {
+  return Math.abs(result.ctx.savingsPct - result.rtk.savingsPct);
 }
 
 export function partitionReportResults(
@@ -182,8 +182,8 @@ function sortBySavingsGap(results: CaseResult[]): CaseResult[] {
     if (right.savingsGap !== left.savingsGap) {
       return right.savingsGap - left.savingsGap;
     }
-    const leftTokenGap = Math.abs(left.tk.tokens - left.rtk.tokens);
-    const rightTokenGap = Math.abs(right.tk.tokens - right.rtk.tokens);
+    const leftTokenGap = Math.abs(left.ctx.tokens - left.rtk.tokens);
+    const rightTokenGap = Math.abs(right.ctx.tokens - right.rtk.tokens);
     if (rightTokenGap !== leftTokenGap) {
       return rightTokenGap - leftTokenGap;
     }
@@ -194,7 +194,7 @@ function sortBySavingsGap(results: CaseResult[]): CaseResult[] {
 function deltaTag(tkPct: number, rtkPct: number): string {
   const diff = tkPct - rtkPct;
   if (Math.abs(diff) < 0.05) return "≈";
-  return diff > 0 ? `tk +${diff.toFixed(1)}pp` : `rtk +${Math.abs(diff).toFixed(1)}pp`;
+  return diff > 0 ? `ctx +${diff.toFixed(1)}pp` : `rtk +${Math.abs(diff).toFixed(1)}pp`;
 }
 
 function rtkAvailable(): boolean {
@@ -220,19 +220,19 @@ function runLiveCase(testCase: LiveComparisonCase, tkBin: string): CaseResult {
   const rawText = mergedOutput(rawRun);
   const tkText = mergedOutput(tkRun);
   const rtkText = mergedOutput(rtkRun);
-  const { raw, filtered: tk } = statsFromBaseline(rawText, tkText);
+  const { raw, filtered: ctx } = statsFromBaseline(rawText, tkText);
   const rtk = statsFromBaseline(rawText, rtkText).filtered;
   const result: CaseResult = {
     name: testCase.name,
     command: testCase.command.join(" "),
     handler,
     rawCmd: rawArgv.join(" "),
-    tkCmd: `tk ${testCase.command.join(" ")}`,
+    tkCmd: `ctx ${testCase.command.join(" ")}`,
     rtkCmd: rtkArgv.slice(1).join(" "),
     exitCode: rawRun.exitCode,
     savingsGap: 0,
     raw,
-    tk,
+    ctx,
     rtk,
     rawText,
     tkText,
@@ -248,7 +248,7 @@ async function runFixtureCase(testCase: FixtureComparisonCase): Promise<CaseResu
   const exitCode = testCase.exitCode ?? 0;
   const tkText = await filterTgFixture(testCase.command, rawText, exitCode, repoRoot);
 
-  // tk-only handlers (e.g. terraform) have no rtk filter: rtk would pass the raw
+  // ctx-only handlers (e.g. terraform) have no rtk filter: rtk would pass the raw
   // output through unchanged, so model it as a raw passthrough (0% savings).
   let rtkText: string;
   let rtkCmd: string;
@@ -269,19 +269,19 @@ async function runFixtureCase(testCase: FixtureComparisonCase): Promise<CaseResu
     rtkCmd = `cat ${testCase.fixture} | rtk ${rtkArgv.join(" ")}`;
   }
 
-  const { raw, filtered: tk } = statsFromBaseline(rawText, tkText);
+  const { raw, filtered: ctx } = statsFromBaseline(rawText, tkText);
   const rtk = statsFromBaseline(rawText, rtkText).filtered;
   const result: CaseResult = {
     name: `[fixture] ${testCase.name}`,
     command: testCase.command.join(" "),
     handler,
     rawCmd: `fixture: ${testCase.fixture}`,
-    tkCmd: `tk filter ${testCase.command.join(" ")}`,
+    tkCmd: `ctx filter ${testCase.command.join(" ")}`,
     rtkCmd,
     exitCode,
     savingsGap: 0,
     raw,
-    tk,
+    ctx,
     rtk,
     rawText,
     tkText,
@@ -301,40 +301,40 @@ export function renderReport(
 ): string {
   const generated = new Date().toISOString().slice(0, 10);
   const lines: string[] = [
-    "# tk vs rtk — Three-Way Comparison",
+    "# ctx vs rtk — Three-Way Comparison",
     "",
     `Generated: ${generated}`,
-    `Project: \`token-killer\` (${repoRoot})`,
+    `Project: \`contexa\` (${repoRoot})`,
     `Scope: ${results.length} cases with full outputs (${liveCount} live, ${fixtureCount} fixture-backed); ${omittedLarge.length} large cases stats-only (raw > ${REPORT_MAX_RAW_TOKENS} tokens)`,
     `rtk: ${rtkVersion}`,
     "",
     "**Method**",
     "- **raw (live)**: underlying command stdout+stderr (`git --no-pager` for git)",
     "- **raw (fixture)**: recorded stdout in `tests/fixtures/**`",
-    "- **tk (live)**: `node dist/cli.js <command>`",
-    "- **tk (fixture)**: handler filter on fixture stdout (same pipeline as product tests)",
+    "- **ctx (live)**: `node dist/cli.js <command>`",
+    "- **ctx (fixture)**: handler filter on fixture stdout (same pipeline as product tests)",
     "- **rtk (live)**: mapped native `rtk` subcommand",
     "- **rtk (fixture)**: `cat <fixture> | rtk …` when stdin filter exists (see per-case RTK cmd)",
     '- **rtk (wrapper)**: err/summary/deps/smart read a command/file/dir, so the fixture is fed via `rtk <sub> "cat <fixture>"`, `rtk smart <fixture>`, or `rtk deps <tmpdir>` (see per-case RTK cmd)',
-    "- **rtk (unsupported)**: tk-only handlers rtk has no filter for (e.g. terraform) are shown as rtk raw passthrough (0% savings)",
-    "- **savingsPct**: token estimate vs raw (`ceil(chars/4)`), same as tk core",
-    "- **Sort**: cases ordered by |tk savingsPct − rtk savingsPct| (largest gap first)",
+    "- **rtk (unsupported)**: ctx-only handlers rtk has no filter for (e.g. terraform) are shown as rtk raw passthrough (0% savings)",
+    "- **savingsPct**: token estimate vs raw (`ceil(chars/4)`), same as ctx core",
+    "- **Sort**: cases ordered by |ctx savingsPct − rtk savingsPct| (largest gap first)",
     `- **Large outputs**: cases with raw > ${REPORT_MAX_RAW_TOKENS} tokens listed under “Omitted large outputs” (no full text)`,
     "",
     "## Summary",
     "",
-    "| # | Case | Handler | raw | tk | rtk | tk savings | rtk savings | Δ |",
+    "| # | Case | Handler | raw | ctx | rtk | ctx savings | rtk savings | Δ |",
     "|---:|---|---|---:|---:|---:|---:|---:|---:|",
   ];
 
   results.forEach((result, index) => {
     lines.push(
-      `| ${index + 1} | ${result.name.replace(/\|/g, "\\|")} | ${result.handler} | ${result.raw.tokens} | ${result.tk.tokens} | ${result.rtk.tokens} | ${result.tk.savingsPct}% | ${result.rtk.savingsPct}% | ${result.savingsGap.toFixed(1)}pp ${deltaTag(result.tk.savingsPct, result.rtk.savingsPct)} |`,
+      `| ${index + 1} | ${result.name.replace(/\|/g, "\\|")} | ${result.handler} | ${result.raw.tokens} | ${result.ctx.tokens} | ${result.rtk.tokens} | ${result.ctx.savingsPct}% | ${result.rtk.savingsPct}% | ${result.savingsGap.toFixed(1)}pp ${deltaTag(result.ctx.savingsPct, result.rtk.savingsPct)} |`,
     );
   });
 
   const totalRaw = results.reduce((sum, row) => sum + row.raw.tokens, 0);
-  const totalTk = results.reduce((sum, row) => sum + row.tk.tokens, 0);
+  const totalTk = results.reduce((sum, row) => sum + row.ctx.tokens, 0);
   const totalRtk = results.reduce((sum, row) => sum + row.rtk.tokens, 0);
   const tkAggregatePct =
     totalRaw === 0 ? 0 : Number((((totalRaw - totalTk) / totalRaw) * 100).toFixed(1));
@@ -345,7 +345,7 @@ export function renderReport(
     "",
     `**Aggregate (token-weighted across ${results.length} cases with full outputs):**`,
     `- raw: ${totalRaw} tokens`,
-    `- tk: ${totalTk} tokens (${tkAggregatePct}% savings)`,
+    `- ctx: ${totalTk} tokens (${tkAggregatePct}% savings)`,
     `- rtk: ${totalRtk} tokens (${rtkAggregatePct}% savings)`,
     "",
   );
@@ -356,12 +356,12 @@ export function renderReport(
       "",
       `Per-case dumps excluded when raw exceeds ${REPORT_MAX_RAW_TOKENS} tokens.`,
       "",
-      "| Case | Handler | raw | tk | rtk | tk savings | rtk savings | Δ |",
+      "| Case | Handler | raw | ctx | rtk | ctx savings | rtk savings | Δ |",
       "|---|---|---:|---:|---:|---:|---:|---:|",
     );
     for (const result of omittedLarge) {
       lines.push(
-        `| ${result.name.replace(/\|/g, "\\|")} | ${result.handler} | ${result.raw.tokens} | ${result.tk.tokens} | ${result.rtk.tokens} | ${result.tk.savingsPct}% | ${result.rtk.savingsPct}% | ${result.savingsGap.toFixed(1)}pp ${deltaTag(result.tk.savingsPct, result.rtk.savingsPct)} |`,
+        `| ${result.name.replace(/\|/g, "\\|")} | ${result.handler} | ${result.raw.tokens} | ${result.ctx.tokens} | ${result.rtk.tokens} | ${result.ctx.savingsPct}% | ${result.rtk.savingsPct}% | ${result.savingsGap.toFixed(1)}pp ${deltaTag(result.ctx.savingsPct, result.rtk.savingsPct)} |`,
       );
     }
     lines.push("");
@@ -381,14 +381,14 @@ export function renderReport(
     lines.push(`### ${index + 1}. ${result.name}`);
     lines.push("");
     lines.push(`- Handler: \`${result.handler}\``);
-    lines.push(`- tk: \`${result.tkCmd}\``);
+    lines.push(`- ctx: \`${result.tkCmd}\``);
     lines.push(`- raw: \`${result.rawCmd}\``);
     lines.push(`- rtk: \`${result.rtkCmd}\``);
     lines.push("");
     lines.push("| channel | chars | tokens | savingsPct |");
     lines.push("|---|---:|---:|---:|");
     lines.push(`| raw | ${result.raw.chars} | ${result.raw.tokens} | 0% |`);
-    lines.push(`| tk | ${result.tk.chars} | ${result.tk.tokens} | ${result.tk.savingsPct}% |`);
+    lines.push(`| ctx | ${result.ctx.chars} | ${result.ctx.tokens} | ${result.ctx.savingsPct}% |`);
     lines.push(`| rtk | ${result.rtk.chars} | ${result.rtk.tokens} | ${result.rtk.savingsPct}% |`);
     lines.push("");
     lines.push(`**raw** (${result.raw.chars} chars, ${result.raw.tokens} tokens):`);
@@ -396,7 +396,7 @@ export function renderReport(
     lines.push(safeCodeBlock(result.rawText, "text"));
     lines.push("");
     lines.push(
-      `**tk** (${result.tk.chars} chars, ${result.tk.tokens} tokens, ${result.tk.savingsPct}% savings):`,
+      `**ctx** (${result.ctx.chars} chars, ${result.ctx.tokens} tokens, ${result.ctx.savingsPct}% savings):`,
     );
     lines.push("");
     lines.push(safeCodeBlock(displayTgText(result), "text"));

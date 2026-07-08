@@ -10,9 +10,9 @@ export type FixtureCase = {
   forbidden?: RegExp[];
   maxOutputGrowth?: number;
   /**
-   * Set for tk-only handlers (e.g. terraform) that rtk has no filter for. The
+   * Set for ctx-only handlers (e.g. terraform) that rtk has no filter for. The
    * three-way report represents rtk as a raw passthrough (0% savings) for these
-   * cases instead of skipping them, surfacing the tk-only win in the main table.
+   * cases instead of skipping them, surfacing the ctx-only win in the main table.
    */
   rtkUnsupported?: boolean;
   /**
@@ -37,12 +37,7 @@ export const fixtureCases: FixtureCase[] = [
     name: "search-like keeps rg default format matches",
     fixture: "tests/fixtures/common/rg_default_format.txt",
     command: ["rg", "pattern", "src"],
-    critical: [
-      "src/core/history.ts",
-      "HistoryRecord",
-      "src/core/report.ts",
-      "buildReport",
-    ],
+    critical: ["src/core/history.ts", "HistoryRecord", "src/core/report.ts", "buildReport"],
     forbidden: [/0 across 0 files/],
   },
   {
@@ -80,7 +75,12 @@ export const fixtureCases: FixtureCase[] = [
     name: "list-like keeps useful paths from real project listing",
     fixture: "tests/fixtures/common/ls_large_project.txt",
     command: ["find", "."],
-    critical: ["5F 3D:", "./ README.md package.json", "src/ cli.ts parse.ts", "tests/unit/ parse.test.ts"],
+    critical: [
+      "5F 3D:",
+      "./ README.md package.json",
+      "src/ cli.ts parse.ts",
+      "tests/unit/ parse.test.ts",
+    ],
   },
   {
     name: "find groups matches by directory like RTK",
@@ -128,7 +128,7 @@ export const fixtureCases: FixtureCase[] = [
     forbidden: [/drwx/, /staff/, /^total/m, /Jan  1/],
   },
   {
-    // RTK: system/read.rs — level "none" (default) returns full content; tk keeps
+    // RTK: system/read.rs — level "none" (default) returns full content; ctx keeps
     // every source symbol so downstream parsing stays valid.
     name: "read keeps source symbols at the default filter level (RTK read.rs)",
     fixture: "tests/fixtures/common/cat_large_ts.txt",
@@ -159,7 +159,7 @@ export const fixtureCases: FixtureCase[] = [
     fixture: "tests/fixtures/git/status_dirty_extended.txt",
     command: ["git", "status"],
     critical: [
-      "* token-killer-node-cli",
+      "* contexa-node-cli",
       " D DESIGN.md",
       " M README.md",
       " M package.json",
@@ -173,7 +173,7 @@ export const fixtureCases: FixtureCase[] = [
     fixture: "tests/fixtures/git/status_porcelain_branch_current.txt",
     command: ["git", "status", "--short", "--branch"],
     critical: [
-      "* token-killer-node-cli",
+      "* contexa-node-cli",
       "docs/testing-and-migration-audit.md",
       "tests/helpers/fixtureCases.ts",
       "tests/unit/handlers/fixtureWiring.test.ts",
@@ -194,10 +194,7 @@ export const fixtureCases: FixtureCase[] = [
     name: "diff keeps file metadata and aligned LCS insertion",
     fixture: "tests/fixtures/common/diff_lcs_insert.txt",
     command: ["diff", "old.ts", "new.ts"],
-    critical: [
-      "old.ts -> new.ts (+1 -0)",
-      "+   const timeoutMs = 5000;",
-    ],
+    critical: ["old.ts -> new.ts (+1 -0)", "+   const timeoutMs = 5000;"],
     forbidden: [/-  const unchanged/, /\+  const unchanged/],
   },
   {
@@ -258,7 +255,7 @@ export const fixtureCases: FixtureCase[] = [
     name: "git-branch small output passes through branch names",
     fixture: "tests/fixtures/git/branch_small_current.txt",
     command: ["git", "branch"],
-    critical: ["* token-killer-node-cli", "main"],
+    critical: ["* contexa-node-cli", "main"],
     forbidden: [/Branches:/, /Hidden:/],
     maxOutputGrowth: 10,
   },
@@ -267,9 +264,7 @@ export const fixtureCases: FixtureCase[] = [
     fixture: "tests/fixtures/git/add_missing_path.txt",
     command: ["git", "add", "__tk_missing_fixture_file__"],
     exitCode: 128,
-    critical: [
-      "fatal: pathspec '__tk_missing_fixture_file__'",
-    ],
+    critical: ["fatal: pathspec '__tk_missing_fixture_file__'"],
   },
   {
     name: "git-commit preserves dry-run dirty tree details",
@@ -293,36 +288,28 @@ export const fixtureCases: FixtureCase[] = [
     fixture: "tests/fixtures/git/pull_unstaged_changes.txt",
     command: ["git", "pull", "--ff-only", ".", "HEAD"],
     exitCode: 128,
-    critical: [
-      "cannot pull with rebase",
-      "You have unstaged changes",
-    ],
+    critical: ["cannot pull with rebase", "You have unstaged changes"],
   },
   {
     name: "git-fetch preserves missing remote failure",
     fixture: "tests/fixtures/git/fetch_missing_remote.txt",
     command: ["git", "fetch", "/tmp/__tk_missing_remote__", "main"],
     exitCode: 128,
-    critical: [
-      "does not appear to be a git repository",
-      "Could not read from remote repository",
-    ],
+    critical: ["does not appear to be a git repository", "Could not read from remote repository"],
   },
   {
     name: "git-stash preserves invalid ref failure",
     fixture: "tests/fixtures/git/stash_invalid_ref.txt",
     command: ["git", "stash", "show", "stash@{999999}"],
     exitCode: 1,
-    critical: [
-      "stash@{999999} is not a valid reference",
-    ],
+    critical: ["stash@{999999} is not a valid reference"],
   },
   {
     name: "git-worktree keeps worktree path and branch",
     fixture: "tests/fixtures/git/worktree_list.txt",
     command: ["git", "worktree", "list"],
     // RTK: git/git.rs::filter_worktree_list compacts $HOME to ~ (see rtkGitWorktreeBehavior).
-    critical: ["~/Workspace/token-killer", "token-killer-node-cli"],
+    critical: ["~/Workspace/contexa", "contexa-node-cli"],
   },
   {
     name: "gh repo view keeps repository identity and URL",
@@ -330,7 +317,7 @@ export const fixtureCases: FixtureCase[] = [
     command: ["gh", "repo", "view"],
     // RTK: gh_cmd.rs::format_repo_view — "owner/name", "[public]", stars/forks, url
     // (no default-branch line; shares the contract with rtkGhBehavior).
-    critical: ["Cozy228/token-killer", "[public]", "https://github.com/Cozy228/token-killer"],
+    critical: ["Cozy228/contexa", "[public]", "https://github.com/Cozy228/contexa"],
   },
   {
     name: "glab mr list keeps merge request identity and branches",
@@ -349,11 +336,7 @@ export const fixtureCases: FixtureCase[] = [
     fixture: "tests/fixtures/python/pytest_failed.txt",
     command: ["pytest"],
     exitCode: 1,
-    critical: [
-      "tests/order/test_submit.py::test_duplicate_submit",
-      "AssertionError",
-      "1 failed",
-    ],
+    critical: ["tests/order/test_submit.py::test_duplicate_submit", "AssertionError", "1 failed"],
   },
   {
     // RTK: pytest_cmd.rs::build_pytest_summary — an all-pass run collapses to
@@ -378,7 +361,13 @@ export const fixtureCases: FixtureCase[] = [
     fixture: "tests/fixtures/python/mypy_many.txt",
     command: ["mypy", "src"],
     exitCode: 1,
-    critical: ["mypy: 2 errors in 2 files", "src/order/submit.py", "L82:", "arg-type", "union-attr"],
+    critical: [
+      "mypy: 2 errors in 2 files",
+      "src/order/submit.py",
+      "L82:",
+      "arg-type",
+      "union-attr",
+    ],
     forbidden: [/Found 2 errors/],
   },
   {
@@ -392,7 +381,12 @@ export const fixtureCases: FixtureCase[] = [
     fixture: "tests/fixtures/js/eslint_many.txt",
     command: ["eslint", "src"],
     exitCode: 1,
-    critical: ["src/components/UserForm.tsx", "42:7", "no-unused-vars", "react-hooks/exhaustive-deps"],
+    critical: [
+      "src/components/UserForm.tsx",
+      "42:7",
+      "no-unused-vars",
+      "react-hooks/exhaustive-deps",
+    ],
   },
   {
     // RTK: tsc_cmd.rs::filter_tsc_output — diagnostics are regrouped by file with a
@@ -433,11 +427,7 @@ export const fixtureCases: FixtureCase[] = [
     fixture: "tests/fixtures/js/jest_failed.txt",
     command: ["jest"],
     exitCode: 1,
-    critical: [
-      "PASS (215) FAIL (3)",
-      "src/order/submit.test.ts",
-      "prevents duplicate submit",
-    ],
+    critical: ["PASS (215) FAIL (3)", "src/order/submit.test.ts", "prevents duplicate submit"],
     forbidden: [/JS tests failed/, /Summary:/],
   },
   {
@@ -685,12 +675,7 @@ export const fixtureCases: FixtureCase[] = [
     name: "env groups variables and masks secrets",
     fixture: "tests/fixtures/system/env_full.txt",
     command: ["env"],
-    critical: [
-      "PATH Variables:",
-      "Cloud/Services:",
-      "AWS_REGION=us-east-1",
-      "Total: 25 vars",
-    ],
+    critical: ["PATH Variables:", "Cloud/Services:", "AWS_REGION=us-east-1", "Total: 25 vars"],
     forbidden: [/fixture_api_secret_supersecretvalue/, /wJalrXUtnFEMIbKbanana/],
   },
   {
@@ -699,7 +684,7 @@ export const fixtureCases: FixtureCase[] = [
     name: "json compacts a package response with sorted keys",
     fixture: "tests/fixtures/system/json_package_response.json",
     command: ["json", "package.json"],
-    critical: ['name: "token-killer"', 'version: "0.1.0"', 'test: "vitest run"'],
+    critical: ['name: "contexa"', 'version: "0.1.0"', 'test: "vitest run"'],
   },
   {
     // RTK: system/log_cmd.rs::analyze_logs — deduplicates repeated log lines into a
@@ -715,7 +700,7 @@ export const fixtureCases: FixtureCase[] = [
     ],
   },
   {
-    // tk-only handler: rtk has no terraform support. Strips state lock / refresh /
+    // ctx-only handler: rtk has no terraform support. Strips state lock / refresh /
     // data-source read progress, the symbol legend, and the trailing -out note;
     // keeps the full resource action body and the plan summary line.
     name: "terraform plan keeps resource changes and plan summary",
@@ -736,7 +721,7 @@ export const fixtureCases: FixtureCase[] = [
     rtkUnsupported: true,
   },
   {
-    // tk-only handler: drops per-run progress and box borders, keeps failed runs,
+    // ctx-only handler: drops per-run progress and box borders, keeps failed runs,
     // the error diagnostic, and the final Failure! summary.
     name: "terraform test keeps failed run and assertion",
     fixture: "tests/fixtures/terraform/test_failed.txt",
@@ -789,7 +774,13 @@ export const fixtureCases: FixtureCase[] = [
     name: "deps summarizes a package.json manifest",
     fixture: "tests/fixtures/system/deps_package.json",
     command: ["deps"],
-    critical: ["Node.js (package.json):", "Dependencies (2):", "react (19.0.0)", "Dev (1):", "vitest (4.1.8)"],
+    critical: [
+      "Node.js (package.json):",
+      "Dependencies (2):",
+      "react (19.0.0)",
+      "Dev (1):",
+      "vitest (4.1.8)",
+    ],
     forbidden: [/"scripts"/],
     rtkWrapper: { mode: "dir-package", sub: ["deps"] },
   },

@@ -1,6 +1,6 @@
 // The single token estimator (metrics-ledger Gap A, ADR 0004 Decision 8). Every
 // ledger and the telemetry builder import from here so the estimate can never drift
-// between what `tk gain` shows and what telemetry sends.
+// between what `ctx gain` shows and what telemetry sends.
 //
 // This is a HEURISTIC, not a real tokenizer — Claude's tokenizer is not available
 // offline, and the docs warn that approximating it with tiktoken/gpt-tokenizer
@@ -8,9 +8,9 @@
 // chars-per-token model: walk the text once, bucket each codepoint, and divide each
 // bucket by a ratio measured against a real BPE tokenizer on a tool-output corpus
 // (scripts/calibrate-tokens.ts — a dev-time tool; nothing it depends on ships at
-// runtime). tk's workload is tool OUTPUT (code, logs, JSON, diffs, file trees),
+// runtime). ctx's workload is tool OUTPUT (code, logs, JSON, diffs, file trees),
 // which tokenizes DENSER than prose — the old flat `other / 4` therefore
-// systematically UNDER-counted tk's savings.
+// systematically UNDER-counted ctx's savings.
 //
 // Buckets (non-CJK):
 //   - letters      ~3.8 chars/token  (code identifiers split on case/underscore)

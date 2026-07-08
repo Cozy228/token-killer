@@ -10,7 +10,7 @@ describe("core/tokens estimateTokens", () => {
   it("segments by content class and counts CJK as ~1 token each (L2)", () => {
     expect(estimateTokens("")).toBe(0);
     // Letters bucket at ~3.8 chars/token (denser than the old flat chars/4 for the
-    // code/log output tk actually compresses).
+    // code/log output ctx actually compresses).
     expect(estimateTokens("abcd")).toBe(2); // 4 / 3.8 → ceil
     // 4 CJK ideographs ≈ 4 tokens — the old flat chars/4 under-counted this as 1.
     expect(estimateTokens("中文测试")).toBe(4);

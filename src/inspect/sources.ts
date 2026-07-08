@@ -24,7 +24,7 @@ export type SourceDiscovery = {
   found: boolean;
 };
 
-// Per-host discovery — carries the resolved root dir tk looked in so the run can
+// Per-host discovery — carries the resolved root dir ctx looked in so the run can
 // show WHERE it scanned (progress), not just which host.
 export type HostDiscovery = {
   inputType: InputType;
@@ -149,7 +149,7 @@ export function discoverHost(
   return inputType === "copilot-cli" ? discoverCopilotCli(home) : discoverVscode(home, platform);
 }
 
-// Discover EVERY known host (used when --input-type is NOT given): tk scans both
+// Discover EVERY known host (used when --input-type is NOT given): ctx scans both
 // VS Code and the Copilot CLI so a user driving either is covered without a flag.
 export function discoverHosts(
   home: string = homedir(),

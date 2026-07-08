@@ -6,17 +6,17 @@ import { afterEach, describe, expect, test, vi } from "vitest";
 import { runTelemetry } from "../../../src/telemetry/cli.js";
 import { configPath, readConfig, writeConfigTemplate } from "../../../src/core/config.js";
 
-const previousHome = process.env.TOKEN_KILLER_HOME;
+const previousHome = process.env.CONTEXA_HOME;
 
 afterEach(() => {
   vi.restoreAllMocks();
-  if (previousHome === undefined) delete process.env.TOKEN_KILLER_HOME;
-  else process.env.TOKEN_KILLER_HOME = previousHome;
+  if (previousHome === undefined) delete process.env.CONTEXA_HOME;
+  else process.env.CONTEXA_HOME = previousHome;
 });
 
 async function withHome<T>(fn: (home: string) => Promise<T>): Promise<T> {
-  const home = await mkdtemp(path.join(tmpdir(), "tk-tcli-"));
-  process.env.TOKEN_KILLER_HOME = home;
+  const home = await mkdtemp(path.join(tmpdir(), "ctx-tcli-"));
+  process.env.CONTEXA_HOME = home;
   try {
     return await fn(home);
   } finally {
@@ -33,7 +33,7 @@ function captureStdout(): { text: () => string } {
   return { text: () => buffer };
 }
 
-describe("tk telemetry enable/disable", () => {
+describe("ctx telemetry enable/disable", () => {
   test("enable sets telemetry true while preserving telemetryExport", async () => {
     await withHome(async () => {
       writeConfigTemplate({ telemetry: false, telemetryExport: true });
@@ -64,7 +64,7 @@ describe("tk telemetry enable/disable", () => {
   });
 });
 
-describe("tk telemetry status / preview — never send", () => {
+describe("ctx telemetry status / preview — never send", () => {
   test("status reports both consents and the device_hash", async () => {
     await withHome(async () => {
       writeConfigTemplate({ telemetry: true, telemetryExport: false });
@@ -95,7 +95,7 @@ describe("tk telemetry status / preview — never send", () => {
   });
 });
 
-describe("tk telemetry — config errors", () => {
+describe("ctx telemetry — config errors", () => {
   test("a malformed config exits 1 on status", async () => {
     await withHome(async () => {
       await writeFile(configPath(), '{ "nope": true }');

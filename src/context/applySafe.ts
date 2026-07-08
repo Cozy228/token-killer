@@ -1,9 +1,9 @@
-// Apply + restore for `tk optimize`. `--apply` writes every deterministic
+// Apply + restore for `ctx optimize`. `--apply` writes every deterministic
 // optimization inspect found (currently frontmatter sets) across the resolved
 // scopes (user-only off-git; user + project inside a git repo). Free-form
 // suggestions are printed for manual review, never written. Before any write the
 // full plan is disclosed, and every touched file is backed up under
-// ~/.token-killer/backups/context/<ts>/ with a manifest so `--restore` can revert
+// ~/.contexa/backups/context/<ts>/ with a manifest so `--restore` can revert
 // the most recent apply.
 
 import { createHash } from "node:crypto";
@@ -11,7 +11,7 @@ import { existsSync, mkdirSync, readFileSync, readdirSync, statSync } from "node
 import { writeFileAtomicSync } from "../core/atomicWrite.js";
 import { basename, join } from "node:path";
 
-import { tokenKillerHome } from "../core/dataDir.js";
+import { contexaHome } from "../core/dataDir.js";
 import { readInspectBucket, type ScopeBucket } from "../inspect/persist.js";
 import { exposureForSurface, recordOptimizeAction } from "../inspect/optimizeActions.js";
 import { estimateTokens, hashText } from "./metrics.js";
@@ -32,13 +32,13 @@ function backupTimestamp(nowMs: number): string {
 }
 
 function backupsRoot(): string {
-  return join(tokenKillerHome(), "backups", "context");
+  return join(contexaHome(), "backups", "context");
 }
 
 type ManifestEntry = { target: string; backup: string };
 
 // Write a reversible backup of `path` into the timestamp dir for `nowMs`, and
-// record it in that dir's manifest.json so `tk optimize --restore` can map the
+// record it in that dir's manifest.json so `ctx optimize --restore` can map the
 // backup file back to its original location (the raw path is never inferable
 // from the backup filename alone).
 export function writeBackup(path: string, content: string, nowMs: number): string {
@@ -67,7 +67,7 @@ export function writeBackup(path: string, content: string, nowMs: number): strin
 export function runRestore(_nowMs: number): number {
   const root = backupsRoot();
   if (!existsSync(root)) {
-    process.stdout.write("tk optimize: nothing to restore (no backups recorded yet).\n");
+    process.stdout.write("ctx optimize: nothing to restore (no backups recorded yet).\n");
     return 0;
   }
   const dirs = readdirSync(root)
@@ -82,14 +82,14 @@ export function runRestore(_nowMs: number): number {
   const latest = dirs[dirs.length - 1];
   const manifestPath = latest ? join(root, latest, "manifest.json") : undefined;
   if (!manifestPath || !existsSync(manifestPath)) {
-    process.stdout.write("tk optimize: nothing to restore (no restorable backup found).\n");
+    process.stdout.write("ctx optimize: nothing to restore (no restorable backup found).\n");
     return 0;
   }
   let entries: ManifestEntry[];
   try {
     entries = JSON.parse(readFileSync(manifestPath, "utf8")) as ManifestEntry[];
   } catch {
-    process.stderr.write("tk optimize: latest backup manifest is unreadable.\n");
+    process.stderr.write("ctx optimize: latest backup manifest is unreadable.\n");
     return 1;
   }
   let restored = 0;
@@ -102,11 +102,11 @@ export function runRestore(_nowMs: number): number {
       restored += 1;
     } catch (error) {
       process.stderr.write(
-        `tk optimize: could not restore ${entry.target}: ${error instanceof Error ? error.message : String(error)}\n`,
+        `ctx optimize: could not restore ${entry.target}: ${error instanceof Error ? error.message : String(error)}\n`,
       );
     }
   }
-  process.stdout.write(`tk optimize: restored ${restored} file(s) from ${latest}.\n`);
+  process.stdout.write(`ctx optimize: restored ${restored} file(s) from ${latest}.\n`);
   return 0;
 }
 
@@ -123,7 +123,7 @@ function miniDiff(path: string, before: string, after: string): string {
 
 // `--backup`: snapshot files BEFORE they are edited (explicit paths, or all
 // in-scope context files when none are given), into ONE backup set with a
-// manifest. A later `tk optimize --restore` reverts those files to this
+// manifest. A later `ctx optimize --restore` reverts those files to this
 // snapshot — so it can undo manual edits an agent makes after this runs.
 export function runBackup(args: OptimizeArgs, nowMs: number, home: string, cwd: string): number {
   const targets =
@@ -141,14 +141,14 @@ export function runBackup(args: OptimizeArgs, nowMs: number, home: string, cwd: 
     count += 1;
   }
   if (count === 0) {
-    process.stdout.write("tk optimize: nothing to back up (no readable files found).\n");
+    process.stdout.write("ctx optimize: nothing to back up (no readable files found).\n");
     return 0;
   }
   process.stdout.write(
-    `tk optimize: backed up ${count} file(s) to ${join(backupsRoot(), backupTimestamp(nowMs))}\n`,
+    `ctx optimize: backed up ${count} file(s) to ${join(backupsRoot(), backupTimestamp(nowMs))}\n`,
   );
   process.stdout.write(
-    "Edit the files now; revert everything later with `tk optimize --restore`.\n",
+    "Edit the files now; revert everything later with `ctx optimize --restore`.\n",
   );
   return 0;
 }
@@ -227,7 +227,7 @@ async function triggerInspectForScope(
   await trigger(scope, home, cwd, nowMs);
 }
 
-// `tk optimize --apply` — apply every deterministic optimization across the
+// `ctx optimize --apply` — apply every deterministic optimization across the
 // resolved scopes, after disclosing the full plan and backing up each file.
 // Free-form `suggested_diff` findings are printed for manual review, never
 // written (they are not guaranteed to apply cleanly).
@@ -255,9 +255,9 @@ export async function runApply(
     if (!bucket) {
       // No persisted bucket for this scope → trigger an inspect to populate it.
       // Tell the user WHY before it runs, and that this scoped scan only analyzes
-      // context files (no transcript/habit findings — run `tk inspect` for those).
+      // context files (no transcript/habit findings — run `ctx inspect` for those).
       process.stderr.write(
-        `tk optimize: no prior inspect for the ${scope} scope; scanning context files to find optimizations (run \`tk inspect\` first for the full session report).\n`,
+        `ctx optimize: no prior inspect for the ${scope} scope; scanning context files to find optimizations (run \`ctx inspect\` first for the full session report).\n`,
       );
       await triggerInspectForScope(deps, scope, home, cwd, nowMs);
       bucket = readInspectBucket(bucketRef);
@@ -311,7 +311,7 @@ export async function runApply(
   }
 
   // Disclosure — always printed in full before any file is touched.
-  process.stdout.write(`# tk optimize --apply (scopes: ${scopes.join(", ")})\n`);
+  process.stdout.write(`# ctx optimize --apply (scopes: ${scopes.join(", ")})\n`);
   if (writes.size === 0 && vscodeApplies.size === 0 && suggestions.length === 0) {
     process.stdout.write("Nothing to optimize — no changes or suggestions found.\n");
     return 0;
@@ -333,7 +333,7 @@ export async function runApply(
   }
   if (deferred.size > 0) {
     process.stdout.write(
-      `\nDeferred (multiple changes on one file; re-run \`tk optimize --apply\` to catch these): ${[...deferred].join(", ")}\n`,
+      `\nDeferred (multiple changes on one file; re-run \`ctx optimize --apply\` to catch these): ${[...deferred].join(", ")}\n`,
     );
   }
 
@@ -347,7 +347,7 @@ export async function runApply(
   // Apply with reversible backups.
   let applied = 0;
   // VS Code settings first — applyCompress writes its own backup into the same
-  // backup-set (nowMs), so `tk optimize --restore` reverts settings.json too.
+  // backup-set (nowMs), so `ctx optimize --restore` reverts settings.json too.
   // Dynamic import avoids a static cycle (vscodeSettings imports writeBackup here).
   if (vscodeApplies.size > 0) {
     const { applyCompress } = await import("./vscodeSettings.js");
@@ -379,7 +379,7 @@ export async function runApply(
       );
     } catch (error) {
       process.stderr.write(
-        `tk optimize: ledger 2 record skipped: ${error instanceof Error ? error.message : String(error)}\n`,
+        `ctx optimize: ledger 2 record skipped: ${error instanceof Error ? error.message : String(error)}\n`,
       );
     }
   }
@@ -387,7 +387,7 @@ export async function runApply(
   process.stdout.write(
     `\ntk optimize: applied ${applied} change(s). Backups under ${join(backupsRoot(), backupTimestamp(nowMs))}\n`,
   );
-  process.stdout.write("Run `tk optimize --restore` to revert the last apply.\n");
+  process.stdout.write("Run `ctx optimize --restore` to revert the last apply.\n");
   return 0;
 }
 

@@ -78,7 +78,7 @@ describe("RTK pytest behavior", () => {
   });
 
   // ADR 0001 divergence: within budget tg lists every XFAIL entry instead of
-  // RTK's MAX_XFAIL (10) cap + "… +5 more" + "tk --raw" recovery hint. All 15
+  // RTK's MAX_XFAIL (10) cap + "… +5 more" + "ctx --raw" recovery hint. All 15
   // expected-failure outcomes are kept with their reasons.
   test("lists every xfail entry with no overflow cap", async () => {
     const lines = [
@@ -102,7 +102,7 @@ describe("RTK pytest behavior", () => {
     expect(result.output).toContain("XFAIL test_x.py::test_case_14 - known issue #14");
     // No RTK cap marker and no recovery hint.
     expect(result.output).not.toContain("more");
-    expect(result.output).not.toMatch(/tk --raw/);
+    expect(result.output).not.toMatch(/ctx --raw/);
   });
 
   // RTK: pytest_cmd.rs::test_filter_pytest_xfail_xpass — XPASS in particular is

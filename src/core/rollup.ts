@@ -1,6 +1,6 @@
 // Cold-path rollup cache for ledger ① (history.jsonl). Append-only JSONL stays the
-// source of truth; rollup.json is rebuilt on `tk gain` / telemetry reads only — never
-// updated on the `tk <cmd>` hot path so runtime is unaffected. Never deletes history.
+// source of truth; rollup.json is rebuilt on `ctx gain` / telemetry reads only — never
+// updated on the `ctx <cmd>` hot path so runtime is unaffected. Never deletes history.
 
 import { createReadStream } from "node:fs";
 import { readFile, stat, writeFile } from "node:fs/promises";
@@ -17,7 +17,7 @@ import {
   historyFile,
   projectDataDir,
   projectFingerprint,
-  tokenKillerHome,
+  contexaHome,
   fingerprintSegment,
 } from "./dataDir.js";
 import { coerceHistorySizes, type HistoryRecord } from "./history.js";
@@ -63,7 +63,7 @@ export type ProjectRollup = {
   // AND mtime prove the rollup is still current WITHOUT reading the file to recount
   // lines. Optional for back-compat — a rollup written before this existed simply
   // misses the fast path once, gets stamped, then hits it. (Perf: see the read-skip
-  // in ensureProjectRollup / listProjectRollups — the dominant `tk gain --user` cost.)
+  // in ensureProjectRollup / listProjectRollups — the dominant `ctx gain --user` cost.)
   source_bytes?: number;
   source_mtime_ms?: number;
   project_fingerprint: string;
@@ -93,7 +93,7 @@ export function rollupFile(cwd: string): string {
 }
 
 export function rollupFileForFingerprint(fingerprint: string): string {
-  return path.join(tokenKillerHome(), "projects", fingerprintSegment(fingerprint), "rollup.json");
+  return path.join(contexaHome(), "projects", fingerprintSegment(fingerprint), "rollup.json");
 }
 
 function fingerprintFromDirEntry(entry: string): string {
@@ -531,7 +531,7 @@ export async function ensureProjectRollup(cwd: string): Promise<ProjectRollup> {
   const existing = await loadRollupFile(rollupFile(cwd));
   // Fast path: append-only history with an unchanged (size, mtime) stamp ⇒ the rollup
   // is current. Return it WITHOUT reading the file to count lines — that full read was
-  // the per-project cost behind slow `tk gain --user` (worst on Windows, where AV
+  // the per-project cost behind slow `ctx gain --user` (worst on Windows, where AV
   // scans every file open).
   if (existing && stampMatches(existing, st)) {
     pruneHourBuckets(existing, new Date());
@@ -559,7 +559,7 @@ export async function ensureProjectRollup(cwd: string): Promise<ProjectRollup> {
   const rebuilt = await rebuildRollupFromJsonl(cwd);
   // The cache key is the PHYSICAL line count (countJsonlLines). applyRecord counts
   // only PARSED records, so a single corrupt/blank line left source_lines < lineCount
-  // and every `tk gain` rebuilt + rewrote the rollup forever (M5). Pin source_lines to
+  // and every `ctx gain` rebuilt + rewrote the rollup forever (M5). Pin source_lines to
   // the physical count so an unchanged file is a cache hit next time.
   rebuilt.source_lines = lineCount;
   rebuilt.source_bytes = st.size;
@@ -575,9 +575,9 @@ export async function ensureProjectRollup(cwd: string): Promise<ProjectRollup> {
 // Read-only sibling of listProjectRollups: loads ONLY already-built rollup.json caches and
 // NEVER opens history.jsonl or rebuilds. The opportunistic hot-path telemetry flush uses this so
 // it stays cheap and does no cold-path work — a project with history but no built rollup yet is
-// skipped, so telemetry never flows until a cold path (`tk gain` / `tk inspect`) has built one.
+// skipped, so telemetry never flows until a cold path (`ctx gain` / `ctx inspect`) has built one.
 export async function loadCachedProjectRollups(): Promise<ProjectRollup[]> {
-  const projectsDir = path.join(tokenKillerHome(), "projects");
+  const projectsDir = path.join(contexaHome(), "projects");
   let entries: string[];
   try {
     const { readdir } = await import("node:fs/promises");
@@ -594,7 +594,7 @@ export async function loadCachedProjectRollups(): Promise<ProjectRollup[]> {
 }
 
 export async function listProjectRollups(): Promise<ProjectRollup[]> {
-  const projectsDir = path.join(tokenKillerHome(), "projects");
+  const projectsDir = path.join(contexaHome(), "projects");
   let entries: string[];
   try {
     const { readdir } = await import("node:fs/promises");
@@ -614,7 +614,7 @@ export async function listProjectRollups(): Promise<ProjectRollup[]> {
     let rollup = await loadRollupFile(rollupPath);
     // Fast path: append-only history with a matching (size, mtime) stamp ⇒ cached
     // rollup is current; skip reading the file at all. This per-project full read was
-    // what made `tk gain --user` slow across many projects / on Windows.
+    // what made `ctx gain --user` slow across many projects / on Windows.
     if (rollup && stampMatches(rollup, st)) {
       rollups.push(rollup);
       continue;

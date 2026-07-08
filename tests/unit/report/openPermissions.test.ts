@@ -6,7 +6,7 @@ import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import type { ReportDoc } from "../../../src/report/html.js";
 import { writeReport } from "../../../src/report/open.js";
 
-// Plan 011: the reports dir is shared with the `tk support` diagnostic bundle, so
+// Plan 011: the reports dir is shared with the `ctx support` diagnostic bundle, so
 // HTML reports + their directory must be owner-only (0700 dir / 0600 file), not the
 // world-readable 0755/0644 a bare mkdir/writeFile would leave on a multi-user host.
 // POSIX modes are ignored on Windows, so every case is win32-skipped.
@@ -25,12 +25,12 @@ const NOW = Date.parse("2026-06-15T12:00:00.000Z");
 let home: string;
 
 beforeEach(() => {
-  home = mkdtempSync(join(tmpdir(), "tk-openperms-home-"));
-  process.env.TOKEN_KILLER_HOME = home;
+  home = mkdtempSync(join(tmpdir(), "ctx-openperms-home-"));
+  process.env.CONTEXA_HOME = home;
 });
 
 afterEach(() => {
-  delete process.env.TOKEN_KILLER_HOME;
+  delete process.env.CONTEXA_HOME;
   rmSync(home, { recursive: true, force: true });
 });
 
@@ -43,7 +43,7 @@ describe("report/open writeReport — owner-only permissions (plan 011)", () => 
 
   it.skipIf(skipOnWin)("retroactively tightens a pre-existing world-listable 0755 dir", () => {
     // Regression guard for the mkdir no-op trap: mkdirSync's mode only applies on
-    // creation, so a dir a prior tk version made 0755 stays 0755 unless we chmod it.
+    // creation, so a dir a prior ctx version made 0755 stays 0755 unless we chmod it.
     const reportsDir = join(home, "reports");
     mkdirSync(reportsDir, { recursive: true });
     chmodSync(reportsDir, 0o755);

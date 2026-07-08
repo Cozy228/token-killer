@@ -16,17 +16,17 @@ let workdir: string;
 let prevHome: string | undefined;
 
 beforeEach(() => {
-  workdir = mkdtempSync(path.join(tmpdir(), "tk-adr0001-"));
+  workdir = mkdtempSync(path.join(tmpdir(), "ctx-adr0001-"));
   // Sandbox the snapshot store under the temp dir (raw snapshots are persisted
-  // relative to TOKEN_KILLER_HOME), so the recovery-contract assertion can read
+  // relative to CONTEXA_HOME), so the recovery-contract assertion can read
   // the snapshot the inline pointer names.
-  prevHome = process.env.TOKEN_KILLER_HOME;
-  process.env.TOKEN_KILLER_HOME = workdir;
+  prevHome = process.env.CONTEXA_HOME;
+  process.env.CONTEXA_HOME = workdir;
 });
 
 afterEach(() => {
-  if (prevHome === undefined) delete process.env.TOKEN_KILLER_HOME;
-  else process.env.TOKEN_KILLER_HOME = prevHome;
+  if (prevHome === undefined) delete process.env.CONTEXA_HOME;
+  else process.env.CONTEXA_HOME = prevHome;
   rmSync(workdir, { recursive: true, force: true });
 });
 

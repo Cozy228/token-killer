@@ -14,7 +14,7 @@ distribution channel) before the cheapest, highest-leverage lever has been check
 
 - The plan itself calls **EDR exclusion the single biggest lever**, and it helps the
   **bare tool too** (which the daemon can never beat). If corporate IT can grant a
-  CrowdStrike exclusion for `node.exe` + `~/.token-killer` + the shim dir org-wide,
+  CrowdStrike exclusion for `node.exe` + `~/.contexa` + the shim dir org-wide,
   then **Tier-1 + exclusion may already be "good enough" and the daemon becomes moot.**
 - So **M5 (exclusion size) and the exclusion's org-wide feasibility must be resolved
   BEFORE the daemon is committed**, not in parallel. Reframe §5 as a decision tree
@@ -53,12 +53,12 @@ typical-case enough that the daemon's marginal value shrinks. Sequence:
    - Else if M-pre says EDR tolerates a daemon → **build the daemon** (Rev 2's §4
      design is fine), sized by M8.
    - Else (exclusion not grantable AND daemon not tolerated) → document the hard floor
-     honestly; tk caps at "bare tool + 2 spawns − Tier-1 ops," and the box's own
+     honestly; ctx caps at "bare tool + 2 spawns − Tier-1 ops," and the box's own
      bare-tool latency is the wall.
 
 ## 4. State the optimization ceiling up front (move it into the Executive Summary)
 Make this explicit and early, because it bounds every expectation:
-**tk can asymptotically reach ≈ (bare tool + one small constant); it can never beat the
+**ctx can asymptotically reach ≈ (bare tool + one small constant); it can never beat the
 bare tool. On this box the bare tool itself is 400–738 ms+ and jittery (same AV tax),
 so "500–600 ms total" is reachable only in good weather AND only with the daemon
 (possibly + EDR exclusion). "Native 300 ms" does not exist on this hardware.**

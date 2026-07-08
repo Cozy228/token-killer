@@ -1,5 +1,5 @@
 // Slice 4 — cold-path telemetry trigger (ADR 0004 §5). Called ONLY at the end of
-// `tk inspect` and `tk gain` — NEVER from `tk <cmd>` (the hot path is sacred). Any
+// `ctx inspect` and `ctx gain` — NEVER from `ctx <cmd>` (the hot path is sacred). Any
 // error here is swallowed: telemetry must never change a command's behavior or exit
 // code. `now`/`runId`/`send`/`endpoint` are injectable so tests stay deterministic.
 
@@ -90,9 +90,9 @@ export function runColdPathTelemetry(params: DispatchParams): void {
 }
 
 // Opportunistic HOT-PATH flush (ADR 0004 Decision 6 amendment). Fires at the tail of a
-// normal `tk <cmd>` compress run — AFTER the compressed result is already on stdout, and
+// normal `ctx <cmd>` compress run — AFTER the compressed result is already on stdout, and
 // NEVER on --raw / passthrough / hook paths. It exists so installs that rarely run the cold
-// path (`tk inspect` / `tk gain`) still report at most once per 23h. It stays USER-LEVEL by
+// path (`ctx inspect` / `ctx gain`) still report at most once per 23h. It stays USER-LEVEL by
 // merging the already-built per-project CACHED rollups via `loadCachedProjectRollups` — a
 // READ-ONLY load that (unlike the cold path's `listProjectRollups`) never opens history.jsonl or
 // rebuilds a rollup, so the hot path stays cheap and a project with history but no built rollup
@@ -126,7 +126,7 @@ export async function runHotPathTelemetryFlush(
     // history or rebuild a rollup here — and do it BEFORE touching state: an opted-in install
     // whose projects have never run the cold path has no cached rollups yet, so we return here
     // without ever minting telemetry state (keeps the hot path side-effect-free and preserves
-    // "tk <cmd> doesn't touch telemetry state"). The next cold-path run seeds the cache.
+    // "ctx <cmd> doesn't touch telemetry state"). The next cold-path run seeds the cache.
     const rollups = await loadCachedProjectRollups();
     if (rollups.length === 0) return;
     const rollup = mergeRollups(rollups);
@@ -154,7 +154,7 @@ export async function runHotPathTelemetryFlush(
 function writeLocalAndWarn(body: string): void {
   try {
     const path = writeTelemetryExport(body);
-    process.stderr.write(`tk: telemetry send unavailable; kept local export: ${path}\n`);
+    process.stderr.write(`ctx: telemetry send unavailable; kept local export: ${path}\n`);
   } catch {
     // best-effort
   }

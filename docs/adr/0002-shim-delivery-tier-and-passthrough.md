@@ -5,8 +5,8 @@ status: accepted
 # PATH-shim delivery tier, narrow compression scope, and the passthrough path
 
 > **Amended by [ADR 0006](0006-cli-consolidation-and-optimize-apply-engine.md) (2026-06-07):**
-> `tk shim` is no longer a top-level command. Its install/status/uninstall now
-> live under `tk init shim <…>`; the tier ladder and passthrough design below are
+> `ctx shim` is no longer a top-level command. Its install/status/uninstall now
+> live under `ctx init shim <…>`; the tier ladder and passthrough design below are
 > unchanged.
 
 > **Further amended by [ADR 0012](0012-vscode-hook-shim-additive-delivery.md) (2026-06-15):**
@@ -27,9 +27,9 @@ rewrite where hooks fire, and (b) `CLAUDE.md` / instruction injection where they
 (e.g. native Windows). It therefore never faces the two problems a shim creates: spawn
 recursion and interactive-output capture.
 
-`tk`'s premise is reducing *unconscious* token inflation (CONTEXT.md). Instruction
+`ctx`'s premise is reducing *unconscious* token inflation (CONTEXT.md). Instruction
 injection is conscious and probabilistic — it depends on the model remembering to prefix
-`tk`. That defeats the premise wherever it is the only path, which is exactly the user's
+`ctx`. That defeats the premise wherever it is the only path, which is exactly the user's
 VS Code env.
 
 ## Decision
@@ -52,15 +52,15 @@ VS Code env.
    `git-commit` (`extended.ts` keys only on `args[0]`) yet opens an editor.
 
 4. **Recursion is prevented dynamically.** `executor.ts` strips the shim dir (located via
-   the `TK_SHIM_DIR` env written at install) from the child's PATH at spawn time, plus a
+   the `CTX_SHIM_DIR` env written at install) from the child's PATH at spawn time, plus a
    sentinel that hard-errors if a resolved tool path still lands inside the shim dir.
 
-5. **One installer, `tk init`, auto-detects the host and wires the highest available
-   tier.** Copilot CLI → hook; VS Code → shim (`terminal.integrated.env` + `TK_SHIM_DIR`);
+5. **One installer, `ctx init`, auto-detects the host and wires the highest available
+   tier.** Copilot CLI → hook; VS Code → shim (`terminal.integrated.env` + `CTX_SHIM_DIR`);
    neither → instruction injection. The user runs one command and the tool picks the tier
    — the same auto-degrade logic as the runtime ladder. Modeled on `rtk init`'s surface
    (`-g` global, `--auto-patch` non-interactive, `--show` status, restart prompt). A
-   lower-level `tk shim install` may remain as an internal step / escape hatch.
+   lower-level `ctx shim install` may remain as an internal step / escape hatch.
 
 ## Considered options
 
@@ -82,22 +82,22 @@ VS Code env.
 - The TTY gate makes the shim **invisible to humans**: a person typing a shimmed `git log`
   gets native output (TTY → passthrough), which also makes PATH injection safe on shared
   terminals.
-- Install must write `TK_SHIM_DIR` and prepend PATH per host — VS Code via
+- Install must write `CTX_SHIM_DIR` and prepend PATH per host — VS Code via
   `terminal.integrated.env.{windows,osx,linux}` (RC files are skipped by non-interactive
   `run_in_terminal` shells), Copilot CLI / plain terminals via shell RC / `$PROFILE`.
 
-## Fail-open boundary (precondition: tk integrity)
+## Fail-open boundary (precondition: ctx integrity)
 
-The "fail toward the real tool" guardrail is scoped to **tk-internal errors** — a handler
+The "fail toward the real tool" guardrail is scoped to **ctx-internal errors** — a handler
 that throws, a compression bug, or `ShimRecursionError` all fall back to passthrough of the
-real tool. It is **not** a guarantee that survives a broken tk *binary*. Because the shim
-wrapper has already shadowed the real tool on PATH and handed control to tk, if the tk
+real tool. It is **not** a guarantee that survives a broken ctx *binary*. Because the shim
+wrapper has already shadowed the real tool on PATH and handed control to ctx, if the ctx
 entrypoint itself is unrunnable (missing/corrupt `cli.js`, broken Node), the wrapper cannot
 fail open: there is no safe in-wrapper retry (blindly re-running the real tool could
-double-execute a mutating command). So **tk binary integrity is a precondition of the
-shim tier**, not something the guard can recover. Two mitigations: (1) wrappers invoke tk
+double-execute a mutating command). So **ctx binary integrity is a precondition of the
+shim tier**, not something the guard can recover. Two mitigations: (1) wrappers invoke ctx
 by the resolved **absolute** Node + `cli.js` path (never the shebang's PATH lookup), so a
-shimmed interpreter cannot hijack startup; (2) `tk shim status` runs a health check
+shimmed interpreter cannot hijack startup; (2) `ctx shim status` runs a health check
 (interception probe + manifest read) the user can run to confirm the entrypoint resolves
 before relying on the shim. Interpreters/shells are also hard-excluded from the wrapper set
-(see `src/shim/programs.ts`) so tk's own runtime can never be shimmed.
+(see `src/shim/programs.ts`) so ctx's own runtime can never be shimmed.

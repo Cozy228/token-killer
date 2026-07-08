@@ -46,7 +46,7 @@ const PROBLEM = {
   malformed_frontmatter: "A file's frontmatter is malformed, so its metadata is ignored",
   discovery_truncated: "Too many files to scan — some were skipped",
   cacheability_churn: "Volatile content breaks prompt caching",
-  uncompressed_commands: "Terminal commands run raw instead of through tk",
+  uncompressed_commands: "Terminal commands run raw instead of through ctx",
   orientation_cost: "The agent spends tokens finding its way around the code",
   repeated_failures: "The same command keeps failing and retrying",
   dependency_reads: "Reading dependency / build files wastes tokens",
@@ -89,7 +89,7 @@ const PROMPT_TPL = {
   prompt_metadata_gap: {
     task: "Add the missing metadata to the prompt file at {file} (line {line}).",
     why: "Without a description the model and UI cannot route to the prompt cleanly, and an over-broad declared tool list grants write/terminal access a read-only prompt never uses — both push the agent toward extra, wasteful turns.",
-    how: ["Add a one-line description stating what the prompt does (or run tk optimize --apply-safe --surface prompts to fill an inferable one automatically).", "If the body has argument placeholders, add an argument-hint describing the expected input.", "Trim the tools list to the minimum the prompt needs — VS Code gives prompt-file tools priority over the agent's defaults."],
+    how: ["Add a one-line description stating what the prompt does (or run ctx optimize --apply-safe --surface prompts to fill an inferable one automatically).", "If the body has argument placeholders, add an argument-hint describing the expected input.", "Trim the tools list to the minimum the prompt needs — VS Code gives prompt-file tools priority over the agent's defaults."],
   },
   agent_overbreadth: {
     task: "Sharpen the custom agent defined in {file} (line {line}) to one persona, one workflow family, and a narrow tool set.",
@@ -159,12 +159,12 @@ const PROMPT_TPL = {
   vscode_compress_disabled: {
     task: "Enable VS Code's built-in terminal-output compression in {file}.",
     why: "With this setting off, the full raw output of terminal commands reaches the model on every run, spending tokens on noise the host could have compressed first.",
-    how: ['Set "chat.tools.compressOutput.enabled": true in your VS Code settings.json (or run tk optimize --apply to do it; it is host-native and reversible with tk optimize --restore).', "If the file is not strict JSON, fix the JSON first so the setting can be written."],
+    how: ['Set "chat.tools.compressOutput.enabled": true in your VS Code settings.json (or run ctx optimize --apply to do it; it is host-native and reversible with ctx optimize --restore).', "If the file is not strict JSON, fix the JSON first so the setting can be written."],
   },
   uncompressed_commands: {
-    task: "Set up tk so terminal commands flow through it, at: {where}.",
-    why: "Compressible shell commands are running raw, sending their full output to the model every time, when tk could losslessly compress that output before it is ever read.",
-    how: ["For VS Code, run tk install to put the PATH shim in place, then restart your editor.", "For Copilot CLI, run tk install --host copilot-cli to wire the rewrite hook.", "After install, the listed commands route through tk automatically — no per-command change needed."],
+    task: "Set up ctx so terminal commands flow through it, at: {where}.",
+    why: "Compressible shell commands are running raw, sending their full output to the model every time, when ctx could losslessly compress that output before it is ever read.",
+    how: ["For VS Code, run ctx install to put the PATH shim in place, then restart your editor.", "For Copilot CLI, run ctx install --host copilot-cli to wire the rewrite hook.", "After install, the listed commands route through ctx automatically — no per-command change needed."],
   },
   orientation_cost: {
     task: "Record durable project context at: {where}.",
@@ -226,8 +226,8 @@ function fillTpl(s, f) {
 }
 
 // Per-finding agent-ready prompt. The displayed fix is for the human; this COPIED
-// text is for the agent, and tells it to SNAPSHOT first (tk optimize --backup) so the
-// human can revert later with tk optimize --restore.
+// text is for the agent, and tells it to SNAPSHOT first (ctx optimize --backup) so the
+// human can revert later with ctx optimize --restore.
 function buildPrompt(f) {
   const tpl = PROMPT_TPL[f.type];
   const task = tpl ? fillTpl(tpl.task, f) : (f.recommendation || PROBLEM[f.type] || humanize(f.type));
@@ -252,7 +252,7 @@ function buildPrompt(f) {
     "Fix a token-wasting issue in my AI/agent configuration.",
     "",
     "Step 1 — before editing, snapshot the file so the change is reversible:",
-    "  tk optimize --backup " + f.file,
+    "  ctx optimize --backup " + f.file,
     "Step 2 — apply this edit directly:",
     "  File: " + where,
     "  Do this: " + task,
@@ -262,7 +262,7 @@ function buildPrompt(f) {
   lines.push(
     "  Leave everything else in the file unchanged.",
     "",
-    "Do not run tk optimize --restore yourself — that is the human's manual undo; it reverts to the step-1 snapshot.",
+    "Do not run ctx optimize --restore yourself — that is the human's manual undo; it reverts to the step-1 snapshot.",
   );
   return lines.filter(Boolean).join("\n");
 }
@@ -287,11 +287,11 @@ function buildAllPrompt(findings) {
   if (files.length) {
     return head.concat([
       "Step 1 — before editing any file, snapshot it so your changes are reversible:",
-      "  tk optimize --backup " + files.join(" "),
+      "  ctx optimize --backup " + files.join(" "),
       "Step 2 — apply each fix directly, leaving the rest of each file unchanged:",
       list,
       "",
-      "When done, verify nothing broke. Do not run tk optimize --restore yourself — that is the human's manual undo; it reverts to the step-1 snapshot.",
+      "When done, verify nothing broke. Do not run ctx optimize --restore yourself — that is the human's manual undo; it reverts to the step-1 snapshot.",
     ]).join("\n");
   }
   return head.concat(["Apply each item below (setup/config actions, not file edits):", list]).join("\n");

@@ -67,7 +67,7 @@ export type TkOptions = {
   saveRaw: boolean | "auto";
   cwd: string;
   // ADR 0009: best-effort agent session id, carried through the rewritten command
-  // via `--session <id>` (portable across sh/pwsh) or the `TK_SESSION` env. Stamped
+  // via `--session <id>` (portable across sh/pwsh) or the `CTX_SESSION` env. Stamped
   // onto history rows (`session_id`) and dedup entries; never part of the dedup key.
   sessionId?: string;
 };
@@ -134,8 +134,8 @@ export interface CommandHandler {
   // non-default gate behaviour; omitted on the majority that take the defaults.
   traits?: HandlerTraits;
   // The real external executables this handler fronts — the programs the shim
-  // wraps so `git`, `tsc`, … on the agent's PATH route into `tk`. Declared only
-  // on handlers that wrap an external tool; omitted on tk-native verbs (read,
+  // wraps so `git`, `tsc`, … on the agent's PATH route into `ctx`. Declared only
+  // on handlers that wrap an external tool; omitted on ctx-native verbs (read,
   // smart, summary, err, test, deps, json, log, pipe). The shim's wrapper set is
   // `dedupe(handlers.flatMap(h => h.programs ?? []))` (see src/shim/programs.ts).
   programs?: string[];

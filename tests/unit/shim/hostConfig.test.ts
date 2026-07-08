@@ -12,14 +12,14 @@ import {
   unpatchVscodeSettings,
 } from "../../../src/shim/hostConfig.js";
 
-const SHIM = "/home/u/.token-killer/shim";
+const SHIM = "/home/u/.contexa/shim";
 
 describe("shell RC block", () => {
   let dir: string;
   let rc: string;
 
   beforeEach(() => {
-    dir = mkdtempSync(join(tmpdir(), "tk-rc-"));
+    dir = mkdtempSync(join(tmpdir(), "ctx-rc-"));
     rc = join(dir, ".zshrc");
   });
   afterEach(() => rmSync(dir, { recursive: true, force: true }));
@@ -31,15 +31,15 @@ describe("shell RC block", () => {
     patchRc(rc, SHIM);
     const twice = readFileSync(rc, "utf8");
     expect(twice).toBe(once);
-    expect(once.match(/token-killer shim/g)?.length).toBe(2); // start + end markers
+    expect(once.match(/contexa shim/g)?.length).toBe(2); // start + end markers
   });
 
   test("block prepends the shim dir on PATH", () => {
     writeFileSync(rc, "export FOO=1\n");
     patchRc(rc, SHIM);
     const content = readFileSync(rc, "utf8");
-    expect(content).toContain(`export TK_SHIM_DIR='${SHIM}'`);
-    expect(content).toContain('export PATH="$TK_SHIM_DIR:$PATH"');
+    expect(content).toContain(`export CTX_SHIM_DIR='${SHIM}'`);
+    expect(content).toContain('export PATH="$CTX_SHIM_DIR:$PATH"');
   });
 
   test("uninstall restores byte-identical pre-state", () => {
@@ -60,10 +60,10 @@ describe("shell RC block", () => {
 });
 
 describe("VS Code settings env", () => {
-  test("prepends shim dir and sets TK_SHIM_DIR (linux)", () => {
+  test("prepends shim dir and sets CTX_SHIM_DIR (linux)", () => {
     const result = applyVscodeEnv({}, SHIM, "linux") as Record<string, Record<string, string>>;
     const env = result["terminal.integrated.env.linux"]!;
-    expect(env.TK_SHIM_DIR).toBe(SHIM);
+    expect(env.CTX_SHIM_DIR).toBe(SHIM);
     expect(env.PATH).toBe(`${SHIM}:\${env:PATH}`);
   });
 
@@ -73,12 +73,12 @@ describe("VS Code settings env", () => {
     expect(twice).toEqual(once);
   });
 
-  test("sets TK_COMPRESS_TTY=1 so the agent's TTY commands compress (R1)", () => {
+  test("sets CTX_COMPRESS_TTY=1 so the agent's TTY commands compress (R1)", () => {
     const result = applyVscodeEnv({}, SHIM, "linux") as Record<string, Record<string, string>>;
-    expect(result["terminal.integrated.env.linux"]!.TK_COMPRESS_TTY).toBe("1");
+    expect(result["terminal.integrated.env.linux"]!.CTX_COMPRESS_TTY).toBe("1");
   });
 
-  test("remove strips TK_COMPRESS_TTY alongside TK_SHIM_DIR/PATH", () => {
+  test("remove strips CTX_COMPRESS_TTY alongside CTX_SHIM_DIR/PATH", () => {
     const before = { "terminal.integrated.env.linux": { MY_VAR: "x" } };
     const patched = applyVscodeEnv(before, SHIM, "linux");
     const removed = removeVscodeEnv(patched, SHIM, "linux") as Record<
@@ -86,7 +86,7 @@ describe("VS Code settings env", () => {
       Record<string, string>
     >;
     const env = removed["terminal.integrated.env.linux"]!;
-    expect(env.TK_COMPRESS_TTY).toBeUndefined();
+    expect(env.CTX_COMPRESS_TTY).toBeUndefined();
     expect(env).toEqual({ MY_VAR: "x" });
   });
 
@@ -99,7 +99,7 @@ describe("VS Code settings env", () => {
     expect(after["editor.fontSize"]).toBe(14);
     const env = after["terminal.integrated.env.linux"] as Record<string, string>;
     expect(env.MY_VAR).toBe("x");
-    expect(env.TK_SHIM_DIR).toBe(SHIM);
+    expect(env.CTX_SHIM_DIR).toBe(SHIM);
   });
 
   test("remove restores an env that only held our keys", () => {
@@ -119,12 +119,12 @@ describe("VS Code settings env", () => {
   });
 
   test("file-level patch + unpatch round-trips a clean settings.json", () => {
-    const dir = mkdtempSync(join(tmpdir(), "tk-vscode-"));
+    const dir = mkdtempSync(join(tmpdir(), "ctx-vscode-"));
     try {
       const settings = join(dir, "settings.json");
       writeFileSync(settings, `${JSON.stringify({ "editor.fontSize": 14 }, null, 2)}\n`);
       patchVscodeSettings(settings, SHIM, "linux");
-      expect(readFileSync(settings, "utf8")).toContain("TK_SHIM_DIR");
+      expect(readFileSync(settings, "utf8")).toContain("CTX_SHIM_DIR");
       unpatchVscodeSettings(settings, SHIM, "linux");
       expect(JSON.parse(readFileSync(settings, "utf8"))).toEqual({ "editor.fontSize": 14 });
     } finally {
@@ -132,23 +132,23 @@ describe("VS Code settings env", () => {
     }
   });
 
-  test("patches a JSONC settings.json: writes env + TK_COMPRESS_TTY, snapshots a backup", () => {
-    const dir = mkdtempSync(join(tmpdir(), "tk-vscode-"));
+  test("patches a JSONC settings.json: writes env + CTX_COMPRESS_TTY, snapshots a backup", () => {
+    const dir = mkdtempSync(join(tmpdir(), "ctx-vscode-"));
     try {
       const settings = join(dir, "settings.json");
       // Real-world commented settings.json — strict JSON.parse would have thrown,
-      // silently aborting the PATH/TK_COMPRESS_TTY injection (I1).
+      // silently aborting the PATH/CTX_COMPRESS_TTY injection (I1).
       writeFileSync(settings, '{\n  // editor prefs\n  "editor.fontSize": 14, // keep small\n}\n');
       const res = patchVscodeSettings(settings, SHIM, "linux");
       const after = JSON.parse(readFileSync(settings, "utf8")) as Record<string, unknown>;
       const env = after["terminal.integrated.env.linux"] as Record<string, string>;
-      expect(env.TK_SHIM_DIR).toBe(SHIM);
-      expect(env.TK_COMPRESS_TTY).toBe("1");
+      expect(env.CTX_SHIM_DIR).toBe(SHIM);
+      expect(env.CTX_COMPRESS_TTY).toBe("1");
       expect(env.PATH).toBe(`${SHIM}:\${env:PATH}`);
       expect(after["editor.fontSize"]).toBe(14);
       // The original JSONC was reformatted to strict JSON, so a recoverable backup exists.
       expect(res.reformatted).toBe(true);
-      expect(res.backupPath).toBe(`${settings}.tk-backup`);
+      expect(res.backupPath).toBe(`${settings}.ctx-backup`);
       expect(readFileSync(res.backupPath!, "utf8")).toContain("// editor prefs");
     } finally {
       rmSync(dir, { recursive: true, force: true });
@@ -156,8 +156,8 @@ describe("VS Code settings env", () => {
   });
 
   test("patches a JSONC settings.json on Windows: windows env key, ; delimiter, backup", () => {
-    const dir = mkdtempSync(join(tmpdir(), "tk-vscode-"));
-    const WIN_SHIM = "C:\\Users\\u\\.token-killer\\shim";
+    const dir = mkdtempSync(join(tmpdir(), "ctx-vscode-"));
+    const WIN_SHIM = "C:\\Users\\u\\.contexa\\shim";
     try {
       const settings = join(dir, "settings.json");
       // Real-world commented settings.json on a Windows box (I1 was first hit there).
@@ -165,13 +165,13 @@ describe("VS Code settings env", () => {
       const res = patchVscodeSettings(settings, WIN_SHIM, "win32");
       const after = JSON.parse(readFileSync(settings, "utf8")) as Record<string, unknown>;
       const env = after["terminal.integrated.env.windows"] as Record<string, string>;
-      expect(env.TK_SHIM_DIR).toBe(WIN_SHIM);
-      expect(env.TK_COMPRESS_TTY).toBe("1");
+      expect(env.CTX_SHIM_DIR).toBe(WIN_SHIM);
+      expect(env.CTX_COMPRESS_TTY).toBe("1");
       // Windows uses `;` as the PATH delimiter.
       expect(env.PATH).toBe(`${WIN_SHIM};\${env:PATH}`);
       expect(after["editor.fontSize"]).toBe(14);
       expect(res.reformatted).toBe(true);
-      expect(res.backupPath).toBe(`${settings}.tk-backup`);
+      expect(res.backupPath).toBe(`${settings}.ctx-backup`);
       // Unpatch removes our keys and drops the now-empty env block.
       unpatchVscodeSettings(settings, WIN_SHIM, "win32");
       const restored = JSON.parse(readFileSync(settings, "utf8")) as Record<string, unknown>;

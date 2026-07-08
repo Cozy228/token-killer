@@ -1,4 +1,4 @@
-// Ledger read-side join — `tk report` (metrics-ledger §4).
+// Ledger read-side join — `ctx report` (metrics-ledger §4).
 //
 // THE load-bearing rule: four ledgers, displayed side by side, NEVER summed. This
 // module reads the existing scattered stores and renders four independent sections
@@ -7,7 +7,7 @@
 // governance.jsonl, ④ derived from history + the ② store.
 //
 // Cold path, fully fail-open: a missing/corrupt store yields an empty section,
-// never a throw. It must never block or error a hot-path `tk <cmd>`.
+// never a throw. It must never block or error a hot-path `ctx <cmd>`.
 
 import {
   countFindingsReverted,
@@ -57,7 +57,7 @@ export type GuardrailsLedger = {
   failure_rate: number;
   // cold-path: a surface whose current hash returned to its pre-opt before_hash.
   findings_reverted: number;
-  // §0.1.4 — DEFERRED. No signal exists (rawStore only saves; tk cannot observe a
+  // §0.1.4 — DEFERRED. No signal exists (rawStore only saves; ctx cannot observe a
   // direct snapshot reopen). Never fabricated.
   raw_reopen_rate: "n/a";
 };
@@ -207,7 +207,7 @@ export function renderJson(ledgers: Ledgers): string {
 export function renderText(ledgers: Ledgers): string {
   const out: string[] = [];
   out.push(
-    `Token Killer — savings report (scope: ${ledgers.scope}${ledgers.since ? `, since ${ledgers.since}` : ""})`,
+    `Contexa — savings report (scope: ${ledgers.scope}${ledgers.since ? `, since ${ledgers.since}` : ""})`,
   );
   out.push("Four separate views, shown side by side. They are never summed.");
   out.push("");
@@ -322,7 +322,7 @@ async function loadTimeseries(opts: ReportOptions, now: Date): Promise<GainTimes
 }
 
 // Build the four-view savings report (measured / optimizer / governance /
-// quality) and open it in the browser. This is the default `tk gain` surface —
+// quality) and open it in the browser. This is the default `ctx gain` surface —
 // `--text`/`--json`/`--csv` keep the terminal forms (see core/gain.ts). The four
 // ledgers are shown side by side, never summed.
 export async function emitGainHtml(opts: ReportOptions, now: Date = new Date()): Promise<void> {
@@ -335,10 +335,10 @@ export async function emitGainHtml(opts: ReportOptions, now: Date = new Date()):
     {
       kind: "gain",
       title: "Your token savings",
-      subtitle: "How much model spend Token Killer saved you, and where it came from.",
+      subtitle: "How much model spend Contexa saved you, and where it came from.",
       generatedAt: now.toISOString(),
       // Name the actual project (cwd basename) so the scope line reads "Covers
-      // token-killer" instead of the ambiguous "this project" (parity with inspect,
+      // contexa" instead of the ambiguous "this project" (parity with inspect,
       // src/inspect/cli.ts). User scope covers every project, so it carries no name.
       data: {
         ...ledgers,

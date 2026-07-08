@@ -12,7 +12,7 @@
 // is deterministic and platform-independent — it does not depend on what binaries
 // happen to be installed on the box running the suite. On a stock Windows box,
 // `ls`/`cat`/`wc`/`gc` are pwsh cmdlet ALIASES, not executables; the gate
-// (`isAvailable`) is what keeps tk from shelling out to a missing binary (D2,
+// (`isAvailable`) is what keeps ctx from shelling out to a missing binary (D2,
 // RTK Windows #1248: alias != executable).
 //
 // Parser status at the time of writing: ZERO changes were required. The existing
@@ -39,13 +39,13 @@ describe("PowerShell corpus — `;` sequencing and pipelines", () => {
     // eligible one is wrapped — provably equivalent (no shared I/O context).
     const r = rewriteCommand("git status; git log", undefined, present);
     expect(r.decision).toBe("rewrite");
-    expect(r.rewritten).toBe("tk git status; tk git log");
+    expect(r.rewritten).toBe("ctx git status; ctx git log");
   });
 
   test("; rewrites the eligible side even when the other side is a no-handler program", () => {
     const r = rewriteCommand("git status; some-unknown-tool", undefined, present);
     expect(r.decision).toBe("rewrite");
-    expect(r.rewritten).toBe("tk git status; some-unknown-tool");
+    expect(r.rewritten).toBe("ctx git status; some-unknown-tool");
   });
 
   test("a pipeline PRODUCER passes — compressing it would corrupt the downstream stage (C1)", () => {
@@ -121,7 +121,7 @@ describe("PowerShell corpus — backtick (escape / line-continuation / substitut
     // and the literal backtick arg is preserved byte-for-byte.
     const r = rewriteCommand("git log --grep '`literal`'", undefined, present);
     expect(r.decision).toBe("rewrite");
-    expect(r.rewritten).toBe("tk git log --grep '`literal`'");
+    expect(r.rewritten).toBe("ctx git log --grep '`literal`'");
   });
 });
 
@@ -142,43 +142,43 @@ describe("PowerShell corpus — $(...), ${...}, script block { ... }", () => {
 
   test("${var} plain variable expansion → REWRITE (provably equivalent)", () => {
     // `${HEAD}` is a plain variable reference in BOTH shells — it expands to a
-    // value, it does not execute a command. Prepending `tk` leaves the expansion
-    // identical (`tk` forwards the expanded value as a normal arg to git), so the
+    // value, it does not execute a command. Prepending `ctx` leaves the expansion
+    // identical (`ctx` forwards the expanded value as a normal arg to git), so the
     // rewrite is equivalent. This is the same safety class as a quoted literal arg,
     // and distinct from `$(...)` which the gate (correctly) catches.
     const r = rewriteCommand("git log ${HEAD}", undefined, present);
     expect(r.decision).toBe("rewrite");
-    expect(r.rewritten).toBe("tk git log ${HEAD}");
+    expect(r.rewritten).toBe("ctx git log ${HEAD}");
   });
 
   test("${var} as a flag value → REWRITE, expansion preserved", () => {
     const r = rewriteCommand("git log --grep ${pat}", undefined, present);
     expect(r.decision).toBe("rewrite");
-    expect(r.rewritten).toBe("tk git log --grep ${pat}");
+    expect(r.rewritten).toBe("ctx git log --grep ${pat}");
   });
 
   test("brace tokens after a native command → REWRITE (literal args, provably equivalent)", () => {
     // For a NATIVE command (git), `{ foo }` is NOT a script block — PowerShell
     // passes `{`, `foo`, `}` as literal string arguments. (A real script block only
     // matters as an argument to a cmdlet like ForEach-Object, and cmdlets have no
-    // tk handler, so those PASS via the no-handler branch — see the cmdlet case
-    // below.) Prepending `tk` forwards the same literal args, so this is equivalent;
+    // ctx handler, so those PASS via the no-handler branch — see the cmdlet case
+    // below.) Prepending `ctx` forwards the same literal args, so this is equivalent;
     // the prepend is byte-faithful (braces and spacing preserved).
     const r = rewriteCommand("git log { foo }", undefined, present);
     expect(r.decision).toBe("rewrite");
-    expect(r.rewritten).toBe("tk git log { foo }");
+    expect(r.rewritten).toBe("ctx git log { foo }");
   });
 
-  test("a `;` INSIDE a brace block is NOT a top-level separator — tk is never injected into the block (#25)", () => {
+  test("a `;` INSIDE a brace block is NOT a top-level separator — ctx is never injected into the block (#25)", () => {
     // The regression issue #25 names: `splitTopLevel` used to track only quotes, so the
     // `;` inside the block was treated as a top-level statement separator and the engine
-    // emitted `tk git log { git status; tk git log }` — injecting `tk` mid-block and
+    // emitted `ctx git log { git status; ctx git log }` — injecting `ctx` mid-block and
     // mutating script-block content. With brace-depth tracking the block is ONE unit:
-    // `tk` is prepended exactly once at the front and the block's bytes (inner `;`
+    // `ctx` is prepended exactly once at the front and the block's bytes (inner `;`
     // included) are byte-faithful.
     const r = rewriteCommand("git log { git status; git log }", undefined, present);
     expect(r.decision).toBe("rewrite");
-    expect(r.rewritten).toBe("tk git log { git status; git log }");
+    expect(r.rewritten).toBe("ctx git log { git status; git log }");
   });
 
   test("a `|` INSIDE a brace block is not a split point either", () => {
@@ -186,7 +186,7 @@ describe("PowerShell corpus — $(...), ${...}, script block { ... }", () => {
     // rule made the whole thing PASS. The block is a literal arg; prepend once.
     const r = rewriteCommand("git log { a | b }", undefined, present);
     expect(r.decision).toBe("rewrite");
-    expect(r.rewritten).toBe("tk git log { a | b }");
+    expect(r.rewritten).toBe("ctx git log { a | b }");
   });
 
   test("a real evaluated script block over a pipe: the inner `;` never wraps a mid-block command (#25)", () => {
@@ -201,9 +201,9 @@ describe("PowerShell corpus — $(...), ${...}, script block { ... }", () => {
     expect(r.decision).toBe("pass");
   });
 
-  test("a pwsh cmdlet that evaluates a script block has NO tk handler → pass", () => {
+  test("a pwsh cmdlet that evaluates a script block has NO ctx handler → pass", () => {
     // The realistic script-block-as-evaluated-block case: `Get-ChildItem | ForEach-Object {…}`.
-    // ForEach-Object isn't a tk handler target, and it's the `|` RHS regardless, so
+    // ForEach-Object isn't a ctx handler target, and it's the `|` RHS regardless, so
     // the command passes. Pin it so the brace-arg rewrite above is never confused
     // with rewriting a genuine script block.
     const r = rewriteCommand("Get-ChildItem | ForEach-Object { $_.Name }", undefined, present);
@@ -215,58 +215,58 @@ describe("PowerShell corpus — quoted native arguments (rewrite, quotes preserv
   test("double-quoted arg with a space → rewrite, quotes byte-preserved", () => {
     const r = rewriteCommand('git log --grep "foo bar"', undefined, present);
     expect(r.decision).toBe("rewrite");
-    expect(r.rewritten).toBe('tk git log --grep "foo bar"');
+    expect(r.rewritten).toBe('ctx git log --grep "foo bar"');
   });
 
   test("a chain operator INSIDE a quoted arg is not a split point", () => {
     const r = rewriteCommand('git log --grep "a; b"', undefined, present);
     expect(r.decision).toBe("rewrite");
-    expect(r.rewritten).toBe('tk git log --grep "a; b"');
+    expect(r.rewritten).toBe('ctx git log --grep "a; b"');
   });
 
   test("a pipe INSIDE a quoted arg is not a split point", () => {
     const r = rewriteCommand('git log --grep "a | b"', undefined, present);
     expect(r.decision).toBe("rewrite");
-    expect(r.rewritten).toBe('tk git log --grep "a | b"');
+    expect(r.rewritten).toBe('ctx git log --grep "a | b"');
   });
 
   test("single-quoted arg with spaces → rewrite, quotes preserved", () => {
     const r = rewriteCommand("rg 'foo bar' src", undefined, present);
     expect(r.decision).toBe("rewrite");
-    expect(r.rewritten).toBe("tk rg 'foo bar' src");
+    expect(r.rewritten).toBe("ctx rg 'foo bar' src");
   });
 });
 
 describe("PowerShell corpus — cmd /c and pwsh -Command nesting", () => {
-  // The OUTER program (`cmd`, `pwsh`, `powershell`) has no tk handler, so the WHOLE
+  // The OUTER program (`cmd`, `pwsh`, `powershell`) has no ctx handler, so the WHOLE
   // command passes via the no-handler branch — and crucially the INNER quoted
   // command is just a quoted argument, never separately rewritten. This holds even
   // when the outer program IS present on PATH (it's the no-handler gate, not the
-  // presence gate, that decides here): tk has nothing to compress from a shell
+  // presence gate, that decides here): ctx has nothing to compress from a shell
   // launcher, and must not reach inside the quoted string.
   test('cmd /c "git status" → pass (outer no-handler; inner not rewritten)', () => {
     const r = rewriteCommand('cmd /c "git status"', undefined, present);
     expect(r.decision).toBe("pass");
-    expect(r.reason).toBe("no tk handler for 'cmd'");
+    expect(r.reason).toBe("no ctx handler for 'cmd'");
     expect(r.rewritten).toBeUndefined();
   });
 
   test('pwsh -Command "git status" → pass (outer no-handler; inner not rewritten)', () => {
     const r = rewriteCommand('pwsh -Command "git status"', undefined, present);
     expect(r.decision).toBe("pass");
-    expect(r.reason).toBe("no tk handler for 'pwsh'");
+    expect(r.reason).toBe("no ctx handler for 'pwsh'");
     expect(r.rewritten).toBeUndefined();
   });
 
   test('powershell -Command "git log" → pass (outer no-handler)', () => {
     const r = rewriteCommand('powershell -Command "git log"', undefined, present);
     expect(r.decision).toBe("pass");
-    expect(r.reason).toBe("no tk handler for 'powershell'");
+    expect(r.reason).toBe("no ctx handler for 'powershell'");
   });
 
   test("the inner command is never reached even if it would otherwise be eligible", () => {
     // Sanity: `git status` alone IS eligible, but wrapped as a quoted arg to `cmd`
-    // it must NOT leak a `tk` into the inner string.
+    // it must NOT leak a `ctx` into the inner string.
     const r = rewriteCommand('cmd /c "git status && git log"', undefined, present);
     expect(r.decision).toBe("pass");
     expect(r.rewritten).toBeUndefined();
@@ -275,8 +275,8 @@ describe("PowerShell corpus — cmd /c and pwsh -Command nesting", () => {
 
 describe("PowerShell corpus — alias vs real executable (Windows presence gate, D2)", () => {
   // The defining Windows case (RTK #1248): on a stock pwsh box `ls`/`cat`/`wc`/`gc`
-  // resolve to cmdlet aliases, NOT to executables on PATH. tk wraps real tools, so
-  // it must rewrite ONLY when the binary actually exists — otherwise `tk cat foo`
+  // resolve to cmdlet aliases, NOT to executables on PATH. ctx wraps real tools, so
+  // it must rewrite ONLY when the binary actually exists — otherwise `ctx cat foo`
   // would shell out to a missing `cat.exe` and break a command pwsh would have run
   // via its alias. The gate is `isAvailable`; assert both polarities.
 
@@ -291,16 +291,18 @@ describe("PowerShell corpus — alias vs real executable (Windows presence gate,
     test(`${alias}: real executable present → eligible (rewrite)`, () => {
       const r = rewriteCommand(`${alias} foo`, undefined, present);
       expect(r.decision).toBe("rewrite");
-      expect(r.rewritten).toBe(`tk ${alias} foo`);
+      expect(r.rewritten).toBe(`ctx ${alias} foo`);
     });
   }
 
-  test("gc (Get-Content alias) has no tk handler — passes regardless of PATH", () => {
-    // `gc` is a pwsh alias for Get-Content. It is NOT one of tk's read programs
+  test("gc (Get-Content alias) has no ctx handler — passes regardless of PATH", () => {
+    // `gc` is a pwsh alias for Get-Content. It is NOT one of ctx's read programs
     // (cat/type/less/read), so it fails at the no-handler gate BEFORE the presence
     // check ever runs — it passes whether or not a `gc` binary exists.
-    expect(rewriteCommand("gc file.txt", undefined, present).reason).toBe("no tk handler for 'gc'");
-    expect(rewriteCommand("gc file.txt", undefined, absent).reason).toBe("no tk handler for 'gc'");
+    expect(rewriteCommand("gc file.txt", undefined, present).reason).toBe(
+      "no ctx handler for 'gc'",
+    );
+    expect(rewriteCommand("gc file.txt", undefined, absent).reason).toBe("no ctx handler for 'gc'");
   });
 
   test("mixed chain: present binary rewrites, alias-only segment passes", () => {
@@ -308,6 +310,6 @@ describe("PowerShell corpus — alias vs real executable (Windows presence gate,
     // real-binary segment is wrapped; the alias segment is left for pwsh to run.
     const r = rewriteCommand("git status; cat foo", undefined, (p) => p === "git");
     expect(r.decision).toBe("rewrite");
-    expect(r.rewritten).toBe("tk git status; cat foo");
+    expect(r.rewritten).toBe("ctx git status; cat foo");
   });
 });
