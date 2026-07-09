@@ -593,19 +593,35 @@ Acceptance: symbol biography via `context(ref)` incl. symbol-level history + anc
 anchor-drift test; per-language parity fixtures; multibyte span regression.
 
 **M3 — Humans see it** (guide, full page set — maintainer: no cut)
-Loopback server + Overview / Entity Biography / Decisions / History / Knowledge / Search +
-evidence drawer + snapshot export (single shell + JSON, one render path).
-Acceptance: Playwright smoke; every displayed fact traces to claim provenance; export diff test.
+M3 starts with a headless projection kernel inside `core`, then builds the guide as a view over it.
+The projection contract is `EntityBiographyProjection`, `OverviewProjection`, `KnowledgeProjection`,
+`EvidencePacket`, and `SearchProjection`; every projection carries claim-backed facts, per-profile
+edge predicates/depth/node caps, omitted counts, freshness/coverage metadata, and perf records
+(latency, entity/link fanout, serialized JSON bytes). After that: Hono loopback server + React/Vite
+shell + system browser open; Entity Biography + Evidence Drawer first; Knowledge + Search next;
+Overview / Decisions / History bounded graph views after the inspector paths are green; snapshot
+export last. Live serve and export both consume the same JSON projections through the same render
+components.
+Acceptance: projection golden transcripts; Playwright smoke; every displayed fact traces to claim
+provenance; no UI route computes graph semantics ad hoc; export diff test; projection perf records
+for deterministic and living-repo tiers.
 
 **M4 — Org context flows in** (network carriers, ingress-only)
-GitHub PR/issue → Jira (stories + decisions) → Confluence (domain docs); dated snapshots;
-cross-carrier arbitration live.
-Acceptance: snapshot fixtures; ingress-only lint (no outbound writes anywhere); conflicts
-across carriers surface in `context()` and guide.
+Carrier snapshot framework first, then GitHub PR/issue, Jira stories/decisions, and Confluence
+domain/docs as separate ingress-only adapters. Network carriers write dated local snapshots under the
+external-SoR policy, never committed repo files and never outbound writes. Projection integration
+comes through the same M3 projection interfaces: cross-carrier conflicts must surface in both
+`context()` and guide without creating a carrier-specific UI path.
+Acceptance: offline snapshot fixtures; credential redaction; ingress-only lint; freshness age
+disclosed per carrier; cross-carrier conflicts visible in `context()` and guide.
 
 **M5 — Hardening + free instrumentation** (record-only, features-before-measurement)
-Perf-gate enforcement (§10), served/usage counters, omitted-handle drill-down rate (the free
-retrieval-quality proxy), budget/envelope property tests.
+Turn the M3 records into hard gates: projection latency/fanout/serialized-size ceilings,
+batched link reads where needed, optional per-generation projection caches, served/usage counters,
+omitted-handle drill-down rate (the free retrieval-quality proxy), budget/envelope property tests,
+and regression fixtures for hot guide/context paths. Only after those gates are stable do
+CFG/def-use/effect-catalog style algorithms get a new decision gate; they are not M5 hardening by
+default.
 
 **Adjacent track** (any time after M1, never blocking): compressor absorption (§8).
 

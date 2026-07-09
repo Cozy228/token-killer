@@ -10,10 +10,11 @@ of `context()` — a live, read-only web guide over the SAME graph, with per-fac
 ## Read first (in this order)
 1. `CONTEXA-IMPL.md` — **§7 Guide impl (the Hono loopback + bearer token + evidence-drawer + ONE-render-
    path + snapshot-export spec)**; §6 selection + §7 serving (the guide's projections REUSE the same
-   selection/provenance, never a parallel path); §9 M3 line; §10 testing; §12 read-back map.
+   selection/provenance, never a parallel path); §9 M3 line, especially the projection-kernel-first
+   route inside M3; §10 testing; §12 read-back map.
 2. `docs/build/M3-ACCEPTANCE.md` — the acceptance bar (reviewer-owned; you make it green, you never
-   weaken it): **G-provenance · G-readonly · G-loopback · G-one-render-path** + scenarios **C1–C9** +
-   the ⚠ verify-at-wiring rule (record observed value + the producing command).
+   weaken it): **G-projection-kernel · G-provenance · G-readonly · G-loopback · G-one-render-path** +
+   scenarios **C0–C9** + the ⚠ verify-at-wiring rule (record observed value + the producing command).
 3. `CONTEXA-DESIGN.md` §6 Human Surface (the six-page set + "read-only = *non-mutating*") + §8 process model.
 4. The merged M2 serve/select code — the Entity Biography IS the human twin of `context(ref)`; study
    `packages/core/src/serve/serve.ts` + `packages/core/src/select/` so the guide projects from the
@@ -36,6 +37,16 @@ of `context()` — a live, read-only web guide over the SAME graph, with per-fac
   core; it is a gated follow-on with its own validator loop, see the M3-ACCEPTANCE footer.)
 - **One render path (binding)**: live serve and snapshot export render through the SAME components,
   fed by the SAME JSON projection. The export-diff test (C9) enforces it — never two render paths.
+- **Projection kernel first (binding)**: M3 starts by adding the guide projection kernel in `core`
+  before browser UI work. The guide never reaches into `select()`/`serve()` ad hoc from UI routes.
+  It consumes typed JSON projections from `core`:
+  `EntityBiographyProjection`, `OverviewProjection`, `KnowledgeProjection`, `EvidencePacket`, and
+  `SearchProjection`. These projection structs are the test/golden surface; React components and
+  snapshot export are adapters. If M3 needs a missing field, update the projection contract and its
+  golden transcript first, then consume it from the guide.
+- **Profile-specific traversal (binding)**: guide projections declare their own edge predicates,
+  weights, depth, node caps, and render budgets. Do not reuse a single all-predicate/default graph walk
+  for every page; a page that needs a broader graph must disclose its budget and omitted handles.
 - **Provenance or it does not render**: every fact reaches the UI as a claim-backed projection
   (`carrier/locus/method/authority/at`); the evidence drawer resolves it. No free-floating prose —
   this is ctx's differentiator vs the wiki cohort's decorative citations.
@@ -49,13 +60,16 @@ of `context()` — a live, read-only web guide over the SAME graph, with per-fac
   golden JSON-projection transcripts; temp `CONTEXA_HOME`/HOME only; `TK_SHIM_DIR` unset; EBUSY-safe
   cleanup; generous serve/browser timeouts (M2's CI lesson: shared runners are slow, hooks must be
   generous); the fixture store is self-contained (do NOT pin assertions to THIS repo's live content).
+- M3 owns recording guide projection performance now, not waiting for M5: for each projection, report
+  latency, entity/link counts, omitted counts, and serialized JSON size for the deterministic fixture;
+  for the living-repo tier, record the same values without asserting brittle rankings.
 
 ## Build route (M3 slices; dependency: 3a → {3b, 3c} parallel → 3d closes)
 | # | Slice | Lands |
 |---|---|---|
-| **3a** | Server + shell + flagship | Hono loopback server (random free port + bearer token + graceful shutdown, davia `web.ts`); `packages/guide` React+Vite shell + system-browser open; the **shared JSON-projection layer + render components reused by BOTH live and export**; the **Entity Biography flagship** (the human twin of `context(ref:"sym:…")`) + the **evidence drawer** on every fact. **Pins the server/projection/render contract everything downstream builds on.** Wires ALL M3 scenarios as skipped/todo (acceptance-first, like M2's 2a). Owns **C1–C3 + G-***. |
-| **3b** | Overview + Decisions + History | Overview (per-source coverage/freshness/carrier presence from real gen/cursor state); Decisions (supersession-chain timeline + source badges + code links); History (hot areas + co-change clusters + React Flow/ELK graph). Owns **C4–C6**. |
-| **3c** | Knowledge + Search | Knowledge (review queue: needs-review entries WITH their `ctx memory confirm|retire <id>` commands + the E8 ops signal; stale-references list; push pin/veto state); Search (cross-source, kind-filtered over all entity kinds). Owns **C7–C8**. |
+| **3a** | Projection kernel + server + shell + flagship | Core-owned typed projections: `EntityBiographyProjection`, `EvidencePacket`, projection perf recorder, profile-specific traversal budgets, and golden JSON transcripts. Then Hono loopback server (random free port + bearer token + graceful shutdown, davia `web.ts`); `packages/guide` React+Vite shell + system-browser open; render components reused by BOTH live and export; the **Entity Biography flagship** (the human twin of `context(ref:"sym:…")`) + the **evidence drawer** on every fact. **Pins the projection/server/render contract everything downstream builds on.** Wires ALL M3 scenarios as skipped/todo (acceptance-first, like M2's 2a). Owns **C0–C3 + G-***. |
+| **3b** | Inspector pages: Knowledge + Search | Knowledge (review queue: needs-review entries WITH their `ctx memory confirm|retire <id>` commands + the E8 ops signal; stale-references list; push pin/veto state); Search (cross-source, kind-filtered over all entity kinds). These are load-bearing inspector paths and should ship before decorative graph views. Owns **C7–C8**. |
+| **3c** | Overview + Decisions + History | Overview (per-source coverage/freshness/carrier presence from real gen/cursor state); Decisions (supersession-chain timeline + source badges + code links); History (hot areas + co-change clusters + bounded React Flow/ELK graph). Owns **C4–C6**. |
 | **3d** | Snapshot export (closer) | `ctx guide --export <dir>` → one self-contained HTML shell + JSON data + client render via the SAME components; the **export-diff test** (live ≡ export) closes the one-render-path contract; re-run the Playwright smoke + provenance sweep. Owns **C9 + the M3 exit checklist**. |
 
 ## Execution model (v2 — maintainer-ratified 2026-07-05; **NO dual-track**)
@@ -83,8 +97,9 @@ Deliver per slice, as your final report:
 2. What landed vs the slice's route row (deviations called out, each with why).
 3. Scenarios flipped green (names) + full test-run tails (ctx packages + Playwright + legacy).
 4. Assumptions where the spec was silent (each: assumption, where recorded).
-5. ⚠ verify-at-wiring values: assertion + observed evidence + the producing command — especially C2's
-   real symbol, and C9's live-vs-export byte-equality on the fixture.
+5. ⚠ verify-at-wiring values: assertion + observed evidence + the producing command — especially
+   C0's projection latency/fanout/JSON size, C2's real symbol, and C9's live-vs-export byte-equality
+   on the fixture.
 6. Anything you could NOT make green (env-gated skips by name — e.g. Playwright headless on CI).
 Gates: joint Fable+Codex review; correctness findings fixed (Opus rounds) before merge; merges into
 `feat/1.0.0` are done by the reviewer, never an implementer.
