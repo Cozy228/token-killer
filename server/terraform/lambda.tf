@@ -20,10 +20,11 @@ resource "aws_lambda_function" "ingest" {
 
   environment {
     variables = {
-      DB_HOST       = aws_db_instance.this.address
-      DB_PORT       = tostring(aws_db_instance.this.port)
-      DB_NAME       = var.db_name
-      DB_SECRET_ARN = aws_db_instance.this.master_user_secret[0].secret_arn
+      DB_HOST         = aws_db_instance.this.address
+      DB_PORT         = tostring(aws_db_instance.this.port)
+      DB_NAME         = var.db_name
+      DB_SECRET_ARN   = aws_db_instance.this.master_user_secret[0].secret_arn
+      TK_EXPORT_TOKEN = var.export_token
     }
   }
 

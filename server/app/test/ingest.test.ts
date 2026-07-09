@@ -1,13 +1,19 @@
+import { gunzipSync } from "node:zlib";
 import { describe, it, expect, vi, beforeEach } from "vitest";
 
 // Stub the DB layer so the route tests never touch Postgres.
 vi.mock("../src/db.js", () => ({
   ensureSchema: vi.fn().mockResolvedValue(undefined),
   insertEvent: vi.fn().mockResolvedValue(undefined),
+  exportTelemetryCsv: vi
+    .fn()
+    .mockResolvedValue(
+      'id,received_at,device_hash,payload\n1,2026-07-09T00:00:00.000Z,a1b2c3,"{""schema"":""1""}"\n',
+    ),
 }));
 
 import app from "../src/index.js";
-import { insertEvent } from "../src/db.js";
+import { exportTelemetryCsv, insertEvent } from "../src/db.js";
 
 const valid = {
   schema: "1",
@@ -41,7 +47,10 @@ function post(body: unknown) {
 }
 
 describe("POST /v1/telemetry", () => {
-  beforeEach(() => vi.clearAllMocks());
+  beforeEach(() => {
+    vi.clearAllMocks();
+    delete process.env.TK_EXPORT_TOKEN;
+  });
 
   it("accepts a valid v1 payload", async () => {
     const res = await post(valid);
@@ -78,5 +87,68 @@ describe("GET /health", () => {
     const res = await app.request("/health");
     expect(res.status).toBe(200);
     expect(await res.json()).toEqual({ ok: true });
+  });
+});
+
+describe("GET /v1/export", () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+    delete process.env.TK_EXPORT_TOKEN;
+  });
+
+  it("requires the export token to be configured", async () => {
+    const res = await app.request("/v1/export");
+    expect(res.status).toBe(503);
+    expect(exportTelemetryCsv).not.toHaveBeenCalled();
+  });
+
+  it("rejects missing or wrong bearer tokens", async () => {
+    process.env.TK_EXPORT_TOKEN = "secret";
+
+    const missing = await app.request("/v1/export");
+    expect(missing.status).toBe(401);
+
+    const wrong = await app.request("/v1/export", {
+      headers: { authorization: "Bearer nope" },
+    });
+    expect(wrong.status).toBe(401);
+    expect(exportTelemetryCsv).not.toHaveBeenCalled();
+  });
+
+  it("returns a CSV export for the configured bearer token", async () => {
+    process.env.TK_EXPORT_TOKEN = "secret";
+
+    const res = await app.request("/v1/export", {
+      headers: { authorization: "Bearer secret" },
+    });
+
+    expect(res.status).toBe(200);
+    expect(res.headers.get("content-type")).toContain("text/csv");
+    expect(res.headers.get("content-disposition")).toContain("telemetry-events.csv");
+    expect(await res.text()).toContain("id,received_at,device_hash,payload");
+    expect(exportTelemetryCsv).toHaveBeenCalledOnce();
+  });
+});
+
+describe("GET /v1/export?gzip=1", () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+    delete process.env.TK_EXPORT_TOKEN;
+  });
+
+  it("returns a gzip CSV export for the configured bearer token", async () => {
+    process.env.TK_EXPORT_TOKEN = "secret";
+
+    const res = await app.request("/v1/export?gzip=1", {
+      headers: { authorization: "Bearer secret" },
+    });
+
+    expect(res.status).toBe(200);
+    expect(res.headers.get("content-type")).toContain("application/gzip");
+    expect(res.headers.get("content-encoding")).toBe("gzip");
+    expect(res.headers.get("content-disposition")).toContain("telemetry-events.csv.gz");
+    const body = Buffer.from(await res.arrayBuffer());
+    expect(gunzipSync(body).toString("utf8")).toContain("id,received_at,device_hash,payload");
+    expect(exportTelemetryCsv).toHaveBeenCalledOnce();
   });
 });

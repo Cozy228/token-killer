@@ -9,6 +9,7 @@ per device per 23h).
 ```
 developer machine (corp network / VPN)
    │  HTTPS POST /v1/telemetry   (single TelemetryPayload v2 JSON, 2s timeout)
+   │  HTTPS GET  /v1/export   (Bearer TK_EXPORT_TOKEN, optional)
    ▼
 execute-api VPC endpoint ──► PRIVATE API Gateway REST API   (resource policy: only this VPCE)
    ▼
@@ -56,6 +57,11 @@ pnpm build         # → dist/index.js (ESM, exports `handler`)
 The handler matches whatever the client POSTs: `application/json`, body = one
 `TelemetryPayload`. Unknown keys are stripped on ingest, so nothing outside the
 allow-list (paths, command text, etc.) can ever reach the database.
+
+`GET /v1/export` returns all `telemetry_events` rows as CSV, ordered by
+`received_at, id`. Add `?gzip=1` to return the same CSV gzipped with Node's
+built-in zlib. Exports are disabled unless `TK_EXPORT_TOKEN` is configured on
+the Lambda, and requests must send `Authorization: Bearer <token>`.
 
 ## Lambda packaging: container vs zip
 
@@ -107,8 +113,8 @@ CERT_ARN=arn:aws:acm:...:certificate/... VPC_ID=vpc-... ./scripts/deploy.sh
 
 Optional overrides (all auto-discovered otherwise): `VPC_ID`, `SUBNET_IDS`,
 `CLIENT_CIDR`, `NAME_PREFIX`, `DB_INSTANCE_CLASS`, `IMAGE_TAG`,
-`CREATE_INTERFACE_ENDPOINTS`, `INGRESS`; ALB-only: `CERT_ARN` (required),
-`LISTENER_PORT` (443), `ALB_MIN_FREE_IPS` (8). If API Gateway is allowed, run
+`CREATE_INTERFACE_ENDPOINTS`, `INGRESS`, `TK_EXPORT_TOKEN`; ALB-only: `CERT_ARN`
+(required), `LISTENER_PORT` (443), `ALB_MIN_FREE_IPS` (8). If API Gateway is allowed, run
 `INGRESS=apigw ./scripts/deploy.sh`. Prereqs: `aws`, `docker`
 (daemon running), `jq`.
 The image is built `--platform linux/amd64` to match the x86_64 Lambda, so it
@@ -132,6 +138,9 @@ Outputs:
 - `telemetry_endpoint_url` — bake this into the CLI as `TK_TELEMETRY_ENDPOINT`
   at build time (the enterprise build). It resolves to private IPs in-VPC.
 - `rds_endpoint` / `rds_secret_arn` — point Grafana's PostgreSQL data source here.
+
+Set `export_token` to enable the CSV export endpoint; leave it empty to keep
+exports disabled.
 
 > Client prerequisite: developer machines must reach the VPC (Direct Connect /
 > VPN / Transit Gateway) and resolve the execute-api private DNS name.
