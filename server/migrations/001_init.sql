@@ -32,3 +32,4 @@ CREATE TABLE IF NOT EXISTS telemetry_events (
 
 CREATE INDEX IF NOT EXISTS idx_telemetry_received_at ON telemetry_events (received_at);
 CREATE INDEX IF NOT EXISTS idx_telemetry_device      ON telemetry_events (device_hash);
+CREATE INDEX IF NOT EXISTS idx_telemetry_export      ON telemetry_events (received_at, id);

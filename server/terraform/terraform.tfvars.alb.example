@@ -35,6 +35,9 @@ create_interface_endpoints = true
 # Filled in after the first ECR push (see README ordering).
 lambda_image_uri = ""
 
+# Optional: bearer token for GET /v1/export. Empty disables exports.
+export_token = ""
+
 db_instance_class = "db.t4g.micro"
 
 tags = {

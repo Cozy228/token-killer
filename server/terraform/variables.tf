@@ -78,6 +78,13 @@ variable "lambda_timeout_s" {
   default = 10
 }
 
+variable "export_token" {
+  type        = string
+  description = "Bearer token required for GET /v1/export. Leave empty to disable exports."
+  default     = ""
+  sensitive   = true
+}
+
 # --- Database ---
 
 variable "db_instance_class" {

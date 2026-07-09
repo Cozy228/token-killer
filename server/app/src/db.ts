@@ -37,7 +37,30 @@ CREATE TABLE IF NOT EXISTS telemetry_events (
 );
 CREATE INDEX IF NOT EXISTS idx_telemetry_received_at ON telemetry_events (received_at);
 CREATE INDEX IF NOT EXISTS idx_telemetry_device      ON telemetry_events (device_hash);
+CREATE INDEX IF NOT EXISTS idx_telemetry_export      ON telemetry_events (received_at, id);
 `;
+
+const EXPORT_COLUMNS = [
+  "id",
+  "received_at",
+  "schema_ver",
+  "device_hash",
+  "run_id",
+  "version",
+  "os",
+  "arch",
+  "commands_24h",
+  "commands_total",
+  "tokens_saved_24h",
+  "tokens_saved_total",
+  "savings_pct",
+  "fallback_count",
+  "parse_failure_24h",
+  "first_seen_days",
+  "active_days_30d",
+  "estimated_savings_usd_30d",
+  "payload",
+] as const;
 
 async function getPool(): Promise<pg.Pool> {
   if (pool) return pool;
@@ -96,4 +119,30 @@ export async function insertEvent(e: TelemetryPayload): Promise<void> {
       JSON.stringify(e),
     ],
   );
+}
+
+export async function exportTelemetryCsv(): Promise<string> {
+  const p = await getPool();
+  const result = await p.query(
+    `SELECT ${EXPORT_COLUMNS.join(", ")}
+     FROM telemetry_events
+     ORDER BY received_at ASC, id ASC`,
+  );
+
+  const lines = [EXPORT_COLUMNS.join(",")];
+  for (const row of result.rows as Record<string, unknown>[]) {
+    lines.push(EXPORT_COLUMNS.map((column) => csvCell(row[column])).join(","));
+  }
+  return `${lines.join("\n")}\n`;
+}
+
+function csvCell(value: unknown): string {
+  if (value === null || value === undefined) return "";
+  const text =
+    value instanceof Date
+      ? value.toISOString()
+      : typeof value === "object"
+        ? JSON.stringify(value)
+        : String(value);
+  return /[",\n\r]/.test(text) ? `"${text.replace(/"/g, '""')}"` : text;
 }

@@ -78,6 +78,7 @@ NAME_PREFIX="${NAME_PREFIX:-tk-telemetry}"
 DB_INSTANCE_CLASS="${DB_INSTANCE_CLASS:-db.t4g.micro}"
 DB_NAME="${DB_NAME:-telemetry}"
 DB_USERNAME="${DB_USERNAME:-tk_ingest}"
+TK_EXPORT_TOKEN="${TK_EXPORT_TOKEN:-}"
 CREATE_INTERFACE_ENDPOINTS="${CREATE_INTERFACE_ENDPOINTS:-true}"
 TAG_SPEC="Key=Project,Value=$NAME_PREFIX"
 
@@ -325,7 +326,13 @@ aws logs put-retention-policy --log-group-name "$LOG_GROUP" --retention-in-days 
 # 9. Lambda function (create or update to the freshly-pushed image)
 # ---------------------------------------------------------------------------
 FN_NAME="$NAME_PREFIX-ingest"
-ENV_VARS="Variables={DB_HOST=$DB_HOST,DB_PORT=$DB_PORT,DB_NAME=$DB_NAME,DB_SECRET_ARN=$DB_SECRET_ARN}"
+ENV_VARS="$(jq -nc \
+  --arg db_host "$DB_HOST" \
+  --arg db_port "$DB_PORT" \
+  --arg db_name "$DB_NAME" \
+  --arg db_secret_arn "$DB_SECRET_ARN" \
+  --arg tk_export_token "$TK_EXPORT_TOKEN" \
+  '{Variables:{DB_HOST:$db_host,DB_PORT:$db_port,DB_NAME:$db_name,DB_SECRET_ARN:$db_secret_arn,TK_EXPORT_TOKEN:$tk_export_token}}')"
 VPC_CONFIG="SubnetIds=$SUBNETS_CSV,SecurityGroupIds=$LAMBDA_SG"
 
 if present "$(aws lambda get-function --function-name "$FN_NAME" \
