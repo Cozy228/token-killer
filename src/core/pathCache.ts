@@ -1,4 +1,4 @@
-import { createHash } from "node:crypto";
+import { hash } from "node:crypto";
 import { existsSync, readFileSync, renameSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 
@@ -31,7 +31,7 @@ function cacheFile(): string {
 // One namespace per (PATH, PATHEXT). A NUL separator keeps the two fields unambiguous.
 function envKey(pathValue: string | undefined): string {
   const material = `${pathValue ?? ""}${FIELD_SEP}${process.env.PATHEXT ?? ""}`;
-  return createHash("sha256").update(material).digest("hex").slice(0, 16);
+  return hash("sha256", material, "hex").slice(0, 16);
 }
 
 function readCache(): CacheShape {

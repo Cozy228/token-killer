@@ -7,7 +7,7 @@
 // fail-open — a lost update only ever causes under-dedup (a missed suppression),
 // never a wrong "unchanged" and never a corrupt store.
 
-import { createHash } from "node:crypto";
+import { createHash, hash } from "node:crypto";
 import { open, mkdir, readFile, rename, stat, unlink, writeFile } from "node:fs/promises";
 import { basename, dirname } from "node:path";
 
@@ -72,7 +72,7 @@ export function normalizeCommand(command: ParsedCommand): string {
 // key = (project_fingerprint, normCmd). The fingerprint is implicit in the file
 // path, so the in-file key only needs to be a stable hash of the normalized command.
 export function entryKey(normCmd: string): string {
-  return createHash("sha256").update(normCmd).digest("hex").slice(0, 24);
+  return hash("sha256", normCmd, "hex").slice(0, 24);
 }
 
 export function hashOutput(output: string): string {

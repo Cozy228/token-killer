@@ -4,20 +4,14 @@
 // machinery (router + executor + gate + pipeline). The management subcommands
 // (install/inspect/optimize/telemetry/report/…) are loaded with `await import()`
 // the moment they're actually requested, keeping them off the per-command path.
-// Compile-cache ladder (2.3) — persist V8's compiled bytecode across invocations:
-//  - Node ≥22.8: `module.enableCompileCache()` (this call). When the shim wrapper
-//    exported NODE_COMPILE_CACHE (2.3) it lands in ~/.contexa/v8-cache; else
-//    Node's default temp dir.
-//  - Node 22.1–22.7: the shim wrapper sets NODE_COMPILE_CACHE, which Node honors
-//    WITHOUT this API — zero code here, it just works when shimmed.
-//  - Node 20–22.0: DEFERRED — needs a `v8-compile-cache` stub, which only hooks the
-//    CJS bundle (item 2.2, out of scope). Not silently dropped: that slice pays the
-//    uncached compile until 2.2 ships.
+// Persist V8's compiled bytecode across invocations. Node 22.18 guarantees this
+// API; when the wrapper exports NODE_COMPILE_CACHE it lands in ~/.contexa/v8-cache,
+// otherwise Node uses its default cache location.
 import module from "node:module";
 try {
-  (module as { enableCompileCache?: () => void }).enableCompileCache?.();
+  module.enableCompileCache();
 } catch {
-  // Older Node, or a read-only cache dir — startup cost is unchanged, never fatal.
+  // Compile-cache failures must never affect command execution.
 }
 
 import { parseArgv } from "./parse.js";

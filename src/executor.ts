@@ -35,6 +35,7 @@ function resolveExitCode(code: number | null, signal: NodeJS.Signals | null): nu
 // lossy UTF-8 — never worse than a hardcoded toString("utf8"). (RTK never fixed
 // this: it decodes child output with from_utf8_lossy — mojibake without a crash
 // — and its POSIX-UTF-8 home turf never triggers it.)
+const strictUtf8Decoder = new TextDecoder("utf-8", { fatal: true });
 let legacyDecoder: InstanceType<typeof TextDecoder> | null | undefined;
 
 // Map the active Windows console code page to its encoding label. Resolved once,
@@ -87,7 +88,7 @@ function getLegacyDecoder(): InstanceType<typeof TextDecoder> | null {
 export function decodeChildOutput(buf: Buffer): string {
   if (buf.length === 0) return "";
   try {
-    return new TextDecoder("utf-8", { fatal: true }).decode(buf);
+    return strictUtf8Decoder.decode(buf);
   } catch {
     const legacy = getLegacyDecoder();
     return legacy ? legacy.decode(buf) : buf.toString("utf8");
