@@ -94,22 +94,24 @@ function isFrameworkFrame(line: string): boolean {
 function isMavenNoise(line: string): boolean {
   return (
     line === "" ||
-    line.startsWith('Scanning for projects') ||
+    line.startsWith("Scanning for projects") ||
     /^--- .+ ---$/.test(line) ||
     /^Running [\w.$-]+/.test(line) ||
     /^Results:$/.test(line) ||
-    line.startsWith('Total time:') ||
-    line.startsWith('Finished at:') ||
-    line.startsWith('Downloading from ') ||
-    line.startsWith('Downloaded from ') ||
-    line.startsWith('Re-run Maven using ') ||
-    line.startsWith('To see the full stack trace') ||
-    line.startsWith('For more information')
+    line.startsWith("Total time:") ||
+    line.startsWith("Finished at:") ||
+    line.startsWith("Downloading from ") ||
+    line.startsWith("Downloaded from ") ||
+    line.startsWith("Re-run Maven using ") ||
+    line.startsWith("To see the full stack trace") ||
+    line.startsWith("For more information")
   );
 }
 
 function isPerClassPassingSummary(line: string): boolean {
-  return line.startsWith('Tests run:') && / -- in /.test(line) && !/<<< (?:FAILURE|ERROR)!/.test(line);
+  return (
+    line.startsWith("Tests run:") && / -- in /.test(line) && !/<<< (?:FAILURE|ERROR)!/.test(line)
+  );
 }
 
 function isFailureSummaryLine(line: string): boolean {
@@ -145,18 +147,20 @@ function collectMavenLines(text: string): string[] {
       /\bBUILD (?:SUCCESS|FAILURE)\b/.test(line) ||
       /\bReactor Summary\b/.test(line) ||
       /\s+\.+\s+(?:SUCCESS|FAILURE|SKIPPED)\b/.test(line) ||
-      line.startsWith('Tests run:') ||
+      line.startsWith("Tests run:") ||
       /^Failures:$/.test(line) ||
       /^Errors:$/.test(line) ||
       /<<< (?:FAILURE|ERROR)!/.test(line) ||
       /^(?:[\w.$-]+(?:Exception|Error)|java\.[\w.$-]+):/.test(line) ||
-      line.startsWith('Caused by:') ||
-      line.startsWith('at ') ||
+      line.startsWith("Caused by:") ||
+      line.startsWith("at ") ||
       isFailureSummaryLine(line) ||
       isCompileDiagnostic(line) ||
-      line.startsWith('There are test failures.') ||
-      /^Please refer to .*surefire-reports/.test(line) ||
-      line.startsWith('Failed to execute goal ')
+      line.startsWith("There are test failures.") ||
+      /^Please refer to .*(?:surefire|failsafe)-reports/.test(line) ||
+      line.startsWith("After correcting the problems, you can resume the build") ||
+      /(?:^|\s)(?:-rf|--resume-from)\s+:\S+/.test(line) ||
+      line.startsWith("Failed to execute goal ")
     ) {
       important.push(line.replace(/\s+\([^)]+\)(?= on project)/g, ""));
     }
@@ -168,6 +172,7 @@ function collectMavenLines(text: string): string[] {
 function formatMaven(
   text: string,
   command: ParsedCommand,
+  exitCode: number,
 ): string | { output: string; omission?: OmissionDeclaration } {
   if (isMavenVerbose(command.args) || isMavenProbe(command.args)) {
     return text;
@@ -179,7 +184,7 @@ function formatMaven(
   }
 
   const quiet = isMavenQuiet(command.args);
-  if (!hasEnglishFooter(text) && !(quiet && hasQuietFailureSignal(text))) {
+  if (!hasEnglishFooter(text) && !(exitCode !== 0 && quiet && hasQuietFailureSignal(text))) {
     return text;
   }
 
@@ -221,5 +226,5 @@ export const mavenHandler = defineHandler({
   },
 
   format: (raw, command, _options) =>
-    formatMaven(removeAnsi(`${raw.stdout}\n${raw.stderr}`), command),
+    formatMaven(removeAnsi(`${raw.stdout}\n${raw.stderr}`), command, raw.exitCode),
 });

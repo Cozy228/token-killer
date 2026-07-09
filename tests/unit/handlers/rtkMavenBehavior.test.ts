@@ -171,6 +171,53 @@ describe("RTK Maven behavior", () => {
     });
   });
 
+  test("quiet success without an English footer stays raw instead of being labeled failed", async () => {
+    const stdout = "Tests run: 5, Failures: 0, Errors: 0, Skipped: 0\n";
+    const result = await filterDirect(["mvn", "-q", "test"], stdout, 0);
+
+    expect(result.output.trim()).toBe(stdout.trim());
+    expect(result.output).not.toContain("Maven failed");
+  });
+
+  test("failsafe failure keeps report path for integration-test recovery", async () => {
+    const stdout = [
+      "[ERROR] Tests run: 1, Failures: 1, Errors: 0, Skipped: 0, Time elapsed: 0.1 s <<< FAILURE! -- in com.example.OrderIT",
+      "[ERROR] com.example.OrderIT.preventsDuplicate -- Time elapsed: 0.01 s <<< FAILURE!",
+      "[ERROR] java.lang.AssertionError: duplicate order should be blocked",
+      "[ERROR]     at com.example.OrderIT.preventsDuplicate(OrderIT.java:82)",
+      "[ERROR] There are test failures.",
+      "[ERROR] Please refer to /tmp/order-service/target/failsafe-reports for the individual test results.",
+      "[ERROR] Failed to execute goal org.apache.maven.plugins:maven-failsafe-plugin:3.2.5:verify (default) on project order-service: There are test failures.",
+      "[INFO] BUILD FAILURE",
+    ].join("\n");
+
+    const result = await filterDirect(["mvn", "verify"], stdout, 1);
+
+    expect(result.output).toContain("Maven failed");
+    expect(result.output).toContain("OrderIT.preventsDuplicate");
+    expect(result.output).toContain("OrderIT.java:82");
+    expect(result.output).toContain("/tmp/order-service/target/failsafe-reports");
+  });
+
+  test("reactor failure keeps resume command for human recovery", async () => {
+    const stdout = [
+      "[INFO] Reactor Summary:",
+      "[INFO] root ........................................ SUCCESS [  0.1 s]",
+      "[INFO] order-service ............................... FAILURE [  0.2 s]",
+      "[ERROR] Failed to execute goal org.apache.maven.plugins:maven-surefire-plugin:3.2.5:test (default-test) on project order-service: There are test failures.",
+      "[ERROR] After correcting the problems, you can resume the build with the command",
+      "[ERROR]   mvn <args> -rf :order-service",
+      "[INFO] BUILD FAILURE",
+    ].join("\n");
+
+    const result = await filterDirect(["mvn", "install"], stdout, 1);
+
+    expect(result.output).toContain("Reactor Summary");
+    expect(result.output).toContain("order-service ............................... FAILURE");
+    expect(result.output).toContain("After correcting the problems");
+    expect(result.output).toContain("mvn <args> -rf :order-service");
+  });
+
   test("compile failure keeps coordinates and javac detail lines", async () => {
     const result = await filterRtkFixture(
       ["mvn", "compile"],

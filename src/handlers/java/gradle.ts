@@ -7,6 +7,7 @@ import { parseJavaEcosystemOutput } from "./staticAnalysis.js";
 type GradleTask =
   | "build"
   | "test"
+  | "check"
   | "connected"
   | "lint"
   | "dependencies"
@@ -43,8 +44,8 @@ function classifyGradleTask(arg: string): Exclude<GradleTask, "passthrough"> | u
 
   if (lower.includes("connected") && lower.includes("androidtest")) return "connected";
   if (lower === "dependencies") return "dependencies";
+  if (lower === "check") return "check";
   if (
-    lower === "check" ||
     lower.startsWith("checkstyle") ||
     lower.startsWith("pmd") ||
     lower.startsWith("spotbugs") ||
@@ -99,16 +100,16 @@ function isFrameworkFrame(line: string): boolean {
 
 function isGradleHelpNoise(line: string): boolean {
   return (
-    line.startsWith('Starting a Gradle Daemon') ||
-    line.startsWith('Daemon will be stopped') ||
-    line.startsWith('> Configure project ') ||
-    line.startsWith('* Try:') ||
-    line.startsWith('> Run with ') ||
-    line.startsWith('* Get more help') ||
+    line.startsWith("Starting a Gradle Daemon") ||
+    line.startsWith("Daemon will be stopped") ||
+    line.startsWith("> Configure project ") ||
+    line.startsWith("* Try:") ||
+    line.startsWith("> Run with ") ||
+    line.startsWith("* Get more help") ||
     /^> Task .*(?:UP-TO-DATE|NO-SOURCE)$/.test(line) ||
-    line.startsWith('INSTRUMENTATION_') ||
+    line.startsWith("INSTRUMENTATION_") ||
     /^Starting \d+ tests/.test(line) ||
-    line.endsWith(' PASSED') ||
+    line.endsWith(" PASSED") ||
     isFrameworkFrame(line)
   );
 }
@@ -118,15 +119,15 @@ function collectGradleBuildLines(lines: string[]): string[] {
     (line) =>
       !isGradleHelpNoise(line) &&
       (/^> Task .*FAILED/.test(line) ||
-        line.startsWith('FAILURE:') ||
-        line.startsWith('Execution failed ') ||
+        line.startsWith("FAILURE:") ||
+        line.startsWith("Execution failed ") ||
         /^> (?:A failure occurred|Compilation error)/.test(line) ||
-        line.startsWith('e: ') ||
-        line.startsWith('w: ') ||
-        line.startsWith('warning: ') ||
-        line.startsWith('Warning: ') ||
+        line.startsWith("e: ") ||
+        line.startsWith("w: ") ||
+        line.startsWith("warning: ") ||
+        line.startsWith("Warning: ") ||
         /\.(?:java|kt):/.test(line) ||
-        line.startsWith('Caused by:') ||
+        line.startsWith("Caused by:") ||
         /^BUILD (?:FAILED|SUCCESSFUL)/.test(line) ||
         /actionable tasks:/.test(line) ||
         /https?:\/\/.*gradle.*scan/i.test(line)),
@@ -137,11 +138,11 @@ function collectGradleTestLines(lines: string[]): string[] {
   return lines.filter(
     (line) =>
       !isGradleHelpNoise(line) &&
-      (line.endsWith('FAILED') ||
+      (line.endsWith("FAILED") ||
         /(?:AssertionError|Exception|Error):/.test(line) ||
         /^\s*at /.test(line) ||
         /tests completed, \d+ failed/.test(line) ||
-        line.startsWith('There were failing tests') ||
+        line.startsWith("There were failing tests") ||
         /See the report at:/.test(line) ||
         /file:\/\//.test(line) ||
         /^BUILD (?:FAILED|SUCCESSFUL)/.test(line) ||
@@ -153,9 +154,9 @@ function collectGradleConnectedLines(lines: string[]): string[] {
   return lines.filter(
     (line) =>
       !isGradleHelpNoise(line) &&
-      (line.endsWith('FAILED') ||
+      (line.endsWith("FAILED") ||
         /No connected devices|INSTALL_FAILED|FAILURES!!!/.test(line) ||
-        line.startsWith('Tests run:') ||
+        line.startsWith("Tests run:") ||
         /(?:AssertionError|Exception|Error):/.test(line) ||
         /^\s*at /.test(line) ||
         /^BUILD (?:FAILED|SUCCESSFUL)/.test(line) ||
@@ -181,7 +182,7 @@ function collectGradleLintLines(lines: string[]): string[] {
 function collectGradleDependencyLines(lines: string[]): string[] {
   return lines
     .filter((line) => {
-      if (isGradleHelpNoise(line) || line.startsWith('> Task ')) return false;
+      if (isGradleHelpNoise(line) || line.startsWith("> Task ")) return false;
       return (
         /^[A-Za-z][\w.-]*\s+-\s+/.test(line) ||
         /^(?:\+---|\\---) /.test(line) ||
@@ -208,15 +209,17 @@ function collectGradleLines(text: string, task: GradleTask): string[] {
   const important =
     task === "test"
       ? collectGradleTestLines(lines)
-      : task === "connected"
-        ? collectGradleConnectedLines(lines)
-        : task === "lint"
-          ? collectGradleLintLines(lines)
-          : task === "dependencies"
-            ? collectGradleDependencyLines(lines)
-            : task === "analysis"
-              ? collectGradleAnalysisLines(lines)
-              : collectGradleBuildLines(lines);
+      : task === "check"
+        ? [...collectGradleTestLines(lines), ...collectGradleAnalysisLines(lines)]
+        : task === "connected"
+          ? collectGradleConnectedLines(lines)
+          : task === "lint"
+            ? collectGradleLintLines(lines)
+            : task === "dependencies"
+              ? collectGradleDependencyLines(lines)
+              : task === "analysis"
+                ? collectGradleAnalysisLines(lines)
+                : collectGradleBuildLines(lines);
 
   return [...new Set([...important.map((line) => line.trim()), ...parseJavaEcosystemOutput(text)])];
 }

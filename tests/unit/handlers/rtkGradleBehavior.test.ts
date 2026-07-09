@@ -181,6 +181,31 @@ describe("RTK gradle behavior", () => {
     });
   });
 
+  test("check task keeps test failure evidence as well as build status", async () => {
+    const result = await filterRtkOutput(
+      ["./gradlew", "check"],
+      [
+        "> Task :app:test FAILED",
+        "OrderServiceTest > preventsDuplicate FAILED",
+        "    java.lang.AssertionError: duplicate order should be blocked",
+        "    at com.example.OrderServiceTest.preventsDuplicate(OrderServiceTest.java:82)",
+        "There were failing tests. See the report at: file:///tmp/app/build/reports/tests/test/index.html",
+        "BUILD FAILED in 8s",
+      ].join("\n"),
+      1,
+    );
+
+    expectRtkParity(result, {
+      critical: [
+        "OrderServiceTest > preventsDuplicate FAILED",
+        "java.lang.AssertionError: duplicate order should be blocked",
+        "OrderServiceTest.java:82",
+        "file:///tmp/app/build/reports/tests/test/index.html",
+        "BUILD FAILED in 8s",
+      ],
+    });
+  });
+
   test("RTK connected fixture keeps instrumentation summary and strips status spam", async () => {
     const result = await filterRtkFixture(
       ["./gradlew", "connectedDebugAndroidTest"],
