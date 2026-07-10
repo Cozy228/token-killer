@@ -117,6 +117,20 @@ route to OPEN.md product items (O-32 timeouts, O-33 miss-guidance), get fixed, a
 re-runs. Only a passing E0 authorizes paid E1/E2 cells. E0 is cheap (no model spend —
 pure local tool calls), so it re-runs after every relevant product fix.
 
+**Landscape note (sonnet survey, 2026-07-10 — full report in session; frozen sweep =
+`landscape-measurement-methods-20260706.md`):** no comparable project publishes a
+standalone retrieval-only benchmark — closest analogues are RepoDocBench's
+Completeness@K (still end-to-end-integrated) and ADR 0023 item 4 (tk's own unbuilt
+proposal). E0 therefore has no external template; its ground-truth shape borrows
+codegraph's rubric structure ("KEY SYMBOLS a correct answer must hit" + dynamic
+boundaries, `offload-eval-ground-truth.json`) applied to fix-commit touched files +
+governing decisions. Corrections to earlier beliefs: codegraph's arms are
+offload/raw/nocg/**frontload** (pre-computed exploration injected via hook — the
+structural analogue of our push channel), not "5 arms A–E"; GitNexus's 74%/88% traces
+to a 3-query single-codebase aggregate with no reps and no correctness check. Nobody
+in the field reports CI/significance; only academic papers pair tokens with success —
+v2's E2 gate already exceeds field practice, keep it.
+
 ## 1c. Condition hygiene (maintainer-ordered, applies to E1 AND E2)
 
 All conditions run **byte-identical checkouts and instruction files**; the ONLY deltas
@@ -133,6 +147,14 @@ are (a) whether the ctx MCP server is configured and (b) the user prompt. Conseq
 - **Adoption metric aligned to the treatment** (E-13): primary adoption flag =
   ctx called **before the first file edit** (`file_change` event), matching the forced
   instruction; before-first-command is kept only as a secondary descriptive column.
+  E1 additionally records **tool-choice share** — ctx calls vs Read/Grep/Glob call
+  counts per run (the only adoption-measurement precedent found in the field,
+  codegraph `ab-adoption.sh`, measures exactly this shift rather than a boolean).
+- **MCP-connection assertion per cell** (HarrisonSec reproduction found silent
+  no-MCP runs completing as if measured): every arm-B/protocol cell logs whether the
+  ctx MCP server actually connected (server handshake or first tool listing); a cell
+  whose treatment silently failed to attach is infra-void, not a "0 adoption" data
+  point. Runner uses strict MCP config + pre-warmed server where the host supports it.
 - **Prompt↔grader contract check** added to the bank review: for every task, the
   reviewer verifies the prompt's observable claims against the golden test's actual
   fixture (E-14's `~/.copilot/hooks/` vs `~/.copilot` mismatch is the class instance);
