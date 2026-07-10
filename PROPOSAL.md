@@ -1,3 +1,8 @@
+---
+status: superseded-in-part
+note: positioning predates PRODUCT-DESIGN.md (ratified 2026-07-10) — token/cost saving is one capability of the local evidence facet, not the product thesis. Deployment & measurement mechanics remain usable for an endpoint pilot; re-frame against PRODUCT-DESIGN.md before any external use.
+---
+
 # Token Killer: Endpoint-Level Cost Control for GitHub Copilot
 
 *A deployment and measurement proposal for controlling GitHub Copilot cost at the developer endpoint.*

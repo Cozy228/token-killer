@@ -327,6 +327,39 @@ comparable tool publishes a correctness-gated token measurement — only academi
 FastContext, Codebase-Memory) pair savings with success rates; Codebase-Memory's 10×-savings-at-9pt-
 quality-cost is the live case for the M2 guardrail.
 
+**P33 — Product converged into ONE system; `PRODUCT-DESIGN.md` ratified as final authority (LAW).** `[2026-07-10]`
+Four derivation rounds (three sealed zero-base: Fable "Cairn", Opus-max "Keystone", GPT-5.6 "Change
+Case Compiler"; plus one context-loaded audit — NOT independent) converged; maintainer ratified
+`PRODUCT-DESIGN.md` at repo root: one decision-moment evidence compiler, one claim contract, two
+evidence facets (`ctx` = local, Atlas = organization). Supersedes `reports/product-future-direction.md`'s
+two-product split (a resource artifact, not a design conclusion; its experiment gates absorbed).
+Architecture rulings **R1–R6**: one system/one contract (3:0); on-demand compilation, indexes = TTL
+accelerators never truth (2:1); zero-material-false-reassurance guardrail + precision-first (2:1);
+thin client, no resident daemon (2:1, matches 0.3.2 field decision); read-only by construction;
+agents first-class under the same ACLs. Also supersedes VISION.md's DCI/CodeWiki/Projection framing
+(VISION.md rewritten as pointer); `reports/change-evidence-roadmap-analysis.md` archived — its
+change-as-primary-object thesis survives inside the contract (artifacts keyed to immutable change
+state). Evidence trail: `reports/derivation-comparison-r1.md`.
+
+**P34 — P3 ownership ruled: layered authority via claim classification; accuracy thresholds = calibration outputs.** `[2026-07-10]`
+Authority-class questions (who can approve / owner of record / applicable policy) answered ONLY from
+`DECLARED`/`OBSERVED` claims in governance-designated authoritative sources (signed
+authority-by-claim-type matrix). Behavioral `INFERRED` evidence (review/fix recency) produces
+suggestions only — labeled with derivation, reason, age — never promotable to authority answers. No
+qualifying claim → abstain + escalation path; layer conflicts displayed side by side, never
+flattened. Numeric precision/recall bars are pre-registered calibration outputs of the backtest
+stage, not design inputs; changing a threshold after results are visible is forbidden.
+
+**P35 — Validation-ladder kill scopes ruled; LAW self-contradictions fixed (found by `reports/product-direction-convergence.md` audit).** `[2026-07-10]`
+Stage 1 (Codex Wizard-of-Oz, ~12 real PRs, source-backed coverage + zero material false reassurance)
+failure kills the **whole compiled-artifact shape**; only the local continuity pilot survives on its
+own gate (its evidence is `OBSERVED` at the command boundary, not compiled from org sources).
+Stage 2 (Fable/Opus impact backtest, ~100–150 historical PRs) failure demotes **P2/Artifact 2 only**
+(declared edges + everything-else-DARK). Amends **P27**: verification *evidence* is in scope as an
+artifact; correctness *judgment* stays out. LAW §0 corrected: "three sealed independent derivations
+plus one context-loaded audit" (Run D not independent). Dead `CTX-DESIGN/CTX-IMPL` references fixed
+to `CONTEXA-*`.
+
 ## Open
 
 - **O1 / O2** (pack §9) — value metric & joint story: partially reshaped by P15 (measurement is
