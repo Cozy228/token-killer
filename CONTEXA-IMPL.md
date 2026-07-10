@@ -651,12 +651,12 @@ before any factual machine serving is enabled.
 > **Corrigendum — DR-06 tuple wording per ADR 0040:** the D32 tuple is (repository revision,
 > worktree digest, schema version, analysis-policy version) per ADR 0040:18-25; `source cursor` is
 > an extra per-source freshness input, never a substitute for the repository revision. The DR-06
-> row above is kept verbatim (revision 3); this corrigendum carries the correction.
+> historical row in the Register is kept verbatim (revision 3); this corrigendum carries the correction.
 >
 > **Corrigendum — DR-29 as-built anchors per P37:** `--raw` → `stdio:inherit` is at
 > src/cli.ts:314-318 + src/executor.ts:637-640 (not the row's src/cli.ts:294); the old absorption
 > plan now lives at docs/archive/CONTEXA-IMPL-20260703.md:513-525 (the row's pre-archive
-> CONTEXA-IMPL.md:511-523 pointer is superseded). The DR-29 row above is kept verbatim (revision 3).
+> CONTEXA-IMPL.md:511-523 pointer is superseded). The historical DR-29 row in the Register is kept verbatim (revision 3).
 >
 > **Corrigendum — DR-09 anchor:** the dead `served_count`/`last_served` columns are at
 > 001-init.sql:62-63 (the historical row's 001-init.sql:67-68 is superseded).

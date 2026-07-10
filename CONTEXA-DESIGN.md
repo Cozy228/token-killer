@@ -110,8 +110,7 @@ art.3] is the posture on every surface that asserts facts.
 ### 5.1 Shipping wedge — filter CLI + hook/shim/injection
 
 The 0.3.2 command filter delivers via a PATH shim / host hook / session injection, at the
-local command boundary — the one place execution truth is exact [LAW §4; code:
-hostAdapter.ts:88-197 root: hook/shim/injection only]. Fail-open gate, recovery, telemetry,
+local command boundary — the one place execution truth is exact [LAW §4; code: src/shim/hostAdapter.ts:88-197 — root ships hook/shim/injection only]. Fail-open gate, recovery, telemetry,
 and ledger separation **conform** as wedge mechanics [DR-18; LAW R5]. Two drifts, both
 plan-level refits (shipping code defects filed report-only) [DR-18]:
 
@@ -172,7 +171,7 @@ as mechanics; only the factual-claim content is withheld pre-gate.
 
 `ctx install · doctor · mcp · run <cmd> · recall <handle> · import <carrier> · sync ·
 remember · memory confirm|retire <id> · push pin|veto <id>` [carried from old §8 claim 52;
-code: cli.ts]. As-built today: the hard rename to `contexa`/`ctx` has landed (`bin ctx`;
+code: packages/cli/src/cli.ts]. As-built today: the hard rename to `contexa`/`ctx` has landed (`bin ctx`;
 ADR 0015 bans a `tk` alias), and `--raw` → `stdio:'inherit'` has landed [DR-29a; code:
 package.json:2; src/cli.ts:314-318; src/executor.ts:637-640]. `ctx import`/`ctx guide` before their milestone return a
 success-shaped "lands later" notice, never an unknown-command error [carried spec addendum,
@@ -261,7 +260,7 @@ enforcement (→DR-05) or the push block's citation posture (→DR-32).
   `unresolved-here` (per-machine/per-branch annotation) are disjoint, split deterministically
   on the git graph not the local index [carried claim 104; MEMORY-SYNC-SETTLEMENTS S4/S9].
 - **Secret guard (E4):** a deterministic secret-shaped regex guard runs before the committed
-  zone, success-shaped refusal, no LLM/network [carried claim 61; code: remember.ts:365-385].
+  zone, success-shaped refusal, no LLM/network [carried claim 61; code: packages/core/src/memory/remember.ts:365-385].
   This is a *capture-time* guard, distinct from the *serve-time* disclosure enforcement DR-05
   still owes.
 - **Landing zones (E3):** CLI `remember` (human-authored) defaults to committed Mainline
