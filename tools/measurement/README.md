@@ -1,9 +1,14 @@
 # R1 afternoon A/B measurement harness
 
-Measures whether **ctx** lowers the uncached input tokens an agent burns to complete
-a coding task, without hurting success. Authority: `docs/design/measurement/MEASUREMENT-DESIGN.md`
-(RATIFIED P32). Work order: `docs/design/measurement/R1-GOAL-PROMPT.md`. Deviation log:
-`implementation-notes.md`.
+Measures whether **ctx** lowers the input tokens an agent burns to complete a coding
+task, without hurting success. Authority: `docs/design/measurement/MEASUREMENT-DESIGN-V2.md`
+(RATIFIED P38; supersedes parts of P32 `MEASUREMENT-DESIGN.md` — see its §7 table).
+v2 splits the work into **E1 (adoption**: does an agent use ctx when available;
+protocol conditions none/optional/forced**)** and **E2 (value-given-use**: paired A/B
+with arm B under the forced protocol; primary metric = paired TOTAL input tokens,
+uncached demoted to audit**)**. Void policy = v2 §2 taxonomy: only infra-voids
+(runner exit ≠ 0, missing usage, timeout) void a row; tool errors are M5 diagnostics.
+Deviation log: `implementation-notes.md`.
 
 **Scope:** these scripts live outside the published packages and never modify
 `packages/`/`src/`. They drive the `ctx` CLI and `claude -p` as black-box subprocesses.
@@ -68,6 +73,61 @@ tsx run-grid.ts --bank tools/measurement/task-bank.jsonl --out tools/measurement
 Defaults to dry-run; `--execute` is required to launch paid cells. Draft banks
 require `--allow-draft`, so a maintainer explicitly accepts the risk before spend.
 Use `--resume` to skip existing graded rows after an interruption.
+
+## Codex protocol/adoption runner (E1 secondary)
+
+The Codex protocol runner measures **when ctx is actually used** (E1), separately from
+whether a task passes. Per v2 F4 ruling, codex is an **E1-only secondary runner** —
+its execution loop proved too fragile for token claims (MCP transport failures,
+model-label drift) — the primary runner for both E1 and E2 is Claude Code headless.
+It reuses the same sandboxes and `grade-cell.ts`, but runs five protocol conditions
+(the v2 headline grid uses only none/optional/forced):
+
+| protocol | meaning |
+|---|---|
+| `none` | arm A checkout, no ctx MCP server |
+| `optional` | arm B checkout, ctx available but not mentioned |
+| `suggested` | ctx available, prompt suggests using it when useful |
+| `forced` | prompt requires one `mcp__ctx__context` call before edits |
+| `forced-inspect` | prompt requires ctx plus inspection of returned file refs |
+
+Dry-run a small pilot first:
+
+```
+node --import "file://$PWD/node_modules/tsx/dist/loader.mjs" \
+  tools/measurement/run-grid-codex-protocol.ts \
+  --bank "$PWD/tools/measurement/task-bank-draft.jsonl" \
+  --out "$PWD/tools/measurement/.work/r2-protocol-codex-gpt55-pilot" \
+  --tasks atlas-availability-page-parse,tk-install-auto-wires-copilot \
+  --protocols none,optional,suggested,forced,forced-inspect \
+  --reps 1 \
+  --model gpt-5.5 \
+  --reasoning low \
+  --allow-draft
+```
+
+Execute/resume the same pilot:
+
+```
+node --import "file://$PWD/node_modules/tsx/dist/loader.mjs" \
+  tools/measurement/run-grid-codex-protocol.ts \
+  --bank "$PWD/tools/measurement/task-bank-draft.jsonl" \
+  --out "$PWD/tools/measurement/.work/r2-protocol-codex-gpt55-pilot" \
+  --tasks atlas-availability-page-parse,tk-install-auto-wires-copilot \
+  --protocols none,optional,suggested,forced,forced-inspect \
+  --reps 1 \
+  --model gpt-5.5 \
+  --reasoning low \
+  --allow-draft \
+  --execute \
+  --resume
+```
+
+Each protocol cell writes `row.json`, `raw-output.json`, and `last-message.txt`.
+After every cell the grid prints completed cells, graded failures, voids, tool
+error rows, ctx-used rows, and artifact counts. The final
+`protocol-report.json` includes protocol-level adoption rates and paired outcome
+deltas versus `none` for the same task+rep.
 
 ## Auth (run-cell `--config-mode`)
 

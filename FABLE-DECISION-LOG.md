@@ -418,6 +418,44 @@ the intent was never a standing site):
   (V1 execution still waits for both); (d) ④ clarified: first M4 batch = deepen git-LOCAL
   carriers, GitHub-API connectors later.
 
+**P38 — Measurement design v2 ratified (F1–F4); P32 superseded-in-part.** `[2026-07-10]`
+Executes P37 ⑦ + refinement (b). Evidence base: on-disk grid artifacts + session `4a64f8f6`
+mining (two collectors; register in `docs/design/measurement/MEASUREMENT-DESIGN-V2.md` §0).
+Key facts that forced the redesign: sonnet B-arm organic ctx adoption 3/20 (the v1 A/B measured
+availability, not use); uncached-M1 dynamic range collapsed (whole-task 8–538 tokens, atlas CI
+[−4,+29] ∋ 0 → HOLD) while paired TOTAL input Δ ≈ +166k; the codex "100% void" report was STALE
+(MCP transport failures; post-rerun truth 48 pass/13 fail/5 void); 30/31 tk voids = one harness
+defect (`stop_sequence` turn-1 death); sonnet report contaminated by 6 leftover rows of a dropped
+task. Rulings (maintainer, all per recommendation):
+- **F1** two experiments, never blended — **E2 value-given-use is the O-14 headline** (arm B under
+  `forced` protocol + placebo preamble in arm A for T2 symmetry); E1 adoption
+  (none/optional/forced) reported as qualifier.
+- **F2** tool-errors-not-void diff **RATIFIED**; void taxonomy = infra-void / graded / contaminated;
+  max-void bar (≥2/3 reps per task×arm, ≤20% grid infra-void) with new **RUN-INVALID** verdict.
+- **F3** **paired TOTAL input tokens promoted to primary** gated metric; uncached demoted to audit
+  column; anti-gaming check inverted (flag total-win + uncached-blowup). Three columns still reported.
+- **F4** uncommitted protocol scripts **ABSORBED** (committed with this entry); **codex demoted to
+  E1-only secondary runner** (no token claims); protocol conditions to be ported into the Claude
+  runner; analyze gains staleness-hash / model-homogeneity / grid-plan-filter guards.
+P32 items: kept/amended/retired exactly per V2 §7 table (Q17 prompt-authenticity stays absolute).
+**Follow-up ruling same day (F5, maintainer + external ChatGPT analysis folded, claims verified
+against code/artifacts):** the pilot mixed THREE failure sources — ctx product defects (300 s
+timeouts O-32; misleading "use task mode" miss-guidance + weak retrieval relevance O-33),
+condition contamination (arm B push block imperatively steers "Start tasks with context" →
+`optional` was never organic; forced-prompt vs before-first-command metric mismatch), and grader
+error (tk-install prompt says detect `~/.copilot/hooks/`, golden test uses `~/.copilot` → pilot
+tk 0/5 RETRACTED as invalid). Root question reframed: does calling ctx DECISIVELY change
+outcomes — and if not, is the tool not good enough, or not used at the right time in the right
+way? Rulings: **do NOT expand the grid next**; ladder = **E0 standalone retrieval benchmark**
+(frozen index, task-derived queries ×10 reps, reliability/relevance-vs-ground-truth/handle
+drillability, no agent in the loop; failing gate → product fix → re-run) → condition hygiene
+(byte-identical checkouts/instructions, only tool-presence + user prompt vary; push-block
+imperative neutralized; adoption metric = before-first-EDIT; prompt↔grader contract check on all
+11 tasks) → then E1/E2. Sonnet collector dispatched to survey how comparable research projects
+(codegraph agent-eval, GitNexus, etc.) measure — feeds E0 spec.
+Preconditions before any paid cell: V2 §8 (E0 pass = hard gate; tk harness fix, adoption
+instrumentation, push-block neutralization, contract re-review, owed prompt reviews E-10).
+
 ## Open
 
 - **O1 / O2** (pack §9) — value metric & joint story: partially reshaped by P15 (measurement is

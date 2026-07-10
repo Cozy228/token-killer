@@ -1,7 +1,8 @@
 ---
-status: active
+status: superseded-in-part
 review_after: 2026-07-20
 ratified: 2026-07-06 (grilling → FABLE-DECISION-LOG P32)
+superseded_by: MEASUREMENT-DESIGN-V2.md (P38, 2026-07-10) — its §7 table lists exactly which Q1–Q17 items are kept/amended/retired; consult V2 first
 ---
 
 # MEASUREMENT-DESIGN — proving (or refuting) ctx's value

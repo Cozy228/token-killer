@@ -1,8 +1,9 @@
 ---
-status: active
+status: superseded
 review_after: 2026-07-31
 purpose: goal prompt — design round producing "measurement design v2" (P37 ⑦ + refinements); a /shape-style conversation, NOT a build order
 executor: Fable session with the maintainer in the loop (user rules every fork); collectors as needed
+superseded_by: docs/design/measurement/MEASUREMENT-DESIGN-V2.md (RATIFIED 2026-07-10, P38) — mission accomplished; all 6 mission items answered there (§1–§7), scripts absorbed same day
 ---
 
 # Goal Prompt — Measurement Design v2
