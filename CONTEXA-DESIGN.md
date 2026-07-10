@@ -4,7 +4,7 @@ tier: REGISTER
 purpose: design register for the `ctx` (local) evidence facet — the ctx facet's design as implemented-and-planned, reconciled to PRODUCT-DESIGN.md (LAW)
 supersedes: CONTEXA-DESIGN.md (2026-07-03 "design-step output" version) and its §9 June-contract amendment register
 death_condition: superseded by a successor design register explicitly ratified by the maintainer, or folded into a LAW-side revision
-ratified: 2026-07-10 (maintainer-instructed landing "先落" — Codex Gate-B review delegated to the maintainer, prompt at docs/build/CODEX-GATE-B-REVIEW-PROMPT.md; batch rulings tracked as OPEN O-31)
+ratified: 2026-07-10 (maintainer-instructed landing "先落" — Codex Gate-B review delegated to the maintainer, prompt at docs/build/CODEX-GATE-B-REVIEW-PROMPT.md; O-31 closed; all nine rulings answered in P37)
 ---
 
 # Contexa (ctx) — Design Register
@@ -56,9 +56,9 @@ host session [DR M-plan v2 R-slice].
 | status (`resolved`/`conflicting`/`stale`/`unavailable`/`restricted`/`unknown`) | scattered across `links.stale`, `conflicts`, `memory.status` | Derive per-claim `status` as a computed view: memory `active`→resolved, `needs-review`(drift)→stale, `needs-review`(pending)→unknown, `unresolvedHere`→unavailable; `restricted` reserved until DR-05 lands [DR-03]. |
 | freshness (per-source decay class + re-verification trigger) | hash-drift detection writes `links.stale` only, **after** selection; traversal and ranking ignore `links.stale`; search does no read-through; drift is never rendered [code: store.ts:1008-1015; subgraph.ts:64-96; render.ts:54-65] | **serve-blocking.** Exclude/downgrade stale links in traversal+ranking; render claim freshness as unknown-until-reverified; rename the header state honestly (index-catchup, not "fresh"); add per-source decay class + re-verification trigger for non-file connectors [DR-04; LAW R2]. |
 | disclosure / `restricted` (permission class enforced at render **and** every machine interface) | not a field. Secret guard scans the mainline path only; MCP notes land in the overlay unscanned; overlay/needs-review served by default; restricted-shaped bodies stay indexed, searchable, renderable [code: remember.ts:365-385; visibility.ts:56-64] | **serve-blocking.** Add real `restricted` status + `disclosure` class (default local); exclude restricted bodies and relationship-derived leaks from FTS/render/machine interfaces; emit only a cited withheld/unavailable outcome [DR-05; LAW art.2; LAW §4]. |
-| immutable-state keying (cases keyed to commit range / workspace fingerprint) | `published_gen` is a per-source visibility pointer; all worktrees share one shard; a clean size+mtime dirty-check can reuse rows built under another worktree/policy and serve them "fresh" [code: shard.ts:4-12; 001-init.sql:79-81; store.ts:855-890; adapter.ts:168-181] | **serve-blocking.** Bind every published generation to the D32 tuple (worktree digest, schema version, analysis-policy version, source cursor); reject/rebuild on any component mismatch [DR-06; LAW §3]. |
-| evidence anchor reaching the consumer | the rendered envelope cites locators (`[handle]`) but carries no per-claim id/status/freshness/disclosure/evidence [code: render.ts:84-92; select/types.ts:25-40] | **serve-blocking.** Define the minimum claim envelope (evidence anchor incl. revision/hash, observed time, derivation, confidence, status, freshness, disclosure), rendered tersely. This DTO is defined **fresh** by this consumer's refit — it does **not** inherit the retired M3 five-struct kernel [DR-07; DR-15; LAW R6]. |
-| bitemporal recompute (`valid_from`/`valid_to`) | columns written by migration 003, never read [code: migration 003] | Wire during the DR-03/DR-06 refit, or provide an equivalent bitemporal recompute path. A bare cut would drop LAW §3's bitemporal promise → requires LAW-side escalation, not a local decision [DR-10]. |
+| immutable-state keying (cases keyed to commit range / workspace fingerprint) | `published_gen` is a per-source visibility pointer; all worktrees share one shard; a clean size+mtime dirty-check can reuse rows built under another worktree/policy and serve them "fresh" [code: shard.ts:4-12; 001-init.sql:79-81; store.ts:855-890; adapter.ts:168-181] | **serve-blocking.** Bind every published generation to the D32 tuple **(repository revision, worktree digest, schema version, analysis-policy version)** [ADR 0040]; reject/rebuild on any component mismatch. `source cursor` is an extra per-source freshness input, never a substitute for the repository revision [DR-06; LAW §3]. |
+| evidence anchor reaching the consumer | the rendered envelope cites locators (`[handle]`) but carries no per-claim id/status/freshness/disclosure/evidence [code: render.ts:84-92; select/types.ts:25-40] | **serve-blocking.** Define the minimum claim envelope (evidence anchor incl. revision/hash, observed time, derivation, confidence, status, freshness, disclosure), rendered tersely. This minimum claim envelope is the binding base for every consumer. Under P37/O-25, retained or reworked M3 projection DTOs are unified with it; historical structs may be reused only where the re-scope justifies them [DR-07; DR-15; P37; LAW R6]. |
+| bitemporal recompute (`valid_from`/`valid_to`) | columns written by migration 003, never read [code: migration 003] | Provide an equivalent as-of / bitemporal recompute path (P37 ⑧ EQUIVALENT-SCHEME — wiring the columns is not required). A bare cut would drop LAW §3's bitemporal promise → requires LAW-side escalation, not a local decision [DR-10; P37]. |
 
 **What already conforms** [DR-08; LAW art.1/2/4, R3/R5]: contentless FTS (index-not-copy);
 claims/links separation; conflicts shown side by side, never averaged [LAW art.4];
@@ -90,11 +90,12 @@ per-deployment implementation choices, no longer forbidden and no longer require
 
 The five decision artifacts are LAW-level outputs [LAW §5]. ctx today holds partial or
 substrate-only material for a subset; construction status per artifact, and what is
-pre-gate-legal versus gated, is normative per [DR-22]:
+pre-gate-legal versus gated, is normative per [DR-22], except where the LAW §8 ladder
+overrides the register — the Artifact 1 build-out is LAW-gated, LAW wins:
 
 | Artifact [LAW §5] | ctx state | Disposition |
 |---|---|---|
-| 1 Context Brief | partial — a local proto-Brief exists (memory + selection) | Keep the claim-backed core; build-out **pre-gate-legal** where every rendered fact is claim-backed. |
+| 1 Context Brief | partial — a local proto-Brief exists (memory + selection) | Keep the existing claim-backed proto-Brief only; **no Artifact 1 build-out is authorized pre-V1**. A V1 pass unlocks only the minimum semantics pre-registered as necessary for V2; any broader Context Brief construction requires an explicit ladder gate [DR-22 override; LAW §8]. |
 | 2 Impact Set / Blast Radius | substrate only (code graph edges) | **Gated — make-or-break.** No impact artifact ships before the LAW §8.1 ladder validates the substrate; declared-edge-plus-DARK is the §9 fallback. |
 | 3 Routing Card | substrate only (git authorship/history edges) | **Gated (org pilot).** Ownership answers follow the §7.1 claim-classification rule [LAW §7.1; P34]. |
 | 4 Verification Ledger | partial — **strongest**, two *unjoined* halves: the shipping proto-continuity card and the greenfield `VALID`/`STALE` primitives | Build-out **pre-gate-legal under FP-L**; the local continuity pilot is the §9 survivor because its evidence is `OBSERVED` at the command boundary [LAW §9; DR-24]. |
@@ -116,8 +117,8 @@ plan-level refits (shipping code defects filed report-only) [DR-18]:
 
 - **Never emit a heuristic success verdict.** `summarizeBuild` takes no exit code; an
   `errors==0 && warnings==0` output renders "[ok] Build successful" and can contradict the
-  real exit code [code: summary.ts:105-133]. Refit: wire the exit code through; neutral
-  counts otherwise [LAW R3 zero false reassurance].
+  real exit code [code: summary.ts:105-133, verdict line :126; coexistence path summary.ts:214-225].
+  Refit: wire the exit code through; neutral counts otherwise [LAW R3 zero false reassurance].
 - **Every synthesized summary that asserts facts carries a raw receipt/anchor** (extend the
   existing snapshot pointer beyond declared-omission) or stops asserting [code:
   base.ts:221-230; LAW art.2].
@@ -159,7 +160,7 @@ claims [DR-20 corrected: the gap is distribution + R6 semantics, not absence].
 
 Push writes a managed, always-loaded block into host instruction files (AGENTS.md /
 CLAUDE.md), and `ctx push` can write those files manually, independent of any install-side
-gate [code: block.ts:32-35; cli.ts:273]. Because the block renders **into instruction files
+gate [code: packages/core/src/push/block.ts:35-39 (header lines); cli.ts:273]. Because the block renders **into instruction files
 that are always loaded**, it must not carry uncited factual claims [LAW art.3]. Pre-gate
 posture (**use-blocking**): **omit factual gotchas entirely** and drop/reword the "with
 provenance" header to non-claiming text; tool-usage instructions may stay [DR-32]. If
@@ -173,10 +174,10 @@ as mechanics; only the factual-claim content is withheld pre-gate.
 remember · memory confirm|retire <id> · push pin|veto <id>` [carried from old §8 claim 52;
 code: cli.ts]. As-built today: the hard rename to `contexa`/`ctx` has landed (`bin ctx`;
 ADR 0015 bans a `tk` alias), and `--raw` → `stdio:'inherit'` has landed [DR-29a; code:
-package.json:2; src/cli.ts:294]. `ctx import`/`ctx guide` before their milestone return a
+package.json:2; src/cli.ts:314-318; src/executor.ts:637-640]. `ctx import`/`ctx guide` before their milestone return a
 success-shaped "lands later" notice, never an unknown-command error [carried spec addendum,
-claim 114]. Note: `ctx guide` is **retired**, not deferred (§9); the CLI stub, if kept,
-returns a retirement notice.
+claim 114]. Note: `ctx guide` before the O-25 re-scope returns a success-shaped
+"re-scope pending" notice, never a retirement notice (§8, §9) [P37].
 
 ## 6. Source model & selection
 
@@ -191,21 +192,26 @@ The secondary axis is **carriers** (presence optional at runtime; absence degrad
 coverage, never a type's existence — the SCIP pattern generalized). Carrier↔type is
 many-to-many through per-type extractors that emit typed facts with `provenance{carrier,
 locus}`; one carrier feeds several types (git → history + decisions). The **network boundary
-invariant** holds: ctx never sends project context out; network carriers are ingress-only,
-user-credentialed, explicitly triggered, stored as dated per-person local snapshots, never
-committed [LAW §4 no-egress by default]. Under the LAW this invariant is subsumed by the
+invariant** holds: **no egress is the default.** Local claims may cross the boundary only under
+explicit, enforced disclosure rules; network carriers remain user-credentialed and explicitly
+triggered, stored as dated per-person local snapshots, never committed [LAW §4; art. 2 disclosure
+class]. Under the LAW this invariant is subsumed by the
 disclosure class (§2, DR-05): "no egress by default" is a disclosure default, and its
 enforcement at every machine interface is the DR-05 refit, not a property the current
 overlay placement already delivers.
 
 **Store** [carried old §3; LAW art.1]. One engine (`node:sqlite` + FTS5), one per-project
-gitignored shard; **index-not-copy** — the store holds locators + facts + links, never
-payload copies; authoritative bytes stay in git/files and are read back at serve time. This
-is DR-08 conformance. The per-carrier ownership/sync matrix (① derived-from-committed / ②
+gitignored shard; **index-not-copy for derived/file-backed sources and the contentless FTS** —
+the store holds locators + facts + links, not payload copies of those sources; authoritative
+bytes stay in git/files and are read back at serve time. The approved exception is
+memory/concepts: SQLite materializes `gist`/`detail`, a payload the store owns but rebuilds
+wholesale from the `.contexa` memory files [code: packages/core/src/store/migrations/001-init.sql:54-64;
+docs/build/MEMORY-DECISIONS.md:11-14]. This is DR-08 conformance. The per-carrier ownership/sync
+matrix (① derived-from-committed / ②
 authored-local / ③ external SoR) is carried; full matrix in
 `docs/build/MEMORY-SYNC-SETTLEMENTS.md` [carried claims 20, 25–27].
 
-**Selection pipeline** [carried old §4 claim 28; `CONTEXA-IMPL.md` §6]. Lexical seeds across
+**Selection pipeline** [carried old §4 claim 28; `CONTEXA-IMPL.md` §5]. Lexical seeds across
 all kinds (FTS5 + identifier normalization + vocabulary bridge) → expansion along structural
 and link edges → query-local PPR on the cross-source subgraph → sections with per-section
 caps and marginal-utility borrowing → projection with render tiers. Time decay applies to
@@ -215,26 +221,31 @@ ignores `links.stale` and does no read-through, so stale/superseded evidence can
 render as current — the serve-blocking refit is to exclude/downgrade stale links in
 traversal and ranking before any factual serving [DR-04; LAW R2].
 
-**Ranking** carries the composite (graph × lexical × history-heat) form, never single-metric
-[carried claim 101; `CONTEXA-IMPL.md` §6]. The projection envelope
-`{coverage, omitted counts + handles, freshness per section, basis}` with no silent
-truncation is retained [carried claim 29] — but note the envelope's freshness field is only
-honest once DR-04 lands; today it reflects adapter-catchup, not per-claim freshness [DR-04].
+**Ranking** as built is composite, never single-metric: PPR over the query subgraph ×
+post-multipliers, RRF-fused (K=60) with the raw lexical rank, then × history-heat × authority-kind
+boost [code: packages/core/src/select/engine.ts:69-117; `CONTEXA-IMPL.md` §5]. The as-built
+projection envelope carries `{budgetTier, totalBudgetTokens, envelopeReserveTokens, perSectionBudget,
+usedTokens, omittedTotal, truncated, partial, constants, notes}` with no silent truncation
+(`truncated` vs `partial` kept distinct) [code: packages/core/src/select/types.ts:67-79]. A richer
+envelope with `coverage`, per-section freshness, and `basis` is a **refit/gated target**, not
+as-built; per-claim freshness is honest only once DR-04 lands [DR-04].
 
 Extractor detail per content type (code / git / decisions / stories / docs / memory) carries
-unchanged and lives in `CONTEXA-IMPL.md` §5 [carried old §5 claims 33–40]; the discipline —
-extract only what is provable from structure, anything semantic is on-demand LLM output
-marked `INFERRED` — is exactly LAW art.3 (an LLM narrates over cited claims, never introduces
-one) [LAW art.3].
+unchanged and lives in `CONTEXA-IMPL.md` §3 [carried old §5 claims 33–40]; the discipline —
+extract only what is provable from structure; semantic narration may be generated only over cited
+claims and may not introduce a claim, otherwise the surface remains silent (merely labeling LLM
+output `INFERRED` is insufficient) — is exactly LAW art.3 (an LLM narrates over cited claims, never
+introduces one) [LAW art.3].
 
 ## 7. Memory design
 
 Memory is the ctx local facet made concrete [LAW §4], and the one content class that is
 authored, not derived. The design is the **unified event model** [P31; carried claims
 19–20, 58–61, 98]: every write — `remember`, host import, a lifecycle verb, a conflict
-resolution — is an immutable event appended to exactly one of three **zones**: ① committed
-Mainline log (`.contexa/memory/*.md`) · ② personal overlay (`.contexa/*.local.*`,
-gitignored) · ③ external snapshot. Status is a **deterministic fold** over events in total
+resolution — is an immutable event appended to one of **two implemented event zones**: ① committed
+Mainline log (`.contexa/memory/*.md`) · ② personal overlay (`.contexa/*.local.*`, gitignored)
+[code: packages/core/src/memory/fileStore.ts:29-45]. A third external-snapshot zone is an
+M4-gated target (§8), not yet implemented. Status is a **deterministic fold** over events in total
 order `(timestamp, ULID)`, never a mutable column [LAW art.2 observed-at ordering]. The
 store's `memory` rows are a rebuildable, gitignored index over the committed files
 (index-not-copy, total) [code: fileStore.ts:29-47; remember.ts:39-97]. This local-facet
@@ -269,8 +280,12 @@ origin is unwired [DR-30].
 
 ## 8. Gated — not yet unlocked by the ladder
 
-Nothing below is authorized by the current LAW; each item names its gate [LAW §8 validation
-ladder; DR M-plan v2]. No aspirational content appears outside this section.
+V0 is authorized now; FP-L may proceed early under LAW §9; `ctx guide` may proceed only after
+Gate B and the R-slice under P37; every other item in this section remains locked behind its
+named ladder gate [LAW §8 validation ladder; DR M-plan v2]. This lock does not reach the
+separately-sanctioned pre-gate work recorded elsewhere: O-14/E0 measurement (P38), wedge
+reliability and the R-slice retrofit, and DR-27's pre-V1 disclosure half. No aspirational
+content appears outside this section.
 
 - **V0 — freeze the O-22 Wizard-of-Oz protocol.** Immediate next step, zero code; a LAW §8.1
   stage-1 precondition [DR-24].
@@ -285,11 +300,12 @@ ladder; DR M-plan v2]. No aspirational content appears outside this section.
   the DR-19 claim-shaping of the history record [DR-24; LAW §9]. Validates Artifact 4's local
   core.
 - **FP-O — Atlas concierge pilot.** Gated: needs V1 + org connectors [DR M-plan v2; LAW §8].
-- **M4 connectors — org carriers, re-scoped (DR-23).** Snapshots retained only as TTL- and
-  source-receipted accelerators, revalidated before trigger-time bitemporal compilation;
-  caller identity/disclosure propagated; connector absence renders as a named blind spot.
-  Connector **breadth** is gated on V1/V2; live-reads-only is not required by R2 [DR-23; LAW
-  R2, §8.3].
+- **M4 connectors — org carriers, re-scoped (DR-23).** Sequencing (P37 ④): M4 lands last, or the
+  locally-verifiable git carriers first (e.g. GitHub commit history); GitHub/API connectors later.
+  Snapshots retained only as TTL- and source-receipted accelerators, revalidated before
+  trigger-time bitemporal compilation; caller identity/disclosure propagated; connector absence
+  renders as a named blind spot. Connector **breadth** is gated on V1/V2; live-reads-only is not
+  required by R2 [DR-23; P37; LAW R2, §8.3].
 - **O-16 full unresolved-mention fix (DR-27).** The honest half proceeds pre-V1 (suppress/flag
   the affected relation, render a named blind spot [LAW art.4]) and its design + fixtures are
   frozen now; the **full** fix (durable unresolved-mention persistence + cross-source
@@ -344,8 +360,8 @@ inputs to the first calibration run**, pre-registered per stage, never adjusted 
   duplicate its mechanism chapters.
 - **`docs/build/MEMORY-DECISIONS.md` / `MEMORY-SYNC-SETTLEMENTS.md`** are the memory SoT
   (A/B/C/D/E rulings, S-settlements); §7 points to them.
-- **`FABLE-DECISION-LOG.md`** carries the decision lineage (P15–P35); R-slice and V0–V3
-  rulings should register there as future P-entries.
+- **`FABLE-DECISION-LOG.md`** carries the decision lineage (P15–P38; P37 = M3 recast + LAW §11,
+  P38 = measurement design v2); the R-slice and V0–V3 rulings register there as future P-entries.
 - The **old `CONTEXA-DESIGN.md`** is archived at `docs/archive/` with a superseded banner
   pointing here.
 
@@ -353,9 +369,10 @@ inputs to the first calibration run**, pre-registered per stage, never adjusted 
 
 ## Appendix — Old-register claim dispositions
 
-Accounts for **Part A claims 1–65** of `C5-old-registers-claims.md` (old `CONTEXA-DESIGN.md`).
-Part B (66–130) and Part C (goal prompts) are `CONTEXA-IMPL.md`'s domain and are dispositioned
-there. **C** = carried, **S** = superseded-with-pointer, **D** = dropped-with-reason.
+Accounts for **Part A claims 1–65** of the old `CONTEXA-DESIGN.md` (archived at
+`docs/archive/CONTEXA-DESIGN-20260703.md`). Part B (66–130) and Part C (goal prompts) are
+`CONTEXA-IMPL.md`'s domain and are dispositioned there. **C** = carried, **S** =
+superseded-with-pointer, **D** = dropped-with-reason.
 
 **Header / status (1–6).** 1–2 **S** → this frontmatter + §10 (design-step-output framing and
 June-contract-amended framing replaced by LAW authority). 3 **split**: Terminology Law
@@ -392,8 +409,9 @@ factual gotchas **omitted pre-gate** and the "with provenance" header reworded [
 **§5 Extractors (33–40).** All **C** → §6 pointer + `CONTEXA-IMPL.md` §5; the static-only/on-demand-
 Inferred discipline maps to LAW art.3.
 
-**§6 `ctx guide` (41–43).** All **S/retired** → §9 (guide + projection kernel retired under LAW
-art.1) [DR-14/15/17].
+**§6 `ctx guide` (41–43).** All **RECAST/FROZEN pending O-25** → §9 (guide + projection kernel
+recast under P37/LAW §11 — retirement rejected; DTOs unified with the DR-07/31 envelope)
+[DR-14/15/17; P37].
 
 **§7 Compressor integration (44–50).** 44 (role) **C** → §5.1. 45 (rename/`tk` alias) **split**:
 rename **C** as-built, `tk` alias **D** (prohibited, ADR 0015) [DR-29a/b]. 46 (handlers→shapers)
@@ -402,7 +420,7 @@ rename **C** as-built, `tk` alias **D** (prohibited, ADR 0015) [DR-29a/b]. 46 (h
 50 (capture tap = session-scoped provenance) **C** → §7.
 
 **§8 Process & delivery (51–55).** 51 (in-process library, asymmetric adapters) **C** → §5/IMPL,
-minus the retired guide adapter. 52 (CLI surface) **C** → §5.4. 53 (private registry, engines,
+the guide adapter RECAST/FROZEN pending O-25 (not retired) [P37]. 52 (CLI surface) **C** → §5.4. 53 (private registry, engines,
 signing) **C** → IMPL (distribution gated by LAW §8). 54 (git-as-sync, three-layer conflict) **C**
 → §7. 55 (three-tier visibility) **C** → §6/§7.
 
@@ -411,7 +429,8 @@ signing) **C** → IMPL (distribution gated by LAW §8). 54 (git-as-sync, three-
 re-architecture) **C** → §7. 59 (E1 three-layer) **C** → §7. 60 (E3 committed=confirmed) **C** → §7.
 61 (E4 secret guard) **C** → §7.
 
-**§10 Forks (62–65).** 62 (FORK-1 guide read-only) **D/moot** — guide retired [DR-14]. 63 (FORK-2
+**§10 Forks (62–65).** 62 (FORK-1 guide read-only) **C** — re-affirmed under the recast (read-only
+stays narrow = non-mutating); guide RECAST/FROZEN pending O-25 [P37; DR-14]. 63 (FORK-2
 user-provided credentials) **C** → IMPL. 64 (FORK-3 lean default budget) **C** → §6/IMPL. 65 (FORK-4
 PR threads as searchable text, decision-promotion only via explicit markers/Inferred) **C** → §6/IMPL,
 consistent with LAW art.3.

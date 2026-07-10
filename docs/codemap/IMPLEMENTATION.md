@@ -1,4 +1,4 @@
-> **[2026-07-04 P28/P29] SUPERSEDED as build order, LIVE as index** — the #59–#84 slice DAG was excluded as a route input (P26); build route = `CONTEXA-IMPL.md` §9 M1–M5. Everything else stands: this file remains the navigation index into the `impl/` dossier, which is the product's detail layer (P29 reference-not-copy; read-back map: `CONTEXA-IMPL.md` §12).
+> **[2026-07-04 P28/P29; updated 2026-07-10] SUPERSEDED as build order, LIVE as index** — the #59–#84 slice DAG was excluded as a route input (P26); the build route is now the gate-first **M-plan v2** in the current `CONTEXA-IMPL.md` §8 (the old M1–M5 route is superseded). Everything else stands: this file remains the navigation index into the `impl/` dossier, which is the product's detail layer (P29 reference-not-copy; the legacy read-back map lives in the archived `docs/archive/CONTEXA-IMPL-20260703.md` §12).
 
 # codemap — Implementation Index
 
