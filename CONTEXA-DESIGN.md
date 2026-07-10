@@ -52,13 +52,13 @@ host session [DR M-plan v2 R-slice].
 
 | LAW §3 field | Implemented today | Refit direction (normative) |
 |---|---|---|
-| derivation (`OBSERVED`/`DECLARED`/`INFERRED`) + confidence (`CONFIRMED`/`LIKELY`/`POSSIBLE`) | a single `authority` enum (`observed`/`derived`/`inferred`/`confirmed`) on claims, memory rows, memory_events, committed mem/dec line grammar, TS types [code: 001-init.sql:31; types.ts:21; remember.ts:54,365-399] | Split every persisted `authority` field into `derivation` + `confidence`. Backfill from carrier+method+create-event actor, never from the legacy enum or authorship alone; `CONFIRMED` requires independent corroboration; `LIKELY` only where the source is authoritative for that claim type (§7.1 matrix logic); ambiguous legacy rows stay `unknown`. Note: production writes `origin=remember`, no mechanical human-authored backfill exists [DR-02]. |
+| derivation (`OBSERVED`/`DECLARED`/`INFERRED`) + confidence (`CONFIRMED`/`LIKELY`/`POSSIBLE`) | a single `authority` enum (`observed`/`derived`/`inferred`/`confirmed`) on claims, memory rows, memory_events, committed mem/dec line grammar, TS types [code: packages/core/src/store/migrations/001-init.sql:31; packages/core/src/store/types.ts:21; packages/core/src/memory/remember.ts:54,365-399] | Split every persisted `authority` field into `derivation` + `confidence`. Backfill from carrier+method+create-event actor, never from the legacy enum or authorship alone; `CONFIRMED` requires independent corroboration; `LIKELY` only where the source is authoritative for that claim type (§7.1 matrix logic); ambiguous legacy rows stay `unknown`. Note: production writes `origin=remember`, no mechanical human-authored backfill exists [DR-02]. |
 | status (`resolved`/`conflicting`/`stale`/`unavailable`/`restricted`/`unknown`) | scattered across `links.stale`, `conflicts`, `memory.status` | Derive per-claim `status` as a computed view: memory `active`→resolved, `needs-review`(drift)→stale, `needs-review`(pending)→unknown, `unresolvedHere`→unavailable; `restricted` reserved until DR-05 lands [DR-03]. |
-| freshness (per-source decay class + re-verification trigger) | hash-drift detection writes `links.stale` only, **after** selection; traversal and ranking ignore `links.stale`; search does no read-through; drift is never rendered [code: store.ts:1008-1015; subgraph.ts:64-96; render.ts:54-65] | **serve-blocking.** Exclude/downgrade stale links in traversal+ranking; render claim freshness as unknown-until-reverified; rename the header state honestly (index-catchup, not "fresh"); add per-source decay class + re-verification trigger for non-file connectors [DR-04; LAW R2]. |
-| disclosure / `restricted` (permission class enforced at render **and** every machine interface) | not a field. Secret guard scans the mainline path only; MCP notes land in the overlay unscanned; overlay/needs-review served by default; restricted-shaped bodies stay indexed, searchable, renderable [code: remember.ts:365-385; visibility.ts:56-64] | **serve-blocking.** Add real `restricted` status + `disclosure` class (default local); exclude restricted bodies and relationship-derived leaks from FTS/render/machine interfaces; emit only a cited withheld/unavailable outcome [DR-05; LAW art.2; LAW §4]. |
-| immutable-state keying (cases keyed to commit range / workspace fingerprint) | `published_gen` is a per-source visibility pointer; all worktrees share one shard; a clean size+mtime dirty-check can reuse rows built under another worktree/policy and serve them "fresh" [code: shard.ts:4-12; 001-init.sql:79-81; store.ts:855-890; adapter.ts:168-181] | **serve-blocking.** Bind every published generation to the D32 tuple **(repository revision, worktree digest, schema version, analysis-policy version)** [ADR 0040]; reject/rebuild on any component mismatch. `source cursor` is an extra per-source freshness input, never a substitute for the repository revision [DR-06; LAW §3]. |
-| evidence anchor reaching the consumer | the rendered envelope cites locators (`[handle]`) but carries no per-claim id/status/freshness/disclosure/evidence [code: render.ts:84-92; select/types.ts:25-40] | **serve-blocking.** Define the minimum claim envelope (evidence anchor incl. revision/hash, observed time, derivation, confidence, status, freshness, disclosure), rendered tersely. This minimum claim envelope is the binding base for every consumer. Under P37/O-25, retained or reworked M3 projection DTOs are unified with it; historical structs may be reused only where the re-scope justifies them [DR-07; DR-15; P37; LAW R6]. |
-| bitemporal recompute (`valid_from`/`valid_to`) | columns written by migration 003, never read [code: migration 003] | Provide an equivalent as-of / bitemporal recompute path (P37 ⑧ EQUIVALENT-SCHEME — wiring the columns is not required). A bare cut would drop LAW §3's bitemporal promise → requires LAW-side escalation, not a local decision [DR-10; P37]. |
+| freshness (per-source decay class + re-verification trigger) | hash-drift detection writes `links.stale` only, **after** selection; traversal and ranking ignore `links.stale`; search does no read-through; drift is never rendered [code: packages/core/src/store/store.ts:1008-1015; packages/core/src/select/subgraph.ts:64-96; packages/core/src/serve/render.ts:54-65] | **serve-blocking.** Exclude/downgrade stale links in traversal+ranking; render claim freshness as unknown-until-reverified; rename the header state honestly (index-catchup, not "fresh"); add per-source decay class + re-verification trigger for non-file connectors [DR-04; LAW R2]. |
+| disclosure / `restricted` (permission class enforced at render **and** every machine interface) | not a field. Secret guard scans the mainline path only; MCP notes land in the overlay unscanned; overlay/needs-review served by default; restricted-shaped bodies stay indexed, searchable, renderable [code: packages/core/src/memory/remember.ts:365-385; packages/core/src/select/visibility.ts:56-64] | **serve-blocking.** Add real `restricted` status + `disclosure` class (default local); exclude restricted bodies and relationship-derived leaks from FTS/render/machine interfaces; emit only a cited withheld/unavailable outcome [DR-05; LAW art.2; LAW §4]. |
+| immutable-state keying (cases keyed to commit range / workspace fingerprint) | `published_gen` is a per-source visibility pointer; all worktrees share one shard; a clean size+mtime dirty-check can reuse rows built under another worktree/policy and serve them "fresh" [code: packages/core/src/store/shard.ts:4-12; packages/core/src/store/migrations/001-init.sql:79-81; packages/core/src/store/store.ts:855-890; packages/core/src/ingest/code/adapter.ts:168-181] | **serve-blocking.** Bind every published generation to the D32 tuple **(repository revision, worktree digest, schema version, analysis-policy version)** [ADR 0040]; reject/rebuild on any component mismatch. `source cursor` is an extra per-source freshness input, never a substitute for the repository revision [DR-06; LAW §3]. |
+| evidence anchor reaching the consumer | the rendered envelope cites locators (`[handle]`) but carries no per-claim id/status/freshness/disclosure/evidence [code: packages/core/src/serve/render.ts:84-92; packages/core/src/select/types.ts:25-40] | **serve-blocking.** Define the minimum claim envelope (evidence anchor incl. revision/hash, observed time, derivation, confidence, status, freshness, disclosure), rendered tersely. This minimum claim envelope is the binding base for every consumer. Under P37/O-25, retained or reworked M3 projection DTOs are unified with it; historical structs may be reused only where the re-scope justifies them [DR-07; DR-15; P37; LAW R6]. |
+| bitemporal recompute (`valid_from`/`valid_to`) | columns written by migration 003, never read [code: packages/core/src/store/migrations/003-memory-bitemporal.sql] | Provide an equivalent as-of / bitemporal recompute path (P37 ⑧ EQUIVALENT-SCHEME — wiring the columns is not required). A bare cut would drop LAW §3's bitemporal promise → requires LAW-side escalation, not a local decision [DR-10; P37]. |
 
 **What already conforms** [DR-08; LAW art.1/2/4, R3/R5]: contentless FTS (index-not-copy);
 claims/links separation; conflicts shown side by side, never averaged [LAW art.4];
@@ -117,15 +117,15 @@ plan-level refits (shipping code defects filed report-only) [DR-18]:
 
 - **Never emit a heuristic success verdict.** `summarizeBuild` takes no exit code; an
   `errors==0 && warnings==0` output renders "[ok] Build successful" and can contradict the
-  real exit code [code: summary.ts:105-133, verdict line :126; coexistence path summary.ts:214-225].
+  real exit code [code: src/handlers/system/summary.ts:105-133, verdict line :126; coexistence path src/handlers/system/summary.ts:214-225].
   Refit: wire the exit code through; neutral counts otherwise [LAW R3 zero false reassurance].
 - **Every synthesized summary that asserts facts carries a raw receipt/anchor** (extend the
   existing snapshot pointer beyond declared-omission) or stops asserting [code:
-  base.ts:221-230; LAW art.2].
+  src/handlers/base.ts:221-230; LAW art.2].
 
 The shipping history record is a **proto-claim, not claim-shaped**: `project_fingerprint`
 is a path hash (accounting id) with no commit/worktree binding and no `VALID`/`STALE`
-recompute [code: history.ts:18-45; dataDir.ts:115]. Claim-shaping it is the **first FP-L
+recompute [code: src/core/history.ts:18-45; src/core/dataDir.ts:115]. Claim-shaping it is the **first FP-L
 slice**, not a general retrofit [DR-19; LAW §4 "still valid?"].
 
 `ctx debug`/`support` remain no-egress field-plumbing utilities — maintained, no scope
@@ -134,10 +134,10 @@ growth; death condition = superseded by facet tooling [DR-21].
 ### 5.2 Greenfield machine interface — `ctx mcp` (gated)
 
 The MCP server exposes three clean verbs — `context(ref | task | handle, budget?)`,
-`search(query, kinds?)`, `remember(note, anchors?, supersedes?)` [code: mcp.ts:37-93] —
+`search(query, kinds?)`, `remember(note, anchors?, supersedes?)` [code: packages/cli/src/mcp.ts:37-93] —
 serving the same store agents and humans read [LAW R6]. It is implemented in the greenfield
 tree (package version 0.0.0, unreleased) and auto-registered by `ctx install`, which also
-places a push block [code: cli.ts:308-337; mcpConfig.ts:41-85]. Two obligations gate any
+places a push block [code: packages/cli/src/cli.ts:308-337; packages/core/src/install/mcpConfig.ts:41-85]. Two obligations gate any
 factual serving into a real host session:
 
 - **Containment (DR-01):** pre-V1, the persisted M1/M2 graph is served only under the
@@ -147,8 +147,8 @@ factual serving into a real host session:
   distribution is unauthorized at any pre-V3 stage) [DR-01; LAW R2, §8].
 - **Envelope obligation (DR-31):** the server is a Markdown transport today; caller scope
   and per-claim evidence/observed-time/derivation/status/confidence/freshness/disclosure and
-  cited UNKNOWN/restricted outcomes never reach the host [code: mcp.ts:174-187;
-  serve/types.ts:1-5]. Factual machine serving is gated until the minimum claim envelope
+  cited UNKNOWN/restricted outcomes never reach the host [code: packages/cli/src/mcp.ts:174-187;
+  packages/core/src/serve/types.ts:1-5]. Factual machine serving is gated until the minimum claim envelope
   (§2, DR-07) is serialized under the caller's identity [DR-31; LAW R6]. This server does
   **not** proxy shell execution, so it does not remove the filter's per-command spawn tax;
   a host-held command-observation pipe is separate gated scope, not a refit [DR-20; LAW R4].
@@ -160,7 +160,7 @@ claims [DR-20 corrected: the gap is distribution + R6 semantics, not absence].
 
 Push writes a managed, always-loaded block into host instruction files (AGENTS.md /
 CLAUDE.md), and `ctx push` can write those files manually, independent of any install-side
-gate [code: packages/core/src/push/block.ts:35-39 (header lines); cli.ts:273]. Because the block renders **into instruction files
+gate [code: packages/core/src/push/block.ts:35-39 (header lines); packages/cli/src/cli.ts:273]. Because the block renders **into instruction files
 that are always loaded**, it must not carry uncited factual claims [LAW art.3]. Pre-gate
 posture (**use-blocking**): **omit factual gotchas entirely** and drop/reword the "with
 provenance" header to non-claiming text; tool-usage instructions may stay [DR-32]. If
@@ -244,11 +244,12 @@ authored, not derived. The design is the **unified event model** [P31; carried c
 19–20, 58–61, 98]: every write — `remember`, host import, a lifecycle verb, a conflict
 resolution — is an immutable event appended to one of **two implemented event zones**: ① committed
 Mainline log (`.contexa/memory/*.md`) · ② personal overlay (`.contexa/*.local.*`, gitignored)
-[code: packages/core/src/memory/fileStore.ts:29-45]. A third external-snapshot zone is an
+[code: packages/core/src/memory/fileStore.ts:29-46]. A third external-snapshot zone is an
 M4-gated target (§8), not yet implemented. Status is a **deterministic fold** over events in total
 order `(timestamp, ULID)`, never a mutable column [LAW art.2 observed-at ordering]. The
-store's `memory` rows are a rebuildable, gitignored index over the committed files
-(index-not-copy, total) [code: fileStore.ts:29-47; remember.ts:39-97]. This local-facet
+store's `memory` rows are a rebuildable, gitignored materialized projection over the committed
+files — the approved memory/concepts exception (index-not-copy holds for derived/file-backed
+sources + contentless FTS) [code: packages/core/src/memory/fileStore.ts:29-47; packages/core/src/memory/remember.ts:39-97]. This local-facet
 machinery **conforms** [DR-11] — scoped: the CONFORMS does not extend to disclosure
 enforcement (→DR-05) or the push block's citation posture (→DR-32).
 
@@ -406,7 +407,7 @@ obligation. 29 (projection envelope) **C** → §6, freshness field honest only 
 **C** → §8 (evidence-gated). 32 (push fixed header + digest) **C-with-refit**: mechanics carried,
 factual gotchas **omitted pre-gate** and the "with provenance" header reworded [DR-32, §5.3].
 
-**§5 Extractors (33–40).** All **C** → §6 pointer + `CONTEXA-IMPL.md` §5; the static-only/on-demand-
+**§5 Extractors (33–40).** All **C** → §6 pointer + `CONTEXA-IMPL.md` §3; the static-only/on-demand-
 Inferred discipline maps to LAW art.3.
 
 **§6 `ctx guide` (41–43).** All **RECAST/FROZEN pending O-25** → §9 (guide + projection kernel

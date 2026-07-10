@@ -141,7 +141,7 @@ unresolvedHere→unavailable; `restricted` reserved until DR-05 lands [DR-03].
 **Refit owed (DR-04, serve-blocking) — freshness wiring** [LAW §3 freshness; art. 1; R2]. Hash-drift
 detection exists but is **not** a freshness guarantee: drift fires *after* selection, selection
 ignores `links.stale`, search does no read-through, detected drift is never rendered
-`[code: store.ts:1008-1015; subgraph.ts:64-96; render.ts:54-65]`. Refit (full text Appendix A):
+`[code: store.ts:1008-1015; subgraph.ts:64-96; packages/core/src/serve/render.ts:54-65]`. Refit (full text Appendix A):
 exclude/downgrade stale links in traversal+ranking; render freshness as unknown-until-reverified;
 honest header (index-catchup, not content freshness); per-source decay class for non-file connectors.
 
@@ -273,7 +273,7 @@ host-import:<host>|remember|remember-local|human-note`; `remember-local` is push
 `[code: push/rank.ts:56,59]`. `confirm` promotes an overlay-only create to mainline (D3);
 non-confirm verbs on an overlay-only row route to overlay (O-21) `[code: remember.ts:715-810]`.
 CLI `LIFECYCLE_VERBS = {confirm,retire,review}` — **`supersede` exists in the event enum but is not
-a CLI subcommand** (DR-30 candidate) `[code: cli.ts:118-122]`.
+a CLI subcommand** (DR-30 candidate) `[code: packages/cli/src/cli.ts:118-122]`.
 
 **As merged — push/pull** `[code: packages/core/src/push/; packages/core/src/memory/catchup.ts]`. `PushConfig{pin,veto,commitMemory}` from
 `.contexa/push.jsonc` (shared) merged with `.contexa/push.local.jsonc` (overlay) for the
@@ -320,7 +320,7 @@ shows behavior change** [LAW §8 ladder].
 budget?}`, `search{query!,kinds?}`, `remember{note!,detail?,anchors?,supersedes?}`. JSON-RPC:
 initialize/ping/tools.list/tools.call; unknown method -32601, parse -32700, unknown tool -32602;
 tool faults surface as `isError:true` content, never a dead transport. `assertNoEgress` runs at
-`runMcp()` entry before opening the store `[code: mcp.ts:213; serve/egress.ts]`.
+`runMcp()` entry before opening the store `[code: packages/cli/src/mcp.ts:213; serve/egress.ts]`.
 
 **As merged — envelope / render** `[code: packages/core/src/serve/render.ts]`. ONE markdown text block.
 Header `# ctx · <subject> — <freshness>`; `SECTION_ORDER = [subject,code,decisions,history,memory,
@@ -339,7 +339,7 @@ decays. `search()` = stages 1–2 + flat ranked render (no PPR). Visibility gate
 
 **Refit owed (DR-01, GATED distribution) — unqualified serving.** The persisted M1/M2 graph is
 served by the greenfield MCP as ordinary tool results with the tool description "Start any task
-here" and NO accelerator/unvalidated qualification `[code: mcp.ts:40; cli.ts:308-337 (install
+here" and NO accelerator/unvalidated qualification `[code: packages/cli/src/mcp.ts:40; packages/cli/src/cli.ts:308-337 (install
 auto-registers MCP + push block)]`. KEEP the rebuildable substrate. Pre-V1 containment: no
 distribution, no auto-install, no decision-trust framing; responses carry an
 accelerator-not-validated disclosure; only the O-14/dogfooding carve-out runs it at all. Expansion
@@ -350,7 +350,7 @@ authorize distribution.
 but no per-claim trust data reaches the consumer; a `[handle]` is navigation, not a source anchor;
 the MCP is a Markdown transport, not R6's same-claim machine interface (no caller scope; no per-claim
 evidence/observed-time/derivation/confidence/status/freshness/disclosure; no cited UNKNOWN/restricted
-outcomes) `[code: render.ts:84-92; select/types.ts:25-40; mcp.ts:174-187; serve/types.ts:1-5]`.
+outcomes) `[code: packages/core/src/serve/render.ts:84-92; packages/core/src/select/types.ts:25-40; packages/cli/src/mcp.ts:174-187; packages/core/src/serve/types.ts:1-5]`.
 Refit (full text Appendix A): define + serialize the **minimum claim envelope** under the caller's
 scope, rendered tersely. This minimum claim envelope is the binding base for every consumer; under
 P37/O-25 the retained or reworked M3 projection DTOs are unified with it, and historical structs may
@@ -367,7 +367,7 @@ emit only a cited withheld/unavailable outcome.
 **Refit owed (DR-32, use-blocking) — push-block claim posture.** The always-loaded block renders
 uncited memory gotchas into host instruction files, its header claims "with provenance" +
 "Start tasks with the `context` MCP tool", and manual `ctx push` bypasses any install-side gate
-`[code: push/block.ts:35-112; cli.ts:273]`. Pre-gate: OMIT factual gotchas and drop/reword the "with
+`[code: packages/core/src/push/block.ts:35-112; packages/cli/src/cli.ts:273]`. Pre-gate: OMIT factual gotchas and drop/reword the "with
 provenance" header to non-claiming text (tool instructions may stay). If factual gotchas ever return,
 each carries the FULL minimum claim envelope + explicit omission disclosure [LAW art. 3].
 
@@ -482,7 +482,7 @@ rejected, P37); M4/M5 are re-scoped.
 |---|---|---|---|
 | **M1 local-facet wedge** | KEEP + RETROFIT | may-proceed (reliability/wedge correctness) | already merged; retrofit acceptance folded into R-slice + DR-19 |
 | **M2 code substrate** | KEEP + RETROFIT | may-proceed (substrate correctness; no decision-trust claims pre-V1) | already merged; D32/incremental refits owned by R-slice |
-| **R-slice "claim-serving integrity"** (NEW) | RETROFIT on merged code only; groups DR-01/02/03/04/05/06/07/10/12/27-disclosure/31/32; adds NO new breadth | may-proceed (wedge correctness); completing it does NOT authorize distribution — §8-staging governs | see R-slice acceptance below |
+| **R-slice "claim-serving integrity"** (NEW) | RETROFIT on merged code only; groups DR-01/02/03/04/05/06/07/10/12/27-disclosure/31/32; adds NO new breadth | starts after the Gate-B review (P37 ③); may-proceed (wedge correctness); completing it does NOT authorize distribution — §8-staging governs | see R-slice acceptance below |
 | **V0 — O-22 protocol freeze** | NEW, immediate next step | §8.1 stage-1 precondition; zero code | O-22 frozen doc exists with taxonomy/materiality/cutoff/denominator/panel/tie-break/window pre-registered |
 | **V1 — WoZ shadow (stage 1)** | NEW | gated on V0 | ~12 real non-trivial PRs, hand-operated read-only queries at first-review cutoff, independent truth panel; **KILL if <9/12 reach the pre-registered coverage bar or on ANY material false reassurance** |
 | **FP-L — ctx continuity pilot** | NEW, may proceed early | LAW §9 survivor; first slice = DR-19 claim-shaping | continuity card built on OBSERVED command-boundary evidence; pre-registered behavior-change gate met (avoidable reruns / stale reasoning reduced) |
@@ -506,8 +506,8 @@ rejected, P37); M4/M5 are re-scoped.
 4. Every published generation is keyed to the full D32 tuple; a worktree/schema/policy mismatch
    rejects/rebuilds instead of reusing rows (DR-06). Test: two worktrees sharing a shard do not
    cross-serve.
-5. `valid_from`/`valid_to` are read (or an equivalent bitemporal recompute exists); a bare cut is
-   escalated, not taken (DR-10).
+5. An equivalent as-of recompute path exists (P37 ⑧ — wiring `valid_from`/`valid_to` is not
+   required); a bare cut is escalated, not taken (DR-10).
 6. The minimum claim envelope DTO is defined and serialized over MCP under the caller's scope, with
    per-claim evidence/observed-time/derivation/confidence/status/freshness/disclosure + cited
    UNKNOWN/restricted outcomes (DR-07/DR-31). **Gate: no factual machine serving until this passes.**
@@ -549,7 +549,8 @@ One line per DRIFT-FIX finding: **DR-id — what — where — owning slice.**
   `store.ts:855-890`, `code/adapter.ts:168-181` — R-slice (serve-blocking).
 - **DR-07/DR-31** — define + serialize the minimum claim envelope under caller scope; gate factual
   serving — `render.ts:84-92`, `serve/types.ts`, `mcp.ts:174-187` — R-slice (serve-blocking).
-- **DR-10** — wire `valid_from`/`valid_to` (or equivalent), else escalate — migration 003 — R-slice.
+- **DR-10** — equivalent as-of recompute path (P37 ⑧); wiring `valid_from`/`valid_to` not
+  required, a bare cut escalates — migration 003 — R-slice.
 - **DR-12** — scoped semantic-override expiry/re-verification — `ops.ts`, `rank.ts:43-68` — R-slice.
 - **DR-16** (per P37: `frozen` until the O-25 re-scope lands, then re-issued — not `superseded`) — M3-GOAL-PROMPT/M3-ACCEPTANCE —
   on the O-25 re-scope (RECAST/FROZEN pending O-25, not retirement).
@@ -561,7 +562,9 @@ One line per DRIFT-FIX finding: **DR-id — what — where — owning slice.**
 - **DR-23** — re-scope M4 snapshots to TTL+receipted accelerators; propagate identity/disclosure —
   M4 — RE-SCOPE, breadth gated V1/V2.
 - **DR-24** — insert V0→V1→V2→V3 + FP-L/FP-O ladder into the route — this §8 — done here; V0 = O-22.
-- **DR-25** — finish + commit the R1 verdict — `tools/measurement/` — O-14.
+- **DR-25** — E0 retrieval benchmark → fix O-32/O-33 → E0 re-pass → E1/E2 grid; the v1 grids
+  are evidence only — no v1 verdict is ever committed; each stage commits only data that passed
+  its own gate [P38] — `tools/measurement/` — O-14.
 - **DR-26** — bundle the M2 dist worker (runs from `.ts` source today); F1 overload re-key
   retire-link rides along — `codeParser.ts:148-151`, O-12 — before any install-base rollout.
 - **DR-27** — pre-V1 disclosure half: named blind spot + freeze fixtures; gated half: durable
@@ -588,7 +591,9 @@ method template per `docs/codemap/RUNBOOK.md` (P29 — referenced, not restated)
 (Windows: rm with retries — EBUSY); spawn tests carry explicit timeouts (CI cold-start tax). Golden
 transcripts back every serve surface (format changes = reviewed diffs). Property tests: budget never
 exceeded; envelope omission counts reconcile against the typed struct (never the rendered string);
-append-only claims/events never mutated (DB triggers enforce it for `memory_events`). Living-repo
+append-only claims/events never mutated on normal write paths — the DB triggers enforce it for
+`memory_events`, but the rebuildable memory projection may be deleted and rebuilt wholesale by
+`resetMemoryCache()` (§2's recorded exception). Living-repo
 tests assert drillable/resolvable, never rendered ranking (the repo is its own acceptance fixture —
 doc churn shifts rankings).
 
@@ -631,6 +636,33 @@ before any factual machine serving is enabled.
 > `O-14 R1 self-measurement → finish + commit verdict` row — operative state is **measurement
 > REDESIGNED per `docs/design/measurement/MEASUREMENT-DESIGN-V2.md` (E0-first ladder; v1 grids =
 > evidence only, no verdict; protocol scripts absorbed/committed).**
+>
+> **P37/O-25 override — DR-07:** the register's DR-07 closing sentence ("this DTO is defined by
+> THIS consumer's refit (see DR-15 — no M3-kernel revival)") is superseded — the minimum claim
+> envelope is the binding base for every consumer, and under O-25 retained or reworked M3
+> projection DTOs are unified with it (historical structs reused only where the re-scope justifies
+> them); live prose §5 carries the operative reading.
+>
+> **P37 override — DR-10 (historical row):** the register's DR-10 "wire … or provide an equivalent
+> bitemporal recompute path" reading is superseded by P37 ⑧ EQUIVALENT-SCHEME — wiring
+> `valid_from`/`valid_to` is NOT required; an equivalent as-of recompute path satisfies §3, and a
+> bare cut still escalates.
+>
+> **Corrigendum — DR-06 tuple wording per ADR 0040:** the D32 tuple is (repository revision,
+> worktree digest, schema version, analysis-policy version) per ADR 0040:18-25; `source cursor` is
+> an extra per-source freshness input, never a substitute for the repository revision. The DR-06
+> row above is kept verbatim (revision 3); this corrigendum carries the correction.
+>
+> **Corrigendum — DR-29 as-built anchors per P37:** `--raw` → `stdio:inherit` is at
+> src/cli.ts:314-318 + src/executor.ts:637-640 (not the row's src/cli.ts:294); the old absorption
+> plan now lives at docs/archive/CONTEXA-IMPL-20260703.md:513-525 (the row's pre-archive
+> CONTEXA-IMPL.md:511-523 pointer is superseded). The DR-29 row above is kept verbatim (revision 3).
+>
+> **Corrigendum — DR-09 anchor:** the dead `served_count`/`last_served` columns are at
+> 001-init.sql:62-63 (the historical row's 001-init.sql:67-68 is superseded).
+>
+> **Corrigendum — DR-32 header anchor:** the push-block header claims are at
+> packages/core/src/push/block.ts:35-39 (the historical row's block.ts:32-35 is superseded).
 
 1. DR-14: confirm RETIREMENT of the M3 guide work order (P26 route change; docs kept as frozen history).
 2. DR-01 + carve-out: confirm that O-14 measurement runs + maintainer dogfooding are the ONLY sanctioned uses of the greenfield MCP pre-V1 (no distribution, no auto-install, no trust framing; §8 staging governs expansion — V3 is the first live-host stage).
@@ -671,7 +703,7 @@ LAW at any pre-V3 stage.
 | DR-03 | store | DRIFT-FIX | §3 status enum | A1-3/A3-3; scattered links.stale/conflicts/memory.status | Derive per-claim `status` (resolved/conflicting/stale/unavailable/restricted/unknown) as a computed view; document the memory-status projection (active→resolved, needs-review(drift)→stale, needs-review(pending)→unknown, unresolvedHere→unavailable; restricted reserved until DR-05 exists). |
 | DR-04 | store/serve | DRIFT-FIX (serve-blocking) | §3 freshness; art. 1 per-claim freshness; R2 | store.ts:1008-1015 (drift → links.stale only); subgraph.ts:64-96 (traversal ignores stale); render.ts:54-65 (header `fresh` from adapter-pending only); no read-through in search | Hash-drift detection exists but is NOT a freshness guarantee: it fires after selection, selection ignores `links.stale`, search does no read-through, and detected drift is never rendered. Refit: exclude/downgrade stale links in traversal+ranking, render claim freshness as unknown-until-reverified, rename header state honestly (index-catchup), add per-source decay class + re-verification trigger for non-file connectors. |
 | DR-05 | store+memory+serve | DRIFT-FIX (serve-blocking) | §3 restricted/disclosure; §4 "explicit and classified" | remember.ts:365-385 (secret guard scans mainline path only; MCP notes land overlay unscanned); remember.ts:415-486 (raw gist/detail → store+FTS); visibility.ts:56-64 (overlay/needs-review served by default) | No-egress + overlay placement are NOT restricted-evidence enforcement: secret-shaped/restricted content stays indexed, searchable, renderable via MCP (host agent may forward it anywhere). Refit: real `restricted` status + `disclosure` class field (default local), exclude restricted bodies (and relationship-derived leaks) from FTS/render/machine interfaces, emit only a cited withheld/unavailable outcome. |
-| DR-06 | store | DRIFT-FIX (serve-blocking) | §3 immutable-state keying; D32/ADR0040 | shard.ts:4-12 (all worktrees share one shard); 001-init.sql:79-81 + store.ts:855-890 (gen = per-source int); code adapter.ts:168-181 (same size+mtime → clean, no hash) | `published_gen` is only a visibility pointer: repository revision, worktree digest, schema version, and analysis-policy version participate in NEITHER dirty-check NOR generation identity while all worktrees share one shard — a clean dirty-check can reuse rows built under another worktree/policy and serve them `fresh`. Refit: bind every published generation to the full D32 tuple **(repository revision, worktree digest, schema version, analysis-policy version)** per ADR 0040:18-25; reject/rebuild on any component mismatch (`source cursor` is an extra per-source freshness input, never a substitute for the revision). |
+| DR-06 | store | DRIFT-FIX (serve-blocking) | §3 immutable-state keying; D32/ADR0040 | shard.ts:4-12 (all worktrees share one shard); 001-init.sql:79-81 + store.ts:855-890 (gen = per-source int); code adapter.ts:168-181 (same size+mtime → clean, no hash) | `published_gen` is only a visibility pointer: worktree digest, schema version, and analysis-policy version participate in NEITHER dirty-check NOR generation identity while all worktrees share one shard — a clean dirty-check can reuse rows built under another worktree/policy and serve them `fresh`. Refit: bind every published generation to the D32 tuple; reject/rebuild on any component mismatch. |
 | DR-07 | serve | DRIFT-FIX (serve-blocking) | art. 2/3 at render; R6 | render.ts:84-92; select/types.ts:25-40 (RenderedItem has no claim id/status/freshness/disclosure/evidence) | Envelope cites locators but no per-claim trust data reaches the consumer; a `[handle]` is navigation, not a source anchor. Refit: define the minimum claim envelope (evidence anchor incl. revision/hash, observed time, derivation, confidence, status, freshness, disclosure) rendered tersely; this DTO is defined by THIS consumer's refit (see DR-15 — no M3-kernel revival). |
 | DR-08 | store/serve | CONFORMS | art. 1/2/4; R3/R5; §4 | A1-8..13; A3-2 | Contentless FTS (index-not-copy); claims/links separation; conflicts side-by-side never squeezed; shrink-guard success-shaped refusal; RECONCILING serves previous gen (fail-open); assertNoEgress + zero network calls (measured). Conformance base for the new DESIGN. |
 | DR-09 | store | ORPHAN | none (research ruled OUT) | 001-init.sql:67-68; O-07 | `served_count`/`last_served` dead columns — cut; closes O-07 as "cut" if ratified. |
@@ -690,11 +722,11 @@ LAW at any pre-V3 stage.
 | DR-22 | artifacts | GATED (map) | §5; §8.1; §9 | A5 table | Artifact statuses: 1 partial local proto-Brief (keep claim-backed = pre-gate-legal); 2 substrate only (gated, make-or-break); 3 substrate only (gated, org pilot); 4 partial strongest — two unjoined halves (shipping proto-card + greenfield VALID/STALE primitives), build-out pre-gate-legal under FP-L; 5 zero (expected). **[Override — LAW §8:** the LAW wins over this register. Artifact 1 has **no pre-gate build-out authorization**: keep the existing claim-backed proto-Brief only; a V1 pass unlocks only the minimum semantics pre-registered as necessary for V2, and any broader Context Brief construction requires an explicit ladder gate. "pre-gate-legal" here is superseded for Artifact 1.**]** |
 | DR-23 | route | GATED + DRIFT-FIX (was ESCALATE) | R2 ("on-demand compilation OVER AN INGESTED SUBSTRATE"; accelerators with TTL+receipts allowed); §8.3 | PRODUCT-DESIGN.md:176-180; A6-2 | ⚖ Corrected per Gate A: M4's dated snapshots do not inherently contradict R2. Re-scope: snapshots retained only as TTL- and source-receipted accelerators, revalidated before trigger-time bitemporal compilation; caller identity/disclosure propagation enforced; connector absence = named blind spot. Gate connector BREADTH on V1/V2; live-reads-only is not required by R2. |
 | DR-24 | route | DRIFT-FIX | §8 ladder absent from route | A6-3/4; O-22 | Insert V0 (freeze O-22 WoZ protocol — immediate next step) → V1 WoZ → V2 backtest → V3 live shadow + FP-L (early, §9 survivor) / FP-O (gated). |
-| DR-25 | route | CONFORMS-incomplete | art. 8; O-14 | C6 (.work grids: sonnet HOLD / codex 100% void / protocol pilot; all uncommitted) | R1 self-measurement sanctioned + partially executed, results uncommitted. Finish → commit a real verdict; measured numbers only. **[Override — P38:** this row is superseded. Measurement is REDESIGNED per `docs/design/measurement/MEASUREMENT-DESIGN-V2.md` (E0-first ladder); v1 grids = evidence only, no verdict; the protocol scripts are now absorbed/committed (the "codex 100% void" report was STALE — post-rerun 48 pass/13 fail/5 void). Commit measured numbers only for a stage that passes its own bar.**] |
+| DR-25 | route | CONFORMS-incomplete | art. 8; O-14 | C6 (.work grids: sonnet HOLD / codex 100% void / protocol pilot; all uncommitted) | R1 self-measurement sanctioned + partially executed, results uncommitted. Finish → commit a real verdict; measured numbers only. **[Override — P38:** this row is superseded. Measurement is REDESIGNED per `docs/design/measurement/MEASUREMENT-DESIGN-V2.md` (E0-first ladder); v1 grids = evidence only, no verdict; the protocol scripts are now absorbed/committed (the "codex 100% void" report was STALE — post-rerun 48 pass/13 fail/5 void). Commit measured numbers only for a stage that passes its own bar.**]** |
 | DR-26 | route | DRIFT-FIX (reliability) | R4 distribution-first | O-12 | F2: M2 worker runs from source, not bundled — must land before any install-base rollout. F1 overload re-key retire-link rides along. |
 | DR-27 | route | split: DRIFT-FIX (disclosure) + GATED (construction) | art. 4 named blind spots; §8 | docs.ts:417-452; OPEN.md:21 ("needs ratification, not a bolt-on") | ⚖ Split per Gate A: the full fix (durable unresolved-mention persistence + cross-source re-resolution seam) is NEW substrate construction — gated behind V1. Pre-V1 the honest half proceeds: suppress/flag the affected relation and render a named blind spot; freeze the design + fixtures now. |
 | DR-28 | route | ORPHAN (moot) | — | A6-11 | M5 guide-perf items moot with M3 retired; M5 re-scoped to measurement + local wedge perf gates. |
-| DR-29 | route | split: AS-BUILT + GATED (remaining absorption) | §4 today's assets; §8 | ⚖ state corrected per Gate A r2: hard rename + `ctx` bin ALREADY LANDED (package.json:2 name=contexa, bin ctx; ADR 0015 explicitly bans a `tk` alias); `--raw` stdio:inherit ALREADY LANDED (src/cli.ts:314-318; src/executor.ts:637-640). Old absorption plan: docs/archive/CONTEXA-IMPL-20260703.md:513-525 | Split three ways: (a) as-built rename + raw stream fidelity = done, record as current state, not future work; (b) `tk` alias = ORPHAN, prohibited by ADR 0015; (c) still-unbuilt absorption (JSONL→SQLite ledger migration, recall handles, session-provenance plumbing) = product/storage expansion GATED on FP-L. Off-critical-path ≠ pre-gate-authorized. |
+| DR-29 | route | split: AS-BUILT + GATED (remaining absorption) | §4 today's assets; §8 | ⚖ state corrected per Gate A r2: hard rename + `ctx` bin ALREADY LANDED (package.json:2 name=contexa, bin ctx; ADR 0015 explicitly bans a `tk` alias); `--raw` stdio:inherit ALREADY LANDED (src/cli.ts:294). Old absorption plan: CONTEXA-IMPL.md:511-523 | Split three ways: (a) as-built rename + raw stream fidelity = done, record as current state, not future work; (b) `tk` alias = ORPHAN, prohibited by ADR 0015; (c) still-unbuilt absorption (JSONL→SQLite ledger migration, recall handles, session-provenance plumbing) = product/storage expansion GATED on FP-L. Off-critical-path ≠ pre-gate-authorized. |
 | DR-30 | memory | DRIFT-FIX (docs) | — | A3 adjacent 1–4 | OPEN candidates: CLI lacks `supersede` verb; `needs-review` overloads drift-stale vs confirmation-pending (§3 splits stale vs unknown); `human-note` origin unwired. |
 | DR-31 | mcp | DRIFT-FIX (serve-blocking) NEW | R6 same claims/citations/UNKNOWNs under caller identity; art. 2/3 | mcp.ts:174-187 (text-only transport); serve/types.ts:1-5 (diag not serialized); ServeDeps has no caller scope | The MCP is a Markdown transport, not the same-claim machine interface R6 requires: caller scope and per-claim evidence/observed-time/derivation/status/confidence/freshness/disclosure and cited UNKNOWN/restricted outcomes never reach the host. Gate factual machine serving until the minimum claim envelope (DR-07) is serialized. |
 | DR-32 | memory/push | DRIFT-FIX NEW (use-blocking) | art. 3 citation-or-silence; §3 full claim contract | block.ts:32-35 (header claims "with provenance" + "Start tasks with the `context` MCP tool"); block.ts:35-65 (gotchas render as `⚠ gist [handle]`, no anchor/status/freshness); block.ts:85-112 (1KB truncation undisclosed in placed block); cli.ts:273 (manual `ctx push` writes host files independent of install gating) | ⚖ Strengthened per Gate A r2: the always-loaded push block renders uncited memory claims into host instruction files, and manual `ctx push` bypasses any install-side gate. Pre-gate: OMIT factual gotchas entirely and drop/reword the "with provenance" header to non-claiming text (tool instructions may stay). If factual gotchas ever return, each carries the FULL minimum claim envelope (revision/hash anchor, observed time, derivation, confidence, status, freshness, disclosure) + explicit omission disclosure. |
@@ -777,7 +809,7 @@ To be appended to `OPEN.md` on ratification (report-only here; this audit does n
   report. **[Override — P38:** superseded. Measurement is REDESIGNED per
   `docs/design/measurement/MEASUREMENT-DESIGN-V2.md` (E0-first ladder; v1 grids = evidence only, no
   verdict); the protocol scripts are now absorbed/committed. Do not simply commit the v1 verdict —
-  run E0 first, fix O-32/O-33, then E1/E2.**]
+  run E0 first, fix O-32/O-33, then E1/E2.**]**
 
 ---
 
