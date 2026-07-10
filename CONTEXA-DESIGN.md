@@ -298,9 +298,13 @@ ladder; DR M-plan v2]. No aspirational content appears outside this section.
   still-unbuilt absorption — JSONL→SQLite ledger migration, recall handles, session-provenance
   plumbing — is product/storage expansion, gated on FP-L. Off-critical-path ≠ pre-gate-authorized
   [DR-29c].
-- **Any future admin/inspection surface.** Explicitly **not** an M3 guide re-entry (DR-14/15
-  retired, §9). LAW §9's admin/inspection clause is an Atlas-failure fallback, not a ctx
-  unlock; any such tool is separate scope with separate authority [DR-14; LAW art.1, §9].
+- **`ctx guide` — recast per P37 [LAW §11].** On-demand, runtime-created, local, read-only
+  render surface over this facet's own cited claims: inspection (review queue, push state,
+  graph state), understanding views (entity/code paths, overview, history, decisions), and
+  decision-artifact rendering. Gates: the surface itself lands AFTER the R-slice (it inherits
+  DR-07/31 claim-envelope rendering, DR-01 accelerator disclosure on unvalidated inferred
+  content, DR-17 §3-provenance spec); the Impact-Set (blast radius) visualization page ships
+  only WITH Artifact 2 (V1→V2 gate). Work-order re-scope tracked as OPEN O-25 [P37; LAW §11].
 
 Threshold numbers (Fable ≥90%/≥70%; Opus recall ≥0.80 @ precision ≥0.50) are **hypothesis
 inputs to the first calibration run**, pre-registered per stage, never adjusted post-hoc
@@ -308,20 +312,19 @@ inputs to the first calibration run**, pre-registered per stage, never adjusted 
 
 ## 9. Retired & superseded
 
-- **`ctx guide` (M3) — retired.** The six-page browsable guide is prohibited as a
-  *destination* under settled LAW art.1 ("compile at the decision moment; never build a
-  destination"); no §8 pass revives it [DR-14; LAW art.1]. The M3 work order is retired (zero
-  code exists), maintainer-confirmed; `M3-GOAL-PROMPT.md` / `M3-ACCEPTANCE.md` take
-  `status: superseded` with a pointer here and are kept as frozen history [DR-14/16]. This
-  retires old §6 (claims 41–43) and old-register FORK-1's guide-read-only ruling as moot.
-  G-readonly / G-loopback / G-profile-budget survive as spec content if any future surface is
-  built; G-provenance does **not** — it carries pre-LAW vocabulary and any future surface spec
-  must use the full LAW §3 claim contract [DR-17].
-- **Projection kernel (five-struct M3 kernel) — retired.** The `EntityBiographyProjection` /
-  `OverviewProjection` / `KnowledgeProjection` / `EvidencePacket` / `SearchProjection` structs
-  are page-coupled, not a proven generic seam. Retired with the guide [DR-15; LAW art.1]. Where
-  a decision-moment consumer needs a shared claim DTO, that minimum envelope is defined **fresh**
-  in that consumer's refit (§2, DR-07) — it does not inherit these structs.
+- **`ctx guide` (M3) — retirement REJECTED; recast (P37, LAW §11).** The reconciliation's
+  Drift Register proposed retirement under art. 1 (DR-14/15) and the maintainer overrode it:
+  the guide was never a standing/central destination — it is an on-demand runtime-created
+  local render surface, retained with the obligations listed in §8 [P37; LAW §11]. DR-14/15/16
+  rows in the register (CONTEXA-IMPL Appendix A) stand as audit history, overridden by P37.
+  What DOES retire from the old work order: its flagship framing, and G-provenance's pre-LAW
+  vocabulary — any surface spec must use the full LAW §3 claim contract [DR-17].
+  G-readonly / G-loopback / G-profile-budget carry as written. FORK-1's guide-read-only ruling
+  is re-affirmed (read-only stays narrow = non-mutating).
+- **Projection kernel (five-struct M3 kernel) — design re-enters via the O-25 re-scope, not
+  verbatim.** The five structs were page-coupled; the re-scoped work order defines its render
+  DTOs unified with the DR-07/31 minimum claim envelope (structs may be reused where the
+  re-scope justifies them) [P37; DR-15 technical note carried].
 - **Old M-route (M1→M5 milestone plan) — superseded** by the gate-first **M-plan v2** in
   `CONTEXA-IMPL.md` (M1/M2 done + retrofit; R-slice; V0–V3; FP-L/FP-O; M4 re-scoped; M5 →
   measurement + wedge perf) [DR M-plan v2; supersedes old §9 claims 112–119].

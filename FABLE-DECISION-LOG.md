@@ -378,6 +378,37 @@ unauthorized pre-V3. Notable Gate-A catches: summarizeBuild heuristic success ve
 O-23), worktree-shared shard × single-int generation (DR-06), push-block uncited gotchas (DR-32).
 **Maintainer batch of 9 rulings OPEN as O-31** — landing does not pre-decide them.
 
+**P37 — Maintainer batch ruled (9/9); M3 recast not retired; LAW art. 1 clarified (§11).** `[2026-07-10]`
+Rulings on the O-31 batch, after a challenge round (Fable argued retirement; maintainer clarified
+the intent was never a standing site):
+- **①(M3) REJECTED retirement — RECAST**: `ctx guide` = on-demand, runtime-created, LOCAL,
+  read-only render surface over the local facet's own cited claims; full function set retained
+  (inspection/review queue/graph state, entity/code paths, overview, history, decisions) plus
+  decision-artifact rendering — the Impact-Set (blast radius) visualization page ships only WITH
+  Artifact 2 (its §8 gate). Obligations: §3 claim envelope at every render (DR-07/31), accelerator
+  disclosure on unvalidated inferred content (DR-01), G-provenance upgraded to §3 (DR-17);
+  G-readonly/loopback/profile-budget carry. Scheduling: after the R-slice; work-order re-scope =
+  O-25. LAW amended (§11). Evidence shape recorded honestly: the three sealed derivations render
+  impact as tiered TEXT into existing surfaces (no sealed run endorses a graph UI; C7 collector,
+  scratchpad); the ruling rests on maintainer authority + the repo's own absorption lineage
+  (ADR-0038/0039 React Flow+ELK codeguide; GitNexus one-backend-three-frontends; UA graph-UX) —
+  landscape corpus contains NO adoption/decay data either way. DR-14/15/16 rows in the Drift
+  Register stand as audit history, OVERRIDDEN by this entry.
+- **② MCP carve-out CONFIRMED**: pre-V1 the greenfield MCP serves only O-14 measurement +
+  maintainer dogfooding; no distribution/auto-install/trust framing; §8 staging governs.
+- **③ R-slice timing = after the Gate-B review** ("等 review").
+- **④ M4 connectors: last, or batched with locally-verifiable carriers first** (e.g. GitHub
+  commit history); breadth still gated V1/V2 (DR-23 shape unchanged).
+- **⑤ §9 boundary acknowledged** (utility maintained regardless; expansion FP-L-gated).
+- **⑥ V1 truth panel = maintainer + Claude + Codex** (heterogeneous models + the human owner;
+  V0 protocol must state the independence limits of a self-adjudicated panel).
+- **⑦ Serial: R1 first, then V0 — but the measurement is to be REDESIGNED before finishing**
+  (existing grid results — sonnet HOLD, codex 100% void — do not simply get committed; O-14
+  updated).
+- **⑧ valid_from/valid_to: EQUIVALENT-SCHEME** (as-of recompute path, not necessarily wiring the
+  columns); served_count/last_served cut stands (DR-09).
+- **⑨ summarizeBuild fix (O-23): scheduled EARLY.**
+
 ## Open
 
 - **O1 / O2** (pack §9) — value metric & joint story: partially reshaped by P15 (measurement is

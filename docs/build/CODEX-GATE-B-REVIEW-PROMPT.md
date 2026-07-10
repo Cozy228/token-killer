@@ -17,6 +17,11 @@ codex exec -m gpt-5.6-sol -c model_reasoning_effort="ultra" --sandbox read-only 
 
 ---
 
+> **P37 update (2026-07-10, post-landing):** the maintainer batch was answered the same day —
+> M3 retirement was REJECTED and recast (see PRODUCT-DESIGN.md §11 amendment + FABLE-DECISION-LOG
+> P37 + CONTEXA-DESIGN §8/§9). Review the documents AS AMENDED: DR-14/15/16 rows in Appendix A are
+> audit history overridden by P37; flag any residual text that still asserts retirement as live.
+
 ## PROMPT (everything below goes to Codex)
 
 You are the Gate-B adversarial reviewer of the design-reconciliation round in this repo

@@ -1,7 +1,7 @@
 ---
 status: frozen
 review_after: 2026-08-01
-note: retirement PROPOSED by the 2026-07-10 design reconciliation (root CONTEXA-IMPL.md Appendix A, DR-14/DR-15 — LAW art. 1 forbids destination surfaces); maintainer ruling pending (OPEN O-31 item 1). Do NOT build from this work order while frozen.
+note: retirement REJECTED by maintainer 2026-07-10 (P37; LAW §11) — guide recast as an on-demand local render surface. This work order stays FROZEN until the O-25 re-scope (inherit R-slice claim envelope; G-provenance → LAW §3; blast-radius page gated with Artifact 2). Do NOT build from it before re-scope.
 ---
 
 # M3 Acceptance — ctx "Humans see it" (`ctx guide`, reviewer-owned)

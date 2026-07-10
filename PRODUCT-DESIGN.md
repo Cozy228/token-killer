@@ -316,3 +316,16 @@ named blind spot, not silence.
   contract wins and the register gets reconciled at the next /gc.
 - The three sealed derivations and the comparison (`reports/derivation-*.md`) — frozen
   evidence snapshots; never edited, only cited.
+
+## 11. Amendments
+
+- **2026-07-10 (P37) — art. 1 clarification + M3 ruling.** Art. 1's prohibition targets
+  standing/central browse-first destinations asserted as truth. It does not prohibit an
+  on-demand, runtime-created, LOCAL, read-only render surface (`ctx guide`) over the local
+  facet's own cited claims — inspection (review queue, push state, current graph state),
+  understanding views (entity/code paths, overview, history, decisions), and decision-artifact
+  rendering (the Impact Set visualization page ships only with Artifact 2, per §8). Every
+  rendered claim carries the §3 envelope; unvalidated inferred content carries the
+  accelerator-not-validated disclosure until the ladder clears it. Maintainer ruling: the M3
+  retirement proposed by the 2026-07-10 reconciliation is REJECTED; M3 is recast under these
+  constraints (FABLE-DECISION-LOG P37).

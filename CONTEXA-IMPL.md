@@ -467,7 +467,7 @@ serve-integrity precondition; V0→V3 is the ladder; M3 is retired; M4/M5 are re
 | **V0 — O-22 protocol freeze** | NEW, immediate next step | §8.1 stage-1 precondition; zero code | O-22 frozen doc exists with taxonomy/materiality/cutoff/denominator/panel/tie-break/window pre-registered |
 | **V1 — WoZ shadow (stage 1)** | NEW | gated on V0 | ~12 real non-trivial PRs, hand-operated read-only queries at first-review cutoff, independent truth panel; **KILL if <9/12 reach the pre-registered coverage bar or on ANY material false reassurance** |
 | **FP-L — ctx continuity pilot** | NEW, may proceed early | LAW §9 survivor; first slice = DR-19 claim-shaping | continuity card built on OBSERVED command-boundary evidence; pre-registered behavior-change gate met (avoidable reruns / stale reasoning reduced) |
-| **M3 guide + projection kernel** | RETIRE work order (maintainer confirms) | LAW art. 1 settled (no destination); no §8 re-entry clause; §9 admin clause is an Atlas-failure fallback, not an M3 unlock | M3-GOAL-PROMPT + M3-ACCEPTANCE get `status: superseded` + supersede pointer (DR-16); zero code exists; any future admin/inspection tool = separate scope + authority |
+| **M3 `ctx guide`** | RECAST per **P37** (retirement rejected; LAW §11) | On-demand runtime-created LOCAL read-only render surface over cited claims — not a standing destination; lands AFTER the R-slice; inherits DR-07/31 envelope + DR-01 disclosure + DR-17 §3-provenance; Impact-Set visualization page ships only WITH Artifact 2 (V1→V2 gate) | Work-order re-scope = O-25; kernel DTOs unified with the DR-07/31 envelope; M3 docs stamped `status: frozen` until re-scoped |
 | **M4 → org connectors** | RE-SCOPE (DR-23) | snapshots as TTL+receipted accelerators, revalidated before trigger-time bitemporal compilation; breadth gated on V1/V2 | ingress-only; caller identity/disclosure propagated; connector absence = named blind spot; live-reads-only NOT required |
 | **V2 — backtest (stage 2)** | NEW | gated on V1; produces §7.2 thresholds | ~100–150 historical PRs regenerated as-of PR-open; scored vs realized breakages; claim-sample truth-at-time audit; **outputs the calibrated precision/recall bars** |
 | **FP-O — Atlas concierge pilot** | NEW | gated: needs V1 + connectors | pre-registered gate (resolved org facts change real decisions) |
@@ -529,7 +529,7 @@ One line per DRIFT-FIX finding: **DR-id — what — where — owning slice.**
   serving — `render.ts:84-92`, `serve/types.ts`, `mcp.ts:174-187` — R-slice (serve-blocking).
 - **DR-10** — wire `valid_from`/`valid_to` (or equivalent), else escalate — migration 003 — R-slice.
 - **DR-12** — scoped semantic-override expiry/re-verification — `ops.ts`, `rank.ts:43-68` — R-slice.
-- **DR-16** — `status: superseded` + supersede pointer on M3 docs — M3-GOAL-PROMPT/M3-ACCEPTANCE —
+- **DR-16** (per P37: `frozen` until the O-25 re-scope lands, then re-issued — not `superseded`) — M3-GOAL-PROMPT/M3-ACCEPTANCE —
   on ratified retirement.
 - **DR-18** — never emit heuristic build-success verdict (wire exit code) + receipt on asserting
   summaries — `src/handlers/system/summary.ts:109-133`, `base.ts:221-230` — shipping refit (+ OPEN
@@ -592,7 +592,15 @@ serving is enabled.
 > records, AND — because the docs landed by maintainer instruction before the batch was answered —
 > the still-open maintainer batch (tracked as OPEN O-31; strike items there as they are ruled).
 
-### Maintainer batch (OPEN as of landing, 2026-07-10 — see O-31)
+### Maintainer batch — ANSWERED 2026-07-10 (P37; O-31 closed)
+
+> All 9 items ruled same day (FABLE-DECISION-LOG **P37** is authoritative; summary: ① M3 recast
+> not retired — on-demand local render surface, LAW §11 amendment; ② MCP carve-out confirmed;
+> ③ R-slice after Gate-B review; ④ M4 last-or-batched, locally-verifiable first; ⑤ acknowledged;
+> ⑥ truth panel = maintainer+Claude+Codex; ⑦ serial + measurement REDESIGN before finishing;
+> ⑧ valid_from/to equivalent-scheme, served_count cut; ⑨ summarizeBuild fix early). The original
+> questions are kept below for the audit trail. **P37 overrides DR-14/15/16 in the register
+> table above (kept as audit history).**
 
 1. DR-14: confirm RETIREMENT of the M3 guide work order (P26 route change; docs kept as frozen history).
 2. DR-01 + carve-out: confirm that O-14 measurement runs + maintainer dogfooding are the ONLY sanctioned uses of the greenfield MCP pre-V1 (no distribution, no auto-install, no trust framing; §8 staging governs expansion — V3 is the first live-host stage).
