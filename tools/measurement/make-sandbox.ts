@@ -207,6 +207,42 @@ function writeWrapper(path: string): void {
   chmodSync(path, 0o755);
 }
 
+/** Copy an extracted base tree into an arm repo, preserving symlinks VERBATIM.
+ *  Default cpSync (verbatimSymlinks:false) rewrites a repo-relative symlink target
+ *  (e.g. atlas CLAUDE.md → AGENTS.md) into an ABSOLUTE path back into the shared
+ *  base/ tree — both arms then alias ONE mutable file outside their checkouts, and
+ *  a write-through (ctx push via armB's CLAUDE.md) contaminates arm A (defect
+ *  found 2026-07-10, e0-sandboxes rebuild; see implementation-notes.md). */
+function copyTreeVerbatim(src: string, dest: string): void {
+  cpSync(src, dest, { recursive: true, verbatimSymlinks: true });
+  assertSymlinksContained(dest);
+}
+
+/** Guard: every symlink in an arm repo must resolve INSIDE that repo. A link whose
+ *  target escapes (absolute, or ../ past the root) fails the build LOUDLY — an
+ *  escaping link is a cross-arm/base aliasing channel, never acceptable. */
+function assertSymlinksContained(root: string): void {
+  const rootAbs = resolve(root);
+  const offenders: string[] = [];
+  const walk = (rel: string): void => {
+    for (const e of readdirSync(join(rootAbs, rel), { withFileTypes: true })) {
+      const r = rel ? join(rel, e.name) : e.name;
+      if (e.isSymbolicLink()) {
+        const target = readlinkSync(join(rootAbs, r));
+        const resolved = resolve(join(rootAbs, r, ".."), target);
+        if (resolved !== rootAbs && !resolved.startsWith(rootAbs + "/"))
+          offenders.push(`${r} → ${target} (resolves to ${resolved})`);
+      } else if (e.isDirectory()) walk(r);
+    }
+  };
+  walk("");
+  if (offenders.length > 0)
+    throw new Error(
+      `symlink(s) escape the arm repo ${rootAbs}:\n  ${offenders.join("\n  ")}\n` +
+        "(refusing to build — an escaping link aliases state outside the checkout)",
+    );
+}
+
 /** Recursive file map (relative path → content signature) for the A4 diff. Robust
  *  on real repos: symlinks are recorded by target (not followed), files are hashed
  *  as bytes (binary-safe, no huge strings), and any unreadable/special entry is
@@ -317,8 +353,8 @@ function main(): number {
   extractTree(repo, fullSha, base);
   const armArepo = join(out, "armA", "repo");
   const armBrepo = join(out, "armB", "repo");
-  cpSync(base, armArepo, { recursive: true });
-  cpSync(base, armBrepo, { recursive: true });
+  copyTreeVerbatim(base, armArepo);
+  copyTreeVerbatim(base, armBrepo);
   initFrozenRepo(armArepo, fullSha);
   initFrozenRepo(armBrepo, fullSha);
 

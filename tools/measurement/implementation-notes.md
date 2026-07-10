@@ -290,6 +290,31 @@ any conflict = `docs/design/measurement/MEASUREMENT-DESIGN-V2.md`. Scope was
   repos partially instead of zeroing one family. No randomness ⇒ `--resume` stays stable.
   Verified: `tsc --noEmit` exit 0; dry-run step order alternates atlas/tk (longer 6-tk bucket
   drains last).
+- **`make-sandbox` symlink materialization defect + fix (found 2026-07-10 E0-sandboxes
+  rebuild; fixed 2026-07-11, reviewer-ordered — it BLOCKED E1/E2 atlas cells).**
+  Atlas commits `CLAUDE.md` as a RELATIVE symlink → `AGENTS.md` (git mode 120000).
+  `git archive | tar -x` materialized it faithfully in `base/`, but the base→arm copy
+  used default `cpSync` (`verbatimSymlinks:false`), which rewrote the target to an
+  ABSOLUTE path back into the shared `base/AGENTS.md`. Consequences (all verified on the
+  pre-fix sandboxes): both arms' `CLAUDE.md` aliased ONE mutable file outside their
+  checkouts; `ctx push`'s write through armB's `CLAUDE.md` landed in `base/AGENTS.md`,
+  so **arm A carried the ctx disclosure block** (§1c arm-A cleanliness violated; no
+  steering imperative leaked — neutralization also wrote through); and the A4 `fileMap`
+  check was blind to it (symlinks are recorded by target string — identical in both arms
+  — so `CLAUDE.md` never showed as differing and exactly-knobs ✓ was a false pass).
+  E0 reports were NOT affected (the bench reads only armB's frozen store/.mcp.json).
+  Fix, harness-side only: (1) `copyTreeVerbatim` — base→arm copies now pass
+  `verbatimSymlinks:true`, so each arm's `CLAUDE.md` stays a relative link resolving to
+  its OWN arm's `AGENTS.md` (write-throughs stay inside the arm; the push-block delta
+  then surfaces in the A4 diff via the already-compared regular file `AGENTS.md`);
+  (2) `assertSymlinksContained` — after each copy, any symlink resolving outside the arm
+  repo fails the build LOUDLY with the offender named (guard, not silent). Verified:
+  5 atlas sandboxes rebuilt (5/5 ✓, all invariants ✓, `differing=["AGENTS.md"]` as
+  expected, both arms' `CLAUDE.md` → relative `AGENTS.md`, armA block-free, armB block
+  neutralized, `base/AGENTS.md` clean); negative test (crafted repo with `escapee.md →
+  /etc/hosts`) aborts with the named offender; root `tsc --noEmit` exit 0. The 6 tk
+  sandboxes were NOT rebuilt (no symlinked instruction files — verified unaffected) so
+  their armB stores remain byte-identical to the ones the collected E0 reports measured.
 
 ## Adjacent-found (untouched — reported, not fixed; product code out of scope)
 
