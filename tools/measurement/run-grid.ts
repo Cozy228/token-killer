@@ -157,11 +157,26 @@ function assertUsableAuth(): void {
 
 /** Safeguard 2: detect a SYSTEMIC failure in a just-run cell so the grid aborts
  *  instead of burning the remaining cells (all would fail identically). Two kinds,
- *  both account-global: `auth` (bad/expired token) and `limit` (session/usage/rate
- *  cap — resume after it resets). */
+ *  both account-global: `auth` (bad/expired token) and `limit` (session/usage/weekly/
+ *  rate cap — resume after it resets).
+ *
+ *  The PRIMARY signal is the structured `api_error_status` in the result JSON: a 429
+ *  is an account-level limit and a 401/403 is auth, regardless of how the human-
+ *  readable `result` text is phrased. The regexes below are a text fallback for the
+ *  cases where the CLI reports the error only as prose. (Text-only detection missed
+ *  the "weekly limit · resets Jul 12" phrasing — the `result` had no "429" and the
+ *  old `resets \d` needed a leading digit that "resets Jul 12" doesn't have — which
+ *  let the whole tk block of the Jul-8 sonnet grid record 30 void cells instead of
+ *  aborting on the first. See implementation-notes E-3.) */
+// Text fallbacks for the (rare) case where the CLI reports the systemic failure only
+// as prose with no structured `api_error_status`. Deliberately PHRASE-based — bare
+// numeric codes (401/403/429) are NOT matched here because task content legitimately
+// contains them (e.g. the `atlas-discovery-cql-403-fallback` task's own output says
+// "403"); numeric codes are read from the structured status field instead.
 const AUTH_ERR_RE =
-  /not logged in|invalid value: 'Bearer|API Error: Header|invalid api key|authentication_error|\b401\b|please run \/login/i;
-const LIMIT_ERR_RE = /session limit|usage limit|rate limit|\b429\b|quota|overloaded|resets \d/i;
+  /not logged in|invalid value: 'Bearer|API Error: Header|invalid api key|authentication_error|please run \/login/i;
+const LIMIT_ERR_RE =
+  /(?:session|usage|weekly|daily|monthly|hourly|rate)\s+limit|hit your\b[^.]*\blimit|\blimit\b[^.]*\bresets\b|quota exceeded|overloaded|resets\s+(?:\d|\w+\s+\d)/i;
 function cellFatalError(
   out: string,
   task: string,
@@ -172,13 +187,24 @@ function cellFatalError(
   if (!existsSync(raw)) return null;
   try {
     const stdout = readJson<{ stdout?: string }>(raw).stdout ?? "";
-    let msg = stdout;
+    let obj: { result?: unknown; api_error_status?: unknown; is_error?: unknown } | null = null;
     try {
-      msg = String((JSON.parse(stdout.trim()) as { result?: unknown }).result ?? stdout);
+      obj = JSON.parse(stdout.trim());
     } catch {
-      /* not JSON — scan the raw text */
+      /* not JSON — fall back to scanning the raw text */
     }
+    // A cell that COMPLETED successfully is never a systemic failure, no matter what
+    // its output text contains. Gate on is_error so task content (which may quote
+    // "403"/"429"/"rate limit") can never trigger a spurious abort.
+    if (obj && obj.is_error === false) return null;
+    const msg = obj && typeof obj.result === "string" ? obj.result : stdout;
     const short = msg.replace(/\s+/g, " ").slice(0, 200);
+    // Structured status wins: unambiguous where the human-readable phrasing varies
+    // ("weekly limit"/"session limit"/"usage limit" all surface as api_error_status 429).
+    const status = obj ? Number(obj.api_error_status) : Number.NaN;
+    if (status === 429) return { kind: "limit", msg: short };
+    if (status === 401 || status === 403) return { kind: "auth", msg: short };
+    // Prose fallback (only reached for errored / unparseable cells).
     if (LIMIT_ERR_RE.test(msg)) return { kind: "limit", msg: short };
     if (AUTH_ERR_RE.test(msg)) return { kind: "auth", msg: short };
     return null;
@@ -207,9 +233,33 @@ function isDone(path: string): boolean {
   return row.is_error === false && row.void_reason !== undefined;
 }
 
+/** Interleave task FAMILIES (by repo) via a deterministic round-robin, then emit each
+ *  task's cells with the existing per-task arm interleaving. This extends v1 §4 arm-order
+ *  interleaving to the task-family axis so a mid-grid quota exhaustion degrades every repo
+ *  partially instead of zeroing one family (E-3: the sonnet grid ran all atlas before all
+ *  tk, so the weekly-cap loss landed entirely on tk). No randomness — families and their
+ *  members keep bank order, so the step sequence is stable and `--resume` is reproducible. */
+function orderTasksRoundRobin(rows: TaskBankRow[]): TaskBankRow[] {
+  const families = new Map<string, TaskBankRow[]>();
+  for (const row of rows) {
+    const bucket = families.get(row.repo);
+    if (bucket) bucket.push(row);
+    else families.set(row.repo, [row]); // first-appearance order preserved by Map
+  }
+  const buckets = [...families.values()];
+  const ordered: TaskBankRow[] = [];
+  for (let i = 0; ordered.length < rows.length; i++) {
+    for (const bucket of buckets) {
+      const row = bucket[i];
+      if (row) ordered.push(row);
+    }
+  }
+  return ordered;
+}
+
 function buildOrder(rows: TaskBankRow[], reps: number): Step[] {
   const steps: Step[] = [];
-  for (const [taskIndex, row] of rows.entries()) {
+  for (const [taskIndex, row] of orderTasksRoundRobin(rows).entries()) {
     for (let rep = 0; rep < reps; rep++) {
       const order: Arm[] = (taskIndex + rep) % 2 === 0 ? ["A", "B"] : ["B", "A"];
       for (const arm of order) steps.push({ task: row.task, arm, rep });

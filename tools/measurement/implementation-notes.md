@@ -262,6 +262,34 @@ any conflict = `docs/design/measurement/MEASUREMENT-DESIGN-V2.md`. Scope was
 - **New shared file `mcp-client.ts`** (dependency-free MCP stdio JSON-RPC client). The
   design implies a "hand-rolled minimal client, no new deps" — this is it, mirroring the
   product shim's own no-SDK stance.
+- **Hardened `cellFatalError` / limit-detection in `run-grid.ts` (E-3 fix, 2026-07-10).**
+  The Safeguard-2 limit detector missed the "weekly limit · resets Jul 12" 429 that killed
+  the sonnet grid (see Adjacent-found E-3). Three changes, harness-side only:
+  1. **Read the structured `api_error_status` first** — `429 ⇒ limit`, `401/403 ⇒ auth` —
+     independent of prose phrasing. This is the robust primary signal.
+  2. **Gate all fatal-detection on `is_error === true`.** A cell that COMPLETED
+     (`is_error:false`) is never systemic-fatal, so task output that legitimately quotes
+     "403"/"429"/"rate limit" (e.g. the `atlas-discovery-cql-403-fallback` task) can no
+     longer trigger a spurious abort. This also let me **remove the bare `\b401\b`/`\b403\b`/
+     `\b429\b` numeric alternatives** from the text regexes, which were latent false-positive
+     traps (the old regex kept `\b401\b`).
+  3. **Broadened the prose fallback** `LIMIT_ERR_RE` to `weekly|daily|monthly|hourly` limits,
+     `hit your … limit`, `limit … resets`, and `resets Jul 12`-style (`resets \w+ \d`) dates,
+     for the rare no-structured-status case.
+  Verified against all 74 preserved cells of `.work/r1-grid-sonnet`: the fixed detector
+  flags 33 cells as `limit` (the 30 tk 429s + 3 tk-support session-limit 429s), **0 false
+  positives** (the 6 successful cql-403 cells are no longer flagged), and correctly leaves
+  8 genuine task-void errored cells (budget/tool_use) un-aborted. In the real grid the abort
+  would have fired on the first 429 (~02:18) and `--resume` would finish the rest after the
+  cap reset. `tsc -p tsconfig.json` clean.
+- **`buildOrder` now round-robins task families by repo (E-3 order-confound fix, reviewer-
+  accepted 2026-07-10 as extending v1 §4 arm-order interleaving to the task-family axis).**
+  New `orderTasksRoundRobin` groups tasks by `repo` (bank order preserved within each family
+  and across first-appearance), then interleaves families deterministically (atlas, tk, atlas,
+  tk, …); per-task arm interleaving is unchanged. So a mid-grid quota cap now degrades **both**
+  repos partially instead of zeroing one family. No randomness ⇒ `--resume` stays stable.
+  Verified: `tsc --noEmit` exit 0; dry-run step order alternates atlas/tk (longer 6-tk bucket
+  drains last).
 
 ## Adjacent-found (untouched — reported, not fixed; product code out of scope)
 
@@ -273,10 +301,36 @@ any conflict = `docs/design/measurement/MEASUREMENT-DESIGN-V2.md`. Scope was
   255 ms on a warm tk store), but E0's `timeout_rate` gate + configurable `--timeout`
   (default 60 s, well below 300 s) exist precisely to catch it cheaply. Product-side; NOT
   fixed.
-- **tk `stop_sequence` turn-1 death (E-3):** NOT root-caused. No tk paid cell was run
-  (constraint), and nothing in the read-only artifacts made the cause obvious. Reading the
-  sonnet tk voids only re-confirms `void_reason: is_error/stop_reason=stop_sequence`. Left
-  as an open precondition for a maintainer (diagnose before any tk paid cell).
+- **tk `stop_sequence` turn-1 death (E-3): ROOT-CAUSED 2026-07-10 (artifacts only, no
+  paid cell).** NOT tk-specific and NOT a prompt/CLAUDE.md/stop-sequence/recursion issue —
+  it was an **account-level 429 rate cap** (weekly limit) hit at the atlas→tk boundary,
+  which the grid's own limit-abort safeguard then failed to catch, so it burned the whole
+  tk block into 30 void cells. Evidence chain:
+  - Every dead tk cell's raw JSON is `is_error:true, api_error_status:429,
+    result:"You've hit your weekly limit · resets Jul 12 at 1pm", stop_reason:stop_sequence,
+    usage all-zero, num_turns:1, wall ~3 s`. `stop_reason:stop_sequence` is just how the
+    CLI labels a rejected-before-inference result — a red herring, not a prompt collision.
+  - The 30 failures fired in a 4-second-apart burst (02:16–02:20) right after atlas cells
+    that each ran 8–9 min. Instant cadence = rejections, not runs.
+  - Same tk tasks, same repo/CLAUDE.md, same `--max-budget-usd 3`, same
+    `bypassPermissions` **succeeded** at other times (e.g. `tk-support-github-channel.B.0`
+    exit 0, 208 s, 12 turns; `.A.0` 135 s, 21 turns). So it is temporal quota, not tk.
+  - `grid-plan.json` step order runs **all 5–6 atlas tasks before all 5 tk tasks** (bank
+    order; `buildOrder` interleaves only arms within a task, never task families). The
+    weekly cap ran out during the atlas block, so the loss landed entirely on tk — a fully
+    confounded result (atlas has data, tk has none), not a signal about tk.
+  - Discriminators for the ruled-out hypotheses: `--max-budget-usd` identical across arms
+    (atlas succeeded at $2.9); permission-mode identical; auth is a **shared account** with
+    per-cell isolated *config dirs* (isolated dir ≠ isolated quota) — same 429 pool; zero
+    tokens billed rules out any content/CLAUDE.md early-stop.
+  - **Why the existing safeguard didn't abort:** `run-grid.ts` already had a limit detector
+    (`cellFatalError`/`LIMIT_ERR_RE`, since 8c050758). Two gaps let the weekly-limit message
+    through: (1) `LIMIT_ERR_RE` listed `session|usage|rate limit` but **not `weekly limit`**;
+    (2) its `resets \d` alternative needs a digit right after "resets", but the text is
+    "resets **Jul** 12"; and (3) `cellFatalError` scanned only the `result` prose, never the
+    structured `api_error_status:429`. So no abort fired and the grid burned all remaining
+    cells. **FIXED** — see Deviations. (Underlying quota exhaustion is product/account-side,
+    NOT fixed; the harness now aborts on the first 429 and `--resume` finishes after reset.)
 
 ## Open questions
 
