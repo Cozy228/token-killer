@@ -360,6 +360,24 @@ artifact; correctness *judgment* stays out. LAW §0 corrected: "three sealed ind
 plus one context-loaded audit" (Run D not independent). Dead `CTX-DESIGN/CTX-IMPL` references fixed
 to `CONTEXA-*`.
 
+**P36 — Registers reconciled to LAW; Drift Register adopted; M-plan v2 proposed; landed by maintainer instruction.** `[2026-07-10]`
+Design-reconciliation round (work order `docs/build/DESIGN-RECONCILE-GOAL-PROMPT.md`): 6 sonnet
+collectors → 6 opus drift analysts → Fable synthesis/arbitration → Codex gpt-5.6-sol ultra Gate A
+(2 substantive rounds: 16 + 7 findings, ALL integrated; round-3 verification and Gate B delegated
+to the maintainer — prompt at `docs/build/CODEX-GATE-B-REVIEW-PROMPT.md` — after a quota limit,
+per the maintainer's "先落" instruction). New root `CONTEXA-DESIGN.md` / `CONTEXA-IMPL.md` replace
+the 2026-07-03 registers (archived `docs/archive/CONTEXA-*-20260703.md` with banners). Drift
+Register (32 findings, revision 3) = CONTEXA-IMPL Appendix A, NORMATIVE over the analyst files.
+Route = M-plan v2 (gate-first): keep+retrofit M1/M2 (R-slice "claim-serving integrity" = DR-01/02/
+03/04/05/06/07/10/12/27d/31/32, precondition for serving factual claims), RETIRE M3 guide +
+projection kernel (proposed, LAW art. 1), re-scope M4 (receipted on-demand connectors, breadth
+gated V1/V2) + M5 (measurement + wedge perf), insert V0 (freeze O-22 WoZ protocol) → V1 → V2 → V3
++ FP-L/FP-O facet pilots. Serve staging: pre-V1 containment (sole carve-out = O-14 measurement +
+maintainer dogfooding, itself pending confirmation); V3 = first live-host stage; distribution
+unauthorized pre-V3. Notable Gate-A catches: summarizeBuild heuristic success verdict (R3 defect,
+O-23), worktree-shared shard × single-int generation (DR-06), push-block uncited gotchas (DR-32).
+**Maintainer batch of 9 rulings OPEN as O-31** — landing does not pre-decide them.
+
 ## Open
 
 - **O1 / O2** (pack §9) — value metric & joint story: partially reshaped by P15 (measurement is

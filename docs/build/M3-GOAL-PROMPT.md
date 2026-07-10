@@ -1,3 +1,9 @@
+---
+status: frozen
+review_after: 2026-08-01
+note: retirement PROPOSED by the 2026-07-10 design reconciliation (root CONTEXA-IMPL.md Appendix A, DR-14/DR-15 — LAW art. 1 forbids destination surfaces); maintainer ruling pending (OPEN O-31 item 1). Do NOT build from this work order while frozen.
+---
+
 # M3 Build Goal — prompt for implementing agents (single-track Opus; joint Fable+Codex review)
 
 You are an implementing agent for **ctx** M3 ("Humans see it" — `ctx guide`). You build assigned
