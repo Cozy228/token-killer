@@ -408,6 +408,15 @@ the intent was never a standing site):
 - **⑧ valid_from/valid_to: EQUIVALENT-SCHEME** (as-of recompute path, not necessarily wiring the
   columns); served_count/last_served cut stands (DR-09).
 - **⑨ summarizeBuild fix (O-23): scheduled EARLY.**
+- **Refinements ruled same day (follow-up round):** (a) ⑥ panel independence CONFIRMED — V0
+  protocol must encode: operator≠adjudicator (isolated sessions, adjudicator blind to operator
+  reasoning), Codex as heterogeneous vote, pre-registered scoring rubric, and an honest
+  self-adjudicated-panel limitation note; (b) ⑦ measurement redesign gets its OWN design round
+  producing "measurement design v2" (explicitly lists which P32 parts it supersedes + disposition
+  of the uncommitted tools/measurement protocol scripts) — HOW to design it = next conversation;
+  (c) serial RELAXED: V0 protocol drafting may proceed IN PARALLEL with the measurement redesign
+  (V1 execution still waits for both); (d) ④ clarified: first M4 batch = deepen git-LOCAL
+  carriers, GitHub-API connectors later.
 
 ## Open
 
