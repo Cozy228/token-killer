@@ -1,3 +1,8 @@
+---
+status: archived
+note: 0.2.0 real-machine acceptance evidence (cozyultra GBK box); zero live references; archived by /gc 2026-07-10.
+---
+
 # tk Real-Machine Acceptance Report
 
 **49 pass · 1 fail · 3 warn · 3 skip · 8 info**
