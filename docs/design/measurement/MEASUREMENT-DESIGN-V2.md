@@ -289,13 +289,14 @@ still waits for both.
 - [x] F1–F4 ruled by maintainer (§9, 2026-07-10); doc status → active; P-entry P38; O-14 updated
 - [x] E-9/E-15 product defects logged (O-32 timeouts, O-33 miss-guidance/relevance)
 - [ ] **E0 ground truth authored + gates frozen; E0 run PASSES** (§1b — hard gate on everything below)
-- [ ] tk stop_sequence harness defect diagnosed + fixed (E-3)
-- [ ] Claude runner records adoption columns (§4.3), adoption metric = before-first-edit (§1c)
-- [ ] analyze: grid-plan filtering + staleness hash + model-homogeneity assert (§2)
-- [ ] push-block imperative neutralized in measurement checkouts (§1c)
+- [ ] tk stop_sequence harness defect diagnosed + fixed (E-3) — builder read artifacts, cause not obvious; needs its own diagnosis round
+- [x] Claude runner records adoption columns (§4.3), adoption metric = before-first-edit (§1c) — @9f38bc2e; extraction verified against a real sonnet transcript; mcp_attached is 3-state (only positive detach voids)
+- [x] analyze: grid-plan filtering + staleness hash + model-homogeneity assert + max-void bar + RUN_INVALID + total-input primary (§2/§3) — @9f38bc2e, selftest 23/23
+- [x] push-block imperative neutralized in measurement checkouts (§1c) — make-sandbox default @9f38bc2e (`--keep-push-imperative` = named shipped condition); existing sandboxes need REBUILD to pick it up
 - [ ] prompt↔grader contract re-review of all 11 tasks; tk-install E-14 mismatch fixed; pilot tk pass column retracted (§1c)
 - [ ] owed prompt reviews done; `prompt_reviewed` flags reconciled (E-10)
-- [ ] scripts committed per §5; stale codex report.json regenerated or deleted
+- [x] scripts committed per §5 (@39c70db4 absorb + @9f38bc2e v2 preconditions); stale codex report.json: superseded — analyze now writes staleness hash; regenerate on next use
+- [ ] E0 tooling BUILT @9f38bc2e (e0-init-ground-truth + e0-bench-retrieval + mcp-client; smoke: 100% completion, p50 169ms, drill 8/8) — ground-truth `expected` sets + gate thresholds still owed by maintainer, then the gated E0 run
 
 ## 9. Forks — RULED by maintainer 2026-07-10 (P38)
 
