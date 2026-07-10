@@ -24,12 +24,48 @@ Working artifacts land under `tools/measurement/.work/` (git-ignored).
 
 | step | script | acceptance |
 |---|---|---|
+| 0. **E0 retrieval benchmark** (runs FIRST, no model spend) | `e0-init-ground-truth.ts` → `e0-bench-retrieval.ts` | §1b gates |
 | 1. propose candidates | `mine-tasks.ts` | A1 |
 | 2. build per-task arm sandboxes | `make-sandbox.ts` | A2/A3/A4 |
 | 3. run one cell (task×arm×rep) | `run-cell.ts` | A5 |
 | 4. grade one cell | `grade-cell.ts` | A5 |
 | 5. analyze all runs | `analyze.ts` | A6 |
 | 6. orchestrate the approved grid | `run-grid.ts` | maintainer |
+
+### 0. E0 — standalone ctx retrieval benchmark (V2 §1b, runs FIRST)
+
+E0 benchmarks the instrument directly — **no agent, no model spend** — and gates the
+whole ladder: a failing E0 stops spend and routes to product fixes (O-32 timeouts,
+O-33 miss-guidance). Two steps:
+
+```
+# a) generate the ground-truth SKELETON (maintainer then fills expected + gates BY HAND)
+tsx e0-init-ground-truth.ts --bank tools/measurement/task-bank-draft.jsonl \
+  --out tools/measurement/e0-ground-truth.jsonl
+# ANTI-LEAK: expected.files / expected.decisions are left EMPTY — the maintainer authors
+# them from the real fix commit; the script NEVER auto-fills from git (Q17).
+
+# b) run the benchmark against frozen make-sandbox stores (reuses arm-B .mcp.json)
+tsx e0-bench-retrieval.ts --ground-truth tools/measurement/e0-ground-truth.jsonl \
+  --sandboxes tools/measurement/.work/<grid>/tasks \
+  --out tools/measurement/.work/e0 --reps 10 --timeout 60000 \
+  [--tasks a,b] [--drill-floor 1.0] [--relevance-floor 0.5]
+```
+
+`--sandboxes` points at a dir with one make-sandbox output per task (i.e. a grid's
+`tasks/` dir). The bench spawns `ctx mcp` exactly as the arm-B wrapper does (run-from-
+source via tsx; command/args/env read from each task's `armB/.mcp.json`), speaks MCP
+JSON-RPC over stdio (dependency-free client, `mcp-client.ts`), and records per query ×
+rep: **completion** (`hit`/`miss`/`timeout`/`transport-error`), **latency** (p50/p95),
+returned handles, and a **drill-down** of each advertised handle. Output = `e0-rows.jsonl`
+(per-call rows) + `e0-report.json` (reliability, relevance where the ground truth is
+filled — else `ungated`, drillability, and **verbatim miss-message text** for the O-33
+check). Analysis is folded into the bench script (no separate `e0-analyze.ts`).
+
+Gates (§1b): `timeout_rate ≈ 0` · `drillability ≈ 1` · per-repo relevance floor (only
+when the ground truth + `--relevance-floor` are supplied; otherwise reported `UNGATED`).
+`miss` is classified by the response **text** (`does not resolve…`, `use task mode`), not
+`isError` — a no-seed miss returns `isError:false` with misleading guidance (O-33).
 
 ### 1. Mine candidates (read-only)
 ```
@@ -49,21 +85,56 @@ Produces `armA/` + `armB/` (byte-identical base, differing only in the 3 ctx kno
 `arm-delta.json`, `timecut-proof.json`, `cell{A,B}.env.json`, `meta.json`. Prints the
 A2/A3/A4 checks.
 
+**Condition hygiene (§1c):** by default the push-block **steering imperative**
+("Start tasks with the `context` MCP tool…") is stripped from arm B's managed block
+(the descriptive disclosure line + gotchas stay) — E-12 showed it turns `optional` into
+a steered condition. Pass `--keep-push-imperative` ONLY for an explicitly named `shipped`
+condition that measures the product's own onboarding.
+
 ### 3–4. Run + grade a cell
 ```
-tsx run-cell.ts   --taskdir <dir> --arm A --rep 0 --out .work/runs [--config-mode isolated|real]
+tsx run-cell.ts   --taskdir <dir> --arm A --rep 0 --out .work/runs \
+    [--config-mode isolated|real] [--protocol none|optional|forced]
 tsx grade-cell.ts --taskdir <dir> --runsdir .work/runs --arm A --rep 0
 ```
 Repeat for arm B and reps 0..M-1. **Interleave arm order per task** (§4/§7). Each
-cell writes `row.json` (M1–M6 + pass). Concatenate all `row.json` into `runs.jsonl`.
+cell writes `row.json` (M1–M6 + pass + adoption). Concatenate all `row.json` into
+`runs.jsonl`.
+
+**`--protocol` (E1/E2, §1c):**
+- `none` / `optional` → raw prompt (no preamble). `none` = arm A / no ctx; `optional` =
+  arm B, ctx present but nothing tells the agent (organic adoption).
+- `forced` → **arm B** gets the frozen `FORCED_PREAMBLE` (one `mcp__ctx__context` call
+  before edits); **arm A** gets the structurally matched `PLACEBO_PREAMBLE` (T2 guard —
+  keeps the delta ctx-only). Both texts are frozen in `lib.ts`. This is the E2 treatment.
+
+**Adoption columns** recovered per cell from the session transcript (§4.3): `ctx_calls`,
+`ctx_context_calls`, `ctx_search_calls`, `ctx_remember_calls`, `ctx_errors`,
+`ctx_before_first_edit` (**PRIMARY** — first ctx event vs first file-edit event),
+`ctx_before_first_command` (secondary), and tool-choice share (`read_calls` / `grep_calls`
+/ `glob_calls` / `edit_calls` / `bash_calls`). **MCP-connection assertion:** each treatment
+cell records `mcp_attached`; a positive silent-detach signal voids the row
+(`void_reason: "mcp not attached"`, infra-void). See the deviation log for the extraction
+path (transcript jsonl keyed by `session_id`) and the `mcp_attached` limitation.
 
 ### 5. Analyze
 ```
-tsx analyze.ts --runs .work/runs.jsonl --out .work/report.json
+tsx analyze.ts --runs .work/runs.jsonl --out .work/report.json [--grid-plan .work/grid-plan.json]
 ```
-Per-repo table + four-condition gate (guardrail ≥8/10 · median Δ>0 · 90% bootstrap CI
-excludes 0 · total-input not ballooned). `--selftest` reproduces the hand-computed
-fixture (A6).
+Per-repo table + gate (V2 §2/§3/§4). **PRIMARY metric = paired TOTAL input tokens** (F3);
+uncached is a reported audit column. Gate: guardrail pass_B ≥ pass_A on ≥8/11 tasks ·
+median Δtotal > 0 · 90% bootstrap CI excludes 0 · **no anti-gaming flag** (a total-input
+win with an uncached BLOWUP is flagged — the inversion of the v1 rule). Verdicts:
+`ESCALATE_TO_R2` / `HOLD` / `INSUFFICIENT_DATA` / **`RUN_INVALID`**.
+
+Guards (§2): pass `--grid-plan` (run-grid does this automatically) to filter **contaminated**
+rows (outside the plan's step list) and apply the **max-void bar** — a task×arm is valid
+iff ≥2/3 reps graded, and a repo's grid is valid iff infra-void ≤20% of planned cells,
+else `RUN_INVALID`. **Model-homogeneity** (E-7): mixed model labels ⇒ `RUN_INVALID`, no
+verdict. The report also records the source `runs.jsonl` row count + sha256 (staleness
+guard). Report shape is now `{ source, run_valid, run_invalid_reasons, models, repos }`.
+`--selftest` reproduces the hand-computed fixtures for the primary switch, anti-gaming,
+CI, homogeneity, max-void, and contamination (A6).
 
 ### 6. Run the approved grid
 ```
@@ -72,7 +143,10 @@ tsx run-grid.ts --bank tools/measurement/task-bank.jsonl --out tools/measurement
 ```
 Defaults to dry-run; `--execute` is required to launch paid cells. Draft banks
 require `--allow-draft`, so a maintainer explicitly accepts the risk before spend.
-Use `--resume` to skip existing graded rows after an interruption.
+Use `--resume` to skip existing graded rows after an interruption. For **E2** pass
+`--protocol forced` (arm B = forced preamble, arm A = matched placebo — §1); the default
+`none` keeps the raw-prompt A/B. run-grid passes `--grid-plan` to `analyze` so the
+contamination + max-void guards fire automatically.
 
 ## Codex protocol/adoption runner (E1 secondary)
 

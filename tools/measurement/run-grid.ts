@@ -40,6 +40,7 @@ interface Flags {
   reps: number;
   configMode: "isolated" | "real";
   model: string; // pinned model — used for BOTH arms (Q4: only ctx presence varies)
+  protocol: "none" | "optional" | "forced"; // E2 uses forced (B=forced, A=placebo)
   execute: boolean;
   allowDraft: boolean;
   resume: boolean;
@@ -63,12 +64,19 @@ function parseFlags(argv: string[]): Flags {
   if (configMode !== "isolated" && configMode !== "real") {
     throw new Error("--config-mode must be isolated or real");
   }
+  const protocol = (raw.protocol ?? "none") as Flags["protocol"];
+  if (!["none", "optional", "forced"].includes(protocol)) {
+    throw new Error("--protocol must be none, optional, or forced");
+  }
   return {
     bank: resolve(raw.bank ?? join(WORKSPACE, "tools", "measurement", "task-bank-draft.jsonl")),
     out: resolve(raw.out ?? join(WORKSPACE, "tools", "measurement", ".work", "grid")),
     reps: raw.reps ? Number(raw.reps) : 3,
     configMode,
     model: raw.model ?? "claude-opus-4-8", // design §4 default; both arms share it
+    // E2 (§1): pass --protocol forced so arm B gets the FORCED preamble and arm A the
+    // matched PLACEBO. Default `none` keeps the raw-prompt A/B (backward compatible).
+    protocol,
     execute: raw.execute === "true",
     allowDraft: raw["allow-draft"] === "true",
     resume: raw.resume === "true",
@@ -235,6 +243,10 @@ function printPlan(rows: TaskBankRow[], flags: Flags, steps: Step[]): void {
   console.log(`config-mode: ${flags.configMode}`);
   console.log(`model: ${flags.model} (both arms — only ctx presence varies)`);
   console.log(
+    `protocol: ${flags.protocol}` +
+      (flags.protocol === "forced" ? " (arm B=forced preamble, arm A=matched placebo — E2)" : ""),
+  );
+  console.log(
     `max budget exposure: $${cells * 3} (${cells} cells x $3 cap; actual << this on cheaper models)`,
   );
   console.log(`mode: ${flags.execute ? "EXECUTE" : "DRY-RUN"}`);
@@ -264,6 +276,7 @@ function main(): number {
     reps: flags.reps,
     configMode: flags.configMode,
     model: flags.model,
+    protocol: flags.protocol,
     steps,
   });
 
@@ -317,6 +330,8 @@ function main(): number {
       flags.configMode,
       "--model",
       flags.model,
+      "--protocol",
+      flags.protocol,
     ]);
     // Safeguard 2: systemic errors (auth or account limit) are account-global — if
     // a cell hits one, abort rather than burn the rest (all fail identically, as the
@@ -348,7 +363,15 @@ function main(): number {
   const runRows = collectRows(join(flags.out, "runs"));
   const runsJsonl = join(flags.out, "runs.jsonl");
   writeJsonl(runsJsonl, runRows);
-  mustRun("analyze", "analyze.ts", ["--runs", runsJsonl, "--out", join(flags.out, "report.json")]);
+  mustRun("analyze", "analyze.ts", [
+    "--runs",
+    runsJsonl,
+    "--out",
+    join(flags.out, "report.json"),
+    // Pass the grid-plan so analyze can filter contaminated rows + apply the max-void bar (§2).
+    "--grid-plan",
+    join(flags.out, "grid-plan.json"),
+  ]);
   console.log(`\nDone. Report: ${join(flags.out, "report.json")}`);
   return 0;
 }

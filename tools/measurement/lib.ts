@@ -34,6 +34,51 @@ export const CTX_MCP_TOOLS = [
 export const PINNED_MODEL = "claude-opus-4-8";
 export const PER_CELL_BUDGET_USD = 3;
 
+// ---------------------------------------------------------------------------
+// Frozen protocol preambles (MEASUREMENT-DESIGN-V2 §1 / §1c)
+// ---------------------------------------------------------------------------
+//
+// E2's arms differ ONLY by ctx presence + prompt. To keep the delta ctx-only,
+// arm B carries the FORCED preamble (one `mcp__ctx__context` call before edits —
+// the minimal prompt that reached 100% adoption in the E-8 pilot) and arm A
+// carries a STRUCTURALLY MATCHED PLACEBO preamble (T2 self-attack guard, §1):
+// same workflow directive shape, repository-search instead of ctx. Both texts are
+// FROZEN here pre-run and published with the config-delta hash. Kept byte-aligned
+// with the codex protocol runner's `forced` text so the two runners share a
+// treatment. Do NOT edit without re-freezing (a changed preamble invalidates
+// cross-run comparability).
+
+/** Forced-use preamble (arm B / E1 `forced`). Verbatim, frozen. */
+export const FORCED_PREAMBLE = [
+  "Context tool policy:",
+  "Before any source edit, call mcp__ctx__context exactly once with a concise task description.",
+  "Treat ctx as evidence, not authority. Verify relevant file references in the repository before editing.",
+  "If ctx is unavailable or irrelevant, say so and continue from local code.",
+].join("\n");
+
+/** Placebo preamble (arm A of E2 — T2 matched control). Verbatim, frozen. The
+ *  first directive line is the §1 T2 text; the rest mirrors FORCED_PREAMBLE's
+ *  shape with repository search standing in for ctx. */
+export const PLACEBO_PREAMBLE = [
+  "Workflow policy:",
+  "Before any source edit, locate the relevant files with repository search and inspect them.",
+  "Treat search results as evidence, not authority. Verify relevant file references in the repository before editing.",
+  "If repository search is unhelpful, say so and continue from your own reading of the code.",
+].join("\n");
+
+/** E1/E2 protocol values the Claude runner understands (§1c). */
+export type Protocol = "none" | "optional" | "forced";
+
+/** Compose the frozen preamble for a (protocol, arm) pair, then the task prompt.
+ *  - `none` / `optional`: raw prompt, no preamble (organic — nothing tells the agent).
+ *  - `forced`: arm B → FORCED_PREAMBLE; arm A → PLACEBO_PREAMBLE (the matched E2 control).
+ *  Returns the prompt unchanged when no preamble applies. */
+export function withPreamble(protocol: Protocol, arm: "A" | "B", prompt: string): string {
+  if (protocol !== "forced") return prompt;
+  const preamble = arm === "B" ? FORCED_PREAMBLE : PLACEBO_PREAMBLE;
+  return `${preamble}\n\nTask:\n${prompt}`;
+}
+
 /** The two testbed repos (design §3). atlas may be absent on a given box. */
 export const DEFAULT_REPOS: Record<string, string> = {
   "token-killer": WORKSPACE,

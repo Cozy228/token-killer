@@ -179,3 +179,116 @@ prompt.
   token gives literal A7.
 - Run the grid (interleave arm order per task), then `analyze` → four-condition
   verdict → R2 go/no-go (budget pre-approved, P32).
+
+---
+
+# v2 preconditions build (2026-07-10) — MEASUREMENT-DESIGN-V2 §1b/§1c/§2/§3/§4
+
+Implements the SCRIPT-side preconditions of the ratified v2 design (P38). Authority on
+any conflict = `docs/design/measurement/MEASUREMENT-DESIGN-V2.md`. Scope was
+`tools/measurement/` ONLY — no `packages/` or `src/` product code was touched (P27).
+
+## Decisions (design left open)
+
+- **Adoption extraction path = the session transcript jsonl (verified), NOT stream-json.**
+  The work order flagged the fork (`--output-format stream-json` vs parsing the
+  transcript). Verified against the tool, no paid runs:
+  - `--output-format json`'s result object (real sonnet rows) carries `session_id` but
+    **no `mcp_servers` field and no tool-call events** — so the result alone cannot give
+    adoption or MCP-attach.
+  - The transcript jsonl `claude -p` writes under the (isolated) `CLAUDE_CONFIG_DIR`
+    (or real `~/.claude`) `/projects/<slug>/<session_id>.jsonl` DOES carry ordered
+    `assistant.message.content[] tool_use` blocks + `user … tool_result` blocks. A
+    type-scan of a real transcript confirmed the shape; `extractAdoption` parses it and,
+    run against `atlas-availability-page-parse.B.0`, reproduced ctx_calls=3, read=5,
+    grep=6, edit=1, first_ctx=4 < first_edit=26 ⇒ `ctx_before_first_edit=true`.
+  - `run-cell` keeps `--output-format json` for the authoritative M1–M6 (fully verified,
+    unchanged) and recovers adoption POST-RUN from the transcript keyed by `session_id`.
+- **`--protocol forced` implies arm B = FORCED, arm A = PLACEBO.** The flag values are
+  `none|optional|forced` per the order; the design's E2 also needs arm A's structurally
+  matched placebo (§1 T2). Rather than add a 4th flag value, `withPreamble(protocol,arm)`
+  maps `forced` → FORCED for B / PLACEBO for A. `none`/`optional` = raw prompt. Both
+  preamble texts are frozen exported consts in `lib.ts` (kept byte-aligned with the codex
+  runner's `forced` text so the two runners share a treatment).
+- **E0 analysis folded into `e0-bench-retrieval.ts`** (no separate `e0-analyze.ts`) — one
+  pass emits `e0-rows.jsonl` + `e0-report.json`. Simpler, and the report needs the rows
+  it just produced.
+- **E0 rides on make-sandbox arm-B stores.** The design says "one `ctx sync` per repo at
+  the task-bank SHA"; but bank tasks in one repo have DIFFERENT fix-parent SHAs, each with
+  its own make-sandbox `armB` frozen store + `.mcp.json`. E0 reuses those per-task stores
+  (`--sandboxes <tasksdir>`, reading each task's `cellB.env.json` → `armB/.mcp.json`),
+  spawning `ctx mcp` with the EXACT arm-B wrapper recipe. This guarantees the benchmark
+  hits the same frozen index the agent would. Verified end-to-end against a freshly-built
+  tk sandbox: 100% completion, p50 169 ms / p95 255 ms, drillability 8/8, gated relevance
+  computed.
+- **E0 completion is classified by response TEXT, not `isError`.** Verified: a no-seed
+  miss returns `isError:false` with the O-33 "…use task mode" guidance. `mcp-client.ts`
+  matches miss markers (`does not resolve to a known entity`, `not indexed`, `use task
+  mode`, …) and captures the verbatim text for the O-33 check.
+- **E0 child env scrubs model keys.** `ctx mcp` refuses to START with a model key set
+  (`assertNoEgress`, M14). The client deletes `ANTHROPIC_API_KEY` / `CLAUDE_CODE_OAUTH_TOKEN`
+  / `OPENAI_API_KEY` / `GEMINI_API_KEY` before spawn.
+- **E0 handle parse requires a digit.** ctx handles are short base36-ish ids (`c3d118`);
+  the literal `[handle]` word in guidance text would otherwise be counted and fail
+  drill-down. `parseHandles` keeps only `[…]` tokens containing a digit.
+- **Push neutralization strips ONLY the imperative line**, keeping the descriptive
+  disclosure line ("This project has a ctx context base…") + gotchas — per the work
+  order's literal "strip/neutralize the imperative sentence". (See Open questions for the
+  E1-`optional` descriptive-line debate.)
+- **Guardrail threshold = 8/11** (was 8/10 in v1). Expressed as the fraction `8/11` so a
+  scaled bank still yields ~8/11 (`ceil(8/11·11)=8`, `ceil(8/11·3)=3`).
+
+## Deviations (departed from the plan, and why)
+
+- **`analyze` report shape changed from an ARRAY to an OBJECT**
+  `{ source, run_valid, run_invalid_reasons, models, repos }`. Required by the staleness
+  guard (source row-count + sha256) and the run-level RUN_INVALID verdict (model
+  homogeneity is a grid-level property). `analyzeRuns` now returns `AnalysisResult` (was
+  `RepoReport[]`); `renderReport` takes the result. No in-repo consumer reads the old
+  array shape (run-grid only writes + prints it). The v1 `.work/report.json` files are
+  stale under the new shape — expected (they were already stale, E-6).
+- **`mcp_attached` cannot detect a silent no-attach when ctx is never called.** The
+  transcript has NO system/init handshake event (confirmed by type-scan). So attach is
+  inferred: a ctx `tool_result` error matching a detach pattern ⇒ `false` (⇒ infra-void
+  `"mcp not attached"`); any ctx call that got a real response (even a product error) ⇒
+  `true`; **no ctx call at all ⇒ `null` (indeterminate), NOT voided.** The design's
+  "silent-detach → void" is therefore only enforceable on the positive-detach signal.
+  Strict detection of a treatment cell that connected-but-was-never-called needs the
+  stream-json `system/init` `mcp_servers` list, which could not be verified without paid
+  spend (see Open questions). Conservative choice: flag, don't fabricate a void.
+- **Added an entry guard to `run-cell.ts`** (`import.meta.url === pathToFileURL(argv[1])`)
+  so `extractAdoption` can be imported for verification without executing `main()`.
+  Verified the guard still fires when run-grid invokes it as a subprocess.
+- **New shared file `mcp-client.ts`** (dependency-free MCP stdio JSON-RPC client). The
+  design implies a "hand-rolled minimal client, no new deps" — this is it, mirroring the
+  product shim's own no-SDK stance.
+
+## Adjacent-found (untouched — reported, not fixed; product code out of scope)
+
+- **O-33 confirmed:** a no-seed `context` miss returns `isError:false` with
+  `"…does not resolve to a known entity. Pass a [handle] …, or use task mode."` even when
+  the query WAS task mode — the E-15 circularity. Lives in `packages/core/src/select/
+  engine.ts`; E0 captures it verbatim. NOT fixed (product scope).
+- **O-32 (E-9) 300 s ctx timeouts:** not reproduced in this build's local probes (p95
+  255 ms on a warm tk store), but E0's `timeout_rate` gate + configurable `--timeout`
+  (default 60 s, well below 300 s) exist precisely to catch it cheaply. Product-side; NOT
+  fixed.
+- **tk `stop_sequence` turn-1 death (E-3):** NOT root-caused. No tk paid cell was run
+  (constraint), and nothing in the read-only artifacts made the cause obvious. Reading the
+  sonnet tk voids only re-confirms `void_reason: is_error/stop_reason=stop_sequence`. Left
+  as an open precondition for a maintainer (diagnose before any tk paid cell).
+
+## Open questions
+
+- **stream-json `system/init` verification.** Before the first paid grid, a maintainer
+  should run ONE cheap cell with `--output-format stream-json --verbose` to confirm the
+  init event lists `mcp_servers[{name,status}]`; if so, `run-cell` can adopt it for STRICT
+  silent-no-attach voiding (the one case the transcript can't cover). Until then,
+  `mcp_attached=null` on zero-ctx-call treatment cells is a known blind spot.
+- **E1 `optional` descriptive line.** §1c says "tools present, nothing tells the agent",
+  but the order scoped neutralization to the imperative sentence only. The block's first
+  line still discloses ctx exists. If the maintainer wants a truly silent `optional`, the
+  whole managed block should be stripped for that condition — a one-line change, deferred
+  pending a ruling.
+- **`prompt_reviewed` reconciliation + E-14 grader fix (§1c) + E0 ground-truth authoring**
+  remain maintainer-owned preconditions (not script work); untouched here.

@@ -24,6 +24,7 @@
  *   tsx make-sandbox.ts --task <id> --repo <path> --sha <fix-parent-sha>
  *       --at <ISO-T> --prompt <text|@file> --out <taskdir>
  *       [--accept-cmd <inline|@file>] [--smoke] [--memory-mode empty|asof]
+ *       [--keep-push-imperative]   # keep the push-block steering line (shipped cond.)
  */
 import { spawnSync } from "node:child_process";
 import { createHash } from "node:crypto";
@@ -55,6 +56,13 @@ import {
 const MANAGED_BLOCK_RE =
   /\n?<!--\s*ctx:managed:begin\s*-->[\s\S]*?<!--\s*ctx:managed:end\s*-->\n?/g;
 const PUSH_TARGETS = ["AGENTS.md", "CLAUDE.md"];
+
+/** The steering IMPERATIVE line inside the managed push block (E-12): it turns an
+ *  `optional` condition into a steered one. Neutralized in measurement checkouts by
+ *  default (§1c). Kept in sync with packages/core/src/push/block.ts HEADER_LINES[1]
+ *  — copied here (measurement must not import product code); the regex tolerates
+ *  minor whitespace drift so a header re-word does not silently un-neutralize. */
+const PUSH_IMPERATIVE_RE = /^Start tasks with the `context` MCP tool[^\n]*\n?/m;
 
 interface Flags {
   [k: string]: string | boolean;
@@ -124,6 +132,27 @@ function stripPushBlocks(repoDir: string): void {
     const after = before.replace(MANAGED_BLOCK_RE, "\n");
     if (after !== before) writeFileSync(p, after);
   }
+}
+
+/** Neutralize (strip) the steering imperative line INSIDE the managed push block,
+ *  in every measurement checkout by default (§1c). The block's descriptive first
+ *  line + gotchas stay (presence disclosure ≠ steering). Only touches text within a
+ *  managed block. Returns true if it changed anything. */
+function neutralizePushImperative(repoDir: string): boolean {
+  let changed = false;
+  for (const t of PUSH_TARGETS) {
+    const p = join(repoDir, t);
+    if (!existsSync(p)) continue;
+    const before = readFileSync(p, "utf8");
+    const after = before.replace(MANAGED_BLOCK_RE, (block) =>
+      block.replace(PUSH_IMPERATIVE_RE, ""),
+    );
+    if (after !== before) {
+      writeFileSync(p, after);
+      changed = true;
+    }
+  }
+  return changed;
 }
 
 /** Remove a `ctx` server from any existing .mcp.json (arm A cleanliness). */
@@ -268,6 +297,9 @@ function main(): number {
   const acceptCmd = f["accept-cmd"] ? resolveValue(String(f["accept-cmd"])).trim() : "";
   const smoke = Boolean(f.smoke);
   const memoryMode = f["memory-mode"] ? String(f["memory-mode"]) : "empty";
+  // §1c: strip the push-block steering imperative by default; keep it ONLY for an
+  // explicitly named `shipped` condition (measuring the product's own onboarding).
+  const keepPushImperative = Boolean(f["keep-push-imperative"]);
   const out = resolve(String(f.out));
 
   if (existsSync(out)) rmSync(out, { recursive: true, force: true });
@@ -323,6 +355,8 @@ function main(): number {
   // Place the ≤1KB push block (cwd = armB/repo, same store).
   const push = runCtx(["push"], { cwd: armBrepo, contexaHome, home: timecutHome });
   if (push.code !== 0) console.error(`warn: ctx push exit ${push.code}\n${push.stderr}`);
+  // §1c: neutralize the steering imperative unless this is the named shipped condition.
+  const imperativeNeutralized = keepPushImperative ? false : neutralizePushImperative(armBrepo);
 
   // 4) A3 time-cut proof: zero host-import memory rows + input-boundary facts.
   const storePath = findStore(contexaHome);
@@ -354,6 +388,8 @@ function main(): number {
     accept_cmd: acceptCmd,
     smoke,
     memory_mode: memoryMode,
+    keep_push_imperative: keepPushImperative,
+    push_imperative_neutralized: imperativeNeutralized,
   };
   writeJson(join(out, "meta.json"), meta);
   writeJson(join(out, "cellA.env.json"), {
@@ -378,6 +414,9 @@ function main(): number {
 
   // report
   console.log(`sandbox for task ${task} → ${out}`);
+  console.log(
+    `  push imperative: ${keepPushImperative ? "KEPT (shipped condition)" : imperativeNeutralized ? "neutralized ✓" : "not present"}`,
+  );
   console.log(`  A2 fix-unreachable: ${a2.fixUnreachable ? "✓" : "✗"} (${a2.note})`);
   console.log(
     `  A3 time-cut: host-import memory rows = ${proof.host_import_memory_rows} ` +

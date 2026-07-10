@@ -29,10 +29,20 @@
  *       [--model claude-opus-4-8] [--budget 3]
  *       [--config-mode isolated|real] [--config-dir <dir>]
  */
-import { cpSync, existsSync, mkdirSync, rmSync } from "node:fs";
+import { cpSync, existsSync, mkdirSync, readdirSync, readFileSync, rmSync } from "node:fs";
 import { homedir } from "node:os";
 import { join, resolve } from "node:path";
-import { ensureDir, PER_CELL_BUDGET_USD, PINNED_MODEL, readJson, run, writeJson } from "./lib.ts";
+import { pathToFileURL } from "node:url";
+import {
+  ensureDir,
+  PER_CELL_BUDGET_USD,
+  PINNED_MODEL,
+  type Protocol,
+  readJson,
+  run,
+  withPreamble,
+  writeJson,
+} from "./lib.ts";
 
 interface CellEnv {
   arm: "A" | "B";
@@ -66,6 +76,26 @@ export interface CellRow {
   is_error: boolean;
   stop_reason: string | null;
   permission_denials: number;
+  // ---- adoption columns (V2 §1c / §4.3) — recovered from the session transcript ----
+  protocol: Protocol; // preamble condition this cell ran under
+  session_id: string | null; // from the result JSON; keys the transcript jsonl
+  ctx_calls: number; // all mcp__ctx__* tool_use blocks
+  ctx_context_calls: number;
+  ctx_search_calls: number;
+  ctx_remember_calls: number;
+  ctx_errors: number; // ctx tool_results with is_error (product errors incl. detach)
+  read_calls: number;
+  grep_calls: number;
+  glob_calls: number;
+  edit_calls: number; // Edit/Write/MultiEdit/NotebookEdit
+  bash_calls: number;
+  first_ctx_event: number | null; // 1-based tool_use index of the first ctx call
+  first_edit_event: number | null;
+  first_command_event: number | null;
+  ctx_before_first_edit: boolean | null; // PRIMARY adoption flag (§1c) — null if no ctx call
+  ctx_before_first_command: boolean | null; // secondary
+  mcp_attached: boolean | null; // did the ctx server actually attach? null = indeterminate
+  transcript_found: boolean;
   // graded later by grade-cell (kept separate from is_error — §2 M2)
   pass: boolean | null;
   void_reason?: string;
@@ -106,6 +136,7 @@ function parseResult(stdout: string): {
   is_error: boolean;
   stop_reason: string | null;
   permission_denials: number;
+  session_id: string | null;
 } | null {
   // --output-format json prints a single JSON object (may be preceded by warnings
   // on stderr — we only read stdout). Be lenient: find the last JSON object.
@@ -143,7 +174,166 @@ function parseResult(stdout: string): {
     is_error: obj.is_error === true,
     stop_reason: (obj.stop_reason as string) ?? null,
     permission_denials: denials,
+    session_id: typeof obj.session_id === "string" ? obj.session_id : null,
   };
+}
+
+// ---------------------------------------------------------------------------
+// Adoption extraction (V2 §1c / §4.3)
+// ---------------------------------------------------------------------------
+//
+// EXTRACTION PATH (verified-against-tool, logged in implementation-notes): the
+// authoritative M1–M6 result is read from `--output-format json` (unchanged, fully
+// verified). Adoption is recovered POST-RUN from the session transcript jsonl that
+// `claude -p` writes under the (isolated) CLAUDE_CONFIG_DIR / (real) ~/.claude —
+// keyed by the result's `session_id`. A type-scan of real sonnet transcripts
+// confirmed: assistant messages carry `message.content[]` with `tool_use` blocks
+// (name = "mcp__ctx__context" | "Read" | "Grep" | "Edit" | "Bash" | …) in order,
+// and user messages carry matching `tool_result` blocks (`tool_use_id`, `is_error`).
+// The transcript has NO system/init event, so the ctx MCP handshake is NOT directly
+// visible; `mcp_attached` is inferred from ctx tool activity (see below).
+
+interface Adoption {
+  ctx_calls: number;
+  ctx_context_calls: number;
+  ctx_search_calls: number;
+  ctx_remember_calls: number;
+  ctx_errors: number;
+  read_calls: number;
+  grep_calls: number;
+  glob_calls: number;
+  edit_calls: number;
+  bash_calls: number;
+  first_ctx_event: number | null;
+  first_edit_event: number | null;
+  first_command_event: number | null;
+  ctx_before_first_edit: boolean | null;
+  ctx_before_first_command: boolean | null;
+  mcp_attached: boolean | null;
+  transcript_found: boolean;
+}
+
+const EMPTY_ADOPTION: Adoption = {
+  ctx_calls: 0,
+  ctx_context_calls: 0,
+  ctx_search_calls: 0,
+  ctx_remember_calls: 0,
+  ctx_errors: 0,
+  read_calls: 0,
+  grep_calls: 0,
+  glob_calls: 0,
+  edit_calls: 0,
+  bash_calls: 0,
+  first_ctx_event: null,
+  first_edit_event: null,
+  first_command_event: null,
+  ctx_before_first_edit: null,
+  ctx_before_first_command: null,
+  mcp_attached: null,
+  transcript_found: false,
+};
+
+const EDIT_TOOLS = new Set(["Edit", "Write", "MultiEdit", "NotebookEdit"]);
+// A tool_result error text that means the ctx server never attached (vs a normal
+// product-level guidance error, which still proves the server responded).
+const MCP_DETACH_RE =
+  /no such tool|not connected|tool .* (?:not found|is not available|unavailable)|failed to connect|mcp server .* (?:not|failed)|unknown tool/i;
+
+/** Find `<projectsRoot>/<anySlug>/<sessionId>.jsonl` (one level deep). */
+function locateTranscript(projectsRoot: string, sessionId: string): string | null {
+  if (!existsSync(projectsRoot)) return null;
+  const target = `${sessionId}.jsonl`;
+  for (const slug of readdirSync(projectsRoot, { withFileTypes: true })) {
+    if (!slug.isDirectory()) continue;
+    const p = join(projectsRoot, slug.name, target);
+    if (existsSync(p)) return p;
+  }
+  return null;
+}
+
+function ctxSuffix(name: string): "context" | "search" | "remember" | null {
+  if (name === "mcp__ctx__context") return "context";
+  if (name === "mcp__ctx__search") return "search";
+  if (name === "mcp__ctx__remember") return "remember";
+  return null;
+}
+
+export function extractAdoption(projectsRoot: string, sessionId: string | null): Adoption {
+  if (!sessionId) return { ...EMPTY_ADOPTION };
+  const path = locateTranscript(projectsRoot, sessionId);
+  if (!path) return { ...EMPTY_ADOPTION };
+  const a: Adoption = { ...EMPTY_ADOPTION, transcript_found: true };
+  const ctxUseIds = new Set<string>();
+  let ctxDetach = false;
+  let toolIndex = 0;
+  for (const line of readFileSync(path, "utf8").split("\n")) {
+    const t = line.trim();
+    if (t.length === 0) continue;
+    let o: Record<string, unknown>;
+    try {
+      o = JSON.parse(t) as Record<string, unknown>;
+    } catch {
+      continue;
+    }
+    const msg = o.message as { content?: unknown } | undefined;
+    if (!msg || !Array.isArray(msg.content)) continue;
+    if (o.type === "assistant") {
+      for (const b of msg.content as Record<string, unknown>[]) {
+        if (b.type !== "tool_use") continue;
+        toolIndex += 1;
+        const name = typeof b.name === "string" ? b.name : "";
+        const suffix = ctxSuffix(name);
+        if (suffix) {
+          a.ctx_calls += 1;
+          if (suffix === "context") a.ctx_context_calls += 1;
+          else if (suffix === "search") a.ctx_search_calls += 1;
+          else a.ctx_remember_calls += 1;
+          if (a.first_ctx_event === null) a.first_ctx_event = toolIndex;
+          if (typeof b.id === "string") ctxUseIds.add(b.id);
+        } else if (name === "Read") a.read_calls += 1;
+        else if (name === "Grep") a.grep_calls += 1;
+        else if (name === "Glob") a.glob_calls += 1;
+        else if (EDIT_TOOLS.has(name)) {
+          a.edit_calls += 1;
+          if (a.first_edit_event === null) a.first_edit_event = toolIndex;
+        } else if (name === "Bash") {
+          a.bash_calls += 1;
+          if (a.first_command_event === null) a.first_command_event = toolIndex;
+        }
+      }
+    } else if (o.type === "user") {
+      for (const b of msg.content as Record<string, unknown>[]) {
+        if (b.type !== "tool_result") continue;
+        const id = typeof b.tool_use_id === "string" ? b.tool_use_id : "";
+        if (!ctxUseIds.has(id)) continue;
+        if (b.is_error === true) {
+          a.ctx_errors += 1;
+          const text =
+            typeof b.content === "string"
+              ? b.content
+              : Array.isArray(b.content)
+                ? (b.content as Record<string, unknown>[])
+                    .map((c) => (typeof c.text === "string" ? c.text : ""))
+                    .join(" ")
+                : "";
+          if (MCP_DETACH_RE.test(text)) ctxDetach = true;
+        }
+      }
+    }
+  }
+  a.ctx_before_first_edit =
+    a.first_ctx_event === null
+      ? null
+      : a.first_edit_event === null || a.first_ctx_event < a.first_edit_event;
+  a.ctx_before_first_command =
+    a.first_ctx_event === null
+      ? null
+      : a.first_command_event === null || a.first_ctx_event < a.first_command_event;
+  // MCP-attach inference (§1c). A detach error → not attached. Any ctx call that got
+  // a real response (even a product-level error) proves the server was there → attached.
+  // No ctx call at all → indeterminate (the transcript carries no init handshake).
+  a.mcp_attached = ctxDetach ? false : a.ctx_calls > 0 ? true : null;
+  return a;
 }
 
 function main(): number {
@@ -161,6 +351,11 @@ function main(): number {
   const runsDir = resolve(f.out as string);
   const model = f.model ?? PINNED_MODEL;
   const budget = f.budget ? Number(f.budget) : PER_CELL_BUDGET_USD;
+  const protocol = (f.protocol ?? "none") as Protocol;
+  if (!["none", "optional", "forced"].includes(protocol)) {
+    console.error(`invalid --protocol ${protocol} (none|optional|forced)`);
+    return 2;
+  }
 
   const meta = readJson<{ task: string; repo: string }>(join(taskdir, "meta.json"));
   const env = readJson<CellEnv>(join(taskdir, `cell${arm}.env.json`));
@@ -180,9 +375,13 @@ function main(): number {
     seedConfigDir(configDir);
   } // 'real' → leave CLAUDE_CONFIG_DIR unset (host auth; A7 caveat — see header)
 
+  // Apply the frozen protocol preamble (§1/§1c): forced→arm B gets FORCED, arm A the
+  // matched PLACEBO; none/optional→raw prompt. Byte-identical checkout otherwise.
+  const promptForCell = withPreamble(protocol, arm, env.prompt);
+
   const args = [
     "-p",
-    env.prompt,
+    promptForCell,
     "--output-format",
     "json",
     "--model",
@@ -237,6 +436,9 @@ function main(): number {
     is_error: false,
     stop_reason: null,
     permission_denials: 0,
+    protocol,
+    session_id: null,
+    ...EMPTY_ADOPTION,
     pass: null,
     raw_path: rawPath,
   };
@@ -258,19 +460,44 @@ function main(): number {
     row.is_error = parsed.is_error;
     row.stop_reason = parsed.stop_reason;
     row.permission_denials = parsed.permission_denials;
+    row.session_id = parsed.session_id;
     // Budget-cap / transport aborts are VOID (non-task reasons — §7), not a saving.
     if (parsed.stop_reason === "budget" || (parsed.is_error && row.m1_uncached === 0)) {
       row.void_reason = `is_error/stop_reason=${parsed.stop_reason}`;
     }
   }
+
+  // Adoption recovery (§1c / §4.3): read the session transcript for ctx usage.
+  // Projects root: isolated → <configDir>/projects; real → ~/.claude/projects.
+  const projectsRoot = configDir
+    ? join(configDir, "projects")
+    : join(homedir(), ".claude", "projects");
+  const adoption = extractAdoption(projectsRoot, row.session_id);
+  Object.assign(row, adoption);
+
+  // MCP-connection assertion (§1c): a treatment cell (arm B, or any non-`none`
+  // protocol) whose ctx server SILENTLY FAILED to attach is infra-void, not a
+  // "0 adoption" data point. We can only assert this positively on a detach signal
+  // (an mcp__ctx__* call that errored "not connected"); a cell that never called ctx
+  // is indeterminate (mcp_attached=null) and is NOT voided here — see notes.
+  const isTreatment = arm === "B" || protocol !== "none";
+  if (!row.void_reason && isTreatment && row.mcp_attached === false) {
+    row.void_reason = "mcp not attached";
+    row.is_error = true;
+  }
+
   writeJson(join(cellDir, "row.json"), row);
   console.log(
-    `cell ${meta.task} arm ${arm} rep ${rep}: exit=${res.code} ` +
+    `cell ${meta.task} arm ${arm} rep ${rep} [${protocol}]: exit=${res.code} ` +
       `M1_uncached=${row.m1_uncached} total=${row.m1_total_input} turns=${row.turns} ` +
-      `cost=$${row.cost_usd.toFixed(4)} is_error=${row.is_error}` +
+      `cost=$${row.cost_usd.toFixed(4)} is_error=${row.is_error} ` +
+      `ctx=${row.ctx_calls}(ctx<edit=${row.ctx_before_first_edit}) mcp=${row.mcp_attached}` +
       (row.void_reason ? ` VOID(${row.void_reason})` : ""),
   );
   return 0;
 }
 
-process.exitCode = main();
+// Only run when invoked directly (so extractAdoption can be imported for tests).
+if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) {
+  process.exitCode = main();
+}
