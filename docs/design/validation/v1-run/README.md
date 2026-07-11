@@ -49,7 +49,7 @@ purpose: >
 - [x] Case 4 — token-killer#57 (operated 2026-07-12)
 - [x] Case 5 — token-killer#47 (operated 2026-07-12)
 - [x] Case 6 — token-killer#53 (operated 2026-07-12)
-- [ ] Case 7 — token-killer#52
+- [x] Case 7 — token-killer#52 (operated 2026-07-12)
 - [ ] Case 8 — token-killer#51
 - [ ] Case 9 — atlas#18
 - [ ] Case 10 — atlas#8
