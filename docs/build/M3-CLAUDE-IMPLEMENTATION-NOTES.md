@@ -69,6 +69,23 @@ designed — the canvas stays DOM-comfortable because the budget says so, not by
   (`listMemoryEntries` LEFT JOINs it for free). This keeps the guide airtight read-only with zero
   core-store change.
 
+## Reviewer round — defects fixed (2026-07-11)
+
+- **D1: reload / skin-switch killed the session (reproduced by reviewer).** `main.tsx` fires
+  `navigator.sendBeacon("api/close")` on `pagehide`, which fires on EVERY navigation (F5, `?skin=`
+  URL change), not just tab close — and the server closed IMMEDIATELY on `/api/close`. FIX: the
+  beacon now SCHEDULES teardown after a grace window (`graceMs`, default 4s); ANY subsequent
+  token-authorized request cancels the pending close (`cancelPendingClose()` runs after auth passes
+  for every non-close route). A reload reconnects within the window and survives; a real tab close
+  (nothing reconnects) still tears down within the window. Idle-timeout semantics unchanged.
+  Tests: `guide-server.test.ts` now has "beacon with NO follow-up tears down after grace" and
+  "beacon followed by a request within grace keeps the server up" (both green). `packages/cli/src/guide/server.ts`.
+- **D2: React Flow MiniMap/Controls rendered default-light (white square on dark skins).** CHOICE:
+  themed via tokens (not hidden) so the chrome FOLLOWS `data-skin` automatically — `maskColor`/
+  node/background driven by `--bg`/`--surface`/`--hairline` in `app.css` (`.react-flow__minimap*`,
+  `.react-flow__controls-button`). Chrome stays neutral (no status hues); one rule set covers all 4
+  skins, which keeps the C11 design-layer-only invariant intact. Verified present in the built CSS.
+
 ## Deviations (departures from the plan + why)
 
 - **Design authority adopted mid-3a (2026-07-11)** — the reviewer added
@@ -144,6 +161,16 @@ Suites: core (516 pass / 5 pre-existing living-repo fails — see Adjacent-found
 - **`ctx guide --project <dir>`** — the guide command reads the project dir from the CLI `RunIo`
   (cwd default), not a `--project` flag (only `mcp` parses `--project`). `--fixture`/`--export`
   work; wiring `--project` for guide is a one-line follow-up if wanted.
+
+## Accepted behavior (recorded for the maintainer, no action)
+
+- **Idle-timeout kills an OPEN-but-unused tab after >10min (no client keepalive).** By design:
+  "on demand, not a standing destination" (brief §2) — the guide is meant to be transient. There is
+  no heartbeat/keepalive, so a tab left open and idle past `idleMs` (default 10 min) sees the server
+  self-shut; the empty-state copy tells the user to re-run `ctx guide`. Considered and kept as the
+  intended ephemerality; flagging it so the maintainer sees it was a deliberate choice, not an
+  oversight. (Any authorized request — including the reload reconnect from D1 — resets the idle
+  timer, so an actively-used tab never hits this.)
 
 ## Open questions
 

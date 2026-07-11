@@ -185,6 +185,26 @@ table.data td.num { font-family: var(--font-mono); font-variant-numeric: tabular
 .empty { color: var(--ink-dim); }
 .empty .cli { margin-top: 8px; }
 
+/* React Flow chrome — themed via tokens so it FOLLOWS data-skin (defect fix:
+   the minimap/controls otherwise render default-light — a glaring white square on
+   dark skins, breaking the neutral-chrome rule). Chrome only; never status hues. */
+.react-flow__minimap {
+  background: var(--surface) !important;
+  border: var(--hairline-style);
+  border-radius: var(--radius-panel);
+}
+.react-flow__minimap-mask { fill: var(--bg); fill-opacity: 0.55; }
+.react-flow__minimap-node { fill: var(--hairline); stroke: none; }
+.react-flow__controls { box-shadow: var(--shadow-float); border-radius: var(--radius-chip); overflow: hidden; }
+.react-flow__controls-button {
+  background: var(--surface-2);
+  color: var(--ink);
+  fill: var(--ink);
+  border-bottom: var(--hairline-style);
+}
+.react-flow__controls-button:hover { background: var(--surface); }
+.react-flow__attribution { display: none; }
+
 @media (prefers-reduced-motion: reduce) {
   * { animation: none !important; transition: none !important; }
 }

@@ -25,6 +25,10 @@ export interface GuideServerOptions {
   distDir?: string;
   /** Idle auto-shutdown in ms (no request within the window → close). Default 10 min. */
   idleMs?: number;
+  /** Grace window (ms) after a disconnect beacon before teardown; any token-authorized
+   *  request within it cancels the pending close (so an F5 reload / `?skin=` navigation
+   *  survives). Default 4s. */
+  graceMs?: number;
   /** Bind host — always loopback; overridable only for tests. Default 127.0.0.1. */
   host?: string;
   /** Env the egress guard inspects (default process.env). */
@@ -83,6 +87,7 @@ export async function startGuideServer(opts: GuideServerOptions): Promise<GuideS
 
   const host = opts.host ?? "127.0.0.1";
   const idleMs = opts.idleMs ?? 10 * 60_000;
+  const graceMs = opts.graceMs ?? 4_000;
   const now = opts.now ?? Date.now;
   const token = randomBytes(24).toString("hex");
   const ctx: GuideContext = { store: opts.store, now };
@@ -101,10 +106,29 @@ export async function startGuideServer(opts: GuideServerOptions): Promise<GuideS
     idleTimer.unref?.();
   }
 
+  // Deferred disconnect teardown: `pagehide` fires on EVERY navigation (F5 reload,
+  // `?skin=` switch), not just a real tab close, so the beacon must not close
+  // synchronously. It schedules a grace-window close that ANY subsequent
+  // token-authorized request cancels — a reload reconnects and survives; a real
+  // close (nothing reconnects) still tears down within the window.
+  let pendingClose: NodeJS.Timeout | undefined;
+  function scheduleClose(): void {
+    if (pendingClose) clearTimeout(pendingClose);
+    pendingClose = setTimeout(() => void doClose(), graceMs);
+    pendingClose.unref?.();
+  }
+  function cancelPendingClose(): void {
+    if (pendingClose) {
+      clearTimeout(pendingClose);
+      pendingClose = undefined;
+    }
+  }
+
   async function doClose(): Promise<void> {
     if (closing) return closed;
     closing = true;
     if (idleTimer) clearTimeout(idleTimer);
+    if (pendingClose) clearTimeout(pendingClose);
     await new Promise<void>((r) => server.close(() => r()));
     resolveClosed();
     return closed;
@@ -198,10 +222,16 @@ export async function startGuideServer(opts: GuideServerOptions): Promise<GuideS
 
     const pathname = url.pathname;
 
-    // Disconnect beacon — the page fires this on unload; tears the server down.
+    // Any token-authorized request cancels a pending disconnect teardown: a reload
+    // or `?skin=` navigation reconnects within the grace window and survives. (The
+    // beacon route re-arms it below, so repeated beacons just reschedule.)
+    if (pathname !== "/api/close") cancelPendingClose();
+
+    // Disconnect beacon — the page fires this on EVERY unload (incl. reload). Defer
+    // teardown by the grace window instead of closing now; a reconnect cancels it.
     if (pathname === "/api/close") {
       res.writeHead(204).end();
-      void doClose();
+      scheduleClose();
       return;
     }
 

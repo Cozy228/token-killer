@@ -205,16 +205,46 @@ describe("ctx guide server — G-shutdown", () => {
     expect(true).toBe(true);
   });
 
-  test("disconnect beacon (/api/close) tears the server down", async () => {
+  test("disconnect beacon with NO follow-up tears the server down after grace", async () => {
     const root = makeTempDir("ctx-guide-disc-");
     const store = makeStore(root);
-    const server = await startGuideServer({ store, now: () => FIXTURE_NOW, idleMs: 60_000 });
+    const server = await startGuideServer({
+      store,
+      now: () => FIXTURE_NOW,
+      idleMs: 60_000,
+      graceMs: 120,
+    });
     const res = await http(server.origin, "/api/close", { token: server.token, method: "POST" });
     expect(res.status).toBe(204);
-    await server.closed;
+    await server.closed; // resolves once the grace window elapses with no reconnect
     store.close();
     cleanup(root);
     expect(true).toBe(true);
+  });
+
+  test("beacon followed by a request within grace keeps the server up (reload/skin-switch survives)", async () => {
+    const root = makeTempDir("ctx-guide-reload-");
+    const store = makeStore(root);
+    const server = await startGuideServer({
+      store,
+      now: () => FIXTURE_NOW,
+      idleMs: 60_000,
+      graceMs: 250,
+    });
+    let closed = false;
+    void server.closed.then(() => (closed = true));
+    // beacon (pagehide) then an immediate reconnect (the reloaded page fetching canvas)
+    expect(
+      (await http(server.origin, "/api/close", { token: server.token, method: "POST" })).status,
+    ).toBe(204);
+    expect((await http(server.origin, "/api/canvas", { token: server.token })).status).toBe(200);
+    // wait past the grace window; the reconnect must have cancelled the teardown
+    await new Promise((r) => setTimeout(r, 400));
+    expect(closed, "server stayed up across the reload").toBe(false);
+    expect((await http(server.origin, "/api/canvas", { token: server.token })).status).toBe(200);
+    await server.close();
+    store.close();
+    cleanup(root);
   });
 });
 
