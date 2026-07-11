@@ -19,6 +19,11 @@ import { freshnessLabel } from "../../src/serve/render.ts";
 import { needsReverification, SOURCE_FRESHNESS } from "../../src/serve/freshness.ts";
 import { remember } from "../../src/memory/remember.ts";
 import { renderAtTier } from "../../src/select/project.ts";
+import {
+  claimEnvelopeFor,
+  renderEnvelopeTerse,
+  ACCELERATOR_DISCLOSURE,
+} from "../../src/serve/envelope.ts";
 import { cleanupTempDir, makeGitFixture, makeTempDir } from "../helpers/sandbox.ts";
 
 const REAL_MIGRATIONS = fileURLToPath(new URL("../../src/store/migrations/", import.meta.url));
@@ -538,5 +543,94 @@ describe("R-slice Phase 3: restricted enforcement (DR-05 serve half, item 7)", (
     if (!r.ok) throw new Error("remember failed");
     expect(store.getMemory(r.entityId)!.disclosure).toBe("local");
     expect(store.ftsSearch("retries").length).toBeGreaterThanOrEqual(1);
+  });
+});
+
+describe("R-slice Phase 4: minimum claim envelope (DR-07/DR-01, item 6)", () => {
+  let root: string;
+  let repo: string;
+  let home: string;
+  let store: Store;
+
+  beforeEach(() => {
+    root = makeTempDir("ctx-rslice-env-");
+    repo = makeGitFixture(root);
+    home = join(root, "contexa-home");
+    store = openStore({ projectDir: repo, now: () => 1_000_000, home });
+  });
+  afterEach(() => {
+    store.close();
+    cleanupTempDir(root);
+  });
+
+  const mem = (
+    entityId: string,
+    origin: Parameters<Store["writeMemory"]>[0]["origin"],
+    extra?: Partial<Parameters<Store["writeMemory"]>[0]>,
+  ) => {
+    store.upsertEntity({
+      id: entityId,
+      kind: "memory",
+      name: entityId,
+      locator: { t: "store" },
+      gen: 1,
+    });
+    store.writeMemory({ entityId, gist: "note", origin, authority: "confirmed", ...extra });
+  };
+
+  test("A6 (DR-07): the envelope carries every §3 axis for a memory claim", () => {
+    mem("mem:e1", "remember");
+    const env = claimEnvelopeFor(store, store.getEntity("mem:e1")!);
+    expect(env.subject).toBe("mem:e1");
+    expect(env.evidence.uri).toBe("store:mem:e1");
+    expect(env.derivation).toBe("DECLARED");
+    expect(env.confidence).toBe("LIKELY");
+    expect(env.status).toBe("resolved");
+    expect(env.disclosure).toBe("local");
+    expect(typeof env.observedAt).toBe("number");
+    expect(env.freshness).toBe("content-hash");
+  });
+
+  test("A6 (DR-07): a restricted memory's envelope reports restricted status+disclosure", () => {
+    mem("mem:e2", "remember", { disclosure: "restricted" });
+    const env = claimEnvelopeFor(store, store.getEntity("mem:e2")!);
+    expect(env.status).toBe("restricted");
+    expect(env.disclosure).toBe("restricted");
+  });
+
+  test("A6 (DR-07): a drifted claim's freshness is unknown-until-reverified, status stale", () => {
+    mem("mem:e3", "remember");
+    store.setMemoryDrift("mem:e3", "body-changed");
+    const env = claimEnvelopeFor(store, store.getEntity("mem:e3")!);
+    expect(env.status).toBe("stale");
+    expect(env.freshness).toBe("unknown-until-reverified");
+  });
+
+  test("A6 (DR-07): ambiguous provenance renders '?' glyphs, never a likely fact", () => {
+    store.upsertEntity({
+      id: "file:x.ts",
+      kind: "file",
+      name: "x.ts",
+      locator: { t: "file", path: "x.ts" },
+      gen: 1,
+    });
+    const env = claimEnvelopeFor(store, store.getEntity("file:x.ts")!);
+    expect(env.derivation).toBeNull();
+    expect(env.confidence).toBeNull();
+    const terse = renderEnvelopeTerse(env);
+    expect(terse).toContain("‹?·?·");
+    expect(terse).toContain("file:x.ts");
+  });
+
+  test("A6 (DR-07): terse render is a compact one-line glyph string", () => {
+    mem("mem:e4", "remember");
+    const terse = renderEnvelopeTerse(claimEnvelopeFor(store, store.getEntity("mem:e4")!));
+    expect(terse).toContain("‹D·L·resolved·");
+    expect(terse.split("\n")).toHaveLength(1);
+  });
+
+  test("A10 (DR-01): the accelerator-not-validated disclosure exists", () => {
+    expect(ACCELERATOR_DISCLOSURE).toMatch(/accelerator/i);
+    expect(ACCELERATOR_DISCLOSURE).toMatch(/not validated|not a verified/i);
   });
 });

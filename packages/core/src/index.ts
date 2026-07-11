@@ -324,6 +324,9 @@ export { foldStatusAsOf } from "./memory/fold.ts";
 // R-slice Phase 2: per-source freshness decay class + re-verification (DR-04).
 export { SOURCE_FRESHNESS, needsReverification } from "./serve/freshness.ts";
 export type { DecayClass, SourceFreshnessPolicy } from "./serve/freshness.ts";
+// R-slice Phase 4: minimum claim envelope (DR-07/DR-31) + accelerator disclosure (DR-01).
+export { claimEnvelopeFor, renderEnvelopeTerse, ACCELERATOR_DISCLOSURE } from "./serve/envelope.ts";
+export type { ClaimEnvelope, ClaimEvidence } from "./serve/envelope.ts";
 
 // install/doctor (slice 1i): managed host writes + read-only verification.
 // Push-block placement REUSES slice 1h's push surface (placePushBlock /

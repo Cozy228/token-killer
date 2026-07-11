@@ -142,9 +142,42 @@ never searchable (gist words + secret all miss FTS); renders a cited withheld
 outcome, body never leaks; non-secret note unaffected. Core = 5 baseline failures;
 CLI 23 green.
 
-### Phase 4 — Claim envelope at the boundary
+### Phase 4 — Claim envelope at the boundary — PARTIAL (items 6, 10 green; item 8 not done)
 
-### Phase 5 — Tail
+DONE (green):
+- **DR-07 minimum claim envelope DTO + builder + terse render.** `serve/envelope.ts`:
+  `ClaimEnvelope` (subject, evidence{uri,revision?,hash?}, observedAt, derivation,
+  confidence, status, freshness, disclosure); `claimEnvelopeFor(store, entity)`
+  builds it for any entity (memory → row trust + DR-03 status + disclosure; other
+  kinds → strongest backing claim + stale-edge status); `renderEnvelopeTerse`
+  emits a 1-line glyph string (`‹D·L·resolved·content-hash·local› store:mem:…`),
+  `?` on an unknown axis (never a likely fact). Drifted/stale → freshness
+  `unknown-until-reverified`.
+- **DR-31 serialize through MCP under caller scope.** `packages/cli/src/mcp.ts`
+  attaches `structuredContent.envelopes` (built from the response diag's entity
+  ids, never re-selected) to every `context`/`search` tool result — the same
+  per-claim §3 axes an agent gets as a human (R6).
+- **DR-01 accelerator-not-validated disclosure.** `ACCELERATOR_DISCLOSURE` on every
+  MCP `structuredContent.disclosure`; the `context` tool description re-qualified
+  from bare "Start any task here" to name it an accelerator index, not a validated
+  oracle.
+
+Tests: 6 DR-07/DR-01 core cases (r-slice.test.ts, 34 total) + 1 DR-31 MCP case
+(cli mcp.test.ts, 24 total).
+
+NOT DONE (see "Where I stopped"):
+- **DR-32 push-block de-claiming (item 8, use-blocking).** Requires OMITTING the
+  factual gotcha lines entirely + rewording the "with provenance" header. The
+  push-block/1h-push tests are deeply coupled to gotcha rendering (~25 asserts);
+  the rewrite is bounded but sizeable and was not reached in this session. The
+  push block still renders `⚠ gist [handle]` gotchas + the "with provenance"
+  header on this branch — NOT yet compliant with DR-32.
+- Full serve-path rendering of the terse envelope inline in the human `text` was
+  NOT wired (would churn the golden transcripts); the envelope reaches the machine
+  consumer via MCP `structuredContent` (DR-31) and is available to any human-render
+  via `renderEnvelopeTerse`, but the default `context()` markdown text is unchanged.
+
+### Phase 5 — Tail — NOT DONE
 
 ## Deviations
 
