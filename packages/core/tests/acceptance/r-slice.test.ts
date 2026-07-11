@@ -17,6 +17,8 @@ import { expandSubgraph, linkConfidence } from "../../src/select/subgraph.ts";
 import { snapshotVisibility } from "../../src/select/visibility.ts";
 import { freshnessLabel } from "../../src/serve/render.ts";
 import { needsReverification, SOURCE_FRESHNESS } from "../../src/serve/freshness.ts";
+import { remember } from "../../src/memory/remember.ts";
+import { renderAtTier } from "../../src/select/project.ts";
 import { cleanupTempDir, makeGitFixture, makeTempDir } from "../helpers/sandbox.ts";
 
 const REAL_MIGRATIONS = fileURLToPath(new URL("../../src/store/migrations/", import.meta.url));
@@ -484,5 +486,57 @@ describe("R-slice Phase 2: freshness wiring (DR-04, item 3)", () => {
     // a snapshot past its TTL needs re-verification before backing a served claim.
     expect(needsReverification("github", 0)).toBe(false);
     expect(needsReverification("github", 16 * 60_000)).toBe(true);
+  });
+});
+
+describe("R-slice Phase 3: restricted enforcement (DR-05 serve half, item 7)", () => {
+  let root: string;
+  let repo: string;
+  let home: string;
+  let store: Store;
+  const SECRET = "sk-ABCDEFGHIJKLMNOP1234567890"; // openai-key shape (secretGuard)
+
+  beforeEach(() => {
+    root = makeTempDir("ctx-rslice-restrict-");
+    repo = makeGitFixture(root);
+    home = join(root, "contexa-home");
+    store = openStore({ projectDir: repo, now: () => 1_000_000, home });
+  });
+  afterEach(() => {
+    store.close();
+    cleanupTempDir(root);
+  });
+
+  test("A7 (DR-05): a secret-shaped MCP note is classified restricted (guard runs off-mainline)", () => {
+    const r = remember(store, { surface: "mcp", note: `deploy key is ${SECRET}` });
+    expect(r.ok).toBe(true);
+    if (!r.ok) throw new Error("remember failed");
+    expect(store.getMemory(r.entityId)!.disclosure).toBe("restricted");
+  });
+
+  test("A7 (DR-05): a restricted MCP note is NEVER searchable (body out of FTS/MCP)", () => {
+    const r = remember(store, { surface: "mcp", note: `token ${SECRET} rotate quarterly` });
+    if (!r.ok) throw new Error("remember failed");
+    // Neither the secret nor the surrounding gist words are indexed.
+    expect(store.ftsSearch("rotate")).toHaveLength(0);
+    expect(store.ftsSearch("quarterly")).toHaveLength(0);
+    expect(store.ftsSearch(SECRET)).toHaveLength(0);
+  });
+
+  test("A7 (DR-05): a restricted note renders a cited withheld outcome, never its body", () => {
+    const r = remember(store, { surface: "mcp", note: `secret ${SECRET} here`, detail: SECRET });
+    if (!r.ok) throw new Error("remember failed");
+    const entity = store.getEntity(r.entityId)!;
+    const rendered = renderAtTier(store, entity, r.handle, "full");
+    expect(rendered.text).toContain("withheld (restricted)");
+    expect(rendered.text).toContain(`[${r.handle}]`); // cited
+    expect(rendered.text).not.toContain(SECRET); // body never leaks
+  });
+
+  test("A7 (DR-05): a non-secret note is unaffected (local, searchable, rendered)", () => {
+    const r = remember(store, { surface: "mcp", note: "ordinary reviewable note about retries" });
+    if (!r.ok) throw new Error("remember failed");
+    expect(store.getMemory(r.entityId)!.disclosure).toBe("local");
+    expect(store.ftsSearch("retries").length).toBeGreaterThanOrEqual(1);
   });
 });

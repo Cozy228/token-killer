@@ -120,7 +120,27 @@ both endpoints resolvable `file:` entities, confidence band) not the exact pair.
 Tests: 4 DR-04 cases in r-slice.test.ts (24 total). Core = 5 baseline failures;
 CLI 23 green.
 
-### Phase 3 — Restricted enforcement
+### Phase 3 — Restricted enforcement (DR-05 serve half, item 7) — COMPLETE (green)
+
+- **Secret guard on EVERY write path.** `remember.ts` now runs
+  `scanMemoryForSecret` unconditionally (was mainline-only). A secret-shaped note
+  on ANY surface (cli/mcp/local) is classified `disclosure = restricted`. Mainline
+  still diverts to overlay + needs-review + remediation as before.
+- **Restricted bodies out of FTS/render/MCP.** A restricted note's body is NEVER
+  FTS-indexed (indexed as a redacted `⊘ withheld (restricted)` marker with empty
+  text) → never searchable via FTS/MCP `search`. `select/project.ts` withholds a
+  restricted memory body at render, emitting a cited withheld outcome
+  `⊘ withheld (restricted) [handle]` (the `[handle]` is the citation) — the body
+  (gist + detail) never reaches the consumer.
+- **Rebuild-durable.** `reindex.ts` re-derives the disclosure via the same
+  deterministic scan and applies the same FTS gate, so a restricted overlay note
+  stays withheld across a from-scratch reindex / fresh clone (no grammar change
+  needed — the scan is the source of truth).
+
+Tests: 4 DR-05 cases in r-slice.test.ts (28 total): MCP secret note → restricted;
+never searchable (gist words + secret all miss FTS); renders a cited withheld
+outcome, body never leaks; non-secret note unaffected. Core = 5 baseline failures;
+CLI 23 green.
 
 ### Phase 4 — Claim envelope at the boundary
 
