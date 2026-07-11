@@ -1,7 +1,7 @@
 ---
-status: frozen
+status: superseded
 review_after: 2026-08-01
-note: retirement REJECTED by maintainer 2026-07-10 (P37; LAW §11) — guide recast as an on-demand local render surface. This work order stays FROZEN until the O-25 re-scope (inherit R-slice claim envelope; G-provenance → LAW §3; blast-radius page gated with Artifact 2). Do NOT build from it before re-scope.
+note: SUPERSEDED 2026-07-11 (P39; DR-16 closed) by docs/build/M3-RESCOPE-BRIEF.md (ratified design) + docs/build/M3-GOAL-PROMPT-V2.md (active work order, acceptance checklist embedded there). Conforming gates (G-readonly/G-loopback/G-profile-budget/one-render-path) carried into v2; G-provenance vocabulary replaced by the LAW §3 claim contract (DR-17). Kept as frozen history.
 ---
 
 # M3 Acceptance — ctx "Humans see it" (`ctx guide`, reviewer-owned)

@@ -1,7 +1,7 @@
 ---
-status: frozen
+status: superseded
 review_after: 2026-08-01
-note: retirement REJECTED by maintainer 2026-07-10 (P37; LAW §11) — guide recast as an on-demand local render surface. This work order stays FROZEN until the O-25 re-scope (inherit R-slice claim envelope; G-provenance → LAW §3; blast-radius page gated with Artifact 2). Do NOT build from it before re-scope.
+note: SUPERSEDED 2026-07-11 (P39; DR-16 closed) by docs/build/M3-RESCOPE-BRIEF.md (ratified design) + docs/build/M3-GOAL-PROMPT-V2.md (active work order). Kept as frozen history. Do NOT build from it.
 ---
 
 # M3 Build Goal — prompt for implementing agents (single-track Opus; joint Fable+Codex review)

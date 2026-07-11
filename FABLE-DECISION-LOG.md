@@ -456,6 +456,46 @@ imperative neutralized; adoption metric = before-first-EDIT; prompt↔grader con
 Preconditions before any paid cell: V2 §8 (E0 pass = hard gate; tk harness fix, adoption
 instrumentation, push-block neutralization, contract re-review, owed prompt reviews E-10).
 
+**P39 — M3 re-scope ratified (R1–R9); O-25 closed; dual-implementer work order issued.** `[2026-07-11]`
+`docs/build/M3-RESCOPE-BRIEF.md` ratified as the M3 design authority (frozen). Rulings:
+- **R1** non-mutating maintained (FORK-1 re-affirmed) — curation actions render their exact CLI
+  command, never execute.
+- **R2** formal build: real `packages/guide` + guide server in `packages/cli`, not a throwaway
+  prototype; work on an M3 branch, merge gated (below).
+- **R3** entry surface = flat flow canvas (understand-anything / GitNexus form: whole-graph tiles +
+  omnibox). UA precedent verified in `.research/`: React Flow canvas + ELK two-stage container
+  layout was their scaling answer — the wall is layout, not the rendering library.
+- **R4** old pages merge by category → three surfaces: **Canvas** (entry; absorbs Overview stats +
+  Search + global Decisions/History as lenses), **Subject** (biography-of-anything; absorbs Entity
+  Biography + scoped Decisions/History), **Inspector** (review queue / conflicts / push preview /
+  memory browser / health) + gated annex (Impact-Set w/ Artifact 2; Revision Compare; Serve Audit
+  blocked on the serve-log write path = O-36).
+- **R5** all seven approved pages carry as content obligations; none retired.
+- **R6** real data only, no mock: the guide renders the live store through in-process core. The
+  ClaimEnvelope LANDED same day (R-slice merged @162be034; `core/src/serve/envelope.ts` incl.
+  `renderEnvelopeTerse` glyphs) — the guide consumes the real envelope; fields still null or
+  compat-shadow (authority) render disclosed, never faked. No LLM narrative (generative guide stays
+  a gated follow-on; zero egress stands).
+- **R7** stack = React 19 + Vite + `@xyflow/react` + `elkjs` (agent fluency + React Flow maturity;
+  Svelte/Solid rejected on realized-advantage grounds). Canvas renderer sits behind a component
+  seam — a WebGL library (Sigma) is the named fallback if a dense full-graph lens ever becomes
+  product (it is not, per art. 1 + profile budgets).
+- **R8** design language by multi-model variant competition: input = product design ONLY (brief
+  §3–§4 + LAW §3), no aesthetic direction; Claude builder ×3–4 skins AND Codex GPT-5.6 sol-ultra
+  ×3–4 skins over identical routes + real data; maintainer adjudicates, grafts, deletes losers.
+  Old visual language discarded; only `open.ts` discipline (detached-open / CTX_NO_OPEN / 0600)
+  inherited.
+- **R9** snapshot export RETAINED: `ctx guide --export` = form A returning as form B's export mode
+  (same components, inlined JSON); the export-diff test (old C9 one-render-path) is binding.
+
+Work order = `docs/build/M3-GOAL-PROMPT-V2.md`, handed VERBATIM to both implementers (dual-track,
+not orchestrated); old M3-GOAL-PROMPT/M3-ACCEPTANCE stamped superseded (DR-16 closed). Merge gate:
+acceptance green + envelope consumption verified + comprehension quiz (R-slice precondition already
+satisfied). Adjacent findings routed: serve-log write path → O-36; engines mismatch (root 22.18 vs
+core/cli 22.16) → O-37. O-24's remaining design call ③ (extend the terse envelope to human
+`context()` text) intersects M3 — the guide IS the human render of the same envelope; the
+`context()`-text half stays a separate maintainer call.
+
 ## Open
 
 - **O1 / O2** (pack §9) — value metric & joint story: partially reshaped by P15 (measurement is
