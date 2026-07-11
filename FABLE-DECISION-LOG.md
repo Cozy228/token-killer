@@ -516,6 +516,20 @@ contract; **R16** dual-track IS the variant competition (one design per implemen
 in Codex's hands is VOID). Process lesson canonized in R11: a render surface's acceptance must
 include a real-store drive — fixture-green proved nothing.
 
+**P41 — V0 WoZ stage-1 protocol RATIFIED & FROZEN (O-22 closed).** `[2026-07-11]`
+`docs/design/validation/V0-WOZ-PROTOCOL.md` set to `status: frozen` with all six §11 parameters
+confirmed at defaults: repos = token-killer + atlas (≥2-repo substitute for LAW §8.1 "≥2 teams",
+per P37 ⑥/(a)); N=12 split 8+4; floor ≥40 lines across ≥3 files (excl. lockfiles/generated);
+5 questions per PR (one per class); adjudication window 7 days. Case list LOCKED in Appendix A
+with per-PR cutoffs. Two ratification facts recorded honestly: ① **all 12 cutoffs are
+merge-timestamp fallbacks** — zero review activity exists on any selected PR, so "knowable at
+first review" reads as "knowable at merge" for this run (pre-registered as a §10 limitation:
+inflates a pass, never a kill); ② **one maintainer edit at ratification** — atlas#16 (157,981-line
+bulk-import PR) swapped for atlas#1 as a near-zero-review-decision case (Appendix A replacement
+log). Kill rule unchanged from LAW §8.1: `<9/12` cases at ≥80% source-backed coverage, or ANY
+material false reassurance, kills the compiled-artifact shape (only the local continuity pilot
+FP-L survives on its own gate). Next: run the operator session (§6), then panel adjudication (§7).
+
 ## Open
 
 - **O1 / O2** (pack §9) — value metric & joint story: partially reshaped by P15 (measurement is

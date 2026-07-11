@@ -1,6 +1,7 @@
 ---
-status: draft
-review_after: 2026-07-25
+status: frozen
+frozen_on: 2026-07-11
+review_after: 2026-08-01
 purpose: >
   Pre-registered Wizard-of-Oz stage-1 experiment protocol for P2 substrate
   viability (PRODUCT-DESIGN §8.1 escalation ladder, stage 1). Tests whether real
@@ -312,13 +313,23 @@ limitation note":
   *confirm* narrowly; a pass at exactly 9/12 is weak evidence and should be read
   as "not killed," not "validated." Stage 2's ~100–150 PRs is where confirmation
   strength lives.
+- **All cutoffs are merge-fallback.** At freeze, none of the 12 selected PRs has
+  any recorded review activity (no reviews, no review comments, no non-bot
+  thread comments) — every cutoff degenerates to the §3 merge-timestamp
+  fallback. "What was knowable at first review" therefore reads as "what was
+  knowable at merge" for this entire run: admissible evidence extends to the
+  last pre-merge push, which is *more* generous to the sources than a true
+  first-review cutoff would be. A pass must be read with this inflation in
+  mind; a kill is unaffected (the sources failed even with the generous
+  window).
 
 ---
 
-## 11. Parameters awaiting freeze
+## 11. Parameters — FROZEN 2026-07-11
 
-The maintainer confirms or edits each at ratification. Each has a concrete
-default so the doc is freezable as-is; **no TBDs**.
+All six parameters CONFIRMED at maintainer ratification 2026-07-11 (P41), at
+their defaults, with one case-list edit (Appendix A replacement log). No
+parameter below may change for the duration of the run.
 
 | Parameter | Default | Notes |
 |---|---|---|
@@ -331,7 +342,48 @@ default so the doc is freezable as-is; **no TBDs**.
 
 ---
 
-*Freeze note: on maintainer ratification, set `status: frozen`, append the frozen
-PR list + cutoffs (§5), and record the ratification in FABLE-DECISION-LOG (next
-P-entry) and close OPEN O-22. After the first query runs, no parameter above may
-change (freeze_condition, §7.2 discipline).*
+*Freeze note: EXECUTED 2026-07-11 — status set to frozen, frozen case list
+appended (Appendix A), ratification recorded as FABLE-DECISION-LOG P41, OPEN
+O-22 closed. No parameter above may change (freeze_condition, §7.2 discipline).*
+
+---
+
+## Appendix A — Frozen case list (ratified 2026-07-11)
+
+Selected per §5 (merged, ≥40 changed lines across ≥3 files, most-recent-first,
+timestamp ties broken by changed-line count), from GitHub `czync/token-killer`
+and `czync/atlas`. Line/file counts below are raw GitHub totals (lockfile/
+generated exclusion applies at the floor check, not to these display numbers).
+Every cutoff is the §3 merge-timestamp fallback — no PR has recorded review
+activity (see §10 limitation).
+
+| Case | PR | Cutoff (UTC) | Size (lines/files) | Title |
+|---|---|---|---|---|
+| 1 | token-killer#90 | 2026-07-09T13:53:05Z | 221/11 | feat: add telemetry export endpoint |
+| 2 | token-killer#89 | 2026-07-09T06:09:56Z | 1987/15 | fix: preserve JVM recovery evidence |
+| 3 | token-killer#87 | 2026-07-08T09:01:09Z | 2533/22 | chore: raise Node minimum to 22.18 |
+| 4 | token-killer#57 | 2026-07-08T06:39:26Z | 13279/335 | feat: release 0.3.2 support, doctor, inspect hardening |
+| 5 | token-killer#47 | 2026-06-18T05:44:23Z | 41047/36 | token-killer 0.3.1 (+ Windows dogfood follow-ups) |
+| 6 | token-killer#53 | 2026-06-17T17:38:12Z | 758/5 | perf(inspect): single-pass scan + habits over one JSON.parse |
+| 7 | token-killer#52 | 2026-06-17T17:38:12Z | 453/5 | perf(inspect): let --since/--session reuse a per-event cross-run cache |
+| 8 | token-killer#51 | 2026-06-17T17:38:12Z | 421/4 | fix(optimize): scope triggered inspect to static-context only |
+| 9 | atlas#18 | 2026-06-30T18:00:33Z | 40607/349 | feat(atlas): 0.2.0 — resource-first portal, dev mock/live seam, zero-download E2E |
+| 10 | atlas#8 | 2026-06-20T08:21:37Z | 3088/85 | ci: verify GitHub Actions pipeline + husky |
+| 11 | atlas#2 | 2026-05-21T14:19:15Z | 3277/60 | Codex atlas v1 implementation |
+| 12 | atlas#1 | 2026-05-12T17:01:51Z | 46768/247 | Implement Atlas V1 context layer, infra plan, and guidance updates |
+
+**Floor rejections (nearest candidates):** token-killer#88 (31 lines < 40),
+token-killer#55 (2 files < 3), atlas#19 (6 lines / 2 files). No title-based
+exclusions applied; token-killer#87 judged NOT dependency-bump-only (2533 lines
+of substantive runtime/config change), retained.
+
+**Replacement log:** atlas#16 ("Codex/mvp source loop", 157,981 lines / 1,277
+files) was mechanically selected but **removed by maintainer edit at
+ratification** (§11 allows edits at ratification only): a bulk-import PR of
+that shape offers near-zero genuine review-decision questions and would pad
+the denominator. Replaced by the next-most-recent qualifying atlas PR not
+already selected: atlas#1. Recorded here so the case set is not presented as
+purely mechanical.
+
+The case set is LOCKED as of this appendix. Any mid-run replacement follows §5
+(same repo, next-most-recent qualifying, logged with reason).
