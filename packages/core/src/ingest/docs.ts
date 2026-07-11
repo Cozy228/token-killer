@@ -119,7 +119,7 @@ export class DocsAdapter implements SourceAdapter {
     const symbolMentions: PendingSymbolMention[] = [];
     const keyLinks: PendingKeyLink[] = [];
     const adrByNumber = new Map<string, string>();
-    const counts = { entities: 0, claims: 0 };
+    const counts = { entities: 0, claims: 0, blindSpots: 0 };
 
     // Phase 1: extract entities from every dirty file (all files on first run).
     for (const f of detail.dirtyFiles) {
@@ -158,7 +158,15 @@ export class DocsAdapter implements SourceAdapter {
 
     store.setCursor(SOURCE, JSON.stringify(detail.next), budget.now(), gen);
     store.publishGeneration(SOURCE);
-    return { source: SOURCE, complete: true, entities: counts.entities, claims: counts.claims };
+    return {
+      source: SOURCE,
+      complete: true,
+      entities: counts.entities,
+      claims: counts.claims,
+      // DR-27 disclosure half: unresolved doc→symbol mentions are surfaced as a
+      // NAMED blind spot, never a silent drop (O-16). Omitted when zero.
+      ...(counts.blindSpots > 0 ? { blindSpots: counts.blindSpots } : {}),
+    };
   }
 }
 
@@ -203,7 +211,7 @@ function extractFile(
   symbolMentions: PendingSymbolMention[],
   keyLinks: PendingKeyLink[],
   adrByNumber: Map<string, string>,
-  counts: { entities: number; claims: number },
+  counts: { entities: number; claims: number; blindSpots: number },
 ): void {
   const relPath = f.path;
   const lines = content.split("\n");
@@ -343,7 +351,7 @@ function resolveMentions(
   mentions: PendingMention[],
   index: PathIndex,
   gen: number,
-  counts: { entities: number; claims: number },
+  counts: { entities: number; claims: number; blindSpots: number },
 ): void {
   for (const m of mentions) {
     const resolved = resolveTarget(index, m.token);
@@ -418,7 +426,7 @@ function resolveSymbolMentions(
   store: Store,
   mentions: PendingSymbolMention[],
   gen: number,
-  counts: { entities: number; claims: number },
+  counts: { entities: number; claims: number; blindSpots: number },
 ): void {
   if (mentions.length === 0) return;
   const byQualified = new Map<string, string[]>();
@@ -433,9 +441,23 @@ function resolveSymbolMentions(
   // wins (an exact qualified spelling beats a bare-basename mention of the same
   // symbol). `setLink` upserts, so a later stronger match overwrites the link.
   const best = new Map<string, number>();
+  // DR-27 disclosure half (O-16): an unresolved backticked symbol mention was
+  // silently dropped (no claim, no conflict, no record). Pre-V1 the HONEST half
+  // proceeds: flag the affected relation as a NAMED blind spot (distinct
+  // unresolved tokens are counted + surfaced in the ingest envelope). The GATED
+  // half — durable unresolved-mention persistence + a cross-source re-resolution
+  // seam — is NEW substrate that stays V1-gated and is deliberately NOT built here.
+  const blindSpotTokens = new Set<string>();
   for (const m of mentions) {
     const resolved = resolveSymbol(byQualified, byName, m.token);
-    if (!resolved || resolved.dst === m.src) continue;
+    if (!resolved) {
+      if (!blindSpotTokens.has(m.token)) {
+        blindSpotTokens.add(m.token);
+        counts.blindSpots++;
+      }
+      continue; // suppressed relation, now NAMED — never a spurious reference link
+    }
+    if (resolved.dst === m.src) continue;
     const key = `${m.src} ${resolved.dst}`;
     const prev = best.get(key);
     if (prev !== undefined && prev >= resolved.confidence) continue;
@@ -502,7 +524,7 @@ function resolveKeyLinks(
   keyLinks: PendingKeyLink[],
   adrByNumber: Map<string, string>,
   gen: number,
-  counts: { entities: number; claims: number },
+  counts: { entities: number; claims: number; blindSpots: number },
 ): void {
   for (const link of keyLinks) {
     const dst = adrByNumber.get(link.adrNumber) ?? adrByNumber.get(String(Number(link.adrNumber)));

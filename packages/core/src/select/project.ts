@@ -82,6 +82,13 @@ export function renderAtTier(
 
   if (entity.kind === "memory") {
     const mem = store.getMemory(entity.id);
+    // DR-05 (serve half): a `restricted`-disclosure note NEVER renders its body
+    // (gist/detail) — relationship inference must not leak what direct access
+    // would deny. Emit only a cited withheld outcome ([handle] is the citation).
+    if (mem?.disclosure === "restricted") {
+      const text = `⊘ withheld (restricted) [${handle}]`;
+      return { tier: "skeleton", text, tokens: estimateTokens(text) };
+    }
     const gist = mem?.gist ?? entity.name;
     // Drift-honest surfacing (2c/B6): a memory that isn't `active` (e.g. an
     // anchor whose symbol drifted → `needs-review`) is flagged so the served

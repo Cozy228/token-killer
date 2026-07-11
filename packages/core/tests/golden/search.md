@@ -1,4 +1,4 @@
-# ctx · search: idempotency key — fresh
+# ctx · search: idempotency key — indexed
 **`matches`**
 idempotency note [m94fd4]
 Idempotency Rule payments.md:3-6 [d98ed3]

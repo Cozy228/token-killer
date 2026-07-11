@@ -191,6 +191,34 @@ describe("ctx mcp — generic stdio client fixture", () => {
     expect(text.toLowerCase()).toContain("idempotent");
   });
 
+  test("tools/call context → structuredContent carries claim envelopes + disclosure (DR-31/DR-01)", async () => {
+    const res = await client.request("tools/call", {
+      name: "context",
+      arguments: { task: "why must retry be idempotent" },
+    });
+    const sc = (
+      res.result as { structuredContent?: { disclosure?: string; envelopes?: unknown[] } }
+    ).structuredContent;
+    expect(sc).toBeDefined();
+    expect(sc!.disclosure).toMatch(/accelerator/i); // DR-01
+    expect(Array.isArray(sc!.envelopes)).toBe(true);
+    expect(sc!.envelopes!.length).toBeGreaterThanOrEqual(1);
+    const env = sc!.envelopes![0] as Record<string, unknown>;
+    // Every §3 axis reaches the machine consumer (DR-07/DR-31, R6).
+    for (const k of [
+      "subject",
+      "evidence",
+      "observedAt",
+      "derivation",
+      "confidence",
+      "status",
+      "freshness",
+      "disclosure",
+    ]) {
+      expect(env).toHaveProperty(k);
+    }
+  });
+
   test("tools/call search → ranked matches with handles", async () => {
     const res = await client.request("tools/call", {
       name: "search",

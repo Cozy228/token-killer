@@ -15,15 +15,19 @@
  */
 import { createInterface } from "node:readline";
 import {
+  ACCELERATOR_DISCLOSURE,
   assertNoEgress,
+  claimEnvelopeFor,
   createDefaultRegistry,
   openStore,
   RefreshEngine,
   serveContext,
   serveRemember,
   serveSearch,
+  type ClaimEnvelope,
   type RefreshReport,
   type ServeDeps,
+  type ServeResponse,
   type Store,
 } from "@contexa/core";
 
@@ -38,8 +42,10 @@ export const TOOLS = [
   {
     name: "context",
     description:
-      "Start any task here. Returns this project's context for a subject: decisions (why), " +
-      "history (what happened), memory (what we learned), each with a resolvable [handle]. " +
+      "Start any task here — a rebuildable accelerator index of cited sources, NOT a validated " +
+      "decision oracle (DR-01). Returns this project's context for a subject: decisions (why), " +
+      "history (what happened), memory (what we learned), each with a resolvable [handle] and a " +
+      "claim envelope (derivation/confidence/status/freshness/disclosure). " +
       "Pass `task` (natural language), `ref` (entity id / name), or a [handle] to drill down.",
     inputSchema: {
       type: "object",
@@ -122,6 +128,35 @@ function replyError(
   send(output, { jsonrpc: "2.0", id, error: { code, message } });
 }
 
+/**
+ * DR-31: serialize the minimum claim envelope for every served item through the
+ * MCP machine interface, under the caller's scope (this stdio session). The entity
+ * ids come from the response diag (never re-selected); each envelope carries the
+ * same per-claim evidence/derivation/confidence/status/freshness/disclosure a human
+ * gets, plus the DR-01 accelerator disclosure. R6: same claims, same citations,
+ * same UNKNOWN/restricted outcomes for an agent as for a person.
+ */
+function envelopesFor(deps: ServeDeps, response: ServeResponse): ClaimEnvelope[] {
+  const ids: string[] = [];
+  const seen = new Set<string>();
+  const add = (id: string): void => {
+    if (!seen.has(id)) {
+      seen.add(id);
+      ids.push(id);
+    }
+  };
+  for (const section of response.diag.sections ?? []) {
+    for (const item of section.items) add(item.entityId);
+  }
+  for (const item of response.diag.search?.items ?? []) add(item.entityId);
+  const envelopes: ClaimEnvelope[] = [];
+  for (const id of ids) {
+    const entity = deps.store.getEntity(id);
+    if (entity) envelopes.push(claimEnvelopeFor(deps.store, entity));
+  }
+  return envelopes;
+}
+
 async function callTool(deps: ServeDeps, name: string, args: Record<string, unknown>) {
   switch (name) {
     case "context":
@@ -183,6 +218,12 @@ export async function runMcpServer(opts: McpServerOptions): Promise<void> {
           }
           reply(output, id, {
             content: [{ type: "text", text: response.text }],
+            // DR-31/DR-01: the machine-readable claim envelopes + accelerator
+            // disclosure ride alongside the human text (R6 same-claim interface).
+            structuredContent: {
+              disclosure: ACCELERATOR_DISCLOSURE,
+              envelopes: envelopesFor(deps, response),
+            },
             isError: response.isError,
           });
         } catch (err) {

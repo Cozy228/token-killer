@@ -1,4 +1,4 @@
-# ctx · idempotency note — fresh
+# ctx · idempotency note — indexed
 retried payment must dedup on the idempotency key, not on wall-clock time [m94fd4]
 **`decisions`**
 Idempotency Rule payments.md:3-6 [d98ed3]

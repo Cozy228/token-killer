@@ -17,8 +17,15 @@ export type EntityKind =
   | "memory"
   | "concept";
 
-/** Claim authority ladder (CONTEXA-IMPL §2 CHECK constraint). */
+/** Claim authority ladder (CONTEXA-IMPL §2 CHECK constraint).
+ *  R-slice / DR-02: RETAINED as a compatibility shadow — the canonical trust
+ *  fields are `derivation` + `confidence` (see `store/trust.ts`). */
 export type Authority = "observed" | "derived" | "inferred" | "confirmed";
+
+// R-slice / DR-02 (LAW §3): the two orthogonal trust axes that replace the
+// conflated 4-value `authority` enum. `null` on either axis = unknown.
+export type { Derivation, Confidence, TrustClass } from "./trust.ts";
+import type { Derivation as _Derivation, Confidence as _Confidence } from "./trust.ts";
 
 /** Claim/link derivation method (CONTEXA-IMPL §2 `claims.method`). */
 export type ClaimMethod =
@@ -87,7 +94,11 @@ export interface Claim {
   carrier: string;
   locus: string | undefined;
   method: ClaimMethod;
+  /** Legacy shadow (DR-02). */
   authority: Authority;
+  /** Canonical trust axes (DR-02) — computed from carrier+method at insert. */
+  derivation: _Derivation | null;
+  confidence: _Confidence | null;
   at: number;
   gen: number;
 }
@@ -179,7 +190,11 @@ export interface MemoryEvent {
   carrier: string;
   locus: string | undefined;
   method: ClaimMethod;
+  /** Legacy shadow (DR-02). */
   authority: Authority;
+  /** Canonical trust axes (DR-02) — computed from carrier+method+actor. */
+  derivation: _Derivation | null;
+  confidence: _Confidence | null;
   at: number;
 }
 
@@ -193,10 +208,30 @@ export interface MemoryInput {
   // row's `observed`/`derived` must survive, not collapse to inferred|confirmed.
   authority: Authority;
   status?: MemoryStatus;
+  /**
+   * DR-05 disclosure permission class (default `local` — the local facet's
+   * no-egress posture, LAW §4). Enforcement lands in Phase 3.
+   */
+  disclosure?: Disclosure;
   /** C5 bitemporal validity — explicit only, never inferred. */
   validFrom?: number;
   validTo?: number;
 }
+
+/** DR-05 disclosure / permission class propagated from source (LAW §3/§4). */
+export type Disclosure = "local" | "shared" | "restricted";
+
+/**
+ * DR-03 per-claim status (LAW §3 status enum). A COMPUTED view over the scattered
+ * `links.stale` / `conflicts` / `memory.status` signals — never a stored column.
+ */
+export type ClaimStatus =
+  | "resolved"
+  | "conflicting"
+  | "stale"
+  | "unavailable"
+  | "restricted"
+  | "unknown";
 
 export interface MemoryRow {
   entityId: string;
@@ -205,9 +240,12 @@ export interface MemoryRow {
   origin: MemoryOrigin;
   sessionRef: string | undefined;
   authority: Authority; // 4-valued (R4) — carried verbatim through reindex
+  /** Canonical trust axes (DR-02) — derived from origin at write. */
+  derivation: _Derivation | null;
+  confidence: _Confidence | null;
+  /** DR-05 disclosure / permission class (default `local`). */
+  disclosure: Disclosure;
   status: MemoryStatus;
-  servedCount: number;
-  lastServed: number | undefined;
   /**
    * Anchor-drift annotation (S4): derived per-checkout index state, NOT an
    * event. The served `status` above is already the composition of the E2/E5

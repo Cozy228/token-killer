@@ -51,13 +51,20 @@ const SECTION_LABELS: Record<Exclude<SectionName, "subject">, string> = {
   conflicts: "conflicts",
 };
 
-/** Header freshness (§7): `fresh`, or `reconciling (git, docs)` when a source is
- *  still catching up / frozen. No refresh ran → `fresh` (nothing to reconcile). */
+/**
+ * Header INDEX state (§7; DR-04 honest header). This names the state of the
+ * rebuildable accelerator INDEX, never the freshness/truth of the served claims:
+ * `indexed` = the index has caught up (says nothing about whether a claim is
+ * still true — per-claim freshness is unknown-until-reverified and carried on the
+ * claim envelope), `index-catchup (git, docs)` = a source is still reconciling or
+ * frozen. The old `fresh` label was a false content-freshness claim (DR-04) and is
+ * gone: an up-to-date index is not a fresh fact.
+ */
 export function freshnessLabel(report: RefreshReport | undefined): string {
-  if (!report) return "fresh";
+  if (!report) return "indexed";
   const reconciling = [...report.pendingSources, ...report.frozenSources];
-  if (reconciling.length === 0) return "fresh";
-  return `reconciling (${[...new Set(reconciling)].sort().join(", ")})`;
+  if (reconciling.length === 0) return "indexed";
+  return `index-catchup (${[...new Set(reconciling)].sort().join(", ")})`;
 }
 
 function headerLine(subject: string, freshness: string): string {

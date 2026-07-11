@@ -17,6 +17,7 @@ import { shortHandleCandidate } from "../store/handles.ts";
 import type { Store } from "../store/store.ts";
 import type {
   Authority,
+  Disclosure,
   EntityKind,
   Facet,
   MemoryEventVerb,
@@ -373,15 +374,21 @@ export function remember(store: Store, input: RememberInput): RememberResult {
   let status: MemoryStatus = route.status;
   const actor = route.actor;
   let remediation: string | undefined;
-  if (zone === "mainline") {
-    const finding = scanMemoryForSecret(gist, input.detail);
-    if (finding.secret) {
-      // E4: never commit a secret-shaped note. Divert to the gitignored overlay as
-      // needs-review with a success-shaped remediation note (never a hard error).
-      zone = "overlay";
-      status = "needs-review";
-      remediation = secretRemediationNote(finding.cls as string);
-    }
+  // DR-05 (serve half): the secret guard runs on EVERY write path, not just
+  // mainline — an MCP/overlay note is host-agent input that can forward anywhere,
+  // so a secret-shaped body must be classified `restricted` there too (the old
+  // mainline-only scan left MCP/overlay notes indexed + renderable). A restricted
+  // note keeps a real `restricted` disclosure, its body is NEVER FTS-indexed
+  // (never searchable) and NEVER rendered (project.ts withholds it).
+  const finding = scanMemoryForSecret(gist, input.detail);
+  const restricted = finding.secret;
+  const disclosure: Disclosure = restricted ? "restricted" : "local";
+  if (restricted && zone === "mainline") {
+    // E4: never commit a secret-shaped note. Divert to the gitignored overlay as
+    // needs-review with a success-shaped remediation note (never a hard error).
+    zone = "overlay";
+    status = "needs-review";
+    remediation = secretRemediationNote(finding.cls as string);
   }
   // E4 per-repo opt-out (item 4): a repo that must not commit memory redirects a
   // Mainline write to the overlay (the MemoryFiles layer enforces the file
@@ -433,6 +440,7 @@ export function remember(store: Store, input: RememberInput): RememberResult {
     sessionRef: input.sessionRef,
     authority: input.authority ?? "confirmed",
     status,
+    disclosure,
   });
   // S6-R2 (item 4): stamp the committed-vs-overlay provenance at the LIVE write, not
   // only at reindex — otherwise an opt-out repo that `remember`s then `push`es before
@@ -479,11 +487,18 @@ export function remember(store: Store, input: RememberInput): RememberResult {
       claimId,
     });
   }
-  store.ftsIndex(id, {
-    name: gist.slice(0, 80),
-    text: `${gist} ${input.detail ?? ""}`.trim(),
-    kind: "memory",
-  });
+  // DR-05: a restricted note's body is NEVER indexed — it must not be searchable
+  // via FTS/MCP. The name index still carries a redacted marker so the entity is
+  // addressable by handle (a cited withheld outcome), never by its secret content.
+  if (restricted) {
+    store.ftsIndex(id, { name: "⊘ withheld (restricted)", text: "", kind: "memory" });
+  } else {
+    store.ftsIndex(id, {
+      name: gist.slice(0, 80),
+      text: `${gist} ${input.detail ?? ""}`.trim(),
+      kind: "memory",
+    });
+  }
 
   if (supersededId !== undefined) {
     // Decision 5: supersede is an append-only decision EVENT; the old entry is

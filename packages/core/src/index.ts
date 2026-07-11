@@ -317,6 +317,23 @@ export {
 export type { RenderOut } from "./serve/render.ts";
 export { MAX_RESPONSE_CHARS, OMITTED_HANDLES_PER_SECTION } from "./serve/types.ts";
 export type { ServeResponse, ServeDeps, ServeDiag, ServeKind } from "./serve/types.ts";
+// R-slice: trust classification (DR-02) + computed per-claim status view (DR-03).
+export { trustFor, memoryTrustFor } from "./store/trust.ts";
+export { memoryClaimStatus, memoryStatusAsOf } from "./serve/status.ts";
+export { foldStatusAsOf } from "./memory/fold.ts";
+// R-slice Phase 5: scoped semantic-local-override expiry (DR-12).
+export {
+  isSemanticLocalOverride,
+  isOverrideExpired,
+  overrideCreatedAt,
+  SEMANTIC_OVERRIDE_TTL_MS,
+} from "./memory/overrideExpiry.ts";
+// R-slice Phase 2: per-source freshness decay class + re-verification (DR-04).
+export { SOURCE_FRESHNESS, needsReverification } from "./serve/freshness.ts";
+export type { DecayClass, SourceFreshnessPolicy } from "./serve/freshness.ts";
+// R-slice Phase 4: minimum claim envelope (DR-07/DR-31) + accelerator disclosure (DR-01).
+export { claimEnvelopeFor, renderEnvelopeTerse, ACCELERATOR_DISCLOSURE } from "./serve/envelope.ts";
+export type { ClaimEnvelope, ClaimEvidence } from "./serve/envelope.ts";
 
 // install/doctor (slice 1i): managed host writes + read-only verification.
 // Push-block placement REUSES slice 1h's push surface (placePushBlock /

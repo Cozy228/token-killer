@@ -25,6 +25,7 @@ import { lineTag, parseDecision, parseMemory } from "./serialize.ts";
 import { classifyAbsentAnchor, isAncestor } from "./anchoredAt.ts";
 import { catchUpStoreOnlyEvents } from "./catchup.ts";
 import { identityCandidatePairs } from "./dedup.ts";
+import { scanMemoryForSecret } from "./secretGuard.ts";
 import {
   foldStatus,
   rebuildConflictStatuses,
@@ -147,6 +148,10 @@ function ingestMemoryEntry(
   gen: number,
 ): void {
   const detail = m.detailPointer ? files.readSidecar(zone, m.detailPointer) : undefined;
+  // DR-05: re-derive the disclosure class on rebuild — the deterministic secret
+  // scan is the source of truth, so a restricted note stays restricted (body never
+  // FTS-indexed, never rendered) across a from-scratch reindex / fresh clone.
+  const restricted = scanMemoryForSecret(m.gist, detail).secret;
   store.upsertEntity({
     id: m.memoryId,
     kind: "memory",
@@ -171,6 +176,7 @@ function ingestMemoryEntry(
     sessionRef: m.sessionRef,
     authority: m.authority, // carried VERBATIM (R4) — 4-valued, no collapse
     status: m.status,
+    disclosure: restricted ? "restricted" : "local",
     validFrom: m.validFrom,
     validTo: m.validTo,
   });
@@ -192,11 +198,16 @@ function ingestMemoryEntry(
       method: "explicit-key",
     });
   }
-  store.ftsIndex(m.memoryId, {
-    name: m.gist.slice(0, 80),
-    text: `${m.gist} ${detail ?? ""}`.trim(),
-    kind: "memory",
-  });
+  // DR-05: a restricted body is never indexed (never searchable via FTS/MCP).
+  if (restricted) {
+    store.ftsIndex(m.memoryId, { name: "⊘ withheld (restricted)", text: "", kind: "memory" });
+  } else {
+    store.ftsIndex(m.memoryId, {
+      name: m.gist.slice(0, 80),
+      text: `${m.gist} ${detail ?? ""}`.trim(),
+      kind: "memory",
+    });
+  }
   store.internHandle(m.memoryId);
 }
 
@@ -212,6 +223,9 @@ function createEvent(m: SerializedMemory): MemoryEvent {
     locus: undefined,
     method: m.method,
     authority: m.authority,
+    // DR-02: carry the split from the committed line; null → store recomputes.
+    derivation: m.derivation ?? null,
+    confidence: m.confidence ?? null,
     at: m.at,
   };
 }
@@ -228,6 +242,9 @@ function decisionEvent(d: SerializedDecision): MemoryEvent {
     locus: d.locus,
     method: d.method,
     authority: d.authority,
+    // DR-02: carry the split from the committed line; null → store recomputes.
+    derivation: d.derivation ?? null,
+    confidence: d.confidence ?? null,
     at: d.at,
   };
 }

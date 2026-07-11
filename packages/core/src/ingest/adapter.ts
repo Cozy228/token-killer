@@ -40,6 +40,12 @@ export interface IngestResult {
   shadowExpanded?: number; // pre-existing files re-resolved because a shadow was added
   driftFlagged?: number; // anchored memories flagged needs-review by drift
   callEdges?: number; // caller→callee `calls` edges resolved this pass (2d)
+  /**
+   * DR-27 disclosure half (O-16): count of DISTINCT doc→symbol mentions that
+   * could not be resolved to a published symbol — a NAMED blind spot, surfaced
+   * instead of silently dropped. Durable persistence / re-resolution is V1-gated.
+   */
+  blindSpots?: number;
   refused?: boolean; // shrink guard refused to publish (generation held at previous gen)
   refusal?: { reason: string; prevSymbols: number; projectedSymbols: number };
   /**

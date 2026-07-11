@@ -91,6 +91,16 @@ export const MEMORY_CONFIRMED_BOOST = 1.3;
  * current. The lifecycle `confirm` verb resolves the conflict and lifts it.
  */
 export const STALE_MEMORY_PENALTY = 0.35;
+/**
+ * DR-04 stale-LINK down-rank factor. A `links.stale` edge (its endpoint's content
+ * hash drifted since the edge was resolved) is a NOT-a-freshness-guarantee signal:
+ * the edge is kept reachable but its effective confidence is multiplied by this
+ * penalty so it is downgraded in BOTH traversal priority AND ranking (the same
+ * `linkConfidence` feeds frontier priority and edge confidence → `confidenceFactor`).
+ * Downgrade (not hard exclude) preserves connectivity while making a drifted edge
+ * never outrank a clean one — freshness is unknown-until-reverified, not asserted.
+ */
+export const STALE_LINK_PENALTY = 0.25;
 /** Reciprocal Rank Fusion constant (§6.3, gitnexus hybrid-search). */
 export const RRF_K = 60;
 /** History-heat boost: score × (1 + HEAT_BOOST · heat) for code kinds (§6.3). */

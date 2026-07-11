@@ -11,14 +11,17 @@
  * - single-writer lease is compare-and-set in meta, 30s TTL, stealable on
  *   expiry (§4.5); readers never block (WAL + snapshot reads).
  */
+import { execFileSync } from "node:child_process";
 import { existsSync, mkdirSync } from "node:fs";
 import { relative, isAbsolute, sep } from "node:path";
 import type { DatabaseSync } from "node:sqlite";
 import { openDatabase, openDatabaseReadOnly, transaction, iterateRows } from "./sqlite.ts";
-import { runMigrations } from "./migrate.ts";
+import { runMigrations, schemaVersionOf } from "./migrate.ts";
+import { ANALYSIS_POLICY_VERSION, generationIdentity } from "./generation.ts";
 import { resolveShard, contexaHome, shardDir, storePath, type ShardResolution } from "./shard.ts";
 import { HANDLE_MIN_LEN, parseHandle, shortHandleCandidate } from "./handles.ts";
 import { blake2bHex } from "./hash.ts";
+import { trustFor, memoryTrustFor as memoryTrust } from "./trust.ts";
 import {
   readFileLocator,
   readGitLocator,
@@ -76,6 +79,13 @@ export interface OpenStoreOptions {
   home?: string;
   /** Injectable clock (lease TTL, timestamps) — fixed-clock tests (§10). */
   now?: () => number;
+  /**
+   * DR-06 worktree-digest override for the generation identity tuple. Defaults to
+   * the resolved checkout root (so distinct worktrees sharing a shard get distinct
+   * generation identities). Exposed as a test seam to simulate a second worktree
+   * without materializing a real linked worktree.
+   */
+  worktreeId?: string;
 }
 
 export interface Store {
@@ -169,6 +179,7 @@ export interface Store {
    * Indexed lookup via claims(subject) — rank calls this per candidate.
    */
   openStaleSuspects(memoryId: string): Conflict[];
+  openContradictions(memoryId: string): Conflict[];
 
   // memory + anchors (store IS the source of truth here — §2 notes exception)
   writeMemory(input: MemoryInput): void;
@@ -249,6 +260,10 @@ export interface Store {
   // generations (§4 publish protocol)
   beginGeneration(source: string): number;
   publishGeneration(source: string): void;
+  /** DR-06: this checkout's generation identity tuple digest. */
+  currentGenerationIdentity(): string;
+  /** DR-06: the identity a source's published generation was built under (if any). */
+  generationIdentityOf(source: string): string | undefined;
   publishedGen(source: string): number;
 
   // single-writer lease (§4.5)
@@ -318,14 +333,26 @@ class SqliteStore implements Store {
    *  regress the total order. Seeded from the max existing event `at` at open, so
    *  it survives process restarts. */
   #lastEventAt = -1;
+  /** DR-06: the generation-identity inputs, resolved once (git spawn is lazy). */
+  readonly #git: boolean;
+  readonly #worktreeId: string;
+  #genIdentity: string | undefined;
 
-  constructor(db: DatabaseSync, dbPath: string, res: ShardResolution, now: () => number) {
+  constructor(
+    db: DatabaseSync,
+    dbPath: string,
+    res: ShardResolution,
+    now: () => number,
+    worktreeId?: string,
+  ) {
     this.#db = db;
     this.dbPath = dbPath;
     this.shard = res.shard;
     this.projectRoot = res.projectRoot;
     this.mainRoot = res.mainRoot;
     this.#now = now;
+    this.#git = res.git;
+    this.#worktreeId = worktreeId ?? res.projectRoot;
     const maxAt = this.#db.prepare("SELECT MAX(at) AS m FROM memory_events").get() as {
       m: number | null;
     };
@@ -413,10 +440,13 @@ class SqliteStore implements Store {
   // ---- claims (append-only) ----
 
   addClaim(input: ClaimInput): number {
+    // DR-02: derivation+confidence are the canonical trust fields, computed
+    // centrally from carrier+method (never the legacy `authority` shadow).
+    const trust = trustFor(input.carrier, input.method);
     const result = this.#db
       .prepare(
-        `INSERT INTO claims (subject, predicate, object, carrier, locus, method, authority, at, gen)
-         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+        `INSERT INTO claims (subject, predicate, object, carrier, locus, method, authority, derivation, confidence, at, gen)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
       )
       .run(
         input.subject,
@@ -426,6 +456,8 @@ class SqliteStore implements Store {
         input.locus ?? null,
         input.method,
         input.authority,
+        trust.derivation,
+        trust.confidence,
         this.#now(),
         input.gen,
       );
@@ -544,6 +576,16 @@ class SqliteStore implements Store {
       .all(memoryId) as unknown as Conflict[];
   }
 
+  /** DR-03: open contradiction conflicts whose claim `a` subject is this memory. */
+  openContradictions(memoryId: string): Conflict[] {
+    return this.#db
+      .prepare(
+        `SELECT c.* FROM conflicts c JOIN claims ca ON ca.id = c.a
+         WHERE c.kind = 'contradiction' AND c.status = 'open' AND ca.subject = ?`,
+      )
+      .all(memoryId) as unknown as Conflict[];
+  }
+
   // ---- memory ----
 
   writeMemory(input: MemoryInput): void {
@@ -560,11 +602,16 @@ class SqliteStore implements Store {
         // cached status is the fold output, so a re-import/re-write must NOT reset
         // it — that would clobber a human confirm. The fold (memory/fold.ts) is the
         // only writer of `status` after creation, via `cacheMemoryStatus`.
-        `INSERT INTO memory (entity_id, gist, detail, origin, session_ref, authority, status, valid_from, valid_to)
-         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+        // DR-02: derivation+confidence derived from `origin` (memory's provenance
+        // carrier). DR-05: disclosure defaults `local`. On CONFLICT they follow the
+        // new write (like authority), but `status` is preserved (fold-owned, F2).
+        `INSERT INTO memory (entity_id, gist, detail, origin, session_ref, authority, derivation, confidence, disclosure, status, valid_from, valid_to)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
          ON CONFLICT(entity_id) DO UPDATE SET
            gist = excluded.gist, detail = excluded.detail, origin = excluded.origin,
            session_ref = excluded.session_ref, authority = excluded.authority,
+           derivation = excluded.derivation, confidence = excluded.confidence,
+           disclosure = excluded.disclosure,
            valid_from = excluded.valid_from, valid_to = excluded.valid_to`,
       )
       .run(
@@ -574,6 +621,9 @@ class SqliteStore implements Store {
         input.origin,
         input.sessionRef ?? null,
         input.authority,
+        memoryTrust(input.origin).derivation,
+        memoryTrust(input.origin).confidence,
+        input.disclosure ?? "local",
         input.status ?? "active",
         input.validFrom ?? null,
         input.validTo ?? null,
@@ -592,9 +642,10 @@ class SqliteStore implements Store {
       origin: row.origin as MemoryRow["origin"],
       sessionRef: (row.session_ref as string | null) ?? undefined,
       authority: row.authority as MemoryRow["authority"],
+      derivation: (row.derivation as MemoryRow["derivation"] | null) ?? null,
+      confidence: (row.confidence as MemoryRow["confidence"] | null) ?? null,
+      disclosure: (row.disclosure as MemoryRow["disclosure"]) ?? "local",
       status: row.status as MemoryRow["status"],
-      servedCount: row.served_count as number,
-      lastServed: (row.last_served as number | null) ?? undefined,
       driftReason: (row.drift_reason as MemoryDriftReason | null) ?? undefined,
       unresolvedHere: Number(row.unresolved_here ?? 0) === 1,
       originZone: (row.origin_zone as MemoryRow["originZone"] | null) ?? undefined,
@@ -679,10 +730,11 @@ class SqliteStore implements Store {
     const at = input.at ?? (nowMs > this.#lastEventAt ? nowMs : this.#lastEventAt + 1);
     if (at > this.#lastEventAt) this.#lastEventAt = at;
     const id = input.id ?? this.#eventUlid(at);
+    const trust = trustFor(input.carrier, input.method, input.actor);
     this.#db
       .prepare(
-        `INSERT INTO memory_events (id, memory_id, verb, actor, reason, refs, carrier, locus, method, authority, at)
-         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+        `INSERT INTO memory_events (id, memory_id, verb, actor, reason, refs, carrier, locus, method, authority, derivation, confidence, at)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
       )
       .run(
         id,
@@ -695,6 +747,8 @@ class SqliteStore implements Store {
         input.locus ?? null,
         input.method,
         input.authority,
+        trust.derivation,
+        trust.confidence,
         at,
       );
     return id;
@@ -714,11 +768,17 @@ class SqliteStore implements Store {
     // Reindex replay — idempotent (INSERT OR IGNORE by the file-supplied id). The
     // files are the append-only source; the table is a rebuildable cache, so
     // replaying the same log line twice is a no-op, never a duplicate.
+    // DR-02: a replayed event from a legacy committed log carries no derivation/
+    // confidence tokens → recompute from carrier+method+actor (never the shadow).
+    const trust =
+      event.derivation !== null || event.confidence !== null
+        ? { derivation: event.derivation, confidence: event.confidence }
+        : trustFor(event.carrier, event.method, event.actor);
     this.#db
       .prepare(
         `INSERT OR IGNORE INTO memory_events
-           (id, memory_id, verb, actor, reason, refs, carrier, locus, method, authority, at)
-         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+           (id, memory_id, verb, actor, reason, refs, carrier, locus, method, authority, derivation, confidence, at)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
       )
       .run(
         event.id,
@@ -731,6 +791,8 @@ class SqliteStore implements Store {
         event.locus ?? null,
         event.method,
         event.authority,
+        trust.derivation,
+        trust.confidence,
         event.at,
       );
     if (event.at > this.#lastEventAt) this.#lastEventAt = event.at;
@@ -852,6 +914,48 @@ class SqliteStore implements Store {
 
   // ---- generations (§4 publish protocol) ----
 
+  /**
+   * DR-06: the current checkout's generation identity (repo rev, worktree digest,
+   * schema version, analysis-policy version), computed once and cached. The git
+   * `rev-parse HEAD` spawn is lazy (first generation touch) and tolerant — a
+   * non-git or detached/unborn checkout contributes an empty revision, which the
+   * worktree digest + schema/policy still discriminate.
+   */
+  #currentIdentity(): string {
+    if (this.#genIdentity !== undefined) return this.#genIdentity;
+    let repoRev = "";
+    if (this.#git) {
+      try {
+        repoRev = execFileSync("git", ["rev-parse", "HEAD"], {
+          cwd: this.projectRoot,
+          encoding: "utf8",
+          stdio: ["ignore", "pipe", "ignore"],
+          timeout: 10_000,
+        }).trim();
+      } catch {
+        repoRev = ""; // unborn / detached with no HEAD — digest still discriminates
+      }
+    }
+    this.#genIdentity = generationIdentity({
+      repoRev,
+      worktreeDigest: blake2bHex(this.#worktreeId).slice(0, 16),
+      schemaVersion: schemaVersionOf(this.#db),
+      policyVersion: ANALYSIS_POLICY_VERSION,
+    });
+    return this.#genIdentity;
+  }
+
+  currentGenerationIdentity(): string {
+    return this.#currentIdentity();
+  }
+
+  generationIdentityOf(source: string): string | undefined {
+    const row = this.#db
+      .prepare("SELECT identity FROM generations WHERE source = ?")
+      .get(source) as { identity: string | null } | undefined;
+    return row?.identity ?? undefined;
+  }
+
   beginGeneration(source: string): number {
     return transaction(this.#db, () => {
       this.#db
@@ -862,9 +966,10 @@ class SqliteStore implements Store {
         .get(source) as { published_gen: number; building_gen: number | null };
       // Resuming an interrupted build reuses its gen (resumable ingest, §4).
       const building = row.building_gen ?? row.published_gen + 1;
+      // DR-06: stamp the in-flight build with the current identity tuple.
       this.#db
-        .prepare("UPDATE generations SET building_gen = ? WHERE source = ?")
-        .run(building, source);
+        .prepare("UPDATE generations SET building_gen = ?, building_identity = ? WHERE source = ?")
+        .run(building, this.#currentIdentity(), source);
       return building;
     });
   }
@@ -872,22 +977,36 @@ class SqliteStore implements Store {
   publishGeneration(source: string): void {
     transaction(this.#db, () => {
       const row = this.#db
-        .prepare("SELECT building_gen FROM generations WHERE source = ?")
-        .get(source) as { building_gen: number | null } | undefined;
+        .prepare("SELECT building_gen, building_identity FROM generations WHERE source = ?")
+        .get(source) as
+        | { building_gen: number | null; building_identity: string | null }
+        | undefined;
       if (!row || row.building_gen === null) {
         throw new Error(`publishGeneration without beginGeneration for source: ${source}`);
       }
+      // DR-06: promote the build identity to the published identity. Fall back to
+      // the current identity for a generation begun before this column existed.
+      const identity = row.building_identity ?? this.#currentIdentity();
       this.#db
-        .prepare("UPDATE generations SET published_gen = ?, building_gen = NULL WHERE source = ?")
-        .run(row.building_gen, source);
+        .prepare(
+          "UPDATE generations SET published_gen = ?, building_gen = NULL, identity = ?, building_identity = NULL WHERE source = ?",
+        )
+        .run(row.building_gen, identity, source);
     });
   }
 
   publishedGen(source: string): number {
     const row = this.#db
-      .prepare("SELECT published_gen FROM generations WHERE source = ?")
-      .get(source) as { published_gen: number } | undefined;
-    return row?.published_gen ?? 0;
+      .prepare("SELECT published_gen, identity FROM generations WHERE source = ?")
+      .get(source) as { published_gen: number; identity: string | null } | undefined;
+    if (!row) return 0;
+    // DR-06: reject a generation built under a DIFFERENT identity tuple (another
+    // worktree / schema / analysis policy). A shared shard must not cross-serve;
+    // returning 0 makes the source read as unpublished → the refresh engine
+    // rebuilds it under this checkout's identity (index-not-copy, nothing lost).
+    // A legacy NULL identity (pre-DR-06 generation) also fails the match → rebuild.
+    if (row.identity !== this.#currentIdentity()) return 0;
+    return row.published_gen;
   }
 
   // ---- lease (§4.5: CAS in meta, TTL, stealable on expiry) ----
@@ -1058,7 +1177,7 @@ export function openStore(opts: OpenStoreOptions = {}): Store {
   const dbPath = storePath(res.shard, home);
   const db = openDatabase(dbPath);
   runMigrations(db);
-  const store = new SqliteStore(db, dbPath, res, opts.now ?? Date.now);
+  const store = new SqliteStore(db, dbPath, res, opts.now ?? Date.now, opts.worktreeId);
   if (store.getMeta("project_root") === undefined) store.setMeta("project_root", res.mainRoot);
   return store;
 }
@@ -1079,7 +1198,7 @@ export function openStoreReadOnly(opts: OpenStoreOptions = {}): Store {
     throw new Error(`no memory store at ${dbPath}`);
   }
   const db = openDatabaseReadOnly(dbPath);
-  return new SqliteStore(db, dbPath, res, opts.now ?? Date.now);
+  return new SqliteStore(db, dbPath, res, opts.now ?? Date.now, opts.worktreeId);
 }
 
 function entityFromRow(row: EntityRow): Entity {
@@ -1107,6 +1226,8 @@ function claimFromRow(row: Record<string, unknown>): Claim {
     locus: (row.locus as string | null) ?? undefined,
     method: row.method as Claim["method"],
     authority: row.authority as Claim["authority"],
+    derivation: (row.derivation as Claim["derivation"] | null) ?? null,
+    confidence: (row.confidence as Claim["confidence"] | null) ?? null,
     at: row.at as number,
     gen: row.gen as number,
   };
@@ -1124,6 +1245,8 @@ function memoryEventFromRow(row: Record<string, unknown>): MemoryEvent {
     locus: (row.locus as string | null) ?? undefined,
     method: row.method as MemoryEvent["method"],
     authority: row.authority as MemoryEvent["authority"],
+    derivation: (row.derivation as MemoryEvent["derivation"] | null) ?? null,
+    confidence: (row.confidence as MemoryEvent["confidence"] | null) ?? null,
     at: row.at as number,
   };
 }
