@@ -1,11 +1,12 @@
 /**
- * `ctx guide` loopback server + export — slice 3a gates (brief §6):
+ * `ctx guide` loopback server + export — P40 gates (brief §6 + P40):
  * G-loopback (127.0.0.1 + bearer token on EVERY route), G-egress (no external
- * URLs + egress guard armed), G-shutdown (idle + disconnect teardown),
+ * URLs + egress guard armed), G-auth-ux (R12 cookie bootstrap), G-lifecycle
+ * (R13: no beacon teardown; idle backstop reset by any request; graceful close),
  * G-readonly (route sweep + attempted write path), and C12 export-diff
  * (live ≡ export, one-render-path). Deterministic fixture store, fixed clock.
  */
-import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync } from "node:fs";
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, statSync } from "node:fs";
 import { request } from "node:http";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
@@ -21,7 +22,8 @@ import {
   type Store,
 } from "@contexa/core";
 import { startGuideServer, type GuideServer } from "../src/guide/server.ts";
-import { EMBEDDED_SHELL } from "../src/guide/shell.ts";
+import { runGuide } from "../src/guide/command.ts";
+import { FALLBACK_SHELL } from "../src/guide/shell.ts";
 import { exportGuide } from "../src/guide/export.ts";
 import { PROJECTION_PATHS } from "../src/guide/routes.ts";
 
@@ -158,8 +160,10 @@ describe("ctx guide server — G-loopback / G-egress / G-readonly", () => {
   test("G-egress: embedded shell + export html contain no external URLs", () => {
     const external = /https?:\/\/(?!127\.0\.0\.1|localhost)/i;
     const cdnish = /(cdn|googleapis|gstatic|unpkg|jsdelivr|fonts\.google|telemetry|analytics)/i;
-    expect(EMBEDDED_SHELL).not.toMatch(external);
-    expect(EMBEDDED_SHELL).not.toMatch(cdnish);
+    expect(FALLBACK_SHELL).not.toMatch(external);
+    expect(FALLBACK_SHELL).not.toMatch(cdnish);
+    // R13: the fallback shell carries NO pagehide/beacon teardown.
+    expect(FALLBACK_SHELL).not.toMatch(/sendBeacon|pagehide|\/api\/close/);
     const exportRoot = makeTempDir("ctx-guide-exp-html-");
     try {
       exportGuide(store, exportRoot, () => FIXTURE_NOW);
@@ -194,56 +198,142 @@ describe("ctx guide server — G-egress guard (refuses model key)", () => {
   });
 });
 
-describe("ctx guide server — G-shutdown", () => {
-  test("idle timeout tears the server down", async () => {
+describe("ctx guide server — G-lifecycle (R13: no beacon; idle backstop; graceful)", () => {
+  test("idle backstop fires when the server sits idle", async () => {
     const root = makeTempDir("ctx-guide-idle-");
     const store = makeStore(root);
     const server = await startGuideServer({ store, now: () => FIXTURE_NOW, idleMs: 120 });
-    await server.closed; // resolves when the idle timer fires
+    await server.closed; // resolves once the idle backstop elapses with no request
     store.close();
     cleanup(root);
     expect(true).toBe(true);
   });
 
-  test("disconnect beacon with NO follow-up tears the server down after grace", async () => {
-    const root = makeTempDir("ctx-guide-disc-");
+  test("any authorized request resets the idle backstop (session survives activity)", async () => {
+    const root = makeTempDir("ctx-guide-idle-reset-");
     const store = makeStore(root);
-    const server = await startGuideServer({
-      store,
-      now: () => FIXTURE_NOW,
-      idleMs: 60_000,
-      graceMs: 120,
-    });
-    const res = await http(server.origin, "/api/close", { token: server.token, method: "POST" });
-    expect(res.status).toBe(204);
-    await server.closed; // resolves once the grace window elapses with no reconnect
-    store.close();
-    cleanup(root);
-    expect(true).toBe(true);
-  });
-
-  test("beacon followed by a request within grace keeps the server up (reload/skin-switch survives)", async () => {
-    const root = makeTempDir("ctx-guide-reload-");
-    const store = makeStore(root);
-    const server = await startGuideServer({
-      store,
-      now: () => FIXTURE_NOW,
-      idleMs: 60_000,
-      graceMs: 250,
-    });
+    const server = await startGuideServer({ store, now: () => FIXTURE_NOW, idleMs: 200 });
     let closed = false;
     void server.closed.then(() => (closed = true));
-    // beacon (pagehide) then an immediate reconnect (the reloaded page fetching canvas)
-    expect(
-      (await http(server.origin, "/api/close", { token: server.token, method: "POST" })).status,
-    ).toBe(204);
-    expect((await http(server.origin, "/api/canvas", { token: server.token })).status).toBe(200);
-    // wait past the grace window; the reconnect must have cancelled the teardown
-    await new Promise((r) => setTimeout(r, 400));
-    expect(closed, "server stayed up across the reload").toBe(false);
+    // Keep the session alive by requesting within the backstop window three times.
+    for (let i = 0; i < 3; i++) {
+      await new Promise((r) => setTimeout(r, 120));
+      expect((await http(server.origin, "/api/canvas", { token: server.token })).status).toBe(200);
+    }
+    expect(closed, "requests within the window kept the backstop from firing").toBe(false);
+    await server.close();
+    store.close();
+    cleanup(root);
+  });
+
+  test("no beacon teardown: closing the tab (POST /api/close) does NOT kill the session", async () => {
+    const root = makeTempDir("ctx-guide-nobeacon-");
+    const store = makeStore(root);
+    const server = await startGuideServer({ store, now: () => FIXTURE_NOW, idleMs: 60_000 });
+    let closed = false;
+    void server.closed.then(() => (closed = true));
+    // The v2 beacon route is gone: a POST to /api/close is just an unknown write → 405.
+    const res = await http(server.origin, "/api/close", { token: server.token, method: "POST" });
+    expect(res.status).toBe(405);
+    await new Promise((r) => setTimeout(r, 200));
+    expect(closed, "no teardown was scheduled").toBe(false);
     expect((await http(server.origin, "/api/canvas", { token: server.token })).status).toBe(200);
     await server.close();
     store.close();
+    cleanup(root);
+  });
+
+  test("close() resolves the closed promise (graceful Ctrl-C path)", async () => {
+    const root = makeTempDir("ctx-guide-close-");
+    const store = makeStore(root);
+    const server = await startGuideServer({ store, now: () => FIXTURE_NOW, idleMs: 60_000 });
+    await server.close();
+    await server.closed; // already resolved — must not hang
+    store.close();
+    cleanup(root);
+    expect(true).toBe(true);
+  });
+});
+
+describe("ctx guide server — G-auth-ux (R12 cookie bootstrap)", () => {
+  let root: string;
+  let store: Store;
+  let server: GuideServer;
+  beforeAll(async () => {
+    root = makeTempDir("ctx-guide-authux-");
+    store = makeStore(root);
+    server = await startGuideServer({ store, now: () => FIXTURE_NOW, idleMs: 60_000 });
+  });
+  afterAll(async () => {
+    await server.close();
+    store.close();
+    cleanup(root);
+  });
+
+  test("the bootstrap shell hit sets the HttpOnly/SameSite cookie", async () => {
+    const shell = await http(server.origin, `/?token=${server.token}`);
+    expect(shell.status).toBe(200);
+    const setCookie = String(shell.headers["set-cookie"] ?? "");
+    expect(setCookie).toContain(`ctx_guide_token=${server.token}`);
+    expect(setCookie).toMatch(/HttpOnly/);
+    expect(setCookie).toMatch(/SameSite=Strict/);
+  });
+
+  test("after bootstrap, a cookie-only request (no token in URL) is authorized — F5/new-tab", async () => {
+    // F5 / deep link / new tab: the browser resends the cookie, the URL has no token.
+    const cookie = `ctx_guide_token=${server.token}`;
+    expect((await http(server.origin, "/", { cookie })).status).toBe(200);
+    expect(
+      (await http(server.origin, "/api/subject?ref=anything", { cookie })).status,
+    ).toBeLessThan(500);
+    expect((await http(server.origin, "/api/canvas", { cookie })).status).toBe(200);
+  });
+
+  test("a tokenless, cookieless request 401s (every route stays gated)", async () => {
+    expect((await http(server.origin, "/")).status).toBe(401);
+    expect((await http(server.origin, "/api/canvas")).status).toBe(401);
+  });
+
+  test("a cookie-authorized shell response does NOT reset the cookie (bootstrap only)", async () => {
+    const cookie = `ctx_guide_token=${server.token}`;
+    const shell = await http(server.origin, "/", { cookie });
+    expect(shell.status).toBe(200);
+    expect(shell.headers["set-cookie"]).toBeUndefined();
+  });
+});
+
+describe("ctx guide — G-fixture-isolation (R10: --fixture never touches the real store)", () => {
+  test("running --fixture leaves the real store byte-identical", async () => {
+    const root = makeTempDir("ctx-guide-fixiso-");
+    const realHome = join(root, "real-home");
+    const project = join(root, "proj");
+    mkdirSync(project, { recursive: true });
+    // Seed a real store (empty is fine — the point is it must not change).
+    const real = openStore({ projectDir: project, home: realHome, now: () => FIXTURE_NOW });
+    const realDb = real.dbPath;
+    real.close();
+    const before = statSync(realDb);
+    const beforeBytes = readFileSync(realDb);
+
+    // Run --fixture via the command path (export mode so it does not block on serving).
+    const exportDir = join(root, "out");
+    const code = await runGuide(
+      {
+        out: () => {},
+        err: () => {},
+        home: realHome,
+        projectDir: project,
+        now: () => FIXTURE_NOW,
+        env: { ...process.env, CTX_NO_OPEN: "1" },
+      },
+      { fixture: true, exportDir },
+    );
+    expect(code).toBe(0);
+
+    const after = statSync(realDb);
+    const afterBytes = readFileSync(realDb);
+    expect(after.size, "real store size unchanged").toBe(before.size);
+    expect(afterBytes.equals(beforeBytes), "real store bytes unchanged").toBe(true);
     cleanup(root);
   });
 });

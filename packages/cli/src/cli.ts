@@ -301,9 +301,9 @@ function cmdPush(io: RunIo, args: ParsedArgs): number {
 }
 
 /**
- * `ctx guide` (M3) — start the ephemeral loopback render surface, or export a
- * self-contained snapshot with `--export <dir>`. Read-only; opens the browser
- * detached (suppressed under `CTX_NO_OPEN`); idle/disconnect auto-shutdown.
+ * `ctx guide` (M3) — start the loopback render surface, or export a self-contained
+ * snapshot with `--export <dir>`. Read-only; opens the browser detached (suppressed
+ * under `CTX_NO_OPEN`); lives until Ctrl-C with a long idle backstop (R13).
  */
 function cmdGuide(io: RunIo, args: ParsedArgs): Promise<number> {
   const exportDir = args.flags.export?.[0];
@@ -409,7 +409,7 @@ Commands (available now):
   memory          List memory entries / lifecycle (confirm|retire|review)
   push            Render + place the ≤1KB context block (AGENTS.md + CLAUDE.md);
                   push pin|veto <id> edits .contexa/push.jsonc; --dry-run / --if-changed
-  guide           Start the ephemeral local render surface (loopback, read-only);
+  guide           Start the local render surface (loopback, read-only, until Ctrl-C);
                   --export <dir> writes a self-contained snapshot; --fixture for a demo store
 
 More commands (import) land in later M1 slices.

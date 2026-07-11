@@ -1,12 +1,18 @@
 /**
- * `ctx guide` loopback server (brief §2 Form B, R1/R6). Ephemeral, in-process,
+ * `ctx guide` loopback server (brief §2 Form B, P40 R12/R13). In-process,
  * READ-ONLY render surface over the same store the MCP serves:
  *   - binds 127.0.0.1 on a random free port (never 0.0.0.0);
  *   - a bearer token gates EVERY route incl. assets (loopback alone does not stop
  *     localhost probing / DNS rebinding — the Host header is allowlisted too);
+ *   - R12 auth UX: the printed URL carries the token ONCE as a bootstrap; the first
+ *     authorized shell hit sets an HttpOnly/SameSite=Strict session cookie, and the
+ *     app strips the token from the address bar. F5, deep links, and new tabs in the
+ *     same browser ride the cookie — no token in the URL thereafter;
+ *   - R13 lifecycle: NO disconnect/pagehide beacon teardown. The server lives until
+ *     the owner closes it (Ctrl-C → graceful `close()`), with a long idle backstop
+ *     (default 2 h, `idleMs` override) reset by any authorized request. Closing the
+ *     tab never kills the session;
  *   - core is called as in-process functions, never a per-request child process;
- *   - idle timeout + browser-disconnect beacon tear the server down ("on demand,
- *     not a standing destination" is mechanical);
  *   - `assertNoEgress` is armed at start; the served shell has ZERO external URLs.
  */
 import { createServer, type IncomingMessage, type Server, type ServerResponse } from "node:http";
@@ -15,20 +21,21 @@ import { readFileSync, statSync } from "node:fs";
 import { extname, join, normalize, sep } from "node:path";
 import { assertNoEgress, type Store } from "@contexa/core";
 import { PROJECTION_ROUTES, type GuideContext } from "./routes.ts";
-import { EMBEDDED_SHELL } from "./shell.ts";
+import { FALLBACK_SHELL } from "./shell.ts";
+
+/** Default idle backstop (R13): a generous 2 h. Not an aggressive teardown — it
+ *  only fires after two hours with no authorized request. `.unref()`'d so it never
+ *  keeps the process alive on its own (davia lesson). */
+export const DEFAULT_IDLE_MS = 2 * 60 * 60_000;
 
 export interface GuideServerOptions {
   store: Store;
   /** Injected clock (fixed-clock tests). Defaults to Date.now. */
   now?: () => number;
-  /** Built Vite app dir (index.html + assets). Falls back to the embedded shell. */
+  /** Built Vite app dir (index.html + assets). Falls back to the minimal shell. */
   distDir?: string;
-  /** Idle auto-shutdown in ms (no request within the window → close). Default 10 min. */
+  /** Idle backstop in ms (no authorized request within the window → close). Default 2 h. */
   idleMs?: number;
-  /** Grace window (ms) after a disconnect beacon before teardown; any token-authorized
-   *  request within it cancels the pending close (so an F5 reload / `?skin=` navigation
-   *  survives). Default 4s. */
-  graceMs?: number;
   /** Bind host — always loopback; overridable only for tests. Default 127.0.0.1. */
   host?: string;
   /** Env the egress guard inspects (default process.env). */
@@ -37,11 +44,12 @@ export interface GuideServerOptions {
 
 export interface GuideServer {
   origin: string;
-  /** Full entry URL incl. the one-time token query the browser opens. */
+  /** Bootstrap entry URL: `origin/?token=…` — the token is carried ONCE, then the
+   *  app strips it and the cookie takes over (R12). */
   url: string;
   port: number;
   token: string;
-  /** Resolves when the server has fully closed (idle / disconnect / explicit). */
+  /** Resolves when the server has fully closed (Ctrl-C / idle backstop / explicit). */
   closed: Promise<void>;
   close(): Promise<void>;
 }
@@ -61,7 +69,7 @@ const CONTENT_TYPES: Record<string, string> = {
 
 const LOOPBACK_HOSTS = new Set(["127.0.0.1", "localhost", "[::1]", "::1"]);
 
-/** Cookie name carrying the bearer token for asset/API requests the browser makes. */
+/** Cookie name carrying the bearer token for the requests the browser makes. */
 const COOKIE = "ctx_guide_token";
 
 function tokenFromCookie(header: string | undefined): string | undefined {
@@ -86,8 +94,7 @@ export async function startGuideServer(opts: GuideServerOptions): Promise<GuideS
   assertNoEgress(opts.env ?? process.env);
 
   const host = opts.host ?? "127.0.0.1";
-  const idleMs = opts.idleMs ?? 10 * 60_000;
-  const graceMs = opts.graceMs ?? 4_000;
+  const idleMs = opts.idleMs ?? DEFAULT_IDLE_MS;
   const now = opts.now ?? Date.now;
   const token = randomBytes(24).toString("hex");
   const ctx: GuideContext = { store: opts.store, now };
@@ -99,6 +106,8 @@ export async function startGuideServer(opts: GuideServerOptions): Promise<GuideS
 
   const server: Server = createServer((req, res) => handle(req, res));
 
+  // R13 idle backstop: reset on every authorized request; `.unref()`'d so it never
+  // keeps the process alive by itself. No beacon, no grace-window, no /api/close.
   let idleTimer: NodeJS.Timeout | undefined;
   function bumpIdle(): void {
     if (idleTimer) clearTimeout(idleTimer);
@@ -106,29 +115,10 @@ export async function startGuideServer(opts: GuideServerOptions): Promise<GuideS
     idleTimer.unref?.();
   }
 
-  // Deferred disconnect teardown: `pagehide` fires on EVERY navigation (F5 reload,
-  // `?skin=` switch), not just a real tab close, so the beacon must not close
-  // synchronously. It schedules a grace-window close that ANY subsequent
-  // token-authorized request cancels — a reload reconnects and survives; a real
-  // close (nothing reconnects) still tears down within the window.
-  let pendingClose: NodeJS.Timeout | undefined;
-  function scheduleClose(): void {
-    if (pendingClose) clearTimeout(pendingClose);
-    pendingClose = setTimeout(() => void doClose(), graceMs);
-    pendingClose.unref?.();
-  }
-  function cancelPendingClose(): void {
-    if (pendingClose) {
-      clearTimeout(pendingClose);
-      pendingClose = undefined;
-    }
-  }
-
   async function doClose(): Promise<void> {
     if (closing) return closed;
     closing = true;
     if (idleTimer) clearTimeout(idleTimer);
-    if (pendingClose) clearTimeout(pendingClose);
     await new Promise<void>((r) => server.close(() => r()));
     resolveClosed();
     return closed;
@@ -141,14 +131,15 @@ export async function startGuideServer(opts: GuideServerOptions): Promise<GuideS
     return LOOPBACK_HOSTS.has(name);
   }
 
-  function authorized(req: IncomingMessage, url: URL): boolean {
+  /** Which carrier authorized this request (for the R12 cookie-set decision). */
+  function authCarrier(req: IncomingMessage, url: URL): "header" | "query" | "cookie" | undefined {
     const auth = req.headers.authorization;
-    if (auth?.startsWith("Bearer ") && tokenEq(auth.slice(7), token)) return true;
+    if (auth?.startsWith("Bearer ") && tokenEq(auth.slice(7), token)) return "header";
     const q = url.searchParams.get("token");
-    if (q && tokenEq(q, token)) return true;
+    if (q && tokenEq(q, token)) return "query";
     const c = tokenFromCookie(req.headers.cookie);
-    if (c && tokenEq(c, token)) return true;
-    return false;
+    if (c && tokenEq(c, token)) return "cookie";
+    return undefined;
   }
 
   function sendJson(res: ServerResponse, code: number, body: unknown): void {
@@ -162,13 +153,13 @@ export async function startGuideServer(opts: GuideServerOptions): Promise<GuideS
     res.end(text);
   }
 
-  function serveShell(res: ServerResponse, setCookieToken: string | undefined): void {
-    let html = EMBEDDED_SHELL;
+  function serveShell(res: ServerResponse, setCookie: boolean): void {
+    let html = FALLBACK_SHELL;
     if (opts.distDir) {
       try {
         html = readFileSync(join(opts.distDir, "index.html"), "utf8");
       } catch {
-        html = EMBEDDED_SHELL;
+        html = FALLBACK_SHELL;
       }
     }
     const headers: Record<string, string> = {
@@ -179,9 +170,12 @@ export async function startGuideServer(opts: GuideServerOptions): Promise<GuideS
       "content-security-policy":
         "default-src 'self'; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline'; font-src 'self'; img-src 'self' data:; connect-src 'self'; frame-ancestors 'none'",
     };
-    if (setCookieToken) {
+    // R12: swap the one-time bootstrap token for a session cookie. Set it whenever the
+    // browser presents a valid token but no valid cookie yet — the app then strips
+    // `?token=` from the address bar and every later request rides this cookie.
+    if (setCookie) {
       headers["set-cookie"] =
-        `${COOKIE}=${encodeURIComponent(setCookieToken)}; HttpOnly; SameSite=Strict; Path=/`;
+        `${COOKIE}=${encodeURIComponent(token)}; HttpOnly; SameSite=Strict; Path=/`;
     }
     res.writeHead(200, headers);
     res.end(html);
@@ -205,7 +199,6 @@ export async function startGuideServer(opts: GuideServerOptions): Promise<GuideS
   }
 
   function handle(req: IncomingMessage, res: ServerResponse): void {
-    bumpIdle();
     const method = req.method ?? "GET";
     const url = new URL(req.url ?? "/", `http://${req.headers.host ?? host}`);
 
@@ -215,25 +208,15 @@ export async function startGuideServer(opts: GuideServerOptions): Promise<GuideS
       return;
     }
     // Bearer token gates EVERY route, including the shell and assets (G-loopback).
-    if (!authorized(req, url)) {
+    const carrier = authCarrier(req, url);
+    if (carrier === undefined) {
       sendJson(res, 401, { error: "unauthorized: bearer token required" });
       return;
     }
+    // R13: any authorized request resets the idle backstop.
+    bumpIdle();
 
     const pathname = url.pathname;
-
-    // Any token-authorized request cancels a pending disconnect teardown: a reload
-    // or `?skin=` navigation reconnects within the grace window and survives. (The
-    // beacon route re-arms it below, so repeated beacons just reschedule.)
-    if (pathname !== "/api/close") cancelPendingClose();
-
-    // Disconnect beacon — the page fires this on EVERY unload (incl. reload). Defer
-    // teardown by the grace window instead of closing now; a reconnect cancels it.
-    if (pathname === "/api/close") {
-      res.writeHead(204).end();
-      scheduleClose();
-      return;
-    }
 
     // Projection API (read-only; only GET/HEAD).
     const route = routeMap.get(pathname);
@@ -271,9 +254,9 @@ export async function startGuideServer(opts: GuideServerOptions): Promise<GuideS
     // Static assets from the built app.
     if (pathname !== "/" && serveStatic(res, pathname)) return;
 
-    // SPA shell (root or client-route fallback). Set the cookie from the entry token.
-    const entryToken = url.searchParams.get("token");
-    serveShell(res, entryToken && tokenEq(entryToken, token) ? entryToken : undefined);
+    // SPA shell (root or client-route fallback). R12: set the cookie when the token
+    // arrived by header/query and no valid cookie is present yet (the bootstrap).
+    serveShell(res, carrier !== "cookie");
   }
 
   await new Promise<void>((resolve, reject) => {
