@@ -10,7 +10,9 @@ import { openStore, type Store } from "../../src/store/store.ts";
 import { openDatabase } from "../../src/store/sqlite.ts";
 import { runMigrations } from "../../src/store/migrate.ts";
 import { trustFor, memoryTrustFor } from "../../src/store/trust.ts";
-import { memoryClaimStatus } from "../../src/serve/status.ts";
+import { generationIdentity } from "../../src/store/generation.ts";
+import { memoryClaimStatus, memoryStatusAsOf } from "../../src/serve/status.ts";
+import { foldStatusAsOf } from "../../src/memory/fold.ts";
 import { cleanupTempDir, makeGitFixture, makeTempDir } from "../helpers/sandbox.ts";
 
 const REAL_MIGRATIONS = fileURLToPath(new URL("../../src/store/migrations/", import.meta.url));
@@ -221,6 +223,44 @@ describe("R-slice Phase 1: derivation+confidence split (DR-02)", () => {
     setStatus("mem:s6", "superseded");
     expect(st("mem:s6")).toBe("restricted");
   });
+
+  // ---- DR-10: equivalent as-of recompute path (item 5) ----
+  test("A5 (DR-10): status recomputes as-of a past instant from the event log", () => {
+    store.upsertEntity({
+      id: "mem:asof",
+      kind: "memory",
+      name: "mem:asof",
+      locator: { t: "store" },
+      gen: 1,
+    });
+    // create @100 (active) → retire @200. The current answer is retired; the
+    // answer AS OF 150 must still be active (a later event never rewrites history).
+    store.appendMemoryEvent({
+      id: "01ASOFCREATE0000000000000",
+      memoryId: "mem:asof",
+      verb: "create",
+      actor: "cli",
+      refs: { status: "active" },
+      carrier: "remember",
+      method: "explicit-key",
+      authority: "confirmed",
+      at: 100,
+    });
+    store.appendMemoryEvent({
+      id: "01ASOFRETIRE0000000000000",
+      memoryId: "mem:asof",
+      verb: "retire",
+      actor: "cli",
+      carrier: "cli",
+      method: "explicit-key",
+      authority: "confirmed",
+      at: 200,
+    });
+    expect(memoryStatusAsOf(store, "mem:asof", 150)).toBe("active");
+    expect(memoryStatusAsOf(store, "mem:asof", 250)).toBe("retired");
+    // pure fold-as-of over an event array (no store) — the equivalent scheme unit.
+    expect(foldStatusAsOf(store.memoryEvents("mem:asof"), 99)).toBe("active");
+  });
 });
 
 describe("R-slice Phase 1: DR-09 dead columns cut + DR-02 backfill (migration 006)", () => {
@@ -299,5 +339,67 @@ describe("R-slice Phase 1: DR-09 dead columns cut + DR-02 backfill (migration 00
     };
     expect(e).toEqual(trustFor("host-import:claude-code", "explicit-key", "agent"));
     db.close();
+  });
+});
+
+describe("R-slice Phase 1: DR-06 generation identity tuple (item 4)", () => {
+  let root: string;
+  let repo: string;
+  let home: string;
+
+  beforeEach(() => {
+    root = makeTempDir("ctx-rslice-gen-");
+    repo = makeGitFixture(root);
+    home = join(root, "contexa-home");
+  });
+  afterEach(() => cleanupTempDir(root));
+
+  test("A4 (DR-06): identity is sensitive to every tuple component", () => {
+    const base = {
+      repoRev: "abc",
+      worktreeDigest: "wt1",
+      schemaVersion: 6,
+      policyVersion: 1,
+    };
+    const id = generationIdentity(base);
+    expect(generationIdentity({ ...base, repoRev: "def" })).not.toBe(id);
+    expect(generationIdentity({ ...base, worktreeDigest: "wt2" })).not.toBe(id);
+    expect(generationIdentity({ ...base, schemaVersion: 7 })).not.toBe(id);
+    expect(generationIdentity({ ...base, policyVersion: 2 })).not.toBe(id);
+    expect(generationIdentity(base)).toBe(id); // deterministic
+  });
+
+  test("A4 (DR-06): a published generation stamps the current identity; same worktree serves", () => {
+    const store = openStore({ projectDir: repo, home, worktreeId: "wtA" });
+    store.beginGeneration("git");
+    store.publishGeneration("git");
+    expect(store.publishedGen("git")).toBe(1); // identity matches → visible
+    expect(store.generationIdentityOf("git")).toBe(store.currentGenerationIdentity());
+    store.close();
+  });
+
+  test("A4 (DR-06): two worktrees sharing a shard do NOT cross-serve", () => {
+    // Worktree A publishes a git generation into the shared shard.
+    const a = openStore({ projectDir: repo, home, worktreeId: "wtA" });
+    a.beginGeneration("git");
+    a.publishGeneration("git");
+    expect(a.publishedGen("git")).toBe(1);
+    const shardPath = a.dbPath;
+    const aIdentity = a.currentGenerationIdentity();
+    a.close();
+
+    // Worktree B opens the SAME shard file (same repo, same shard) with a
+    // different worktree digest → the generation A built is rejected: B must not
+    // reuse/serve rows built under A's identity.
+    const b = openStore({ projectDir: repo, home, worktreeId: "wtB" });
+    expect(b.dbPath).toBe(shardPath); // same shard, as real worktrees share
+    expect(b.currentGenerationIdentity()).not.toBe(aIdentity);
+    expect(b.publishedGen("git")).toBe(0); // DR-06: identity mismatch → not cross-served
+
+    // After B rebuilds under its own identity, B serves again.
+    b.beginGeneration("git");
+    b.publishGeneration("git");
+    expect(b.publishedGen("git")).toBe(2);
+    b.close();
   });
 });

@@ -19,8 +19,9 @@
  *   open stale-suspect / superseded → stale
  *   retired                   → unavailable (hard-excluded from default pull)
  */
+import { composeStatus, foldStatusAsOf } from "../memory/fold.ts";
 import type { Store } from "../store/store.ts";
-import type { ClaimStatus, MemoryRow } from "../store/types.ts";
+import type { ClaimStatus, MemoryRow, MemoryStatus } from "../store/types.ts";
 
 /**
  * Compute the §3 status of a memory claim from its row + the store's conflict
@@ -53,4 +54,21 @@ export function memoryClaimStatus(store: Store, row: MemoryRow): ClaimStatus {
 
   if (row.status === "active") return "resolved";
   return "unknown";
+}
+
+/**
+ * DR-10 — the memory lifecycle status recomputed AS OF a past instant, by folding
+ * the event log up to `asOf` (see `foldStatusAsOf`). The current drift annotation
+ * is composed in (drift is per-checkout index state, not a historical event); pass
+ * the row's `driftReason` when a served answer is wanted, or omit for pure
+ * transaction-time lifecycle history. This is the equivalent as-of recompute path
+ * §3 bitemporality requires — no `valid_from`/`valid_to` read needed.
+ */
+export function memoryStatusAsOf(
+  store: Store,
+  memoryId: string,
+  asOf: number,
+  drift?: MemoryRow["driftReason"],
+): MemoryStatus {
+  return composeStatus(foldStatusAsOf(store.memoryEvents(memoryId), asOf), drift);
 }

@@ -11,11 +11,13 @@
  * - single-writer lease is compare-and-set in meta, 30s TTL, stealable on
  *   expiry (§4.5); readers never block (WAL + snapshot reads).
  */
+import { execFileSync } from "node:child_process";
 import { existsSync, mkdirSync } from "node:fs";
 import { relative, isAbsolute, sep } from "node:path";
 import type { DatabaseSync } from "node:sqlite";
 import { openDatabase, openDatabaseReadOnly, transaction, iterateRows } from "./sqlite.ts";
-import { runMigrations } from "./migrate.ts";
+import { runMigrations, schemaVersionOf } from "./migrate.ts";
+import { ANALYSIS_POLICY_VERSION, generationIdentity } from "./generation.ts";
 import { resolveShard, contexaHome, shardDir, storePath, type ShardResolution } from "./shard.ts";
 import { HANDLE_MIN_LEN, parseHandle, shortHandleCandidate } from "./handles.ts";
 import { blake2bHex } from "./hash.ts";
@@ -77,6 +79,13 @@ export interface OpenStoreOptions {
   home?: string;
   /** Injectable clock (lease TTL, timestamps) — fixed-clock tests (§10). */
   now?: () => number;
+  /**
+   * DR-06 worktree-digest override for the generation identity tuple. Defaults to
+   * the resolved checkout root (so distinct worktrees sharing a shard get distinct
+   * generation identities). Exposed as a test seam to simulate a second worktree
+   * without materializing a real linked worktree.
+   */
+  worktreeId?: string;
 }
 
 export interface Store {
@@ -251,6 +260,10 @@ export interface Store {
   // generations (§4 publish protocol)
   beginGeneration(source: string): number;
   publishGeneration(source: string): void;
+  /** DR-06: this checkout's generation identity tuple digest. */
+  currentGenerationIdentity(): string;
+  /** DR-06: the identity a source's published generation was built under (if any). */
+  generationIdentityOf(source: string): string | undefined;
   publishedGen(source: string): number;
 
   // single-writer lease (§4.5)
@@ -320,14 +333,26 @@ class SqliteStore implements Store {
    *  regress the total order. Seeded from the max existing event `at` at open, so
    *  it survives process restarts. */
   #lastEventAt = -1;
+  /** DR-06: the generation-identity inputs, resolved once (git spawn is lazy). */
+  readonly #git: boolean;
+  readonly #worktreeId: string;
+  #genIdentity: string | undefined;
 
-  constructor(db: DatabaseSync, dbPath: string, res: ShardResolution, now: () => number) {
+  constructor(
+    db: DatabaseSync,
+    dbPath: string,
+    res: ShardResolution,
+    now: () => number,
+    worktreeId?: string,
+  ) {
     this.#db = db;
     this.dbPath = dbPath;
     this.shard = res.shard;
     this.projectRoot = res.projectRoot;
     this.mainRoot = res.mainRoot;
     this.#now = now;
+    this.#git = res.git;
+    this.#worktreeId = worktreeId ?? res.projectRoot;
     const maxAt = this.#db.prepare("SELECT MAX(at) AS m FROM memory_events").get() as {
       m: number | null;
     };
@@ -889,6 +914,48 @@ class SqliteStore implements Store {
 
   // ---- generations (§4 publish protocol) ----
 
+  /**
+   * DR-06: the current checkout's generation identity (repo rev, worktree digest,
+   * schema version, analysis-policy version), computed once and cached. The git
+   * `rev-parse HEAD` spawn is lazy (first generation touch) and tolerant — a
+   * non-git or detached/unborn checkout contributes an empty revision, which the
+   * worktree digest + schema/policy still discriminate.
+   */
+  #currentIdentity(): string {
+    if (this.#genIdentity !== undefined) return this.#genIdentity;
+    let repoRev = "";
+    if (this.#git) {
+      try {
+        repoRev = execFileSync("git", ["rev-parse", "HEAD"], {
+          cwd: this.projectRoot,
+          encoding: "utf8",
+          stdio: ["ignore", "pipe", "ignore"],
+          timeout: 10_000,
+        }).trim();
+      } catch {
+        repoRev = ""; // unborn / detached with no HEAD — digest still discriminates
+      }
+    }
+    this.#genIdentity = generationIdentity({
+      repoRev,
+      worktreeDigest: blake2bHex(this.#worktreeId).slice(0, 16),
+      schemaVersion: schemaVersionOf(this.#db),
+      policyVersion: ANALYSIS_POLICY_VERSION,
+    });
+    return this.#genIdentity;
+  }
+
+  currentGenerationIdentity(): string {
+    return this.#currentIdentity();
+  }
+
+  generationIdentityOf(source: string): string | undefined {
+    const row = this.#db
+      .prepare("SELECT identity FROM generations WHERE source = ?")
+      .get(source) as { identity: string | null } | undefined;
+    return row?.identity ?? undefined;
+  }
+
   beginGeneration(source: string): number {
     return transaction(this.#db, () => {
       this.#db
@@ -899,9 +966,10 @@ class SqliteStore implements Store {
         .get(source) as { published_gen: number; building_gen: number | null };
       // Resuming an interrupted build reuses its gen (resumable ingest, §4).
       const building = row.building_gen ?? row.published_gen + 1;
+      // DR-06: stamp the in-flight build with the current identity tuple.
       this.#db
-        .prepare("UPDATE generations SET building_gen = ? WHERE source = ?")
-        .run(building, source);
+        .prepare("UPDATE generations SET building_gen = ?, building_identity = ? WHERE source = ?")
+        .run(building, this.#currentIdentity(), source);
       return building;
     });
   }
@@ -909,22 +977,36 @@ class SqliteStore implements Store {
   publishGeneration(source: string): void {
     transaction(this.#db, () => {
       const row = this.#db
-        .prepare("SELECT building_gen FROM generations WHERE source = ?")
-        .get(source) as { building_gen: number | null } | undefined;
+        .prepare("SELECT building_gen, building_identity FROM generations WHERE source = ?")
+        .get(source) as
+        | { building_gen: number | null; building_identity: string | null }
+        | undefined;
       if (!row || row.building_gen === null) {
         throw new Error(`publishGeneration without beginGeneration for source: ${source}`);
       }
+      // DR-06: promote the build identity to the published identity. Fall back to
+      // the current identity for a generation begun before this column existed.
+      const identity = row.building_identity ?? this.#currentIdentity();
       this.#db
-        .prepare("UPDATE generations SET published_gen = ?, building_gen = NULL WHERE source = ?")
-        .run(row.building_gen, source);
+        .prepare(
+          "UPDATE generations SET published_gen = ?, building_gen = NULL, identity = ?, building_identity = NULL WHERE source = ?",
+        )
+        .run(row.building_gen, identity, source);
     });
   }
 
   publishedGen(source: string): number {
     const row = this.#db
-      .prepare("SELECT published_gen FROM generations WHERE source = ?")
-      .get(source) as { published_gen: number } | undefined;
-    return row?.published_gen ?? 0;
+      .prepare("SELECT published_gen, identity FROM generations WHERE source = ?")
+      .get(source) as { published_gen: number; identity: string | null } | undefined;
+    if (!row) return 0;
+    // DR-06: reject a generation built under a DIFFERENT identity tuple (another
+    // worktree / schema / analysis policy). A shared shard must not cross-serve;
+    // returning 0 makes the source read as unpublished → the refresh engine
+    // rebuilds it under this checkout's identity (index-not-copy, nothing lost).
+    // A legacy NULL identity (pre-DR-06 generation) also fails the match → rebuild.
+    if (row.identity !== this.#currentIdentity()) return 0;
+    return row.published_gen;
   }
 
   // ---- lease (§4.5: CAS in meta, TTL, stealable on expiry) ----
@@ -1095,7 +1177,7 @@ export function openStore(opts: OpenStoreOptions = {}): Store {
   const dbPath = storePath(res.shard, home);
   const db = openDatabase(dbPath);
   runMigrations(db);
-  const store = new SqliteStore(db, dbPath, res, opts.now ?? Date.now);
+  const store = new SqliteStore(db, dbPath, res, opts.now ?? Date.now, opts.worktreeId);
   if (store.getMeta("project_root") === undefined) store.setMeta("project_root", res.mainRoot);
   return store;
 }
@@ -1116,7 +1198,7 @@ export function openStoreReadOnly(opts: OpenStoreOptions = {}): Store {
     throw new Error(`no memory store at ${dbPath}`);
   }
   const db = openDatabaseReadOnly(dbPath);
-  return new SqliteStore(db, dbPath, res, opts.now ?? Date.now);
+  return new SqliteStore(db, dbPath, res, opts.now ?? Date.now, opts.worktreeId);
 }
 
 function entityFromRow(row: EntityRow): Entity {

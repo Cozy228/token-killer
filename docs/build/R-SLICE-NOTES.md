@@ -45,7 +45,58 @@ not in the DR-02 acceptance item.
 
 (sections filled as each DR lands)
 
-### Phase 1 — Schema + backfill
+### Phase 1 — Schema + backfill — COMPLETE (green)
+
+Commits: `44119a71` (DR-02/05/09 schema), `a3ea1102` (DR-03), + Phase-1-complete
+commit (DR-06/DR-10 + living-repo cochange robustness).
+
+- **DR-02 (spec: split every persisted `authority` into derivation+confidence,
+  backfill from carrier+method+actor, never enum/authorship, ambiguous→unknown,
+  CONFIRMED needs corroboration).** Done via `store/trust.ts` (`trustFor`,
+  `memoryTrustFor`) — the single matrix; migration `006` backfills existing
+  claims/memory/memory_events with a CASE that mirrors it; new writes compute it
+  centrally in `addClaim`/`writeMemory`/`appendMemoryEvent`/`ingestMemoryEvent`.
+  Committed grammar (`serialize.ts`) carries new `deriv`/`conf` tokens with
+  back-compat parse (legacy lines → recomputed at ingest). `authority` kept as
+  shadow (D-SHADOW). CONFIRMED is never assigned at backfill/write (property
+  tested). Ambiguous (carrier migration/system, unknown method) → null/null.
+- **DR-03 (spec: computed per-claim `status` view).** `serve/status.ts::
+  memoryClaimStatus` — never a stored column; projection exactly per Appendix A
+  (active→resolved, needs-review(drift)→stale, needs-review(pending)→unknown,
+  unresolvedHere→unavailable, superseded→stale, open contradiction→conflicting,
+  restricted disclosure→restricted, retired→unavailable). Added
+  `store.openContradictions()` mirroring `openStaleSuspects`.
+- **DR-05 schema half (spec: `disclosure` column default local).** Added to
+  `memory` (migration 006), default `'local'`, surfaced on `MemoryRow`. Full
+  enforcement is Phase 3.
+- **DR-06 (spec: bind published generation to the D32 tuple; reject/rebuild on
+  mismatch; two worktrees sharing a shard don't cross-serve).**
+  `store/generation.ts` (tuple = repo rev, worktree digest, schema version,
+  analysis-policy version; digest). `generations.identity`/`building_identity`
+  columns; stamped at begin/publish; `publishedGen` is identity-guarded (returns
+  0 on mismatch → source reads unpublished → refresh rebuilds under the current
+  tuple; index-not-copy loses nothing). Test seam `openStore({worktreeId})`
+  simulates a second worktree on the same shard. DEVIATION: repo-rev is IN the
+  tuple, but the guard is evaluated once per store session (identity cached at
+  first generation touch), so within-session incremental ingest is unaffected;
+  only a genuinely different worktree/schema/policy (or a legacy NULL-identity
+  generation) triggers rebuild. This matches "reject/rebuild on mismatch" without
+  forcing a full re-parse mid-session.
+- **DR-09 (spec: cut served_count/last_served).** Dropped in migration 006;
+  removed from `MemoryRow`/`getMemory`; the obsolete `S2-A7` test rewritten to
+  assert the columns are gone.
+- **DR-10 (spec: equivalent as-of recompute path; wiring valid_from/valid_to not
+  required; bare cut escalates).** `fold.ts::foldStatusAsOf` +
+  `serve/status.ts::memoryStatusAsOf` — the event-sourced log already supports
+  "answer as of T" by folding events with `at <= T` (the transaction-time axis of
+  §3 bitemporality). `valid_from`/`valid_to` columns are KEPT (not cut — no
+  escalation needed); the recompute path is provided and documented.
+
+Living-repo robustness: `1d-git.test.ts > A4-cochange` pinned the exact top
+co-change pair; this slice's own commits (store.ts+types.ts co-change) legitimately
+overtook it — the documented living-repo fragility. Per the goal prompt's
+robust-assertion rule the assertion now checks structural guarantees (support ≥ 9,
+both endpoints resolvable `file:` entities, confidence band) not the exact pair.
 
 ### Phase 2 — Freshness wiring
 
@@ -58,6 +109,15 @@ not in the DR-02 acceptance item.
 ## Deviations
 
 - D-SHADOW (above): `authority` kept as a shadow column rather than removed.
+- DR-06 identity is cached once per store session (see Phase 1 note) so
+  within-session incremental ingest is preserved; a mismatch (other worktree /
+  schema / policy / legacy NULL) rejects and rebuilds. Faithful to "reject/rebuild
+  on mismatch" without forcing a mid-session full re-parse.
+- DR-10: `valid_from`/`valid_to` columns retained (not cut) alongside the as-of
+  recompute path, so no LAW-side escalation was needed.
+- `1d-git.test.ts > A4-cochange`: brittle exact-pair ranking assertion relaxed to
+  structural guarantees (living-repo robust-assertion rule) after this slice's own
+  commits shifted the top co-change pair.
 
 ## Adjacent-found (untouched)
 

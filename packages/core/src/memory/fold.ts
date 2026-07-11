@@ -118,6 +118,21 @@ export function foldStatus(events: readonly MemoryEvent[]): MemoryStatus {
 }
 
 /**
+ * DR-10 — the equivalent as-of / bitemporal recompute path (P37 ⑧
+ * EQUIVALENT-SCHEME). LAW §3 requires "answer as of T, recompute on demand".
+ * Because memory is event-sourced (an append-only, totally-ordered log per S4),
+ * the as-of answer is just the fold over the events whose transaction time `at`
+ * is `<= asOf` — no `valid_from`/`valid_to` column read is needed. This is the
+ * transaction-time axis of §3's bitemporality: a later diff is never evaluated
+ * against an earlier summary because the earlier summary is recomputed from the
+ * events that existed then. (The columns remain written for the explicit
+ * valid-time axis; this path covers the transaction-time recompute the DR flags.)
+ */
+export function foldStatusAsOf(events: readonly MemoryEvent[], asOf: number): MemoryStatus {
+  return foldStatus(events.filter((e) => e.at <= asOf));
+}
+
+/**
  * E5 collision predicate. A GENUINE collision = the memory's log carries BOTH a
  * `retire` and a `supersede` event: two mutually-exclusive terminal dispositions
  * ("this is dead/wrong" vs "this is replaced by memory Y") taken as independent
