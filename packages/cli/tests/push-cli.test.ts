@@ -51,7 +51,16 @@ describe("Contexa CLI: push", () => {
     expect(out).toContain("wrote");
     expect(existsSync(join(repo, "AGENTS.md"))).toBe(true);
     expect(existsSync(join(repo, "CLAUDE.md"))).toBe(true);
-    expect(readFileSync(join(repo, "AGENTS.md"), "utf8")).toContain("ctx:managed:begin");
+    const agents = readFileSync(join(repo, "AGENTS.md"), "utf8");
+    expect(agents).toContain("ctx:managed:begin");
+    // DR-32: the PLACED host file carries NO uncited factual gotchas and NO "with
+    // provenance" claim — only the de-claimed header + tool instruction + an
+    // explicit omission disclosure.
+    expect(agents).not.toContain("⚠");
+    expect(agents).not.toContain("with provenance");
+    expect(agents).toContain("omitted");
+    expect(agents).toContain("`context` MCP tool");
+    expect(out).toContain("omitted"); // the command output reports the omission
   });
 
   test("ctx push --dry-run prints without writing files", () => {
@@ -101,6 +110,10 @@ describe("Contexa CLI: push", () => {
     const out = lines.join("\n");
     expect(out).toContain("local view");
     expect(out).toContain("NOT written to any file");
+    // DR-32 (e): the `--local` DISPLAY view writes no host file, so it MAY still
+    // show the gotcha locally — the ⚠ line appears here (but never in a host file).
+    expect(out).toContain("⚠");
+    expect(out).toContain("gotcha for local view");
     // Display-only: no host file placed.
     expect(existsSync(join(repo, "AGENTS.md"))).toBe(false);
     expect(existsSync(join(repo, "CLAUDE.md"))).toBe(false);

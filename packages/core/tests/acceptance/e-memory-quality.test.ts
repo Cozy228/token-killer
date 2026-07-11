@@ -135,7 +135,9 @@ describe("acceptance: E memory-quality", () => {
     expect(hit, "anchor-drift stale-suspect filed").toBeDefined();
     expect(store.getClaim(hit!.b)?.object).toBe("target-removed");
     expect(recall(store, stale.handle).ok).toBe(true); // kept, not deleted
-    expect(buildPushBlock(store, { now: clock }).handles).not.toContain(stale.handle); // out of push
+    expect(buildPushBlock(store, { now: clock }).wouldRender.map((g) => g.handle)).not.toContain(
+      stale.handle,
+    ); // out of push
   });
 
   test("E2 sym-signature-changed: an arity change to an anchored symbol flips the memory + files signature-changed", async () => {
@@ -193,7 +195,9 @@ describe("acceptance: E memory-quality", () => {
     const active = listMemories(store, { status: "active" }).map((m) => m.entityId);
     expect(active).not.toContain(v1.entityId);
     expect(active).toContain(v2.entityId);
-    expect(buildPushBlock(store, { now: clock }).handles).not.toContain(v1.handle);
+    expect(buildPushBlock(store, { now: clock }).wouldRender.map((g) => g.handle)).not.toContain(
+      v1.handle,
+    );
     expect(recall(store, v1.handle).ok).toBe(true); // retained + retrievable
     expect(listMemories(store, { status: "superseded" }).map((m) => m.entityId)).toContain(
       v1.entityId,
@@ -246,11 +250,15 @@ describe("acceptance: E memory-quality", () => {
     const b = buildPushBlock(store, { now: clock, maxGotchas: 6 });
     expect(b.bytes).toBeLessThanOrEqual(PUSH_MAX_BYTES);
     expect(Buffer.byteLength(b.text, "utf8")).toBe(b.bytes);
-    expect(b.handles).toContain(a1.handle);
-    expect(b.handles).toContain(a2.handle);
-    expect(b.handles).not.toContain(retired.handle);
-    expect(b.handles).not.toContain(v1.handle);
-    expect(b.handles).not.toContain(stale.handle); // needs-review excluded (E2 status)
+    // DR-32: the placed block cites nothing; eligibility governs the would-return
+    // set (which notes surface once each carries a full claim envelope).
+    expect(b.rendered).toEqual([]);
+    const wh = b.wouldRender.map((g) => g.handle);
+    expect(wh).toContain(a1.handle);
+    expect(wh).toContain(a2.handle);
+    expect(wh).not.toContain(retired.handle);
+    expect(wh).not.toContain(v1.handle);
+    expect(wh).not.toContain(stale.handle); // needs-review excluded (E2 status)
   });
 
   test("E5 pin-gate (A2): a pin cannot force a needs-review memory into push", () => {
@@ -264,8 +272,9 @@ describe("acceptance: E memory-quality", () => {
     );
     const cfg = readPushConfig(repo);
     const b = buildPushBlock(store, { config: cfg, now: clock });
-    expect(b.handles).not.toContain(stale.handle); // eligibility vetoes the pin
-    expect(b.handles).toContain(ok.handle);
+    const wh = b.wouldRender.map((g) => g.handle);
+    expect(wh).not.toContain(stale.handle); // eligibility vetoes the pin
+    expect(wh).toContain(ok.handle);
   });
 
   // ---- E6 — echo prevention · label: host-echo-loop ----
@@ -320,8 +329,9 @@ describe("acceptance: E memory-quality", () => {
       "utf8",
     );
     const cfg = (): ReturnType<typeof readPushConfig> => readPushConfig(repo);
+    // DR-32: eligibility governs the would-return set (placed block cites nothing).
     const pinnedFlag = (): boolean | undefined =>
-      buildPushBlock(store, { config: cfg(), now: clock }).rendered.find(
+      buildPushBlock(store, { config: cfg(), now: clock }).wouldRender.find(
         (g) => g.entityId === mem.entityId,
       )?.pinned;
     const entity = (): NonNullable<ReturnType<typeof store.getEntity>> =>
@@ -378,14 +388,18 @@ describe("acceptance: E memory-quality", () => {
     await reingestGitCode(store);
     expect(store.getMemory(mem.entityId)?.status).toBe("needs-review");
     expect(store.openStaleSuspects(mem.entityId).length).toBeGreaterThanOrEqual(1);
-    expect(buildPushBlock(store, { now: clock }).handles).not.toContain(mem.handle); // out of push
+    expect(buildPushBlock(store, { now: clock }).wouldRender.map((g) => g.handle)).not.toContain(
+      mem.handle,
+    ); // out of push
 
     const confirm = setMemoryLifecycle(store, mem.handle, "active");
     expect(confirm.ok).toBe(true);
     expect(store.getMemory(mem.entityId)?.status).toBe("active");
     expect(store.openStaleSuspects(mem.entityId)).toHaveLength(0);
     expect(store.claimsFor(mem.entityId, "stale-reason").length).toBeGreaterThanOrEqual(1); // audit kept
-    expect(buildPushBlock(store, { now: clock }).handles).toContain(mem.handle); // eligible again
+    expect(buildPushBlock(store, { now: clock }).wouldRender.map((g) => g.handle)).toContain(
+      mem.handle,
+    ); // eligible again
   });
 
   // ---- EG-review — the review queue · label: unreviewed-import ----

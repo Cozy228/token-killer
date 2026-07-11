@@ -98,18 +98,25 @@ describe("acceptance: 1h push", () => {
         expect(block.text).toContain("<!-- ctx:managed:end -->");
         expect(block.text).toContain("This project has a ctx context base");
         expect(block.text).toContain("Start tasks with the `context` MCP tool");
-        // A3/D8: host imports land `needs-review` → NONE surface in push until a
-        // human confirms them (push filters status=active). The block is header-only.
+        // DR-32: the placed block carries NO uncited factual gotchas and no "with
+        // provenance" claim — regardless of what ranks.
+        expect(block.text).not.toContain("with provenance");
+        expect(block.text).not.toContain("⚠");
         expect(block.rendered.length).toBe(0);
+        // A3/D8: host imports land `needs-review` → NONE are even push-eligible
+        // until a human confirms them, so nothing WOULD return yet either.
+        expect(block.wouldRender.length).toBe(0);
 
-        // Confirm one imported entry → it now surfaces, and its handle round-trips.
+        // Confirm one imported entry → it becomes a would-return candidate (still
+        // NOT placed, DR-32), and its handle round-trips.
         const first = report.written[0];
         expect(first, "the live repo has ≥1 importable host memory").toBeDefined();
         setMemoryLifecycle(store, first!, "active", files);
         const afterConfirm = buildPushBlock(store);
         expect(afterConfirm.bytes).toBeLessThanOrEqual(PUSH_MAX_BYTES);
-        expect(afterConfirm.rendered.length).toBeGreaterThan(0);
-        for (const g of afterConfirm.rendered) {
+        expect(afterConfirm.rendered.length).toBe(0); // placed block still cites nothing
+        expect(afterConfirm.wouldRender.length).toBeGreaterThan(0);
+        for (const g of afterConfirm.wouldRender) {
           expect(store.resolveHandle(g.handle)?.entityId).toBe(g.entityId);
         }
         store.close();
@@ -131,9 +138,11 @@ describe("acceptance: 1h push", () => {
             pinned: false,
           });
         }
-        // maxGotchas = n disables the readability cap: the BYTE budget is the
-        // sole limiter, so this asserts the hard invariant, not the soft cap.
-        const block = renderPushBlock(gotchas, n);
+        // The byte cap governs the `--local` DISPLAY view (where gotchas actually
+        // render, DR-32). maxGotchas = n disables the readability cap so the BYTE
+        // budget is the sole limiter — the hard invariant, not the soft cap. (The
+        // placed block omits gotchas and is trivially small; the cap matters here.)
+        const block = renderPushBlock(gotchas, { maxGotchas: n, includeGotchas: true });
         expect(block.bytes, `round ${round} (${n} gotchas)`).toBeLessThanOrEqual(PUSH_MAX_BYTES);
         expect(Buffer.byteLength(block.text, "utf8")).toBe(block.bytes);
       }
@@ -155,10 +164,18 @@ describe("acceptance: 1h push", () => {
     const m3 = must(remember(store, { surface: "cli", note: "charlie: newest gotcha" }));
     const NOW = 1_000_000_300_000;
 
-    // Default top-2: newest two (m3, m2); m1 is cut, m3 is in.
+    // DR-32: pins/vetoes no longer place uncited claims into the host file — they
+    // govern `wouldRender` (which notes WOULD return once each carries a full claim
+    // envelope). The placed block cites nothing regardless.
+    const wh = (b: { wouldRender: GotchaCandidate[] }): string[] =>
+      b.wouldRender.map((g) => g.handle);
+
+    // Default top-2 would-return: newest two (m3, m2); m1 is cut, m3 is in.
     const base = buildPushBlock(store, { maxGotchas: 2, now: NOW });
-    expect(base.handles).toContain(m3.handle);
-    expect(base.handles).not.toContain(m1.handle);
+    expect(base.rendered).toEqual([]); // nothing placed
+    expect(base.text).not.toContain("⚠");
+    expect(wh(base)).toContain(m3.handle);
+    expect(wh(base)).not.toContain(m1.handle);
 
     // A .contexa/push.jsonc (with comments) pins m1 and vetoes m3.
     const cfgPath = join(repo, ".contexa", "push.jsonc");
@@ -166,7 +183,7 @@ describe("acceptance: 1h push", () => {
     writeFileSync(
       cfgPath,
       `{
-  // force the oldest gotcha to always show
+  // force the oldest gotcha to always return
   "pin": ["${m1.handle}"],
   "veto": ["${m3.handle}"]
 }
@@ -176,10 +193,11 @@ describe("acceptance: 1h push", () => {
     expect(cfg.ok).toBe(true);
 
     const pinned = buildPushBlock(store, { config: cfg, maxGotchas: 2, now: NOW });
-    expect(pinned.handles).toContain(m1.handle); // pin forced it in
-    expect(pinned.handles).not.toContain(m3.handle); // veto kept it out
-    expect(pinned.handles[0]).toBe(m1.handle); // pins render first
-    expect(pinned.handles).toContain(m2.handle); // auto-fill kept the un-vetoed middle
+    expect(pinned.rendered).toEqual([]); // still nothing placed (DR-32)
+    expect(wh(pinned)).toContain(m1.handle); // pin forced it into would-return
+    expect(wh(pinned)).not.toContain(m3.handle); // veto kept it out
+    expect(wh(pinned)[0]).toBe(m1.handle); // pins rank first
+    expect(wh(pinned)).toContain(m2.handle); // auto-fill kept the un-vetoed middle
 
     // Both survive a re-render (deterministic, byte-identical).
     const again = buildPushBlock(store, { config: cfg, maxGotchas: 2, now: NOW });
@@ -205,8 +223,12 @@ describe("acceptance: 1h push", () => {
     writeFileSync(cfgPath, `{ "pin": ["${review.handle}"], "veto": [] }\n`);
     const cfg = readPushConfig(repo);
     const block = buildPushBlock(store, { config: cfg, now: 1_000_000_200_000 });
-    expect(block.handles).not.toContain(review.handle); // pin vetoed by eligibility
-    expect(block.handles).toContain(ok.handle); // the eligible active one still shows
+    // DR-32: eligibility is checked on the would-return set (the placed block cites
+    // nothing). A pin cannot force a needs-review memory even into would-return.
+    const wh = block.wouldRender.map((g) => g.handle);
+    expect(wh).not.toContain(review.handle); // pin vetoed by eligibility
+    expect(wh).toContain(ok.handle); // the eligible active one would return
+    expect(block.rendered).toEqual([]); // nothing placed
     store.close();
   });
 

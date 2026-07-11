@@ -260,7 +260,10 @@ function cmdPush(io: RunIo, args: ParsedArgs): number {
     return withStore(io, (store) => {
       const merged = readMergedPushConfig(store.projectRoot);
       for (const w of merged.warnings) io.out(`note: ${w}`);
-      const block = buildPushBlock(store, { config: merged });
+      // DR-32: the `--local` display view writes NO host file, so it may still SHOW
+      // the ranked gotchas locally (`includeGotchas`). The placed/committed block
+      // (runPush / install) omits them.
+      const block = buildPushBlock(store, { config: merged, includeGotchas: true });
       io.out(block.text);
       io.out(
         `local view: ${block.bytes} bytes, ${block.rendered.length} gotcha(s) ` +
@@ -286,9 +289,11 @@ function cmdPush(io: RunIo, args: ParsedArgs): number {
       const status = p.changed ? (p.created ? "created" : "updated") : "unchanged";
       io.out(`  ${verb} ${p.path} (${status}, ${p.bytes} bytes)`);
     }
+    // DR-32: the placed block omits factual gotchas — report the omission, not a
+    // rendered count (which is always 0 for the placed block).
     io.out(
-      `block: ${res.block.bytes} bytes, ${res.block.rendered.length} gotcha(s)` +
-        (res.block.truncated ? " (budget-trimmed)" : ""),
+      `block: ${res.block.bytes} bytes, ${res.block.omittedGotchas} memory note(s) omitted ` +
+        "(query the `context` MCP tool for cited claims).",
     );
     return 0;
   });
