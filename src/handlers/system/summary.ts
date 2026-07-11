@@ -21,6 +21,13 @@ function truncate(text: string, maxLen: number): string {
 
 type OutputType = "test" | "build" | "log" | "list" | "json" | "generic";
 
+// DR-18 (LAW §3, zero false reassurance): the affirmative build verdict is the ONE
+// factual claim summarizeBuild is allowed to assert, and only when the real exit
+// code authorises it. A module-local sentinel so the handler's filter() can detect an
+// asserting summary and attach a raw receipt/anchor (part b) — never re-derived from
+// a keyword scan.
+const BUILD_SUCCESS_VERDICT = "   [ok] Build successful";
+
 // RTK: summary.rs::detect_output_type.
 function detectOutputType(output: string, command: string): OutputType {
   const cmdLower = command.toLowerCase();
@@ -102,7 +109,23 @@ function summarizeTests(output: string, result: string[]): void {
 }
 
 // RTK: summary.rs::summarize_build.
-function summarizeBuild(output: string, result: string[]): void {
+//
+// DR-18 (LAW §3): the affirmative "Build successful" verdict is anchored to the real
+// exit code (`success`), NOT to a keyword scan of the output. The prior code derived
+// the verdict purely from `errors === 0 && warnings === 0`, so a build that truly
+// FAILED with no literal English "error" token (linker "undefined symbol", "cannot
+// find crate", an OOM kill, a panic, a non-English toolchain) printed "[ok] Build
+// successful" under a "[FAIL]" header — self-contradicting false reassurance. The
+// reverse also misfired: a successful build whose log merely contains the substring
+// "error" (e.g. "error handling module compiled") was miscounted as a failure.
+//
+// The exit code is authoritative; the keyword counts are only supplementary detail:
+//   - exit says FAILURE → never assert success; surface neutral counts + error lines.
+//   - exit says SUCCESS → the keyword scan can only misfire toward false "errors", so
+//     it must never downgrade the verdict; show warnings, then affirm success. We do
+//     NOT print a keyword-derived "[error]" count on a successful build (it would
+//     contradict the exit code — prefer neutral phrasing over contradiction).
+function summarizeBuild(output: string, result: string[], success: boolean): void {
   result.push("Build Summary:");
 
   let errors = 0;
@@ -121,15 +144,25 @@ function summarizeBuild(output: string, result: string[]): void {
   }
 
   if (compiled > 0) result.push(`   ${compiled} crates/files compiled`);
-  if (errors > 0) result.push(`   [error] ${errors} errors`);
-  if (warnings > 0) result.push(`   [warn] ${warnings} warnings`);
-  if (errors === 0 && warnings === 0) result.push("   [ok] Build successful");
 
-  if (errorMsgs.length > 0) {
-    result.push("");
-    result.push("   Errors:");
-    for (const msg of errorMsgs) result.push(`   • ${truncate(msg, 70)}`);
+  if (!success) {
+    // Exit code (authoritative) says the build FAILED. Never emit a success verdict;
+    // surface the neutral supplementary counts and any captured error lines only.
+    if (errors > 0) result.push(`   [error] ${errors} errors`);
+    if (warnings > 0) result.push(`   [warn] ${warnings} warnings`);
+    if (errorMsgs.length > 0) {
+      result.push("");
+      result.push("   Errors:");
+      for (const msg of errorMsgs) result.push(`   • ${truncate(msg, 70)}`);
+    }
+    return;
   }
+
+  // Exit code says SUCCESS. Warnings are real supplementary signal; keyword-"error"
+  // lines cannot be a failure here (the process exited 0), so they are never surfaced
+  // as errors. Preserve the prior threshold that warnings suppress the terse verdict.
+  if (warnings > 0) result.push(`   [warn] ${warnings} warnings`);
+  else result.push(BUILD_SUCCESS_VERDICT);
 }
 
 // RTK: summary.rs::summarize_logs_quick.
@@ -221,7 +254,7 @@ function summarizeOutput(output: string, command: string, success: boolean): str
       summarizeTests(output, result);
       break;
     case "build":
-      summarizeBuild(output, result);
+      summarizeBuild(output, result, success);
       break;
     case "log":
       summarizeLogs(output, result);
@@ -266,6 +299,15 @@ export const summaryHandler: CommandHandler = {
       const cmdLabel = command.args.join(" ");
       const lines = rawText(raw).split("\n").length;
       text = `${raw.exitCode === 0 ? "[ok]" : "[FAIL]"} Command: ${truncate(cmdLabel, 60)}\n   ${lines} lines of output (summary over budget — see snapshot)\n`;
+      omission = { kind: "replacement" };
+    } else if (summary.includes(BUILD_SUCCESS_VERDICT)) {
+      // DR-18 (b), LAW §3: an in-budget summary that ASSERTS a factual verdict
+      // ("Build successful") must be anchored to the raw output it was derived from.
+      // The summary is a complete-replacement digest of that raw, so we declare a
+      // `replacement` omission — reusing the existing recovery mechanism (base.ts):
+      // the gate force-persists raw this turn and appends the `[full output: <path>]`
+      // receipt. With --no-save-raw no receipt is possible, so the gate fails open to
+      // raw — i.e. the summary "stops asserting" rather than assert unanchored.
       omission = { kind: "replacement" };
     }
     return makeFilteredResult(this, raw, text, options, undefined, omission);
