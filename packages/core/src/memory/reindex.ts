@@ -212,6 +212,9 @@ function createEvent(m: SerializedMemory): MemoryEvent {
     locus: undefined,
     method: m.method,
     authority: m.authority,
+    // DR-02: carry the split from the committed line; null → store recomputes.
+    derivation: m.derivation ?? null,
+    confidence: m.confidence ?? null,
     at: m.at,
   };
 }
@@ -228,6 +231,9 @@ function decisionEvent(d: SerializedDecision): MemoryEvent {
     locus: d.locus,
     method: d.method,
     authority: d.authority,
+    // DR-02: carry the split from the committed line; null → store recomputes.
+    derivation: d.derivation ?? null,
+    confidence: d.confidence ?? null,
     at: d.at,
   };
 }

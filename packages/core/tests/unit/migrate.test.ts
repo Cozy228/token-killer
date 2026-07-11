@@ -16,14 +16,24 @@ describe("migrations (forward-only, NNN-<name>.sql, one transaction each)", () =
     cleanupTempDir(dir);
   });
 
-  test("fresh DB: applies 001-init + 002-memory-events + 003-bitemporal + 004-unresolved-here and lands the §2 tables", () => {
+  test("fresh DB: applies 001-init + 002-memory-events + 003-bitemporal + 004-unresolved-here + 006-r-slice and lands the §2 tables", () => {
     const db = openDatabase(join(dir, "store.sqlite"));
     const outcome = runMigrations(db);
     // slice 2 added 002-memory-events; slice 3 added 003-memory-bitemporal (C5);
     // slice 4 added 004-memory-unresolved-here (S9); slice 6 added
-    // 005-memory-origin-zone (item 4 committed-vs-overlay provenance).
-    expect(outcome.applied).toEqual([1, 2, 3, 4, 5]);
-    expect(outcome.schemaVersion).toBe(5);
+    // 005-memory-origin-zone (item 4 committed-vs-overlay provenance); R-slice
+    // added 006-r-slice-claim-integrity (DR-02 derivation/confidence, DR-05
+    // disclosure, DR-06 generation identity, DR-09 dead-column cut).
+    expect(outcome.applied).toEqual([1, 2, 3, 4, 5, 6]);
+    expect(outcome.schemaVersion).toBe(6);
+    // DR-02/05: derivation/confidence/disclosure landed; DR-09: served columns cut.
+    const memColsEarly = (
+      db.prepare("SELECT name FROM pragma_table_info('memory')").all() as Array<{ name: string }>
+    ).map((r) => r.name);
+    expect(memColsEarly).toEqual(
+      expect.arrayContaining(["derivation", "confidence", "disclosure"]),
+    );
+    expect(memColsEarly).not.toContain("served_count");
     // C5 bitemporal columns + S9 unresolved-here + item-4 origin_zone on the index.
     const memCols = (
       db.prepare("SELECT name FROM pragma_table_info('memory')").all() as Array<{ name: string }>
@@ -61,7 +71,7 @@ describe("migrations (forward-only, NNN-<name>.sql, one transaction each)", () =
     runMigrations(db);
     const again = runMigrations(db);
     expect(again.applied).toEqual([]);
-    expect(schemaVersionOf(db)).toBe(5);
+    expect(schemaVersionOf(db)).toBe(6);
     db.close();
   });
 

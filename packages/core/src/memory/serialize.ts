@@ -20,7 +20,14 @@
  *
  * Pure functions — no IO, no clock, no network.
  */
-import type { Authority, ClaimMethod, MemoryEventVerb, MemoryStatus } from "../store/types.ts";
+import type {
+  Authority,
+  ClaimMethod,
+  Confidence,
+  Derivation,
+  MemoryEventVerb,
+  MemoryStatus,
+} from "../store/types.ts";
 
 /** The memory payload carried by a `create` (mem) line — the note itself. */
 export interface SerializedMemory {
@@ -33,7 +40,11 @@ export interface SerializedMemory {
   actor: string;
   carrier: string;
   method: ClaimMethod;
+  /** Legacy shadow (DR-02) — derivation+confidence are canonical. */
   authority: Authority;
+  /** Canonical trust axes (DR-02, LAW §3). Absent on legacy lines → recomputed. */
+  derivation?: Derivation | null;
+  confidence?: Confidence | null;
   /** landing status (the create-event `refs.status` fold baseline). */
   status: MemoryStatus;
   gist: string;
@@ -71,7 +82,11 @@ export interface SerializedDecision {
   actor: string;
   carrier: string;
   method: ClaimMethod;
+  /** Legacy shadow (DR-02). */
   authority: Authority;
+  /** Canonical trust axes (DR-02). Absent on legacy lines → recomputed. */
+  derivation?: Derivation | null;
+  confidence?: Confidence | null;
   reason?: string;
   locus?: string;
   /** refs object (supersededBy / conflictA / conflictB / status). */
@@ -111,6 +126,8 @@ export function serializeMemory(m: SerializedMemory): string {
     ["carrier", enc(m.carrier)],
     ["method", enc(m.method)],
     ["authority", enc(m.authority)],
+    ["deriv", m.derivation ? enc(m.derivation) : undefined],
+    ["conf", m.confidence ? enc(m.confidence) : undefined],
     ["status", enc(m.status)],
     ["origin", enc(m.origin)],
     ["gist", enc(m.gist)],
@@ -161,6 +178,8 @@ function parseMemoryUnsafe(raw: string): SerializedMemory | undefined {
     carrier: t.carrier ? dec(t.carrier) : "memory",
     method: (t.method ? dec(t.method) : "explicit-key") as ClaimMethod,
     authority: (t.authority ? dec(t.authority) : "confirmed") as Authority,
+    derivation: t.deriv ? (dec(t.deriv) as Derivation) : undefined,
+    confidence: t.conf ? (dec(t.conf) as Confidence) : undefined,
     status: (t.status ? dec(t.status) : "active") as MemoryStatus,
     gist: t.gist ? dec(t.gist) : "",
     origin: t.origin ? dec(t.origin) : "remember",
@@ -188,6 +207,8 @@ export function serializeDecision(d: SerializedDecision): string {
     ["carrier", enc(d.carrier)],
     ["method", enc(d.method)],
     ["authority", enc(d.authority)],
+    ["deriv", d.derivation ? enc(d.derivation) : undefined],
+    ["conf", d.confidence ? enc(d.confidence) : undefined],
     ["locus", d.locus ? enc(d.locus) : undefined],
     ["reason", d.reason ? enc(d.reason) : undefined],
     ["refs", refs],
@@ -217,6 +238,8 @@ function parseDecisionUnsafe(raw: string): SerializedDecision | undefined {
     carrier: t.carrier ? dec(t.carrier) : "cli",
     method: (t.method ? dec(t.method) : "explicit-key") as ClaimMethod,
     authority: (t.authority ? dec(t.authority) : "confirmed") as Authority,
+    derivation: t.deriv ? (dec(t.deriv) as Derivation) : undefined,
+    confidence: t.conf ? (dec(t.conf) as Confidence) : undefined,
     locus: t.locus ? dec(t.locus) : undefined,
     reason: t.reason ? dec(t.reason) : undefined,
     refs: t.refs ? (JSON.parse(dec(t.refs)) as Record<string, unknown>) : undefined,

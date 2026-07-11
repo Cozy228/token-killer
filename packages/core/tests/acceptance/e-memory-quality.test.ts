@@ -562,19 +562,24 @@ describe("acceptance: E memory-quality", () => {
     ).toHaveLength(1);
   });
 
-  // A7: served_count is telemetry-only — untouched by lifecycle / fold / drift.
-  test("S2-A7: served_count is untouched by remember / lifecycle / drift", async () => {
+  // A7 (R-slice / DR-09): the served_count / last_served usage columns were cut
+  // (research ruled the usage signal OUT). They no longer exist on the row or in
+  // the schema; a memory survives lifecycle/drift with no usage accounting.
+  test("S2-A7: served_count/last_served are cut (DR-09)", async () => {
     await ingestSources(store);
     const symId = redeliverSymbolId(store)!;
     const mem = remb("redeliver keeps ordering", {
       note: "redeliver keeps ordering",
       anchors: [symId],
     });
-    expect(store.getMemory(mem.entityId)?.servedCount).toBe(0);
+    const row = store.getMemory(mem.entityId)!;
+    expect(row).toBeDefined();
+    expect("servedCount" in row).toBe(false);
+    expect("lastServed" in row).toBe(false);
     setMemoryLifecycle(store, mem.handle, "needs-review");
     changeRedeliverSignature(repo);
     await reingestGitCode(store);
     setMemoryLifecycle(store, mem.handle, "active");
-    expect(store.getMemory(mem.entityId)?.servedCount).toBe(0); // never a ranking/lifecycle input
+    expect(store.getMemory(mem.entityId)).toBeDefined();
   });
 });

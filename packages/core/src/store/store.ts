@@ -19,6 +19,7 @@ import { runMigrations } from "./migrate.ts";
 import { resolveShard, contexaHome, shardDir, storePath, type ShardResolution } from "./shard.ts";
 import { HANDLE_MIN_LEN, parseHandle, shortHandleCandidate } from "./handles.ts";
 import { blake2bHex } from "./hash.ts";
+import { trustFor, memoryTrustFor as memoryTrust } from "./trust.ts";
 import {
   readFileLocator,
   readGitLocator,
@@ -413,10 +414,13 @@ class SqliteStore implements Store {
   // ---- claims (append-only) ----
 
   addClaim(input: ClaimInput): number {
+    // DR-02: derivation+confidence are the canonical trust fields, computed
+    // centrally from carrier+method (never the legacy `authority` shadow).
+    const trust = trustFor(input.carrier, input.method);
     const result = this.#db
       .prepare(
-        `INSERT INTO claims (subject, predicate, object, carrier, locus, method, authority, at, gen)
-         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+        `INSERT INTO claims (subject, predicate, object, carrier, locus, method, authority, derivation, confidence, at, gen)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
       )
       .run(
         input.subject,
@@ -426,6 +430,8 @@ class SqliteStore implements Store {
         input.locus ?? null,
         input.method,
         input.authority,
+        trust.derivation,
+        trust.confidence,
         this.#now(),
         input.gen,
       );
@@ -560,11 +566,16 @@ class SqliteStore implements Store {
         // cached status is the fold output, so a re-import/re-write must NOT reset
         // it — that would clobber a human confirm. The fold (memory/fold.ts) is the
         // only writer of `status` after creation, via `cacheMemoryStatus`.
-        `INSERT INTO memory (entity_id, gist, detail, origin, session_ref, authority, status, valid_from, valid_to)
-         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+        // DR-02: derivation+confidence derived from `origin` (memory's provenance
+        // carrier). DR-05: disclosure defaults `local`. On CONFLICT they follow the
+        // new write (like authority), but `status` is preserved (fold-owned, F2).
+        `INSERT INTO memory (entity_id, gist, detail, origin, session_ref, authority, derivation, confidence, disclosure, status, valid_from, valid_to)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
          ON CONFLICT(entity_id) DO UPDATE SET
            gist = excluded.gist, detail = excluded.detail, origin = excluded.origin,
            session_ref = excluded.session_ref, authority = excluded.authority,
+           derivation = excluded.derivation, confidence = excluded.confidence,
+           disclosure = excluded.disclosure,
            valid_from = excluded.valid_from, valid_to = excluded.valid_to`,
       )
       .run(
@@ -574,6 +585,9 @@ class SqliteStore implements Store {
         input.origin,
         input.sessionRef ?? null,
         input.authority,
+        memoryTrust(input.origin).derivation,
+        memoryTrust(input.origin).confidence,
+        input.disclosure ?? "local",
         input.status ?? "active",
         input.validFrom ?? null,
         input.validTo ?? null,
@@ -592,9 +606,10 @@ class SqliteStore implements Store {
       origin: row.origin as MemoryRow["origin"],
       sessionRef: (row.session_ref as string | null) ?? undefined,
       authority: row.authority as MemoryRow["authority"],
+      derivation: (row.derivation as MemoryRow["derivation"] | null) ?? null,
+      confidence: (row.confidence as MemoryRow["confidence"] | null) ?? null,
+      disclosure: (row.disclosure as MemoryRow["disclosure"]) ?? "local",
       status: row.status as MemoryRow["status"],
-      servedCount: row.served_count as number,
-      lastServed: (row.last_served as number | null) ?? undefined,
       driftReason: (row.drift_reason as MemoryDriftReason | null) ?? undefined,
       unresolvedHere: Number(row.unresolved_here ?? 0) === 1,
       originZone: (row.origin_zone as MemoryRow["originZone"] | null) ?? undefined,
@@ -679,10 +694,11 @@ class SqliteStore implements Store {
     const at = input.at ?? (nowMs > this.#lastEventAt ? nowMs : this.#lastEventAt + 1);
     if (at > this.#lastEventAt) this.#lastEventAt = at;
     const id = input.id ?? this.#eventUlid(at);
+    const trust = trustFor(input.carrier, input.method, input.actor);
     this.#db
       .prepare(
-        `INSERT INTO memory_events (id, memory_id, verb, actor, reason, refs, carrier, locus, method, authority, at)
-         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+        `INSERT INTO memory_events (id, memory_id, verb, actor, reason, refs, carrier, locus, method, authority, derivation, confidence, at)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
       )
       .run(
         id,
@@ -695,6 +711,8 @@ class SqliteStore implements Store {
         input.locus ?? null,
         input.method,
         input.authority,
+        trust.derivation,
+        trust.confidence,
         at,
       );
     return id;
@@ -714,11 +732,17 @@ class SqliteStore implements Store {
     // Reindex replay — idempotent (INSERT OR IGNORE by the file-supplied id). The
     // files are the append-only source; the table is a rebuildable cache, so
     // replaying the same log line twice is a no-op, never a duplicate.
+    // DR-02: a replayed event from a legacy committed log carries no derivation/
+    // confidence tokens → recompute from carrier+method+actor (never the shadow).
+    const trust =
+      event.derivation !== null || event.confidence !== null
+        ? { derivation: event.derivation, confidence: event.confidence }
+        : trustFor(event.carrier, event.method, event.actor);
     this.#db
       .prepare(
         `INSERT OR IGNORE INTO memory_events
-           (id, memory_id, verb, actor, reason, refs, carrier, locus, method, authority, at)
-         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+           (id, memory_id, verb, actor, reason, refs, carrier, locus, method, authority, derivation, confidence, at)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
       )
       .run(
         event.id,
@@ -731,6 +755,8 @@ class SqliteStore implements Store {
         event.locus ?? null,
         event.method,
         event.authority,
+        trust.derivation,
+        trust.confidence,
         event.at,
       );
     if (event.at > this.#lastEventAt) this.#lastEventAt = event.at;
@@ -1107,6 +1133,8 @@ function claimFromRow(row: Record<string, unknown>): Claim {
     locus: (row.locus as string | null) ?? undefined,
     method: row.method as Claim["method"],
     authority: row.authority as Claim["authority"],
+    derivation: (row.derivation as Claim["derivation"] | null) ?? null,
+    confidence: (row.confidence as Claim["confidence"] | null) ?? null,
     at: row.at as number,
     gen: row.gen as number,
   };
@@ -1124,6 +1152,8 @@ function memoryEventFromRow(row: Record<string, unknown>): MemoryEvent {
     locus: (row.locus as string | null) ?? undefined,
     method: row.method as MemoryEvent["method"],
     authority: row.authority as MemoryEvent["authority"],
+    derivation: (row.derivation as MemoryEvent["derivation"] | null) ?? null,
+    confidence: (row.confidence as MemoryEvent["confidence"] | null) ?? null,
     at: row.at as number,
   };
 }
