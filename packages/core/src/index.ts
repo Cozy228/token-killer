@@ -365,5 +365,11 @@ export {
   MIN_SQLITE,
 } from "./install/versions.ts";
 
+// M3 guide (slice 3a): read-only projection kernel over the store + selection
+// engine — the typed DTOs the `ctx guide` server serializes and the React app
+// adapts. Core stays the single source of query truth; the guide is a VIEW.
+export * from "./guide/index.ts";
+export { buildFixtureStore, FIXTURE_NOW } from "./guide/fixture.ts";
+
 /** Milestone marker kept from slice 1a; the CLI stub prints it until 1i. */
 export const CTX_CORE_SCAFFOLD = "m1-1a" as const;

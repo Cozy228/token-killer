@@ -1,0 +1,204 @@
+{
+  "kind": "subject",
+  "meta": {
+    "disclosure": "accelerator, not validated — a rebuildable index of cited sources, not a verified decision oracle",
+    "generatedAt": 1783123200000
+  },
+  "subject": {
+    "entityId": "mem:retry-note",
+    "kind": "memory",
+    "name": "retry idempotency note",
+    "handle": "mem:retry-note"
+  },
+  "evidence": {
+    "envelope": {
+      "subject": "mem:retry-note",
+      "evidence": {
+        "uri": "store:mem:retry-note"
+      },
+      "observedAt": 1783123200000,
+      "derivation": "DECLARED",
+      "confidence": "LIKELY",
+      "status": "conflicting",
+      "freshness": "content-hash",
+      "disclosure": "shared"
+    },
+    "terse": "‹D·L·conflicting·content-hash·shared› store:mem:retry-note",
+    "glyphs": {
+      "derivation": {
+        "glyph": "D",
+        "label": "declared",
+        "value": "DECLARED",
+        "gap": false
+      },
+      "confidence": {
+        "glyph": "L",
+        "label": "likely",
+        "value": "LIKELY",
+        "gap": false
+      },
+      "status": {
+        "glyph": "◆",
+        "label": "conflicting",
+        "value": "conflicting",
+        "gap": false
+      },
+      "freshness": {
+        "glyph": "≈",
+        "label": "content-hash",
+        "value": "content-hash",
+        "gap": false
+      },
+      "disclosure": {
+        "glyph": "◇",
+        "label": "shared",
+        "value": "shared",
+        "gap": false
+      }
+    },
+    "preRSlice": []
+  },
+  "facts": [],
+  "decisionChain": [
+    {
+      "entityId": "mem:retry-note",
+      "name": "retry idempotency note",
+      "handle": "mem:retry-note",
+      "verb": "create",
+      "at": 1783123197000,
+      "reason": "captured from payments review",
+      "evidence": {
+        "envelope": {
+          "subject": "mem:retry-note",
+          "evidence": {
+            "uri": "store:mem:retry-note"
+          },
+          "observedAt": 1783123200000,
+          "derivation": "DECLARED",
+          "confidence": "LIKELY",
+          "status": "conflicting",
+          "freshness": "content-hash",
+          "disclosure": "shared"
+        },
+        "terse": "‹D·L·conflicting·content-hash·shared› store:mem:retry-note",
+        "glyphs": {
+          "derivation": {
+            "glyph": "D",
+            "label": "declared",
+            "value": "DECLARED",
+            "gap": false
+          },
+          "confidence": {
+            "glyph": "L",
+            "label": "likely",
+            "value": "LIKELY",
+            "gap": false
+          },
+          "status": {
+            "glyph": "◆",
+            "label": "conflicting",
+            "value": "conflicting",
+            "gap": false
+          },
+          "freshness": {
+            "glyph": "≈",
+            "label": "content-hash",
+            "value": "content-hash",
+            "gap": false
+          },
+          "disclosure": {
+            "glyph": "◇",
+            "label": "shared",
+            "value": "shared",
+            "gap": false
+          }
+        },
+        "preRSlice": []
+      }
+    },
+    {
+      "entityId": "mem:retry-note",
+      "name": "retry idempotency note",
+      "handle": "mem:retry-note",
+      "verb": "confirm",
+      "at": 1783123198000,
+      "evidence": {
+        "envelope": {
+          "subject": "mem:retry-note",
+          "evidence": {
+            "uri": "store:mem:retry-note"
+          },
+          "observedAt": 1783123200000,
+          "derivation": "DECLARED",
+          "confidence": "LIKELY",
+          "status": "conflicting",
+          "freshness": "content-hash",
+          "disclosure": "shared"
+        },
+        "terse": "‹D·L·conflicting·content-hash·shared› store:mem:retry-note",
+        "glyphs": {
+          "derivation": {
+            "glyph": "D",
+            "label": "declared",
+            "value": "DECLARED",
+            "gap": false
+          },
+          "confidence": {
+            "glyph": "L",
+            "label": "likely",
+            "value": "LIKELY",
+            "gap": false
+          },
+          "status": {
+            "glyph": "◆",
+            "label": "conflicting",
+            "value": "conflicting",
+            "gap": false
+          },
+          "freshness": {
+            "glyph": "≈",
+            "label": "content-hash",
+            "value": "content-hash",
+            "gap": false
+          },
+          "disclosure": {
+            "glyph": "◇",
+            "label": "shared",
+            "value": "shared",
+            "gap": false
+          }
+        },
+        "preRSlice": []
+      }
+    }
+  ],
+  "history": [],
+  "neighborhood": {
+    "nodes": [
+      {
+        "entityId": "mem:retry-note",
+        "name": "retry idempotency note",
+        "kind": "memory",
+        "handle": "mem:retry-note",
+        "depth": 0
+      }
+    ],
+    "edges": []
+  },
+  "budget": {
+    "budget": {
+      "edgePredicates": [
+        "calls",
+        "references",
+        "contains",
+        "touches",
+        "co-changed",
+        "supersedes"
+      ],
+      "depth": 1,
+      "nodeCap": 24
+    },
+    "omitted": 0,
+    "omittedByReason": {}
+  }
+}

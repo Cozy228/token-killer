@@ -1,0 +1,29 @@
+{
+  "kind": "time-lens",
+  "meta": {
+    "disclosure": "accelerator, not validated — a rebuildable index of cited sources, not a verified decision oracle",
+    "generatedAt": 1783123200000
+  },
+  "chains": [
+    {
+      "from": "mem:new-timeout",
+      "to": "mem:old-timeout",
+      "fromName": "new timeout note",
+      "toName": "old timeout note",
+      "predicate": "supersedes",
+      "at": 1783123200000
+    }
+  ],
+  "budget": {
+    "budget": {
+      "edgePredicates": [
+        "supersedes",
+        "co-changed"
+      ],
+      "depth": 1,
+      "nodeCap": 200
+    },
+    "omitted": 0,
+    "omittedByReason": {}
+  }
+}

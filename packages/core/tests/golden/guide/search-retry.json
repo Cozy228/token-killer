@@ -1,0 +1,534 @@
+{
+  "kind": "search",
+  "meta": {
+    "disclosure": "accelerator, not validated — a rebuildable index of cited sources, not a verified decision oracle",
+    "generatedAt": 1783123200000
+  },
+  "query": "retry",
+  "kinds": null,
+  "hits": [
+    {
+      "entityId": "commit:c1",
+      "kind": "commit",
+      "name": "c1 add charge",
+      "handle": "commit:c1",
+      "evidence": {
+        "envelope": {
+          "subject": "commit:c1",
+          "evidence": {
+            "uri": "git:c1aaaaaa",
+            "revision": "c1aaaaaa"
+          },
+          "observedAt": 1783123200000,
+          "derivation": null,
+          "confidence": null,
+          "status": "resolved",
+          "freshness": "content-hash",
+          "disclosure": "local"
+        },
+        "terse": "‹?·?·resolved·content-hash·local› git:c1aaaaaa@c1aaaaaa",
+        "glyphs": {
+          "derivation": {
+            "glyph": "?",
+            "label": "unknown",
+            "value": null,
+            "gap": true
+          },
+          "confidence": {
+            "glyph": "?",
+            "label": "unknown",
+            "value": null,
+            "gap": true
+          },
+          "status": {
+            "glyph": "●",
+            "label": "resolved",
+            "value": "resolved",
+            "gap": false
+          },
+          "freshness": {
+            "glyph": "≈",
+            "label": "content-hash",
+            "value": "content-hash",
+            "gap": false
+          },
+          "disclosure": {
+            "glyph": "·",
+            "label": "local",
+            "value": "local",
+            "gap": false
+          }
+        },
+        "preRSlice": [
+          "derivation",
+          "confidence"
+        ]
+      }
+    },
+    {
+      "entityId": "commit:c2",
+      "kind": "commit",
+      "name": "c2 idempotent retry",
+      "handle": "commit:c2",
+      "evidence": {
+        "envelope": {
+          "subject": "commit:c2",
+          "evidence": {
+            "uri": "git:c2bbbbbb",
+            "revision": "c2bbbbbb"
+          },
+          "observedAt": 1783123200000,
+          "derivation": null,
+          "confidence": null,
+          "status": "resolved",
+          "freshness": "content-hash",
+          "disclosure": "local"
+        },
+        "terse": "‹?·?·resolved·content-hash·local› git:c2bbbbbb@c2bbbbbb",
+        "glyphs": {
+          "derivation": {
+            "glyph": "?",
+            "label": "unknown",
+            "value": null,
+            "gap": true
+          },
+          "confidence": {
+            "glyph": "?",
+            "label": "unknown",
+            "value": null,
+            "gap": true
+          },
+          "status": {
+            "glyph": "●",
+            "label": "resolved",
+            "value": "resolved",
+            "gap": false
+          },
+          "freshness": {
+            "glyph": "≈",
+            "label": "content-hash",
+            "value": "content-hash",
+            "gap": false
+          },
+          "disclosure": {
+            "glyph": "·",
+            "label": "local",
+            "value": "local",
+            "gap": false
+          }
+        },
+        "preRSlice": [
+          "derivation",
+          "confidence"
+        ]
+      }
+    },
+    {
+      "entityId": "file:orders.ts",
+      "kind": "file",
+      "name": "orders.ts",
+      "handle": "file:orders.ts",
+      "evidence": {
+        "envelope": {
+          "subject": "file:orders.ts",
+          "evidence": {
+            "uri": "file:orders.ts",
+            "revision": "rev-code-1",
+            "hash": "hash-orders.ts"
+          },
+          "observedAt": 1783123200000,
+          "derivation": null,
+          "confidence": null,
+          "status": "resolved",
+          "freshness": "content-hash",
+          "disclosure": "local"
+        },
+        "terse": "‹?·?·resolved·content-hash·local› file:orders.ts@rev-code",
+        "glyphs": {
+          "derivation": {
+            "glyph": "?",
+            "label": "unknown",
+            "value": null,
+            "gap": true
+          },
+          "confidence": {
+            "glyph": "?",
+            "label": "unknown",
+            "value": null,
+            "gap": true
+          },
+          "status": {
+            "glyph": "●",
+            "label": "resolved",
+            "value": "resolved",
+            "gap": false
+          },
+          "freshness": {
+            "glyph": "≈",
+            "label": "content-hash",
+            "value": "content-hash",
+            "gap": false
+          },
+          "disclosure": {
+            "glyph": "·",
+            "label": "local",
+            "value": "local",
+            "gap": false
+          }
+        },
+        "preRSlice": [
+          "derivation",
+          "confidence"
+        ]
+      }
+    },
+    {
+      "entityId": "file:payments.ts",
+      "kind": "file",
+      "name": "payments.ts",
+      "handle": "file:payments.ts",
+      "evidence": {
+        "envelope": {
+          "subject": "file:payments.ts",
+          "evidence": {
+            "uri": "file:payments.ts",
+            "revision": "rev-code-1",
+            "hash": "hash-payments.ts"
+          },
+          "observedAt": 1783123200000,
+          "derivation": null,
+          "confidence": null,
+          "status": "resolved",
+          "freshness": "content-hash",
+          "disclosure": "local"
+        },
+        "terse": "‹?·?·resolved·content-hash·local› file:payments.ts@rev-code",
+        "glyphs": {
+          "derivation": {
+            "glyph": "?",
+            "label": "unknown",
+            "value": null,
+            "gap": true
+          },
+          "confidence": {
+            "glyph": "?",
+            "label": "unknown",
+            "value": null,
+            "gap": true
+          },
+          "status": {
+            "glyph": "●",
+            "label": "resolved",
+            "value": "resolved",
+            "gap": false
+          },
+          "freshness": {
+            "glyph": "≈",
+            "label": "content-hash",
+            "value": "content-hash",
+            "gap": false
+          },
+          "disclosure": {
+            "glyph": "·",
+            "label": "local",
+            "value": "local",
+            "gap": false
+          }
+        },
+        "preRSlice": [
+          "derivation",
+          "confidence"
+        ]
+      }
+    },
+    {
+      "entityId": "sym:charge",
+      "kind": "symbol",
+      "name": "charge",
+      "handle": "sym:charge",
+      "evidence": {
+        "envelope": {
+          "subject": "sym:charge",
+          "evidence": {
+            "uri": "file:payments.ts:10-40",
+            "revision": "rev-code-1",
+            "hash": "hash-charge"
+          },
+          "observedAt": 1783123200000,
+          "derivation": "OBSERVED",
+          "confidence": "LIKELY",
+          "status": "resolved",
+          "freshness": "content-hash",
+          "disclosure": "local"
+        },
+        "terse": "‹O·L·resolved·content-hash·local› file:payments.ts:10-40@rev-code",
+        "glyphs": {
+          "derivation": {
+            "glyph": "O",
+            "label": "observed",
+            "value": "OBSERVED",
+            "gap": false
+          },
+          "confidence": {
+            "glyph": "L",
+            "label": "likely",
+            "value": "LIKELY",
+            "gap": false
+          },
+          "status": {
+            "glyph": "●",
+            "label": "resolved",
+            "value": "resolved",
+            "gap": false
+          },
+          "freshness": {
+            "glyph": "≈",
+            "label": "content-hash",
+            "value": "content-hash",
+            "gap": false
+          },
+          "disclosure": {
+            "glyph": "·",
+            "label": "local",
+            "value": "local",
+            "gap": false
+          }
+        },
+        "preRSlice": []
+      }
+    },
+    {
+      "entityId": "sym:validateCard",
+      "kind": "symbol",
+      "name": "validateCard",
+      "handle": "sym:validateCard",
+      "evidence": {
+        "envelope": {
+          "subject": "sym:validateCard",
+          "evidence": {
+            "uri": "file:payments.ts:42-60",
+            "revision": "rev-code-1",
+            "hash": "hash-validateCard"
+          },
+          "observedAt": 1783123200000,
+          "derivation": "OBSERVED",
+          "confidence": "LIKELY",
+          "status": "resolved",
+          "freshness": "content-hash",
+          "disclosure": "local"
+        },
+        "terse": "‹O·L·resolved·content-hash·local› file:payments.ts:42-60@rev-code",
+        "glyphs": {
+          "derivation": {
+            "glyph": "O",
+            "label": "observed",
+            "value": "OBSERVED",
+            "gap": false
+          },
+          "confidence": {
+            "glyph": "L",
+            "label": "likely",
+            "value": "LIKELY",
+            "gap": false
+          },
+          "status": {
+            "glyph": "●",
+            "label": "resolved",
+            "value": "resolved",
+            "gap": false
+          },
+          "freshness": {
+            "glyph": "≈",
+            "label": "content-hash",
+            "value": "content-hash",
+            "gap": false
+          },
+          "disclosure": {
+            "glyph": "·",
+            "label": "local",
+            "value": "local",
+            "gap": false
+          }
+        },
+        "preRSlice": []
+      }
+    },
+    {
+      "entityId": "sym:retry",
+      "kind": "symbol",
+      "name": "retry",
+      "handle": "sym:retry",
+      "evidence": {
+        "envelope": {
+          "subject": "sym:retry",
+          "evidence": {
+            "uri": "file:orders.ts:5-30",
+            "revision": "rev-code-1",
+            "hash": "hash-retry"
+          },
+          "observedAt": 1783123200000,
+          "derivation": "OBSERVED",
+          "confidence": "LIKELY",
+          "status": "resolved",
+          "freshness": "content-hash",
+          "disclosure": "local"
+        },
+        "terse": "‹O·L·resolved·content-hash·local› file:orders.ts:5-30@rev-code",
+        "glyphs": {
+          "derivation": {
+            "glyph": "O",
+            "label": "observed",
+            "value": "OBSERVED",
+            "gap": false
+          },
+          "confidence": {
+            "glyph": "L",
+            "label": "likely",
+            "value": "LIKELY",
+            "gap": false
+          },
+          "status": {
+            "glyph": "●",
+            "label": "resolved",
+            "value": "resolved",
+            "gap": false
+          },
+          "freshness": {
+            "glyph": "≈",
+            "label": "content-hash",
+            "value": "content-hash",
+            "gap": false
+          },
+          "disclosure": {
+            "glyph": "·",
+            "label": "local",
+            "value": "local",
+            "gap": false
+          }
+        },
+        "preRSlice": []
+      }
+    },
+    {
+      "entityId": "mem:retry-note",
+      "kind": "memory",
+      "name": "retry idempotency note",
+      "handle": "mem:retry-note",
+      "evidence": {
+        "envelope": {
+          "subject": "mem:retry-note",
+          "evidence": {
+            "uri": "store:mem:retry-note"
+          },
+          "observedAt": 1783123200000,
+          "derivation": "DECLARED",
+          "confidence": "LIKELY",
+          "status": "conflicting",
+          "freshness": "content-hash",
+          "disclosure": "shared"
+        },
+        "terse": "‹D·L·conflicting·content-hash·shared› store:mem:retry-note",
+        "glyphs": {
+          "derivation": {
+            "glyph": "D",
+            "label": "declared",
+            "value": "DECLARED",
+            "gap": false
+          },
+          "confidence": {
+            "glyph": "L",
+            "label": "likely",
+            "value": "LIKELY",
+            "gap": false
+          },
+          "status": {
+            "glyph": "◆",
+            "label": "conflicting",
+            "value": "conflicting",
+            "gap": false
+          },
+          "freshness": {
+            "glyph": "≈",
+            "label": "content-hash",
+            "value": "content-hash",
+            "gap": false
+          },
+          "disclosure": {
+            "glyph": "◇",
+            "label": "shared",
+            "value": "shared",
+            "gap": false
+          }
+        },
+        "preRSlice": []
+      }
+    },
+    {
+      "entityId": "decision:idempotent-retry",
+      "kind": "decision",
+      "name": "Adopt idempotent retry",
+      "handle": "decision:idempotent-retry",
+      "evidence": {
+        "envelope": {
+          "subject": "decision:idempotent-retry",
+          "evidence": {
+            "uri": "file:payments.md:12-12",
+            "revision": "rev-docs-1"
+          },
+          "observedAt": 1783123200000,
+          "derivation": null,
+          "confidence": null,
+          "status": "resolved",
+          "freshness": "content-hash",
+          "disclosure": "local"
+        },
+        "terse": "‹?·?·resolved·content-hash·local› file:payments.md:12-12@rev-docs",
+        "glyphs": {
+          "derivation": {
+            "glyph": "?",
+            "label": "unknown",
+            "value": null,
+            "gap": true
+          },
+          "confidence": {
+            "glyph": "?",
+            "label": "unknown",
+            "value": null,
+            "gap": true
+          },
+          "status": {
+            "glyph": "●",
+            "label": "resolved",
+            "value": "resolved",
+            "gap": false
+          },
+          "freshness": {
+            "glyph": "≈",
+            "label": "content-hash",
+            "value": "content-hash",
+            "gap": false
+          },
+          "disclosure": {
+            "glyph": "·",
+            "label": "local",
+            "value": "local",
+            "gap": false
+          }
+        },
+        "preRSlice": [
+          "derivation",
+          "confidence"
+        ]
+      }
+    }
+  ],
+  "budget": {
+    "budget": {
+      "edgePredicates": [],
+      "depth": 0,
+      "nodeCap": 40
+    },
+    "omitted": 0,
+    "omittedByReason": {}
+  }
+}

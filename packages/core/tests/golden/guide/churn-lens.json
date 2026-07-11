@@ -1,0 +1,36 @@
+{
+  "kind": "churn-lens",
+  "meta": {
+    "disclosure": "accelerator, not validated — a rebuildable index of cited sources, not a verified decision oracle",
+    "generatedAt": 1783123200000
+  },
+  "clusters": [
+    {
+      "members": [
+        {
+          "entityId": "file:orders.ts",
+          "name": "orders.ts",
+          "handle": "file:orders.ts"
+        },
+        {
+          "entityId": "file:payments.ts",
+          "name": "payments.ts",
+          "handle": "file:payments.ts"
+        }
+      ],
+      "support": 0.8
+    }
+  ],
+  "budget": {
+    "budget": {
+      "edgePredicates": [
+        "supersedes",
+        "co-changed"
+      ],
+      "depth": 1,
+      "nodeCap": 200
+    },
+    "omitted": 0,
+    "omittedByReason": {}
+  }
+}

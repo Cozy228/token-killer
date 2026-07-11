@@ -1,0 +1,394 @@
+{
+  "kind": "inspector",
+  "meta": {
+    "disclosure": "accelerator, not validated — a rebuildable index of cited sources, not a verified decision oracle",
+    "generatedAt": 1783123200000
+  },
+  "reviewQueue": [
+    {
+      "entityId": "mem:draft-note",
+      "handle": "mem:draft-note",
+      "gist": "Cache invalidation on order update may be racy — needs a human to confirm.",
+      "cliCommand": "ctx memory confirm mem:draft-note",
+      "evidence": {
+        "envelope": {
+          "subject": "mem:draft-note",
+          "evidence": {
+            "uri": "store:mem:draft-note"
+          },
+          "observedAt": 1783123200000,
+          "derivation": "DECLARED",
+          "confidence": "LIKELY",
+          "status": "unknown",
+          "freshness": "content-hash",
+          "disclosure": "local"
+        },
+        "terse": "‹D·L·unknown·content-hash·local› store:mem:draft-note",
+        "glyphs": {
+          "derivation": {
+            "glyph": "D",
+            "label": "declared",
+            "value": "DECLARED",
+            "gap": false
+          },
+          "confidence": {
+            "glyph": "L",
+            "label": "likely",
+            "value": "LIKELY",
+            "gap": false
+          },
+          "status": {
+            "glyph": "?",
+            "label": "unknown",
+            "value": "unknown",
+            "gap": true
+          },
+          "freshness": {
+            "glyph": "≈",
+            "label": "content-hash",
+            "value": "content-hash",
+            "gap": false
+          },
+          "disclosure": {
+            "glyph": "·",
+            "label": "local",
+            "value": "local",
+            "gap": false
+          }
+        },
+        "preRSlice": []
+      }
+    }
+  ],
+  "conflicts": [
+    {
+      "reasonClass": "contradiction",
+      "items": [
+        {
+          "a": 4,
+          "b": 5,
+          "subjectA": "mem:retry-note",
+          "subjectB": "mem:old-timeout",
+          "cliCommand": "ctx memory confirm mem:retry-note"
+        }
+      ]
+    }
+  ],
+  "pushPreview": {
+    "digestText": "<!-- ctx:managed:begin -->\nThis project has a ctx context base (code, decisions, history, memory).\nStart tasks with the `context` MCP tool; drill down by passing back any [handle].\nGotchas:\n⚠ Timeout is now 30s after the idempotency change. [m2edb9]\n⚠ Retry must be idempotent — a double-charge on redelivery is the failure we avoid. [m71ed1]\n<!-- ctx:managed:end -->",
+    "bytes": 373,
+    "budgetBytes": 1024,
+    "pins": [],
+    "vetoes": [],
+    "omittedGotchas": 0
+  },
+  "memoryBrowser": {
+    "zones": {
+      "mainline": 3,
+      "overlay": 1,
+      "unknown": 0
+    },
+    "entries": [
+      {
+        "entityId": "mem:draft-note",
+        "handle": "mem:draft-note",
+        "name": "draft cache note",
+        "gist": "Cache invalidation on order update may be racy — needs a human to confirm.",
+        "origin": "remember",
+        "zone": "overlay",
+        "status": "needs-review",
+        "lifecycle": [
+          {
+            "verb": "create",
+            "actor": "agent",
+            "at": 1783123199000
+          }
+        ],
+        "evidence": {
+          "envelope": {
+            "subject": "mem:draft-note",
+            "evidence": {
+              "uri": "store:mem:draft-note"
+            },
+            "observedAt": 1783123200000,
+            "derivation": "DECLARED",
+            "confidence": "LIKELY",
+            "status": "unknown",
+            "freshness": "content-hash",
+            "disclosure": "local"
+          },
+          "terse": "‹D·L·unknown·content-hash·local› store:mem:draft-note",
+          "glyphs": {
+            "derivation": {
+              "glyph": "D",
+              "label": "declared",
+              "value": "DECLARED",
+              "gap": false
+            },
+            "confidence": {
+              "glyph": "L",
+              "label": "likely",
+              "value": "LIKELY",
+              "gap": false
+            },
+            "status": {
+              "glyph": "?",
+              "label": "unknown",
+              "value": "unknown",
+              "gap": true
+            },
+            "freshness": {
+              "glyph": "≈",
+              "label": "content-hash",
+              "value": "content-hash",
+              "gap": false
+            },
+            "disclosure": {
+              "glyph": "·",
+              "label": "local",
+              "value": "local",
+              "gap": false
+            }
+          },
+          "preRSlice": []
+        }
+      },
+      {
+        "entityId": "mem:new-timeout",
+        "handle": "mem:new-timeout",
+        "name": "new timeout note",
+        "gist": "Timeout is now 30s after the idempotency change.",
+        "origin": "human-note",
+        "zone": "mainline",
+        "status": "active",
+        "lifecycle": [
+          {
+            "verb": "supersede",
+            "actor": "human",
+            "at": 1783123199500,
+            "reason": "raised timeout to 30s"
+          }
+        ],
+        "evidence": {
+          "envelope": {
+            "subject": "mem:new-timeout",
+            "evidence": {
+              "uri": "store:mem:new-timeout"
+            },
+            "observedAt": 1783123200000,
+            "derivation": "DECLARED",
+            "confidence": "LIKELY",
+            "status": "resolved",
+            "freshness": "content-hash",
+            "disclosure": "local"
+          },
+          "terse": "‹D·L·resolved·content-hash·local› store:mem:new-timeout",
+          "glyphs": {
+            "derivation": {
+              "glyph": "D",
+              "label": "declared",
+              "value": "DECLARED",
+              "gap": false
+            },
+            "confidence": {
+              "glyph": "L",
+              "label": "likely",
+              "value": "LIKELY",
+              "gap": false
+            },
+            "status": {
+              "glyph": "●",
+              "label": "resolved",
+              "value": "resolved",
+              "gap": false
+            },
+            "freshness": {
+              "glyph": "≈",
+              "label": "content-hash",
+              "value": "content-hash",
+              "gap": false
+            },
+            "disclosure": {
+              "glyph": "·",
+              "label": "local",
+              "value": "local",
+              "gap": false
+            }
+          },
+          "preRSlice": []
+        }
+      },
+      {
+        "entityId": "mem:old-timeout",
+        "handle": "mem:old-timeout",
+        "name": "old timeout note",
+        "gist": "Timeout was 5s (superseded).",
+        "origin": "human-note",
+        "zone": "mainline",
+        "status": "superseded",
+        "lifecycle": [],
+        "evidence": {
+          "envelope": {
+            "subject": "mem:old-timeout",
+            "evidence": {
+              "uri": "store:mem:old-timeout"
+            },
+            "observedAt": 1783123200000,
+            "derivation": "DECLARED",
+            "confidence": "LIKELY",
+            "status": "stale",
+            "freshness": "unknown-until-reverified",
+            "disclosure": "local"
+          },
+          "terse": "‹D·L·stale·unknown-until-reverified·local› store:mem:old-timeout",
+          "glyphs": {
+            "derivation": {
+              "glyph": "D",
+              "label": "declared",
+              "value": "DECLARED",
+              "gap": false
+            },
+            "confidence": {
+              "glyph": "L",
+              "label": "likely",
+              "value": "LIKELY",
+              "gap": false
+            },
+            "status": {
+              "glyph": "○",
+              "label": "stale",
+              "value": "stale",
+              "gap": false
+            },
+            "freshness": {
+              "glyph": "⟳",
+              "label": "unknown-until-reverified",
+              "value": "unknown-until-reverified",
+              "gap": false
+            },
+            "disclosure": {
+              "glyph": "·",
+              "label": "local",
+              "value": "local",
+              "gap": false
+            }
+          },
+          "preRSlice": []
+        }
+      },
+      {
+        "entityId": "mem:retry-note",
+        "handle": "mem:retry-note",
+        "name": "retry idempotency note",
+        "gist": "Retry must be idempotent — a double-charge on redelivery is the failure we avoid.",
+        "origin": "human-note",
+        "zone": "mainline",
+        "status": "active",
+        "lifecycle": [
+          {
+            "verb": "create",
+            "actor": "human",
+            "at": 1783123197000,
+            "reason": "captured from payments review"
+          },
+          {
+            "verb": "confirm",
+            "actor": "human",
+            "at": 1783123198000
+          }
+        ],
+        "evidence": {
+          "envelope": {
+            "subject": "mem:retry-note",
+            "evidence": {
+              "uri": "store:mem:retry-note"
+            },
+            "observedAt": 1783123200000,
+            "derivation": "DECLARED",
+            "confidence": "LIKELY",
+            "status": "conflicting",
+            "freshness": "content-hash",
+            "disclosure": "shared"
+          },
+          "terse": "‹D·L·conflicting·content-hash·shared› store:mem:retry-note",
+          "glyphs": {
+            "derivation": {
+              "glyph": "D",
+              "label": "declared",
+              "value": "DECLARED",
+              "gap": false
+            },
+            "confidence": {
+              "glyph": "L",
+              "label": "likely",
+              "value": "LIKELY",
+              "gap": false
+            },
+            "status": {
+              "glyph": "◆",
+              "label": "conflicting",
+              "value": "conflicting",
+              "gap": false
+            },
+            "freshness": {
+              "glyph": "≈",
+              "label": "content-hash",
+              "value": "content-hash",
+              "gap": false
+            },
+            "disclosure": {
+              "glyph": "◇",
+              "label": "shared",
+              "value": "shared",
+              "gap": false
+            }
+          },
+          "preRSlice": []
+        }
+      }
+    ]
+  },
+  "health": {
+    "sources": [
+      {
+        "source": "code",
+        "publishedGen": 1,
+        "cursorPosition": "rev-code-1",
+        "cursorFreshness": 1783123200000,
+        "stale": false
+      },
+      {
+        "source": "git",
+        "publishedGen": 1,
+        "cursorPosition": "c2bbbbbb",
+        "cursorFreshness": 1783123200000,
+        "stale": false
+      },
+      {
+        "source": "docs",
+        "publishedGen": 1,
+        "cursorPosition": "rev-docs-1",
+        "cursorFreshness": 1783123200000,
+        "stale": false
+      },
+      {
+        "source": "memory",
+        "publishedGen": 1,
+        "cursorPosition": "mem-cursor-1",
+        "cursorFreshness": 1783123200000,
+        "stale": false
+      }
+    ],
+    "needsReview": 1,
+    "openConflicts": 1
+  },
+  "budget": {
+    "budget": {
+      "edgePredicates": [],
+      "depth": 0,
+      "nodeCap": 500
+    },
+    "omitted": 0,
+    "omittedByReason": {}
+  }
+}
