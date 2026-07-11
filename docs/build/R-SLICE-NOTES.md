@@ -218,7 +218,64 @@ NOT DONE (see "Where I stopped"):
 - Full removal of the legacy `authority` column/field (DR-02 literal) — deferred;
   recommended as a dedicated mechanical follow-up once derivation+confidence are
   proven in review.
+- DR-32 (item 8) remains: reword the push-block header off "with provenance",
+  omit factual gotchas (keep `rankGotchas`), add an omission disclosure, gate
+  manual `ctx push`, and rewrite `push-block.test.ts` + `1h-push.test.ts` to the
+  omission posture. Understood + scoped; not landed this session.
+- Should the terse envelope (`renderEnvelopeTerse`) be rendered inline in the human
+  `context()` markdown text (would churn the golden transcripts), or stay
+  machine-only via MCP `structuredContent`? Left machine-only to avoid golden churn;
+  a design call for review.
+
+## Where I stopped
+
+Phases 1, 2, 3 COMPLETE (green). Phase 4 PARTIAL (items 6 + 10 green; item 8/DR-32
+not done). Phase 5 COMPLETE (items 9 + 11 green). **10 of 11 acceptance items PASS;
+item 8 (DR-32 push-block de-claiming) NOT DONE.**
+
+DR-32 not done because "OMIT factual gotchas entirely" guts the push block's
+current gotcha-rendering behavior, and the two acceptance suites that pin it
+(`packages/core/tests/unit/push-block.test.ts`, `tests/acceptance/1h-push.test.ts`
+— ~200 lines of pin/veto/byte-budget assertions built entirely around rendered
+gotchas) would need a full rewrite to the new omission posture. That rewrite was
+too large to land green within this session's budget; stopping here keeps the tree
+green (the goal prompt's "STOP at a clean boundary with everything green" rule)
+rather than risking a half-finished push-block rewrite. The mechanism is understood
+and scoped (reword `HEADER_LINES[0]` to drop "— with provenance"; make
+`renderPushBlock` emit no `⚠ gist [handle]` lines + an omission disclosure; keep
+`rankGotchas`; gate manual `ctx push`). Handoff-ready.
+
+Every completed DR is an independent green commit; the branch `r-slice/opus` is
+pushed to origin (HEAD = dr-12 commit). Suite state at stop: core
+**5 failed / 489 passed / 2 todo** — the 5 are the PRE-EXISTING living-repo
+doc-churn baseline failures (unchanged since the pristine checkout); CLI **24
+passed**.
 
 ## 11-item acceptance self-check
 
-(filled at the end; per-item PASS/FAIL/NOT-DONE + evidence)
+Evidence tests live in `packages/core/tests/acceptance/r-slice.test.ts` unless
+noted. Run: `pnpm --dir packages/core vitest run tests/acceptance/r-slice.test.ts`.
+
+| # | DR | Verdict | Evidence |
+|---|----|---------|----------|
+| 1 | DR-02 split + backfill; no CONFIRMED w/o corroboration | PASS | `A1 (DR-02) …` ×5 + `A1 … PROPERTY: trustFor never returns CONFIRMED`, `… no persisted row is CONFIRMED`; backfill: `DR-02 backfill: pre-006 … split from carrier+method` |
+| 2 | DR-03 computed status view | PASS | `A2 (DR-03) …` ×5 (active→resolved, needs-review drift/pending, unresolvedHere/retired→unavailable, superseded→stale, restricted outranks) |
+| 3 | DR-04 stale links downgraded (traversal+rank); honest header; drift never `fresh` | PASS | `A3 (DR-04) …` ×4 (stale linkConfidence, traversal edge downgrade, header `indexed`/`index-catchup` never `fresh`, decay-class scaffold) |
+| 4 | DR-06 D32 tuple; worktrees don't cross-serve | PASS | `A4 (DR-06) …` ×3 (identity sensitivity, publish stamps identity, two worktrees no cross-serve) |
+| 5 | DR-10 equivalent as-of recompute; no bare cut | PASS | `A5 (DR-10): status recomputes as-of …`; `valid_from`/`valid_to` columns retained (no escalation) |
+| 6 | DR-07/DR-31 minimum envelope defined + serialized over MCP under caller scope | PASS | core `A6 (DR-07) …` ×6 (all §3 axes, restricted, drift, `?`-unknown, terse, DR-01 disclosure) + cli `tools/call context → structuredContent carries claim envelopes + disclosure` (`packages/cli/tests/mcp.test.ts`) |
+| 7 | DR-05 restricted excluded from FTS/render/MCP; secret MCP note never searchable | PASS | `A7 (DR-05) …` ×4 (mcp note→restricted, never searchable, cited withheld render, non-secret unaffected) |
+| 8 | DR-32 push block omits gotchas + de-claims header + gates manual push | **NOT DONE** | see "Where I stopped" — push block still renders gotchas + "with provenance" header on this branch |
+| 9 | DR-12 scoped override expiry → stale-flagged-retained | PASS | `A9 (DR-12) …` ×3 (fresh=resolved, past-TTL=stale+retained, scoping) |
+| 10 | DR-01 accelerator-not-validated disclosure on responses | PASS | `A10 (DR-01): the accelerator-not-validated disclosure exists` + cli MCP `structuredContent.disclosure` + `context` tool description re-qualified. (Pre-V1 distribution containment = NON-GOAL of this slice per the goal prompt; unchanged/inherited.) |
+| 11 | DR-27 unresolved mention → named blind spot; persistence V1-gated | PASS | `A11 (DR-27): an unresolved backticked symbol mention is a NAMED blind spot, no spurious link` |
+
+## Adjacent-found (untouched)
+
+- DR-30 items (CLI `supersede` verb missing; `needs-review` overloads
+  drift-stale vs pending; `human-note` origin unwired) — OPEN candidates, not in
+  this slice's DR set; left untouched. The DR-03 status view already distinguishes
+  drift-stale (`stale`) from pending (`unknown`), partially addressing the
+  `needs-review` overload at the read layer.
+- DR-18 `summarizeBuild` exit-code defect (shipping wedge `src/`) — out of this
+  slice's scope (packages/ greenfield only); untouched.
