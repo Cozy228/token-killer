@@ -221,6 +221,18 @@ export interface MemoryInput {
 /** DR-05 disclosure / permission class propagated from source (LAW §3/§4). */
 export type Disclosure = "local" | "shared" | "restricted";
 
+/**
+ * DR-03 per-claim status (LAW §3 status enum). A COMPUTED view over the scattered
+ * `links.stale` / `conflicts` / `memory.status` signals — never a stored column.
+ */
+export type ClaimStatus =
+  | "resolved"
+  | "conflicting"
+  | "stale"
+  | "unavailable"
+  | "restricted"
+  | "unknown";
+
 export interface MemoryRow {
   entityId: string;
   gist: string;

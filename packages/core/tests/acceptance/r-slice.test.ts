@@ -10,6 +10,7 @@ import { openStore, type Store } from "../../src/store/store.ts";
 import { openDatabase } from "../../src/store/sqlite.ts";
 import { runMigrations } from "../../src/store/migrate.ts";
 import { trustFor, memoryTrustFor } from "../../src/store/trust.ts";
+import { memoryClaimStatus } from "../../src/serve/status.ts";
 import { cleanupTempDir, makeGitFixture, makeTempDir } from "../helpers/sandbox.ts";
 
 const REAL_MIGRATIONS = fileURLToPath(new URL("../../src/store/migrations/", import.meta.url));
@@ -167,6 +168,58 @@ describe("R-slice Phase 1: derivation+confidence split (DR-02)", () => {
   test("DR-05 schema half: memory disclosure defaults to local", () => {
     addMemory("mem:disc", "remember");
     expect(store.getMemory("mem:disc")!.disclosure).toBe("local");
+  });
+
+  // ---- DR-03: computed per-claim status view (item 2) ----
+  const setStatus = (entityId: string, status: import("../../src/store/types.ts").MemoryStatus) =>
+    store.cacheMemoryStatus(entityId, status);
+  const st = (entityId: string) => memoryClaimStatus(store, store.getMemory(entityId)!);
+
+  test("A2 (DR-03): active memory → resolved", () => {
+    addMemory("mem:s1", "remember");
+    expect(st("mem:s1")).toBe("resolved");
+  });
+
+  test("A2 (DR-03): needs-review with drift → stale; without drift → unknown", () => {
+    addMemory("mem:s2", "remember");
+    setStatus("mem:s2", "needs-review");
+    expect(st("mem:s2")).toBe("unknown"); // pending confirmation
+    store.setMemoryDrift("mem:s2", "body-changed");
+    expect(st("mem:s2")).toBe("stale"); // an anchor drifted
+  });
+
+  test("A2 (DR-03): unresolvedHere → unavailable; retired → unavailable", () => {
+    addMemory("mem:s3", "remember");
+    store.setMemoryUnresolvedHere("mem:s3", true);
+    expect(st("mem:s3")).toBe("unavailable");
+    addMemory("mem:s4", "remember");
+    setStatus("mem:s4", "retired");
+    expect(st("mem:s4")).toBe("unavailable");
+  });
+
+  test("A2 (DR-03): superseded → stale", () => {
+    addMemory("mem:s5", "remember");
+    setStatus("mem:s5", "superseded");
+    expect(st("mem:s5")).toBe("stale");
+  });
+
+  test("A2 (DR-03): restricted disclosure → restricted (outranks a stale body)", () => {
+    store.upsertEntity({
+      id: "mem:s6",
+      kind: "memory",
+      name: "mem:s6",
+      locator: { t: "store" },
+      gen: 1,
+    });
+    store.writeMemory({
+      entityId: "mem:s6",
+      gist: "secret",
+      origin: "remember",
+      authority: "confirmed",
+      disclosure: "restricted",
+    });
+    setStatus("mem:s6", "superseded");
+    expect(st("mem:s6")).toBe("restricted");
   });
 });
 

@@ -317,6 +317,9 @@ export {
 export type { RenderOut } from "./serve/render.ts";
 export { MAX_RESPONSE_CHARS, OMITTED_HANDLES_PER_SECTION } from "./serve/types.ts";
 export type { ServeResponse, ServeDeps, ServeDiag, ServeKind } from "./serve/types.ts";
+// R-slice: trust classification (DR-02) + computed per-claim status view (DR-03).
+export { trustFor, memoryTrustFor } from "./store/trust.ts";
+export { memoryClaimStatus } from "./serve/status.ts";
 
 // install/doctor (slice 1i): managed host writes + read-only verification.
 // Push-block placement REUSES slice 1h's push surface (placePushBlock /

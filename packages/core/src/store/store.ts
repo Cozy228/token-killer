@@ -170,6 +170,7 @@ export interface Store {
    * Indexed lookup via claims(subject) — rank calls this per candidate.
    */
   openStaleSuspects(memoryId: string): Conflict[];
+  openContradictions(memoryId: string): Conflict[];
 
   // memory + anchors (store IS the source of truth here — §2 notes exception)
   writeMemory(input: MemoryInput): void;
@@ -546,6 +547,16 @@ class SqliteStore implements Store {
       .prepare(
         `SELECT c.* FROM conflicts c JOIN claims ca ON ca.id = c.a
          WHERE c.kind = 'stale-suspect' AND c.status = 'open' AND ca.subject = ?`,
+      )
+      .all(memoryId) as unknown as Conflict[];
+  }
+
+  /** DR-03: open contradiction conflicts whose claim `a` subject is this memory. */
+  openContradictions(memoryId: string): Conflict[] {
+    return this.#db
+      .prepare(
+        `SELECT c.* FROM conflicts c JOIN claims ca ON ca.id = c.a
+         WHERE c.kind = 'contradiction' AND c.status = 'open' AND ca.subject = ?`,
       )
       .all(memoryId) as unknown as Conflict[];
   }
