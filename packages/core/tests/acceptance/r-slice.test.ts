@@ -24,6 +24,10 @@ import {
   renderEnvelopeTerse,
   ACCELERATOR_DISCLOSURE,
 } from "../../src/serve/envelope.ts";
+import { execFileSync as childExecFileSync } from "node:child_process";
+import { writeFileSync } from "node:fs";
+import { DocsAdapter } from "../../src/ingest/docs.ts";
+import { clearScanCache } from "../../src/ingest/scan.ts";
 import { cleanupTempDir, makeGitFixture, makeTempDir } from "../helpers/sandbox.ts";
 
 const REAL_MIGRATIONS = fileURLToPath(new URL("../../src/store/migrations/", import.meta.url));
@@ -632,5 +636,54 @@ describe("R-slice Phase 4: minimum claim envelope (DR-07/DR-01, item 6)", () => 
   test("A10 (DR-01): the accelerator-not-validated disclosure exists", () => {
     expect(ACCELERATOR_DISCLOSURE).toMatch(/accelerator/i);
     expect(ACCELERATOR_DISCLOSURE).toMatch(/not validated|not a verified/i);
+  });
+});
+
+describe("R-slice Phase 5: DR-27 disclosure half — named blind spot (item 11)", () => {
+  let root: string;
+  let repo: string;
+  let store: Store;
+
+  const gitIn = (args: string[]) =>
+    childExecFileSync("git", args, {
+      cwd: repo,
+      stdio: ["ignore", "ignore", "pipe"],
+      timeout: 15_000,
+    });
+
+  beforeEach(() => {
+    root = makeTempDir("ctx-rslice-o16-");
+    repo = makeGitFixture(root);
+    store = openStore({ projectDir: repo, home: join(root, "contexa-home") });
+  });
+  afterEach(() => {
+    store.close();
+    cleanupTempDir(root);
+  });
+
+  test("A11 (DR-27): an unresolved backticked symbol mention is a NAMED blind spot, no spurious link", async () => {
+    // A doc backticks a symbol that exists in NO published code → the O-16 path
+    // used to `continue` silently. Now it is flagged + counted as a blind spot.
+    writeFileSync(
+      join(repo, "guide.md"),
+      "# Guide\n\nSee `ThisSymbolDoesNotExistAnywhere` for the retry protocol.\n",
+    );
+    gitIn(["add", "guide.md"]);
+    gitIn(["commit", "-q", "-m", "docs: guide"]);
+    clearScanCache();
+    const docs = new DocsAdapter();
+    const result = await docs.ingest(store, await docs.dirtyCheck(store), {
+      deadline: Date.now() + 60_000,
+      now: () => Date.now(),
+    });
+    // Named blind spot surfaced in the ingest envelope (never silent).
+    expect(result.blindSpots ?? 0).toBeGreaterThanOrEqual(1);
+    // Suppressed relation: NO spurious `references` link/claim to a made-up symbol.
+    expect(store.linksFrom("file:guide.md", "references")).toHaveLength(0);
+    expect(
+      store
+        .claimsFor("file:guide.md", "references")
+        .filter((c) => c.object?.includes("DoesNotExist")),
+    ).toHaveLength(0);
   });
 });

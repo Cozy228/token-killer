@@ -177,7 +177,17 @@ NOT DONE (see "Where I stopped"):
   consumer via MCP `structuredContent` (DR-31) and is available to any human-render
   via `renderEnvelopeTerse`, but the default `context()` markdown text is unchanged.
 
-### Phase 5 — Tail — NOT DONE
+### Phase 5 — Tail — PARTIAL (item 11 green; item 9 in progress)
+
+- **DR-27 disclosure half (item 11) — DONE (green).** `ingest/docs.ts`
+  `resolveSymbolMentions` no longer silently `continue`s on an unresolved
+  backticked symbol mention (the O-16 blind spot): distinct unresolved tokens are
+  counted and surfaced as a NAMED blind spot in the `IngestResult.blindSpots`
+  envelope field. The affected relation is suppressed (no spurious `references`
+  link/claim). The GATED construction half (durable unresolved-mention persistence
+  + cross-source re-resolution seam) stays V1-gated and is deliberately NOT built.
+  Frozen fixture: a doc backticking a non-existent symbol → `blindSpots >= 1`, no
+  spurious link (r-slice.test.ts, 35 total).
 
 ## Deviations
 
