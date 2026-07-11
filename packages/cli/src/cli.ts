@@ -41,6 +41,7 @@ import {
   type Store,
 } from "@contexa/core";
 import { runMcp } from "./mcp.ts";
+import { runGuide } from "./guide/command.ts";
 
 /** Cold-path budget: large enough for a full first-call catch-up (§4.4). The
  *  engine's first-call gate uses `catchupGateMs`, so raise both together. */
@@ -299,6 +300,30 @@ function cmdPush(io: RunIo, args: ParsedArgs): number {
   });
 }
 
+/**
+ * `ctx guide` (M3) — start the ephemeral loopback render surface, or export a
+ * self-contained snapshot with `--export <dir>`. Read-only; opens the browser
+ * detached (suppressed under `CTX_NO_OPEN`); idle/disconnect auto-shutdown.
+ */
+function cmdGuide(io: RunIo, args: ParsedArgs): Promise<number> {
+  const exportDir = args.flags.export?.[0];
+  const idleRaw = args.flags["idle-ms"]?.[0];
+  const flags = {
+    ...(exportDir !== undefined && exportDir !== "" ? { exportDir } : {}),
+    ...(args.flags.fixture !== undefined ? { fixture: true } : {}),
+    ...(idleRaw !== undefined && idleRaw !== "" ? { idleMs: Number(idleRaw) } : {}),
+  };
+  return runGuide(
+    {
+      out: io.out,
+      ...(io.err !== undefined ? { err: io.err } : {}),
+      ...(io.home !== undefined ? { home: io.home } : {}),
+      ...(io.projectDir !== undefined ? { projectDir: io.projectDir } : {}),
+    },
+    flags,
+  );
+}
+
 function cmdImport(io: RunIo, args: ParsedArgs): number {
   const carrier = args.positionals[0] ?? "";
   // P28: `ctx import` (network carriers) lands at M4 — success-shaped notice.
@@ -384,8 +409,10 @@ Commands (available now):
   memory          List memory entries / lifecycle (confirm|retire|review)
   push            Render + place the ≤1KB context block (AGENTS.md + CLAUDE.md);
                   push pin|veto <id> edits .contexa/push.jsonc; --dry-run / --if-changed
+  guide           Start the ephemeral local render surface (loopback, read-only);
+                  --export <dir> writes a self-contained snapshot; --fixture for a demo store
 
-More commands (guide/import) land in later M1 slices.
+More commands (import) land in later M1 slices.
 `;
 
 export function run(argv: string[], io: RunIo): number | Promise<number> {
@@ -424,6 +451,8 @@ export function run(argv: string[], io: RunIo): number | Promise<number> {
     }
     case "push":
       return cmdPush(io, args);
+    case "guide":
+      return cmdGuide(io, args);
     case "import":
       return cmdImport(io, args);
     case undefined:

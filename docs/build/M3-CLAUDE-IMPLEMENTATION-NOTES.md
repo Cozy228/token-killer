@@ -15,8 +15,8 @@ Identity: CLAUDE track. Branch `m3/rescope-claude`. In-worktree build; never pus
 | Slice | State |
 |---|---|
 | 3a projection kernel (core) | DONE — kernel + fixture + goldens + gates + C1–C10 green |
-| 3a server (cli) | see below |
-| 3a Vite shell + glyph component | see below |
+| 3a server (cli) | DONE — loopback+token+host-allowlist, idle/disconnect shutdown, export; G-loopback/G-egress/G-readonly/G-shutdown/C12 green |
+| 3a Vite shell + glyph component | embedded fallback shell DONE; full Vite app pending (3b+) |
 | 3b canvas | see below |
 | 3c subject | see below |
 | 3d inspector | see below |
@@ -63,12 +63,32 @@ designed — the canvas stays DOM-comfortable because the budget says so, not by
 
 ## Deviations (departures from the plan + why)
 
-_(recorded as they occur)_
+- **Design authority adopted mid-3a (2026-07-11)** — the reviewer added
+  `docs/build/M3-CLAUDE-DESIGN.md` (binding for the `packages/guide` UI layer only; arbitration
+  order RESCOPE-BRIEF §3-§4 + LAW §3 > design doc > discretion). Adopted. It changes NO projection
+  contract, route, test, or acceptance item, so the committed 3a core kernel and the CLI server are
+  unaffected. Alignment notes for when I build the UI:
+  - The core `EnvelopeGlyphs` DTO (glyphs.ts) already carries per-axis `{glyph,label,value,gap}`,
+    which is exactly the adapter input the design's §3 glyph chip needs (shape=derivation,
+    hue=status, opacity=freshness, ticks=confidence, lock=restricted). No DTO change required.
+  - Minor redundancy (not a conflict): core `envelopeGlyphs` also assigns a status *glyph char*
+    (●◆○△▢?). The UI encodes status by HUE (design §3), so the UI adapter reads the axis VALUE,
+    not that char. The char stays as a harmless text-only fallback (keeps the terse grammar intact).
+  - Fonts (IBM Plex Sans/Mono) + Phosphor icons must be VENDORED/npm-bundled (zero egress) when I
+    reach the UI — reinforces G-egress.
 
 ## Adjacent-found (untouched)
 
 - O-37 engines mismatch (root `>=22.18.0` vs core/cli `>=22.16`) — pre-existing, left untouched per
   guardrail ("do NOT change any engines field").
+- **5 pre-existing living-repo test failures (NOT mine, untouched)** — `1e-docs A5-adr`,
+  `1f-selection A6-search`, `1g-serve A7-why` + `A7-drill`, `2d-callgraph B4-mention`. These are
+  living-repo ranking/edge assertions (the "fragile to doc-churn" class flagged in repo memory).
+  Verified they fail IDENTICALLY at the base commit `3730192d` (origin/feat/1.0.0) with none of my
+  changes present — I created a detached worktree at that SHA and ran the four files: same 5 red,
+  13 passed. So they are red on the base branch, not a regression from the guide work. My additions
+  are purely additive (new `packages/core/src/guide/**`, `packages/cli/src/guide/**`, tests, docs);
+  I did not touch ingest/select/serve logic. Left untouched (out of scope; not my defect to fix).
 
 ## Open questions
 
