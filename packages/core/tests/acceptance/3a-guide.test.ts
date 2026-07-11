@@ -282,6 +282,23 @@ describe("acceptance: 3a guide projection kernel (deterministic fixture tier)", 
     }
   });
 
+  test("D3: canvas per-status envelope counts are deterministic + match ground truth", () => {
+    // The legend's numbers derive from the canvas projection's envelope statuses.
+    // Build twice → identical counts (no store-history drift); the conflicting
+    // count is the number of conflicting ENVELOPES, not store conflict-rows.
+    const countStatuses = (): Record<string, number> => {
+      const packets: EvidencePacket[] = [];
+      collectEvidence(buildCanvasProjection(store, FIXTURE_NOW), packets);
+      const c: Record<string, number> = {};
+      for (const p of packets) c[p.envelope.status] = (c[p.envelope.status] ?? 0) + 1;
+      return c;
+    };
+    const a = countStatuses();
+    const b = countStatuses();
+    expect(a).toEqual(b); // same store + same surface → same numbers
+    expect(a.conflicting ?? 0).toBe(1); // exactly one conflicting envelope on the canvas
+  });
+
   // C11 (skin switch) and C12 (export-diff) are UI/server scenarios — covered in
   // the guide component suite and the cli guide-server suite respectively.
   test.todo("C11: skin switch changes ONLY the design-system layer — see packages/guide");

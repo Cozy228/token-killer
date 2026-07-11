@@ -116,6 +116,7 @@ button { font: inherit; }
 .legend .row[aria-pressed="true"] { border-color: var(--accent); }
 .legend .row .swatch { width: 10px; height: 10px; border-radius: 50%; background: var(--status-hue); }
 .legend .row .count { margin-left: auto; font-family: var(--font-mono); color: var(--ink-dim); }
+.legend .legend-cap { margin: 6px 2px 0; font-size: 11px; color: var(--ink-faint); }
 
 /* ---- panels / surfaces ---- */
 .pad { padding: 16px; }

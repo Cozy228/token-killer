@@ -86,6 +86,23 @@ designed — the canvas stays DOM-comfortable because the budget says so, not by
   `.react-flow__controls-button`). Chrome stays neutral (no status hues); one rule set covers all 4
   skins, which keeps the C11 design-layer-only invariant intact. Verified present in the built CSS.
 
+- **D3: Claim Legend count nondeterminism (reviewer saw conflicting 1 → 3).** ROOT CAUSE: the
+  legend was fed `data.badges.openConflicts` — the store's count of conflict ROWS — as its
+  `conflicting` number (and NOTHING populated the other five statuses). That number (a) has a
+  different semantic than the status glyphs the legend teaches (envelope status, not conflict rows),
+  and (b) is store-history dependent: conflicts/claims are append-only, and BOTH subjects of a
+  contradiction feed row-based reasoning, so re-seeding the fixture store or re-navigating drifted
+  it upward. PINNED SEMANTIC (now documented in the legend's caption + aria/title): the legend
+  counts "entities whose claim envelope has status X on the CURRENT surface's projection", derived
+  from the projection's evidence packets via `statusCounts(data)` — the same projection in always
+  yields the same counts out, independent of navigation/fetch order, and matches the glyph grammar
+  the legend teaches. Ground truth verified: the canvas projection has EXACTLY ONE conflicting
+  envelope (`mem:retry-note`); `statusCounts` returns `conflicting: 1`. Tests:
+  `packages/guide/tests/legend.test.tsx` (determinism across repeated calls + two fresh mounts;
+  count equals conflicting-envelope count and is decoupled from `openConflicts`) and a core-source
+  determinism assertion in `3a-guide.test.ts` ("D3: canvas per-status envelope counts are
+  deterministic + match ground truth"). Files: `Canvas.tsx`, `ClaimLegend.tsx`, `app.css`.
+
 ## Deviations (departures from the plan + why)
 
 - **Design authority adopted mid-3a (2026-07-11)** — the reviewer added

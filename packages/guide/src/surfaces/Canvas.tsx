@@ -16,7 +16,7 @@ import {
 import "@xyflow/react/dist/style.css";
 import type { CanvasProjection, ClaimStatus } from "@contexa/core";
 import { getCanvas, getChurnLens, getTimeLens, getSearch } from "../api.ts";
-import { useAsync } from "../util.ts";
+import { statusCounts, useAsync } from "../util.ts";
 import { EnvelopeChip } from "../components/EnvelopeChip.tsx";
 import { ClaimLegend } from "../components/ClaimLegend.tsx";
 import { layout } from "./layout.ts";
@@ -107,10 +107,12 @@ export function Canvas({
     );
   }
 
-  const counts: Record<string, number> = {};
-  for (const b of [data.badges]) {
-    counts.conflicting = b.openConflicts;
-  }
+  // Legend semantic (pinned, deterministic): the number of ENTITIES whose claim
+  // envelope has each status ON THE CURRENT canvas projection. Derived from the
+  // projection's evidence packets — NOT from `badges.openConflicts` (a store
+  // conflict-ROW count with a different semantic that drifts with store history).
+  // Same projection in → same counts out, regardless of navigation/fetch order.
+  const counts = statusCounts(data);
 
   return (
     <div style={{ position: "absolute", inset: 0 }}>
