@@ -29,6 +29,9 @@ import { execFileSync as childExecFileSync } from "node:child_process";
 import { writeFileSync } from "node:fs";
 import { DocsAdapter } from "../../src/ingest/docs.ts";
 import { clearScanCache } from "../../src/ingest/scan.ts";
+import { buildPushBlock as rslBuildPushBlock } from "../../src/push/block.ts";
+import { runPush as rslRunPush } from "../../src/push/push.ts";
+import { remember as rslremember } from "../../src/memory/remember.ts";
 import { cleanupTempDir, makeGitFixture, makeTempDir } from "../helpers/sandbox.ts";
 
 const REAL_MIGRATIONS = fileURLToPath(new URL("../../src/store/migrations/", import.meta.url));
@@ -797,5 +800,57 @@ describe("R-slice Phase 5: DR-12 scoped semantic-override expiry (item 9)", () =
     });
     expect(isSemanticLocalOverride(store, "mem:loc")).toBe(false);
     expect(isOverrideExpired(store, "mem:loc", CREATED + TTL * 10)).toBe(false);
+  });
+});
+
+describe("R-slice Phase 4: DR-32 push-block de-claiming (item 8, use-blocking)", () => {
+  let root: string;
+  let repo: string;
+  let store: Store;
+
+  beforeEach(() => {
+    root = makeTempDir("ctx-rslice-push-");
+    repo = makeGitFixture(root);
+    store = openStore({
+      projectDir: repo,
+      now: () => 1_600_000_000_000,
+      home: join(root, "contexa-home"),
+    });
+  });
+  afterEach(() => {
+    store.close();
+    cleanupTempDir(root);
+  });
+
+  test("A8 (DR-32): the placed block omits factual gotchas + drops the 'with provenance' header", () => {
+    const r = rslremember(store, { surface: "cli", note: "retries must be idempotent" });
+    if (!r.ok) throw new Error("seed failed");
+    const placed = rslBuildPushBlock(store, { now: 1_600_000_000_000 });
+    expect(placed.text).not.toContain("⚠"); // no uncited factual claim
+    expect(placed.text).not.toContain("with provenance"); // header de-claimed
+    expect(placed.rendered).toEqual([]);
+    expect(placed.text).toContain("omitted"); // explicit omission disclosure
+    expect(placed.text).toContain("`context` MCP tool"); // tool instruction stays
+    expect(placed.wouldRender.length).toBe(1); // ranking still tracks would-return
+  });
+
+  test("A8 (DR-32): manual `ctx push` respects the SAME gate as install (omits gotchas)", () => {
+    const r = rslremember(store, { surface: "cli", note: "shard hashes the git-common-dir" });
+    if (!r.ok) throw new Error("seed failed");
+    // runPush (manual `ctx push`) uses the default placed builder → same omission
+    // gate as install; the block written to host files carries no factual gotcha.
+    const res = rslRunPush(store, store.projectRoot, { dryRun: true, now: 1_600_000_000_000 });
+    expect(res.block.text).not.toContain("⚠");
+    expect(res.block.text).not.toContain("with provenance");
+    expect(res.block.rendered).toEqual([]);
+    expect(res.block.omittedGotchas).toBe(1);
+  });
+
+  test("A8 (DR-32): `ctx push --local` display view MAY still show gotchas (no host file)", () => {
+    const r = rslremember(store, { surface: "cli", note: "a local-view gotcha" });
+    if (!r.ok) throw new Error("seed failed");
+    const local = rslBuildPushBlock(store, { now: 1_600_000_000_000, includeGotchas: true });
+    expect(local.text).toContain("⚠ a local-view gotcha");
+    expect(local.rendered.length).toBe(1);
   });
 });

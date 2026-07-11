@@ -142,7 +142,7 @@ never searchable (gist words + secret all miss FTS); renders a cited withheld
 outcome, body never leaks; non-secret note unaffected. Core = 5 baseline failures;
 CLI 23 green.
 
-### Phase 4 — Claim envelope at the boundary — PARTIAL (items 6, 10 green; item 8 not done)
+### Phase 4 — Claim envelope at the boundary — COMPLETE (items 6, 8, 10 green)
 
 DONE (green):
 - **DR-07 minimum claim envelope DTO + builder + terse render.** `serve/envelope.ts`:
@@ -165,13 +165,26 @@ DONE (green):
 Tests: 6 DR-07/DR-01 core cases (r-slice.test.ts, 34 total) + 1 DR-31 MCP case
 (cli mcp.test.ts, 24 total).
 
-NOT DONE (see "Where I stopped"):
-- **DR-32 push-block de-claiming (item 8, use-blocking).** Requires OMITTING the
-  factual gotcha lines entirely + rewording the "with provenance" header. The
-  push-block/1h-push tests are deeply coupled to gotcha rendering (~25 asserts);
-  the rewrite is bounded but sizeable and was not reached in this session. The
-  push block still renders `⚠ gist [handle]` gotchas + the "with provenance"
-  header on this branch — NOT yet compliant with DR-32.
+DONE (green) — follow-up after the branch was merged @162be034:
+- **DR-32 push-block de-claiming (item 8, use-blocking).** `push/block.ts`:
+  the PLACED block (written into always-loaded host `AGENTS.md`/`CLAUDE.md` via
+  `runPush`/`install`) now OMITS all factual gotcha lines and carries an explicit
+  omission disclosure; `HEADER_LINES[0]` dropped the "— with provenance" claim
+  (tool instruction line 2 stays). Ranking (`rankGotchas`) still runs and now
+  drives a new `PushBlock.wouldRender` (which notes WOULD return once each carries
+  a full claim envelope) + `omittedGotchas` count — so pin/veto/eligibility
+  semantics survive, moved off `rendered`. `renderPushBlock`/`buildPushBlock` take
+  `includeGotchas` (default false = placed); the `ctx push --local` DISPLAY view
+  (writes no host file) opts in (`includeGotchas: true`) and still shows the
+  `⚠ gist [handle]` gotchas locally. Manual `ctx push` respects the same gate
+  (both `runPush` and `install` use the default placed builder). Tests: 3 DR-32
+  acceptance cases in r-slice.test.ts (41 total) + rewritten `push-block.test.ts`
+  (placed-omit / --local-show / pin-veto-on-wouldRender) + `1h-push.test.ts`
+  (budget property on the display view; pin/veto/eligibility asserted on
+  `wouldRender`) + strengthened `push-cli.test.ts` (placed host file has no ⚠ / no
+  "with provenance" / carries the omission line; `--local` shows ⚠). Dependent
+  suites updated: `e-memory-quality.test.ts` (eligibility → `wouldRender`),
+  `slice5-local-overlay.test.ts` (local view uses `includeGotchas`).
 - Full serve-path rendering of the terse envelope inline in the human `text` was
   NOT wired (would churn the golden transcripts); the envelope reaches the machine
   consumer via MCP `structuredContent` (DR-31) and is available to any human-render
@@ -210,6 +223,13 @@ NOT DONE (see "Where I stopped"):
 - `1d-git.test.ts > A4-cochange`: brittle exact-pair ranking assertion relaxed to
   structural guarantees (living-repo robust-assertion rule) after this slice's own
   commits shifted the top co-change pair.
+- DR-32: rather than delete the pin/veto/ranking behavior, I moved it from
+  `PushBlock.rendered` onto a new `PushBlock.wouldRender` (+ `omittedGotchas`), so
+  the pre-gate placed block cites nothing while pins/vetoes still deterministically
+  govern which notes WOULD return once each carries a full claim envelope. The
+  `ctx push --local` display view (no host file) keeps rendering gotchas via an
+  opt-in `includeGotchas` flag — the register permits it ("tool instructions may
+  stay"; the register's prohibition is on the always-loaded HOST FILE).
 
 ## Adjacent-found (untouched)
 
@@ -218,36 +238,18 @@ NOT DONE (see "Where I stopped"):
 - Full removal of the legacy `authority` column/field (DR-02 literal) — deferred;
   recommended as a dedicated mechanical follow-up once derivation+confidence are
   proven in review.
-- DR-32 (item 8) remains: reword the push-block header off "with provenance",
-  omit factual gotchas (keep `rankGotchas`), add an omission disclosure, gate
-  manual `ctx push`, and rewrite `push-block.test.ts` + `1h-push.test.ts` to the
-  omission posture. Understood + scoped; not landed this session.
 - Should the terse envelope (`renderEnvelopeTerse`) be rendered inline in the human
   `context()` markdown text (would churn the golden transcripts), or stay
   machine-only via MCP `structuredContent`? Left machine-only to avoid golden churn;
   a design call for review.
 
-## Where I stopped
+## Status
 
-Phases 1, 2, 3 COMPLETE (green). Phase 4 PARTIAL (items 6 + 10 green; item 8/DR-32
-not done). Phase 5 COMPLETE (items 9 + 11 green). **10 of 11 acceptance items PASS;
-item 8 (DR-32 push-block de-claiming) NOT DONE.**
-
-DR-32 not done because "OMIT factual gotchas entirely" guts the push block's
-current gotcha-rendering behavior, and the two acceptance suites that pin it
-(`packages/core/tests/unit/push-block.test.ts`, `tests/acceptance/1h-push.test.ts`
-— ~200 lines of pin/veto/byte-budget assertions built entirely around rendered
-gotchas) would need a full rewrite to the new omission posture. That rewrite was
-too large to land green within this session's budget; stopping here keeps the tree
-green (the goal prompt's "STOP at a clean boundary with everything green" rule)
-rather than risking a half-finished push-block rewrite. The mechanism is understood
-and scoped (reword `HEADER_LINES[0]` to drop "— with provenance"; make
-`renderPushBlock` emit no `⚠ gist [handle]` lines + an omission disclosure; keep
-`rankGotchas`; gate manual `ctx push`). Handoff-ready.
-
-Every completed DR is an independent green commit; the branch `r-slice/opus` is
-pushed to origin (HEAD = dr-12 commit). Suite state at stop: core
-**5 failed / 489 passed / 2 todo** — the 5 are the PRE-EXISTING living-repo
+ALL FIVE PHASES COMPLETE (green). **11 of 11 acceptance items PASS.** The initial
+build (merged @162be034) landed 10/11; DR-32 (item 8) followed up on the same
+branch after the merge (see the Phase 4 "DONE — follow-up" note). Every DR is an
+independent green commit; `r-slice/opus` is pushed to origin. Suite state: core
+**5 failed / 495 passed / 2 todo** — the 5 are the PRE-EXISTING living-repo
 doc-churn baseline failures (unchanged since the pristine checkout); CLI **24
 passed**.
 
@@ -265,7 +267,7 @@ noted. Run: `pnpm --dir packages/core vitest run tests/acceptance/r-slice.test.t
 | 5 | DR-10 equivalent as-of recompute; no bare cut | PASS | `A5 (DR-10): status recomputes as-of …`; `valid_from`/`valid_to` columns retained (no escalation) |
 | 6 | DR-07/DR-31 minimum envelope defined + serialized over MCP under caller scope | PASS | core `A6 (DR-07) …` ×6 (all §3 axes, restricted, drift, `?`-unknown, terse, DR-01 disclosure) + cli `tools/call context → structuredContent carries claim envelopes + disclosure` (`packages/cli/tests/mcp.test.ts`) |
 | 7 | DR-05 restricted excluded from FTS/render/MCP; secret MCP note never searchable | PASS | `A7 (DR-05) …` ×4 (mcp note→restricted, never searchable, cited withheld render, non-secret unaffected) |
-| 8 | DR-32 push block omits gotchas + de-claims header + gates manual push | **NOT DONE** | see "Where I stopped" — push block still renders gotchas + "with provenance" header on this branch |
+| 8 | DR-32 push block omits gotchas + de-claims header + gates manual push | PASS | `A8 (DR-32) …` ×3 (placed omits + de-claimed header, manual push same gate, `--local` still shows) + rewritten `push-block.test.ts` / `1h-push.test.ts` + strengthened `push-cli.test.ts` |
 | 9 | DR-12 scoped override expiry → stale-flagged-retained | PASS | `A9 (DR-12) …` ×3 (fresh=resolved, past-TTL=stale+retained, scoping) |
 | 10 | DR-01 accelerator-not-validated disclosure on responses | PASS | `A10 (DR-01): the accelerator-not-validated disclosure exists` + cli MCP `structuredContent.disclosure` + `context` tool description re-qualified. (Pre-V1 distribution containment = NON-GOAL of this slice per the goal prompt; unchanged/inherited.) |
 | 11 | DR-27 unresolved mention → named blind spot; persistence V1-gated | PASS | `A11 (DR-27): an unresolved backticked symbol mention is a NAMED blind spot, no spurious link` |

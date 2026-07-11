@@ -143,15 +143,23 @@ describe("acceptance: slice 5 — personal overlay + three-tier scope", () => {
     writeSharedConfig(repo, `{ "pin": [], "veto": [] }`);
     const sharedBefore = buildPushBlock(store, { config: readPushConfig(repo) }).text;
 
-    // Copy A's personal overlay pins alpha to the front.
+    // Copy A's personal overlay pins alpha to the front. DR-32: the `--local`
+    // DISPLAY view (no host file) may still SHOW gotchas (`includeGotchas`), so a
+    // different pin order yields a different local view.
     writeLocalConfig(repo, JSON.stringify({ pin: [a.handle] }));
-    const localA = buildPushBlock(store, { config: readMergedPushConfig(repo) }).text;
-    // The SHARED/placed digest ignores the personal overlay — unchanged.
+    const localA = buildPushBlock(store, {
+      config: readMergedPushConfig(repo),
+      includeGotchas: true,
+    }).text;
+    // The SHARED/placed digest ignores the personal overlay AND omits gotchas — unchanged.
     expect(buildPushBlock(store, { config: readPushConfig(repo) }).text).toBe(sharedBefore);
 
     // Copy B's personal overlay pins bravo instead.
     writeLocalConfig(repo, JSON.stringify({ pin: [b.handle] }));
-    const localB = buildPushBlock(store, { config: readMergedPushConfig(repo) }).text;
+    const localB = buildPushBlock(store, {
+      config: readMergedPushConfig(repo),
+      includeGotchas: true,
+    }).text;
     expect(buildPushBlock(store, { config: readPushConfig(repo) }).text).toBe(sharedBefore);
 
     // Same committed config → identical SHARED digest across copies; the personal
