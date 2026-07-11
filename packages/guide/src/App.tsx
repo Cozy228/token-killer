@@ -1,136 +1,205 @@
 /**
- * App shell — DR-01 quiet bar (standing, exact ACCELERATOR_DISCLOSURE), top nav
- * (Canvas / Subject / Inspector), the runtime skin selector (?skin=, C11), and the
- * shared Evidence Drawer. Hash routing keeps the surface swap dependency-free;
- * the Claim Legend's active-status filter is app state shared across surfaces.
+ * App shell (P40 R14/R15) — the "Instrument". A job-first IA, NOT a canvas:
+ *   top bar (repo identity + freshness + ⌘K search)  ·  persistent DR-01 banner  ·
+ *   left rail (Orient J1 / Review J4 / Legend J5)  ·  routed main  ·
+ *   command palette (Find J2)  ·  evidence drawer (provenance J5).
+ * Graph rendering appears only bounded inside a Subject (J3). One coherent design;
+ * no skin system (R14).
  */
 import { useCallback, useEffect, useMemo, useState } from "react";
-import type { EvidencePacket, ClaimStatus } from "@contexa/core";
+import { House, ClipboardText, Info, MagnifyingGlass, Sun } from "@phosphor-icons/react";
+import type { ClaimStatus, EvidencePacket } from "@contexa/core";
+import { AppContext, type AppState } from "./appContext.ts";
+import { useHashRoute, navigate } from "./router.ts";
+import { useAsync } from "./util.ts";
+import { getCanvas } from "./api.ts";
 import { ACCELERATOR_DISCLOSURE_TEXT } from "./constants.ts";
-import { SKINS, currentSkin, setSkin, type Skin } from "./skins.ts";
 import { EvidenceDrawer } from "./components/EvidenceDrawer.tsx";
-import { Canvas } from "./surfaces/Canvas.tsx";
-import { Subject } from "./surfaces/Subject.tsx";
-import { Inspector } from "./surfaces/Inspector.tsx";
-
-type Route =
-  | { name: "canvas" }
-  | { name: "subject"; ref: string }
-  | { name: "inspector" };
-
-function parseHash(): Route {
-  const h = window.location.hash.replace(/^#/, "");
-  if (h.startsWith("subject/")) return { name: "subject", ref: decodeURIComponent(h.slice("subject/".length)) };
-  if (h === "inspector") return { name: "inspector" };
-  return { name: "canvas" };
-}
+import { ClaimLegend, STATUS_ORDER } from "./components/ClaimLegend.tsx";
+import { CommandPalette } from "./components/CommandPalette.tsx";
+import { Orient } from "./views/Orient.tsx";
+import { Subject } from "./views/Subject.tsx";
+import { Review } from "./views/Review.tsx";
 
 export function App(): React.ReactElement {
-  const [route, setRoute] = useState<Route>(parseHash);
-  const [skin, setSkinState] = useState<Skin>(currentSkin);
-  const [drawer, setDrawer] = useState<EvidencePacket | null>(null);
-  const [active, setActive] = useState<Set<ClaimStatus>>(new Set());
+  const route = useHashRoute();
+  const canvas = useAsync(getCanvas, []);
+  const [evidence, setEvidence] = useState<EvidencePacket | null>(null);
+  const [paletteOpen, setPaletteOpen] = useState(false);
+  const [legendOpen, setLegendOpen] = useState(false);
+  const [focus, setFocus] = useState<Set<ClaimStatus> | null>(null);
+  const [scope, setScope] = useState<{ counts: Record<string, number>; label: string }>({
+    counts: {},
+    label: "entities on this surface",
+  });
 
-  useEffect(() => {
-    const onHash = () => setRoute(parseHash());
-    window.addEventListener("hashchange", onHash);
-    return () => window.removeEventListener("hashchange", onHash);
-  }, []);
-
-  const nav = useCallback((r: Route) => {
-    const hash =
-      r.name === "canvas" ? "" : r.name === "inspector" ? "#inspector" : `#subject/${encodeURIComponent(r.ref)}`;
-    window.location.hash = hash;
-    setRoute(r);
-  }, []);
-
-  const openSubject = useCallback((ref: string) => nav({ name: "subject", ref }), [nav]);
-  const openEvidence = useCallback((e: EvidencePacket) => setDrawer(e), []);
-  const toggleStatus = useCallback((s: ClaimStatus) => {
-    setActive((prev) => {
-      const next = new Set(prev);
+  const openEvidence = useCallback((e: EvidencePacket) => setEvidence(e), []);
+  const publishScope = useCallback(
+    (counts: Record<string, number>, label: string) => setScope({ counts, label }),
+    [],
+  );
+  const toggleFocus = useCallback((s: ClaimStatus) => {
+    setFocus((prev) => {
+      const base = prev ?? new Set<ClaimStatus>(STATUS_ORDER);
+      const next = new Set(base);
       if (next.has(s)) next.delete(s);
       else next.add(s);
-      return next;
+      return next.size === STATUS_ORDER.length ? null : next;
     });
   }, []);
 
-  const onSkin = useCallback((s: Skin) => {
-    setSkin(s);
-    setSkinState(s);
+  const app: AppState = useMemo(
+    () => ({ openEvidence, focus, toggleFocus, setScope: publishScope }),
+    [openEvidence, focus, toggleFocus, publishScope],
+  );
+
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent): void => {
+      if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === "k") {
+        e.preventDefault();
+        setPaletteOpen((v) => !v);
+      } else if (e.key === "Escape") {
+        setPaletteOpen(false);
+        setEvidence(null);
+      }
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
   }, []);
 
-  const surface = useMemo(() => {
-    switch (route.name) {
-      case "subject":
-        return <Subject refId={route.ref} onOpenSubject={openSubject} onOpenEvidence={openEvidence} />;
-      case "inspector":
-        return <Inspector onOpenEvidence={openEvidence} />;
-      default:
-        return (
-          <Canvas
-            active={active}
-            onToggleStatus={toggleStatus}
-            onOpenSubject={openSubject}
-            onOpenEvidence={openEvidence}
-          />
-        );
-    }
-  }, [route, active, openSubject, openEvidence, toggleStatus]);
+  const c = canvas.data;
+  const total = c ? c.sources.reduce((a, s) => a + s.entityCount, 0) : 0;
+  const disclosure = c?.meta.disclosure ?? ACCELERATOR_DISCLOSURE_TEXT;
+  const needsReview = c?.badges.needsReview ?? 0;
+  const freshState = !c
+    ? "empty"
+    : total === 0
+      ? "empty"
+      : c.badges.e8StaleSources.length > 0
+        ? "reconciling"
+        : "fresh";
+
+  const toggleTheme = (): void => {
+    const root = document.documentElement;
+    root.dataset.theme = root.dataset.theme === "light" ? "dark" : "light";
+  };
 
   return (
-    <div className="app">
-      <div className="dr01" role="note">
-        {ACCELERATOR_DISCLOSURE_TEXT}
-      </div>
-      <nav className="topnav">
-        <span className="brand">ctx guide</span>
-        <button
-          type="button"
-          className="tab"
-          aria-current={route.name === "canvas" ? "page" : undefined}
-          onClick={() => nav({ name: "canvas" })}
-        >
-          Canvas
-        </button>
-        <button
-          type="button"
-          className="tab"
-          aria-current={route.name === "subject" ? "page" : undefined}
-          onClick={() => (route.name === "subject" ? undefined : nav({ name: "canvas" }))}
-          disabled={route.name !== "subject"}
-        >
-          Subject
-        </button>
-        <button
-          type="button"
-          className="tab"
-          aria-current={route.name === "inspector" ? "page" : undefined}
-          onClick={() => nav({ name: "inspector" })}
-        >
-          Inspector
-        </button>
-        <span className="grow" />
-        <label>
-          <span className="mono" style={{ color: "var(--ink-dim)", marginRight: 6 }}>
-            skin
-          </span>
-          <select
-            className="skinsel"
-            value={skin}
-            onChange={(e) => onSkin(e.target.value as Skin)}
-            aria-label="Design skin"
+    <AppContext.Provider value={app}>
+      <div className="app">
+        <div className="brand" title="ctx guide">
+          <span className="glyph">ctx</span>
+        </div>
+
+        <header className="topbar">
+          <div className="repo">
+            <span className="name">this repo</span>
+            <span className="meta num">
+              {total.toLocaleString()} entities · {c ? c.sources.length : 0} sources
+            </span>
+          </div>
+          <span className="spacer" />
+          <span
+            className="fresh"
+            data-state={freshState}
+            title="Startup RefreshEngine catch-up (R10)"
           >
-            {SKINS.map((s) => (
-              <option key={s} value={s}>
-                {s}
-              </option>
-            ))}
-          </select>
-        </label>
-      </nav>
-      <main className="main">{surface}</main>
-      <EvidenceDrawer evidence={drawer} onClose={() => setDrawer(null)} />
-    </div>
+            <span className="dot" />
+            {freshState === "empty" ? "no index" : freshState === "reconciling" ? "reconciling" : "fresh"}
+          </span>
+          <button type="button" className="kbd-btn" onClick={() => setPaletteOpen(true)}>
+            <MagnifyingGlass size={14} weight="bold" />
+            Search everything
+            <kbd>⌘K</kbd>
+          </button>
+          <button type="button" className="icon-btn" onClick={toggleTheme} aria-label="Toggle theme">
+            <Sun size={16} />
+          </button>
+        </header>
+
+        <div className="banner" role="note" aria-label="disclosure">
+          <span className="tag">accelerator</span>
+          <span>{disclosure}</span>
+        </div>
+
+        <nav className="rail" aria-label="Primary">
+          <button
+            type="button"
+            aria-current={route.view === "orient"}
+            title="Orient — what is this repo (J1)"
+            onClick={() => navigate({ view: "orient" })}
+          >
+            <House size={19} />
+          </button>
+          <button
+            type="button"
+            aria-current={route.view === "review"}
+            title="Review — needs-review, conflicts, push (J4)"
+            onClick={() => navigate({ view: "review", tab: "queue" })}
+          >
+            <ClipboardText size={19} />
+            {needsReview > 0 && <span className="badge num">{needsReview}</span>}
+          </button>
+          <button
+            type="button"
+            title="Find — search all entity kinds (J2)"
+            onClick={() => setPaletteOpen(true)}
+          >
+            <MagnifyingGlass size={19} />
+          </button>
+          <span className="sep" />
+          <button
+            type="button"
+            aria-current={legendOpen}
+            title="Claim-status legend (J5)"
+            onClick={() => setLegendOpen((v) => !v)}
+          >
+            <Info size={19} />
+          </button>
+        </nav>
+
+        <main className="main">
+          {route.view === "orient" && <Orient canvas={canvas} />}
+          {route.view === "subject" && <Subject refId={route.ref} />}
+          {route.view === "review" && <Review tab={route.tab} />}
+        </main>
+      </div>
+
+      {legendOpen && (
+        <div className="drawer-scrim" onClick={() => setLegendOpen(false)}>
+          <div
+            className="drawer"
+            role="dialog"
+            aria-label="Claim status legend"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <button type="button" className="close" onClick={() => setLegendOpen(false)}>
+              Close
+            </button>
+            <h2>Trust legend</h2>
+            <p className="dim" style={{ fontSize: 12.5, marginTop: 0 }}>
+              The only color anywhere is a claim's status. Click a status to focus it across this
+              surface. Derivation is the mark shape (● observed · ▪ declared · ◌ inferred), confidence
+              is the tick stack, freshness is opacity.
+            </p>
+            <ClaimLegend
+              counts={scope.counts}
+              active={focus ?? new Set<ClaimStatus>(STATUS_ORDER)}
+              onToggle={toggleFocus}
+              scope={scope.label}
+            />
+          </div>
+        </div>
+      )}
+
+      {evidence && (
+        <>
+          <div className="drawer-scrim" onClick={() => setEvidence(null)} />
+          <EvidenceDrawer evidence={evidence} onClose={() => setEvidence(null)} />
+        </>
+      )}
+
+      {paletteOpen && <CommandPalette onClose={() => setPaletteOpen(false)} />}
+    </AppContext.Provider>
   );
 }
