@@ -98,7 +98,27 @@ overtook it — the documented living-repo fragility. Per the goal prompt's
 robust-assertion rule the assertion now checks structural guarantees (support ≥ 9,
 both endpoints resolvable `file:` entities, confidence band) not the exact pair.
 
-### Phase 2 — Freshness wiring
+### Phase 2 — Freshness wiring (DR-04) — COMPLETE (green)
+
+- **Stale links excluded/downgraded in traversal AND ranking.** `linkConfidence`
+  (select/subgraph.ts) now multiplies a `stale` edge by `STALE_LINK_PENALTY`
+  (0.25) — this same value feeds frontier priority (traversal) and induced-edge
+  confidence (→ `confidenceFactor`, ranking). Downgrade not hard-exclude, so
+  connectivity is preserved but a drifted edge never outranks a clean one.
+- **Header renamed honestly.** `freshnessLabel` (serve/render.ts): `fresh`→`indexed`
+  (names the INDEX state, not content truth), `reconciling (...)`→`index-catchup
+  (...)`. The false content-freshness word `fresh` is gone. Goldens regenerated
+  (4 files: biography/context/facet/search — header line only).
+- **Claim freshness = unknown-until-reverified.** With `fresh` removed the header
+  never asserts content freshness; a drift-flagged memory's DR-03 status is `stale`
+  (not resolved); acceptance test asserts the header never renders `fresh`.
+- **Per-source decay class + re-verification scaffold** (serve/freshness.ts):
+  `SOURCE_FRESHNESS` (file sources = content-hash/no-TTL; github/jira/confluence =
+  snapshot-ttl) + `needsReverification`. Scaffold only — no connector wired (M4
+  gated); it declares the freshness contract at the source boundary.
+
+Tests: 4 DR-04 cases in r-slice.test.ts (24 total). Core = 5 baseline failures;
+CLI 23 green.
 
 ### Phase 3 — Restricted enforcement
 

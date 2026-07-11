@@ -1,4 +1,4 @@
-# ctx · greet — fresh
+# ctx · greet — indexed
 greet lib.ts:1-3 [s562e1]
 1	export function greet(name: string): string {
 2	  return "hi " + name;

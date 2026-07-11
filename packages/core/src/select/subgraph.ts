@@ -13,15 +13,27 @@ import {
   EXPANSION_MAX_DEPTH,
   EXPANSION_NODE_CAP,
   PREDICATE_CONFIDENCE_FLOOR,
+  STALE_LINK_PENALTY,
 } from "./constants.ts";
 import type { Seed, Subgraph, SubgraphEdge, SubgraphNode } from "./types.ts";
 import type { Visibility } from "./visibility.ts";
 
-/** Effective link confidence: per-predicate floor substitutes a missing value (§6.3). */
-export function linkConfidence(link: Pick<Link, "predicate" | "confidence">): number {
+/**
+ * Effective link confidence: per-predicate floor substitutes a missing value
+ * (§6.3), then DR-04 downgrades a `stale` edge by `STALE_LINK_PENALTY` so a drifted
+ * edge is demoted in traversal priority AND ranking (never excluded outright, never
+ * left at full weight). Callers that pass only predicate+confidence get the clean
+ * value (the stale flag defaults absent → no penalty).
+ */
+export function linkConfidence(
+  link: Pick<Link, "predicate" | "confidence"> & { stale?: boolean },
+): number {
   const c = link.confidence;
-  if (Number.isFinite(c) && c > 0) return Math.min(c, 1);
-  return PREDICATE_CONFIDENCE_FLOOR[link.predicate] ?? DEFAULT_CONFIDENCE_FLOOR;
+  const base =
+    Number.isFinite(c) && c > 0
+      ? Math.min(c, 1)
+      : (PREDICATE_CONFIDENCE_FLOOR[link.predicate] ?? DEFAULT_CONFIDENCE_FLOOR);
+  return link.stale ? base * STALE_LINK_PENALTY : base;
 }
 
 interface FrontierItem {

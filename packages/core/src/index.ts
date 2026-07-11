@@ -321,6 +321,9 @@ export type { ServeResponse, ServeDeps, ServeDiag, ServeKind } from "./serve/typ
 export { trustFor, memoryTrustFor } from "./store/trust.ts";
 export { memoryClaimStatus, memoryStatusAsOf } from "./serve/status.ts";
 export { foldStatusAsOf } from "./memory/fold.ts";
+// R-slice Phase 2: per-source freshness decay class + re-verification (DR-04).
+export { SOURCE_FRESHNESS, needsReverification } from "./serve/freshness.ts";
+export type { DecayClass, SourceFreshnessPolicy } from "./serve/freshness.ts";
 
 // install/doctor (slice 1i): managed host writes + read-only verification.
 // Push-block placement REUSES slice 1h's push surface (placePushBlock /

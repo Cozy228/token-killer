@@ -13,6 +13,10 @@ import { trustFor, memoryTrustFor } from "../../src/store/trust.ts";
 import { generationIdentity } from "../../src/store/generation.ts";
 import { memoryClaimStatus, memoryStatusAsOf } from "../../src/serve/status.ts";
 import { foldStatusAsOf } from "../../src/memory/fold.ts";
+import { expandSubgraph, linkConfidence } from "../../src/select/subgraph.ts";
+import { snapshotVisibility } from "../../src/select/visibility.ts";
+import { freshnessLabel } from "../../src/serve/render.ts";
+import { needsReverification, SOURCE_FRESHNESS } from "../../src/serve/freshness.ts";
 import { cleanupTempDir, makeGitFixture, makeTempDir } from "../helpers/sandbox.ts";
 
 const REAL_MIGRATIONS = fileURLToPath(new URL("../../src/store/migrations/", import.meta.url));
@@ -401,5 +405,84 @@ describe("R-slice Phase 1: DR-06 generation identity tuple (item 4)", () => {
     b.publishGeneration("git");
     expect(b.publishedGen("git")).toBe(2);
     b.close();
+  });
+});
+
+describe("R-slice Phase 2: freshness wiring (DR-04, item 3)", () => {
+  let root: string;
+  let repo: string;
+  let home: string;
+  let store: Store;
+
+  beforeEach(() => {
+    root = makeTempDir("ctx-rslice-fresh-");
+    repo = makeGitFixture(root);
+    home = join(root, "contexa-home");
+    store = openStore({ projectDir: repo, now: () => 1_000_000, home });
+  });
+  afterEach(() => {
+    store.close();
+    cleanupTempDir(root);
+  });
+
+  test("A3 (DR-04): a stale link is downgraded (traversal + ranking), never full-weight", () => {
+    const clean = linkConfidence({ predicate: "calls", confidence: 1.0, stale: false });
+    const stale = linkConfidence({ predicate: "calls", confidence: 1.0, stale: true });
+    expect(stale).toBeLessThan(clean);
+    expect(stale).toBeGreaterThan(0); // downgraded, not excluded
+  });
+
+  test("A3 (DR-04): the traversal downgrades an edge once its link goes stale", () => {
+    for (const id of ["file:a", "file:b"]) {
+      store.upsertEntity({
+        id,
+        kind: "file",
+        name: id,
+        locator: { t: "file", path: id.slice(5) },
+        gen: 1,
+      });
+    }
+    store.beginGeneration("git");
+    store.setLink({
+      src: "file:a",
+      dst: "file:b",
+      predicate: "calls",
+      method: "structural",
+      confidence: 1.0,
+    });
+    store.publishGeneration("git");
+    const seeds = [{ entityId: "file:a", weight: 1, lexicalScore: 1, named: true }];
+    const vis = snapshotVisibility(store);
+    const entityOf = (id: string) => store.getEntity(id);
+    const before = expandSubgraph(store, seeds, vis, entityOf);
+    const edgeBefore = before.edges.find((e) => e.dst === "file:b")!;
+
+    store.flagLinksStale("file:b"); // an endpoint's content drifted
+    const after = expandSubgraph(store, seeds, vis, entityOf);
+    const edgeAfter = after.edges.find((e) => e.dst === "file:b")!;
+    expect(edgeAfter.confidence).toBeLessThan(edgeBefore.confidence);
+  });
+
+  test("A3 (DR-04): the header names the index state honestly, NEVER a false 'fresh'", () => {
+    expect(freshnessLabel(undefined)).toBe("indexed");
+    expect(freshnessLabel(undefined)).not.toBe("fresh");
+    const report: import("../../src/ingest/refresh.ts").RefreshReport = {
+      status: "reconciling",
+      sources: [],
+      pendingSources: ["git", "docs"],
+      frozenSources: [],
+    };
+    expect(freshnessLabel(report)).toBe("index-catchup (docs, git)");
+    expect(freshnessLabel(report)).not.toContain("fresh");
+  });
+
+  test("A3 (DR-04): per-source decay class + re-verification trigger scaffold", () => {
+    expect(SOURCE_FRESHNESS.git.decay).toBe("content-hash");
+    expect(SOURCE_FRESHNESS.github.decay).toBe("snapshot-ttl");
+    // content-hash sources re-verify at ingest → never time-stale.
+    expect(needsReverification("git", Number.MAX_SAFE_INTEGER)).toBe(false);
+    // a snapshot past its TTL needs re-verification before backing a served claim.
+    expect(needsReverification("github", 0)).toBe(false);
+    expect(needsReverification("github", 16 * 60_000)).toBe(true);
   });
 });
