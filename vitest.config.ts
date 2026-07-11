@@ -38,6 +38,9 @@ export default defineConfig({
       "tests/unit/handlers/fixtureContent.test.ts",
       "tests/unit/handlers/curlProductBehavior.test.ts",
       "tests/unit/handlers/adr0001Ladder.test.ts",
+      // DR-18 / O-23: build summary verdict is anchored to the exit code, not a
+      // keyword scan, and asserting summaries carry a raw receipt.
+      "tests/unit/handlers/summaryBuildVerdict.test.ts",
       // Shipped-handler behavior coverage — every rtk*Behavior suite (all assert
       // tk's actual ADR-0001 behavior; the RTK divergences are ratified).
       "tests/unit/handlers/rtk*Behavior.test.ts",
