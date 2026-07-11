@@ -96,6 +96,20 @@ layout, list, and budget decision must be defensible at these numbers and at 10�
 4. The DISCARDED branch `m3/rescope-claude` — reference ONLY for the projection-kernel pattern
    (core-owned DTOs + golden transcripts) and the export/one-render-path plumbing. Its frontend,
    auth flow, and lifecycle are rejected; do not copy them.
+5. **Reference projects (REQUIRED study before designing your IA)** — local checkouts under
+   `/Users/ziyu/Workspace/token-killer/.research/` (main repo checkout only, not in worktrees;
+   read via absolute path). Lift ideas, not code; this design must still be your own:
+   - `understand-anything` — the proven answer to graph UI at real scale: React Flow canvas +
+     side panel, and its `graph-layout-scaling` plan (dagre→ELK, container nodes, two-stage lazy
+     layout — expand-on-demand instead of global layout). This is exactly the wall the v2 canvas
+     died on; study how they avoid it.
+   - `gitnexus` — canvas-first repo information architecture: how a git repo becomes a navigable
+     graph surface (entry framing, cluster drill, search integration).
+   - `davia` (`web.ts`) — local-server ergonomics: port detection, browser open, graceful
+     shutdown.
+   - The v2 build ignored these in practice (it cited them and then shipped kind-count boxes).
+     Your deviation log must contain a short "reference findings" section: for UA and gitnexus,
+     what you took, what you rejected, and why.
 
 ## Hard guardrails (carried from v2, still binding)
 
