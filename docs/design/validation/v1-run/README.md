@@ -45,8 +45,8 @@ purpose: >
 
 - [x] Case 1 — token-killer#90 (operated 2026-07-12; 3 falsified extrapolations corrected from real queries, see scorecard note)
 - [x] Case 2 — token-killer#89 (operated 2026-07-12)
-- [ ] Case 3 — token-killer#87
-- [ ] Case 4 — token-killer#57
+- [x] Case 3 — token-killer#87 (operated 2026-07-12)
+- [x] Case 4 — token-killer#57 (operated 2026-07-12)
 - [ ] Case 5 — token-killer#47
 - [ ] Case 6 — token-killer#53
 - [ ] Case 7 — token-killer#52
