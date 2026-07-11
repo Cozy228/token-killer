@@ -48,7 +48,7 @@ purpose: >
 - [x] Case 3 — token-killer#87 (operated 2026-07-12)
 - [x] Case 4 — token-killer#57 (operated 2026-07-12)
 - [x] Case 5 — token-killer#47 (operated 2026-07-12)
-- [ ] Case 6 — token-killer#53
+- [x] Case 6 — token-killer#53 (operated 2026-07-12)
 - [ ] Case 7 — token-killer#52
 - [ ] Case 8 — token-killer#51
 - [ ] Case 9 — atlas#18
