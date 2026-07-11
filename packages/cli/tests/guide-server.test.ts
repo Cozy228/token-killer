@@ -5,10 +5,13 @@
  * G-readonly (route sweep + attempted write path), and C12 export-diff
  * (live ≡ export, one-render-path). Deterministic fixture store, fixed clock.
  */
-import { mkdirSync, mkdtempSync, readFileSync, rmSync } from "node:fs";
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync } from "node:fs";
 import { request } from "node:http";
 import { tmpdir } from "node:os";
-import { join } from "node:path";
+import { dirname, join } from "node:path";
+import { fileURLToPath } from "node:url";
+
+const THIS_DIR = dirname(fileURLToPath(import.meta.url));
 import { afterAll, beforeAll, describe, expect, test } from "vitest";
 import {
   buildCanvasProjection,
@@ -212,6 +215,43 @@ describe("ctx guide server — G-shutdown", () => {
     store.close();
     cleanup(root);
     expect(true).toBe(true);
+  });
+});
+
+describe("ctx guide server — serves the built Vite app (when present)", () => {
+  test("serves dist/index.html + a JS asset, token-gated, with strict CSP", async () => {
+    const distDir = join(THIS_DIR, "..", "..", "guide", "dist");
+    if (!existsSync(join(distDir, "index.html"))) {
+      // dist is a build artifact; CI builds the guide before this tier runs.
+      expect(true).toBe(true);
+      return;
+    }
+    const root = makeTempDir("ctx-guide-built-");
+    const store = makeStore(root);
+    const server = await startGuideServer({
+      store,
+      now: () => FIXTURE_NOW,
+      idleMs: 60_000,
+      distDir,
+    });
+    try {
+      // no token → 401 even for the built shell
+      expect((await http(server.origin, "/")).status).toBe(401);
+      const shell = await http(server.origin, `/?token=${server.token}`);
+      expect(shell.status).toBe(200);
+      expect(shell.body).toContain('<div id="root">');
+      expect(shell.body).toMatch(/<script[^>]+type="module"/);
+      // a hashed JS asset resolves (token via cookie the shell would carry)
+      const asset = shell.body.match(/\/?assets\/[A-Za-z0-9._-]+\.js/);
+      expect(asset, "index.html references a JS asset").not.toBeNull();
+      const assetPath = asset![0].startsWith("/") ? asset![0] : `/${asset![0]}`;
+      const js = await http(server.origin, assetPath, { token: server.token });
+      expect(js.status).toBe(200);
+    } finally {
+      await server.close();
+      store.close();
+      cleanup(root);
+    }
   });
 });
 

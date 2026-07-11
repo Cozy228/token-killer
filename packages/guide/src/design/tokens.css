@@ -1,0 +1,141 @@
+/*
+ * Design tokens — the ONLY layer variants change (design §8, C11). Routes,
+ * projections, DOM structure, glyph grammar (shape=derivation, hue=status,
+ * opacity=freshness, ticks=confidence, lock=restricted), copy, and a11y are
+ * fixed across skins; only these token values + the component-skin CSS differ.
+ * Color budget (LAW §3 / brief §4): status hues + ONE cobalt accent only; node
+ * kind is NEVER encoded by hue.
+ */
+
+/* ---- V1 graphite (lead skin, dark) ---- */
+:root,
+[data-skin="graphite"] {
+  color-scheme: dark;
+  --bg: oklch(0.17 0.012 240);
+  --surface: oklch(0.205 0.012 240);
+  --surface-2: oklch(0.24 0.012 240);
+  --hairline: oklch(0.32 0.012 240);
+  --ink: oklch(0.93 0.005 240);
+  --ink-dim: oklch(0.72 0.008 240);
+  --ink-faint: oklch(0.55 0.008 240);
+  --accent: oklch(0.65 0.1 230);
+  --accent-hover: oklch(0.7 0.1 230);
+  --st-resolved: oklch(0.72 0.13 150);
+  --st-conflicting: oklch(0.68 0.16 25);
+  --st-stale: oklch(0.75 0.13 75);
+  --st-unavailable: oklch(0.6 0.015 240);
+  --st-restricted: oklch(0.65 0.11 300);
+  --st-unknown: oklch(0.55 0.01 240);
+
+  --radius-chip: 4px;
+  --radius-panel: 8px;
+  --radius-drawer: 12px;
+  --shadow-float: 0 8px 24px oklch(0 0 0 / 0.35);
+  --hairline-style: 1px solid var(--hairline);
+  --font-sans: "IBM Plex Sans", ui-sans-serif, system-ui, sans-serif;
+  --font-mono: "IBM Plex Mono", ui-monospace, "SF Mono", Menlo, monospace;
+}
+
+/* ---- V2 ledger (light, chroma-0, sharp, hairline-ruled) ---- */
+[data-skin="ledger"] {
+  color-scheme: light;
+  --bg: oklch(0.98 0 0);
+  --surface: oklch(0.995 0 0);
+  --surface-2: oklch(0.95 0 0);
+  --hairline: oklch(0.78 0 0);
+  --ink: oklch(0.22 0 0);
+  --ink-dim: oklch(0.42 0 0);
+  --ink-faint: oklch(0.6 0 0);
+  --accent: oklch(0.5 0.12 245);
+  --accent-hover: oklch(0.44 0.12 245);
+  --st-resolved: oklch(0.52 0.14 150);
+  --st-conflicting: oklch(0.52 0.19 25);
+  --st-stale: oklch(0.58 0.13 75);
+  --st-unavailable: oklch(0.5 0.01 240);
+  --st-restricted: oklch(0.5 0.15 300);
+  --st-unknown: oklch(0.55 0.01 240);
+
+  --radius-chip: 0px;
+  --radius-panel: 0px;
+  --radius-drawer: 0px;
+  --shadow-float: none;
+  --hairline-style: 1px solid var(--hairline);
+  --font-sans: "IBM Plex Sans", ui-sans-serif, system-ui, sans-serif;
+  --font-mono: "IBM Plex Mono", ui-monospace, monospace;
+}
+
+/* ---- V3 depth (dark, soft, borderless, elevation via shadow + lightness) ---- */
+[data-skin="depth"] {
+  color-scheme: dark;
+  --bg: oklch(0.2 0.02 265);
+  --surface: oklch(0.25 0.02 265);
+  --surface-2: oklch(0.3 0.02 265);
+  --hairline: transparent;
+  --ink: oklch(0.94 0.005 265);
+  --ink-dim: oklch(0.74 0.01 265);
+  --ink-faint: oklch(0.58 0.01 265);
+  --accent: oklch(0.68 0.11 250);
+  --accent-hover: oklch(0.73 0.11 250);
+  --st-resolved: oklch(0.74 0.13 150);
+  --st-conflicting: oklch(0.7 0.16 25);
+  --st-stale: oklch(0.77 0.13 75);
+  --st-unavailable: oklch(0.62 0.015 265);
+  --st-restricted: oklch(0.67 0.11 300);
+  --st-unknown: oklch(0.57 0.01 265);
+
+  --radius-chip: 8px;
+  --radius-panel: 12px;
+  --radius-drawer: 12px;
+  --shadow-float: 0 10px 30px oklch(0 0 0 / 0.45);
+  --hairline-style: 1px solid transparent;
+  --font-sans: "IBM Plex Sans", ui-sans-serif, system-ui, sans-serif;
+  --font-mono: "IBM Plex Mono", ui-monospace, monospace;
+}
+
+/* ---- V4 signal (near-monochrome; status marks are the only color, one size up) ---- */
+[data-skin="signal"] {
+  color-scheme: dark;
+  --bg: oklch(0.15 0 0);
+  --surface: oklch(0.19 0 0);
+  --surface-2: oklch(0.24 0 0);
+  --hairline: oklch(0.34 0 0);
+  --ink: oklch(0.95 0 0);
+  --ink-dim: oklch(0.7 0 0);
+  --ink-faint: oklch(0.52 0 0);
+  --accent: oklch(0.72 0.02 240);
+  --accent-hover: oklch(0.8 0.02 240);
+  --st-resolved: oklch(0.74 0.17 150);
+  --st-conflicting: oklch(0.68 0.2 25);
+  --st-stale: oklch(0.78 0.16 75);
+  --st-unavailable: oklch(0.62 0.02 240);
+  --st-restricted: oklch(0.67 0.15 300);
+  --st-unknown: oklch(0.55 0.01 240);
+
+  --radius-chip: 4px;
+  --radius-panel: 6px;
+  --radius-drawer: 8px;
+  --shadow-float: 0 8px 24px oklch(0 0 0 / 0.5);
+  --hairline-style: 1px solid var(--hairline);
+  --font-sans: "IBM Plex Sans", ui-sans-serif, system-ui, sans-serif;
+  --font-mono: "IBM Plex Mono", ui-monospace, monospace;
+  --signal-mark-scale: 1.25;
+}
+
+/* z-index scale (design §2) — documented constants, no arbitrary values. */
+:root {
+  --z-canvas-overlay: 10;
+  --z-sticky-header: 20;
+  --z-drawer: 30;
+  --z-popover: 40;
+  --z-omnibox: 50;
+  --z-toast: 60;
+  --ease-enter: cubic-bezier(0.32, 0.72, 0, 1);
+}
+
+/* Map claim status → its hue token (single source used by chip, legend, badges). */
+[data-status="resolved"] { --status-hue: var(--st-resolved); }
+[data-status="conflicting"] { --status-hue: var(--st-conflicting); }
+[data-status="stale"] { --status-hue: var(--st-stale); }
+[data-status="unavailable"] { --status-hue: var(--st-unavailable); }
+[data-status="restricted"] { --status-hue: var(--st-restricted); }
+[data-status="unknown"] { --status-hue: var(--st-unknown); }
