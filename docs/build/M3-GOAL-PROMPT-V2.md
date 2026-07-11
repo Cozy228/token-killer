@@ -1,5 +1,7 @@
 ---
-status: active
+status: superseded
+superseded_by: M3-GOAL-PROMPT-V3.md (P40, 2026-07-11 — first build's UI/UX and data story
+  rejected on live drive; data layer ratified, UI reworked from scratch)
 review_after: 2026-08-08
 note: re-scoped M3 work order (P39; O-25 closed). This EXACT text is handed to two independent
   implementers (Claude builder agent AND Codex GPT-5.6 sol-ultra) — dual-track, not orchestrated.

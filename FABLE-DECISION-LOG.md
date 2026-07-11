@@ -496,6 +496,26 @@ core/cli 22.16) → O-37. O-24's remaining design call ③ (extend the terse env
 `context()` text) intersects M3 — the guide IS the human render of the same envelope; the
 `context()`-text half stays a separate maintainer call.
 
+**P40 — M3 v2 build REJECTED on live drive; data layer ratified; UI rework ordered (R10–R16).**
+`[2026-07-11]` The maintainer drove the v2 Claude-track build (`m3/rescope-claude`) on real data
+and rejected it: canvas = 7 kind-count boxes at 9,588 real entities, search dead, Subject
+unreachable, `?skin=` variants = color palettes only, disconnect teardown + token-URL fought the
+user. Root cause of the blindness: ALL acceptance ran on a 14-entity fixture, and a `--fixture`
+run had permanently written demo rows into the real project store (no real ingestion was ever
+wired into the guide story — `ctx sync` existed but was never connected). Dogfood proof same day:
+polluted store backed up + rebuilt, `ctx sync` ingested this repo in ~10 s (9,588 entities /
+21,668 claims / 19,657 links), guide served it — Inspector's review queue was the one screen that
+worked; everything else collapsed. Rulings, amending P39 where they collide: **R10** data-first
+(startup refresh catch-up; empty state names `ctx sync`; `--fixture` isolated from the real
+store); **R11** fixture-verification ban (acceptance requires a cold real-repo drive); **R12**
+token→cookie auth, clean URL; **R13** beacon teardown removed (Ctrl-C + long idle backstop);
+**R14** UI from scratch, kind-count-box canvas and global full-set layouts banned, skins
+abolished; **R15** jobs (orient/find/understand/review/trust) replace pages as the content
+contract; **R16** dual-track IS the variant competition (one design per implementer). Work order
+= `docs/build/M3-GOAL-PROMPT-V3.md` (verbatim to both tracks; V2 stamped superseded; the V2 order
+in Codex's hands is VOID). Process lesson canonized in R11: a render surface's acceptance must
+include a real-store drive — fixture-green proved nothing.
+
 ## Open
 
 - **O1 / O2** (pack §9) — value metric & joint story: partially reshaped by P15 (measurement is
