@@ -16,12 +16,20 @@ Identity: CLAUDE track. Branch `m3/rescope-claude`. In-worktree build; never pus
 |---|---|
 | 3a projection kernel (core) | DONE — kernel + fixture + goldens + gates + C1–C10 green |
 | 3a server (cli) | DONE — loopback+token+host-allowlist, idle/disconnect shutdown, export; G-loopback/G-egress/G-readonly/G-shutdown/C12 green |
-| 3a Vite shell + glyph component | embedded fallback shell DONE; full Vite app pending (3b+) |
-| 3b canvas | see below |
-| 3c subject | see below |
-| 3d inspector | see below |
-| 3e design variants | see below |
-| 3f export | see below |
+| 3a Vite shell + glyph component | DONE — React 19 + Vite app builds; envelope glyph chip + claim legend |
+| 3b canvas | DONE — React Flow field (elkjs layout), omnibox search, time/churn lenses, badges, side preview, legend dock |
+| 3c subject | DONE — biography: facts+chips, decision chain, history/co-change table, bounded neighborhood, evidence drawer |
+| 3d inspector | DONE — tabbed worklist (review/conflicts/push/memory/health), exact CLI copy-commands, verbatim push digest |
+| 3e design variants | DONE (4 skins graphite/ledger/depth/signal, `?skin=`, runtime switch, C11 test green); craft-floor audit per skin = partial (see remaining) |
+| 3f export | DONE — `ctx guide --export`, one-render-path via shared PROJECTION_ROUTES, C12 export-diff green |
+
+### Lens ruling (3b records this for the open item, brief §9)
+The **lens form suffices** for both time (supersession) and churn (co-change) on the fixture and
+living repo: both render as bounded canvas overlays fed by their own `time-lens` / `churn-lens`
+projections (each budget-disclosed). No standalone Decisions/History PAGE was needed — the Subject
+surface already carries the subject-SCOPED decision chain + history, and the canvas lenses carry
+the GLOBAL view. Recommendation to the maintainer: keep lenses, do not add standalone pages. This
+is recorded evidence for the open ruling, not a unilateral close.
 
 ## Perf recorder — living-repo numbers (G-perf-recorded; recorded, never asserted)
 
@@ -90,7 +98,57 @@ designed — the canvas stays DOM-comfortable because the budget says so, not by
   are purely additive (new `packages/core/src/guide/**`, `packages/cli/src/guide/**`, tests, docs);
   I did not touch ingest/select/serve logic. Left untouched (out of scope; not my defect to fix).
 
+## Acceptance checklist — item-by-item self-verification
+
+Gates (evidence = the named test, all run green with `TK_SHIM_DIR` unset):
+- **G-readonly** — PASS. `packages/cli/tests/guide-server.test.ts` "G-readonly: … a write method → 405; store unchanged": sweeps every projection path, asserts POST/PUT/DELETE/PATCH → 405 and `store.entityCount()` unchanged. Kernel never calls `internHandle` (the only store-write on a read path) — drill keys are entity ids.
+- **G-loopback** — PASS. Same suite: binds `127.0.0.1` only; EVERY route (`/`, api, assets, unknown) → 401 without the bearer token; token via header/query/cookie resolves; non-loopback Host → 403 (DNS-rebinding).
+- **G-egress** — PASS. Server suite (no external URLs in shell/export html + strict CSP `connect-src 'self'` + guard throws on `ANTHROPIC_API_KEY`); `packages/guide/tests/egress.test.ts` (disclosure mirror == core; built `dist/` has no CDN/font/telemetry host); fonts vendored via `@fontsource` woff2; no wasm/CDN in bundle.
+- **G-shutdown** — PASS. Server suite: idle-timeout teardown + `/api/close` disconnect beacon both resolve `server.closed`.
+- **G-provenance** — PASS. `packages/core/tests/acceptance/3a-guide.test.ts` "G-provenance": sweeps canvas/subject×2/inspector/search, every evidence packet's `envelope.evidence.uri` is non-empty and appears in its terse render.
+- **G-honest-gap** — PASS. Core test "G-honest-gap" (null axes → `preRSlice` + `?` glyph, never fabricated) + `packages/guide/tests/envelope-chip.test.tsx` (null derivation/confidence render `?` + "unknown" + `compat shadow` tag).
+- **G-budget** — PASS. Core test "G-budget": every projection declares `budget{edgePredicates,depth,nodeCap}` and `omitted == sum(omittedByReason)`; golden transcripts assert the full payload.
+- **G-one-render-path** — PASS. `packages/cli/tests/guide-server.test.ts` C12: exported `canvas.json` deep-equals both the live `/api/canvas` response and the direct builder output (shared `PROJECTION_ROUTES`).
+- **G-perf-recorded** — PASS. Core perf recorder records fixture + living-repo numbers (recorded, never asserted). Living numbers in the section above.
+
+Scenarios:
+- **C1** canvas sources+badges — PASS (core C1 + server "serves canvas projection" + Canvas surface).
+- **C2** omnibox finds doc/symbol/memory note, drillable — PASS (core C2; omnibox in Canvas.tsx drills to Subject by entityId).
+- **C3** subject(symbol) facts+anchors+glyphs — PASS (core C3; Subject.tsx renders chips per fact).
+- **C4** subject(memory note) zone+lifecycle — PASS (core C4).
+- **C5** time lens supersession — PASS (core C5; LensOverlay).
+- **C6** churn lens co-change — PASS (core C6; LensOverlay).
+- **C7** review queue + exact CLI commands — PASS (core C7; Inspector copy-commands).
+- **C8** conflicts grouped by reason class — PASS (core C8; Inspector conflicts tab).
+- **C9** push preview verbatim digest + budget — PASS (core C9; Inspector push tab).
+- **C10** health per-source gen/cursor — PASS (core C10; Inspector health tab).
+- **C11** skin switch changes only the design layer — PASS (`packages/guide/tests/skin.test.tsx`: chip + legend DOM byte-identical across all 4 skins, only `data-skin` differs).
+- **C12** export-diff (live ≡ export) — PASS (server suite, above).
+
+Suites: core (516 pass / 5 pre-existing living-repo fails — see Adjacent-found, red on base), cli (all pass incl. 13 guide-server), guide (9 pass). Final numbers reported to the reviewer.
+
+## Remaining / not done (honest gaps for the reviewer)
+
+- **Playwright browser smoke** — NOT DONE as a real browser run. Playwright + browser binaries are
+  not installed (network/binary weight). Substituted with an HTTP-level built-app smoke (server
+  serves the real hashed Vite bundle, token-gated, in `guide-server.test.ts`) + happy-dom component
+  tests. A `@playwright/test` headless smoke that boots the server and asserts the canvas renders is
+  the one remaining test-surface item; the app is structured for it (stable roles/labels).
+- **Craft-floor §7 per-skin contrast re-verification** — the 4 skins are built to the token spec and
+  the C11 structural-invariance test is green, but automated WCAG-AA contrast verification per skin
+  is not wired (design §7 asks for it). Tokens were chosen to the doc's stated ratios; a contrast
+  assertion test per skin remains.
+- **elkjs bundle weight** — the guide JS bundle is ~1.8MB (elkjs is ~1.5MB). Acceptable for a local
+  loopback tool (no network fetch), but a lazy `import()` of the layout module would trim first
+  paint. Not done; noted.
+- **`ctx guide --project <dir>`** — the guide command reads the project dir from the CLI `RunIo`
+  (cwd default), not a `--project` flag (only `mcp` parses `--project`). `--fixture`/`--export`
+  work; wiring `--project` for guide is a one-line follow-up if wanted.
+
 ## Open questions
 
-_(recorded as they occur)_
+- Canvas member preview is bounded to the projection's per-cluster `nodeCap` (12); on a large repo
+  the canvas shows cluster cards, not every node. Whether the maintainer wants a denser WebGL lens
+  (Sigma, the named fallback) is explicitly out of scope now (guardrail) — flagging that the DOM
+  React Flow field is comfortable at fixture + this-repo scale, per the recorded perf.
 </content>
