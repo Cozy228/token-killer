@@ -83,6 +83,19 @@ function evidenceFor(store: Store, entity: Entity): ReturnType<typeof evidencePa
   return evidencePacket(claimEnvelopeFor(store, entity));
 }
 
+/**
+ * A source cursor's `position` is a freshness signal (a git oid, a snapshot date),
+ * but the code source stores its ENTIRE per-file hash map there — multi-hundred-KB
+ * on a real repo. A projection must stay bounded (G-budget), so the cursor is
+ * summarized to a short prefix, never embedded raw. Fixture cursors are already
+ * short, so goldens are unaffected.
+ */
+const CURSOR_SUMMARY_MAX = 64;
+function cursorSummary(pos: string | undefined): string | undefined {
+  if (pos === undefined) return undefined;
+  return pos.length > CURSOR_SUMMARY_MAX ? `${pos.slice(0, CURSOR_SUMMARY_MAX)}…` : pos;
+}
+
 // ---- Canvas ----
 
 const CANVAS_BUDGET: ProjectionBudget = {
@@ -113,7 +126,7 @@ export function buildCanvasProjection(store: Store, now: number): CanvasProjecti
       source,
       entityCount: count,
       publishedGen: store.publishedGen(source),
-      ...(cursor?.position !== undefined ? { cursorPosition: cursor.position } : {}),
+      ...(cursor?.position !== undefined ? { cursorPosition: cursorSummary(cursor.position) } : {}),
       ...(cursor?.freshness !== undefined ? { cursorFreshness: cursor.freshness } : {}),
       coverage: total > 0 ? count / total : 0,
     };
@@ -490,7 +503,7 @@ export function buildInspectorProjection(store: Store, now: number): InspectorPr
     return {
       source,
       publishedGen: store.publishedGen(source),
-      ...(cursor?.position !== undefined ? { cursorPosition: cursor.position } : {}),
+      ...(cursor?.position !== undefined ? { cursorPosition: cursorSummary(cursor.position) } : {}),
       ...(cursor?.freshness !== undefined ? { cursorFreshness: cursor.freshness } : {}),
       stale: cursor?.position === undefined,
     };

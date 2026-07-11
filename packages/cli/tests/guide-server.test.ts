@@ -396,4 +396,30 @@ describe("ctx guide export — C12 one-render-path (live ≡ export)", () => {
       cleanup(root);
     }
   });
+
+  test("R9: exported index.html mounts the built bundle with an inlined blob (when built), zero external URLs", () => {
+    const distDir = join(THIS_DIR, "..", "..", "guide", "dist");
+    if (!existsSync(join(distDir, "index.html"))) {
+      expect(true).toBe(true); // dist is a build artifact; CI builds it first
+      return;
+    }
+    const root = makeTempDir("ctx-guide-exp-bundle-");
+    const store = makeStore(root);
+    const out = join(root, "snap");
+    try {
+      const result = exportGuide(store, out, () => FIXTURE_NOW, distDir);
+      expect(result.mountedBundle).toBe(true);
+      const html = readFileSync(join(out, "index.html"), "utf8");
+      // The real bundle + inlined projections are present…
+      expect(html).toContain("window.__CTX_GUIDE_EXPORT__");
+      expect(html).toMatch(/assets\/index-[A-Za-z0-9._-]+\.js/);
+      // …and the copied assets exist offline, with zero external URLs.
+      expect(existsSync(join(out, "assets"))).toBe(true);
+      expect(html).not.toMatch(/https?:\/\/(?!127\.0\.0\.1|localhost)/i);
+      expect(html).not.toMatch(/(cdn|googleapis|gstatic|unpkg|jsdelivr|fonts\.google)/i);
+    } finally {
+      store.close();
+      cleanup(root);
+    }
+  });
 });

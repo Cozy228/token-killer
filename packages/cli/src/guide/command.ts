@@ -118,10 +118,14 @@ export async function runGuide(io: GuideIo, flags: GuideFlags): Promise<number> 
     try {
       if (!flags.fixture) await refreshCatchUp(prepared.store, io);
       const dir = resolve(flags.exportDir);
-      const result = exportGuide(prepared.store, dir, now);
+      const result = exportGuide(prepared.store, dir, now, resolveDistDir());
       io.out(`ctx guide: exported ${result.files.length} file(s) + ${result.subjects} subject(s)`);
       io.out(`  ${result.dir}`);
-      io.out("  self-contained snapshot (offline, zero external URLs) — open index.html");
+      io.out(
+        result.mountedBundle
+          ? "  self-contained snapshot (offline, real UI, zero external URLs) — open index.html"
+          : "  self-contained snapshot (offline JSON, zero external URLs) — build the guide for the UI",
+      );
       return 0;
     } finally {
       prepared.store.close();

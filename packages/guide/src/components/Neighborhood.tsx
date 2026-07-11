@@ -55,9 +55,8 @@ export function Neighborhood({
 }: NeighborhoodProps): React.ReactElement {
   const flowNodes = useMemo<Node<EgoData>[]>(() => {
     const ring = nodes.filter((n) => n.entityId !== subjectId);
-    const cx = 280;
-    const cy = 170;
-    const radius = 150;
+    const cx = 300;
+    const cy = 210;
     const out: Node<EgoData>[] = [];
     const center = nodes.find((n) => n.entityId === subjectId) ?? nodes[0];
     if (center) {
@@ -70,12 +69,18 @@ export function Neighborhood({
         draggable: false,
       });
     }
+    // Concentric rings of ~10 so a full 24-node neighborhood never overlaps.
+    const PER_RING = 10;
     ring.forEach((n, i) => {
-      const angle = (2 * Math.PI * i) / Math.max(ring.length, 1) - Math.PI / 2;
+      const ringIdx = Math.floor(i / PER_RING);
+      const inRing = i % PER_RING;
+      const count = Math.min(PER_RING, ring.length - ringIdx * PER_RING);
+      const r = 165 + ringIdx * 120;
+      const angle = (2 * Math.PI * inRing) / count - Math.PI / 2 + ringIdx * 0.32;
       out.push({
         id: n.entityId,
         type: "ego",
-        position: { x: cx + radius * Math.cos(angle), y: cy + radius * Math.sin(angle) },
+        position: { x: cx + r * Math.cos(angle), y: cy + r * Math.sin(angle) },
         data: { label: n.name, kind: n.kind, center: false },
         draggable: false,
       });
