@@ -20,6 +20,7 @@
  *   retired                   → unavailable (hard-excluded from default pull)
  */
 import { composeStatus, foldStatusAsOf } from "../memory/fold.ts";
+import { isOverrideExpired } from "../memory/overrideExpiry.ts";
 import type { Store } from "../store/store.ts";
 import type { ClaimStatus, MemoryRow, MemoryStatus } from "../store/types.ts";
 
@@ -29,7 +30,11 @@ import type { ClaimStatus, MemoryRow, MemoryStatus } from "../store/types.ts";
  * body (a restricted or absent claim must never render as merely `stale`), and an
  * open contradiction outranks the lifecycle status.
  */
-export function memoryClaimStatus(store: Store, row: MemoryRow): ClaimStatus {
+export function memoryClaimStatus(
+  store: Store,
+  row: MemoryRow,
+  now: number = Date.now(),
+): ClaimStatus {
   // 1. Disclosure gate (DR-05): a restricted body is withheld, not served stale.
   if (row.disclosure === "restricted") return "restricted";
 
@@ -52,7 +57,12 @@ export function memoryClaimStatus(store: Store, row: MemoryRow): ClaimStatus {
   if (row.driftReason !== undefined) return "stale";
   if (store.openStaleSuspects(row.entityId).length > 0) return "stale";
 
-  if (row.status === "active") return "resolved";
+  if (row.status === "active") {
+    // DR-12: an expired semantic local override loses precedence — surfaced as
+    // stale-until-reverified (retained, never deleted); re-`confirm` restores it.
+    if (isOverrideExpired(store, row.entityId, now)) return "stale";
+    return "resolved";
+  }
   return "unknown";
 }
 

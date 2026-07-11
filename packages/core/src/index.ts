@@ -321,6 +321,13 @@ export type { ServeResponse, ServeDeps, ServeDiag, ServeKind } from "./serve/typ
 export { trustFor, memoryTrustFor } from "./store/trust.ts";
 export { memoryClaimStatus, memoryStatusAsOf } from "./serve/status.ts";
 export { foldStatusAsOf } from "./memory/fold.ts";
+// R-slice Phase 5: scoped semantic-local-override expiry (DR-12).
+export {
+  isSemanticLocalOverride,
+  isOverrideExpired,
+  overrideCreatedAt,
+  SEMANTIC_OVERRIDE_TTL_MS,
+} from "./memory/overrideExpiry.ts";
 // R-slice Phase 2: per-source freshness decay class + re-verification (DR-04).
 export { SOURCE_FRESHNESS, needsReverification } from "./serve/freshness.ts";
 export type { DecayClass, SourceFreshnessPolicy } from "./serve/freshness.ts";

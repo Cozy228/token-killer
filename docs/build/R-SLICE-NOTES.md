@@ -177,8 +177,17 @@ NOT DONE (see "Where I stopped"):
   consumer via MCP `structuredContent` (DR-31) and is available to any human-render
   via `renderEnvelopeTerse`, but the default `context()` markdown text is unchanged.
 
-### Phase 5 — Tail — PARTIAL (item 11 green; item 9 in progress)
+### Phase 5 — Tail — COMPLETE (items 9 + 11 green)
 
+- **DR-12 scoped override expiry (item 9) — DONE (green).** `memory/overrideExpiry.ts`:
+  a semantic local override (`origin = remember-local` AND carrying a `supersedes`
+  claim) gets a re-verification TTL (`SEMANTIC_OVERRIDE_TTL_MS`, 90d from its create
+  time). Past the TTL it LOSES precedence — the DR-03 `memoryClaimStatus` (now takes
+  an optional `now`) returns `stale` for an expired active override, so it surfaces
+  stale-flagged and is RETAINED (never deleted; re-`confirm` restores it). Scope is
+  narrow: ordinary local notes and committed/mainline supersedes never expire.
+  Tests: fresh override = resolved; past-TTL = stale + retained; scoping (3 cases,
+  38 total).
 - **DR-27 disclosure half (item 11) — DONE (green).** `ingest/docs.ts`
   `resolveSymbolMentions` no longer silently `continue`s on an unresolved
   backticked symbol mention (the O-16 blind spot): distinct unresolved tokens are

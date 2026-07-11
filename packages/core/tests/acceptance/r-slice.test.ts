@@ -12,6 +12,7 @@ import { runMigrations } from "../../src/store/migrate.ts";
 import { trustFor, memoryTrustFor } from "../../src/store/trust.ts";
 import { generationIdentity } from "../../src/store/generation.ts";
 import { memoryClaimStatus, memoryStatusAsOf } from "../../src/serve/status.ts";
+import { isSemanticLocalOverride, isOverrideExpired } from "../../src/memory/overrideExpiry.ts";
 import { foldStatusAsOf } from "../../src/memory/fold.ts";
 import { expandSubgraph, linkConfidence } from "../../src/select/subgraph.ts";
 import { snapshotVisibility } from "../../src/select/visibility.ts";
@@ -685,5 +686,116 @@ describe("R-slice Phase 5: DR-27 disclosure half — named blind spot (item 11)"
         .claimsFor("file:guide.md", "references")
         .filter((c) => c.object?.includes("DoesNotExist")),
     ).toHaveLength(0);
+  });
+});
+
+describe("R-slice Phase 5: DR-12 scoped semantic-override expiry (item 9)", () => {
+  let root: string;
+  let repo: string;
+  let store: Store;
+  const CREATED = 1_000_000;
+  const TTL = 90 * 24 * 60 * 60 * 1000;
+
+  beforeEach(() => {
+    root = makeTempDir("ctx-rslice-ovr-");
+    repo = makeGitFixture(root);
+    store = openStore({ projectDir: repo, now: () => CREATED, home: join(root, "contexa-home") });
+  });
+  afterEach(() => {
+    store.close();
+    cleanupTempDir(root);
+  });
+
+  // A remember-local note that superseded another claim = a semantic local override.
+  const makeLocalOverride = (id: string, at: number) => {
+    store.upsertEntity({ id, kind: "memory", name: id, locator: { t: "store" }, gen: 1 });
+    store.writeMemory({
+      entityId: id,
+      gist: "override",
+      origin: "remember-local",
+      authority: "confirmed",
+    });
+    store.addClaim({
+      subject: id,
+      predicate: "supersedes",
+      object: "mem:old",
+      carrier: "remember",
+      method: "explicit-key",
+      authority: "confirmed",
+      gen: 1,
+    });
+    store.appendMemoryEvent({
+      id: "01OVRCREATE00000000000000",
+      memoryId: id,
+      verb: "create",
+      actor: "cli",
+      refs: { status: "active" },
+      carrier: "remember-local",
+      method: "explicit-key",
+      authority: "confirmed",
+      at,
+    });
+  };
+
+  test("A9 (DR-12): a fresh semantic local override keeps precedence (resolved)", () => {
+    makeLocalOverride("mem:ovr", CREATED);
+    expect(isSemanticLocalOverride(store, "mem:ovr")).toBe(true);
+    expect(isOverrideExpired(store, "mem:ovr", CREATED + TTL - 1)).toBe(false);
+    expect(memoryClaimStatus(store, store.getMemory("mem:ovr")!, CREATED + TTL - 1)).toBe(
+      "resolved",
+    );
+  });
+
+  test("A9 (DR-12): past its TTL the override loses precedence → stale, and is RETAINED", () => {
+    makeLocalOverride("mem:ovr", CREATED);
+    const now = CREATED + TTL + 1;
+    expect(isOverrideExpired(store, "mem:ovr", now)).toBe(true);
+    expect(memoryClaimStatus(store, store.getMemory("mem:ovr")!, now)).toBe("stale");
+    // Retained, never deleted (non-destruction).
+    expect(store.getMemory("mem:ovr")).toBeDefined();
+  });
+
+  test("A9 (DR-12): expiry is scoped — a non-local supersede / a local non-override never expires", () => {
+    // A committed (mainline) supersede is NOT a local override.
+    store.upsertEntity({
+      id: "mem:main",
+      kind: "memory",
+      name: "m",
+      locator: { t: "store" },
+      gen: 1,
+    });
+    store.writeMemory({
+      entityId: "mem:main",
+      gist: "g",
+      origin: "remember",
+      authority: "confirmed",
+    });
+    store.addClaim({
+      subject: "mem:main",
+      predicate: "supersedes",
+      object: "mem:x",
+      carrier: "remember",
+      method: "explicit-key",
+      authority: "confirmed",
+      gen: 1,
+    });
+    expect(isSemanticLocalOverride(store, "mem:main")).toBe(false);
+    expect(isOverrideExpired(store, "mem:main", CREATED + TTL * 10)).toBe(false);
+    // A local note that overrides NOTHING is not a semantic override.
+    store.upsertEntity({
+      id: "mem:loc",
+      kind: "memory",
+      name: "l",
+      locator: { t: "store" },
+      gen: 1,
+    });
+    store.writeMemory({
+      entityId: "mem:loc",
+      gist: "g",
+      origin: "remember-local",
+      authority: "confirmed",
+    });
+    expect(isSemanticLocalOverride(store, "mem:loc")).toBe(false);
+    expect(isOverrideExpired(store, "mem:loc", CREATED + TTL * 10)).toBe(false);
   });
 });
