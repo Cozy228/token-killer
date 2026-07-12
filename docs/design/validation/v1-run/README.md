@@ -58,3 +58,13 @@ purpose: >
 
 Scorecards: `case-NN-<repo>-<pr>.md`. Blind packets (generated after all 12
 cases complete, before any adjudication): `packets/`.
+
+## Adjudication phase
+
+- [x] Packets generated 2026-07-12 (`packets/case-01..12.md`; contents
+      ruling recorded in `packets/README.md` — Evidence sections excluded
+      per §7 clause 2). Operator session generated mechanically; does not vote.
+- [ ] Claude votes (12 packets, fresh isolated sessions) → `packets/votes/`
+- [ ] Codex votes (12 packets, fresh isolated sessions) → `packets/votes/`
+- [ ] Maintainer tie-breaks + false-reassurance materiality calls → `votes/case-NN-final.md`
+- [ ] Aggregate verdict (only after all 60 questions scored; deadline 2026-07-19)
