@@ -171,6 +171,20 @@ describe("select/engine", () => {
     if (r.ok) throw new Error("unreachable");
     expect(r.reason).toBe("unknown-ref");
     expect(r.guidance.length).toBeGreaterThan(0);
+    // ref mode legitimately suggests escalating to task mode
+    expect(r.guidance).toContain("task mode");
+  });
+
+  test("FIX-3: a task-mode miss never tells the caller to use task mode", () => {
+    const r = select(store, { task: "zzqnonexistenttermxyz", now: () => NOW });
+    expect(r.ok).toBe(false);
+    if (r.ok) throw new Error("unreachable");
+    expect(r.reason).toBe("unknown-ref");
+    expect(r.guidance.length).toBeGreaterThan(0);
+    // the input already WAS task mode — the circular advice must be gone
+    expect(r.guidance.toLowerCase()).not.toContain("task mode");
+    // it points at the real recovery levers instead
+    expect(r.guidance).toContain("ctx sync");
   });
 
   test("no input: SelectMiss(no-input)", () => {

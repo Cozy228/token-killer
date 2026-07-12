@@ -146,8 +146,16 @@ function conflictCandidates(ctx: Ctx, ranked: RankedCandidate[]): ConflictCandid
   return out;
 }
 
-function missUnknownRef(store: Store, input: string): SelectMiss {
+/**
+ * Recoverable miss for a ref/handle that resolves to nothing, OR a task query
+ * that seeds nothing. The guidance splits by origin (FIX-3 / O-33(a)): a
+ * ref-mode miss points at task mode; a task-mode miss must NEVER say "use task
+ * mode" (the input already WAS task mode) — it points at freshness + wording.
+ */
+function missUnknownRef(store: Store, input: string, origin: "ref" | "task"): SelectMiss {
   const query = tokenizeQuery(input, store.projectRoot)
+    // path tokens carry `/` (not an FTS tokenchar) — skip in the candidate probe.
+    .filter((t) => !t.text.includes("/"))
     .map((t) => `"${t.text}"`)
     .join(" OR ");
   const candidates: SelectMiss["candidates"] = [];
@@ -163,12 +171,11 @@ function missUnknownRef(store: Store, input: string): SelectMiss {
       });
     }
   }
-  return {
-    ok: false,
-    reason: "unknown-ref",
-    guidance: `\`${input}\` does not resolve to a known entity. Pass a [handle] from a previous response, a full entity id, or use task mode.`,
-    candidates,
-  };
+  const guidance =
+    origin === "task"
+      ? `No entity matched \`${input}\`. Try different wording or a specific symbol/file name; if the code was added recently, run \`ctx sync\` to refresh the context base.`
+      : `\`${input}\` does not resolve to a known entity. Pass a [handle] from a previous response, a full entity id, or use task mode.`;
+  return { ok: false, reason: "unknown-ref", guidance, candidates };
 }
 
 export function select(store: Store, input: SelectInput): SelectResult | SelectMiss | FacetResult {
@@ -190,7 +197,7 @@ export function select(store: Store, input: SelectInput): SelectResult | SelectM
     const resolved = store.resolveHandle(refInput);
     const entity = resolved ? entityOf(ctx, resolved.entityId) : undefined;
     if (!resolved || !entity || !ctx.visibility.isVisible(entity)) {
-      return missUnknownRef(store, refInput);
+      return missUnknownRef(store, refInput, "ref");
     }
     if (resolved.facet !== undefined) {
       return renderFacet(ctx, entity, resolved.facet); // skips PPR (§6)
@@ -236,7 +243,7 @@ export function select(store: Store, input: SelectInput): SelectResult | SelectM
     };
   }
   const stage = gatherSeeds(store, task, ctx.visibility);
-  if (stage.seeds.length === 0) return missUnknownRef(store, task);
+  if (stage.seeds.length === 0) return missUnknownRef(store, task, "task");
   const ranked = rankSelection(ctx, stage);
   const subject = ranked.length > 0 ? ranked[0]!.entity : undefined;
   const { sections, envelope } = assembleSections(
