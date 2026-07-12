@@ -19,6 +19,8 @@
  * is skipped, so no `touches`/reference claim is ever double-appended. The cursor
  * is an optimisation on top of that guard, advanced per batch.
  */
+import { statSync } from "node:fs";
+import { join } from "node:path";
 import type { Store } from "../../store/store.ts";
 import type { Budget, DirtyReport, IngestResult, SourceAdapter } from "../adapter.ts";
 import { GitError, headOid, revListCount } from "./gitCli.ts";
@@ -300,6 +302,18 @@ export class GitAdapter implements SourceAdapter {
   #ensureFileEntity(store: Store, path: string, gen: number, fileSeen: Set<string>): number {
     if (fileSeen.has(path)) return 0;
     fileSeen.add(path);
+    // Working-tree hygiene: if the path currently EXISTS but is NOT a regular
+    // file (statSync follows symlinks, so a symlink→directory is seen as a
+    // directory here), skip the entity — read-through of such a locator throws
+    // EISDIR at serve time. Paths ABSENT from the working tree (statSync throws)
+    // keep their entity: deleted/historical files legitimately stay in the graph
+    // (the target-removed register depends on it). fileSeen already dedups, so
+    // this is one statSync per unique path on the per-commit hot path.
+    try {
+      if (!statSync(join(store.projectRoot, path)).isFile()) return 0;
+    } catch {
+      // Not in the working tree — historical/deleted path, keep the entity.
+    }
     store.upsertEntity({
       id: fileId(path),
       kind: "file",

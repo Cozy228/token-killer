@@ -83,7 +83,13 @@ export function readFileLocator(
   if (!resolved.ok) return resolved;
   let size: number;
   try {
-    size = statSync(resolved.abs).size;
+    // statSync follows symlinks, so this catches symlink→directory as well as
+    // plain directories, FIFOs, sockets, and device files. Reading any of them
+    // via readFileSync would throw (e.g. EISDIR) and escape the contract that
+    // "nothing here throws for bad input", so refuse before reading.
+    const st = statSync(resolved.abs);
+    if (!st.isFile()) return fail("not-found", `not a regular file: ${locator.path}`);
+    size = st.size;
   } catch {
     return fail("not-found", `no such file: ${locator.path}`);
   }

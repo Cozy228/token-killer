@@ -1,4 +1,5 @@
-import { mkdirSync, symlinkSync, writeFileSync } from "node:fs";
+import { mkdirSync, mkdtempSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
+import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, test } from "vitest";
 import { blake2bHex } from "../../src/store/hash.ts";
@@ -10,6 +11,20 @@ import {
 } from "../../src/store/readthrough.ts";
 import { openStore, type Store } from "../../src/store/store.ts";
 import { cleanupTempDir, git, makeGitFixture, makeTempDir } from "../helpers/sandbox.ts";
+
+/** Probe once whether this host/user can create symlinks (Windows non-admin can't). */
+const SYMLINKS_SUPPORTED = (() => {
+  const probe = mkdtempSync(join(tmpdir(), "ctx-rt-symprobe-"));
+  try {
+    mkdirSync(join(probe, "dir"));
+    symlinkSync(join(probe, "dir"), join(probe, "link"), "dir");
+    return true;
+  } catch {
+    return false;
+  } finally {
+    rmSync(probe, { recursive: true, force: true, maxRetries: 5, retryDelay: 100 });
+  }
+})();
 
 describe("read-through hardening (traversal, allowlist, caps, sniff)", () => {
   let root: string;
@@ -80,6 +95,31 @@ describe("read-through hardening (traversal, allowlist, caps, sniff)", () => {
       reason: "not-found",
     });
   });
+
+  test("a directory locator is a not-found refusal, not an EISDIR throw", () => {
+    const dirHost: ReadThroughHost = { projectRoot, isKnownEntityPath: () => true };
+    mkdirSync(join(projectRoot, "adir"));
+    expect(() => readFileLocator(dirHost, { t: "file", path: "adir" })).not.toThrow();
+    expect(readFileLocator(dirHost, { t: "file", path: "adir" })).toMatchObject({
+      ok: false,
+      reason: "not-found",
+    });
+  });
+
+  test.skipIf(!SYMLINKS_SUPPORTED)(
+    "a symlink-to-directory locator is a not-found refusal, not an EISDIR throw",
+    () => {
+      const linkHost: ReadThroughHost = { projectRoot, isKnownEntityPath: () => true };
+      mkdirSync(join(projectRoot, "realdir"));
+      // "dir" type keeps parity with git-tracked directory symlinks; statSync follows it.
+      symlinkSync(join(projectRoot, "realdir"), join(projectRoot, "dirlink"), "dir");
+      expect(() => readFileLocator(linkHost, { t: "file", path: "dirlink" })).not.toThrow();
+      expect(readFileLocator(linkHost, { t: "file", path: "dirlink" })).toMatchObject({
+        ok: false,
+        reason: "not-found",
+      });
+    },
+  );
 });
 
 describe("store-integrated read-through (drift, git, store, snapshot)", () => {

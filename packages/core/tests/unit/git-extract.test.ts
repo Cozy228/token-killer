@@ -3,7 +3,8 @@
  * script-generated into temp dirs (Windows EBUSY cleanup); all git spawns carry
  * explicit timeouts via the sandbox helper. No real host state is touched (G-7).
  */
-import { writeFileSync } from "node:fs";
+import { mkdirSync, mkdtempSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
+import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, test } from "vitest";
 import { createGitAdapter } from "../../src/ingest/git/adapter.ts";
@@ -24,6 +25,20 @@ function commit(repo: string, files: Record<string, string>, message: string): v
   }
   git(["commit", "-q", "-m", message], repo);
 }
+
+/** Probe once whether this host/user can create symlinks (Windows non-admin can't). */
+const SYMLINKS_SUPPORTED = (() => {
+  const probe = mkdtempSync(join(tmpdir(), "ctx-gitx-symprobe-"));
+  try {
+    mkdirSync(join(probe, "dir"));
+    symlinkSync(join(probe, "dir"), join(probe, "link"), "dir");
+    return true;
+  } catch {
+    return false;
+  } finally {
+    rmSync(probe, { recursive: true, force: true, maxRetries: 5, retryDelay: 100 });
+  }
+})();
 
 /** A budget that never expires (generous cold path). */
 function fullBudget(): Budget {
@@ -247,6 +262,37 @@ describe("git adapter over fixture repos (§5.1)", () => {
       db.close();
     }
   });
+
+  test.skipIf(!SYMLINKS_SUPPORTED)(
+    "committed symlink→directory gets no file entity; normal + deleted paths still do",
+    async () => {
+      // A normal regular file — must get a file entity.
+      writeFileSync(join(repo, "normal.ts"), "export const n = 1;\n");
+      // A real directory with content, plus a git symlink pointing at it (the
+      // atlas `.claude/skills/*` shape that caused EISDIR at serve time).
+      mkdirSync(join(repo, "realdir"));
+      writeFileSync(join(repo, "realdir", "inner.ts"), "export const i = 1;\n");
+      symlinkSync("realdir", join(repo, "sklink"), "dir");
+      // A file committed then deleted — touched historically, absent from the
+      // working tree; it must KEEP its entity (target-removed register).
+      writeFileSync(join(repo, "deleted.ts"), "export const d = 1;\n");
+      git(["add", "-A"], repo);
+      git(["commit", "-q", "-m", "add normal, symlink→dir, and a delete-me file"], repo);
+      git(["rm", "-q", "deleted.ts"], repo);
+      git(["commit", "-q", "-m", "remove deleted.ts"], repo);
+
+      const adapter = createGitAdapter();
+      await adapter.ingest(store, { source: "git", dirty: true, magnitude: 3 }, fullBudget());
+
+      // The symlink→directory path is skipped — no file entity, no EISDIR later.
+      expect(store.getEntity("file:sklink")).toBeUndefined();
+      // Regular files (top-level and nested) are ingested as usual.
+      expect(store.getEntity("file:normal.ts")?.kind).toBe("file");
+      expect(store.getEntity("file:realdir/inner.ts")?.kind).toBe("file");
+      // Deleted-but-touched historical path keeps its entity.
+      expect(store.getEntity("file:deleted.ts")?.kind).toBe("file");
+    },
+  );
 
   test("walkCommits parses rename status with score + post-image path", async () => {
     commit(repo, { "src.ts": "export const v = 1;\n".repeat(30) }, "add src");
