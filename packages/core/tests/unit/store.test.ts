@@ -78,6 +78,47 @@ describe("Store (SQLite spine)", () => {
     expect(store.claimsFor("file:s.md", "touches").length).toBeGreaterThan(0);
   });
 
+  test("FIX-2: filesByPathSuffix resolves a bare basename and an exact relative path", () => {
+    store.upsertEntity(fileEntity("file:src/hook/rewrite.ts", "src/hook/rewrite.ts"));
+    store.upsertEntity(fileEntity("file:src/other/rewrite.ts", "src/other/rewrite.ts"));
+    store.upsertEntity(fileEntity("file:src/hook/index.ts", "src/hook/index.ts"));
+    // a docs file entity is `name`d by basename but `locator.path` is full — the
+    // suffix lookup must match on the path, not the name.
+    store.upsertEntity({
+      id: "file:docs/rewrite.md",
+      kind: "file",
+      name: "rewrite.md",
+      locator: { t: "file", path: "docs/rewrite.md" },
+      gen: 1,
+    });
+
+    // exact relative path wins outright
+    const exact = store.filesByPathSuffix("src/hook/rewrite.ts");
+    expect(exact.map((e) => e.id)).toEqual(["file:src/hook/rewrite.ts"]);
+
+    // bare basename → trailing-component suffix match (both rewrite.ts files)
+    const bare = store.filesByPathSuffix("rewrite.ts");
+    expect(bare.map((e) => e.id).sort()).toEqual([
+      "file:src/hook/rewrite.ts",
+      "file:src/other/rewrite.ts",
+    ]);
+
+    // a Windows-separator / :line suffix normalizes before matching
+    expect(store.filesByPathSuffix("src\\hook\\rewrite.ts").map((e) => e.id)).toEqual([
+      "file:src/hook/rewrite.ts",
+    ]);
+
+    // matches on locator.path even when the entity name is a bare basename
+    expect(store.filesByPathSuffix("docs/rewrite.md").map((e) => e.id)).toEqual([
+      "file:docs/rewrite.md",
+    ]);
+
+    // no such file → empty (caller falls through to normal seeding)
+    expect(store.filesByPathSuffix("nope/missing.ts")).toEqual([]);
+    // non-file entities are never returned
+    expect(store.filesByPathSuffix("")).toEqual([]);
+  });
+
   test("links: upsert on (src,predicate,dst), stale flagging", () => {
     store.setLink({
       src: "file:a.md",

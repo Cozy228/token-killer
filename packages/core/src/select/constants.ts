@@ -15,6 +15,13 @@ export const FTS_SEED_LIMIT = 64;
 export const MAX_SEEDS_PER_FILE = 3;
 /** Seed mass for a named-seed injection (force-include; aider's 100-mass convention). */
 export const NAMED_SEED_WEIGHT = 100;
+/**
+ * Cap on FILE entities resolved for one path-/basename-shaped query token
+ * (FIX-2 path-aware seeding). A named path token force-includes the file(s) it
+ * resolves to; the cap bounds an ambiguous bare basename (e.g. many `index.ts`)
+ * from flooding the seed pool.
+ */
+export const FILE_SUFFIX_SEED_LIMIT = 8;
 /** Down-weight for query tokens that are part of the project name (§6.1). */
 export const PROJECT_NAME_TOKEN_WEIGHT = 0.25;
 /** Weight of a split sub-token relative to its compound token. */
@@ -150,6 +157,7 @@ export function disclosedConstants(): Record<string, number | string> {
     ftsSeedLimit: FTS_SEED_LIMIT,
     maxSeedsPerFile: MAX_SEEDS_PER_FILE,
     namedSeedWeight: NAMED_SEED_WEIGHT,
+    fileSuffixSeedLimit: FILE_SUFFIX_SEED_LIMIT,
     testFileDemotion: TEST_FILE_DEMOTION,
     definitionSiteBoost: DEFINITION_SITE_BOOST,
     archivePathDemotion: ARCHIVE_PATH_DEMOTION,

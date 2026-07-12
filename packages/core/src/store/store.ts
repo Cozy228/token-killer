@@ -118,6 +118,16 @@ export interface Store {
    * tokens resolve via the name index and are force-included).
    */
   entitiesByName(name: string, limit?: number): Entity[];
+  /**
+   * FILE entities whose project-relative path matches `suffix` (FIX-2): exact
+   * relative-path match first, else a trailing `…/<suffix>` path-component
+   * match. Matches on `locator.path` (the ONE field that is always the full
+   * relative path — docs file entities are `name`d by basename, code/git by
+   * full path), case-insensitively, deterministically ordered by id. Closes the
+   * gap that a bare basename / path token never resolves via `entitiesByName`;
+   * `entitiesByName` semantics are unchanged for non-file callers.
+   */
+  filesByPathSuffix(suffix: string, limit?: number): Entity[];
 
   // claims — append-only (no mutation API, by design)
   addClaim(input: ClaimInput): number;
@@ -423,6 +433,32 @@ class SqliteStore implements Store {
     const rows = this.#db
       .prepare("SELECT * FROM entities WHERE name = ? COLLATE NOCASE ORDER BY id LIMIT ?")
       .all(name, limit) as unknown as EntityRow[];
+    return rows.map((row) => entityFromRow(row));
+  }
+
+  filesByPathSuffix(suffix: string, limit = 32): Entity[] {
+    const norm = suffix
+      .split("\\")
+      .join("/")
+      .replace(/^\.?\//, "")
+      .replace(/\/+$/, "");
+    if (norm.length === 0) return [];
+    // Exact project-relative path first (COLLATE NOCASE — case-insensitive FS
+    // safety; deterministic ORDER BY id).
+    const exact = this.#db
+      .prepare(
+        "SELECT * FROM entities WHERE kind = 'file' AND json_extract(locator, '$.path') = ? COLLATE NOCASE ORDER BY id LIMIT ?",
+      )
+      .all(norm, limit) as unknown as EntityRow[];
+    if (exact.length > 0) return exact.map((row) => entityFromRow(row));
+    // Else a trailing path-component suffix (`…/<suffix>`). LIKE is
+    // case-insensitive for ASCII; escape LIKE metacharacters in the suffix.
+    const esc = norm.replace(/[\\%_]/g, (m) => `\\${m}`);
+    const rows = this.#db
+      .prepare(
+        "SELECT * FROM entities WHERE kind = 'file' AND json_extract(locator, '$.path') LIKE ? ESCAPE '\\' ORDER BY id LIMIT ?",
+      )
+      .all(`%/${esc}`, limit) as unknown as EntityRow[];
     return rows.map((row) => entityFromRow(row));
   }
 
