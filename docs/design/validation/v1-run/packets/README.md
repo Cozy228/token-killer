@@ -56,3 +56,51 @@ retrievable). Resolution applied here:
 The operator session (this one) generated these packets mechanically
 (script: parse scorecards → strip Evidence sections) and does not vote.
 Packets were not hand-edited after generation.
+
+## Reusable vote-session launch prompt
+
+Launch each vote in a FRESH session (new Claude Code conversation, or a new
+Codex CLI run). One packet per session. Replace `NN` (01–12) and
+`<claude|codex>` before sending. Votes stay uncommitted; the maintainer
+commits after both model votes for a case are recorded.
+
+```text
+You are a truth-panel member for the V0 WoZ stage-1 adjudication
+(P2 substrate viability). Your ONLY operator-derived input is this packet:
+
+  docs/design/validation/v1-run/packets/case-NN.md   (repo: token-killer)
+
+Read it fully and follow its embedded instructions exactly. Hard rules for
+this session, in addition to the packet's:
+
+1. Identity: you are the <claude|codex> vote. Work alone — no other model,
+   agent, or person.
+2. Blindness: do NOT open the operator scorecards
+   (docs/design/validation/v1-run/case-*.md), the v1-run README,
+   packets/votes/ (other votes), or any other packet. Do not use ctx or any
+   compiled artifact. Treat recalled memory or prior knowledge about these
+   repos as INADMISSIBLE: every claim in your vote must cite evidence you
+   retrieved in THIS session via a logged query against the pinned sources.
+3. Sources: clones at /Users/ziyu/Workspace/token-killer and
+   /Users/ziyu/Workspace/atlas. Pin a detached git worktree at the packet's
+   merge commit exactly as the packet instructs; run all file/history reads
+   against it. GitHub API queries must filter created_at <= the packet's
+   cutoff. Anything newer is inadmissible.
+4. Score all 5 questions with the packet's rubric (correct /
+   abstained-correctly / partial + fraction with enumerated sub-claims /
+   incorrect / false-reassurance). Then write EXACTLY ONE file:
+     docs/design/validation/v1-run/packets/votes/case-NN-<claude|codex>.md
+   Format: frontmatter (case, voter, date), then one section per question
+   with the score and a one-paragraph justification citing the admissible
+   evidence you checked (file:line or exact command). Write the file in
+   English.
+5. Do not compute any per-case percentage or aggregate. Do not modify any
+   other file. Do not git commit or push. Remove your temporary worktree
+   when done, and end by stating only which file you wrote.
+```
+
+Launch notes: for Claude, start the session in the token-killer repo so the
+packet path resolves; the session may reply in chat per its own rules — only
+the vote file's content is protocol output. For Codex, pass the same text as
+the task prompt; Codex must also respect the no-commit rule (its runtime
+cannot commit in linked worktrees anyway).
