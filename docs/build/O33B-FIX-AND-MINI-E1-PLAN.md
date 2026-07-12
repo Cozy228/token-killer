@@ -27,6 +27,50 @@ Two-part defect hypothesis (to be confirmed by A1, in order of suspected impact)
 2. **Ranking floods with doc items** — code items either absent from the candidate set (indexing
    gap) or out-ranked by doc sections for bug-fix-shaped queries.
 
+## A1 FINDINGS (2026-07-12, completed — stage-by-stage trace on frozen-store copies)
+
+All 4 zero tasks are **case (ii)**: every expected fix-surface file is fully indexed
+(file + symbol entities present), yet none ever becomes a SEED — dropped at stage 1,
+before ranking; the served `code` section is empty. Two distinct mechanisms:
+
+**R-A — filename-token resolution gap + doc flood (tk tasks).**
+- `tokenizeQuery` correctly marks `rewrite.ts` distinctive, but named-seed channel (a)
+  `entitiesByName("rewrite.ts")` misses: file entities are named by FULL relative path
+  (`src/hook/rewrite.ts`) with no basename fallback.
+- Channel (b) exact-token FTS `"rewrite.ts"` → 36 hits: 31 doc_sections + 3 ADRs that
+  MENTION the file in prose, zero code (the file/symbol FTS text does not carry the
+  file's own path tokens). Each doc mention is then force-included at NAMED_SEED_WEIGHT
+  100 → docs flood the whole seed pool.
+- Full paths in the task text (`src/hook/rewrite.ts:40`) are destroyed by `WORD_RE`
+  (splits at `/`) — no path-shaped token survives tokenization.
+
+**R-B — exported `type` aliases are not indexed (atlas tasks).**
+- `export type DiscoveredService = {…}` (discoverSources.ts:34 — an EXPECTED file) has
+  NO entity and NO FTS row; `export interface HostAdapter` HAS one. Verified twice:
+  `ParsedCommand` (tk types.ts type alias) → 0 entities; only 23/2028 tk symbols are
+  PascalCase. Type-centric task queries (exactly how product tasks describe code)
+  cannot touch the code side at all.
+- Aggravated by R-A: with no symbol to hit and no path resolution, the atlas queries'
+  only matches are docs.
+
+Side observations (report-only): `gatherSeeds`' acronym-boost stage calls
+`readThrough` → `flagLinksStale`, a WRITE inside the query path (broke a read-only
+trace; worth a look separately). Anti-gaming flag audit (sequencing step 1): **flag is
+immaterial** — atlas uncached median inversion is 4 tokens vs a 142k total win; uncached
+at whole-task scale is noise (re-confirms F3). atlas per-rep totals swing ±2M on the
+same task — the structural-variance conclusion stands.
+
+**A2 fork — evidence-backed proposal (maintainer ratifies):**
+- **FIX-1 (R-B, indexer):** index exported type aliases as symbols (tree-sitter query
+  likely lacks `type_alias_declaration`). Predicted to flip BOTH atlas tasks
+  (DiscoveredService lives in an expected file).
+- **FIX-2 (R-A, seeds):** path-aware named seeding — (a) extract path-shaped tokens
+  (`a/b.ts`, `file:line`) before WORD_RE; (b) basename→file-entity fallback in channel
+  (a); (c) a file-shaped token that resolves to a real file entity out-seeds prose
+  mentions of the same name. Predicted to flip tk-powershell; tk-install probable.
+- **FIX-3 (O-33a):** miss-guidance text, same area.
+- **F-b (code-slot quota): backstop only** if the E0 rerun doesn't flip ≥3/4.
+
 ## Workstream A — product fix (normal build pipeline, NOT measurement scripts)
 
 | step | what | acceptance |
