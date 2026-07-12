@@ -54,7 +54,7 @@ purpose: >
 - [x] Case 9 — atlas#18 (operated 2026-07-12)
 - [x] Case 10 — atlas#8 (operated 2026-07-12)
 - [x] Case 11 — atlas#2 (operated 2026-07-12; Q5 premise corrected: handoff doc is a revert record, not a demo runbook)
-- [ ] Case 12 — atlas#1
+- [x] Case 12 — atlas#1 (operated 2026-07-12; one pre-question git-history query disclosed as protocol deviation in the scorecard)
 
 Scorecards: `case-NN-<repo>-<pr>.md`. Blind packets (generated after all 12
 cases complete, before any adjudication): `packets/`.
