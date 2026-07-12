@@ -106,6 +106,40 @@ describe("select/tokenize: stopwords + project-name down-weighting", () => {
   });
 });
 
+describe("select/tokenize: path-aware tokens (FIX-2)", () => {
+  test("a `/`-path with a :line suffix emits a normalized file-shaped path token", () => {
+    const tokens = tokenizeQuery("where is src/hook/rewrite.ts:40 used");
+    const path = tokens.find((t) => t.text === "src/hook/rewrite.ts");
+    expect(path?.fileShaped).toBe(true);
+    expect(path?.derived).toBe(false);
+    // the constituent words are still emitted (existing bm25 behavior)
+    expect(tokens.some((t) => t.text === "hook")).toBe(true);
+    expect(tokens.some((t) => t.text === "rewrite")).toBe(true);
+  });
+
+  test("a Windows `\\`-path normalizes to forward slashes", () => {
+    const tokens = tokenizeQuery("open src\\hook\\rewrite.ts");
+    expect(tokens.some((t) => t.fileShaped && t.text === "src/hook/rewrite.ts")).toBe(true);
+  });
+
+  test("a bare basename with an extension is file-shaped", () => {
+    const tokens = tokenizeQuery("what calls rewrite.ts");
+    const bare = tokens.find((t) => t.text === "rewrite.ts");
+    expect(bare?.fileShaped).toBe(true);
+  });
+
+  test("a plain identifier is not file-shaped", () => {
+    const tokens = tokenizeQuery("processOrder retry");
+    expect(tokens.find((t) => t.text === "processorder")?.fileShaped).toBe(false);
+  });
+
+  test("path tokens are excluded from the FTS MATCH (not FTS tokenchars)", () => {
+    const match = toFtsMatch(tokenizeQuery("read src/hook/rewrite.ts:40"));
+    expect(match).not.toContain("/");
+    expect(match).toContain('"rewrite.ts"'); // the bare basename still matches
+  });
+});
+
 describe("select/tokenize: FTS MATCH construction is injection-safe", () => {
   test("tokens are quoted and OR'd", () => {
     const match = toFtsMatch(tokenizeQuery("retry queue"));

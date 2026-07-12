@@ -119,6 +119,61 @@ export interface QueryToken {
   distinctive: boolean;
   /** True for split sub-tokens / stem variants (never named-seed candidates). */
   derived: boolean;
+  /**
+   * File-path-shaped (FIX-2): a path fragment (carries `/` — a normalized
+   * project-relative suffix) or a bare basename with a file extension
+   * (`rewrite.ts`). Seeds resolve these to FILE entities by path suffix before
+   * the exact-FTS named-seed pass. Detection is liberal — a token that resolves
+   * to no file entity simply falls through to normal seeding.
+   */
+  fileShaped: boolean;
+}
+
+/**
+ * A bare basename carrying a file extension (`rewrite.ts`, `config.json`,
+ * `README.md`) — exactly one dot, a 1–5 char lowercase-shaped extension, no
+ * path separator (FIX-2). Deliberately liberal: a token that matches but names
+ * no real file (`dotted.path`) resolves to nothing in the store and falls
+ * through to ordinary seeding, so a false positive is harmless.
+ */
+export function isFileBasename(word: string): boolean {
+  const m = /^[^.\s/\\]+\.([A-Za-z][A-Za-z0-9]{0,4})$/.exec(word);
+  const ext = m?.[1];
+  return ext !== undefined && ext === ext.toLowerCase();
+}
+
+/**
+ * Normalize a path-shaped raw fragment to its project-relative-suffix form
+ * (FIX-2): `\` → `/`, surrounding quotes/brackets/trailing punctuation trimmed,
+ * a trailing `:line[:col]` stripped, and a leading absolute / drive / `./`
+ * prefix removed. Returns "" when nothing path-like survives. Deterministic.
+ */
+export function normalizePathSuffix(fragment: string): string {
+  let s = fragment.split("\\").join("/").trim();
+  s = s.replace(/^[('"`[<]+/, "").replace(/[)'"`\]>.,;!?]+$/, "");
+  s = s.replace(/:\d+(?::\d+)?$/, ""); // drop :line[:col]
+  s = s
+    .replace(/^[A-Za-z]:\//, "") // windows drive
+    .replace(/^\.?\//, "") // leading absolute or ./
+    .replace(/\/+$/, "");
+  return s;
+}
+
+/**
+ * Path fragments in the RAW query, recognized BEFORE word tokenization (FIX-2):
+ * any whitespace-separated chunk carrying `/` or `\` (agents run on Windows
+ * too). Each is returned as its normalized project-relative suffix. The word
+ * tokenizer still runs over the whole query, so the constituent words are also
+ * emitted — this only ADDS the path tokens.
+ */
+export function extractPathTokens(query: string): string[] {
+  const out: string[] = [];
+  for (const chunk of query.split(/\s+/)) {
+    if (!/[/\\]/.test(chunk)) continue;
+    const norm = normalizePathSuffix(chunk);
+    if (norm.length >= 2 && /[/]/.test(norm)) out.push(norm);
+  }
+  return out;
 }
 
 /** camelCase / PascalCase / snake_case / dotted.path / has-digit → identifier-shaped. */
@@ -213,7 +268,7 @@ const WORD_RE = /[A-Za-z_$][\w$]*(?:\.[A-Za-z_$][\w$]*)*/g;
 export function tokenizeQuery(query: string, projectRoot = ""): QueryToken[] {
   const projectTokens = projectNameTokens(projectRoot);
   const seen = new Map<string, QueryToken>();
-  const push = (raw: string, weight: number, derived: boolean): void => {
+  const push = (raw: string, weight: number, derived: boolean, fileShaped = false): void => {
     const text = raw.toLowerCase();
     if (text.length < 2 || STOPWORDS.has(text)) return;
     const w = projectTokens.has(text) ? weight * PROJECT_NAME_TOKEN_WEIGHT : weight;
@@ -221,6 +276,7 @@ export function tokenizeQuery(query: string, projectRoot = ""): QueryToken[] {
     if (existing) {
       if (w > existing.weight) existing.weight = w;
       if (!derived) existing.derived = false;
+      if (fileShaped) existing.fileShaped = true;
       return;
     }
     seen.set(text, {
@@ -229,11 +285,12 @@ export function tokenizeQuery(query: string, projectRoot = ""): QueryToken[] {
       weight: w,
       distinctive: !derived && isDistinctiveIdentifier(raw),
       derived,
+      fileShaped,
     });
   };
 
   for (const raw of query.match(WORD_RE) ?? []) {
-    push(raw, 1, false);
+    push(raw, 1, false, isFileBasename(raw));
     if (isIdentifierShaped(raw)) {
       // keep the compound token (pushed above) AND its parts
       for (const part of splitIdentifier(raw)) push(part, SUBTOKEN_WEIGHT, true);
@@ -241,6 +298,10 @@ export function tokenizeQuery(query: string, projectRoot = ""): QueryToken[] {
       for (const v of getStemVariants(raw)) push(v, STEM_VARIANT_WEIGHT, true);
     }
   }
+  // Path fragments (contain a separator, so WORD_RE alone would shatter them):
+  // emit the normalized project-relative suffix as a distinctive, non-derived,
+  // file-shaped token. The constituent words were already emitted above.
+  for (const p of extractPathTokens(query)) push(p, 1, false, true);
   return [...seen.values()];
 }
 
@@ -252,6 +313,9 @@ export function queryMentionsTests(tokens: QueryToken[]): boolean {
 /** Escape tokens into an FTS5 MATCH string (OR of quoted tokens; injection-safe). */
 export function toFtsMatch(tokens: QueryToken[]): string {
   const quoted = tokens
+    // path tokens carry `/` (not an FTS tokenchar) — they seed via file
+    // resolution, never the bm25 pass (FIX-2); their words are already present.
+    .filter((t) => !t.text.includes("/"))
     .map((t) => t.text.replace(/"/g, "").trim())
     .filter((t) => t.length > 0)
     // dotted compounds are not single FTS tokens (tokenchars only _$) — quote

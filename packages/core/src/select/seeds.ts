@@ -13,6 +13,7 @@ import type { Entity } from "../store/types.ts";
 import {
   ARCHIVE_PATH_DEMOTION,
   DEFINITION_SITE_BOOST,
+  FILE_SUFFIX_SEED_LIMIT,
   FTS_SEED_LIMIT,
   KIND_BONUS,
   MAX_SEEDS_PER_FILE,
@@ -102,6 +103,40 @@ export function gatherSeeds(store: Store, query: string, visibility: Visibility)
     }
   }
 
+  const injectNamed = (id: string, entity: Entity): void => {
+    const weight = NAMED_SEED_WEIGHT * kindBonus(entity) * demotion(entity);
+    const existing = seeds.get(id);
+    if (existing) {
+      existing.named = true;
+      if (existing.weight < weight) existing.weight = weight;
+      if (existing.lexicalScore < weight) existing.lexicalScore = weight;
+    } else {
+      seeds.set(id, { entityId: id, weight, lexicalScore: weight, named: true });
+    }
+  };
+
+  // --- path-aware file seeding + flood control (FIX-2) ---
+  // A path-/basename-shaped token resolves to FILE entities by path suffix
+  // (file entities are named by full relative path, so entitiesByName misses a
+  // bare basename). When it resolves to ≥1 real file, seed those files as named
+  // seeds AND suppress this token's exact-FTS injection below — otherwise every
+  // prose section MENTIONING the file gets force-injected at NAMED_SEED_WEIGHT
+  // and floods out the actual code (those mentions stay reachable via the
+  // general bm25 pass). A token that resolves to no file falls through to the
+  // ordinary name/FTS named-seed path, so prose remains reachable.
+  const fileResolvedTokens = new Set<string>();
+  for (const token of tokens) {
+    if (!token.fileShaped) continue;
+    const files = store.filesByPathSuffix(token.text, FILE_SUFFIX_SEED_LIMIT);
+    let resolved = false;
+    for (const entity of files) {
+      if (!visibility.isVisible(entity)) continue;
+      injectNamed(entity.id, entity);
+      resolved = true;
+    }
+    if (resolved) fileResolvedTokens.add(token.text);
+  }
+
   // --- named-seed injection (force-include, large weight) ---
   for (const token of tokens) {
     if (!token.distinctive) continue;
@@ -109,22 +144,17 @@ export function gatherSeeds(store: Store, query: string, visibility: Visibility)
     // (a) direct name index — an entity NAMED like the token.
     for (const e of store.entitiesByName(token.raw)) targets.add(e.id);
     // (b) exact-token FTS pass — entities whose indexed text carries the
-    // identifier verbatim (uncut by the general query's bm25 top-64).
-    for (const hit of store.ftsSearch(`"${token.text.replace(/"/g, "")}"`, FTS_SEED_LIMIT)) {
-      targets.add(hit.entityId);
+    // identifier verbatim (uncut by the general query's bm25 top-64). Skipped
+    // for a token already resolved to a file (FIX-2 flood control).
+    if (!fileResolvedTokens.has(token.text)) {
+      for (const hit of store.ftsSearch(`"${token.text.replace(/"/g, "")}"`, FTS_SEED_LIMIT)) {
+        targets.add(hit.entityId);
+      }
     }
     for (const id of targets) {
       const entity = getEntity(id);
       if (!entity || !visibility.isVisible(entity)) continue;
-      const weight = NAMED_SEED_WEIGHT * kindBonus(entity) * demotion(entity);
-      const existing = seeds.get(id);
-      if (existing) {
-        existing.named = true;
-        if (existing.weight < weight) existing.weight = weight;
-        if (existing.lexicalScore < weight) existing.lexicalScore = weight;
-      } else {
-        seeds.set(id, { entityId: id, weight, lexicalScore: weight, named: true });
-      }
+      injectNamed(id, entity);
     }
   }
 
