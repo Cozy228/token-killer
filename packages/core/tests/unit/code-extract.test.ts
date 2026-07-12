@@ -67,6 +67,22 @@ describe("code extractor rules", () => {
     expect(res.symbols[0]?.id).toBe("sym:t.ts#only");
   });
 
+  test("FIX-1: top-level exported type alias is captured (class kind); function-local is dropped", async () => {
+    const res = await parse(
+      `export type DiscoveredService = { name: string };\n` +
+        `type Local = number;\n` +
+        `export function outer() {\n  type Inner = string;\n  const x: Inner = "y";\n  return x;\n}\n`,
+    );
+    const byName = new Map(res.symbols.map((s) => [s.name, s]));
+    // top-level type aliases → captured under the existing `class` kind (like interfaces)
+    expect(byName.get("DiscoveredService")?.kind).toBe("class");
+    expect(byName.get("Local")?.kind).toBe("class");
+    // the function-local alias is dropped by the callable-ancestor filter
+    expect(byName.has("Inner")).toBe(false);
+    // outer is still a function symbol; no SymbolKind vocabulary was extended
+    expect(byName.get("outer")?.kind).toBe("function");
+  });
+
   test("same-arity overloads disambiguate by signature, STABLE under reorder (G-9 — #8)", async () => {
     // Two same-name/same-arity overloads differ only by parameter TYPE. Their ids
     // must be order-INDEPENDENT: reordering them and inserting a third same-arity

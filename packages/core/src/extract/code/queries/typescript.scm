@@ -14,6 +14,10 @@
 (class_declaration name: (type_identifier) @name) @def.class
 (abstract_class_declaration name: (type_identifier) @name) @def.class
 (interface_declaration name: (type_identifier) @name) @def.class
+; exported type aliases carry named contracts (`export type Foo = {…}`); index
+; them under the existing `class` kind, exactly like interfaces (FIX-1 / R-B).
+; Function-local type aliases are dropped by the callable-ancestor filter.
+(type_alias_declaration name: (type_identifier) @name) @def.class
 
 ; function-valued declarators become functions; plain const/let become const
 ; (id de-dup with kind priority keeps the function reading when both match).
