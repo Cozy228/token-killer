@@ -530,6 +530,84 @@ log). Kill rule unchanged from LAW §8.1: `<9/12` cases at ≥80% source-backed 
 material false reassurance, kills the compiled-artifact shape (only the local continuity pilot
 FP-L survives on its own gate). Next: run the operator session (§6), then panel adjudication (§7).
 
+**P42 — M3/M4 reconciliation ratified (RC1–RC6); doc budget 2+2 set.** `[2026-07-12]`
+Two same-day grilling rounds collided: round A produced the M3 brief's ratified continuation
+(D7–D18) + `docs/design/M4-PROJECT-UNDERSTANDING-BRIEF.md`; round B (separate session) ratified
+nine lighter rulings, four conflicting. Maintainer ordered per-conflict re-ruling under /shape
+discipline (evidence closes knowledge unknowns; maintainer rules values only). Evidence: real-store
+anchor-density counts (95/104 memories cite file paths; 59% of P-entries cite none) + an 8-memory
+blinded anchoring probe (isolated slice, no repo access: 5/5 proposals correct, 0 guesses, 3
+refusals all caused by candidate retrieval). Rulings, ratified via a visual SHOW explainer and
+absorbed same day (`docs/archive/M3-M4-RECONCILIATION-BRIEF.md` = archived source):
+- **RC1** D8 ladder → three automatic rungs (symbol → file → explicit directory); repo level
+  human-declared only (M3 brief D8 amendment).
+- **RC2** ONE LLM integration mode product-wide = isolated host adapter; stock-knowledge anchor
+  proposals become a new proposal kind in the same pipeline, with a deterministic
+  cited-reference-resolution pre-pass in the slice builder (M4 brief §19.1). In-session
+  propose_anchor verb deferred with a named trigger.
+- **RC3** Gate 0 unchanged; M4 slice 3 split 3a (anchor tracer, parallel-safe with slice 2) /
+  3b (use-case generation) (M4 brief §19.2).
+- **RC4** 3a ships under a pre-registered fuse gate (acceptance floor / wrong-anchor cap /
+  review-time threshold, breach ⇒ stop) + provenance chain + one-command revert; §15 milestone
+  gates unchanged.
+- **RC5** anchor durability: evidence stored beside target id; per-sync repair pass; unrepairable
+  → needs-review, never silent (M3 brief D20). Root cause: path-derived entity ids rot on moves.
+- **RC6** disclosure vs user egress: `local` never blocks the user's own generate run; per-run
+  manifest confirmation is the entire consent; only third-party-permission `restricted` content
+  stays excluded (M4 brief §19.3).
+- **Doc budget (maintainer):** M3+M4 end state = ≤2 design docs (M3 UI brief + M4 brief) and
+  ≤2 implementation docs (one work order each); interim briefs absorb-then-archive (M4 §19.4).
+Also landed: M3 brief D19 (deterministic reachability view, explicitly NOT impact; upgrade gated
+on Artifact 2's §8 ladder). Process rule promoted after a second correction: design-process files
+start in scratchpad; repo writes need explicit path consent (project standing-rules).
+
+**P43 — P40/R14+R16 formally amended; v4 work order issued; M3 doc set consolidated to 2+2.**
+`[2026-07-12]` Executes P42's amendment list plus the maintainer's doc budget ("最终 M3M4 应该
+最多两份设计文档,两份实现文档"). Rulings:
+- **R14 amended**: a complete persistent **code** Atlas is required as a LOGICAL model
+  (M3 brief D7); the renderer receives only an LOD-bounded visible slice (D12 budgets
+  merge-blocking). Still banned: mixed seven-kind global graph; mounting the full logical set
+  in React Flow; kind-count-box canvases; skin systems.
+- **R16 amended**: the dual-track competition is implementation-quality only (D2); the IA is
+  ratified in `docs/design/M3-UI-LAYOUT-BRIEF.md` (D1-D21) and no longer designed by
+  implementers.
+- **Work order**: `docs/build/M3-GOAL-PROMPT-V4.md` issued, superseding V3 (any v3 order in an
+  implementer's hands is VOID). Slice 5a = perf spike is a hard gate before production UI;
+  slice 5e folds the D6 deterministic-attachment core amendment into v4 (no third
+  implementation doc), using the amended D8 ladder + D20 durability; LLM anchor PROPOSALS stay
+  M4 (3a).
+- **Consolidation**: `M3-RESCOPE-BRIEF.md` absorbed (last live clause → M3 brief D21 gated
+  annex) and archived with V3 under `docs/archive/`. M3/M4 doc set now: 2 design (M3 UI brief,
+  M4 brief) + 1 implementation (v4); the M4 work order (second impl doc) is drafted only after
+  M3 lands (Gate 0). Older stamped-superseded M3 docs (M3-GOAL-PROMPT{,-V2}.md, M3-ACCEPTANCE.md)
+  remain /gc archive candidates.
+
+**P44 — Event Projection + Evidence Navigation ratified as M3's form; Route Compiler and
+Impact Product stay gated; diff surface named "Change Trace".**
+`[2026-07-12]` Three-way convergence (maintainer + Fable + heterogeneous second opinion,
+two rounds) independently re-derived the LAW's compile-at-the-moment thesis — recorded as
+corroboration of PRODUCT-DESIGN.md. Contracted thesis: build Event Projection + Evidence
+Navigation now; claim "observed relationships" only. Rulings:
+- **M3 brief D22–D25 appended**: D22 hard-anchor event projection + deep-link entry
+  (open-concept events rejected in M3; `Intent`/`Role` fields deferred); D23 Evidence Rail
+  with mechanical traversal order (importance ranking stays behind Artifact 2); D24 naming
+  gate — diff surface = **Change Trace**, D19 view keeps "Static Reachability", impact
+  wording banned pre-gate, renaming to Impact IS the gate-clearing signal; D25
+  coordinate-system completeness + gap-driven data expansion (edge-role stratification of
+  the existing 7 link kinds).
+- **V0 protocol amended (additive only)**: Verification + Missing-evidence worksheet
+  columns; evidence-dependency tally as second deliverable (the productization selector).
+  No gate/scoring/denominator change; §11 frozen parameters untouched.
+- **M4 brief §20**: absorbs Event Compiler / Route Planner vocabulary; concept routes are
+  M4's primary use-case shape, post-V0.
+- **REJECTED**: up-front Canonical-Map data wishlist (supply-side cathedral — new edge
+  kinds only via the D25 gap loop); `Role`/`Intent` event fields (unobservable locally);
+  open-concept events in M3; importance ranking pre-Artifact-2.
+- Product promise wording: "At the moment you need to understand, change, or review —
+  light up only what that moment needs."
+- Critical path UNCHANGED: V0 WoZ run (with upgraded worksheet) → E2 defect retest
+  (O-32/O-33) → v4 work-order amendment → M4 gate review.
+
 ## Open
 
 - **O1 / O2** (pack §9) — value metric & joint story: partially reshaped by P15 (measurement is

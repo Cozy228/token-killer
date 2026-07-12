@@ -1,5 +1,7 @@
 ---
-status: frozen
+status: absorbed
+absorbed_into: docs/design/M3-UI-LAYOUT-BRIEF.md (P43, 2026-07-12 — last live clause §3.4
+  gated annex → D21; all other clauses carried by P40 R10-R16, D1-D20, or M3-GOAL-PROMPT-V4)
 review_after: 2026-08-08
 note: RATIFIED 2026-07-11 (P39; R1–R9 incl. R9 export retained). O-25 closed — work order issued as
   docs/build/M3-GOAL-PROMPT-V2.md (handed verbatim to both implementers). Old M3-GOAL-PROMPT.md /

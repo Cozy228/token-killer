@@ -1,5 +1,7 @@
 ---
-status: active
+status: superseded
+superseded_by: M3-GOAL-PROMPT-V4.md (P43, 2026-07-12 — IA competition ended by D2; design
+  ratified in docs/design/M3-UI-LAYOUT-BRIEF.md; any v3 order in an implementer's hands is VOID)
 review_after: 2026-08-08
 note: M3 UI rework work order (P40). Supersedes M3-GOAL-PROMPT-V2.md after the maintainer
   rejected the first build's UI/UX and data story on a live drive (2026-07-11). This EXACT text

@@ -387,3 +387,48 @@ purely mechanical.
 
 The case set is LOCKED as of this appendix. Any mid-run replacement follows §5
 (same repo, next-most-recent qualifying, logged with reason).
+
+---
+
+## Amendment 2026-07-12 — additive recording fields (no gate / scoring / denominator change)
+
+Ratified with FABLE-DECISION-LOG P44. The §1 taxonomy, §2 materiality, §3 cutoff, §4
+coverage bar, §7 adjudication, §8 kill/pass rule, and §11 frozen parameters are UNTOUCHED.
+This amendment only adds recording columns to §6's verbatim query log and one post-run
+analysis output to §9.
+
+### A1 — Per-answer worksheet columns (extends §6's query log)
+
+The log already records: query issued, evidence found (with cutoff check), answer given,
+confidence framing (confirmed / partial / abstained). Formalize each answer as:
+
+| Field | Meaning | Status |
+|---|---|---|
+| Claim | the operator's formed judgment | existing (answer) |
+| Evidence | code/relations/docs supporting it | existing |
+| Status | confirmed / inferred / unknown | existing (confidence framing) |
+| Confidence | operator's stated confidence | existing |
+| **Verification** | what method would further confirm this claim | NEW |
+| **Missing evidence** | why this cannot currently be determined | NEW |
+
+Note: the review-moment question list from the 2026-07-12 convergence round ("what
+behavior actually changed / where does it propagate / which parts are inference / which
+tests are missing / which constraints are touched") maps onto the frozen §1 classes and is
+absorbed as guidance for writing concrete question stems — NOT a new taxonomy.
+
+### A2 — Evidence-dependency tally (added to §9 outputs)
+
+After adjudication, tally per §1 question class which of these sufficed / failed:
+
+```text
+answered by calls/imports graph alone
+answered only by reading code bodies
+failed due to retrieval (evidence existed, was not found)
+failed due to missing data (evidence exists in no admissible source)
+inherently human business judgment (should not be automated short-term)
+```
+
+This tally is the **productization selector**: only claim types that prove repeatable and
+calibratable get compiled by the product; "missing data" rows feed the M3 brief D25 gap
+loop; "human judgment" rows are recorded as out-of-scope. This is V0's second deliverable
+beside pass/fail.
