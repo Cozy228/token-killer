@@ -1,0 +1,35 @@
+---
+case: 11
+voter: codex
+date: 2026-07-12
+---
+
+## Q1
+
+**Score: correct**
+
+The answer correctly identifies the four route consumers and their roles: the shared query is defined with key `["availability"]` and calls `fetchAvailability` (`portal/src/api/queries.ts:18-22`); `catalog.index`, `catalog.$topicId`, and `guidance.$topicId` preload it, while `availability.index` both loads it and renders `MatrixView` (`portal/src/routes/catalog.index.tsx:27`, `portal/src/routes/catalog.$topicId.tsx:43`, `portal/src/routes/guidance.$topicId.tsx:42`, `portal/src/routes/availability.index.tsx:36-38,107-110,188-196`). The DEBUG harness measures ten server-render passes and only logs median/max timings (`portal/scripts/measure-availability-render-cost.debug.test.tsx:20-29,32-86`), includes a 30-by-10 Azure case (`portal/scripts/measure-availability-render-cost.debug.test.tsx:97-108,151-157`), contains no assertion or threshold, and is explicitly excluded from the default test command while remaining separately invocable (`portal/package.json:23-25`). Thus the operator accurately distinguishes a scale-oriented measurement concern from a recorded performance constraint.
+
+## Q2
+
+**Score: correct**
+
+The scope was traceable before the PR rather than existing only in its empty body: the base-tree status snapshot names the authoritative spec families and records the V1 product loop and boundaries (`git show dc5c20168e13a8a4cedf949bc39f9394d8a19984:docs/product/atlas_v1_design_status_snapshot.md | nl -ba | sed -n '1,50p'`), the implementation plan defines the truth-source order and narrow complete loop (`docs/architecture/implementation_plan.md:7-30`), and the pre-existing availability spec selects the map-grid hybrid and its service-card/status/panel composition (`docs/architecture/catalog_design.md:1-14,42-50,52-95`). The base also already contained `docs/architecture/catalog_availability_preview_v2.html`, whose optional matrix implementation is visible at lines 340-342 and 672-733; `git diff --quiet dc5c20168e13a8a4cedf949bc39f9394d8a19984 HEAD -- docs/architecture/catalog_design.md docs/architecture/implementation_plan.md docs/product/atlas_v1_design_status_snapshot.md` returned 0. Finally, `gh api repos/czync/atlas/pulls/2 --jq '{created_at,merged_at,head_sha:.head.sha,body}'` returned `body:null`, so the claim that the PR itself contributed no scope record is also correct.
+
+## Q3
+
+**Score: partial (5/6)**
+
+Material sub-claims: (1) no CI workflow existed — correct, because `git ls-tree -r --name-only HEAD -- .github` returned empty; (2) no admissible checks or Actions runs existed — correct, because `gh api repos/czync/atlas/commits/ee26e4f2afbaaca2de95bfc7b91420361388d1dc/check-runs --jq '{total_count, admissible:[.check_runs[] | select((.started_at // .completed_at) <= "2026-05-21T14:19:15Z")]}'` and the cutoff-filtered `gh api 'repos/czync/atlas/actions/runs?head_sha=3b17ebf3bb3ca896182594bce3bab157ad22356c&per_page=100'` query both returned total count 0; (3) the empty PR was merged ten seconds after creation — correct from the PR API result `created_at=2026-05-21T14:19:05Z`, `merged_at=2026-05-21T14:19:15Z`, `body=null`; (4) the row-model test exercises filtering, grouping, selection, and active-location behavior — correct (`portal/src/lib/availability-row-model.test.ts:44-80`); (5) the status-dot test renders markup while the matrix test merely checks source strings and the perf harness has no assertions — correct (`portal/src/components/explore/status-dot.test.tsx:6-13`, `portal/src/components/explore/matrix-view.test.ts:4-14`, `portal/scripts/measure-availability-render-cost.debug.test.tsx:32-86`); (6) the blanket opening claim that “no automated verification existed” — incorrect, because automated test assets did exist in the tree, even though no admissible evidence shows that they ran. The accurate formulation is “no recorded CI execution existed”; this overstatement is not false reassurance because it understates, rather than inflates, verification confidence.
+
+## Q4
+
+**Score: correct**
+
+The answer correctly separates de-facto visual authority from recorded authority. The implementation changed from committed IBM Plex font faces to system font stacks in the same branch (`git show dc5c20168e13a8a4cedf949bc39f9394d8a19984:portal/src/styles/globals.css | nl -ba | sed -n '1,55p'`; `portal/src/styles/globals.css:12-21`), matching the concurrent `DESIGN.md` font rewrite shown by `git diff --unified=20 dc5c20168e13a8a4cedf949bc39f9394d8a19984 3b17ebf3bb3ca896182594bce3bab157ad22356c -- DESIGN.md`. Yet the repository doc map lists `current_design.md`, the implementation plan, and constraints without listing root `DESIGN.md` (`docs/README.md:11-18,28-38`), and the only Markdown/code cross-reference returned by `git grep -n 'DESIGN.md' HEAD -- '*.md' '*.json' '*.ts' '*.tsx'` is `docs/architecture/portal_frontend_design_plan.md:15`, which says the file does not exist. The recorded update-before-implementation rules concern `current_design.md` and the constraints file (`docs/architecture/constraints.md:85-88,127-129`), not visual `DESIGN.md`; no admissible source found by that repository-wide query governs changing the latter alongside consuming code.
+
+## Q5
+
+**Score: partial (3/4)**
+
+Material sub-claims: (1) the handoff imposes no current run/demo requirement because it expressly describes reverted work and says to treat itself as continuation context, not current source truth — correct (`docs/demo_skills_routes_handoff.md:1-4,103-109`); (2) the specialized consumer, skills-publication files, and `/skills` route needed to resume that demo are absent — correct, as the exact `git cat-file -e HEAD:<path>` checks returned absent for `context-layer/src/consumer/contextApiConsumer.ts`, all listed `.well-known/agent-skills` and agent-skills server/lib paths, and the checked skills route files, consistent with the doc's inventories (`docs/demo_skills_routes_handoff.md:15-24,36-56,58-79`); (3) “every referenced demo/skills artifact is verifiably absent” — incorrect, because the same exhaustive path check returned present for `context-layer/src/index.ts`, `context-layer/src/seeds/pilotRegistry.ts`, `context-layer/src/sourceContent/pilotSourceContent.ts`, `context-layer/src/services/contextBundleService.ts`, `portal/src/routes/guidance.$topicId.tsx`, `portal/src/routes/catalog.$topicId.tsx`, and `portal/src/routes/sources.tsx`; the document itself says only that some referenced files no longer exist (`docs/demo_skills_routes_handoff.md:3`); (4) the Dockerfile tweak is unrelated to the reverted demo and internally consistent — correct, because the diff only changes `PNPM_VERSION` to `11.1.1` and the root manifest pins `packageManager` to the same version (`git diff dc5c20168e13a8a4cedf949bc39f9394d8a19984 3b17ebf3bb3ca896182594bce3bab157ad22356c -- portal/Dockerfile`; `package.json:1-8`). The false universal absence claim does not create false reassurance: the decisive specialized demo/skills pieces and route are still absent, so the truth does not make the documented demo runnable.
