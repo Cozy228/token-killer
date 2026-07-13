@@ -91,29 +91,35 @@ comment naming source file and licence.
 Store: `~/.contexa/projects/9cd2e7eab8b4/store.sqlite`. The shard key derives from
 `git rev-parse --git-common-dir`, so **every worktree of this repo shares ONE store**.
 
-| Fact | Value |
-|---|---|
-| entities | 10,307 — symbol 4,450 · doc_section 2,963 · file 1,332 · concept 977 · commit 430 · memory 104 · decision 51 |
-| links | 20,480 — touches 8,808 · calls 4,228 · contains 4,205 · co-changed 1,302 · references 1,083 · imports 693 · renamed-to 157 |
-| claims | 44,505 |
-| files with >=1 declaration | 535 of 1,332 |
-| declarations per file | min 1 · median 5 · p90 16 · **max 115 (`store.ts`)** |
-| `calls` intra-file | **2,153 / 4,228 = 51%** |
-| `calls` resolvability | 4,228 / 4,228 sym→sym, zero dangling ends |
-| parallel sym→sym call links | **0** — every pair has exactly one |
-| relation-graph components (file grain) | **3; the giant one holds 439/447 = 98.2%** |
-| cyclic SCCs (file grain) | **5 SCCs, 17 files (3.8%), largest = 6** — the graph is 96% a DAG |
-| declaration fan-in | median 1 · p99 12 · **max 358 (`push`)** |
-| decl-bearing files with zero visible relation | **106 / 535 = 20%** |
-| top-level scopes | 14 (tests 356 · docs 302 · packages 271 · src 193 · …) |
+Measured after a `ctx sync` from THIS worktree (store: 11,082 entities · 20,475 links · 49,082
+claims). **These figures drift with every sync. Never hardcode one of them in an assertion** — see
+the census gate in K1.
 
-**The generation trap (resolve in K1; do not discover it later).** `publishedGen(source)` returns
-0 whenever the stored generation identity — `(repoRev, worktreeDigest, schemaVersion,
-policyVersion)` — does not match the current checkout. The store was last synced from another
-worktree, so a guide launched here may legitimately see an EMPTY store. That is by design.
-Determine empirically whether the identity includes a worktree digest (if it does, sibling
-worktrees mutually invalidate each other) and make the answer a test. The `live | snapshot | stale`
-badge (D28) exists to render this honestly — never fake data, never silently fall back.
+| Fact | Value | Why it binds the design |
+|---|---|---|
+| entities | symbol 4,498 · doc_section 3,504 · file 1,406 · concept 1,055 · commit 456 · memory 112 · decision 51 | |
+| links | touches 8,927 · calls 4,446 · contains 3,809 · co-changed 1,305 · references 1,254 · imports 571 · renamed-to 159 | |
+| `calls` intra-file | **1,918 / 4,446 = 43%** | a file-grain canvas silently discards ~half the call evidence → D36 compound grain |
+| **declarations with NO containing file** | **689** (symbols 4,498 vs `contains` 3,809); **578 calls have an end on one** | atoms with no lot. The kernel MUST NOT silently drop them — that is another face of compile-time truncation (D33). Decide and TEST their treatment (external/imported symbol? ingest gap?) and disclose them honestly |
+| parallel sym→sym call links | **0** — every pair has exactly one | "stacked calls lines" were never parallel edges; they were distinct edges sharing one channel → D37, not fake multiplicity |
+| relation-graph components (file grain) | **3; the giant one holds 402/410 = 98.0%** | a relationship cluster cannot bound a projection → D35: the directory selects |
+| cyclic SCCs (file grain) | 5 SCCs, 17 files (3.8%), largest = 6 | the graph is ~96% a DAG → layering by dependency direction is well-defined nearly everywhere |
+| declaration fan-in | median 1 · p99 13 · **max 359** | no lane scheme makes 359 edges separable → D40: grouping is a precondition |
+| declarations per file | median 5 · p90 16 · **max 76 (`store.ts`)** | an expanded dense file cannot show everything → D40's `+N more (no visible route)` handle |
+| decl-bearing files with zero visible relation | **101 / 496 = 20%** | the honest periphery is real and sizeable → D40 |
+| top-level scopes | 14 | Overview is ~14 named cards → E1 |
+
+**The generation trap — CONFIRMED, not hypothetical (2026-07-14).** The generation identity is
+`(repoRev, worktreeDigest, schemaVersion, policyVersion)` and `worktreeDigest`'s own doc comment
+reads *"distinguishes worktrees that share one shard"* (`packages/core/src/store/generation.ts`).
+The shard is keyed on `git rev-parse --git-common-dir`, so **all worktrees of this repo share ONE
+store while each invalidates the others' generations**: running `ctx sync` from this worktree moved
+the identity from `60cd4ec3…` to `540c0fe7…`, and `publishedGen(source)` now returns 0 — an empty
+store — for every other worktree until it syncs again.
+
+This is a first-class product fact, not a bug to route around. The guide MUST render it honestly:
+the `live | snapshot | stale` badge (D28) exists for exactly this. Never fake data, never silently
+fall back to a snapshot, and never present a mismatched generation as live. Make it a test.
 
 ## Architecture (settled; do not re-decide)
 
@@ -167,7 +173,7 @@ gate is the maintainer looking at a real screenshot.
 
 | # | Slice | Lands | Contract |
 |---|---|---|---|
-| **K1** | Core projection kernel (no UI, no server) | `packages/core/src/guide/`. Complete logical atlas: every file + **every declaration as an atom** (D36) — ZERO compile-time truncation; assert all 4,450 symbols and all 4,228 calls survive into the model. Relation index over the 7 link kinds, stratified per D25. The four projections (overview / scope / connections / event), each emitting a BOUNDED **compound** DTO: file containers + declaration children, aggregate edges with counts, boundary nodes, explicit `omitted` counts. Each projection must classify **no-visible-route** members (degree 0 within the bounded set) at BOTH grains (D40) and expose relation groups (connected components) — the renderer cannot invent these. Claim-set aggregation per D33 (`{relationKind, count, constituentClaimIds[], evidenceRevisions[], derivations[], confidenceSummary, freshness, disclosure, omittedCount}`). Generation/freshness resolution (answer the generation trap, with a test). New core store queries: symbols-in-file, commit→files, diff re-derivation via the existing `gitCli`/`diffHunks` helpers. Export `openStoreReadOnly` from core's index (implemented today but unexported). Golden projection JSON on the real corpus + completeness replay tests. | No E-line. Gate = census assertions on the real store + goldens. |
+| **K1** | Core projection kernel (no UI, no server) | `packages/core/src/guide/`. Complete logical atlas: every file + **every declaration as an atom** (D36) — ZERO compile-time truncation. **Census gate — no magic numbers:** the test computes BOTH sides from the live store at run time and asserts equality (`model.declarations.length === store.countByKind("symbol")`; every `calls`/`imports`/`contains` link in the store appears exactly once in the model's relation index). A hardcoded count would drift with the next `ctx sync` and start lying. Declarations with no containing file (measured: 689) are atoms with no lot — decide their treatment, TEST it, and disclose them; silently dropping them is the same defect class as truncation. Relation index over the 7 link kinds, stratified per D25. The four projections (overview / scope / connections / event), each emitting a BOUNDED **compound** DTO: file containers + declaration children, aggregate edges with counts, boundary nodes, explicit `omitted` counts. Each projection must classify **no-visible-route** members (degree 0 within the bounded set) at BOTH grains (D40) and expose relation groups (connected components) — the renderer cannot invent these. Claim-set aggregation per D33 (`{relationKind, count, constituentClaimIds[], evidenceRevisions[], derivations[], confidenceSummary, freshness, disclosure, omittedCount}`). Generation/freshness resolution (answer the generation trap, with a test). New core store queries: symbols-in-file, commit→files, diff re-derivation via the existing `gitCli`/`diffHunks` helpers. Export `openStoreReadOnly` from core's index (implemented today but unexported). Golden projection JSON on the real corpus + completeness replay tests. | No E-line. Gate = census assertions on the real store + goldens. |
 | **K2** | `ctx guide` server + data seam + state screens | `packages/cli/src/guide/`: a `case "guide"` arm in the CLI switch (`cli.ts:391-442`); `node:http` bound to 127.0.0.1 on a random free port; bearer token in the printed URL, exchanged once for an HttpOnly cookie; **no route resolves without it** (G-loopback); serve until Ctrl-C; `assertNoEgress` armed; `/api/*` serves K1's DTOs; `/api/generation` reports CURRENT state, never a startup snapshot. `packages/guide/`: Vite 8 + React 19 + TS + Tailwind 4 scaffold, hash router, one typed `GuideDataSource` seam with `LiveDataSource` (HTTP) and `SnapshotDataSource` (inlined JSON). Ships only the shared interaction states (D28): loading · empty-store with exact `ctx sync` guidance · auth failure · stale/mismatched generation. Asset shipping follows the `packages/core/scripts/copy-assets.mjs` precedent. | E5 partial: the badge tells the truth on a real launch, including the mismatched-generation empty case. |
 | **S** | Shell + Overview | D28 shell: top bar (repo · revision · generation · live\|snapshot\|stale · omnibox · mode — nothing else); left rail = directory/scope tree (DOM text, always legible) + attention counts + rail dock + nav history; centre = the four-state canvas host; right = inspector. Rail and inspector are INDEPENDENT scroll owners with reserved height budgets — never one flex column. D29 Overview: ~14 module/package cards, **positioned by aggregate dependency direction, not in a directory grid** (E1); deterministic content only — name, path + counts, changed/needs-review/conflict counts, aggregate in/out counts, trust badge; NO generated prose. Narrow (<1100px): tree + inspector become drawers. Perf HUD behind a dev flag. D24 naming gate on all copy. Playwright smoke lands here (fixed-viewport screenshots for the reviewer's diff). | E1 in full. |
 | **G** | Scope Graph — the heart of this order | elkjs, async + cancellable + cached by `(scopeId, generation)`. **Hierarchical layout** (`hierarchyHandling: INCLUDE_CHILDREN`): file containers laid out by dependency direction (`layered`, `LAYER_SWEEP`), declaration children laid out inside them (D36). The directory SELECTS the bounded set; **relationships decide every position** (D34/D35). Folder identity survives only as a weak background hull that never moves an atom and never obstructs routing. **CONSUME ELK's routed sections/bend points** into the edge renderer — explicit ports, fan-out at the source, fan-in at the target, stable separate lanes, deterministic lane order (D37). ELK input node size = the real rendered card size (D37/D39). Node size derives from real name length and real child count; no font shrinking, no fixed lots (D39). Edge stroke distinguishes `calls` from `imports`; no permanent per-edge kind label — label on focus/hover (D38). Cross-scope relations collapse into boundary nodes with counts; clicking one re-roots. Cycles (17 files, 5 SCCs) lay out as one block with no fabricated ordering. Budgets + disclosed omission handles; **no-visible-route periphery at both grains** (D40): a relevant file with no visible relation goes to a labelled peripheral area; a declaration inside an expanded file with no visible relation collapses into `+N more (no visible route)`. Omission selection is MECHANICAL (degree in the current projection), never an importance judgment (D25). | E2 in full; **E6 in full**; E3 partial. |
