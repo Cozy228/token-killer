@@ -21,10 +21,17 @@ function tail(path: string): string {
   return i === -1 ? path : path.slice(i + 1);
 }
 
-export function FocusedEvidence(props: { model: AtlasModel; selectedId: string; onFocus: (id: string) => void }) {
-  const { model, selectedId, onFocus } = props;
+export function FocusedEvidence(props: {
+  model: AtlasModel;
+  selectedId: string;
+  onFocus: (id: string) => void;
+  /** Open the focused Connections view rooted on this node (files/decls only). */
+  onOpenConnections?: (id: string) => void;
+}) {
+  const { model, selectedId, onFocus, onOpenConnections } = props;
   const node = model.nodeIndex.get(selectedId);
   if (!node) return null;
+  const canConnect = node.kind === "file" || node.kind === "decl";
 
   const decls =
     node.kind === "file" ? model.nodes.filter((n) => n.parent === node.id && n.kind === "decl") : [];
@@ -60,6 +67,15 @@ export function FocusedEvidence(props: { model: AtlasModel; selectedId: string; 
         </div>
         <div className="fe-name">{node.name}</div>
         <div className="fe-path mono">{node.path}</div>
+        {onOpenConnections && canConnect ? (
+          <button
+            type="button"
+            className="fe-connections"
+            onClick={() => onOpenConnections(selectedId)}
+          >
+            Connections
+          </button>
+        ) : null}
       </header>
 
       {node.kind === "file" ? (
@@ -85,13 +101,23 @@ export function FocusedEvidence(props: { model: AtlasModel; selectedId: string; 
         {rows.length === 0 ? <div className="fe-empty">No observed connections.</div> : null}
         <ul className="fe-rows">
           {shownRows.map((r, i) => (
-            <li key={`${r.verb}:${r.nodeId}:${i}`}>
+            <li key={`${r.verb}:${r.nodeId}:${i}`} className="fe-row-wrap">
               <button type="button" className="fe-row" onClick={() => onFocus(r.nodeId)}>
                 <span className="fe-row-verb">{r.verb}</span>
                 <span className="fe-row-name mono">{r.name}</span>
                 <span className="fe-row-tail">{r.pathTail}</span>
                 {r.claimId != null ? <span className="fe-row-prov mono">claim_id={r.claimId}</span> : null}
               </button>
+              {onOpenConnections ? (
+                <button
+                  type="button"
+                  className="fe-row-view"
+                  title="Open the Connections view rooted on this node"
+                  onClick={() => onOpenConnections(r.nodeId)}
+                >
+                  view
+                </button>
+              ) : null}
             </li>
           ))}
         </ul>

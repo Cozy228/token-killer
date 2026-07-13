@@ -40,6 +40,7 @@ import {
 import { edgeKey, GraphRenderer, type LitState, type RendererApi } from "./GraphRenderer.js";
 import { EvidenceRail } from "./EvidenceRail.js";
 import { FocusedEvidence } from "./FocusedEvidence.js";
+import { FocusGraph } from "./FocusGraph.js";
 import { Minimap } from "./Minimap.js";
 import { GenerationPrompt } from "./GenerationPrompt.js";
 import { StateScreen, type StateScreenKind } from "./StateScreen.js";
@@ -47,10 +48,17 @@ import { selectVariant, variants } from "../variants/registry.js";
 import { defaultDataSource, generationInfoOf, type GuideDataSource } from "../data/source.js";
 
 /** Reading zoom targets (5c fold-in): rail/search focus lands here, per kind. */
-const READING_ZOOM_DECL = 3.2;
 const READING_ZOOM_FILE_MIN = 1.0;
 const READING_TARGET_PX = 200;
 const UNIT_PX = 14;
+/**
+ * Nominal pane size used to size the SLICE viewport for a PROGRAMMATIC reveal
+ * (rail/search/connections/minimap/drill). The renderer animates the real camera
+ * from its measured pane; this only needs to be generous enough that the target
+ * node lands inside the recomputed slice (overscan covers the rest).
+ */
+const NOMINAL_PANE_W = 1400;
+const NOMINAL_PANE_H = 900;
 /** Default live-generation poll cadence (D10). */
 const DEFAULT_POLL_MS = 30_000;
 
@@ -133,6 +141,10 @@ export function SpikeApp({ dataSource, pollMs = DEFAULT_POLL_MS, storage }: Spik
   const [sweeping, setSweeping] = useState(false);
   const [seededKey, setSeededKey] = useState<string | null>(null);
   const [pendingGen, setPendingGen] = useState<GenerationInfo | null>(null);
+  // Connections view (focus graph) root. The map itself is always quiet now
+  // (structural edges only draw when lit/selected/hovered): the map answers
+  // "where", the Connections view answers "what connects".
+  const [connectionsRootId, setConnectionsRootId] = useState<string | null>(null);
 
   // Track hash changes (deep links are the primary entry, D22).
   useEffect(() => {
@@ -367,6 +379,38 @@ export function SpikeApp({ dataSource, pollMs = DEFAULT_POLL_MS, storage }: Spik
     if (commitTimerRef.current) clearTimeout(commitTimerRef.current);
   }, []);
 
+  // PROGRAMMATIC reveal: force an immediate slice recompute centered on `rect` at
+  // the seeded zoom bucket, BYPASSING the pan/zoom hysteresis+debounce. That
+  // damping must only smooth USER gestures — a rail/search/connections/minimap
+  // reveal has to re-slice now, or the camera moves to the target while the slice
+  // stays at folder LOD and the viewport is blank until a manual zoom/Fit.
+  const commitSlice = useCallback((rect: Viewport, zoom: number) => {
+    const z = Math.max(0.02, Math.min(4, zoom));
+    const cx = rect.x + rect.w / 2;
+    const cy = rect.y + rect.h / 2;
+    const w = NOMINAL_PANE_W / (z * UNIT_PX);
+    const h = NOMINAL_PANE_H / (z * UNIT_PX);
+    const vp: Viewport = { x: cx - w / 2, y: cy - h / 2, w, h };
+    if (commitTimerRef.current) {
+      clearTimeout(commitTimerRef.current);
+      commitTimerRef.current = null;
+    }
+    pendingVpRef.current = null;
+    const level = nextZoomLevel(0, z); // fresh bucket — no hysteresis dead-band
+    levelRef.current = level;
+    lastVpRef.current = { level, cx, cy };
+    setViewport(vp);
+    setZoom(z);
+    setRevealLevel(level);
+  }, []);
+
+  // Zoom that fits a world rect into the nominal pane (for region reveals).
+  const fitZoomFor = useCallback(
+    (rect: Viewport) =>
+      Math.min(NOMINAL_PANE_W / (rect.w * UNIT_PX), NOMINAL_PANE_H / (rect.h * UNIT_PX)),
+    [],
+  );
+
   const setHashParam = useCallback((patch: Partial<HashQuery>) => {
     const next = { ...parseHashQuery(window.location.hash), ...patch };
     const params = new URLSearchParams();
@@ -406,36 +450,40 @@ export function SpikeApp({ dataSource, pollMs = DEFAULT_POLL_MS, storage }: Spik
     [data],
   );
 
-  // Reading focus (rail / search / minimap destinations): ALWAYS center the
-  // target at a deterministic reading zoom for its kind (decl >=1.6, file such
-  // that the lot is ~200 px), so navigation lands the same way across variants.
+  // Reading focus (rail / search / connections destinations): ALWAYS center the
+  // target at a deterministic reading zoom AND force an immediate slice recompute
+  // (commitSlice) so the destination is actually in the slice — never just a
+  // camera move over a folder-level slice. A decl has no map cell under Option A,
+  // so focusing one reveals its FILE lot.
   const focusReading = useCallback(
     (nodeId: string) => {
-      setFocusedId(nodeId);
-      const node = data?.model.nodeIndex.get(nodeId);
+      const model = data?.model;
+      if (!model) return;
+      const node = model.nodeIndex.get(nodeId);
       if (!node) return;
-      let targetZoom: number;
-      if (node.kind === "decl") {
-        targetZoom = READING_ZOOM_DECL;
-      } else if (node.kind === "file") {
-        const side = Math.max(node.rect.w, node.rect.h);
-        targetZoom = Math.max(READING_ZOOM_FILE_MIN, READING_TARGET_PX / (side * UNIT_PX));
-      } else {
-        // Folder: frame the whole region rather than over-zoom.
-        apiRef.current?.setViewport({
-          x: node.rect.x - 2,
-          y: node.rect.y - 2,
-          w: node.rect.w + 4,
-          h: node.rect.h + 4,
-        });
+      setFocusedId(nodeId);
+      const target = node.kind === "decl" ? model.nodeIndex.get(node.parent ?? "") ?? node : node;
+      if (target.kind === "folder") {
+        const pad = 2;
+        const rect: Viewport = {
+          x: target.rect.x - pad,
+          y: target.rect.y - pad,
+          w: target.rect.w + pad * 2,
+          h: target.rect.h + pad * 2,
+        };
+        commitSlice(rect, fitZoomFor(rect));
+        apiRef.current?.setViewport(rect);
         return;
       }
+      const side = Math.max(target.rect.w, target.rect.h);
+      const targetZoom = Math.max(READING_ZOOM_FILE_MIN, READING_TARGET_PX / (side * UNIT_PX));
+      commitSlice(target.rect, targetZoom);
       apiRef.current?.centerOn(
-        { x: node.rect.x, y: node.rect.y, w: node.rect.w, h: node.rect.h },
+        { x: target.rect.x, y: target.rect.y, w: target.rect.w, h: target.rect.h },
         targetZoom,
       );
     },
-    [data],
+    [data, commitSlice, fitZoomFor],
   );
 
   // Clear selection AND any pinned reveals (D9: pins cleared on deselect/Esc).
@@ -458,16 +506,62 @@ export function SpikeApp({ dataSource, pollMs = DEFAULT_POLL_MS, storage }: Spik
         h: node.rect.h + pad * 2,
       };
       lastFitIdRef.current = nodeId;
+      commitSlice(target, fitZoomFor(target));
       apiRef.current?.setViewport(target);
     },
-    [data],
+    [data, commitSlice, fitZoomFor],
   );
 
+  // Open the focused Connections view rooted on a file/decl node.
+  const openConnections = useCallback((nodeId: string) => {
+    const node = data?.model.nodeIndex.get(nodeId);
+    if (!node || node.kind === "folder") return;
+    setFocusedId(nodeId);
+    setConnectionsRootId(nodeId);
+  }, [data]);
+
+  // Double-click a node: folders drill/fit (R4-6); files/decls open Connections.
+  const onDoubleClickNode = useCallback(
+    (nodeId: string) => {
+      const node = data?.model.nodeIndex.get(nodeId);
+      if (!node) return;
+      if (node.kind === "folder") drillNode(nodeId);
+      else openConnections(nodeId);
+    },
+    [data, drillNode, openConnections],
+  );
+
+  // "Open on map" from inside the Connections view: dismiss + reveal on the atlas.
+  // Uses the reading-focus path so the target is centered AND re-sliced (not just
+  // a camera move that could land on a folder-level slice).
+  const openOnMap = useCallback(
+    (nodeId: string) => {
+      setConnectionsRootId(null);
+      focusReading(nodeId);
+    },
+    [focusReading],
+  );
+
+  // `v` opens Connections for the selected node (ignored while typing in a field).
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key !== "v" && e.key !== "V") return;
+      if (connectionsRootId != null) return;
+      const t = e.target as HTMLElement | null;
+      if (t && (t.tagName === "INPUT" || t.tagName === "TEXTAREA" || t.isContentEditable)) return;
+      if (focusedId != null) openConnections(focusedId);
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [focusedId, connectionsRootId, openConnections]);
+
   // Esc: first clears selection; a second press backs the fit out to the parent
-  // region of the last drill (cheap back-out, R4-6).
+  // region of the last drill (cheap back-out, R4-6). The Connections overlay owns
+  // Esc while open, so yield to it here.
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
       if (e.key !== "Escape") return;
+      if (connectionsRootId != null) return;
       if (focusedId != null) {
         clearSelection();
         return;
@@ -484,7 +578,7 @@ export function SpikeApp({ dataSource, pollMs = DEFAULT_POLL_MS, storage }: Spik
     };
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
-  }, [focusedId, clearSelection, data]);
+  }, [focusedId, clearSelection, data, connectionsRootId]);
 
   const runSweep = useCallback(async () => {
     if (!apiRef.current || sweeping) return;
@@ -553,18 +647,24 @@ export function SpikeApp({ dataSource, pollMs = DEFAULT_POLL_MS, storage }: Spik
     (regionId: string) => {
       const node = data?.model.nodeIndex.get(regionId);
       if (!node) return;
-      apiRef.current?.setViewport({
+      const target: Viewport = {
         x: node.rect.x - 2,
         y: node.rect.y - 2,
         w: node.rect.w + 4,
         h: node.rect.h + 4,
-      });
+      };
+      commitSlice(target, fitZoomFor(target));
+      apiRef.current?.setViewport(target);
     },
-    [data],
+    [data, commitSlice, fitZoomFor],
   );
-  const minimapPan = useCallback((vp: Viewport) => {
-    apiRef.current?.setViewport(vp);
-  }, []);
+  const minimapPan = useCallback(
+    (vp: Viewport) => {
+      commitSlice(vp, fitZoomFor(vp));
+      apiRef.current?.setViewport(vp);
+    },
+    [commitSlice, fitZoomFor],
+  );
 
   // Live-generation poll (D10). Detect a new generation WITHOUT swapping the map:
   // only a prompt is raised; the corpus is reloaded solely on an explicit switch.
@@ -741,11 +841,12 @@ export function SpikeApp({ dataSource, pollMs = DEFAULT_POLL_MS, storage }: Spik
             focusedId={focusedId}
             variant={variant}
             initialViewport={openViewport}
+            viewport={viewport}
             onFocus={focusNode}
             onViewportChange={onViewportChange}
             fitRequest={fitRequest}
             onClearSelection={clearSelection}
-            onDrill={drillNode}
+            onDrill={onDoubleClickNode}
             recencyBuckets={recencyMap}
             onApiReady={(api) => {
               apiRef.current = api;
@@ -793,7 +894,12 @@ export function SpikeApp({ dataSource, pollMs = DEFAULT_POLL_MS, storage }: Spik
 
         <div className="rail-col">
           {focusedId ? (
-            <FocusedEvidence model={data.model} selectedId={focusedId} onFocus={focusReading} />
+            <FocusedEvidence
+              model={data.model}
+              selectedId={focusedId}
+              onFocus={focusReading}
+              onOpenConnections={openConnections}
+            />
           ) : null}
           {projection?.ok ? (
             <EvidenceRail
@@ -857,6 +963,16 @@ export function SpikeApp({ dataSource, pollMs = DEFAULT_POLL_MS, storage }: Spik
           ) : null}
         </section>
       </div>
+
+      {connectionsRootId && data.model.nodeIndex.has(connectionsRootId) ? (
+        <FocusGraph
+          model={data.model}
+          rootId={connectionsRootId}
+          litIds={rawLit}
+          onClose={() => setConnectionsRootId(null)}
+          onOpenOnMap={openOnMap}
+        />
+      ) : null}
     </div>
   );
 }

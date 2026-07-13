@@ -78,11 +78,21 @@
   font-weight: 600;
   color: var(--ink-muted);
 }
-/* Decl name inside the cell, only when the renderer says it is readable (R4-5). */
-.variant-wireframe .wf-decl-label {
+/* Self-describing file lot: name + decl-count chip, stacked. The whole text
+   block fades in as the lot becomes readable (--zoom is set on the graph
+   wrapper); below the readable zoom the lot shows only its tick / lit marker /
+   recency luminance and the hover readout carries identity. */
+.variant-wireframe .wf-file-meta {
+  opacity: clamp(0, calc((var(--zoom, 1) - 0.7) / 0.35), 1);
+}
+.variant-wireframe .wf-decl-chip {
   font-size: 8px;
-  line-height: 1;
-  padding: 1px;
+  line-height: 1.1;
+  color: var(--ink-muted);
+  padding: 0 2px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 /* Perimeter status tick — the only saturated color. */
 .variant-wireframe .wf-tick {

@@ -45,6 +45,11 @@ export interface GraphRendererProps {
    * projection exists (defect 1/4).
    */
   initialViewport: Viewport;
+  /**
+   * Current world viewport (committed slice viewport). Used only by the edge
+   * layer to stub selection edges whose far endpoint is off-screen. Optional.
+   */
+  viewport?: Viewport;
   onFocus: (nodeId: string) => void;
   onViewportChange: (viewport: Viewport, zoom: number) => void;
   fitRequest: number;

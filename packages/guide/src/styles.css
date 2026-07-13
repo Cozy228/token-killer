@@ -36,6 +36,15 @@
   --minimap-viewport-stroke: #2563c9;
   --minimap-viewport-fill: rgba(37, 99, 201, 0.1);
   --minimap-search-mark: #b26a00;
+
+  /* Focus-graph (Connections view) surfaces — light defaults. Dark variants get
+     overrides below scoped to their themeClass (the substrate references variant
+     themeClasses only for this throwaway overlay; variant folders stay clean). */
+  --fg-scrim: rgba(18, 18, 22, 0.42);
+  --fg-surface: #ffffff;
+  --fg-surface-2: #fbfbfc;
+  --fg-surface-3: #f2f5fb;
+  --fg-accent: #2563c9;
 }
 
 * {
@@ -133,6 +142,21 @@ body {
   opacity: 0.7;
   transition: opacity 200ms ease;
 }
+/* Every drawn edge (fallback line AND any variant EdgePath) stays screen-space:
+   vector-effect keeps the stroke width from scaling with the zoom transform, so
+   a lit/selected edge can never render as a giant world-scaled band. */
+.atlas-edge line,
+.atlas-edge path {
+  vector-effect: non-scaling-stroke;
+}
+/* Off-viewport selection/lit edges render as a short fading direction stub. */
+.atlas-edge.edge-stub {
+  opacity: 0.4;
+}
+.atlas-edge.edge-stub.edge-selected,
+.atlas-edge.edge-stub.edge-lit {
+  opacity: 0.55;
+}
 .atlas-edge.edge-lit {
   stroke: var(--lit-outline, #111);
   opacity: 1;
@@ -140,10 +164,9 @@ body {
 .atlas-edge.edge-imports {
   stroke-dasharray: 4 3;
 }
-.atlas-edge.edge-dimmed {
-  opacity: 0.12;
-}
-/* Selection emphasis (R4-1, UA values): adjacent full ink, unrelated ~0.08. */
+/* Selection emphasis (R4-1, UA values): adjacent edges full ink. The map is
+   quiet at rest, so only lit / selection-adjacent / hover edges are drawn at
+   all — there is no faded or dimmed edge state to style. */
 .atlas-edge.edge-selected {
   stroke: var(--lit-outline, #111);
   opacity: 0.85;
@@ -152,32 +175,19 @@ body {
   stroke: var(--ink, #333);
   opacity: 0.6;
 }
-.atlas-edge.edge-faded {
-  opacity: 0.08;
-}
-/* Overview noise floor: single-occurrence aggregated edges hidden until revealed. */
-.atlas-edge.edge-belowfloor {
-  display: none;
-}
 .atlas-arrowhead {
   fill: var(--lit-outline, #111);
   stroke: none;
 }
-/* Count / relation labels — counter-scaled so they read ~11px at any zoom. */
-.edge-count,
-.edge-relation {
+/* Aggregated count plate — counter-scaled so it reads ~11px at any zoom. */
+.edge-count {
   fill: var(--ink, #222);
   stroke: var(--lot-bg, #fff);
   stroke-width: calc(3px / var(--zoom, 1));
   paint-order: stroke;
   font-family: var(--font-mono);
   pointer-events: none;
-}
-.edge-count {
   font-size: calc(11px / var(--zoom, 1));
-}
-.edge-relation {
-  font-size: calc(10px / var(--zoom, 1));
 }
 
 /* Node interaction: pointer + selection wrapper classes (all variants inherit). */
@@ -684,4 +694,566 @@ body {
   font-family: var(--font-mono);
   font-size: 12px;
   color: var(--status-conflict);
+}
+
+/* --------------------------------------------------------------------------
+   FocusedEvidence "Connections" primary button + per-row "view" affordance.
+   The Connections view is the primary way to read connections, so its entry
+   button is visually primary (solid accent), and each connection row carries a
+   quiet "view" affordance that opens the Connections view rooted on that node.
+   -------------------------------------------------------------------------- */
+.fe-connections {
+  margin-top: 6px;
+  font-size: 11px;
+  font-weight: 700;
+  padding: 4px 12px;
+  border: 1px solid var(--fg-accent, #2563c9);
+  border-radius: 3px;
+  background: var(--fg-accent, #2563c9);
+  color: #fff;
+  cursor: pointer;
+}
+.fe-connections:hover {
+  filter: brightness(1.08);
+}
+.fe-row-wrap {
+  display: flex;
+  align-items: stretch;
+  gap: 4px;
+}
+.fe-row-wrap .fe-row {
+  flex: 1 1 auto;
+  min-width: 0;
+}
+.fe-row-view {
+  flex: 0 0 auto;
+  align-self: center;
+  font-size: 10px;
+  padding: 1px 7px;
+  border: 1px solid var(--region-border, #ccc);
+  border-radius: 3px;
+  background: transparent;
+  color: var(--fg-accent, #2563c9);
+  cursor: pointer;
+}
+.fe-row-view:hover {
+  border-color: var(--fg-accent, #2563c9);
+  background: var(--fg-surface-3);
+}
+
+/* --------------------------------------------------------------------------
+   Connections view (FocusGraph) — dismissible overlay, three columns, no
+   layout engine. Structural + wireframe styling from substrate tokens so every
+   variant inherits; dark variants get surface overrides at the end of the file.
+   -------------------------------------------------------------------------- */
+.focus-graph-overlay {
+  position: absolute;
+  inset: 0;
+  z-index: 40;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+.fg-backdrop {
+  position: absolute;
+  inset: 0;
+  background: var(--fg-scrim);
+}
+.focus-graph {
+  position: relative;
+  width: 70%;
+  height: 70%;
+  min-width: 720px;
+  display: flex;
+  flex-direction: column;
+  background: var(--fg-surface);
+  color: var(--ink);
+  border: 1px solid var(--region-border);
+  box-shadow: 0 18px 60px rgba(0, 0, 0, 0.32);
+  overflow: hidden;
+}
+.fg-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 8px 12px;
+  border-bottom: 1px solid var(--region-border);
+  background: var(--fg-surface-2);
+}
+.fg-breadcrumb {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 3px;
+  min-width: 0;
+}
+.fg-crumb {
+  display: inline-flex;
+  align-items: baseline;
+  gap: 3px;
+}
+.fg-crumb-sep {
+  color: var(--ink-muted);
+}
+.fg-crumb-btn {
+  border: none;
+  background: transparent;
+  color: var(--fg-accent);
+  cursor: pointer;
+  font-size: 12px;
+  padding: 0;
+  font-family: var(--font-mono);
+}
+.fg-crumb-btn.fg-crumb-current {
+  color: var(--ink);
+  font-weight: 700;
+  cursor: default;
+}
+.fg-header-actions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex: 0 0 auto;
+}
+.fg-header-actions button {
+  font-size: 12px;
+  padding: 3px 10px;
+  cursor: pointer;
+  border: 1px solid var(--region-border);
+  background: transparent;
+  color: var(--ink);
+}
+.fg-open-map {
+  border-color: var(--lit-outline, #111) !important;
+}
+.fg-close {
+  font-size: 16px !important;
+  line-height: 1;
+  padding: 1px 8px !important;
+}
+
+.fg-columns {
+  flex: 1 1 auto;
+  min-height: 0;
+  display: grid;
+  grid-template-columns: 1fr 1.15fr 1fr;
+  gap: 10px;
+  padding: 12px;
+  overflow: auto;
+}
+.fg-col {
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+.fg-col-head {
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+}
+.fg-col-title {
+  font-family: var(--font-display);
+  font-weight: 700;
+  font-size: 13px;
+}
+.fg-col-sub {
+  font-size: 10px;
+  color: var(--ink-muted);
+}
+.fg-col-inbound {
+  text-align: right;
+}
+.fg-col-inbound .fg-col-head {
+  align-items: flex-end;
+}
+.fg-empty {
+  font-size: 11px;
+  color: var(--ink-muted);
+}
+
+.fg-card-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+.fg-card-row {
+  display: flex;
+  align-items: stretch;
+  gap: 2px;
+}
+.fg-card-inbound .fg-card-row {
+  justify-content: flex-end;
+}
+.fg-file-header {
+  font-size: 10px;
+  color: var(--ink-muted);
+  border-bottom: 1px dashed var(--region-border);
+  padding-bottom: 2px;
+  margin-bottom: 2px;
+}
+.fg-card-body {
+  flex: 1 1 auto;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+.fg-card-main {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 6px;
+  width: 100%;
+  text-align: left;
+  border: 1px solid var(--region-border);
+  background: var(--fg-surface-2);
+  padding: 6px 8px;
+  cursor: pointer;
+  font-size: 12px;
+  color: var(--ink);
+}
+.fg-card-main:hover {
+  background: var(--fg-surface-3);
+  border-color: var(--lit-outline, #111);
+}
+.fg-badge {
+  font-size: 9px;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: var(--ink-muted);
+  border: 1px solid var(--region-border);
+  border-radius: 2px;
+  padding: 0 4px;
+  white-space: nowrap;
+}
+.fg-card-name {
+  font-family: var(--font-display);
+  font-weight: 700;
+  font-size: 13px;
+  word-break: break-word;
+}
+.fg-card-tail {
+  font-size: 10px;
+  color: var(--ink-muted);
+}
+.fg-count {
+  font-family: var(--font-mono);
+  font-size: 10px;
+  color: var(--ink);
+  border: 1px solid var(--region-border);
+  border-radius: 2px;
+  padding: 0 4px;
+  margin-left: auto;
+}
+.fg-status {
+  font-size: 9px;
+  padding: 0 5px;
+  border-radius: 2px;
+  color: #fff;
+}
+.fg-status.status-active {
+  background: var(--status-active);
+}
+.fg-status.status-needs-review {
+  background: var(--status-needs-review);
+}
+.fg-status.status-conflict {
+  background: var(--status-conflict);
+}
+.fg-lit-tick {
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+  font-size: 9px;
+  color: var(--ink);
+  font-weight: 600;
+}
+.fg-lit-dot {
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: var(--lit-outline, #111);
+  border: 1px solid var(--fg-surface);
+}
+.fg-expand {
+  align-self: flex-start;
+  border: none;
+  background: transparent;
+  color: var(--ink-muted);
+  font-size: 10px;
+  cursor: pointer;
+  padding: 0;
+}
+.fg-expand:hover {
+  color: var(--ink);
+}
+.fg-pairs {
+  list-style: none;
+  margin: 0;
+  padding: 2px 0 2px 8px;
+  border-left: 2px solid var(--region-border);
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+.fg-pair {
+  display: flex;
+  align-items: baseline;
+  gap: 5px;
+  font-size: 10px;
+  color: var(--ink-muted);
+}
+.fg-pair-from,
+.fg-pair-to {
+  color: var(--ink);
+}
+.fg-pair-count {
+  color: var(--ink-muted);
+}
+.fg-pair-prov {
+  margin-left: auto;
+  font-size: 9px;
+  color: var(--ink-muted);
+}
+
+/* Short SVG connector: line width = log2(count+1) capped 5, count on the line. */
+.fg-connector {
+  flex: 0 0 auto;
+  align-self: center;
+  overflow: visible;
+}
+.fg-conn-line {
+  stroke: var(--ink, #333);
+}
+.fg-conn-line.fg-conn-imports {
+  stroke: var(--ink-muted, #777);
+}
+.fg-conn-arrow {
+  fill: var(--ink, #333);
+}
+.fg-connector-outbound .fg-conn-arrow {
+  fill: var(--lit-outline, #111);
+}
+.fg-conn-count {
+  fill: var(--ink);
+  stroke: var(--fg-surface);
+  stroke-width: 3px;
+  paint-order: stroke;
+  font-family: var(--font-mono);
+  font-size: 10px;
+}
+
+/* Boundary pills (UA-style) at the column ends. */
+.fg-pills {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  margin-top: 4px;
+}
+.fg-col-inbound .fg-pills {
+  align-items: flex-end;
+}
+.fg-pills-title {
+  font-size: 9px;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: var(--ink-muted);
+}
+.fg-pill-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  width: 100%;
+}
+.fg-pill {
+  display: inline-flex;
+  align-items: baseline;
+  gap: 8px;
+  max-width: 100%;
+  border: 1px solid var(--region-border);
+  border-radius: 999px;
+  background: var(--fg-surface-2);
+  padding: 2px 10px;
+  cursor: pointer;
+  color: var(--ink);
+}
+.fg-pill:hover {
+  border-color: var(--lit-outline, #111);
+  background: var(--fg-surface-3);
+}
+.fg-pill-imports {
+  border-style: dashed;
+}
+.fg-pill-lit {
+  border-color: var(--lit-outline, #111);
+  border-width: 2px;
+}
+.fg-pill-label {
+  font-size: 10px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.fg-pill-count {
+  font-size: 9px;
+  color: var(--ink-muted);
+  white-space: nowrap;
+  margin-left: auto;
+}
+.fg-more {
+  align-self: flex-start;
+  border: none;
+  background: transparent;
+  color: var(--fg-accent);
+  font-size: 10px;
+  cursor: pointer;
+  padding: 0;
+}
+
+/* Center column — the subject card. */
+.fg-col-center {
+  align-items: center;
+  justify-content: flex-start;
+}
+.fg-subject {
+  width: 100%;
+  border: 2px solid var(--lit-outline, #111);
+  background: var(--fg-surface-2);
+  padding: 12px 14px;
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+  align-items: center;
+  text-align: center;
+}
+.fg-badge-subject {
+  align-self: center;
+}
+.fg-subject-name {
+  font-family: var(--font-display);
+  font-weight: 700;
+  font-size: 18px;
+  word-break: break-word;
+}
+.fg-subject-path {
+  font-size: 10px;
+  color: var(--ink-muted);
+  word-break: break-all;
+}
+.fg-subject-meta {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  align-items: center;
+  justify-content: center;
+  margin-top: 2px;
+}
+.fg-subject-decls {
+  font-size: 10px;
+  color: var(--ink-muted);
+  font-family: var(--font-mono);
+}
+.fg-subject-pkg {
+  font-size: 9px;
+  color: var(--ink-muted);
+}
+
+/* Keyboard focus ring on the re-rootable cards/pills + breadcrumb (arrow-key
+   navigation, first-class Connections view). */
+.fg-card-main:focus-visible,
+.fg-pill:focus-visible,
+.fg-crumb-btn:focus-visible,
+.fg-header-actions button:focus-visible {
+  outline: 2px solid var(--fg-accent, #2563c9);
+  outline-offset: 1px;
+}
+
+/* Store-absent endpoint pill: a non-rooting marker with a "not in index" note. */
+.fg-pill-absent {
+  display: inline-flex;
+  align-items: baseline;
+  gap: 8px;
+  max-width: 100%;
+  border: 1px dashed var(--region-border);
+  border-radius: 999px;
+  background: transparent;
+  padding: 2px 10px;
+  color: var(--ink-muted);
+  cursor: default;
+}
+.fg-pill-note {
+  font-size: 8px;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: var(--status-needs-review, #b26a00);
+  white-space: nowrap;
+}
+
+/* Zero-connection state: an explicit line under the subject + its decl list. */
+.fg-zero {
+  width: 100%;
+  margin-top: 10px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  align-items: center;
+  text-align: center;
+}
+.fg-zero-line {
+  font-size: 12px;
+  color: var(--ink-muted);
+  font-style: italic;
+}
+.fg-zero-decls {
+  width: 100%;
+}
+.fg-zero-decls-title {
+  font-size: 10px;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: var(--ink-muted);
+  margin-bottom: 4px;
+}
+.fg-zero-decl-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+.fg-zero-decl {
+  display: flex;
+  justify-content: space-between;
+  gap: 8px;
+  font-size: 11px;
+  border: 1px solid var(--region-border);
+  padding: 2px 8px;
+}
+.fg-zero-decl-kind {
+  color: var(--ink-muted);
+}
+
+/* Dark-variant surface overrides (readability pass). Scoped to the two dark
+   themeClasses; variant folders are untouched. */
+.variant-instrument .focus-graph,
+.variant-transit .focus-graph {
+  --fg-surface: #12161d;
+  --fg-surface-2: #171d26;
+  --fg-surface-3: #232c39;
+  --region-border: rgba(220, 226, 235, 0.22);
+  --lit-outline: #e8eaee;
+  color: var(--ink);
+}
+.variant-instrument .fg-lit-dot,
+.variant-transit .fg-lit-dot {
+  border-color: #12161d;
 }

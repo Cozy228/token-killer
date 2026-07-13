@@ -44,4 +44,30 @@ describe("FocusedEvidence panel (R4-3)", () => {
     const { container } = render(<FocusedEvidence model={model} selectedId="sym:nope#x" onFocus={() => {}} />);
     expect(container.querySelector(".focused-evidence")).toBeNull();
   });
+
+  it("surfaces a primary Connections button and a per-row 'view' reverse affordance", () => {
+    const onOpenConnections = vi.fn();
+    const { container } = render(
+      <FocusedEvidence
+        model={model}
+        selectedId="file:src/app.ts"
+        onFocus={() => {}}
+        onOpenConnections={onOpenConnections}
+      />,
+    );
+    // Primary entry button opens the Connections view on the subject itself.
+    const primary = container.querySelector(".fe-connections") as HTMLButtonElement;
+    expect(primary).toBeTruthy();
+    fireEvent.click(primary);
+    expect(onOpenConnections).toHaveBeenCalledWith("file:src/app.ts");
+
+    // Each connection row gets a "view" affordance opening Connections rooted on
+    // the OTHER endpoint (the reverse of "Open on map").
+    const view = container.querySelector(".fe-row-view") as HTMLButtonElement;
+    expect(view).toBeTruthy();
+    fireEvent.click(view);
+    expect(onOpenConnections).toHaveBeenCalledTimes(2);
+    expect(typeof onOpenConnections.mock.calls[1][0]).toBe("string");
+    expect(onOpenConnections.mock.calls[1][0]).not.toBe("file:src/app.ts");
+  });
 });

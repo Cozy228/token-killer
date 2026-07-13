@@ -22,24 +22,24 @@ export const DEFAULT_LOD: LodOptions = {
 interface Reveal {
   maxFolderDepth: number;
   showFiles: boolean;
-  showDecls: boolean;
 }
 
-// Semantic-zoom levels (D9). Four discrete reveal levels; the numeric zoom is
-// mapped onto a level with HYSTERESIS so a zoom sitting near a boundary cannot
-// flap the visible slice open/closed. UP[k] = zoom needed to REVEAL level k;
-// DOWN[k] = the LOWER zoom needed to DROP back out of level k. DOWN < UP for
+// Semantic-zoom levels (D9). Under the Option-A map slim-down the map answers
+// "where" with folders + files ONLY — declarations never render on the map, so
+// the ladder is folders -> files (three discrete levels), not four. The numeric
+// zoom is mapped onto a level with HYSTERESIS so a zoom sitting near a boundary
+// cannot flap the visible slice open/closed. UP[k] = zoom needed to REVEAL level
+// k; DOWN[k] = the LOWER zoom needed to DROP back out of level k. DOWN < UP for
 // every level is the whole point (asserted in tests). The UP thresholds equal
-// the historical single-boundary values, so a fresh (no-history) mapping is
-// byte-for-byte what revealFor() used to return.
-export const ZOOM_UP: readonly number[] = [0, 0.35, 0.7, 1.2];
-export const ZOOM_DOWN: readonly number[] = [0, 0.28, 0.56, 0.96];
+// the historical folder/file boundaries, so a fresh (no-history) mapping is
+// byte-for-byte what revealFor() used to return up to the file level.
+export const ZOOM_UP: readonly number[] = [0, 0.35, 0.7];
+export const ZOOM_DOWN: readonly number[] = [0, 0.28, 0.56];
 
 const REVEAL_BY_LEVEL: readonly Reveal[] = [
-  { maxFolderDepth: 1, showFiles: false, showDecls: false },
-  { maxFolderDepth: 2, showFiles: false, showDecls: false },
-  { maxFolderDepth: 99, showFiles: true, showDecls: false },
-  { maxFolderDepth: 99, showFiles: true, showDecls: true },
+  { maxFolderDepth: 1, showFiles: false },
+  { maxFolderDepth: 2, showFiles: false },
+  { maxFolderDepth: 99, showFiles: true },
 ];
 
 const MAX_LEVEL = REVEAL_BY_LEVEL.length - 1;
@@ -72,14 +72,6 @@ export function zoomBucketIndex(zoom: number): number {
 /** Zoom bucket -> which hierarchy levels are readable (D9 semantic zoom). */
 export function revealFor(zoom: number): Reveal {
   return revealForLevel(zoomBucketIndex(zoom));
-}
-
-// A 1-unit decl cell is UNIT(14) px wide in world space; a label needs ~44px
-// on-screen (UA truncates >24 chars). 44/14 ≈ 3.14 render zoom (R4-5).
-export const DECL_LABEL_MIN_PX = 44;
-const UNIT_PX = 14;
-export function declLabelsVisibleAt(zoom: number): boolean {
-  return UNIT_PX * zoom >= DECL_LABEL_MIN_PX;
 }
 
 function intersects(a: Viewport, b: Viewport): boolean {
@@ -210,17 +202,21 @@ export function computeSlice(
     if (n.parent !== null && pinned && pinned.has(n.parent)) return true;
     if (n.kind === "folder") return n.depth <= reveal.maxFolderDepth;
     if (n.kind === "file") return reveal.showFiles;
-    return reveal.showDecls;
+    // Declarations never render on the map (Option-A slim-down): the map grain
+    // is folders + files only. Lit decls light their FILE lot via the aggregation
+    // below; searching/lighting still address decl atoms in the kernel model.
+    return false;
   };
 
   // 1. Candidate nodes: kind revealed at this zoom AND intersecting the overscan box.
+  //    Decl atoms are never map nodes, so they are skipped outright (not counted
+  //    as a "hidden" omission — they are simply not part of this view's grain).
   const candidates: AtlasNode[] = [];
-  let declHidden = 0;
   let fileHidden = 0;
   for (const n of model.nodes) {
+    if (n.kind === "decl") continue;
     if (!isRevealed(n)) {
       if (n.kind === "file") fileHidden++;
-      else if (n.kind === "decl") declHidden++;
       continue;
     }
     if (intersects(over, n.rect)) candidates.push(n);
@@ -315,22 +311,13 @@ export function computeSlice(
   const keptEdges = aggEdges.slice(0, opts.maxEdges);
   const droppedEdges = aggEdges.length - keptEdges.length;
 
-  // Overview noise floor (R4-2d): at folder LOD, an aggregated edge with count<2
-  // that is not lit is de-emphasized (kept in the slice so selection can reveal
-  // it; hidden by default in the renderer). Disclosed below.
-  let belowFloorCount = 0;
-  if (!reveal.showFiles) {
-    for (const e of keptEdges) {
-      if (e.count < 2 && !e.lit) {
-        e.belowFloor = true;
-        belowFloorCount++;
-      }
-    }
-  }
+  // The map is quiet at rest: structural edges are not drawn except the lit
+  // Change Trace trunk, selection-adjacent, and hover pre-highlight edges (the
+  // renderer decides which of the slice edges to paint). No slice-level noise
+  // floor is needed — an edge nobody has lit or selected simply is not drawn.
 
   // 4. Omissions (non-empty whenever something is not shown).
   const omissions: string[] = [];
-  if (declHidden > 0) omissions.push(`${declHidden} declaration nodes hidden below current zoom`);
   if (fileHidden > 0)
     omissions.push(`${fileHidden} file lots aggregated into folder regions at current zoom`);
   if (droppedNodes > 0) {
@@ -341,11 +328,6 @@ export function computeSlice(
   if (droppedEdges > 0) {
     omissions.push(
       `${droppedEdges} edges beyond the ${opts.maxEdges}-edge budget dropped (lowest count first)`,
-    );
-  }
-  if (belowFloorCount > 0) {
-    omissions.push(
-      `${belowFloorCount} single-occurrence aggregated edges de-emphasized at folder zoom (revealed on selection)`,
     );
   }
 
@@ -365,6 +347,5 @@ export function computeSlice(
     generation: model.generations,
     projectionId: model.projectionId,
     litVisibleIds: [...litVisible].filter((id) => visibleIds.has(id)).sort(cmp),
-    declLabelsVisible: declLabelsVisibleAt(zoom),
   };
 }

@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { compile } from "../src/atlas/compile.js";
-import { computeSlice, DEFAULT_LOD, declLabelsVisibleAt, fitViewport } from "../src/atlas/lod.js";
+import { computeSlice, DEFAULT_LOD, fitViewport } from "../src/atlas/lod.js";
 import { project, resolveEvent } from "../src/atlas/event.js";
 import { expand10x } from "../src/atlas/synthetic.js";
 import type { CorpusInput } from "../src/atlas/types.js";
@@ -105,7 +105,42 @@ describe("LOD aggregation-aware lit edges (defect 2)", () => {
   });
 });
 
-describe("LOD overview noise floor (R4-2d)", () => {
+describe("map slim-down: declarations never reach the renderer (Option A)", () => {
+  const modelCurrent = compile(makeFixtureCorpus());
+
+  it("emits only folders + files across every zoom (current scale)", () => {
+    const fit = fitViewport(modelCurrent);
+    // The old ladder had a decls level at zoom >= 1.2; assert it is gone at high
+    // zoom too — decls are structurally not a map grain anymore.
+    for (const zoom of [0.2, 0.5, 0.7, 1.0, 1.5, 3, 4]) {
+      const slice = computeSlice(modelCurrent, fit, zoom, DEFAULT_LOD);
+      expect(slice.nodes.every((n) => n.kind !== "decl")).toBe(true);
+    }
+  });
+
+  it("still emits no decl nodes at 10x scale and any zoom", () => {
+    const fit10 = fitViewport(model10x);
+    for (const zoom of [0.2, 0.9, 1.5, 3, 4]) {
+      const slice = computeSlice(model10x, fit10, zoom, DEFAULT_LOD);
+      expect(slice.nodes.some((n) => n.kind === "decl")).toBe(false);
+    }
+  });
+
+  it("keeps a lit decl legible by aggregating it onto its FILE lot, not a decl cell", () => {
+    const lit = new Set(["sym:src/util/math.ts#add"]);
+    const fit = fitViewport(modelCurrent);
+    // Files revealed: the lit decl's nearest revealed ancestor is its file lot.
+    const slice = computeSlice(modelCurrent, fit, 1.5, DEFAULT_LOD, lit);
+    expect(slice.litVisibleIds.length).toBeGreaterThan(0);
+    const visible = new Set(slice.nodes.map((n) => n.id));
+    for (const id of slice.litVisibleIds) {
+      expect(visible.has(id)).toBe(true);
+      expect(modelCurrent.nodeIndex.get(id)?.kind).not.toBe("decl");
+    }
+  });
+});
+
+describe("quiet map: aggregated edges stay in the slice (render decides what to draw)", () => {
   // Two folders, one single-occurrence cross-folder import.
   const corpus: CorpusInput = {
     schemaVersion: 1,
@@ -145,32 +180,22 @@ describe("LOD overview noise floor (R4-2d)", () => {
   };
   const model = compile(corpus);
 
-  it("de-emphasizes a single-occurrence aggregated edge at folder zoom and discloses it", () => {
+  it("keeps a single-occurrence aggregated edge in the slice at folder zoom (no noise floor)", () => {
     const fit = fitViewport(model);
     const slice = computeSlice(model, fit, 0.2, DEFAULT_LOD); // folder LOD
-    const below = slice.edges.filter((e) => e.belowFloor);
-    expect(below.length).toBeGreaterThan(0);
-    for (const e of below) expect(e.count).toBeLessThan(2);
-    expect(slice.omissions.some((o) => /de-emphasized at folder zoom/.test(o))).toBe(true);
+    // The import file:a/x.ts -> file:b/y.ts aggregates to dir:a -> dir:b (count 1)
+    // and is present in the slice; the renderer decides not to draw it at rest.
+    const agg = slice.edges.filter((e) => e.count === 1);
+    expect(agg.length).toBeGreaterThan(0);
+    // There is no slice-level noise-floor omission anymore.
+    expect(slice.omissions.some((o) => /de-emphasized at folder zoom/.test(o))).toBe(false);
   });
 
-  it("does not mark belowFloor once files are revealed", () => {
+  it("no longer carries a belowFloor concept on any slice edge", () => {
     const fit = fitViewport(model);
-    const slice = computeSlice(model, fit, 1.5, DEFAULT_LOD); // files revealed
-    expect(slice.edges.every((e) => !e.belowFloor)).toBe(true);
-  });
-});
-
-describe("decl-label threshold (R4-5)", () => {
-  it("gates decl labels on on-screen cell size", () => {
-    expect(declLabelsVisibleAt(1.0)).toBe(false);
-    expect(declLabelsVisibleAt(3.5)).toBe(true);
-  });
-
-  it("surfaces the flag on the slice", () => {
-    const model = compile(makeFixtureCorpus());
-    const fit = fitViewport(model);
-    expect(computeSlice(model, fit, 1.0, DEFAULT_LOD).declLabelsVisible).toBe(false);
-    expect(computeSlice(model, fit, 3.5, DEFAULT_LOD).declLabelsVisible).toBe(true);
+    for (const zoom of [0.2, 1.5]) {
+      const slice = computeSlice(model, fit, zoom, DEFAULT_LOD);
+      expect(slice.edges.every((e) => !("belowFloor" in e))).toBe(true);
+    }
   });
 });

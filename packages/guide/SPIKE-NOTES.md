@@ -423,3 +423,32 @@ Per-variant design rationale, token/contrast tables, and deviation logs live in
 pointer copies (`implementation-notes.{atelier,transit}.md`) were folded here and removed
 by the reviewer — the variant builders' file contract keeps all variant artifacts inside
 their own folder.
+
+---
+
+## Option A formalization (Connections view → first-class)
+
+The maintainer ruled the old canvas model (a map that also answered "what connects")
+unreadable. Option A splits the two questions and is now formalized (not a SHOW mock):
+
+- **MAP answers "where"** — folders + files ONLY. Declarations never render on the map again
+  (they stay addressable/searchable/lit-able in the kernel model). The LOD ladder is folders →
+  files (3 levels, hysteresis kept); decl reveal level + decl-label machinery removed.
+- **CONNECTIONS VIEW answers "what connects"** — the 3-column FocusGraph, promoted to a
+  first-class surface: cycle-safe breadcrumb, keyboard navigation (arrows / Enter / Backspace /
+  Esc, visible focus ring), zero-connection state, store-absent "not in index" pills, and a
+  reverse "view" affordance from the focused-evidence panel.
+- **Quiet is the only map mode** — structural edges draw only for the lit Change Trace trunk,
+  selection-adjacent, or hover pre-highlight. The "Map edges: quiet/all" HUD toggle and the
+  overview noise-floor were deleted.
+
+A follow-up reviewer browser re-drive found two regressions, both fixed: (R1) programmatic focus
+(rail/search/connections/minimap/drill) now forces an immediate slice recompute centered on the
+target, bypassing the pan/zoom hysteresis+debounce that had left the viewport blank; (R2) drawn
+edges are hard-capped to ≤6px screen-space (non-scaling-stroke) and selection edges to
+off-viewport endpoints render as short direction stubs instead of giant bands / cross-map lines.
+
+Full model-shift write-up, removed surface list, decisions, deviations, the regression-fix detail,
+and the item-by-item acceptance table live in the repo-root `implementation-notes.md` ("Option A
+formalization" + "two regressions fixed" sections). Guide suite: 121 pass (was 109). No commit
+(reviewer merges).

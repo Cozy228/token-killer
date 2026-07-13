@@ -40,8 +40,8 @@ describe("semantic-zoom hysteresis (D9)", () => {
     expect(level).toBe(1);
   });
 
-  it("reveals a level on zoom-in but holds it until the LOWER down-threshold", () => {
-    // Climb into level 2 (files).
+  it("reveals the file level on zoom-in but holds it until the LOWER down-threshold", () => {
+    // Climb into level 2 (files) — the top of the folders -> files ladder.
     let level = nextZoomLevel(1, 0.8);
     expect(level).toBe(2);
     // Zoom back to 0.6: below UP[2]=0.7 but above DOWN[2]=0.56 -> stays revealed.
@@ -53,7 +53,8 @@ describe("semantic-zoom hysteresis (D9)", () => {
   });
 
   it("bounds slice recomputes over a monotone zoom-in sweep", () => {
-    // A slow monotone climb crosses each level boundary at most once: <= 3 changes.
+    // A slow monotone climb crosses each level boundary at most once. The ladder
+    // now tops out at the file level (2), so <= 2 changes and it settles at 2.
     let level = 0;
     let changes = 0;
     for (let z = 0.1; z <= 2; z += 0.05) {
@@ -61,8 +62,8 @@ describe("semantic-zoom hysteresis (D9)", () => {
       if (next !== level) changes++;
       level = next;
     }
-    expect(changes).toBeLessThanOrEqual(3);
-    expect(level).toBe(3);
+    expect(changes).toBeLessThanOrEqual(2);
+    expect(level).toBe(2);
   });
 });
 
@@ -155,13 +156,12 @@ describe("cold-open hotspot viewport (D10)", () => {
 });
 
 describe("revealForLevel is stable and clamped", () => {
-  it("maps levels 0..3 to the documented hierarchy reveal", () => {
+  it("maps levels 0..2 to the folders -> files ladder (no decl level)", () => {
     expect(revealForLevel(0).showFiles).toBe(false);
+    expect(revealForLevel(1).showFiles).toBe(false);
     expect(revealForLevel(2).showFiles).toBe(true);
-    expect(revealForLevel(2).showDecls).toBe(false);
-    expect(revealForLevel(3).showDecls).toBe(true);
-    // Out-of-range clamps rather than throwing.
+    // Out-of-range clamps rather than throwing; the top level is files (2).
     expect(revealForLevel(-5)).toEqual(revealForLevel(0));
-    expect(revealForLevel(99)).toEqual(revealForLevel(3));
+    expect(revealForLevel(99)).toEqual(revealForLevel(2));
   });
 });

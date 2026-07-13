@@ -302,6 +302,7 @@ function emitFile(
     footprint: side,
     status: file.status,
     overflow,
+    declCount: file.declCount,
     recency: file.recency,
   });
   // Decls pack on the inner side x side grid, in source order.

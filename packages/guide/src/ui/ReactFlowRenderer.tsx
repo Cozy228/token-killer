@@ -37,7 +37,6 @@ interface AtlasNodeData extends Record<string, unknown> {
   lit: boolean;
   dimmed: boolean;
   focused: boolean;
-  showDeclLabel: boolean;
   render: GraphRendererProps["variant"]["NodeContent"];
 }
 
@@ -49,22 +48,13 @@ type AtlasFlowNode = Node<AtlasNodeData, "atlas">;
 const AtlasNodeComp = memo(
   function AtlasNodeComp({ data }: NodeProps<AtlasFlowNode>) {
     const Content = data.render;
-    return (
-      <Content
-        node={data.atlas}
-        lit={data.lit}
-        dimmed={data.dimmed}
-        focused={data.focused}
-        showDeclLabel={data.showDeclLabel}
-      />
-    );
+    return <Content node={data.atlas} lit={data.lit} dimmed={data.dimmed} focused={data.focused} />;
   },
   (prev, next) =>
     prev.data.atlas === next.data.atlas &&
     prev.data.lit === next.data.lit &&
     prev.data.dimmed === next.data.dimmed &&
     prev.data.focused === next.data.focused &&
-    prev.data.showDeclLabel === next.data.showDeclLabel &&
     prev.data.render === next.data.render,
 );
 
@@ -79,14 +69,32 @@ function isAggregated(edge: AtlasEdge): boolean {
   return !edge.src.startsWith("sym:") || !edge.dst.startsWith("sym:");
 }
 
+// On-screen edge stroke width: log2 growth capped at 5px, +1.5 for a selected
+// edge, hard-capped at 6px. vector-effect keeps these screen-space at any zoom.
+function edgeStrokeWidth(count: number, selected: boolean): number {
+  const base = Math.min(5, 1 + Math.log2(count + 1));
+  return Math.min(6, base + (selected ? 1.5 : 0));
+}
+
+// Off-screen stub length as a fraction of the smaller viewport dimension — a
+// roughly constant on-screen length regardless of zoom, so a selection edge to
+// an off-viewport endpoint only HINTS direction (the Connections view reads it).
+const STUB_VIEWPORT_FRACTION = 0.12;
+
+function rectIntersectsViewport(rect: AtlasNode["rect"], vp: { x: number; y: number; w: number; h: number }): boolean {
+  return !(rect.x + rect.w <= vp.x || vp.x + vp.w <= rect.x || rect.y + rect.h <= vp.y || vp.y + vp.h <= rect.y);
+}
+
 export function EdgeLayer(props: {
   slice: GraphRendererProps["slice"];
   litState: LitState;
   variant: GraphRendererProps["variant"];
   focusedId: string | null;
   hoveredId: string | null;
+  /** Current world viewport — off-viewport edge endpoints render as short stubs. */
+  viewport?: GraphRendererProps["initialViewport"];
 }) {
-  const { slice, litState, variant, focusedId, hoveredId } = props;
+  const { slice, litState, variant, focusedId, hoveredId, viewport } = props;
   const nodeById = useMemo(() => {
     const m = new Map<string, AtlasNode>();
     for (const n of slice.nodes) m.set(n.id, n);
@@ -141,46 +149,84 @@ export function EdgeLayer(props: {
         const lit = litState.hasEvent && e.lit === true;
         const selAdj = selectionActive && (e.src === focusedId || e.dst === focusedId);
         const hovAdj = hoveredId != null && (e.src === hoveredId || e.dst === hoveredId);
-        const faded = selectionActive && !selAdj; // selection wins over event dim (R4-1)
-        const dimmed = !selectionActive && litState.hasEvent && !lit;
-        const belowHidden = e.belowFloor === true && !lit && !selAdj && !hovAdj;
+        // The map is quiet at rest (the only mode now that the Connections view
+        // answers "what connects"): draw an edge ONLY when it is (a) a lit Change
+        // Trace trunk edge, (b) selection-adjacent, or (c) hover pre-highlight.
+        if (!lit && !selAdj && !hovAdj) return null;
         const emphasized = selAdj || lit;
         const aggregated = isAggregated(e);
 
-        const strokeWidth = selAdj ? 2.5 : lit ? 2.5 + Math.log2(e.count + 1) : 1 + Math.log2(e.count + 1);
+        // On-screen stroke width (screen-space via vector-effect), capped ≤6px so
+        // a lit/selected edge can never render as a giant world-scaled band.
+        const strokeWidth = edgeStrokeWidth(e.count, selAdj);
+
+        // Off-viewport endpoint → short direction stub instead of a line shooting
+        // across (or off) the map. Keep the on-screen endpoint, walk a bounded
+        // distance toward the off-screen one.
+        const srcInside = !viewport || rectIntersectsViewport(src.rect, viewport);
+        const dstInside = !viewport || rectIntersectsViewport(dst.rect, viewport);
+        let x1 = clip.x1;
+        let y1 = clip.y1;
+        let x2 = clip.x2;
+        let y2 = clip.y2;
+        let stub = false;
+        if (viewport && (!srcInside || !dstInside)) {
+          if (!srcInside && !dstInside) return null; // whole edge off-screen
+          stub = true;
+          const stubPx = STUB_VIEWPORT_FRACTION * Math.min(viewport.w, viewport.h) * UNIT;
+          if (srcInside) {
+            // keep src end, stub toward dst
+            const dx = clip.x2 - clip.x1;
+            const dy = clip.y2 - clip.y1;
+            const len = Math.hypot(dx, dy) || 1;
+            const f = Math.min(1, stubPx / len);
+            x2 = clip.x1 + dx * f;
+            y2 = clip.y1 + dy * f;
+          } else {
+            // keep dst end, stub toward src
+            const dx = clip.x1 - clip.x2;
+            const dy = clip.y1 - clip.y2;
+            const len = Math.hypot(dx, dy) || 1;
+            const f = Math.min(1, stubPx / len);
+            x1 = clip.x2 + dx * f;
+            y1 = clip.y2 + dy * f;
+          }
+        }
+
         const cls = [
           "atlas-edge",
           `edge-${e.kind}`,
           lit ? "edge-lit" : "",
           selAdj ? "edge-selected" : "",
-          faded ? "edge-faded" : "",
-          hovAdj && !selAdj ? "edge-hover" : "",
-          dimmed ? "edge-dimmed" : "",
-          belowHidden ? "edge-belowfloor" : "",
+          hovAdj && !selAdj && !lit ? "edge-hover" : "",
+          stub ? "edge-stub" : "",
         ]
           .filter(Boolean)
           .join(" ");
 
+        const midX = (x1 + x2) / 2;
+        const midY = (y1 + y2) / 2;
         const geometry: EdgeGeometry = {
-          x1: clip.x1,
-          y1: clip.y1,
-          x2: clip.x2,
-          y2: clip.y2,
+          x1,
+          y1,
+          x2,
+          y2,
           strokeWidth,
-          clippedX1: clip.x1,
-          clippedY1: clip.y1,
-          clippedX2: clip.x2,
-          clippedY2: clip.y2,
-          midX: clip.midX,
-          midY: clip.midY,
+          clippedX1: x1,
+          clippedY1: y1,
+          clippedX2: x2,
+          clippedY2: y2,
+          midX,
+          midY,
           count: e.count,
           direction: "src->dst",
         };
 
-        // Label policy (R4-2b): aggregated edges get an always-on count plate;
-        // raw sym->sym edges show a relation-kind label only when selected.
-        const showCount = aggregated && !belowHidden;
-        const showRelation = !aggregated && selAdj;
+        // Label policy: every map edge is an aggregated file/folder edge now (raw
+        // sym->sym call pairs live in the Connections view). A count plate appears
+        // only on the edges the quiet map draws for a reason — lit or
+        // selection-adjacent — and never on a stub (its midpoint is meaningless).
+        const showCount = aggregated && (lit || selAdj) && !stub;
 
         return (
           <g key={key} className={cls}>
@@ -188,23 +234,18 @@ export function EdgeLayer(props: {
               EdgePath(e, geometry)
             ) : (
               <line
-                x1={clip.x1}
-                y1={clip.y1}
-                x2={clip.x2}
-                y2={clip.y2}
+                x1={x1}
+                y1={y1}
+                x2={x2}
+                y2={y2}
                 strokeWidth={strokeWidth}
                 vectorEffect="non-scaling-stroke"
                 markerEnd={emphasized ? "url(#atlas-arrow)" : undefined}
               />
             )}
             {showCount ? (
-              <text className="edge-count" x={clip.midX} y={clip.midY} textAnchor="middle" dominantBaseline="central">
+              <text className="edge-count" x={midX} y={midY} textAnchor="middle" dominantBaseline="central">
                 {e.count}
-              </text>
-            ) : null}
-            {showRelation ? (
-              <text className="edge-relation" x={clip.midX} y={clip.midY - 2} textAnchor="middle">
-                {e.kind}
               </text>
             ) : null}
           </g>
@@ -243,6 +284,7 @@ function Inner(props: GraphRendererProps) {
     onClearSelection,
     onDrill,
     recencyBuckets,
+    viewport,
   } = props;
   const wrapperRef = useRef<HTMLDivElement>(null);
   const rf = useReactFlow();
@@ -296,10 +338,11 @@ function Inner(props: GraphRendererProps) {
     const out: AtlasFlowNode[] = [];
     const selectionActive = focusedId != null;
     for (const n of slice.nodes) {
+      // Decl atoms never reach the renderer (Option-A map slim-down): the slice
+      // emits folders + files only. No decl-cell path, no decl-label gate.
       const lit = litState.hasEvent && litState.litNodeIds.has(n.id);
       const dimmed = !selectionActive && litState.hasEvent && !lit;
       const focused = n.id === focusedId;
-      const showDeclLabel = n.kind === "decl" && slice.declLabelsVisible;
       // Recent-lens ramp (D11): a neutral `recency-N` class on the FILE lot
       // wrapper. Orthogonal to selection — both classes coexist so lit/dim and
       // selection emphasis stack above the ramp.
@@ -315,7 +358,6 @@ function Inner(props: GraphRendererProps) {
         cached.data.lit === lit &&
         cached.data.dimmed === dimmed &&
         cached.data.focused === focused &&
-        cached.data.showDeclLabel === showDeclLabel &&
         cached.className === className &&
         cached.data.render === variant.NodeContent
       ) {
@@ -332,7 +374,7 @@ function Inner(props: GraphRendererProps) {
           connectable: false,
           zIndex: zIndexFor(n.kind),
           className,
-          data: { atlas: n, lit, dimmed, focused, showDeclLabel, render: variant.NodeContent },
+          data: { atlas: n, lit, dimmed, focused, render: variant.NodeContent },
         };
       }
       next.set(n.id, node);
@@ -340,7 +382,7 @@ function Inner(props: GraphRendererProps) {
     }
     nodeCacheRef.current = next;
     return out;
-  }, [slice.nodes, slice.declLabelsVisible, litState, focusedId, neighborIds, variant, recencyBuckets]);
+  }, [slice.nodes, litState, focusedId, neighborIds, variant, recencyBuckets]);
 
   const emitViewport = useCallback(() => {
     const el = wrapperRef.current;
@@ -449,6 +491,7 @@ function Inner(props: GraphRendererProps) {
               variant={variant}
               focusedId={focusedId}
               hoveredId={hoveredId}
+              viewport={viewport}
             />
           </ViewportPortal>
         </ReactFlow>
