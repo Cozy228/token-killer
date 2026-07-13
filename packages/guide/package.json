@@ -4,6 +4,11 @@
   "private": true,
   "type": "module",
   "description": "ctx guide M3 slice-5a perf spike: quantized Atlas projection + React Flow renderer seam + Change Trace event projection. Throwaway probe proving D12 budgets.",
+  "exports": {
+    "./package.json": "./package.json",
+    "./corpus-source": "./tools/corpus-source.ts",
+    "./fixture-corpus": "./tests/fixtures/corpus.ts"
+  },
   "scripts": {
     "dev": "vite",
     "build": "vite build",

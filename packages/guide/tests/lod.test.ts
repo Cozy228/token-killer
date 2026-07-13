@@ -1,8 +1,9 @@
 import { describe, expect, it } from "vitest";
 import { compile } from "../src/atlas/compile.js";
-import { computeSlice, DEFAULT_LOD, fitViewport } from "../src/atlas/lod.js";
+import { computeSlice, DEFAULT_LOD, declLabelsVisibleAt, fitViewport } from "../src/atlas/lod.js";
 import { project, resolveEvent } from "../src/atlas/event.js";
 import { expand10x } from "../src/atlas/synthetic.js";
+import type { CorpusInput } from "../src/atlas/types.js";
 import { makeFixtureCorpus } from "./fixtures/corpus.js";
 
 const model10x = compile(expand10x(makeFixtureCorpus()));
@@ -101,5 +102,75 @@ describe("LOD aggregation-aware lit edges (defect 2)", () => {
     const fit = fitViewport(model);
     const slice = computeSlice(model, fit, 1.0, DEFAULT_LOD, litNodes);
     expect(slice.edges.every((e) => !e.lit)).toBe(true);
+  });
+});
+
+describe("LOD overview noise floor (R4-2d)", () => {
+  // Two folders, one single-occurrence cross-folder import.
+  const corpus: CorpusInput = {
+    schemaVersion: 1,
+    repo: "nf",
+    sourceRevision: "x",
+    generations: { code: 1, git: 1, docs: 1, memory: 1 },
+    files: [
+      {
+        path: "a/x.ts",
+        declCount: 1,
+        decls: [{ id: "sym:a/x.ts#f", name: "f", kind: "function", order: 0 }],
+        status: "active",
+        recency: null,
+      },
+      {
+        path: "b/y.ts",
+        declCount: 1,
+        decls: [{ id: "sym:b/y.ts#g", name: "g", kind: "function", order: 0 }],
+        status: "active",
+        recency: null,
+      },
+    ],
+    edges: {
+      calls: [],
+      imports: [{ src: "file:a/x.ts", dst: "file:b/y.ts", count: 1, claimId: 1 }],
+      touches: [],
+    },
+    event: {
+      kind: "diff",
+      label: "e",
+      range: { from: "aaaaaaa", to: "bbbbbbb" },
+      commitIds: [],
+      anchorFiles: [],
+      anchorSyms: [],
+    },
+    disclosures: [],
+  };
+  const model = compile(corpus);
+
+  it("de-emphasizes a single-occurrence aggregated edge at folder zoom and discloses it", () => {
+    const fit = fitViewport(model);
+    const slice = computeSlice(model, fit, 0.2, DEFAULT_LOD); // folder LOD
+    const below = slice.edges.filter((e) => e.belowFloor);
+    expect(below.length).toBeGreaterThan(0);
+    for (const e of below) expect(e.count).toBeLessThan(2);
+    expect(slice.omissions.some((o) => /de-emphasized at folder zoom/.test(o))).toBe(true);
+  });
+
+  it("does not mark belowFloor once files are revealed", () => {
+    const fit = fitViewport(model);
+    const slice = computeSlice(model, fit, 1.5, DEFAULT_LOD); // files revealed
+    expect(slice.edges.every((e) => !e.belowFloor)).toBe(true);
+  });
+});
+
+describe("decl-label threshold (R4-5)", () => {
+  it("gates decl labels on on-screen cell size", () => {
+    expect(declLabelsVisibleAt(1.0)).toBe(false);
+    expect(declLabelsVisibleAt(3.5)).toBe(true);
+  });
+
+  it("surfaces the flag on the slice", () => {
+    const model = compile(makeFixtureCorpus());
+    const fit = fitViewport(model);
+    expect(computeSlice(model, fit, 1.0, DEFAULT_LOD).declLabelsVisible).toBe(false);
+    expect(computeSlice(model, fit, 3.5, DEFAULT_LOD).declLabelsVisible).toBe(true);
   });
 });

@@ -41,6 +41,14 @@ export function zoomBucketIndex(zoom: number): number {
   return 3;
 }
 
+// A 1-unit decl cell is UNIT(14) px wide in world space; a label needs ~44px
+// on-screen (UA truncates >24 chars). 44/14 ≈ 3.14 render zoom (R4-5).
+export const DECL_LABEL_MIN_PX = 44;
+const UNIT_PX = 14;
+export function declLabelsVisibleAt(zoom: number): boolean {
+  return UNIT_PX * zoom >= DECL_LABEL_MIN_PX;
+}
+
 function intersects(a: Viewport, b: Viewport): boolean {
   return !(a.x + a.w <= b.x || b.x + b.w <= a.x || a.y + a.h <= b.y || b.y + b.h <= a.y);
 }
@@ -185,6 +193,19 @@ export function computeSlice(
   const keptEdges = aggEdges.slice(0, opts.maxEdges);
   const droppedEdges = aggEdges.length - keptEdges.length;
 
+  // Overview noise floor (R4-2d): at folder LOD, an aggregated edge with count<2
+  // that is not lit is de-emphasized (kept in the slice so selection can reveal
+  // it; hidden by default in the renderer). Disclosed below.
+  let belowFloorCount = 0;
+  if (!reveal.showFiles) {
+    for (const e of keptEdges) {
+      if (e.count < 2 && !e.lit) {
+        e.belowFloor = true;
+        belowFloorCount++;
+      }
+    }
+  }
+
   // 4. Omissions (non-empty whenever something is not shown).
   const omissions: string[] = [];
   if (declHidden > 0) omissions.push(`${declHidden} declaration nodes hidden below current zoom`);
@@ -198,6 +219,11 @@ export function computeSlice(
   if (droppedEdges > 0) {
     omissions.push(
       `${droppedEdges} edges beyond the ${opts.maxEdges}-edge budget dropped (lowest count first)`,
+    );
+  }
+  if (belowFloorCount > 0) {
+    omissions.push(
+      `${belowFloorCount} single-occurrence aggregated edges de-emphasized at folder zoom (revealed on selection)`,
     );
   }
 
@@ -217,5 +243,6 @@ export function computeSlice(
     generation: model.generations,
     projectionId: model.projectionId,
     litVisibleIds: [...litVisible].filter((id) => visibleIds.has(id)).sort(cmp),
+    declLabelsVisible: declLabelsVisibleAt(zoom),
   };
 }

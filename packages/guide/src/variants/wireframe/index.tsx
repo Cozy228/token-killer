@@ -4,7 +4,13 @@
 import type { NodeContentProps, VariantSpec } from "../types.js";
 import "./wireframe.css";
 
-function NodeContent({ node, lit, dimmed, focused }: NodeContentProps) {
+/** Middle-truncate names longer than 24 chars (UA rule). */
+function truncate(name: string): string {
+  if (name.length <= 24) return name;
+  return `${name.slice(0, 12)}…${name.slice(-10)}`;
+}
+
+function NodeContent({ node, lit, dimmed, focused, showDeclLabel }: NodeContentProps) {
   const classes = [
     "wf-node",
     `wf-${node.kind}`,
@@ -22,7 +28,9 @@ function NodeContent({ node, lit, dimmed, focused }: NodeContentProps) {
       {node.kind === "folder" ? (
         <div className="wf-label wf-folder-label">{node.name}/</div>
       ) : node.kind === "file" ? (
-        <div className="wf-label">{node.name}</div>
+        <div className="wf-label">{truncate(node.name)}</div>
+      ) : node.kind === "decl" && showDeclLabel ? (
+        <div className="wf-label wf-decl-label">{truncate(node.name)}</div>
       ) : null}
       {showTick ? <span className={`wf-tick wf-status-${node.status}`} /> : null}
       {node.overflow > 0 ? <span className="wf-overflow">+{node.overflow}</span> : null}

@@ -78,6 +78,12 @@
   font-weight: 600;
   color: var(--ink-muted);
 }
+/* Decl name inside the cell, only when the renderer says it is readable (R4-5). */
+.variant-wireframe .wf-decl-label {
+  font-size: 8px;
+  line-height: 1;
+  padding: 1px;
+}
 /* Perimeter status tick — the only saturated color. */
 .variant-wireframe .wf-tick {
   position: absolute;

@@ -108,6 +108,7 @@ body {
   fill: none;
   stroke: var(--region-border, #ccc);
   opacity: 0.7;
+  transition: opacity 200ms ease;
 }
 .atlas-edge.edge-lit {
   stroke: var(--lit-outline, #111);
@@ -118,6 +119,89 @@ body {
 }
 .atlas-edge.edge-dimmed {
   opacity: 0.12;
+}
+/* Selection emphasis (R4-1, UA values): adjacent full ink, unrelated ~0.08. */
+.atlas-edge.edge-selected {
+  stroke: var(--lit-outline, #111);
+  opacity: 0.85;
+}
+.atlas-edge.edge-hover {
+  stroke: var(--ink, #333);
+  opacity: 0.6;
+}
+.atlas-edge.edge-faded {
+  opacity: 0.08;
+}
+/* Overview noise floor: single-occurrence aggregated edges hidden until revealed. */
+.atlas-edge.edge-belowfloor {
+  display: none;
+}
+.atlas-arrowhead {
+  fill: var(--lit-outline, #111);
+  stroke: none;
+}
+/* Count / relation labels — counter-scaled so they read ~11px at any zoom. */
+.edge-count,
+.edge-relation {
+  fill: var(--ink, #222);
+  stroke: var(--lot-bg, #fff);
+  stroke-width: calc(3px / var(--zoom, 1));
+  paint-order: stroke;
+  font-family: var(--font-mono);
+  pointer-events: none;
+}
+.edge-count {
+  font-size: calc(11px / var(--zoom, 1));
+}
+.edge-relation {
+  font-size: calc(10px / var(--zoom, 1));
+}
+
+/* Node interaction: pointer + selection wrapper classes (all variants inherit). */
+.react-flow__node {
+  cursor: pointer;
+}
+.react-flow__node.node-faded {
+  opacity: var(--sel-faded-opacity, 0.22);
+  transition: opacity 200ms ease;
+}
+.react-flow__node.node-neighbor {
+  outline: 2px solid var(--sel-neighbor-ring, rgba(17, 17, 20, 0.45));
+  outline-offset: 1px;
+}
+.react-flow__node:hover {
+  outline: 1.5px solid var(--node-hover-outline, rgba(17, 17, 20, 0.55));
+  outline-offset: 0;
+}
+
+/* Hover readout — one DOM node, bottom-left of the canvas (R4-4). */
+.hover-readout {
+  position: absolute;
+  left: 8px;
+  bottom: 96px;
+  z-index: 16;
+  display: flex;
+  gap: 8px;
+  align-items: baseline;
+  font-family: var(--font-mono);
+  font-size: 11px;
+  background: rgba(255, 255, 255, 0.92);
+  border: 1px solid var(--region-border);
+  padding: 3px 8px;
+  max-width: 70%;
+  pointer-events: none;
+}
+.hover-readout .hr-kind {
+  color: var(--ink-muted);
+}
+.hover-readout .hr-name {
+  font-weight: 700;
+}
+.hover-readout .hr-path {
+  color: var(--ink-muted);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 /* Lit region overlay — unmistakable at far zoom (non-scaling stroke + tint). */
 .atlas-lit-region {
@@ -200,11 +284,120 @@ body {
   color: var(--ink-muted);
 }
 
-.evidence-rail {
+/* Right column stacks the focused-evidence panel above the Evidence Rail. */
+.rail-col {
   border-right: 1px solid var(--region-border);
+  overflow: auto;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+}
+.evidence-rail {
   overflow: auto;
   padding: 10px 12px;
   font-size: 12px;
+}
+
+/* Focused-evidence panel (R4-3) — the click reaction. */
+.focused-evidence {
+  border-bottom: 1px solid var(--region-border);
+  padding: 10px 12px;
+  font-size: 12px;
+  max-height: 55%;
+  overflow: auto;
+}
+.fe-title {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.fe-kind {
+  font-size: 10px;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: var(--ink-muted);
+}
+.fe-status {
+  font-size: 10px;
+  padding: 0 5px;
+  border-radius: 2px;
+  color: #fff;
+}
+.fe-status.status-active {
+  background: var(--status-active);
+}
+.fe-status.status-needs-review {
+  background: var(--status-needs-review);
+}
+.fe-status.status-conflict {
+  background: var(--status-conflict);
+}
+.fe-name {
+  font-family: var(--font-display);
+  font-weight: 700;
+  font-size: 14px;
+  margin-top: 3px;
+}
+.fe-path {
+  font-size: 10px;
+  color: var(--ink-muted);
+  word-break: break-all;
+}
+.fe-block {
+  margin-top: 10px;
+}
+.fe-block-title {
+  font-size: 11px;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: var(--ink-muted);
+  margin: 0 0 4px;
+}
+.fe-rows {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+.fe-row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 6px;
+  width: 100%;
+  text-align: left;
+  border: 1px solid var(--region-border);
+  background: #fbfbfc;
+  padding: 3px 6px;
+  cursor: pointer;
+  font-size: 11px;
+}
+.fe-row:hover {
+  background: #f2f5fb;
+}
+.fe-row-verb {
+  color: var(--ink-muted);
+  min-width: 78px;
+}
+.fe-row-name {
+  font-weight: 600;
+}
+.fe-row-tail,
+.fe-row-kind {
+  color: var(--ink-muted);
+}
+.fe-row-prov {
+  color: var(--ink-muted);
+  font-size: 9px;
+  margin-left: auto;
+}
+.fe-more,
+.fe-empty {
+  font-size: 10px;
+  color: var(--ink-muted);
+  padding: 2px 0;
 }
 .rail-title {
   font-family: var(--font-display);

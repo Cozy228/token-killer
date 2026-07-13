@@ -1,0 +1,7 @@
+# ctx personal overlay — gitignored, per-person, never shared (E3 / three-tier).
+# Nothing auto-generated (agent remember, host imports) reaches git unreviewed.
+# (The rebuildable SQLite index lives under ~/.contexa, outside the repo, so it needs
+# no pattern here; if a future index moves in-repo, add its pattern below.)
+*.local.md
+*.local.jsonc
+details.local/

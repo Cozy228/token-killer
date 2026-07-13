@@ -105,6 +105,8 @@ export interface AtlasNode {
   status: NodeStatus;
   /** How many decls beyond the lot capacity are disclosed as "+N" (files only). */
   overflow: number;
+  /** symbolKind for decl nodes (function|method|class|const|...); undefined otherwise. */
+  symbolKind?: string;
   lit?: boolean;
 }
 
@@ -120,6 +122,12 @@ export interface AtlasEdge {
    * even though their key differs from the atom-level lit edge keys (defect 2).
    */
   lit?: boolean;
+  /**
+   * Overview noise floor (R4-2d): an aggregated edge with count < 2 that is not
+   * lit is de-emphasized at folder LOD (hidden unless selection/hover-adjacent).
+   * Still present in the slice so selection can reveal it; disclosed in omissions.
+   */
+  belowFloor?: boolean;
 }
 
 export interface AtlasRegion {
@@ -177,6 +185,12 @@ export interface VisibleSlice {
    * at every zoom (D22/D25).
    */
   litVisibleIds: string[];
+  /**
+   * Whether decl cells are large enough on-screen to carry an inline label at
+   * this zoom (R4-5). Derived from the LOD zoom; the renderer/variant gates
+   * decl-name rendering on it.
+   */
+  declLabelsVisible: boolean;
 }
 
 // ---------------------------------------------------------------------------

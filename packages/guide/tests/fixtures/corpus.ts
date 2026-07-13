@@ -138,7 +138,9 @@ export function shuffledFixtureCorpus(seed = 7): CorpusInput {
     const a = [...arr];
     for (let i = a.length - 1; i > 0; i--) {
       const j = Math.floor(rnd() * (i + 1));
-      [a[i], a[j]] = [a[j], a[i]];
+      const ai = a[i]!;
+      a[i] = a[j]!;
+      a[j] = ai;
     }
     return a;
   };

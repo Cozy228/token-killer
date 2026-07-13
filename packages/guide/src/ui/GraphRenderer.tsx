@@ -18,6 +18,11 @@ export interface LitState {
 export interface RendererApi {
   setViewport(viewport: Viewport): void;
   fitView(): void;
+  /**
+   * Reveal a node's world rect ONLY if it is offscreen or its on-screen width is
+   * below `minPx` (R4-1). Otherwise no camera move. Returns whether it moved.
+   */
+  revealNode(rect: Viewport, minPx?: number): boolean;
   /** Scripted 3s viewport tour; resolves after recording fps into onFps. */
   runSweep(onFps: (fps: number) => void): Promise<void>;
 }
@@ -38,6 +43,10 @@ export interface GraphRendererProps {
   onViewportChange: (viewport: Viewport, zoom: number) => void;
   fitRequest: number;
   onApiReady?: (api: RendererApi) => void;
+  /** Pane click / Esc clears selection (R4-1). */
+  onClearSelection?: () => void;
+  /** Double-click a folder region → drill/fit to it (R4-6). */
+  onDrill?: (nodeId: string) => void;
 }
 
 export function edgeKey(edge: AtlasEdge): string {
@@ -46,6 +55,21 @@ export function edgeKey(edge: AtlasEdge): string {
 
 export function nodeIsLit(node: AtlasNode, litState: LitState): boolean {
   return litState.hasEvent && litState.litNodeIds.has(node.id);
+}
+
+/**
+ * Selection emphasis class for a node's React Flow wrapper (R4-1). Applied at
+ * the substrate level so every variant inherits the fade/neighbor treatment.
+ */
+export function nodeSelectionClassName(
+  nodeId: string,
+  focusedId: string | null,
+  neighborIds: ReadonlySet<string>,
+): string {
+  if (focusedId == null) return "";
+  if (nodeId === focusedId) return "node-selected";
+  if (neighborIds.has(nodeId)) return "node-neighbor";
+  return "node-faded";
 }
 
 export function GraphRenderer(props: GraphRendererProps) {

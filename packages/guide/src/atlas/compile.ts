@@ -322,6 +322,7 @@ function emitFile(
       footprint: 1,
       status: file.status,
       overflow: 0,
+      symbolKind: d.kind,
     });
   }
 }

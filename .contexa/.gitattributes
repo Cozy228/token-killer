@@ -1,0 +1,5 @@
+# ctx memory — append-only logs auto-merge line-wise (E2 merge=union).
+# A git conflict here would signal a byte collision, never a contradiction;
+# semantic contradictions are filed at post-merge reindex, not by git.
+memory/log.md merge=union
+memory/decisions.md merge=union

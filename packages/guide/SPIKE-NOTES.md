@@ -165,6 +165,74 @@ readings are for the reviewer's re-drive.
 
 ---
 
+## Fix log — reviewer drive round 4 (presentation / standard)
+
+Maintainer priority: presentation first, performance last (no gross regression). Live verdict:
+edges unreadable (no meaning/direction/from-to), decl cells dense+unlabeled, click gave no
+reaction. UA (understand-anything) studied for reusable facts. Built additively on the 5b tree
+(`GuideDataSource` seam untouched). All new type fields are optional/additive; variant folders
+untouched (substrate + wireframe + additive CSS hooks only). Files:
+`src/atlas/{geometry.ts(new),types.ts,lod.ts,compile.ts}`,
+`src/ui/{GraphRenderer,ReactFlowRenderer,SpikeApp}.tsx`, `src/ui/FocusedEvidence.tsx (new)`,
+`src/variants/wireframe/{index.tsx,wireframe.css}`, `src/styles.css`, and tests.
+
+- **R4-1 Selection emphasis (D11).** Click a node → its direct edges get `edge-selected`
+  (full ink, width 2.5, opacity 0.85); all other edges `edge-faded` (0.08); endpoint neighbors
+  `node-neighbor` (dim ring), all other nodes `node-faded` (0.22); 200 ms opacity transitions.
+  Selection emphasis wins over event dim while active. Node classes live on the React Flow node
+  WRAPPER (`nodeSelectionClassName`), so every variant inherits the treatment from substrate CSS
+  with no variant edit. Pane click / Esc clears. Camera: `RendererApi.revealNode` moves ONLY if
+  the node is offscreen or its on-screen width < 24 px (duration 400, padding 0.3, maxZoom
+  max(currentZoom, 1.2)); an already-visible node just gets emphasized (no camera churn).
+- **R4-2 Edge legibility.** (a) Endpoints are clipped to the rect BOUNDARY both ends
+  (`geometry.ts` `clipEdge`), never center-through-body. (b) Aggregated (file/folder) edges carry
+  an always-on `edge-count` plate (counter-scaled via `--zoom` so it reads ~11 px at any zoom);
+  raw sym-sym edges show a relation-kind label (`edge-relation`) only when selection-adjacent.
+  (c) A dst-end arrowhead marker renders ONLY on emphasized edges (`edge-selected`/`edge-lit`) —
+  quiet by default like UA. `EdgeGeometry` extended additively with
+  `clipped*/mid*/count/direction`. (d) Overview noise floor: at folder LOD an aggregated edge with
+  count < 2 and not lit is marked `belowFloor`, hidden by default (revealed when
+  selection/hover-adjacent), and the count is disclosed in omissions.
+- **R4-3 Focused-evidence panel** (`FocusedEvidence.tsx`, right column above the rail,
+  collapsible/hidden when nothing is selected). Shows kind + claim-status badge, name, path; for a
+  FILE a "Declared here (n)" decl list; for any node "Connections (n)" directional-verb rows
+  ("calls →" / "← called by" / "imports →" / "← imported by") built from the logical edges, each
+  row click-focuses the endpoint and carries provenance (`claim_id=…`). Rows capped at 12 with
+  "+N more". Copy passes the D24 gate.
+- **R4-4 Hover identity.** `.react-flow__node` gets `cursor:pointer` + a thin `:hover` outline
+  (all variants). A single fixed hover readout line (bottom-left, above the counts) shows
+  "kind · name · path"; the hovered node's edges get `edge-hover` (weaker than selection). Hover
+  state is renderer-local so it never re-slices.
+- **R4-5 Decl labels.** `declLabelsVisibleAt(zoom)` (44 px / 14 px-per-unit ≈ 3.14 render zoom) is
+  surfaced on the slice as `declLabelsVisible`; the renderer passes it to `NodeContent`, and
+  wireframe renders the decl name (middle-truncated > 24 chars) only above the threshold.
+- **R4-6 Drill / back-out.** Double-click a folder region → fit to it (single click stays
+  select-only). Esc first clears selection; a second Esc backs the fit out to the parent region of
+  the last drill.
+
+UA facts reused (paths under `.research/…/dashboard/`): directed one-edge-per-container-pair
+aggregation with always-on count label (`edgeAggregation.ts`, `GraphView.tsx:594`), selection
+emphasis values (`GraphView.tsx:1290`, `CustomNode.tsx:111`), `fitView` reveal
+(`GraphView.tsx:210`), pane-click deselect (`:1518`), NodeInfo directional-verb rows
+(`NodeInfo.tsx:526`). Like UA: no default arrowheads, no edge hover — direction via directed
+aggregation + the panel verbs; the arrowhead appears only on emphasized edges.
+
+**Tests added/updated (all pass):** `geometry.test.ts` (boundary clipping both ends);
+`lod.test.ts` (+noise-floor marking/omission, +decl-label threshold + slice flag);
+`edge-layer.test.tsx` (+clipped `EdgeGeometry` passed to `EdgePath`, +count-label-only-on-aggregated,
++selection emphasis edge-selected/edge-faded partition, +relation label on selected sym-sym);
+`focused-evidence.test.tsx` (directional verbs + click-focus + provenance); `selection.test.ts`
+(`nodeSelectionClassName`); `spike-app.test.tsx` (+click → edge-selected + evidence panel verbs).
+Naming gate re-scans the new panel strings — green.
+
+**Verify:** `pnpm --filter @contexa/guide test` → 13 files / **65 tests** pass; `pnpm -r typecheck`
+clean (core + cli + guide); `pnpm build` succeeds with all four variants; `pnpm gen` unchanged
+(1327 KiB); cli suite still 43 pass. Node-side no gross regression: compile 18.9 ms, slice worst
+8.9 ms at real scale (clipping/labels are renderer-side). Browser rendering is for the reviewer's
+re-drive.
+
+---
+
 ## What was built
 
 `packages/guide/` — new package `@contexa/guide` (private, not published).

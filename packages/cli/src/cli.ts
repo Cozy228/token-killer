@@ -41,6 +41,7 @@ import {
   type Store,
 } from "@contexa/core";
 import { runMcp } from "./mcp.ts";
+import { runGuide } from "./guide/server.ts";
 
 /** Cold-path budget: large enough for a full first-call catch-up (§4.4). The
  *  engine's first-call gate uses `catchupGateMs`, so raise both together. */
@@ -384,8 +385,9 @@ Commands (available now):
   memory          List memory entries / lifecycle (confirm|retire|review)
   push            Render + place the ≤1KB context block (AGENTS.md + CLAUDE.md);
                   push pin|veto <id> edits .contexa/push.jsonc; --dry-run / --if-changed
+  guide           Serve the loopback code-Atlas guide (--fixture, --idle-ms <ms>)
 
-More commands (guide/import) land in later M1 slices.
+More commands (import) land in later M1 slices.
 `;
 
 export function run(argv: string[], io: RunIo): number | Promise<number> {
@@ -424,6 +426,18 @@ export function run(argv: string[], io: RunIo): number | Promise<number> {
     }
     case "push":
       return cmdPush(io, args);
+    case "guide": {
+      // `ctx guide` (M3 slice 5b): loopback-only guide server + read-only data.
+      const idleRaw = args.flags["idle-ms"]?.[0];
+      const idleMs = idleRaw !== undefined && idleRaw !== "" ? Number(idleRaw) : undefined;
+      return runGuide(
+        { out: io.out, home: io.home, projectDir: io.projectDir },
+        {
+          fixture: args.flags.fixture !== undefined,
+          ...(idleMs !== undefined && Number.isFinite(idleMs) ? { idleMs } : {}),
+        },
+      );
+    }
     case "import":
       return cmdImport(io, args);
     case undefined:

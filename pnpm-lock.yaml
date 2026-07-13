@@ -47,6 +47,9 @@ importers:
       '@contexa/core':
         specifier: workspace:*
         version: link:../core
+      '@contexa/guide':
+        specifier: workspace:*
+        version: link:../guide
     devDependencies:
       '@types/node':
         specifier: ^25.9.3

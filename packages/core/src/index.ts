@@ -9,6 +9,7 @@
 // store spine
 export {
   openStore,
+  openStoreReadOnly,
   scrubToProjectRelative,
   LEASE_TTL_MS,
   MEMORY_GIST_MAX_CHARS,

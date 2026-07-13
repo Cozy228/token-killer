@@ -2,12 +2,9 @@
 // upstream sees the GraphRenderer contract, never React Flow types.
 //
 // Edges are drawn by our own SVG layer inside the viewport transform, NOT by
-// React Flow's edge system. Reason: RF v12 will not route an edge until both
-// endpoint nodes expose measured Handle bounds; our custom lot/decl nodes have
-// no handles, so RF silently dropped every edge. Our edges are precomputed
-// straight segments from rect geometry, so one SVG layer (with non-scaling
-// strokes) is simpler, faster (one element tree, not N components), keeps the
-// D12 seam honest, and feeds variant.EdgePath directly.
+// React Flow's edge system (RF v12 drops handle-less custom nodes). Our edges
+// are precomputed straight segments; one SVG layer with non-scaling strokes is
+// simpler, faster, keeps the D12 seam honest, and feeds variant.EdgePath.
 
 import { memo, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
@@ -22,32 +19,51 @@ import {
   type NodeTypes,
 } from "@xyflow/react";
 import "@xyflow/react/dist/style.css";
-import type { AtlasNode } from "../atlas/types.js";
+import { clipEdge } from "../atlas/geometry.js";
+import type { AtlasEdge, AtlasNode } from "../atlas/types.js";
 import type { EdgeGeometry } from "../variants/types.js";
-import { UNIT, edgeKey, type GraphRendererProps, type LitState, type RendererApi } from "./GraphRenderer.js";
+import {
+  UNIT,
+  edgeKey,
+  nodeSelectionClassName,
+  type GraphRendererProps,
+  type LitState,
+  type RendererApi,
+} from "./GraphRenderer.js";
 
 interface AtlasNodeData extends Record<string, unknown> {
   atlas: AtlasNode;
   lit: boolean;
   dimmed: boolean;
   focused: boolean;
+  showDeclLabel: boolean;
   render: GraphRendererProps["variant"]["NodeContent"];
 }
 
 type AtlasFlowNode = Node<AtlasNodeData, "atlas">;
 
-// Memoized so an unchanged node (identical lit/dimmed/focused/atlas) does not
-// re-render during a focus-only or viewport change (defect 3).
+// Selection fade/neighbor/select live as classes on the React Flow node WRAPPER
+// (.react-flow__node.node-faded etc.), so every variant inherits the R4-1
+// emphasis from substrate CSS without a variant edit.
 const AtlasNodeComp = memo(
   function AtlasNodeComp({ data }: NodeProps<AtlasFlowNode>) {
     const Content = data.render;
-    return <Content node={data.atlas} lit={data.lit} dimmed={data.dimmed} focused={data.focused} />;
+    return (
+      <Content
+        node={data.atlas}
+        lit={data.lit}
+        dimmed={data.dimmed}
+        focused={data.focused}
+        showDeclLabel={data.showDeclLabel}
+      />
+    );
   },
   (prev, next) =>
     prev.data.atlas === next.data.atlas &&
     prev.data.lit === next.data.lit &&
     prev.data.dimmed === next.data.dimmed &&
     prev.data.focused === next.data.focused &&
+    prev.data.showDeclLabel === next.data.showDeclLabel &&
     prev.data.render === next.data.render,
 );
 
@@ -57,36 +73,45 @@ function zIndexFor(kind: AtlasNode["kind"]): number {
   return kind === "folder" ? 0 : kind === "file" ? 1 : 2;
 }
 
-function center(n: AtlasNode): { x: number; y: number } {
-  return { x: (n.rect.x + n.rect.w / 2) * UNIT, y: (n.rect.y + n.rect.h / 2) * UNIT };
+function isAggregated(edge: AtlasEdge): boolean {
+  // Aggregated rollup edges have folder/file endpoints; raw call edges are sym->sym.
+  return !edge.src.startsWith("sym:") || !edge.dst.startsWith("sym:");
 }
 
-/**
- * SVG layer rendered inside the viewport transform. Draws:
- *  - lit region overlays (litVisibleIds) so the trace is unmistakable at far
- *    zoom (non-scaling stroke + light tint), and
- *  - every slice edge as a straight segment, delegating to variant.EdgePath
- *    when present, with edge-lit / edge-dimmed / edge-<kind> classes on the SVG
- *    element so variant CSS can hook them.
- * Strokes use vector-effect: non-scaling-stroke so they stay legible at any zoom.
- */
 export function EdgeLayer(props: {
   slice: GraphRendererProps["slice"];
   litState: LitState;
   variant: GraphRendererProps["variant"];
+  focusedId: string | null;
+  hoveredId: string | null;
 }) {
-  const { slice, litState, variant } = props;
-  const centers = useMemo(() => {
+  const { slice, litState, variant, focusedId, hoveredId } = props;
+  const nodeById = useMemo(() => {
     const m = new Map<string, AtlasNode>();
     for (const n of slice.nodes) m.set(n.id, n);
     return m;
   }, [slice.nodes]);
 
   const EdgePath = variant.EdgePath;
+  const selectionActive = focusedId != null;
 
   return (
     <svg className="edge-layer" style={{ position: "absolute", overflow: "visible", pointerEvents: "none" }}>
-      {/* Lit region overlays first (painted under the edges). */}
+      <defs>
+        <marker
+          id="atlas-arrow"
+          markerWidth="9"
+          markerHeight="9"
+          refX="7"
+          refY="4.5"
+          orient="auto"
+          markerUnits="userSpaceOnUse"
+        >
+          <path d="M0,0 L9,4.5 L0,9 z" className="atlas-arrowhead" />
+        </marker>
+      </defs>
+
+      {/* Lit region overlays (painted under the edges). */}
       {litState.hasEvent
         ? slice.nodes
             .filter((n) => litState.litNodeIds.has(n.id))
@@ -102,39 +127,86 @@ export function EdgeLayer(props: {
               />
             ))
         : null}
+
       {slice.edges.map((e) => {
-        const src = centers.get(e.src);
-        const dst = centers.get(e.dst);
+        const src = nodeById.get(e.src);
+        const dst = nodeById.get(e.dst);
         if (!src || !dst) return null;
-        const a = center(src);
-        const b = center(dst);
+        const srcPx = { x: src.rect.x * UNIT, y: src.rect.y * UNIT, w: src.rect.w * UNIT, h: src.rect.h * UNIT };
+        const dstPx = { x: dst.rect.x * UNIT, y: dst.rect.y * UNIT, w: dst.rect.w * UNIT, h: dst.rect.h * UNIT };
+        const clip = clipEdge(srcPx, dstPx); // endpoints at rect boundaries (R4-2a)
         const key = edgeKey(e);
-        // The slice edge carries `lit` (aggregation-aware, defect 2).
+
         const lit = litState.hasEvent && e.lit === true;
-        const dimmed = litState.hasEvent && !lit;
-        const strokeWidth = (lit ? 2.5 : 1) + Math.log2(e.count + 1);
-        const cls = ["atlas-edge", `edge-${e.kind}`, lit ? "edge-lit" : "", dimmed ? "edge-dimmed" : ""]
+        const selAdj = selectionActive && (e.src === focusedId || e.dst === focusedId);
+        const hovAdj = hoveredId != null && (e.src === hoveredId || e.dst === hoveredId);
+        const faded = selectionActive && !selAdj; // selection wins over event dim (R4-1)
+        const dimmed = !selectionActive && litState.hasEvent && !lit;
+        const belowHidden = e.belowFloor === true && !lit && !selAdj && !hovAdj;
+        const emphasized = selAdj || lit;
+        const aggregated = isAggregated(e);
+
+        const strokeWidth = selAdj ? 2.5 : lit ? 2.5 + Math.log2(e.count + 1) : 1 + Math.log2(e.count + 1);
+        const cls = [
+          "atlas-edge",
+          `edge-${e.kind}`,
+          lit ? "edge-lit" : "",
+          selAdj ? "edge-selected" : "",
+          faded ? "edge-faded" : "",
+          hovAdj && !selAdj ? "edge-hover" : "",
+          dimmed ? "edge-dimmed" : "",
+          belowHidden ? "edge-belowfloor" : "",
+        ]
           .filter(Boolean)
           .join(" ");
-        const geometry: EdgeGeometry = { x1: a.x, y1: a.y, x2: b.x, y2: b.y, strokeWidth };
-        if (EdgePath) {
-          return (
-            <g key={key} className={cls}>
-              {EdgePath(e, geometry)}
-            </g>
-          );
-        }
+
+        const geometry: EdgeGeometry = {
+          x1: clip.x1,
+          y1: clip.y1,
+          x2: clip.x2,
+          y2: clip.y2,
+          strokeWidth,
+          clippedX1: clip.x1,
+          clippedY1: clip.y1,
+          clippedX2: clip.x2,
+          clippedY2: clip.y2,
+          midX: clip.midX,
+          midY: clip.midY,
+          count: e.count,
+          direction: "src->dst",
+        };
+
+        // Label policy (R4-2b): aggregated edges get an always-on count plate;
+        // raw sym->sym edges show a relation-kind label only when selected.
+        const showCount = aggregated && !belowHidden;
+        const showRelation = !aggregated && selAdj;
+
         return (
-          <line
-            key={key}
-            className={cls}
-            x1={a.x}
-            y1={a.y}
-            x2={b.x}
-            y2={b.y}
-            strokeWidth={strokeWidth}
-            vectorEffect="non-scaling-stroke"
-          />
+          <g key={key} className={cls}>
+            {EdgePath ? (
+              EdgePath(e, geometry)
+            ) : (
+              <line
+                x1={clip.x1}
+                y1={clip.y1}
+                x2={clip.x2}
+                y2={clip.y2}
+                strokeWidth={strokeWidth}
+                vectorEffect="non-scaling-stroke"
+                markerEnd={emphasized ? "url(#atlas-arrow)" : undefined}
+              />
+            )}
+            {showCount ? (
+              <text className="edge-count" x={clip.midX} y={clip.midY} textAnchor="middle" dominantBaseline="central">
+                {e.count}
+              </text>
+            ) : null}
+            {showRelation ? (
+              <text className="edge-relation" x={clip.midX} y={clip.midY - 2} textAnchor="middle">
+                {e.kind}
+              </text>
+            ) : null}
+          </g>
         );
       })}
     </svg>
@@ -147,7 +219,6 @@ interface Transform {
   zoom: number;
 }
 
-/** Center + fit a world-unit viewport into a pane, as a React Flow transform. */
 function worldToTransform(vp: GraphRendererProps["initialViewport"], paneW: number, paneH: number): Transform {
   const w = Math.max(vp.w, 1) * UNIT;
   const h = Math.max(vp.h, 1) * UNIT;
@@ -158,10 +229,22 @@ function worldToTransform(vp: GraphRendererProps["initialViewport"], paneW: numb
 }
 
 function Inner(props: GraphRendererProps) {
-  const { slice, litState, focusedId, variant, initialViewport, onFocus, onViewportChange, fitRequest, onApiReady } =
-    props;
+  const {
+    slice,
+    litState,
+    focusedId,
+    variant,
+    initialViewport,
+    onFocus,
+    onViewportChange,
+    fitRequest,
+    onApiReady,
+    onClearSelection,
+    onDrill,
+  } = props;
   const wrapperRef = useRef<HTMLDivElement>(null);
   const rf = useReactFlow();
+  const [hoveredId, setHoveredId] = useState<string | null>(null);
 
   // Measure the pane BEFORE first mounting React Flow so the event viewport can
   // be handed in as a deterministic `defaultViewport` (no identity-scale race).
@@ -183,24 +266,39 @@ function Inner(props: GraphRendererProps) {
     return;
   }, []);
 
-  // Captured once per pane; the first paint uses this exact transform.
   const initialViewportRef = useRef(initialViewport);
   const defaultTransform = useMemo<Transform>(
     () => (pane ? worldToTransform(initialViewportRef.current, pane.w, pane.h) : { x: 0, y: 0, zoom: 1 }),
     [pane],
   );
 
-  // Stable-identity node cache: reuse the exact node object when nothing that
-  // affects its render changed, so React Flow reconciles only changed nodes.
+  const setZoomVar = useCallback((zoom: number) => {
+    wrapperRef.current?.style.setProperty("--zoom", String(zoom));
+  }, []);
+
+  // Selection neighbor set (endpoints of the selected node's direct edges, R4-1).
+  const neighborIds = useMemo(() => {
+    const set = new Set<string>();
+    if (focusedId == null) return set;
+    for (const e of slice.edges) {
+      if (e.src === focusedId) set.add(e.dst);
+      else if (e.dst === focusedId) set.add(e.src);
+    }
+    return set;
+  }, [slice.edges, focusedId]);
+
   const nodeCacheRef = useRef<Map<string, AtlasFlowNode>>(new Map());
   const nodes = useMemo<AtlasFlowNode[]>(() => {
     const cache = nodeCacheRef.current;
     const next = new Map<string, AtlasFlowNode>();
     const out: AtlasFlowNode[] = [];
+    const selectionActive = focusedId != null;
     for (const n of slice.nodes) {
       const lit = litState.hasEvent && litState.litNodeIds.has(n.id);
-      const dimmed = litState.hasEvent && !lit;
+      const dimmed = !selectionActive && litState.hasEvent && !lit;
       const focused = n.id === focusedId;
+      const showDeclLabel = n.kind === "decl" && slice.declLabelsVisible;
+      const className = nodeSelectionClassName(n.id, focusedId, neighborIds);
       const cached = cache.get(n.id);
       let node: AtlasFlowNode;
       if (
@@ -209,6 +307,8 @@ function Inner(props: GraphRendererProps) {
         cached.data.lit === lit &&
         cached.data.dimmed === dimmed &&
         cached.data.focused === focused &&
+        cached.data.showDeclLabel === showDeclLabel &&
+        cached.className === className &&
         cached.data.render === variant.NodeContent
       ) {
         node = cached;
@@ -223,7 +323,8 @@ function Inner(props: GraphRendererProps) {
           selectable: true,
           connectable: false,
           zIndex: zIndexFor(n.kind),
-          data: { atlas: n, lit, dimmed, focused, render: variant.NodeContent },
+          className,
+          data: { atlas: n, lit, dimmed, focused, showDeclLabel, render: variant.NodeContent },
         };
       }
       next.set(n.id, node);
@@ -231,23 +332,22 @@ function Inner(props: GraphRendererProps) {
     }
     nodeCacheRef.current = next;
     return out;
-  }, [slice.nodes, litState, focusedId, variant]);
+  }, [slice.nodes, slice.declLabelsVisible, litState, focusedId, neighborIds, variant]);
 
   const emitViewport = useCallback(() => {
     const el = wrapperRef.current;
     if (!el) return;
     const { x, y, zoom } = rf.getViewport();
+    setZoomVar(zoom);
     const w = el.clientWidth || 1000;
     const h = el.clientHeight || 700;
     onViewportChange({ x: -x / zoom / UNIT, y: -y / zoom / UNIT, w: w / zoom / UNIT, h: h / zoom / UNIT }, zoom);
-  }, [rf, onViewportChange]);
+  }, [rf, onViewportChange, setZoomVar]);
 
-  // Fit on explicit request only (never fights the event viewport on mount).
   useEffect(() => {
     if (fitRequest > 0) rf.fitView({ duration: 200 });
   }, [fitRequest, rf]);
 
-  // Imperative API for the app (event viewport, fit, sweep).
   useEffect(() => {
     if (!onApiReady) return;
     const api: RendererApi = {
@@ -256,6 +356,29 @@ function Inner(props: GraphRendererProps) {
       },
       fitView() {
         rf.fitView({ duration: 200 });
+      },
+      revealNode(rect, minPx = 24) {
+        const el = wrapperRef.current;
+        if (!el) return false;
+        const { x, y, zoom } = rf.getViewport();
+        const paneW = el.clientWidth || 1000;
+        const paneH = el.clientHeight || 700;
+        const sx = rect.x * UNIT * zoom + x;
+        const sy = rect.y * UNIT * zoom + y;
+        const sw = rect.w * UNIT * zoom;
+        const sh = rect.h * UNIT * zoom;
+        const offscreen = sx + sw < 0 || sy + sh < 0 || sx > paneW || sy > paneH;
+        if (!offscreen && sw >= minPx) return false;
+        const fitZoom = Math.min(paneW / (rect.w * UNIT), paneH / (rect.h * UNIT)) * 0.7; // padding 0.3
+        const maxZoom = Math.max(zoom, 1.2);
+        const targetZoom = Math.max(0.02, Math.min(fitZoom, maxZoom, 4));
+        const cx = (rect.x + rect.w / 2) * UNIT;
+        const cy = (rect.y + rect.h / 2) * UNIT;
+        rf.setViewport(
+          { x: paneW / 2 - cx * targetZoom, y: paneH / 2 - cy * targetZoom, zoom: targetZoom },
+          { duration: 400 },
+        );
+        return true;
       },
       runSweep(onFps) {
         const el = wrapperRef.current;
@@ -266,6 +389,8 @@ function Inner(props: GraphRendererProps) {
     };
     onApiReady(api);
   }, [rf, onApiReady]);
+
+  const hovered = hoveredId != null ? slice.nodes.find((n) => n.id === hoveredId) ?? null : null;
 
   return (
     <div ref={wrapperRef} className="graph-wrapper">
@@ -283,21 +408,37 @@ function Inner(props: GraphRendererProps) {
           minZoom={0.02}
           maxZoom={4}
           onInit={() => {
-            // Belt-and-braces: re-apply the event viewport once RF is initialized,
-            // then sync app state to the true transform in a single pass.
             const iv = initialViewportRef.current;
             rf.fitBounds({ x: iv.x * UNIT, y: iv.y * UNIT, width: iv.w * UNIT, height: iv.h * UNIT }, { duration: 0 });
             emitViewport();
           }}
           onNodeClick={(_e, node) => onFocus(node.id)}
+          onNodeDoubleClick={(_e, node) => onDrill?.(node.id)}
+          onNodeMouseEnter={(_e, node) => setHoveredId(node.id)}
+          onNodeMouseLeave={() => setHoveredId(null)}
+          onPaneClick={() => onClearSelection?.()}
+          onMove={(_e, vp) => setZoomVar(vp.zoom)}
           onMoveEnd={() => emitViewport()}
           proOptions={{ hideAttribution: true }}
         >
           <Background gap={UNIT} />
           <ViewportPortal>
-            <EdgeLayer slice={slice} litState={litState} variant={variant} />
+            <EdgeLayer
+              slice={slice}
+              litState={litState}
+              variant={variant}
+              focusedId={focusedId}
+              hoveredId={hoveredId}
+            />
           </ViewportPortal>
         </ReactFlow>
+      ) : null}
+      {hovered ? (
+        <div className="hover-readout" aria-hidden="true">
+          <span className="hr-kind">{hovered.kind}</span>
+          <span className="hr-name">{hovered.name}</span>
+          <span className="hr-path">{hovered.path}</span>
+        </div>
       ) : null}
     </div>
   );
@@ -305,10 +446,6 @@ function Inner(props: GraphRendererProps) {
 
 const NO_EDGES: Edge[] = [];
 
-/**
- * Scripted ~3 s viewport tour. Pans by a visible fraction of the pane and
- * oscillates the zoom, sampling fps ONLY across the animation window.
- */
 function runViewportSweep(
   rf: ReturnType<typeof useReactFlow>,
   onFps: (fps: number) => void,

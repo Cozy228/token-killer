@@ -18,8 +18,10 @@ import {
 } from "../perf.js";
 import { edgeKey, GraphRenderer, type LitState, type RendererApi } from "./GraphRenderer.js";
 import { EvidenceRail } from "./EvidenceRail.js";
+import { FocusedEvidence } from "./FocusedEvidence.js";
 import { StateScreen, type StateScreenKind } from "./StateScreen.js";
 import { selectVariant, variants } from "../variants/registry.js";
+import { defaultDataSource, type GuideDataSource } from "../data/source.js";
 
 declare global {
   interface Window {
@@ -55,13 +57,15 @@ interface LoadedData {
   jsonBytes: number;
 }
 
-export function SpikeApp() {
+export function SpikeApp({ dataSource }: { dataSource?: GuideDataSource } = {}) {
   const perfRef = useRef<PerfRecorder>(createPerfRecorder());
   const perf = perfRef.current;
+  const sourceRef = useRef<GuideDataSource>(dataSource ?? defaultDataSource());
   const apiRef = useRef<RendererApi | null>(null);
   const firstPaintDone = useRef(false);
   const appliedProjectionRef = useRef<string | null>(null);
   const lastVpRef = useRef({ bucket: -1, cx: Number.NaN, cy: Number.NaN });
+  const lastFitIdRef = useRef<string | null>(null);
 
   const [hashQuery, setHashQuery] = useState<HashQuery>(() => parseHashQuery(window.location.hash));
   const scale: Scale = hashQuery.scale === "10x" ? "10x" : "current";
@@ -87,18 +91,17 @@ export function SpikeApp() {
     return () => window.removeEventListener("hashchange", onHash);
   }, []);
 
-  // Load corpus once.
+  // Load corpus once, through the GuideDataSource seam (live endpoint first,
+  // static snapshot fallback — D1). The live endpoint runs the R10 startup index
+  // catch-up before it answers, so this is also the "index catch-up" wait.
   useEffect(() => {
     let cancelled = false;
-    fetch("./generated/corpus.json")
-      .then(async (res) => {
-        if (!res.ok) throw new Error(`corpus fetch failed: HTTP ${res.status}`);
-        const text = await res.text();
-        const corpus = JSON.parse(text) as CorpusInput;
-        if (!cancelled) {
-          perf.setJsonBytes(new Blob([text]).size);
-          setRawCorpus(corpus);
-        }
+    sourceRef.current
+      .load()
+      .then((loaded) => {
+        if (cancelled) return;
+        perf.setJsonBytes(loaded.bytes);
+        setRawCorpus(loaded.corpus);
       })
       .catch((err: unknown) => {
         if (!cancelled) setLoadError(err instanceof Error ? err.message : String(err));
@@ -108,9 +111,10 @@ export function SpikeApp() {
     };
   }, [perf]);
 
-  // Compile (measured) whenever the corpus or scale changes.
+  // Compile (measured) whenever the corpus or scale changes. An empty corpus
+  // (no indexed store) renders the `ctx sync` empty state — never compiled.
   useEffect(() => {
-    if (!rawCorpus) return;
+    if (!rawCorpus || rawCorpus.files.length === 0) return;
     const corpus = scale === "10x" ? expand10x(rawCorpus) : rawCorpus;
     const t0 = performance.now();
     const model = compile(corpus);
@@ -278,33 +282,61 @@ export function SpikeApp() {
     });
   }, [data, search, perf]);
 
+  // Selection: highlight + preview. Camera only moves if the node is offscreen
+  // or too small on-screen (R4-1); an already-visible node just gets emphasized.
   const focusNode = useCallback(
     (nodeId: string) => {
       setFocusedId(nodeId);
       const node = data?.model.nodeIndex.get(nodeId);
       if (!node) return;
-      // A code result focuses its declaration/file: seed the slice viewport at a
-      // zoom that REVEALS the target's kind (D9/D14), then move the camera. Seeding
-      // state re-slices immediately so the hit path is present (defect 5).
-      const pad = 8;
+      apiRef.current?.revealNode({ x: node.rect.x, y: node.rect.y, w: node.rect.w, h: node.rect.h });
+    },
+    [data],
+  );
+
+  const clearSelection = useCallback(() => setFocusedId(null), []);
+
+  // Double-click a folder region → fit to it (R4-6). Records the fit so Esc can
+  // back out to the parent region.
+  const drillNode = useCallback(
+    (nodeId: string) => {
+      const node = data?.model.nodeIndex.get(nodeId);
+      if (!node || node.kind !== "folder") return;
+      const pad = 2;
       const target: Viewport = {
         x: node.rect.x - pad,
         y: node.rect.y - pad,
         w: node.rect.w + pad * 2,
         h: node.rect.h + pad * 2,
       };
-      const revealZoom = node.kind === "decl" ? 1.6 : node.kind === "file" ? 1.0 : 0.6;
-      lastVpRef.current = {
-        bucket: zoomBucketIndex(revealZoom),
-        cx: target.x + target.w / 2,
-        cy: target.y + target.h / 2,
-      };
-      setViewport(target);
-      setZoom(revealZoom);
+      lastFitIdRef.current = nodeId;
       apiRef.current?.setViewport(target);
     },
     [data],
   );
+
+  // Esc: first clears selection; a second press backs the fit out to the parent
+  // region of the last drill (cheap back-out, R4-6).
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key !== "Escape") return;
+      if (focusedId != null) {
+        clearSelection();
+        return;
+      }
+      const lastFit = lastFitIdRef.current;
+      const parentId = lastFit ? data?.model.nodeIndex.get(lastFit)?.parent ?? null : null;
+      const parent = parentId ? data?.model.nodeIndex.get(parentId) : null;
+      if (parent) {
+        lastFitIdRef.current = parent.id;
+        apiRef.current?.setViewport({ x: parent.rect.x - 2, y: parent.rect.y - 2, w: parent.rect.w + 4, h: parent.rect.h + 4 });
+      } else {
+        setFitRequest((n) => n + 1);
+      }
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [focusedId, clearSelection, data]);
 
   const runSweep = useCallback(async () => {
     if (!apiRef.current || sweeping) return;
@@ -326,7 +358,14 @@ export function SpikeApp() {
     return <StateScreen state={{ kind: "empty" }} />;
   }
   if (!data || !slice) {
-    return <StateScreen state={{ kind: "loading" }} />;
+    return (
+      <StateScreen
+        state={{
+          kind: "loading",
+          detail: "Loading the code Atlas — the server runs its index catch-up on connect.",
+        }}
+      />
+    );
   }
   // Gate the shell until the event viewport has been seeded, so the renderer and
   // the footer both bind to the SAME (event) slice — never an earlier whole-map
@@ -424,6 +463,8 @@ export function SpikeApp() {
             onFocus={focusNode}
             onViewportChange={onViewportChange}
             fitRequest={fitRequest}
+            onClearSelection={clearSelection}
+            onDrill={drillNode}
             onApiReady={(api) => {
               apiRef.current = api;
               setApiReady(true);
@@ -459,15 +500,20 @@ export function SpikeApp() {
           </div>
         </main>
 
-        {projection?.ok ? (
-          <EvidenceRail
-            rail={projection.p.rail}
-            focusedId={focusedId}
-            onFocus={focusNode}
-            variant={variant}
-            eventLabel={projection.p.event.label}
-          />
-        ) : null}
+        <div className="rail-col">
+          {focusedId ? (
+            <FocusedEvidence model={data.model} selectedId={focusedId} onFocus={focusNode} />
+          ) : null}
+          {projection?.ok ? (
+            <EvidenceRail
+              rail={projection.p.rail}
+              focusedId={focusedId}
+              onFocus={focusNode}
+              variant={variant}
+              eventLabel={projection.p.event.label}
+            />
+          ) : null}
+        </div>
 
         <section className="perf-hud" aria-label="performance budget">
           <h2>Perf HUD — D12 ({scale})</h2>

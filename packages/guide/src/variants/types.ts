@@ -14,6 +14,12 @@ export interface NodeContentProps {
   lit: boolean;
   dimmed: boolean;
   focused: boolean;
+  /** Endpoint of the current selection's direct edges (R4-1). Optional/additive. */
+  neighbor?: boolean;
+  /** Faded because another node is selected and this one is unrelated (R4-1). */
+  faded?: boolean;
+  /** The decl cell is large enough to carry an inline name at this zoom (R4-5). */
+  showDeclLabel?: boolean;
 }
 
 export interface RailStepProps {
@@ -28,6 +34,17 @@ export interface EdgeGeometry {
   x2: number;
   y2: number;
   strokeWidth: number;
+  // Additive (R4-2): endpoints clipped to rect boundaries, midpoint, aggregated
+  // count, and direction. Present when the renderer supplies them; variants that
+  // predate these fields keep working with x1..y2.
+  clippedX1?: number;
+  clippedY1?: number;
+  clippedX2?: number;
+  clippedY2?: number;
+  midX?: number;
+  midY?: number;
+  count?: number;
+  direction?: "src->dst";
 }
 
 export interface VariantSpec {
