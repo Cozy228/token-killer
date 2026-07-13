@@ -40,6 +40,7 @@ import {
   type MemoryStatus,
   type Store,
 } from "@contexa/core";
+import { cmdGuide } from "./guide/command.ts";
 import { runMcp } from "./mcp.ts";
 
 /** Cold-path budget: large enough for a full first-call catch-up (§4.4). The
@@ -378,6 +379,7 @@ Commands (available now):
   install         Register the ctx MCP server + place push blocks, then sync
   doctor          Verify runtime/store/registration/push (--remove-push to strip)
   sync            Ingest all registered sources into the project context base
+  guide           Serve the Code Atlas on 127.0.0.1 until Ctrl-C (--no-open for headless)
   mcp             Run the MCP stdio server (context/search/remember tools)
   remember        Write a memory entry (gist ≤240 chars, optional anchors)
   recall          Expand a handle or entity id
@@ -385,7 +387,7 @@ Commands (available now):
   push            Render + place the ≤1KB context block (AGENTS.md + CLAUDE.md);
                   push pin|veto <id> edits .contexa/push.jsonc; --dry-run / --if-changed
 
-More commands (guide/import) land in later M1 slices.
+More commands (import) land in later M1 slices.
 `;
 
 export function run(argv: string[], io: RunIo): number | Promise<number> {
@@ -422,6 +424,11 @@ export function run(argv: string[], io: RunIo): number | Promise<number> {
         ...(io.home !== undefined ? { home: io.home } : {}),
       });
     }
+    case "guide":
+      // `--no-open` is the headless/CI escape hatch (the `CTX_NO_OPEN` env var, honoured
+      // by the legacy report opener, works too). The server binds 127.0.0.1 on a random
+      // free port and runs in the foreground until Ctrl-C.
+      return cmdGuide(io, { noOpen: args.flags["no-open"] !== undefined });
     case "push":
       return cmdPush(io, args);
     case "import":

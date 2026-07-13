@@ -11,7 +11,7 @@
   ],
   "type": "module",
   "scripts": {
-    "build": "tsdown",
+    "build": "tsdown && node scripts/copy-guide-assets.mjs",
     "typecheck": "tsc --noEmit -p tsconfig.json",
     "test": "vitest run --config vitest.config.ts"
   },
@@ -19,6 +19,7 @@
     "@contexa/core": "workspace:*"
   },
   "devDependencies": {
+    "@contexa/guide": "workspace:*",
     "@types/node": "^25.9.3",
     "tsdown": "^0.22.3",
     "typescript": "rc",

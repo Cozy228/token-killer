@@ -1,0 +1,16 @@
+/* Tailwind 4 (D1). Bundled at build time — no CDN, no remote font, no network at runtime.
+   The system font stack is deliberate: a downloaded webfont would be egress. */
+@import "tailwindcss";
+
+@theme {
+  --font-sans:
+    ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+  --font-mono:
+    ui-monospace, SFMono-Regular, "SF Mono", Menlo, Consolas, "Liberation Mono", monospace;
+}
+
+html,
+body,
+#root {
+  height: 100%;
+}
