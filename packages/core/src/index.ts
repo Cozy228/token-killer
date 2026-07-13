@@ -9,6 +9,9 @@
 // store spine
 export {
   openStore,
+  // The guide server opens the store READ-ONLY: the product is non-mutating, and a
+  // `ctx guide` run must leave zero traces. Implemented since 1i, unexported until M3.
+  openStoreReadOnly,
   scrubToProjectRelative,
   LEASE_TTL_MS,
   MEMORY_GIST_MAX_CHARS,
@@ -364,6 +367,9 @@ export {
   MIN_NODE,
   MIN_SQLITE,
 } from "./install/versions.ts";
+
+// guide projection kernel (M3 K1) — complete logical Atlas + bounded projections
+export * from "./guide/index.ts";
 
 /** Milestone marker kept from slice 1a; the CLI stub prints it until 1i. */
 export const CTX_CORE_SCAFFOLD = "m1-1a" as const;

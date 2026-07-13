@@ -138,6 +138,14 @@ export interface Store {
   setLink(input: LinkInput): void;
   linksFrom(src: string, predicate?: string): Link[];
   linksTo(dst: string, predicate?: string): Link[];
+  /**
+   * Every link of one predicate. The guide's relation index needs a BULK read:
+   * walking adjacency per entity would silently miss any link whose endpoint has
+   * no entity row (a retired symbol's `renamed-to`, a commit's `touches` onto a
+   * symbol that was never entity-ised), and a silently missing link is exactly
+   * the completeness defect D33 outlaws.
+   */
+  linksByPredicate(predicate: string): Link[];
   flagLinksStale(entityId: string): number;
   /**
    * Delete the resolved links from `src` (optionally one predicate) — links are
@@ -552,6 +560,11 @@ class SqliteStore implements Store {
         : this.#db.prepare("SELECT * FROM links WHERE dst = ? AND predicate = ?");
     const params = predicate === undefined ? [dst] : [dst, predicate];
     return [...iterateRows(stmt, ...params)].map((r) => linkFromRow(r as Record<string, unknown>));
+  }
+
+  linksByPredicate(predicate: string): Link[] {
+    const stmt = this.#db.prepare("SELECT * FROM links WHERE predicate = ?");
+    return [...iterateRows(stmt, predicate)].map((r) => linkFromRow(r as Record<string, unknown>));
   }
 
   flagLinksStale(entityId: string): number {

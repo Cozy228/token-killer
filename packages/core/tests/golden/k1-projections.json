@@ -1,0 +1,700 @@
+{
+  "atlas": {
+    "files": [
+      {
+        "id": "file:app/lonely.ts",
+        "path": "app/lonely.ts",
+        "name": "lonely.ts",
+        "dir": "app",
+        "scope": "app",
+        "declarationIds": [
+          "sym:app/lonely.ts#lonely"
+        ],
+        "synthetic": false,
+        "contentHash": "bebf5223a062d5dad7852a630f0e686db1833af265a4aca123e039c89433719cc3871c91ceb2c46b5c7f8bfdccecffbce0eb6a45ca2650eca57459e5e7183e26"
+      },
+      {
+        "id": "file:app/main.ts",
+        "path": "app/main.ts",
+        "name": "main.ts",
+        "dir": "app",
+        "scope": "app",
+        "declarationIds": [
+          "sym:app/main.ts#main"
+        ],
+        "synthetic": false,
+        "contentHash": "e5b08c1c96af848d815636b3e907d8c486edf2fe28225cac1f4314a0bddabb9403c0f98de253171dbc7ee970f58d0e5943e77c4f05339a345d7141230c569e29"
+      },
+      {
+        "id": "file:core/util.ts",
+        "path": "core/util.ts",
+        "name": "util.ts",
+        "dir": "core",
+        "scope": "core",
+        "declarationIds": [
+          "sym:core/util.ts#core",
+          "sym:core/util.ts#helper",
+          "sym:core/util.ts#orphan"
+        ],
+        "synthetic": false,
+        "contentHash": "91a65f7884b0c50b7e324e7c2d9feeffea2351ebd731a3cd58343601796df14699eda8cef1c9021b49b783e68a426733c360454978877260973c7fc612c4f965"
+      }
+    ],
+    "declarations": [
+      {
+        "id": "sym:app/lonely.ts#lonely",
+        "name": "lonely",
+        "qualified": "lonely",
+        "symbolKind": "function",
+        "lang": "typescript",
+        "fileId": "file:app/lonely.ts",
+        "path": "app/lonely.ts",
+        "span": [
+          1,
+          1
+        ],
+        "scope": "app"
+      },
+      {
+        "id": "sym:app/main.ts#main",
+        "name": "main",
+        "qualified": "main",
+        "symbolKind": "function",
+        "lang": "typescript",
+        "fileId": "file:app/main.ts",
+        "path": "app/main.ts",
+        "span": [
+          2,
+          2
+        ],
+        "scope": "app"
+      },
+      {
+        "id": "sym:core/util.ts#core",
+        "name": "core",
+        "qualified": "core",
+        "symbolKind": "function",
+        "lang": "typescript",
+        "fileId": "file:core/util.ts",
+        "path": "core/util.ts",
+        "span": [
+          2,
+          2
+        ],
+        "scope": "core"
+      },
+      {
+        "id": "sym:core/util.ts#helper",
+        "name": "helper",
+        "qualified": "helper",
+        "symbolKind": "function",
+        "lang": "typescript",
+        "fileId": "file:core/util.ts",
+        "path": "core/util.ts",
+        "span": [
+          1,
+          1
+        ],
+        "scope": "core"
+      },
+      {
+        "id": "sym:core/util.ts#orphan",
+        "name": "orphan",
+        "qualified": "orphan",
+        "symbolKind": "function",
+        "lang": "typescript",
+        "fileId": "file:core/util.ts",
+        "path": "core/util.ts",
+        "span": [
+          3,
+          3
+        ],
+        "scope": "core"
+      }
+    ],
+    "scopes": [
+      "app",
+      "core"
+    ],
+    "disclosure": {
+      "lotsInAtlas": 3,
+      "lotsOutsideAtlas": 0,
+      "fileEntitiesInStore": 3,
+      "filesWithDeclarations": 3,
+      "syntheticFileLots": 0,
+      "declarationsTotal": 5,
+      "symbolsInStore": 5,
+      "declarationsRetired": 0,
+      "callsInAtlas": 2,
+      "callsWithRetiredEnd": 0,
+      "relationsTotal": 8,
+      "relationsWithUnresolvedEndpoint": 0,
+      "excludedRelationKinds": []
+    }
+  },
+  "overview": {
+    "kind": "overview",
+    "containers": [
+      {
+        "id": "scope:app",
+        "grain": "scope",
+        "name": "app",
+        "path": "app",
+        "scope": "app",
+        "declarations": [],
+        "declarationCount": 2,
+        "omittedDeclarations": 0,
+        "omittedNoVisibleRoute": 0,
+        "expanded": false,
+        "degree": {
+          "inbound": 0,
+          "outbound": 2
+        },
+        "noVisibleRoute": false,
+        "fileCount": 2
+      },
+      {
+        "id": "scope:core",
+        "grain": "scope",
+        "name": "core",
+        "path": "core",
+        "scope": "core",
+        "declarations": [],
+        "declarationCount": 3,
+        "omittedDeclarations": 0,
+        "omittedNoVisibleRoute": 0,
+        "expanded": false,
+        "degree": {
+          "inbound": 2,
+          "outbound": 0
+        },
+        "noVisibleRoute": false,
+        "fileCount": 1
+      }
+    ],
+    "boundaries": [],
+    "edges": [
+      {
+        "id": "scope:app->scope:core:calls",
+        "src": "scope:app",
+        "dst": "scope:core",
+        "srcGrain": "scope",
+        "dstGrain": "scope",
+        "layer": "backbone",
+        "claimSet": {
+          "relationKind": "calls",
+          "count": 1,
+          "constituentClaimIds": [
+            7
+          ],
+          "constituents": [
+            {
+              "src": "sym:app/main.ts#main",
+              "dst": "sym:core/util.ts#core"
+            }
+          ],
+          "evidenceRevisions": [],
+          "evidenceGenerations": [
+            1
+          ],
+          "revisionsUnresolved": 1,
+          "derivations": [
+            "OBSERVED"
+          ],
+          "confidenceSummary": {
+            "weakest": "LIKELY",
+            "tiers": [
+              "LIKELY"
+            ]
+          },
+          "freshness": "fresh",
+          "disclosure": "local",
+          "omittedCount": 1
+        }
+      },
+      {
+        "id": "scope:app->scope:core:imports",
+        "src": "scope:app",
+        "dst": "scope:core",
+        "srcGrain": "scope",
+        "dstGrain": "scope",
+        "layer": "backbone",
+        "claimSet": {
+          "relationKind": "imports",
+          "count": 1,
+          "constituentClaimIds": [
+            3
+          ],
+          "constituents": [
+            {
+              "src": "file:app/main.ts",
+              "dst": "file:core/util.ts"
+            }
+          ],
+          "evidenceRevisions": [],
+          "evidenceGenerations": [
+            1
+          ],
+          "revisionsUnresolved": 1,
+          "derivations": [
+            "OBSERVED"
+          ],
+          "confidenceSummary": {
+            "weakest": "LIKELY",
+            "tiers": [
+              "LIKELY"
+            ]
+          },
+          "freshness": "fresh",
+          "disclosure": "local",
+          "omittedCount": 1
+        }
+      }
+    ],
+    "groups": [
+      {
+        "id": "group:0",
+        "memberIds": [
+          "scope:app",
+          "scope:core"
+        ],
+        "size": 2
+      }
+    ],
+    "noVisibleRoute": {
+      "containerIds": [],
+      "omittedContainerCount": 0,
+      "declarations": []
+    },
+    "omitted": {
+      "containers": 0,
+      "declarations": 0,
+      "edges": 0,
+      "boundaryMembers": 0,
+      "notes": []
+    }
+  },
+  "scope": {
+    "kind": "scope",
+    "subject": {
+      "id": "core",
+      "grain": "scope",
+      "name": "core",
+      "path": "core"
+    },
+    "containers": [
+      {
+        "id": "file:core/util.ts",
+        "grain": "file",
+        "name": "util.ts",
+        "path": "core/util.ts",
+        "scope": "core",
+        "declarations": [
+          {
+            "id": "sym:core/util.ts#helper",
+            "name": "helper",
+            "symbolKind": "function",
+            "path": "core/util.ts",
+            "span": [
+              1,
+              1
+            ],
+            "degree": {
+              "inbound": 1,
+              "outbound": 0
+            },
+            "noVisibleRoute": false
+          },
+          {
+            "id": "sym:core/util.ts#core",
+            "name": "core",
+            "symbolKind": "function",
+            "path": "core/util.ts",
+            "span": [
+              2,
+              2
+            ],
+            "degree": {
+              "inbound": 1,
+              "outbound": 1
+            },
+            "noVisibleRoute": false
+          }
+        ],
+        "declarationCount": 3,
+        "omittedDeclarations": 1,
+        "omittedNoVisibleRoute": 1,
+        "expanded": true,
+        "degree": {
+          "inbound": 1,
+          "outbound": 0
+        },
+        "noVisibleRoute": false
+      }
+    ],
+    "boundaries": [
+      {
+        "id": "boundary:app",
+        "name": "app",
+        "path": "app",
+        "grain": "boundary",
+        "direction": "inbound",
+        "memberCount": 2,
+        "memberIds": [
+          "file:app/main.ts",
+          "sym:app/main.ts#main"
+        ],
+        "reroot": "app"
+      }
+    ],
+    "edges": [
+      {
+        "id": "boundary:app->file:core/util.ts:imports",
+        "src": "boundary:app",
+        "dst": "file:core/util.ts",
+        "srcGrain": "boundary",
+        "dstGrain": "file",
+        "layer": "backbone",
+        "claimSet": {
+          "relationKind": "imports",
+          "count": 1,
+          "constituentClaimIds": [
+            3
+          ],
+          "constituents": [
+            {
+              "src": "file:app/main.ts",
+              "dst": "file:core/util.ts"
+            }
+          ],
+          "evidenceRevisions": [],
+          "evidenceGenerations": [
+            1
+          ],
+          "revisionsUnresolved": 1,
+          "derivations": [
+            "OBSERVED"
+          ],
+          "confidenceSummary": {
+            "weakest": "LIKELY",
+            "tiers": [
+              "LIKELY"
+            ]
+          },
+          "freshness": "fresh",
+          "disclosure": "local",
+          "omittedCount": 1
+        }
+      },
+      {
+        "id": "boundary:app->sym:core/util.ts#core:calls",
+        "src": "boundary:app",
+        "dst": "sym:core/util.ts#core",
+        "srcGrain": "boundary",
+        "dstGrain": "declaration",
+        "layer": "backbone",
+        "claimSet": {
+          "relationKind": "calls",
+          "count": 1,
+          "constituentClaimIds": [
+            7
+          ],
+          "constituents": [
+            {
+              "src": "sym:app/main.ts#main",
+              "dst": "sym:core/util.ts#core"
+            }
+          ],
+          "evidenceRevisions": [],
+          "evidenceGenerations": [
+            1
+          ],
+          "revisionsUnresolved": 1,
+          "derivations": [
+            "OBSERVED"
+          ],
+          "confidenceSummary": {
+            "weakest": "LIKELY",
+            "tiers": [
+              "LIKELY"
+            ]
+          },
+          "freshness": "fresh",
+          "disclosure": "local",
+          "omittedCount": 1
+        }
+      },
+      {
+        "id": "sym:core/util.ts#core->sym:core/util.ts#helper:calls",
+        "src": "sym:core/util.ts#core",
+        "dst": "sym:core/util.ts#helper",
+        "srcGrain": "declaration",
+        "dstGrain": "declaration",
+        "layer": "backbone",
+        "claimSet": {
+          "relationKind": "calls",
+          "count": 1,
+          "constituentClaimIds": [
+            8
+          ],
+          "constituents": [
+            {
+              "src": "sym:core/util.ts#core",
+              "dst": "sym:core/util.ts#helper"
+            }
+          ],
+          "evidenceRevisions": [],
+          "evidenceGenerations": [
+            1
+          ],
+          "revisionsUnresolved": 1,
+          "derivations": [
+            "OBSERVED"
+          ],
+          "confidenceSummary": {
+            "weakest": "LIKELY",
+            "tiers": [
+              "LIKELY"
+            ]
+          },
+          "freshness": "fresh",
+          "disclosure": "local",
+          "omittedCount": 0
+        }
+      }
+    ],
+    "groups": [
+      {
+        "id": "group:0",
+        "memberIds": [
+          "sym:core/util.ts#core",
+          "sym:core/util.ts#helper"
+        ],
+        "size": 2
+      }
+    ],
+    "noVisibleRoute": {
+      "containerIds": [],
+      "omittedContainerCount": 0,
+      "declarations": [
+        {
+          "containerId": "file:core/util.ts",
+          "declarationIds": [
+            "sym:core/util.ts#orphan"
+          ]
+        }
+      ]
+    },
+    "omitted": {
+      "containers": 0,
+      "declarations": 1,
+      "edges": 0,
+      "boundaryMembers": 2,
+      "notes": [
+        "1 more declarations"
+      ]
+    }
+  },
+  "connections": {
+    "kind": "connections",
+    "subject": {
+      "id": "sym:core/util.ts#core",
+      "grain": "declaration",
+      "name": "core",
+      "path": "core/util.ts"
+    },
+    "anchors": [
+      "sym:core/util.ts#core"
+    ],
+    "containers": [
+      {
+        "id": "file:app/main.ts",
+        "grain": "file",
+        "name": "main.ts",
+        "path": "app/main.ts",
+        "scope": "app",
+        "declarations": [
+          {
+            "id": "sym:app/main.ts#main",
+            "name": "main",
+            "symbolKind": "function",
+            "path": "app/main.ts",
+            "span": [
+              2,
+              2
+            ],
+            "degree": {
+              "inbound": 0,
+              "outbound": 1
+            },
+            "noVisibleRoute": false
+          }
+        ],
+        "declarationCount": 1,
+        "omittedDeclarations": 0,
+        "omittedNoVisibleRoute": 0,
+        "expanded": true,
+        "degree": {
+          "inbound": 0,
+          "outbound": 0
+        },
+        "noVisibleRoute": true
+      },
+      {
+        "id": "file:core/util.ts",
+        "grain": "file",
+        "name": "util.ts",
+        "path": "core/util.ts",
+        "scope": "core",
+        "declarations": [
+          {
+            "id": "sym:core/util.ts#helper",
+            "name": "helper",
+            "symbolKind": "function",
+            "path": "core/util.ts",
+            "span": [
+              1,
+              1
+            ],
+            "degree": {
+              "inbound": 1,
+              "outbound": 0
+            },
+            "noVisibleRoute": false
+          },
+          {
+            "id": "sym:core/util.ts#core",
+            "name": "core",
+            "symbolKind": "function",
+            "path": "core/util.ts",
+            "span": [
+              2,
+              2
+            ],
+            "degree": {
+              "inbound": 1,
+              "outbound": 1
+            },
+            "noVisibleRoute": false
+          }
+        ],
+        "declarationCount": 3,
+        "omittedDeclarations": 1,
+        "omittedNoVisibleRoute": 0,
+        "expanded": true,
+        "degree": {
+          "inbound": 0,
+          "outbound": 0
+        },
+        "noVisibleRoute": true
+      }
+    ],
+    "boundaries": [],
+    "edges": [
+      {
+        "id": "sym:app/main.ts#main->sym:core/util.ts#core:calls",
+        "src": "sym:app/main.ts#main",
+        "dst": "sym:core/util.ts#core",
+        "srcGrain": "declaration",
+        "dstGrain": "declaration",
+        "layer": "backbone",
+        "claimSet": {
+          "relationKind": "calls",
+          "count": 1,
+          "constituentClaimIds": [
+            7
+          ],
+          "constituents": [
+            {
+              "src": "sym:app/main.ts#main",
+              "dst": "sym:core/util.ts#core"
+            }
+          ],
+          "evidenceRevisions": [],
+          "evidenceGenerations": [
+            1
+          ],
+          "revisionsUnresolved": 1,
+          "derivations": [
+            "OBSERVED"
+          ],
+          "confidenceSummary": {
+            "weakest": "LIKELY",
+            "tiers": [
+              "LIKELY"
+            ]
+          },
+          "freshness": "fresh",
+          "disclosure": "local",
+          "omittedCount": 0
+        }
+      },
+      {
+        "id": "sym:core/util.ts#core->sym:core/util.ts#helper:calls",
+        "src": "sym:core/util.ts#core",
+        "dst": "sym:core/util.ts#helper",
+        "srcGrain": "declaration",
+        "dstGrain": "declaration",
+        "layer": "backbone",
+        "claimSet": {
+          "relationKind": "calls",
+          "count": 1,
+          "constituentClaimIds": [
+            8
+          ],
+          "constituents": [
+            {
+              "src": "sym:core/util.ts#core",
+              "dst": "sym:core/util.ts#helper"
+            }
+          ],
+          "evidenceRevisions": [],
+          "evidenceGenerations": [
+            1
+          ],
+          "revisionsUnresolved": 1,
+          "derivations": [
+            "OBSERVED"
+          ],
+          "confidenceSummary": {
+            "weakest": "LIKELY",
+            "tiers": [
+              "LIKELY"
+            ]
+          },
+          "freshness": "fresh",
+          "disclosure": "local",
+          "omittedCount": 0
+        }
+      }
+    ],
+    "groups": [
+      {
+        "id": "group:0",
+        "memberIds": [
+          "sym:app/main.ts#main",
+          "sym:core/util.ts#core",
+          "sym:core/util.ts#helper"
+        ],
+        "size": 3
+      }
+    ],
+    "noVisibleRoute": {
+      "containerIds": [
+        "file:app/main.ts",
+        "file:core/util.ts"
+      ],
+      "omittedContainerCount": 0,
+      "declarations": []
+    },
+    "omitted": {
+      "containers": 0,
+      "declarations": 1,
+      "edges": 0,
+      "boundaryMembers": 0,
+      "notes": [
+        "1 more declarations"
+      ]
+    }
+  }
+}
