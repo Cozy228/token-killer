@@ -25,20 +25,53 @@ interface Reveal {
   showDecls: boolean;
 }
 
-/** Zoom bucket -> which hierarchy levels are readable (D9 semantic zoom). */
-export function revealFor(zoom: number): Reveal {
-  if (zoom < 0.35) return { maxFolderDepth: 1, showFiles: false, showDecls: false };
-  if (zoom < 0.7) return { maxFolderDepth: 2, showFiles: false, showDecls: false };
-  if (zoom < 1.2) return { maxFolderDepth: 99, showFiles: true, showDecls: false };
-  return { maxFolderDepth: 99, showFiles: true, showDecls: true };
+// Semantic-zoom levels (D9). Four discrete reveal levels; the numeric zoom is
+// mapped onto a level with HYSTERESIS so a zoom sitting near a boundary cannot
+// flap the visible slice open/closed. UP[k] = zoom needed to REVEAL level k;
+// DOWN[k] = the LOWER zoom needed to DROP back out of level k. DOWN < UP for
+// every level is the whole point (asserted in tests). The UP thresholds equal
+// the historical single-boundary values, so a fresh (no-history) mapping is
+// byte-for-byte what revealFor() used to return.
+export const ZOOM_UP: readonly number[] = [0, 0.35, 0.7, 1.2];
+export const ZOOM_DOWN: readonly number[] = [0, 0.28, 0.56, 0.96];
+
+const REVEAL_BY_LEVEL: readonly Reveal[] = [
+  { maxFolderDepth: 1, showFiles: false, showDecls: false },
+  { maxFolderDepth: 2, showFiles: false, showDecls: false },
+  { maxFolderDepth: 99, showFiles: true, showDecls: false },
+  { maxFolderDepth: 99, showFiles: true, showDecls: true },
+];
+
+const MAX_LEVEL = REVEAL_BY_LEVEL.length - 1;
+
+/** Reveal spec for a discrete semantic-zoom level (0..3). */
+export function revealForLevel(level: number): Reveal {
+  const clamped = Math.max(0, Math.min(MAX_LEVEL, Math.round(level)));
+  return REVEAL_BY_LEVEL[clamped];
 }
 
-/** Discrete zoom bucket index (0..3) — used for slice-recompute hysteresis. */
+/**
+ * Next semantic-zoom level given the CURRENT level and a new zoom, with
+ * hysteresis: climb only when zoom clears the (higher) UP threshold of the next
+ * level; drop only when zoom falls below the (lower) DOWN threshold of the
+ * current level. Monotone and flap-free — repeatedly calling it inside the dead
+ * band [DOWN[k], UP[k]) returns the same level. Pass current=0 for a fresh map.
+ */
+export function nextZoomLevel(current: number, zoom: number): number {
+  let level = Math.max(0, Math.min(MAX_LEVEL, Math.round(current)));
+  while (level < MAX_LEVEL && zoom >= ZOOM_UP[level + 1]) level++;
+  while (level > 0 && zoom < ZOOM_DOWN[level]) level--;
+  return level;
+}
+
+/** Fresh (history-free) zoom -> level. Equivalent to the old bucket boundaries. */
 export function zoomBucketIndex(zoom: number): number {
-  if (zoom < 0.35) return 0;
-  if (zoom < 0.7) return 1;
-  if (zoom < 1.2) return 2;
-  return 3;
+  return nextZoomLevel(0, zoom);
+}
+
+/** Zoom bucket -> which hierarchy levels are readable (D9 semantic zoom). */
+export function revealFor(zoom: number): Reveal {
+  return revealForLevel(zoomBucketIndex(zoom));
 }
 
 // A 1-unit decl cell is UNIT(14) px wide in world space; a label needs ~44px
@@ -72,6 +105,90 @@ export function fitViewport(model: AtlasModel): Viewport {
   return { x: 0, y: 0, w: 1, h: 1 };
 }
 
+/** Grow a rect by a fraction of its own size on every side (padding). */
+function padRect(r: Viewport, frac: number): Viewport {
+  const gx = r.w * frac;
+  const gy = r.h * frac;
+  return { x: r.x - gx, y: r.y - gy, w: r.w + gx * 2, h: r.h + gy * 2 };
+}
+
+/**
+ * Cold-open viewport (D10): the DENSEST code region touched by the default event
+ * — the folder region containing the most lit FILE lots — padded by `pad`
+ * (default 0.25). NOT the whole-repo lit bbox (which opens the map at ~0.13).
+ * With no lit files (no code activity) it fits the repository.
+ *
+ * "Densest region" is resolved at a fixed folder depth so the frame is a real
+ * neighbourhood, not a single file: each lit file votes for its ancestor folder
+ * at `regionDepth` (default 1 = a top-level area), and the winner's padded rect
+ * is returned. Ties break on the lexicographically smallest region id.
+ */
+export function hotspotViewport(
+  model: AtlasModel,
+  litNodeIds: ReadonlySet<string> | undefined,
+  pad = 0.25,
+  regionDepth = 1,
+): Viewport {
+  if (!litNodeIds || litNodeIds.size === 0) return fitViewport(model);
+
+  const litFiles: AtlasNode[] = [];
+  for (const id of litNodeIds) {
+    const n = model.nodeIndex.get(id);
+    if (n && n.kind === "file") litFiles.push(n);
+  }
+  if (litFiles.length === 0) return fitViewport(model);
+
+  // Each lit file votes for its ancestor folder at regionDepth (or its immediate
+  // parent folder if it is shallower than regionDepth).
+  const regionOf = (file: AtlasNode): AtlasNode | null => {
+    let chosen: AtlasNode | null = null;
+    for (const anc of ancestorsOf(model, file.id)) {
+      if (anc.kind !== "folder") continue;
+      chosen = anc; // ancestorsOf walks nearest -> root; keep updating
+      if (anc.depth === regionDepth) return anc;
+    }
+    return chosen; // shallower than regionDepth: nearest folder toward root
+  };
+
+  const counts = new Map<string, number>();
+  const regionById = new Map<string, AtlasNode>();
+  for (const f of litFiles) {
+    const region = regionOf(f);
+    if (!region) continue;
+    counts.set(region.id, (counts.get(region.id) ?? 0) + 1);
+    regionById.set(region.id, region);
+  }
+  if (counts.size === 0) return fitViewport(model);
+
+  let bestId = "";
+  let bestCount = -1;
+  for (const [id, c] of counts) {
+    if (c > bestCount || (c === bestCount && id < bestId)) {
+      bestCount = c;
+      bestId = id;
+    }
+  }
+  const region = regionById.get(bestId);
+  if (!region) return fitViewport(model);
+  return padRect(region.rect, pad);
+}
+
+/** Dynamic per-frame slice inputs that are NOT part of the static LOD budget. */
+export interface SliceState {
+  /**
+   * Explicit semantic-zoom level (0..3) to render at. When set it overrides the
+   * fresh zoom->level mapping so the caller can carry hysteresis state across
+   * frames (D9 flap-free zoom). Omit for a history-free mapping from `zoom`.
+   */
+  revealLevel?: number;
+  /**
+   * Folder ids whose next hierarchy level is PINNED open regardless of the
+   * current zoom (D9 "click pins an expansion"). A pinned folder's direct
+   * children are revealed even at overview zoom; cleared on Esc/deselect.
+   */
+  pinnedIds?: ReadonlySet<string>;
+}
+
 export function computeSlice(
   model: AtlasModel,
   viewport: Viewport,
@@ -79,13 +196,18 @@ export function computeSlice(
   opts: LodOptions = DEFAULT_LOD,
   litNodeIds?: ReadonlySet<string>,
   litEdgeKeys?: ReadonlySet<string>,
+  state?: SliceState,
 ): VisibleSlice {
-  const reveal = revealFor(zoom);
+  const reveal =
+    state?.revealLevel !== undefined ? revealForLevel(state.revealLevel) : revealFor(zoom);
+  const pinned = state?.pinnedIds;
   const over = overscanViewport(viewport, opts.overscan);
   const cx = viewport.x + viewport.w / 2;
   const cy = viewport.y + viewport.h / 2;
 
   const isRevealed = (n: AtlasNode): boolean => {
+    // A pinned folder's direct children are revealed at any zoom (click-pin, D9).
+    if (n.parent !== null && pinned && pinned.has(n.parent)) return true;
     if (n.kind === "folder") return n.depth <= reveal.maxFolderDepth;
     if (n.kind === "file") return reveal.showFiles;
     return reveal.showDecls;

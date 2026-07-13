@@ -18,6 +18,7 @@ import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, test } from "vitest";
 import { makeFixtureCorpus } from "@contexa/guide/fixture-corpus";
 import { startGuide, type GuideHandle } from "../src/guide/server.ts";
+import { buildGenerationInfo } from "../src/guide/corpus.ts";
 import { assertGuideDist } from "../src/guide/assets.ts";
 
 const fixtureCorpus = makeFixtureCorpus();
@@ -25,6 +26,7 @@ const CORPUS = {
   corpus: fixtureCorpus,
   json: JSON.stringify(fixtureCorpus),
   stale: false,
+  generationJson: JSON.stringify(buildGenerationInfo(fixtureCorpus)),
 };
 
 function makeDist(): string {
@@ -97,6 +99,29 @@ describe("ctx guide server", () => {
     const page = await fetch(`http://127.0.0.1:${h.port}/`, { headers: { cookie } });
     expect(page.status).toBe(200);
     expect(await page.text()).toContain("<div id=root>");
+  });
+
+  test("GET /api/generation returns cheap generation metadata, not the corpus", async () => {
+    const h = await start();
+    const boot = await fetch(h.url, { redirect: "manual" });
+    const cookie = boot.headers.getSetCookie()[0]!.split(";")[0]!;
+
+    // No cookie -> 401 (same auth as every route).
+    expect((await fetch(`http://127.0.0.1:${h.port}/api/generation`)).status).toBe(401);
+
+    const res = await fetch(`http://127.0.0.1:${h.port}/api/generation`, { headers: { cookie } });
+    expect(res.status).toBe(200);
+    expect(res.headers.get("content-type")).toMatch(/application\/json/);
+    const body = JSON.parse(await res.text());
+    // Carries generation identity + cheap counts…
+    expect(body.identity).toBe(
+      `${fixtureCorpus.generations.code}.${fixtureCorpus.generations.git}.` +
+        `${fixtureCorpus.generations.docs}.${fixtureCorpus.generations.memory}`,
+    );
+    expect(body.fileCount).toBe(fixtureCorpus.files.length);
+    expect(typeof body.declCount).toBe("number");
+    // …but NOT the full corpus body (no files array).
+    expect(body.files).toBeUndefined();
   });
 
   test("the bootstrap token is single-use", async () => {

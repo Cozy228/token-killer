@@ -62,10 +62,41 @@ export const defaultCorpusDeps: CorpusDeps = {
   catchupBudgetMs: GUIDE_CATCHUP_BUDGET_MS,
 };
 
+/**
+ * Cheap generation metadata (D10) served at GET /api/generation WITHOUT the full
+ * corpus body, so the reader can be told a new generation exists without swapping
+ * the map. Field names mirror @contexa/guide's `GenerationInfo`.
+ */
+export interface GuideGenerationInfo {
+  generations: CorpusInput["generations"];
+  identity: string;
+  fileCount: number;
+  declCount: number;
+}
+
 export interface GuideCorpusResult {
   corpus: CorpusInput;
   json: string;
   stale: boolean;
+  /** Pre-serialized generation payload for GET /api/generation. */
+  generationJson: string;
+}
+
+/** Deterministic identity string for a generation tuple (matches the frontend). */
+export function generationIdentity(g: CorpusInput["generations"]): string {
+  return `${g.code}.${g.git}.${g.docs}.${g.memory}`;
+}
+
+/** Build the cheap generation payload from a loaded corpus. */
+export function buildGenerationInfo(corpus: CorpusInput): GuideGenerationInfo {
+  let declCount = 0;
+  for (const f of corpus.files) declCount += f.declCount;
+  return {
+    generations: corpus.generations,
+    identity: generationIdentity(corpus.generations),
+    fileCount: corpus.files.length,
+    declCount,
+  };
 }
 
 /**
@@ -123,9 +154,19 @@ export async function loadGuideCorpus(
   if (opts.fixture) {
     // NEVER touches the real store: no opener is called on this path.
     const corpus = deps.fixtureCorpus();
-    return { corpus, json: JSON.stringify(corpus), stale: false };
+    return {
+      corpus,
+      json: JSON.stringify(corpus),
+      stale: false,
+      generationJson: JSON.stringify(buildGenerationInfo(corpus)),
+    };
   }
   const stale = await runCatchup(opts, deps);
   const corpus = loadRealCorpus(opts, deps, stale);
-  return { corpus, json: JSON.stringify(corpus), stale };
+  return {
+    corpus,
+    json: JSON.stringify(corpus),
+    stale,
+    generationJson: JSON.stringify(buildGenerationInfo(corpus)),
+  };
 }

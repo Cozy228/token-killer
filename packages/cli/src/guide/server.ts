@@ -156,6 +156,19 @@ export async function startGuide(opts: StartGuideOptions = {}): Promise<GuideHan
       return;
     }
 
+    // Cheap generation metadata (D10): identity + counts, never the full corpus.
+    // The reader polls this to detect a new generation without swapping the map.
+    if (url.pathname === "/api/generation") {
+      send(
+        res,
+        200,
+        { "Content-Type": "application/json; charset=utf-8", "Cache-Control": "no-store" },
+        corpus.generationJson,
+        headOnly,
+      );
+      return;
+    }
+
     // Static asset, else the SPA shell (hash routes → one page, D13).
     const asset = readAsset(distDir, url.pathname);
     if (asset) {

@@ -13,6 +13,29 @@
   --lit-outline: #111114;
   --lit-tint: rgba(10, 10, 12, 0.07);
   --region-border: #d6d6da;
+
+  /* Recent-lens neutral ramp (D11): border-weight + neutral ink, NEVER saturated
+     color. Bucket 0 = most recent (heaviest), 3 = never (faintest). Variants may
+     override these tokens. */
+  --recency-0-weight: 2px;
+  --recency-0-ink: rgba(17, 17, 20, 0.55);
+  --recency-1-weight: 1.5px;
+  --recency-1-ink: rgba(17, 17, 20, 0.34);
+  --recency-2-weight: 1px;
+  --recency-2-ink: rgba(17, 17, 20, 0.2);
+  --recency-3-weight: 1px;
+  --recency-3-ink: rgba(17, 17, 20, 0.09);
+
+  /* Minimap substrate tokens (D9) — variants may restyle via these hooks. */
+  --minimap-bg: rgba(255, 255, 255, 0.94);
+  --minimap-border: var(--region-border);
+  --minimap-region-fill: rgba(17, 17, 20, 0.06);
+  --minimap-region-stroke: rgba(17, 17, 20, 0.28);
+  --minimap-region-lit-fill: var(--lit-tint);
+  --minimap-region-lit-stroke: var(--lit-outline);
+  --minimap-viewport-stroke: #2563c9;
+  --minimap-viewport-fill: rgba(37, 99, 201, 0.1);
+  --minimap-search-mark: #b26a00;
 }
 
 * {
@@ -172,6 +195,127 @@ body {
 .react-flow__node:hover {
   outline: 1.5px solid var(--node-hover-outline, rgba(17, 17, 20, 0.55));
   outline-offset: 0;
+}
+
+/* Recent-lens ramp (D11): neutral border-weight on the FILE lot wrapper. Uses an
+   inset box-shadow so it does NOT fight the lot's own background, and stacks with
+   selection opacity + lit/dim (which use other properties). No saturated color. */
+.react-flow__node.recency-0 {
+  box-shadow: inset 0 0 0 var(--recency-0-weight) var(--recency-0-ink);
+}
+.react-flow__node.recency-1 {
+  box-shadow: inset 0 0 0 var(--recency-1-weight) var(--recency-1-ink);
+}
+.react-flow__node.recency-2 {
+  box-shadow: inset 0 0 0 var(--recency-2-weight) var(--recency-2-ink);
+}
+.react-flow__node.recency-3 {
+  box-shadow: inset 0 0 0 var(--recency-3-weight) var(--recency-3-ink);
+}
+
+/* Active-lens indicator in the HUD (D11) — a static label, not a switcher. */
+.hud-lens {
+  font-family: var(--font-mono);
+  font-size: 11px;
+  color: var(--ink-muted);
+  border: 1px solid var(--region-border);
+  border-radius: 2px;
+  padding: 1px 6px;
+}
+
+/* Bottom-right folder minimap (D9). Structural only; variants restyle via the
+   --minimap-* tokens. Always available; collapsible. */
+.minimap {
+  position: absolute;
+  z-index: 18;
+  right: 8px;
+  bottom: 8px;
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: 3px;
+  background: var(--minimap-bg);
+  border: 1px solid var(--minimap-border);
+  padding: 4px;
+}
+.minimap-toggle {
+  font-family: var(--font-mono);
+  font-size: 10px;
+  color: var(--ink-muted);
+  background: transparent;
+  border: none;
+  cursor: pointer;
+  padding: 0 2px;
+}
+.minimap-svg {
+  display: block;
+}
+.minimap-region {
+  fill: var(--minimap-region-fill);
+  stroke: var(--minimap-region-stroke);
+  stroke-width: 0.75;
+  cursor: pointer;
+}
+.minimap-region:hover {
+  fill: rgba(17, 17, 20, 0.14);
+}
+.minimap-region.minimap-region-lit {
+  fill: var(--minimap-region-lit-fill);
+  stroke: var(--minimap-region-lit-stroke);
+  stroke-width: 1.25;
+}
+.minimap-search-mark {
+  fill: var(--minimap-search-mark);
+  stroke: #fff;
+  stroke-width: 0.5;
+  pointer-events: none;
+}
+.minimap-viewport {
+  fill: var(--minimap-viewport-fill);
+  stroke: var(--minimap-viewport-stroke);
+  stroke-width: 1.25;
+  cursor: grab;
+}
+.minimap-viewport:active {
+  cursor: grabbing;
+}
+
+/* Generation switch prompt (D10) — dismissible, never refreshes the map. */
+.gen-prompt {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  padding: 6px 14px;
+  background: #eef4ff;
+  border-bottom: 1px solid #b9cdf2;
+  font-size: 12px;
+}
+.gen-prompt-body {
+  display: flex;
+  align-items: baseline;
+  gap: 10px;
+}
+.gen-prompt-title {
+  font-family: var(--font-display);
+  font-size: 13px;
+}
+.gen-prompt-diff {
+  font-family: var(--font-mono);
+  font-size: 11px;
+  color: var(--ink-muted);
+}
+.gen-prompt-actions {
+  display: flex;
+  gap: 8px;
+}
+.gen-prompt-actions button {
+  font-size: 12px;
+  padding: 3px 10px;
+  cursor: pointer;
+}
+.gen-prompt-switch {
+  font-weight: 600;
 }
 
 /* Hover readout — one DOM node, bottom-left of the canvas (R4-4). */

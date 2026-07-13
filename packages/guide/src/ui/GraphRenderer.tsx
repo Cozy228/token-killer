@@ -23,6 +23,12 @@ export interface RendererApi {
    * below `minPx` (R4-1). Otherwise no camera move. Returns whether it moved.
    */
   revealNode(rect: Viewport, minPx?: number): boolean;
+  /**
+   * Deterministically CENTER a node's world rect at a fixed reading zoom (5c
+   * fold-in): rail/search focus must land the same way across variants, never
+   * "too far out". Always moves the camera (unlike revealNode).
+   */
+  centerOn(rect: Viewport, targetZoom: number): void;
   /** Scripted 3s viewport tour; resolves after recording fps into onFps. */
   runSweep(onFps: (fps: number) => void): Promise<void>;
 }
@@ -47,6 +53,12 @@ export interface GraphRendererProps {
   onClearSelection?: () => void;
   /** Double-click a folder region → drill/fit to it (R4-6). */
   onDrill?: (nodeId: string) => void;
+  /**
+   * Recent-lens recency bucket per FILE lot id (0 = most recent .. 3 = never).
+   * Rendered as a neutral `recency-N` class on the lot wrapper (D11). Optional;
+   * absent = no lens ramp.
+   */
+  recencyBuckets?: ReadonlyMap<string, number>;
 }
 
 export function edgeKey(edge: AtlasEdge): string {
@@ -70,6 +82,20 @@ export function nodeSelectionClassName(
   if (nodeId === focusedId) return "node-selected";
   if (neighborIds.has(nodeId)) return "node-neighbor";
   return "node-faded";
+}
+
+/**
+ * Recent-lens class for a node's React Flow wrapper (D11). Only FILE lots carry
+ * a neutral `recency-N` ramp class; folders/decls and un-bucketed files get none.
+ * Orthogonal to selection — both classes coexist on the wrapper.
+ */
+export function fileRecencyClassName(
+  node: AtlasNode,
+  recencyBuckets: ReadonlyMap<string, number> | undefined,
+): string {
+  if (node.kind !== "file" || !recencyBuckets) return "";
+  const bucket = recencyBuckets.get(node.id);
+  return bucket === undefined ? "" : `recency-${bucket}`;
 }
 
 export function GraphRenderer(props: GraphRendererProps) {

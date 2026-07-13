@@ -25,6 +25,7 @@ import type { EdgeGeometry } from "../variants/types.js";
 import {
   UNIT,
   edgeKey,
+  fileRecencyClassName,
   nodeSelectionClassName,
   type GraphRendererProps,
   type LitState,
@@ -241,6 +242,7 @@ function Inner(props: GraphRendererProps) {
     onApiReady,
     onClearSelection,
     onDrill,
+    recencyBuckets,
   } = props;
   const wrapperRef = useRef<HTMLDivElement>(null);
   const rf = useReactFlow();
@@ -298,7 +300,13 @@ function Inner(props: GraphRendererProps) {
       const dimmed = !selectionActive && litState.hasEvent && !lit;
       const focused = n.id === focusedId;
       const showDeclLabel = n.kind === "decl" && slice.declLabelsVisible;
-      const className = nodeSelectionClassName(n.id, focusedId, neighborIds);
+      // Recent-lens ramp (D11): a neutral `recency-N` class on the FILE lot
+      // wrapper. Orthogonal to selection — both classes coexist so lit/dim and
+      // selection emphasis stack above the ramp.
+      const recencyClass = fileRecencyClassName(n, recencyBuckets);
+      const className = [nodeSelectionClassName(n.id, focusedId, neighborIds), recencyClass]
+        .filter(Boolean)
+        .join(" ");
       const cached = cache.get(n.id);
       let node: AtlasFlowNode;
       if (
@@ -332,7 +340,7 @@ function Inner(props: GraphRendererProps) {
     }
     nodeCacheRef.current = next;
     return out;
-  }, [slice.nodes, slice.declLabelsVisible, litState, focusedId, neighborIds, variant]);
+  }, [slice.nodes, slice.declLabelsVisible, litState, focusedId, neighborIds, variant, recencyBuckets]);
 
   const emitViewport = useCallback(() => {
     const el = wrapperRef.current;
@@ -379,6 +387,18 @@ function Inner(props: GraphRendererProps) {
           { duration: 400 },
         );
         return true;
+      },
+      centerOn(rect, targetZoom) {
+        const el = wrapperRef.current;
+        const paneW = el?.clientWidth || 1000;
+        const paneH = el?.clientHeight || 700;
+        const zoom = Math.max(0.02, Math.min(4, targetZoom));
+        const cx = (rect.x + rect.w / 2) * UNIT;
+        const cy = (rect.y + rect.h / 2) * UNIT;
+        rf.setViewport(
+          { x: paneW / 2 - cx * zoom, y: paneH / 2 - cy * zoom, zoom },
+          { duration: 400 },
+        );
       },
       runSweep(onFps) {
         const el = wrapperRef.current;

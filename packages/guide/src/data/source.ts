@@ -6,7 +6,8 @@
 // the endpoint is absent — which keeps the `vite preview` / `pnpm dev` spike
 // flows working without a server. Kept deliberately thin.
 
-import type { CorpusInput } from "../atlas/types.js";
+import type { CorpusInput, GenerationInfo } from "../atlas/types.js";
+import { generationIdentity } from "../atlas/types.js";
 
 export interface CorpusLoad {
   corpus: CorpusInput;
@@ -17,6 +18,31 @@ export interface CorpusLoad {
 
 export interface GuideDataSource {
   load(signal?: AbortSignal): Promise<CorpusLoad>;
+  /**
+   * Cheap generation-metadata poll (D10). Returns the CURRENTLY served
+   * generation without the full corpus body so the reader can be offered a
+   * switch prompt without swapping the map. Optional: a source that cannot poll
+   * (a static snapshot bundled with the app) simply omits it.
+   */
+  pollGeneration?(signal?: AbortSignal): Promise<GenerationInfo>;
+}
+
+/** Cheap corpus counts (files, decls) — used for the switch-prompt diff line. */
+export function corpusCounts(corpus: CorpusInput): { fileCount: number; declCount: number } {
+  let declCount = 0;
+  for (const f of corpus.files) declCount += f.declCount;
+  return { fileCount: corpus.files.length, declCount };
+}
+
+/** Derive GenerationInfo from an already-loaded corpus (snapshot fallback). */
+export function generationInfoOf(corpus: CorpusInput): GenerationInfo {
+  const { fileCount, declCount } = corpusCounts(corpus);
+  return {
+    generations: corpus.generations,
+    identity: generationIdentity(corpus.generations),
+    fileCount,
+    declCount,
+  };
 }
 
 async function fetchCorpus(
@@ -35,11 +61,21 @@ async function fetchCorpus(
 /** In-process live endpoint, same-origin with the HttpOnly session cookie. */
 export class LiveDataSource implements GuideDataSource {
   readonly #url: string;
-  constructor(url = "/api/corpus") {
+  readonly #genUrl: string;
+  constructor(url = "/api/corpus", genUrl = "/api/generation") {
     this.#url = url;
+    this.#genUrl = genUrl;
   }
   load(signal?: AbortSignal): Promise<CorpusLoad> {
     return fetchCorpus(this.#url, "live", { credentials: "include" }, signal);
+  }
+  async pollGeneration(signal?: AbortSignal): Promise<GenerationInfo> {
+    const res = await fetch(this.#genUrl, {
+      credentials: "include",
+      ...(signal ? { signal } : {}),
+    });
+    if (!res.ok) throw new Error(`generation poll failed: HTTP ${res.status}`);
+    return (await res.json()) as GenerationInfo;
   }
 }
 
@@ -68,6 +104,11 @@ export class FallbackDataSource implements GuideDataSource {
     } catch {
       return this.#fallback.load(signal);
     }
+  }
+  async pollGeneration(signal?: AbortSignal): Promise<GenerationInfo> {
+    if (this.#primary.pollGeneration) return this.#primary.pollGeneration(signal);
+    if (this.#fallback.pollGeneration) return this.#fallback.pollGeneration(signal);
+    throw new Error("no pollable source");
   }
 }
 

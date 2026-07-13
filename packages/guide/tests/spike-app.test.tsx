@@ -41,6 +41,7 @@ vi.mock("../src/ui/ReactFlowRenderer.js", async (importOriginal) => {
         setViewport() {},
         fitView() {},
         revealNode: () => false,
+        centerOn() {},
         runSweep: async () => {},
       });
     }, []);

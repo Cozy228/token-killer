@@ -4,11 +4,32 @@
 // and a live perf HUD vs the D12 budget table.
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { compile } from "../atlas/compile.js";
-import { computeSlice, DEFAULT_LOD, fitViewport, zoomBucketIndex } from "../atlas/lod.js";
+import { ancestors, compile } from "../atlas/compile.js";
+import {
+  computeSlice,
+  DEFAULT_LOD,
+  fitViewport,
+  hotspotViewport,
+  nextZoomLevel,
+  revealForLevel,
+} from "../atlas/lod.js";
 import { project, resolveEvent } from "../atlas/event.js";
+import { recencyBuckets } from "../atlas/lens.js";
+import {
+  loadSession,
+  saveSession,
+  type KeyValueStore,
+  type SessionState,
+} from "../atlas/persist.js";
 import { expand10x } from "../atlas/synthetic.js";
-import type { AtlasModel, CorpusInput, EventProjection, Viewport } from "../atlas/types.js";
+import {
+  generationIdentity,
+  type AtlasModel,
+  type CorpusInput,
+  type EventProjection,
+  type GenerationInfo,
+  type Viewport,
+} from "../atlas/types.js";
 import {
   BUDGET_10X,
   BUDGET_CURRENT,
@@ -19,9 +40,19 @@ import {
 import { edgeKey, GraphRenderer, type LitState, type RendererApi } from "./GraphRenderer.js";
 import { EvidenceRail } from "./EvidenceRail.js";
 import { FocusedEvidence } from "./FocusedEvidence.js";
+import { Minimap } from "./Minimap.js";
+import { GenerationPrompt } from "./GenerationPrompt.js";
 import { StateScreen, type StateScreenKind } from "./StateScreen.js";
 import { selectVariant, variants } from "../variants/registry.js";
-import { defaultDataSource, type GuideDataSource } from "../data/source.js";
+import { defaultDataSource, generationInfoOf, type GuideDataSource } from "../data/source.js";
+
+/** Reading zoom targets (5c fold-in): rail/search focus lands here, per kind. */
+const READING_ZOOM_DECL = 3.2;
+const READING_ZOOM_FILE_MIN = 1.0;
+const READING_TARGET_PX = 200;
+const UNIT_PX = 14;
+/** Default live-generation poll cadence (D10). */
+const DEFAULT_POLL_MS = 30_000;
 
 declare global {
   interface Window {
@@ -57,15 +88,30 @@ interface LoadedData {
   jsonBytes: number;
 }
 
-export function SpikeApp({ dataSource }: { dataSource?: GuideDataSource } = {}) {
+export interface SpikeAppProps {
+  dataSource?: GuideDataSource;
+  /** Live-generation poll cadence (D10). Tests pass a small value. */
+  pollMs?: number;
+  /** Session-persistence store (D10). Defaults to localStorage; tests inject. */
+  storage?: KeyValueStore;
+}
+
+export function SpikeApp({ dataSource, pollMs = DEFAULT_POLL_MS, storage }: SpikeAppProps = {}) {
   const perfRef = useRef<PerfRecorder>(createPerfRecorder());
   const perf = perfRef.current;
   const sourceRef = useRef<GuideDataSource>(dataSource ?? defaultDataSource());
   const apiRef = useRef<RendererApi | null>(null);
   const firstPaintDone = useRef(false);
   const appliedProjectionRef = useRef<string | null>(null);
-  const lastVpRef = useRef({ bucket: -1, cx: Number.NaN, cy: Number.NaN });
+  const lastVpRef = useRef({ level: -1, cx: Number.NaN, cy: Number.NaN });
   const lastFitIdRef = useRef<string | null>(null);
+  const levelRef = useRef(0);
+  // Hysteresis debounce (D9): coalesce onMove-driven re-slices (150-250 ms).
+  const commitTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const pendingVpRef = useRef<{ vp: Viewport; z: number } | null>(null);
+  // Live-generation tracking (D10).
+  const loadedGenIdentityRef = useRef<string | null>(null);
+  const dismissedGenRef = useRef<string | null>(null);
 
   const [hashQuery, setHashQuery] = useState<HashQuery>(() => parseHashQuery(window.location.hash));
   const scale: Scale = hashQuery.scale === "10x" ? "10x" : "current";
@@ -75,7 +121,10 @@ export function SpikeApp({ dataSource }: { dataSource?: GuideDataSource } = {}) 
   const [loadError, setLoadError] = useState<string | null>(null);
   const [data, setData] = useState<LoadedData | null>(null);
   const [viewport, setViewport] = useState<Viewport>({ x: 0, y: 0, w: 100, h: 100 });
+  const [openViewport, setOpenViewport] = useState<Viewport>({ x: 0, y: 0, w: 100, h: 100 });
   const [zoom, setZoom] = useState(0.8);
+  const [revealLevel, setRevealLevel] = useState(0);
+  const [pinnedIds, setPinnedIds] = useState<ReadonlySet<string>>(() => new Set());
   const [focusedId, setFocusedId] = useState<string | null>(null);
   const [fitRequest, setFitRequest] = useState(0);
   const [search, setSearch] = useState("");
@@ -83,6 +132,7 @@ export function SpikeApp({ dataSource }: { dataSource?: GuideDataSource } = {}) 
   const [apiReady, setApiReady] = useState(false);
   const [sweeping, setSweeping] = useState(false);
   const [seededKey, setSeededKey] = useState<string | null>(null);
+  const [pendingGen, setPendingGen] = useState<GenerationInfo | null>(null);
 
   // Track hash changes (deep links are the primary entry, D22).
   useEffect(() => {
@@ -101,6 +151,7 @@ export function SpikeApp({ dataSource }: { dataSource?: GuideDataSource } = {}) 
       .then((loaded) => {
         if (cancelled) return;
         perf.setJsonBytes(loaded.bytes);
+        loadedGenIdentityRef.current = generationInfoOf(loaded.corpus).identity;
         setRawCorpus(loaded.corpus);
       })
       .catch((err: unknown) => {
@@ -122,7 +173,10 @@ export function SpikeApp({ dataSource }: { dataSource?: GuideDataSource } = {}) 
     perf.markProjectionAvailable();
     firstPaintDone.current = false;
     appliedProjectionRef.current = null;
-    lastVpRef.current = { bucket: -1, cx: Number.NaN, cy: Number.NaN };
+    lastVpRef.current = { level: -1, cx: Number.NaN, cy: Number.NaN };
+    // A new generation preserves only a still-existing selection (D10); pins reset.
+    setFocusedId((prev) => (prev && model.nodeIndex.has(prev) ? prev : null));
+    setPinnedIds(new Set());
     setData({ corpus, model, jsonBytes: perf.record.jsonBytes ?? 0 });
     // Provisional fit so the first slice can compute; the event viewport is
     // applied once the projection + renderer API are ready (defect 4).
@@ -153,38 +207,66 @@ export function SpikeApp({ dataSource }: { dataSource?: GuideDataSource } = {}) 
     return undefined;
   }, [projection]);
 
-  // The world viewport to open on: the event bbox, or a repo fit.
+  // A deep-link event (diff=/sym=) keeps its projected viewport; a cold `#/` open
+  // focuses the recent hotspot (D10). `q=` is not an event (rejected upstream).
+  const coldOpen = !hashQuery.diff && !hashQuery.sym;
+
+  // The world viewport to open on: deep-link event bbox, cold-open hotspot, or fit.
   const projectionKey = data
     ? projection?.ok
-      ? `${data.model.projectionId}:${projection.p.event.label}`
+      ? `${data.model.projectionId}:${coldOpen ? "cold" : projection.p.event.label}`
       : `${data.model.projectionId}:fit`
     : null;
-  const initialViewport = useMemo<Viewport>(
-    () => (projection?.ok ? projection.p.viewport : data ? fitViewport(data.model) : { x: 0, y: 0, w: 100, h: 100 }),
-    [projection, data],
-  );
+  const baseOpenViewport = useMemo<Viewport>(() => {
+    if (!data) return { x: 0, y: 0, w: 100, h: 100 };
+    if (!projection?.ok) return fitViewport(data.model);
+    if (coldOpen) return hotspotViewport(data.model, new Set(projection.p.litNodeIds));
+    return projection.p.viewport;
+  }, [projection, data, coldOpen]);
 
   // Seed the slice viewport/zoom synchronously ONCE per projection so the FIRST
   // slice the renderer (and footer) receive IS the event slice — single source,
-  // one pass, no identity-scale intermediate (defects 1/3/4). The renderer turns
-  // initialViewport into a deterministic defaultViewport from the measured pane.
+  // one pass, no identity-scale intermediate (defects 1/3/4). A cold open restores
+  // a saved same-generation session when present (D10 within-generation persist);
+  // otherwise it uses the hotspot/event viewport. The renderer turns openViewport
+  // into a deterministic defaultViewport from the measured pane.
   useEffect(() => {
     if (!data || !projectionKey || appliedProjectionRef.current === projectionKey) return;
     appliedProjectionRef.current = projectionKey;
-    const vp = initialViewport;
+
+    const genId = generationIdentity(data.model.generations);
+    const restored = coldOpen ? loadSession(data.model.projectionId, genId, storage) : null;
+    const valid =
+      restored && (restored.focusedId === null || data.model.nodeIndex.has(restored.focusedId))
+        ? restored
+        : null;
+
+    const vp = valid ? valid.viewport : baseOpenViewport;
     const span = Math.max(vp.w, vp.h);
-    const seedZoom = span <= 40 ? 1.5 : span <= 160 ? 1.0 : 0.6;
-    lastVpRef.current = { bucket: zoomBucketIndex(seedZoom), cx: vp.x + vp.w / 2, cy: vp.y + vp.h / 2 };
+    const seedZoom = valid ? valid.zoom : span <= 40 ? 1.5 : span <= 160 ? 1.0 : 0.6;
+    const seedLevel = nextZoomLevel(0, seedZoom);
+
+    levelRef.current = seedLevel;
+    lastVpRef.current = { level: seedLevel, cx: vp.x + vp.w / 2, cy: vp.y + vp.h / 2 };
+    setOpenViewport(vp);
     setViewport(vp);
     setZoom(seedZoom);
+    setRevealLevel(seedLevel);
+    if (valid) {
+      setFocusedId(valid.focusedId);
+      setPinnedIds(new Set(valid.pinnedIds.filter((id) => data.model.nodeIndex.has(id))));
+    }
     setSeededKey(projectionKey);
-  }, [data, projectionKey, initialViewport]);
+  }, [data, projectionKey, baseOpenViewport, coldOpen, storage]);
 
   // Visible slice (measured as an "expand" recompute).
   const slice = useMemo(() => {
     if (!data) return null;
     return perf.measureAction("expand", () => {
-      const s = computeSlice(data.model, viewport, zoom, DEFAULT_LOD, rawLit, rawLitEdges);
+      const s = computeSlice(data.model, viewport, zoom, DEFAULT_LOD, rawLit, rawLitEdges, {
+        revealLevel,
+        pinnedIds,
+      });
       perf.setSliceMs(perf.record.expand.at(-1)?.ms ?? 0);
       perf.setCounts({
         logicalNodes: s.counts.logicalNodes,
@@ -194,7 +276,7 @@ export function SpikeApp({ dataSource }: { dataSource?: GuideDataSource } = {}) 
       });
       return s;
     });
-  }, [data, viewport, zoom, rawLit, rawLitEdges, perf]);
+  }, [data, viewport, zoom, revealLevel, pinnedIds, rawLit, rawLitEdges, perf]);
 
   // Lit rendering set = the slice's effective lit ids (aggregation onto visible
   // ancestors when a lit atom is hidden by the current zoom, defect 6).
@@ -248,20 +330,41 @@ export function SpikeApp({ dataSource }: { dataSource?: GuideDataSource } = {}) 
     }
   }, [slice, perf]);
 
-  // Hysteresis: only re-slice when the zoom bucket changes or the viewport center
-  // moves beyond ~30% of the view. A focus-only camera nudge within the same tile
-  // does NOT trigger a slice recompute (defect 3).
-  const onViewportChange = useCallback((vp: Viewport, z: number) => {
-    const bucket = zoomBucketIndex(z);
+  // Hysteresis + debounce (D9). A move commits a re-slice only when the semantic
+  // zoom LEVEL changes (via nextZoomLevel — up-threshold to reveal, lower
+  // down-threshold to drop, so a zoom hovering near a boundary can't flap) or the
+  // viewport center moves beyond ~30% of the view. The commit is debounced ~180 ms
+  // so a burst of onMove-end events coalesces into one recompute.
+  const commitViewport = useCallback(() => {
+    const pending = pendingVpRef.current;
+    if (!pending) return;
+    pendingVpRef.current = null;
+    const { vp, z } = pending;
+    const level = nextZoomLevel(levelRef.current, z);
     const cx = vp.x + vp.w / 2;
     const cy = vp.y + vp.h / 2;
     const last = lastVpRef.current;
     const moved = Number.isNaN(last.cx) ? Infinity : Math.hypot(cx - last.cx, cy - last.cy);
     const threshold = 0.3 * Math.max(vp.w, vp.h);
-    if (bucket === last.bucket && moved < threshold) return;
-    lastVpRef.current = { bucket, cx, cy };
+    if (level === last.level && moved < threshold) return;
+    levelRef.current = level;
+    lastVpRef.current = { level, cx, cy };
     setViewport(vp);
     setZoom(z);
+    setRevealLevel(level);
+  }, []);
+
+  const onViewportChange = useCallback(
+    (vp: Viewport, z: number) => {
+      pendingVpRef.current = { vp, z };
+      if (commitTimerRef.current) clearTimeout(commitTimerRef.current);
+      commitTimerRef.current = setTimeout(commitViewport, 180);
+    },
+    [commitViewport],
+  );
+
+  useEffect(() => () => {
+    if (commitTimerRef.current) clearTimeout(commitTimerRef.current);
   }, []);
 
   const setHashParam = useCallback((patch: Partial<HashQuery>) => {
@@ -282,19 +385,64 @@ export function SpikeApp({ dataSource }: { dataSource?: GuideDataSource } = {}) 
     });
   }, [data, search, perf]);
 
-  // Selection: highlight + preview. Camera only moves if the node is offscreen
-  // or too small on-screen (R4-1); an already-visible node just gets emphasized.
+  // Selection (canvas click): highlight + preview. Camera only moves if the node
+  // is offscreen or too small on-screen (R4-1); an already-visible node just gets
+  // emphasized. Clicking a folder whose children are hidden at the current zoom
+  // PINS its next level open (D9 "click pins an expansion").
   const focusNode = useCallback(
     (nodeId: string) => {
       setFocusedId(nodeId);
       const node = data?.model.nodeIndex.get(nodeId);
       if (!node) return;
+      if (node.kind === "folder") {
+        const reveal = revealForLevel(levelRef.current);
+        const childrenHidden = node.depth + 1 > reveal.maxFolderDepth || !reveal.showFiles;
+        if (childrenHidden) {
+          setPinnedIds((prev) => (prev.has(node.id) ? prev : new Set(prev).add(node.id)));
+        }
+      }
       apiRef.current?.revealNode({ x: node.rect.x, y: node.rect.y, w: node.rect.w, h: node.rect.h });
     },
     [data],
   );
 
-  const clearSelection = useCallback(() => setFocusedId(null), []);
+  // Reading focus (rail / search / minimap destinations): ALWAYS center the
+  // target at a deterministic reading zoom for its kind (decl >=1.6, file such
+  // that the lot is ~200 px), so navigation lands the same way across variants.
+  const focusReading = useCallback(
+    (nodeId: string) => {
+      setFocusedId(nodeId);
+      const node = data?.model.nodeIndex.get(nodeId);
+      if (!node) return;
+      let targetZoom: number;
+      if (node.kind === "decl") {
+        targetZoom = READING_ZOOM_DECL;
+      } else if (node.kind === "file") {
+        const side = Math.max(node.rect.w, node.rect.h);
+        targetZoom = Math.max(READING_ZOOM_FILE_MIN, READING_TARGET_PX / (side * UNIT_PX));
+      } else {
+        // Folder: frame the whole region rather than over-zoom.
+        apiRef.current?.setViewport({
+          x: node.rect.x - 2,
+          y: node.rect.y - 2,
+          w: node.rect.w + 4,
+          h: node.rect.h + 4,
+        });
+        return;
+      }
+      apiRef.current?.centerOn(
+        { x: node.rect.x, y: node.rect.y, w: node.rect.w, h: node.rect.h },
+        targetZoom,
+      );
+    },
+    [data],
+  );
+
+  // Clear selection AND any pinned reveals (D9: pins cleared on deselect/Esc).
+  const clearSelection = useCallback(() => {
+    setFocusedId(null);
+    setPinnedIds((prev) => (prev.size === 0 ? prev : new Set()));
+  }, []);
 
   // Double-click a folder region → fit to it (R4-6). Records the fit so Esc can
   // back out to the parent region.
@@ -349,6 +497,124 @@ export function SpikeApp({ dataSource }: { dataSource?: GuideDataSource } = {}) 
     }
   }, [perf, sweeping]);
 
+  // Within-generation persistence (D10): save viewport/selection/pins under the
+  // (projectionId, generation identity) key so a reload of the SAME generation
+  // restores them; a different generation identity never restores stale state.
+  useEffect(() => {
+    if (!data || seededKey !== projectionKey) return;
+    const genId = generationIdentity(data.model.generations);
+    const state: SessionState = { viewport, zoom, focusedId, pinnedIds: [...pinnedIds] };
+    saveSession(data.model.projectionId, genId, state, storage);
+  }, [data, seededKey, projectionKey, viewport, zoom, focusedId, pinnedIds, storage]);
+
+  // Recent-lens ramp (D11 default lens): neutral recency bucket per file lot.
+  const recencyMap = useMemo(
+    () => (data ? recencyBuckets(data.model, data.corpus) : undefined),
+    [data],
+  );
+
+  // Minimap substrate data (D9): top-level folder regions + lit regions + world
+  // bounds + search-hit centers. Never files/decls.
+  const topRegions = useMemo(() => {
+    if (!data) return [];
+    const d1 = data.model.regions.filter((r) => r.depth === 1);
+    return d1.length > 0 ? d1 : data.model.regions.filter((r) => r.depth === 0);
+  }, [data]);
+  const worldBounds = useMemo(
+    () => (data ? fitViewport(data.model) : { x: 0, y: 0, w: 1, h: 1 }),
+    [data],
+  );
+  const litRegionIds = useMemo(() => {
+    const set = new Set<string>();
+    if (!data || !projection?.ok) return set;
+    const topIds = new Set(topRegions.map((r) => r.id));
+    for (const id of projection.p.litNodeIds) {
+      const node = data.model.nodeIndex.get(id);
+      if (!node) continue;
+      if (topIds.has(node.id)) {
+        set.add(node.id);
+        continue;
+      }
+      for (const anc of ancestors(data.model, id)) {
+        if (topIds.has(anc.id)) {
+          set.add(anc.id);
+          break;
+        }
+      }
+    }
+    return set;
+  }, [data, projection, topRegions]);
+  const searchMarks = useMemo(
+    () => searchResults.map((n) => ({ x: n.rect.x + n.rect.w / 2, y: n.rect.y + n.rect.h / 2 })),
+    [searchResults],
+  );
+
+  const panToRegion = useCallback(
+    (regionId: string) => {
+      const node = data?.model.nodeIndex.get(regionId);
+      if (!node) return;
+      apiRef.current?.setViewport({
+        x: node.rect.x - 2,
+        y: node.rect.y - 2,
+        w: node.rect.w + 4,
+        h: node.rect.h + 4,
+      });
+    },
+    [data],
+  );
+  const minimapPan = useCallback((vp: Viewport) => {
+    apiRef.current?.setViewport(vp);
+  }, []);
+
+  // Live-generation poll (D10). Detect a new generation WITHOUT swapping the map:
+  // only a prompt is raised; the corpus is reloaded solely on an explicit switch.
+  useEffect(() => {
+    const source = sourceRef.current;
+    if (!source.pollGeneration || !data) return;
+    let cancelled = false;
+    const tick = async () => {
+      try {
+        const info = await source.pollGeneration!();
+        if (cancelled) return;
+        const loaded = loadedGenIdentityRef.current;
+        if (loaded && info.identity !== loaded && info.identity !== dismissedGenRef.current) {
+          setPendingGen(info);
+        }
+      } catch {
+        // Poll failures are non-fatal (e.g. static snapshot / no server).
+      }
+    };
+    const id = setInterval(tick, Math.max(1, pollMs));
+    return () => {
+      cancelled = true;
+      clearInterval(id);
+    };
+  }, [data, pollMs]);
+
+  const currentGenInfo = useMemo<GenerationInfo | null>(
+    () => (data ? generationInfoOf(data.corpus) : null),
+    [data],
+  );
+  const switchGeneration = useCallback(() => {
+    if (!pendingGen) return;
+    setPendingGen(null);
+    sourceRef.current
+      .load()
+      .then((loaded) => {
+        perf.setJsonBytes(loaded.bytes);
+        loadedGenIdentityRef.current = generationInfoOf(loaded.corpus).identity;
+        dismissedGenRef.current = null;
+        setRawCorpus(loaded.corpus);
+      })
+      .catch((err: unknown) => setLoadError(err instanceof Error ? err.message : String(err)));
+  }, [pendingGen, perf]);
+  const dismissGeneration = useCallback(() => {
+    setPendingGen((cur) => {
+      if (cur) dismissedGenRef.current = cur.identity;
+      return null;
+    });
+  }, []);
+
   // ---- Render states ----
   if (loadError) {
     const state: StateScreenKind = { kind: "error", detail: loadError };
@@ -390,6 +656,12 @@ export function SpikeApp({ dataSource }: { dataSource?: GuideDataSource } = {}) 
         </div>
         <div className="hud-gen">
           gen code={gen.code} · git={gen.git} · docs={gen.docs} · memory={gen.memory}
+        </div>
+        {/* Recent lens is the default and only lens in this slice (D11); the other
+            lenses (Churn/Co-change/Review/Conflict) are slice 5f — a static label,
+            not a switcher. */}
+        <div className="hud-lens" aria-label="active lens">
+          Lens: Recent
         </div>
         <input
           className="omnibox"
@@ -437,6 +709,15 @@ export function SpikeApp({ dataSource }: { dataSource?: GuideDataSource } = {}) 
         </div>
       ) : null}
 
+      {pendingGen && currentGenInfo ? (
+        <GenerationPrompt
+          current={currentGenInfo}
+          pending={pendingGen}
+          onSwitch={switchGeneration}
+          onDismiss={dismissGeneration}
+        />
+      ) : null}
+
       <div className="spike-body">
         <main className="canvas-col">
           {Legend ? (
@@ -448,7 +729,7 @@ export function SpikeApp({ dataSource }: { dataSource?: GuideDataSource } = {}) 
           {searchResults.length > 0 ? (
             <div className="search-results">
               {searchResults.map((n) => (
-                <button key={n.id} type="button" className="search-hit" onClick={() => focusNode(n.id)}>
+                <button key={n.id} type="button" className="search-hit" onClick={() => focusReading(n.id)}>
                   <span className={`hit-kind hit-${n.kind}`}>{n.kind}</span> {n.path}
                 </button>
               ))}
@@ -459,16 +740,26 @@ export function SpikeApp({ dataSource }: { dataSource?: GuideDataSource } = {}) 
             litState={litState}
             focusedId={focusedId}
             variant={variant}
-            initialViewport={initialViewport}
+            initialViewport={openViewport}
             onFocus={focusNode}
             onViewportChange={onViewportChange}
             fitRequest={fitRequest}
             onClearSelection={clearSelection}
             onDrill={drillNode}
+            recencyBuckets={recencyMap}
             onApiReady={(api) => {
               apiRef.current = api;
               setApiReady(true);
             }}
+          />
+          <Minimap
+            regions={topRegions}
+            worldBounds={worldBounds}
+            viewport={viewport}
+            litRegionIds={litRegionIds}
+            searchMarks={searchMarks}
+            onRegionClick={panToRegion}
+            onViewportChange={minimapPan}
           />
           <div className="map-hud">
             <span>
@@ -502,13 +793,13 @@ export function SpikeApp({ dataSource }: { dataSource?: GuideDataSource } = {}) 
 
         <div className="rail-col">
           {focusedId ? (
-            <FocusedEvidence model={data.model} selectedId={focusedId} onFocus={focusNode} />
+            <FocusedEvidence model={data.model} selectedId={focusedId} onFocus={focusReading} />
           ) : null}
           {projection?.ok ? (
             <EvidenceRail
               rail={projection.p.rail}
               focusedId={focusedId}
-              onFocus={focusNode}
+              onFocus={focusReading}
               variant={variant}
               eventLabel={projection.p.event.label}
             />

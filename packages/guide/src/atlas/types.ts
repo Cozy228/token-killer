@@ -108,6 +108,12 @@ export interface AtlasNode {
   /** symbolKind for decl nodes (function|method|class|const|...); undefined otherwise. */
   symbolKind?: string;
   lit?: boolean;
+  /**
+   * Max commit date (epoch ms) touching this file, else null — carried onto file
+   * lots so the Recent lens (D11, slice 5c) can classify a neutral recency ramp.
+   * Files only; folders/decls leave it undefined.
+   */
+  recency?: number | null;
 }
 
 export interface AtlasEdge {
@@ -230,4 +236,24 @@ export interface ProjectableEvent {
   to: string;
   anchorFiles: string[];
   anchorSyms: string[];
+}
+
+// ---------------------------------------------------------------------------
+// GenerationInfo — the cheap generation-metadata payload (D10, slice 5c). The
+// live server answers GET /api/generation with this WITHOUT the full corpus body
+// so the reader can be told a new generation exists without swapping the map.
+// ---------------------------------------------------------------------------
+
+export interface GenerationInfo {
+  generations: CorpusInput["generations"];
+  /** Stable string identity of the served generation (compare to detect a swap). */
+  identity: string;
+  /** Cheap corpus counts so the switch prompt can show a diff line. */
+  fileCount: number;
+  declCount: number;
+}
+
+/** Canonical identity string for a generation tuple (deterministic). */
+export function generationIdentity(g: CorpusInput["generations"]): string {
+  return `${g.code}.${g.git}.${g.docs}.${g.memory}`;
 }
