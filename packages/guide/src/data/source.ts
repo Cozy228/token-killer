@@ -13,7 +13,13 @@
  * The seam is built in K2 — before the export closer needs it — precisely so it cannot
  * be retrofitted around later.
  */
-import type { BoundedProjection, GuideEvent, GuideStatus, RelationKind } from "./dto.ts";
+import type {
+  BoundedProjection,
+  GuideEvent,
+  GuideStatus,
+  GuideTree,
+  RelationKind,
+} from "./dto.ts";
 
 export interface ScopeQuery {
   path: string;
@@ -32,6 +38,11 @@ export interface GuideDataSource {
   readonly mode: "live" | "snapshot";
   /** Current repo + generation. Always answers, including when nothing is servable. */
   status(): Promise<GuideStatus>;
+  /**
+   * The D28 rail's directory/scope tree with its attention counts. NOT a bounded projection:
+   * the rail is DOM text at every zoom, so it carries the whole lot hierarchy.
+   */
+  tree(): Promise<GuideTree>;
   overview(): Promise<BoundedProjection>;
   scope(query: ScopeQuery): Promise<BoundedProjection>;
   connections(query: ConnectionsQuery): Promise<BoundedProjection>;

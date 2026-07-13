@@ -353,24 +353,91 @@ describe("K1 census — the complete logical Atlas on the real corpus", () => {
     }
   });
 
-  test("the killed v4 branch's `packages/guide` never draws a card", () => {
-    // `packages/guide` is the killed v4 branch's package. It is not in this worktree, but it
-    // IS in the maintainer's shard (all worktrees of a repo share one store), where it drew a
-    // 56-file Overview card until the manifest became the lot oracle.
+  test("no projected lot names a path absent from the code ingest manifest", () => {
+    // WHAT THIS REPLACES, AND WHY. This test used to read "the killed v4 branch's
+    // `packages/guide` never draws a card" and assert `atlas.scopes` did not contain
+    // "packages/guide". It was wrong THE DAY IT WAS WRITTEN: it pinned a NAME where the rule
+    // is general. K2 then landed a real `packages/guide` package and a sync ingested it, so
+    // the name became a legitimately live scope and the assertion became false — an absence
+    // that the corpus had simply filled in.
     //
-    // A FRESH sync never ingests it, so this asserts the general rule that kills it — no lot
-    // outside the manifest is ever projected — plus the specific absence. The rule is what
-    // holds on any store; the shard that actually carries the ghost is the maintainer's.
-    expect(existsSync(join(REPO_ROOT, "packages/guide"))).toBe(false);
-    expect(atlas.scopes).not.toContain("packages/guide");
-    expect(atlas.files.some((f) => f.path.startsWith("packages/guide/"))).toBe(false);
-    expect(projectOverview(atlas, store).containers.map((c) => c.name)).not.toContain(
-      "packages/guide",
-    );
+    // An assertion pinned to today's data starts lying tomorrow while staying green; that is
+    // the same defect class as a magic-number census gate, and K1's own gate rules it out.
+    // So this is the RULE itself, which does not rot when a package is added or removed:
+    //
+    //     the `code` source's ingest manifest is the only oracle of what exists. Nothing
+    //     outside it is ever drawn — at any grain, in any projection.
+    //
+    // It held when `packages/guide` was a ghost of the killed v4 branch (all worktrees share
+    // one shard, so its 56 dead lots really were in the store), it holds now that the path is
+    // a live package, and it holds for whatever the next sync adds or removes.
+    const manifest = liveCodeFiles(store);
+    expect(manifest.size).toBeGreaterThan(0);
 
-    // The general rule: every non-lot file entity is reachable, and none is ever a node.
+    // The oracle governs the ATLAS: every lot is a manifest entry, and every atom sits in one.
+    for (const lot of atlas.files) {
+      expect(manifest.has(lot.path), `lot ${lot.id} is not in the code manifest`).toBe(true);
+    }
+    for (const declaration of atlas.declarations) {
+      expect(
+        manifest.has(declaration.path),
+        `declaration ${declaration.id} names a path the ingest never saw`,
+      ).toBe(true);
+    }
+
+    // The scopes a CARD may name are exactly the scopes of manifest-backed lots. This is the
+    // general form of the old assertion: a package the ingest never saw has no live lot, so it
+    // has no scope, so it cannot draw a card — whatever it happens to be called.
+    const liveScopes = new Set(atlas.files.map((file) => file.scope));
+
+    const scope = "packages/core/src/store";
+    const dense = `file:${scope}/store.ts`;
+    const commit = codeCommit();
+    const subject = [...atlas.declarations]
+      .map((d) => ({
+        id: d.id,
+        fanIn: (atlas.relations.incoming.get(d.id) ?? []).filter((r) => r.kind === "calls").length,
+      }))
+      .sort((a, b) => b.fanIn - a.fanIn)[0]!.id;
+
+    const projections = [
+      projectOverview(atlas, store),
+      projectScope(atlas, store, scope, { expand: [dense] }),
+      projectConnections(atlas, store, subject),
+      projectEvent(atlas, store, { commits: [commit.id] }),
+    ];
+
+    let checked = 0;
+    for (const projection of projections) {
+      for (const container of projection.containers) {
+        if (container.grain === "file") {
+          expect(
+            manifest.has(container.path),
+            `projected lot ${container.id} is not in the code manifest`,
+          ).toBe(true);
+        } else {
+          expect(
+            liveScopes.has(container.path),
+            `projected scope card ${container.id} names a scope no ingested file lives in`,
+          ).toBe(true);
+        }
+        for (const declaration of container.declarations) {
+          expect(
+            manifest.has(declaration.path),
+            `projected declaration ${declaration.id} is not in the code manifest`,
+          ).toBe(true);
+        }
+        checked += 1;
+      }
+    }
+    expect(checked).toBeGreaterThan(0);
+
+    // The other side of the same rule: the file entities the manifest does NOT vouch for stay
+    // REACHABLE (nothing is deleted) and are never a node in any projection.
     expect(atlas.nonAtlasLotIds.length).toBeGreaterThan(0); // docs/config, at minimum
-    const projected = new Set(projectOverview(atlas, store).containers.map((c) => c.id));
+    const projected = new Set(
+      projections.flatMap((projection) => projection.containers.map((c) => c.id)),
+    );
     for (const id of atlas.nonAtlasLotIds) {
       expect(store.getEntity(id)).toBeDefined();
       expect(atlas.fileById.has(id)).toBe(false);

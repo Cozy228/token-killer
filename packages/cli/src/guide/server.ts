@@ -36,10 +36,12 @@ import {
   projectEvent,
   projectOverview,
   projectScope,
+  projectTree,
   resolveGeneration,
   type AtlasModel,
   type BoundedProjection,
   type GenerationView,
+  type GuideTree,
   type RelationKind,
   type Store,
 } from "@contexa/core";
@@ -278,7 +280,11 @@ function serveApi(url: URL, res: ServerResponse, ctx: Context): void {
   }
 }
 
-function project(url: URL, atlas: AtlasModel, store: Store): BoundedProjection | undefined {
+function project(
+  url: URL,
+  atlas: AtlasModel,
+  store: Store,
+): BoundedProjection | GuideTree | undefined {
   const list = (name: string): string[] =>
     (url.searchParams.get(name) ?? "")
       .split(",")
@@ -288,6 +294,10 @@ function project(url: URL, atlas: AtlasModel, store: Store): BoundedProjection |
   switch (url.pathname) {
     case "/api/overview":
       return projectOverview(atlas, store);
+    // The D28 left rail. Not a bounded projection: it is DOM text at every zoom, so it
+    // carries the WHOLE lot hierarchy — 621 rows, no budget, no truncation.
+    case "/api/tree":
+      return projectTree(atlas, store);
     case "/api/scope":
       return projectScope(atlas, store, url.searchParams.get("path") ?? "", {
         expand: list("expand"),

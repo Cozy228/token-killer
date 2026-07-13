@@ -7,7 +7,7 @@
  * cannot leak what it does not hold. A 401 here means the cookie is absent or wrong, and
  * the only honest response is the auth screen.
  */
-import type { BoundedProjection, GuideEvent, GuideStatus } from "./dto.ts";
+import type { BoundedProjection, GuideEvent, GuideStatus, GuideTree } from "./dto.ts";
 import {
   GuideAuthError,
   GuideNotServableError,
@@ -28,6 +28,10 @@ export class LiveDataSource implements GuideDataSource {
 
   status(): Promise<GuideStatus> {
     return this.#get<GuideStatus>("/api/generation");
+  }
+
+  tree(): Promise<GuideTree> {
+    return this.#get<GuideTree>("/api/tree");
   }
 
   overview(): Promise<BoundedProjection> {

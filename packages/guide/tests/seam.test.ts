@@ -5,7 +5,7 @@
  * a second product. That is what this file exists to prevent.
  */
 import { afterEach, describe, expect, test, vi } from "vitest";
-import type { BoundedProjection, GuideStatus } from "../src/data/dto.ts";
+import type { BoundedProjection, GuideStatus, GuideTree } from "../src/data/dto.ts";
 import { LiveDataSource } from "../src/data/live.ts";
 import { eventKey, SnapshotDataSource, type GuideSnapshot } from "../src/data/snapshot.ts";
 import {
@@ -23,6 +23,7 @@ function status(state: GuideStatus["generation"]["state"], reason: string): Guid
 }
 
 const projection = { kind: "overview", containers: [], edges: [] } as unknown as BoundedProjection;
+const tree = { roots: [], attention: { changed: 0, needsReview: 0, conflict: 0 } } as unknown as GuideTree;
 
 function respond(body: unknown, init: ResponseInit = {}): Response {
   return new Response(JSON.stringify(body), {
@@ -95,6 +96,7 @@ describe("LiveDataSource", () => {
 describe("SnapshotDataSource", () => {
   const snapshot: GuideSnapshot = {
     status: status("snapshot", "exported snapshot of generation abc123"),
+    tree,
     overview: projection,
     scopes: { "packages/core": projection },
     connections: {},
@@ -136,6 +138,7 @@ describe("the seam", () => {
       new LiveDataSource(),
       new SnapshotDataSource({
         status: status("snapshot", "ok"),
+        tree,
         overview: projection,
         scopes: {},
         connections: {},

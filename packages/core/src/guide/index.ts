@@ -23,6 +23,14 @@ export {
   diffForCommits,
 } from "./queries.ts";
 export type { LiveCodeFile } from "./queries.ts";
+export { projectTree, DEFAULT_RECENT_COMMITS } from "./tree.ts";
+export type {
+  AttentionCounts,
+  GuideTree,
+  TreeNode,
+  TreeNodeKind,
+  TreeOptions,
+} from "./tree.ts";
 export {
   DEFAULT_BUDGET,
   RELATION_KINDS,

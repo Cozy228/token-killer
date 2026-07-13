@@ -10,7 +10,12 @@ import { cleanup, render, screen, waitFor } from "@testing-library/react";
 import { afterEach, describe, expect, test } from "vitest";
 import { GuidePage } from "../src/App.tsx";
 import { DataSourceProvider } from "../src/data/context.tsx";
-import type { BoundedProjection, FreshnessState, GuideStatus } from "../src/data/dto.ts";
+import type {
+  BoundedProjection,
+  FreshnessState,
+  GuideStatus,
+  GuideTree,
+} from "../src/data/dto.ts";
 import {
   GuideAuthError,
   GuideNotServableError,
@@ -44,6 +49,7 @@ function fake(over: Partial<GuideDataSource>): GuideDataSource {
   return {
     mode: "live",
     status: reject,
+    tree: reject,
     overview: reject,
     scope: reject,
     connections: reject,
@@ -74,6 +80,9 @@ describe("shared interaction states", () => {
     draw(
       fake({
         status: () => Promise.resolve(stale),
+        // The server 409s EVERY projection route when the generation is not servable — the
+        // refusal is structural, not per-endpoint. The fake has to refuse the same way.
+        tree: () => Promise.reject(new GuideNotServableError(stale)),
         overview: () => Promise.reject(new GuideNotServableError(stale)),
       }),
     );
@@ -91,6 +100,7 @@ describe("shared interaction states", () => {
     draw(
       fake({
         status: () => Promise.resolve(empty),
+        tree: () => Promise.reject(new GuideNotServableError(empty)),
         overview: () => Promise.reject(new GuideNotServableError(empty)),
       }),
     );
@@ -116,20 +126,70 @@ describe("shared interaction states", () => {
     expect(screen.getByTestId("state-source").textContent).toContain("did not answer");
   });
 
-  test("live — the badge says live and the projection crossed the seam", async () => {
+  test("live — the badge says live and the shell mounts on the projection", async () => {
     const live = status("live", "built under the current generation 540c0fe7");
     const overview = {
       kind: "overview",
-      containers: [{ id: "scope:packages/core", fileCount: 3 }],
-      edges: [{ id: "e1" }],
+      containers: [
+        {
+          id: "scope:packages/core",
+          grain: "scope",
+          name: "packages/core",
+          path: "packages/core",
+          scope: "packages/core",
+          declarations: [],
+          declarationCount: 1263,
+          omittedDeclarations: 0,
+          omittedNoVisibleRoute: 0,
+          expanded: false,
+          degree: { inbound: 7, outbound: 1 },
+          noVisibleRoute: false,
+          fileCount: 154,
+        },
+      ],
+      boundaries: [],
+      edges: [],
+      groups: [],
+      noVisibleRoute: { containerIds: [], omittedContainerCount: 0, declarations: [] },
+      omitted: { containers: 0, declarations: 0, edges: 0, boundaryMembers: 0, notes: [] },
     } as unknown as BoundedProjection;
 
+    const tree = {
+      generation: live.generation,
+      roots: [
+        {
+          id: "scope:packages/core",
+          kind: "scope",
+          name: "packages/core",
+          path: "packages/core",
+          fileCount: 154,
+          declarationCount: 1263,
+          attention: { changed: 26, needsReview: 0, conflict: 0 },
+          children: [],
+        },
+      ],
+      attention: { changed: 26, needsReview: 0, conflict: 0 },
+      recentCommits: 20,
+      unanchored: { needsReview: 113, conflict: 4 },
+    } as unknown as GuideTree;
+
     draw(
-      fake({ status: () => Promise.resolve(live), overview: () => Promise.resolve(overview) }),
+      fake({
+        status: () => Promise.resolve(live),
+        tree: () => Promise.resolve(tree),
+        overview: () => Promise.resolve(overview),
+      }),
     );
 
-    await waitFor(() => expect(screen.getByTestId("state-ready")).toBeTruthy());
+    await waitFor(() => expect(screen.getByTestId("shell")).toBeTruthy());
     expect(screen.getByTestId("freshness-badge").textContent).toBe("live");
-    expect(screen.getByTestId("state-ready").textContent).toContain("1 scopes");
+    // The three D28 surfaces are all mounted, each its own scroll owner.
+    expect(screen.getByTestId("rail")).toBeTruthy();
+    expect(screen.getByTestId("canvas-host")).toBeTruthy();
+    expect(screen.getByTestId("inspector")).toBeTruthy();
+    // The scope crossed the seam and reached the rail as a NAMED row.
+    expect(screen.getByTestId("rail-tree").textContent).toContain("packages/core");
+    // Attention that resolves to no code anchor is COUNTED, not hidden.
+    expect(screen.getByTestId("rail-unanchored").textContent).toContain("113");
   });
 });

@@ -31,6 +31,14 @@ export type {
   SourceGeneration,
 } from "../../../core/src/guide/types.ts";
 
+/** The D28 left rail's payload. Also from the kernel — the SPA computes no projection. */
+export type {
+  AttentionCounts,
+  GuideTree,
+  TreeNode,
+  TreeNodeKind,
+} from "../../../core/src/guide/tree.ts";
+
 import type { GenerationView } from "../../../core/src/guide/types.ts";
 
 /** The repository the guide is serving. Deterministic; no generated prose. */

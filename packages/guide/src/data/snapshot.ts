@@ -10,7 +10,7 @@
  * The export BUILDER lands with the export closer. The reader lands here, with the seam,
  * because a seam introduced after both sides exist is a seam nobody obeys.
  */
-import type { BoundedProjection, GuideEvent, GuideStatus } from "./dto.ts";
+import type { BoundedProjection, GuideEvent, GuideStatus, GuideTree } from "./dto.ts";
 import {
   GuideNotServableError,
   GuideSourceError,
@@ -22,6 +22,8 @@ import {
 /** The inlined blob. Written by the export builder, read here. */
 export interface GuideSnapshot {
   status: GuideStatus;
+  /** The rail's tree. An export without it would ship a guide you cannot navigate. */
+  tree: GuideTree;
   overview: BoundedProjection;
   /** Keyed by scope path. */
   scopes: Record<string, BoundedProjection>;
@@ -59,6 +61,22 @@ export class SnapshotDataSource implements GuideDataSource {
 
   status(): Promise<GuideStatus> {
     return Promise.resolve(this.#snapshot.status);
+  }
+
+  tree(): Promise<GuideTree> {
+    const status = this.#snapshot.status;
+    if (status.generation.state !== "snapshot" && status.generation.state !== "live") {
+      return Promise.reject(new GuideNotServableError(status));
+    }
+    if (!this.#snapshot.tree) {
+      return Promise.reject(
+        new GuideSourceError(
+          "this exported guide does not include the scope tree. Run `ctx guide` on the " +
+            "repository to reach it.",
+        ),
+      );
+    }
+    return Promise.resolve(this.#snapshot.tree);
   }
 
   overview(): Promise<BoundedProjection> {
