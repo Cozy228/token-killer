@@ -124,6 +124,33 @@ describe("ctx guide server", () => {
     expect(body.files).toBeUndefined();
   });
 
+  test("GET /api/generation re-reads current state per request, not the snapshot", async () => {
+    // A mutable provider proves the endpoint reflects the CURRENT store state
+    // (D33), not the frozen startup snapshot. memoMs:0 disables memoization.
+    let gen = { code: 1, git: 1, docs: 0, memory: 0 };
+    const provider = () => ({
+      generations: gen,
+      identity: `${gen.code}.${gen.git}.${gen.docs}.${gen.memory}`,
+      fileCount: 3,
+      declCount: 9,
+    });
+    const h = await start({ generationProvider: provider, generationMemoMs: 0 });
+    const boot = await fetch(h.url, { redirect: "manual" });
+    const cookie = boot.headers.getSetCookie()[0]!.split(";")[0]!;
+
+    const first = (await (
+      await fetch(`http://127.0.0.1:${h.port}/api/generation`, { headers: { cookie } })
+    ).json()) as { identity: string };
+    expect(first.identity).toBe("1.1.0.0");
+
+    // The store advances a generation between requests.
+    gen = { code: 2, git: 1, docs: 0, memory: 0 };
+    const second = (await (
+      await fetch(`http://127.0.0.1:${h.port}/api/generation`, { headers: { cookie } })
+    ).json()) as { identity: string };
+    expect(second.identity).toBe("2.1.0.0");
+  });
+
   test("the bootstrap token is single-use", async () => {
     const h = await start();
     // First use consumes it.

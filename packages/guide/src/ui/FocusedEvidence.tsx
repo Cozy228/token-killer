@@ -11,7 +11,19 @@ interface ConnRow {
   nodeId: string;
   name: string;
   pathTail: string;
-  claimId: number | null;
+  constituentClaimIds: number[];
+  omittedClaimCount: number;
+}
+
+/** "N claims" label + full-id hover title (D33 aggregate trust). */
+function claimsText(ids: number[], omitted: number): string {
+  const n = ids.length + omitted;
+  return n === 1 ? "1 claim" : `${n} claims`;
+}
+function claimsTitle(ids: number[], omitted: number): string {
+  if (ids.length === 0) return "no claim id";
+  const base = `claim_ids=${ids.join(",")}`;
+  return omitted > 0 ? `${base} (+${omitted} more)` : base;
 }
 
 const ROW_CAP = 12;
@@ -37,19 +49,33 @@ export function FocusedEvidence(props: {
     node.kind === "file" ? model.nodes.filter((n) => n.parent === node.id && n.kind === "decl") : [];
 
   const rows: ConnRow[] = [];
-  const add = (verb: string, otherId: string, claimId: number | null) => {
+  const add = (verb: string, otherId: string, ids: number[], omitted: number) => {
     const o = model.nodeIndex.get(otherId);
-    rows.push({ verb, nodeId: otherId, name: o?.name ?? otherId, pathTail: o ? tail(o.path) : otherId, claimId });
+    rows.push({
+      verb,
+      nodeId: otherId,
+      name: o?.name ?? otherId,
+      pathTail: o ? tail(o.path) : otherId,
+      constituentClaimIds: ids,
+      omittedClaimCount: omitted,
+    });
   };
   if (node.kind === "decl") {
     for (const e of model.edges.sym) {
-      if (e.src === selectedId) add("calls →", e.dst, e.claimId);
-      else if (e.dst === selectedId) add("← called by", e.src, e.claimId);
+      if (e.src === selectedId) add("calls →", e.dst, e.constituentClaimIds, e.omittedClaimCount);
+      else if (e.dst === selectedId) add("← called by", e.src, e.constituentClaimIds, e.omittedClaimCount);
     }
   } else if (node.kind === "file") {
     for (const e of model.edges.file) {
-      if (e.src === selectedId) add(e.kind === "calls" ? "calls →" : "imports →", e.dst, e.claimId);
-      else if (e.dst === selectedId) add(e.kind === "calls" ? "← called by" : "← imported by", e.src, e.claimId);
+      if (e.src === selectedId)
+        add(e.kind === "calls" ? "calls →" : "imports →", e.dst, e.constituentClaimIds, e.omittedClaimCount);
+      else if (e.dst === selectedId)
+        add(
+          e.kind === "calls" ? "← called by" : "← imported by",
+          e.src,
+          e.constituentClaimIds,
+          e.omittedClaimCount,
+        );
     }
   }
 
@@ -106,7 +132,14 @@ export function FocusedEvidence(props: {
                 <span className="fe-row-verb">{r.verb}</span>
                 <span className="fe-row-name mono">{r.name}</span>
                 <span className="fe-row-tail">{r.pathTail}</span>
-                {r.claimId != null ? <span className="fe-row-prov mono">claim_id={r.claimId}</span> : null}
+                {r.constituentClaimIds.length > 0 || r.omittedClaimCount > 0 ? (
+                  <span
+                    className="fe-row-prov mono"
+                    title={claimsTitle(r.constituentClaimIds, r.omittedClaimCount)}
+                  >
+                    {claimsText(r.constituentClaimIds, r.omittedClaimCount)}
+                  </span>
+                ) : null}
               </button>
               {onOpenConnections ? (
                 <button

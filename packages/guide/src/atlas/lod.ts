@@ -6,6 +6,7 @@
 
 import { ancestors as ancestorsOf } from "./compile.js";
 import type { AtlasEdge, AtlasModel, AtlasNode, Viewport, VisibleSlice } from "./types.js";
+import { accumulateClaims, emptyClaimAccumulator, finalizeClaimSet } from "./types.js";
 
 export interface LodOptions {
   maxNodes: number;
@@ -280,7 +281,15 @@ export function computeSlice(
     ...model.edges.file.filter((e) => e.kind === "imports"),
   ];
 
-  const agg = new Map<string, AtlasEdge>();
+  interface EdgeAgg {
+    src: string;
+    dst: string;
+    kind: "calls" | "imports";
+    count: number;
+    claims: ReturnType<typeof emptyClaimAccumulator>;
+    lit: boolean;
+  }
+  const agg = new Map<string, EdgeAgg>();
   for (const e of logicalEdges) {
     const vs = nearestVisible(e.src);
     const vd = nearestVisible(e.dst);
@@ -288,26 +297,42 @@ export function computeSlice(
     // An aggregated edge is lit iff ANY constituent atom edge is lit (defect 2).
     const atomLit = litEdgeKeys ? litEdgeKeys.has(`${e.kind} ${e.src} ${e.dst}`) : false;
     const key = `${e.kind} ${vs} ${vd}`;
-    const cur = agg.get(key);
-    if (cur) {
-      cur.count += e.count;
-      if (atomLit) cur.lit = true;
-    } else {
-      agg.set(key, {
+    let cur = agg.get(key);
+    if (!cur) {
+      cur = {
         src: vs,
         dst: vd,
         kind: e.kind,
-        count: e.count,
-        claimId: e.claimId,
-        lit: atomLit,
-      });
+        count: 0,
+        claims: emptyClaimAccumulator(),
+        lit: false,
+      };
+      agg.set(key, cur);
     }
+    cur.count += e.count;
+    // Visible-ancestor claim-set rollup (D33): union constituent ids of every
+    // atom edge folded into this visible aggregate; carry omitted counts forward.
+    accumulateClaims(cur.claims, e.constituentClaimIds, e.omittedClaimCount);
+    if (atomLit) cur.lit = true;
   }
 
   const cmp = (a: string, b: string) => (a < b ? -1 : a > b ? 1 : 0);
-  const aggEdges = [...agg.values()].sort(
-    (a, b) => b.count - a.count || cmp(a.kind, b.kind) || cmp(a.src, b.src) || cmp(a.dst, b.dst),
-  );
+  const aggEdges: AtlasEdge[] = [...agg.values()]
+    .sort(
+      (a, b) => b.count - a.count || cmp(a.kind, b.kind) || cmp(a.src, b.src) || cmp(a.dst, b.dst),
+    )
+    .map((a) => {
+      const cs = finalizeClaimSet(a.claims);
+      return {
+        src: a.src,
+        dst: a.dst,
+        kind: a.kind,
+        count: a.count,
+        constituentClaimIds: cs.constituentClaimIds,
+        omittedClaimCount: cs.omittedClaimCount,
+        lit: a.lit,
+      };
+    });
   const keptEdges = aggEdges.slice(0, opts.maxEdges);
   const droppedEdges = aggEdges.length - keptEdges.length;
 

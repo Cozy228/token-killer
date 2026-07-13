@@ -19,9 +19,16 @@ import type {
   ResolvedEvent,
   Viewport,
 } from "./types.js";
+import { accumulateClaims, emptyClaimAccumulator, finalizeClaimSet } from "./types.js";
 
 const HEX = /^[0-9a-f]{7,40}$/;
 const VIEWPORT_PAD = 4;
+/**
+ * Max directly-observed 1-hop neighbors added per anchor (D32 real expansion).
+ * Beyond this the neighbor edge is dropped and counted in `omittedNeighborCount`
+ * — a bounded, disclosed projection rather than the anchor-induced hairball.
+ */
+const NEIGHBOR_CAP_PER_ANCHOR = 8;
 
 /** Strip an optional `commit:` prefix from a diff endpoint. */
 function normHex(raw: string): string {
@@ -102,25 +109,38 @@ export function resolveEvent(
 
 const cmp = (a: string, b: string) => (a < b ? -1 : a > b ? 1 : 0);
 
-/** Resolve raw anchors to atlas node ids that actually exist in the model. */
-function resolveAnchorNodes(event: ProjectableEvent, model: AtlasModel): Set<string> {
-  const set = new Set<string>();
+/**
+ * Resolve raw anchors to atlas node ids that exist in the model. With D33 kernel
+ * completeness most symbol anchors resolve to their decl node; where one still
+ * cannot, it is DOWNGRADED to its containing file lot and counted (disclosed,
+ * never silent — the old behaviour hid 219 of 227 default-event symbols).
+ */
+function resolveAnchorNodes(
+  event: ProjectableEvent,
+  model: AtlasModel,
+): { anchors: Set<string>; downgrades: number } {
+  const anchors = new Set<string>();
+  let downgrades = 0;
   for (const f of event.anchorFiles) {
-    if (model.nodeIndex.has(f)) set.add(f);
+    if (model.nodeIndex.has(f)) anchors.add(f);
   }
   for (const s of event.anchorSyms) {
-    if (model.nodeIndex.has(s)) set.add(s);
-    else {
-      // Fall back to the containing file lot when the decl is not an atlas atom.
-      const parent = fileId(s.startsWith("sym:") ? s.slice(4).split("#")[0] : s);
-      if (model.nodeIndex.has(parent)) set.add(parent);
+    if (model.nodeIndex.has(s)) {
+      anchors.add(s);
+      continue;
+    }
+    // Fall back to the containing file lot when the decl is not an atlas atom.
+    const parent = fileId(s.startsWith("sym:") ? s.slice(4).split("#")[0] : s);
+    if (model.nodeIndex.has(parent)) {
+      anchors.add(parent);
+      downgrades++;
     }
   }
-  return set;
+  return { anchors, downgrades };
 }
 
 export function project(event: ProjectableEvent, model: AtlasModel): EventProjection {
-  const anchorSet = resolveAnchorNodes(event, model);
+  const { anchors: anchorSet, downgrades } = resolveAnchorNodes(event, model);
 
   // An id "resolves" to the event if it or an ancestor is an anchor node.
   const resolves = (id: string): boolean => {
@@ -128,28 +148,66 @@ export function project(event: ProjectableEvent, model: AtlasModel): EventProjec
     for (const a of ancestors(model, id)) if (anchorSet.has(a.id)) return true;
     return false;
   };
+  // Nearest anchor owning an id (self or ancestor) — the owner for neighbor caps.
+  const anchorOf = (id: string): string | null => {
+    if (anchorSet.has(id)) return id;
+    for (const a of ancestors(model, id)) if (anchorSet.has(a.id)) return a.id;
+    return null;
+  };
 
+  // The VIEWPORT lit set: anchors + directly observed 1-hop neighbors ONLY.
+  // Ancestors are collected SEPARATELY (litAncestors) and NEVER enter this set —
+  // the root region rect spans the whole world, so lit ancestors would pollute
+  // the viewport bbox back to root±padding (the tested defect class, D32).
   const lit = new Set<string>(anchorSet);
-  // Contains parents (region path to root) for every anchor.
-  for (const id of anchorSet) {
-    for (const a of ancestors(model, id)) lit.add(a.id);
-  }
+  const neighborSet = new Set<string>();
 
-  // Lit observed edges: direct calls/imports where BOTH endpoints resolve.
+  // Lit observed edges (D32 real 1-hop): an edge enters the projection if EITHER
+  // endpoint resolves. Both resolve -> an anchor-to-anchor path edge. Exactly one
+  // resolves -> the far endpoint is a NEIGHBOR, capped per owning anchor with a
+  // disclosed omission count (no anchor-induced hairball).
   const litEdges: AtlasEdge[] = [];
+  const neighborCount = new Map<string, number>();
+  let omittedNeighborCount = 0;
   const considerEdge = (e: AtlasEdge) => {
     if (!model.nodeIndex.has(e.src) || !model.nodeIndex.has(e.dst)) return;
-    if (!resolves(e.src) || !resolves(e.dst)) return;
-    litEdges.push(e);
-    for (const endpoint of [e.src, e.dst]) {
-      lit.add(endpoint);
-      for (const a of ancestors(model, endpoint)) lit.add(a.id);
+    const rs = resolves(e.src);
+    const rd = resolves(e.dst);
+    if (!rs && !rd) return;
+    if (rs && rd) {
+      // Anchor-to-anchor observed path: both endpoints already in the changed set.
+      litEdges.push(e);
+      lit.add(e.src);
+      lit.add(e.dst);
+      return;
     }
+    // One endpoint resolves; the other is a 1-hop neighbor. Cap per owning anchor.
+    const anchorEndpoint = rs ? e.src : e.dst;
+    const neighborEndpoint = rs ? e.dst : e.src;
+    const owner = anchorOf(anchorEndpoint);
+    if (owner === null) return; // defensive: resolves() true implies an owner
+    const seen = neighborCount.get(owner) ?? 0;
+    if (seen >= NEIGHBOR_CAP_PER_ANCHOR) {
+      omittedNeighborCount++;
+      return;
+    }
+    neighborCount.set(owner, seen + 1);
+    litEdges.push(e);
+    lit.add(anchorEndpoint);
+    lit.add(neighborEndpoint);
+    neighborSet.add(neighborEndpoint);
   };
   for (const e of model.edges.sym) considerEdge(e);
   for (const e of model.edges.file) if (e.kind === "imports") considerEdge(e);
 
   litEdges.sort((a, b) => cmp(a.kind, b.kind) || cmp(a.src, b.src) || cmp(a.dst, b.dst));
+
+  // Lit ancestors: containing folders of every lit node — for LEFT-TREE highlight
+  // only. Collected AFTER the viewport set is frozen so they never widen it.
+  const litAncestors = new Set<string>();
+  for (const id of lit) {
+    for (const a of ancestors(model, id)) litAncestors.add(a.id);
+  }
 
   // BFS hop distance from anchors over the lit calls/imports edges (undirected).
   const adj = new Map<string, string[]>();
@@ -186,13 +244,25 @@ export function project(event: ProjectableEvent, model: AtlasModel): EventProjec
     h: number,
     edgeKind: RailStep["edgeKind"],
     provenance: string,
+    constituentClaimIds: number[] = [],
+    omittedClaimCount = 0,
   ) => {
     const node = model.nodeIndex.get(nodeId);
     if (!node) return;
     const key = `${group}:${nodeId}`;
     if (seen.has(key)) return;
     seen.add(key);
-    steps.push({ nodeId, group, hop: h, edgeKind, provenance, label: node.name, path: node.path });
+    steps.push({
+      nodeId,
+      group,
+      hop: h,
+      edgeKind,
+      provenance,
+      label: node.name,
+      path: node.path,
+      constituentClaimIds,
+      omittedClaimCount,
+    });
   };
 
   const anchorProvenance = event.from
@@ -213,6 +283,8 @@ export function project(event: ProjectableEvent, model: AtlasModel): EventProjec
         provenance: "structural:contains",
         label: a.name,
         path: a.path,
+        constituentClaimIds: [],
+        omittedClaimCount: 0,
       });
       dist++;
     }
@@ -228,47 +300,98 @@ export function project(event: ProjectableEvent, model: AtlasModel): EventProjec
     steps.push(s);
   }
 
-  // Calls + imports: one step per lit edge, keyed on its far (dst) endpoint.
+  // Calls + imports: one step per lit edge, keyed on its far (dst) endpoint. Claim
+  // ids from EVERY constituent edge to that endpoint are unioned into the step's
+  // claim set (D33 aggregate trust — never "count + first claim id").
   const edgeSteps = (kind: "calls" | "imports", group: RailGroup): RailStep[] => {
-    const collected: RailStep[] = [];
+    interface Agg {
+      nodeId: string;
+      hop: number;
+      label: string;
+      path: string;
+      claims: ReturnType<typeof emptyClaimAccumulator>;
+    }
+    const byNode = new Map<string, Agg>();
     for (const e of litEdges) {
       if (e.kind !== kind) continue;
       const node = model.nodeIndex.get(e.dst);
       if (!node) continue;
-      collected.push({
-        nodeId: e.dst,
-        group,
-        hop: hop.get(e.dst) ?? 1,
-        edgeKind: kind,
-        provenance: `links.claim_id=${e.claimId ?? "unknown"} predicate=${kind}`,
-        label: node.name,
-        path: node.path,
+      const h = hop.get(e.dst) ?? 1;
+      let a = byNode.get(e.dst);
+      if (!a) {
+        a = {
+          nodeId: e.dst,
+          hop: h,
+          label: node.name,
+          path: node.path,
+          claims: emptyClaimAccumulator(),
+        };
+        byNode.set(e.dst, a);
+      } else if (h < a.hop) {
+        a.hop = h;
+      }
+      accumulateClaims(a.claims, e.constituentClaimIds, e.omittedClaimCount);
+    }
+    return [...byNode.values()]
+      .sort((a, b) => a.hop - b.hop || cmp(a.path, b.path))
+      .map((a) => {
+        const cs = finalizeClaimSet(a.claims);
+        const ids =
+          cs.constituentClaimIds.length > 0 ? cs.constituentClaimIds.join(",") : "unknown";
+        return {
+          nodeId: a.nodeId,
+          group,
+          hop: a.hop,
+          edgeKind: kind,
+          provenance: `links.claim_ids=${ids} predicate=${kind}`,
+          label: a.label,
+          path: a.path,
+          constituentClaimIds: cs.constituentClaimIds,
+          omittedClaimCount: cs.omittedClaimCount,
+        };
       });
-    }
-    const min = new Map<string, RailStep>();
-    for (const s of collected) {
-      const cur = min.get(s.nodeId);
-      if (!cur || s.hop < cur.hop) min.set(s.nodeId, s);
-    }
-    return [...min.values()].sort((a, b) => a.hop - b.hop || cmp(a.path, b.path));
   };
   for (const s of edgeSteps("calls", "calls"))
-    push("calls", s.nodeId, s.hop, "calls", s.provenance);
+    push(
+      "calls",
+      s.nodeId,
+      s.hop,
+      "calls",
+      s.provenance,
+      s.constituentClaimIds,
+      s.omittedClaimCount,
+    );
   for (const s of edgeSteps("imports", "imports"))
-    push("imports", s.nodeId, s.hop, "imports", s.provenance);
+    push(
+      "imports",
+      s.nodeId,
+      s.hop,
+      "imports",
+      s.provenance,
+      s.constituentClaimIds,
+      s.omittedClaimCount,
+    );
 
-  // Viewport: bounding box over lit nodes, padded.
+  // Viewport: bounding box over the LIT set (anchors + neighbors) ONLY. Ancestors
+  // are excluded by construction, so the root region can no longer pollute it.
   const viewport = boundingViewport(
     [...lit].map((id) => model.nodeIndex.get(id)).filter(Boolean) as AtlasNode[],
   );
 
   return {
     litNodeIds: [...lit].sort(cmp),
+    anchors: [...anchorSet].sort(cmp),
+    neighbors: [...neighborSet].sort(cmp),
+    litAncestors: [...litAncestors].sort(cmp),
     litEdges,
     viewport,
     rail: steps,
     event: { kind: "diff", label: event.label, from: event.from, to: event.to },
+    downgrades,
+    omittedNeighborCount,
     projectionId: model.projectionId,
+    structuralProjectionId: model.structuralProjectionId,
+    evidenceProjectionId: model.evidenceProjectionId,
   };
 }
 

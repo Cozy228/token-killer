@@ -86,6 +86,29 @@ body {
   font-size: 11px;
   color: var(--ink-muted);
 }
+/* Data-state honesty badge (D33 / E5): live | snapshot | snapshot (live down). */
+.hud-data-state {
+  margin-left: 6px;
+  padding: 1px 6px;
+  border-radius: 999px;
+  font-family: var(--font-mono);
+  font-size: 10px;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  border: 1px solid var(--line, #ccc);
+  color: var(--ink-muted);
+}
+.data-state-live {
+  color: #0a7d3f;
+  border-color: #0a7d3f;
+}
+.data-state-snapshot {
+  color: var(--ink-muted);
+}
+.data-state-snapshot-degraded {
+  color: #b06a00;
+  border-color: #b06a00;
+}
 .omnibox {
   flex: 1 1 260px;
   min-width: 200px;

@@ -107,11 +107,15 @@ describe("packing invariants", () => {
     }
   });
 
-  it("discloses a +N overflow marker beyond lot capacity", () => {
+  it("emits EVERY declaration as a node (D33 kernel completeness — no truncation)", () => {
+    // The old MAX_DECLS_SHOWN=34 cap silently deleted decls beyond a lot's grid.
+    // Now every declaration is a logical node and there is no overflow.
     const big = model.nodeIndex.get("file:src/big.ts")!;
-    expect(big.overflow).toBe(6); // 40 decls - 34 shown
-    const declCount = model.nodes.filter((n) => n.parent === big.id).length;
-    expect(declCount).toBe(34);
+    expect(big.overflow).toBe(0);
+    const declNodes = model.nodes.filter((n) => n.parent === big.id && n.kind === "decl");
+    expect(declNodes.length).toBe(40); // all 40 fixture decls present
+    // The lot grew to hold them all, so decls still pack inside it (geometry valid).
+    for (const d of declNodes) expect(contains(big.rect, d.rect)).toBe(true);
   });
 });
 

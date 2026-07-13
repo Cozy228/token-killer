@@ -169,14 +169,17 @@ describe("FocusGraph first-class surface (keyboard, cycle, edge cases)", () => {
     expect(declText).toContain("DEFAULTS");
   });
 
-  it("carries decl-pair provenance (claim_id) on a counterpart card", () => {
+  it("carries decl-pair provenance (claim set) on a counterpart card", () => {
     const { container } = renderGraph("file:src/app.ts");
     const inbound = container.querySelector(".fg-col-inbound")!;
     const card = within(inbound as HTMLElement).getByText("index.ts").closest("li")!;
     const expand = card.querySelector(".fg-expand") as HTMLButtonElement;
     expect(expand).toBeTruthy();
     fireEvent.click(expand);
-    expect(card.querySelector(".fg-pair-prov")?.textContent).toMatch(/claim_id=/);
+    const prov = card.querySelector(".fg-pair-prov");
+    // D33: visible text is the honest "N claims"; the full id list is in the title.
+    expect(prov?.textContent).toMatch(/\d+\s+claims?/);
+    expect(prov?.getAttribute("title")).toMatch(/claim_ids=/);
   });
 
   it("solidly roots a decl subject (grouped counterparts)", () => {
@@ -197,7 +200,8 @@ describe("FocusGraph first-class surface (keyboard, cycle, edge cases)", () => {
       dst: "file:src/ghost.ts",
       kind: "imports",
       count: 1,
-      claimId: null,
+      constituentClaimIds: [],
+      omittedClaimCount: 0,
     });
     const focus = buildFocusModel(m, "file:src/app.ts")!;
     const absent = focus.outbound.pills.find((p) => p.notInIndex);

@@ -111,6 +111,11 @@ describe("SpikeApp integration smoke", () => {
 
     const mapHud = container.querySelector(".map-hud");
     expect(mapHud?.textContent).toContain(`visible ${slice.counts.visibleNodes}/`);
+
+    // Data-state honesty badge (D33 / E5): the stubbed live endpoint succeeds, so
+    // the top bar truthfully shows the "live" source.
+    const badge = container.querySelector(".hud-data-state");
+    expect(badge?.textContent).toBe("live");
   });
 
   it("selecting a node emphasizes its edges and opens the evidence panel (R4-1/R4-3)", async () => {

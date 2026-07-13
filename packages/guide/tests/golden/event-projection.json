@@ -1,13 +1,34 @@
 {
   "litNodeIds": [
+    "file:src/app.ts",
+    "file:src/index.ts",
+    "file:src/router.ts",
+    "file:src/util/math.ts",
+    "sym:src/app.ts#run",
+    "sym:src/index.ts#main",
+    "sym:src/util/math.ts#add",
+    "sym:src/util/math.ts#mul",
+    "sym:src/util/str.ts#trim"
+  ],
+  "anchors": [
+    "file:src/app.ts",
+    "file:src/util/math.ts",
+    "sym:src/util/math.ts#add"
+  ],
+  "neighbors": [
+    "file:src/index.ts",
+    "file:src/router.ts",
+    "sym:src/index.ts#main",
+    "sym:src/util/str.ts#trim"
+  ],
+  "litAncestors": [
     "dir:src",
     "dir:src/util",
     "file:src/app.ts",
+    "file:src/index.ts",
     "file:src/util/math.ts",
-    "repo:root",
-    "sym:src/app.ts#run",
-    "sym:src/util/math.ts#add",
-    "sym:src/util/math.ts#mul"
+    "file:src/util/str.ts",
+    "repo:root"
   ],
   "litEdges": [
     {
@@ -15,28 +36,77 @@
       "dst": "sym:src/util/math.ts#add",
       "kind": "calls",
       "count": 1,
-      "claimId": 102
+      "constituentClaimIds": [
+        102
+      ],
+      "omittedClaimCount": 0
+    },
+    {
+      "src": "sym:src/app.ts#run",
+      "dst": "sym:src/util/str.ts#trim",
+      "kind": "calls",
+      "count": 1,
+      "constituentClaimIds": [
+        103
+      ],
+      "omittedClaimCount": 0
+    },
+    {
+      "src": "sym:src/index.ts#main",
+      "dst": "sym:src/app.ts#run",
+      "kind": "calls",
+      "count": 2,
+      "constituentClaimIds": [
+        101
+      ],
+      "omittedClaimCount": 0
     },
     {
       "src": "sym:src/util/math.ts#mul",
       "dst": "sym:src/util/math.ts#add",
       "kind": "calls",
       "count": 3,
-      "claimId": 105
+      "constituentClaimIds": [
+        105
+      ],
+      "omittedClaimCount": 0
+    },
+    {
+      "src": "file:src/app.ts",
+      "dst": "file:src/router.ts",
+      "kind": "imports",
+      "count": 1,
+      "constituentClaimIds": [
+        203
+      ],
+      "omittedClaimCount": 0
     },
     {
       "src": "file:src/app.ts",
       "dst": "file:src/util/math.ts",
       "kind": "imports",
       "count": 1,
-      "claimId": 202
+      "constituentClaimIds": [
+        202
+      ],
+      "omittedClaimCount": 0
+    },
+    {
+      "src": "file:src/index.ts",
+      "dst": "file:src/app.ts",
+      "kind": "imports",
+      "count": 1,
+      "constituentClaimIds": [
+        201
+      ],
+      "omittedClaimCount": 0
     }
   ],
   "viewport": {
-    "x": -4,
-    "y": -4,
-    "w": 28,
-    "h": 35
+    "x": -2,
+    "y": 5,
+    "w": 25,
+    "h": 23
   },
   "rail": [
     {
@@ -46,7 +116,9 @@
       "edgeKind": "anchor",
       "provenance": "diff-range aaaaaaa..bbbbbbb",
       "label": "app.ts",
-      "path": "src/app.ts"
+      "path": "src/app.ts",
+      "constituentClaimIds": [],
+      "omittedClaimCount": 0
     },
     {
       "nodeId": "file:src/util/math.ts",
@@ -55,7 +127,9 @@
       "edgeKind": "anchor",
       "provenance": "diff-range aaaaaaa..bbbbbbb",
       "label": "math.ts",
-      "path": "src/util/math.ts"
+      "path": "src/util/math.ts",
+      "constituentClaimIds": [],
+      "omittedClaimCount": 0
     },
     {
       "nodeId": "sym:src/util/math.ts#add",
@@ -64,7 +138,9 @@
       "edgeKind": "anchor",
       "provenance": "diff-range aaaaaaa..bbbbbbb",
       "label": "add",
-      "path": "src/util/math.ts#add"
+      "path": "src/util/math.ts#add",
+      "constituentClaimIds": [],
+      "omittedClaimCount": 0
     },
     {
       "nodeId": "dir:src",
@@ -73,7 +149,9 @@
       "edgeKind": "contains",
       "provenance": "structural:contains",
       "label": "src",
-      "path": "src"
+      "path": "src",
+      "constituentClaimIds": [],
+      "omittedClaimCount": 0
     },
     {
       "nodeId": "dir:src/util",
@@ -82,7 +160,9 @@
       "edgeKind": "contains",
       "provenance": "structural:contains",
       "label": "util",
-      "path": "src/util"
+      "path": "src/util",
+      "constituentClaimIds": [],
+      "omittedClaimCount": 0
     },
     {
       "nodeId": "file:src/util/math.ts",
@@ -91,7 +171,9 @@
       "edgeKind": "contains",
       "provenance": "structural:contains",
       "label": "math.ts",
-      "path": "src/util/math.ts"
+      "path": "src/util/math.ts",
+      "constituentClaimIds": [],
+      "omittedClaimCount": 0
     },
     {
       "nodeId": "repo:root",
@@ -100,25 +182,88 @@
       "edgeKind": "contains",
       "provenance": "structural:contains",
       "label": "fixture-repo",
-      "path": ""
+      "path": "",
+      "constituentClaimIds": [],
+      "omittedClaimCount": 0
     },
     {
       "nodeId": "sym:src/util/math.ts#add",
       "group": "calls",
       "hop": 0,
       "edgeKind": "calls",
-      "provenance": "links.claim_id=102 predicate=calls",
+      "provenance": "links.claim_ids=102,105 predicate=calls",
       "label": "add",
-      "path": "src/util/math.ts#add"
+      "path": "src/util/math.ts#add",
+      "constituentClaimIds": [
+        102,
+        105
+      ],
+      "omittedClaimCount": 0
+    },
+    {
+      "nodeId": "sym:src/app.ts#run",
+      "group": "calls",
+      "hop": 1,
+      "edgeKind": "calls",
+      "provenance": "links.claim_ids=101 predicate=calls",
+      "label": "run",
+      "path": "src/app.ts#run",
+      "constituentClaimIds": [
+        101
+      ],
+      "omittedClaimCount": 0
+    },
+    {
+      "nodeId": "sym:src/util/str.ts#trim",
+      "group": "calls",
+      "hop": 2,
+      "edgeKind": "calls",
+      "provenance": "links.claim_ids=103 predicate=calls",
+      "label": "trim",
+      "path": "src/util/str.ts#trim",
+      "constituentClaimIds": [
+        103
+      ],
+      "omittedClaimCount": 0
+    },
+    {
+      "nodeId": "file:src/app.ts",
+      "group": "imports",
+      "hop": 0,
+      "edgeKind": "imports",
+      "provenance": "links.claim_ids=201 predicate=imports",
+      "label": "app.ts",
+      "path": "src/app.ts",
+      "constituentClaimIds": [
+        201
+      ],
+      "omittedClaimCount": 0
     },
     {
       "nodeId": "file:src/util/math.ts",
       "group": "imports",
       "hop": 0,
       "edgeKind": "imports",
-      "provenance": "links.claim_id=202 predicate=imports",
+      "provenance": "links.claim_ids=202 predicate=imports",
       "label": "math.ts",
-      "path": "src/util/math.ts"
+      "path": "src/util/math.ts",
+      "constituentClaimIds": [
+        202
+      ],
+      "omittedClaimCount": 0
+    },
+    {
+      "nodeId": "file:src/router.ts",
+      "group": "imports",
+      "hop": 1,
+      "edgeKind": "imports",
+      "provenance": "links.claim_ids=203 predicate=imports",
+      "label": "router.ts",
+      "path": "src/router.ts",
+      "constituentClaimIds": [
+        203
+      ],
+      "omittedClaimCount": 0
     }
   ],
   "event": {
@@ -127,5 +272,9 @@
     "from": "aaaaaaa",
     "to": "bbbbbbb"
   },
-  "projectionId": "83cee9a7"
+  "downgrades": 0,
+  "omittedNeighborCount": 0,
+  "projectionId": "83cee9a7",
+  "structuralProjectionId": "83cee9a7",
+  "evidenceProjectionId": "46fe4dd5"
 }

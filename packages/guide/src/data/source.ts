@@ -14,6 +14,12 @@ export interface CorpusLoad {
   /** Byte size of the transferred JSON (perf recorder input). */
   bytes: number;
   via: "live" | "snapshot";
+  /**
+   * When the live endpoint was tried and failed, the reason it fell back to the
+   * static snapshot — surfaced so the top-bar badge can read "snapshot (live
+   * unavailable)" instead of a silent downgrade (D33 data-state honesty).
+   */
+  error?: string;
 }
 
 export interface GuideDataSource {
@@ -101,8 +107,11 @@ export class FallbackDataSource implements GuideDataSource {
   async load(signal?: AbortSignal): Promise<CorpusLoad> {
     try {
       return await this.#primary.load(signal);
-    } catch {
-      return this.#fallback.load(signal);
+    } catch (err) {
+      // Live failed: fall back to the snapshot but DISCLOSE why (never silent).
+      const reason = err instanceof Error ? err.message : String(err);
+      const fallback = await this.#fallback.load(signal);
+      return { ...fallback, error: reason };
     }
   }
   async pollGeneration(signal?: AbortSignal): Promise<GenerationInfo> {

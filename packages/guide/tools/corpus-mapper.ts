@@ -93,16 +93,37 @@ export function commitEpoch(attrs: string): number | null {
 }
 
 function aggregateEdges(links: RawLinkRow[]): CorpusEdge[] {
-  const map = new Map<string, CorpusEdge>();
+  interface Agg {
+    src: string;
+    dst: string;
+    count: number;
+    claimId: number | null;
+    claimIds: Set<number>;
+  }
+  const map = new Map<string, Agg>();
   for (const l of links) {
     if (l.src === l.dst) continue;
     const key = `${l.src} ${l.dst}`;
-    const cur = map.get(key);
-    if (cur) cur.count += 1;
-    else map.set(key, { src: l.src, dst: l.dst, count: 1, claimId: l.claim_id });
+    let cur = map.get(key);
+    if (!cur) {
+      cur = { src: l.src, dst: l.dst, count: 0, claimId: l.claim_id, claimIds: new Set<number>() };
+      map.set(key, cur);
+    }
+    cur.count += 1;
+    // D33 aggregate trust: collect EVERY distinct backing claim id (SQL dedup),
+    // not just the first — `claimId` stays as the first for wire back-compat.
+    if (l.claim_id !== null) cur.claimIds.add(l.claim_id);
   }
   const cmp = (a: string, b: string) => (a < b ? -1 : a > b ? 1 : 0);
-  return [...map.values()].sort((a, b) => cmp(a.src, b.src) || cmp(a.dst, b.dst));
+  return [...map.values()]
+    .sort((a, b) => cmp(a.src, b.src) || cmp(a.dst, b.dst))
+    .map((a) => ({
+      src: a.src,
+      dst: a.dst,
+      count: a.count,
+      claimId: a.claimId,
+      claimIds: [...a.claimIds].sort((x, y) => x - y),
+    }));
 }
 
 /** Throws if the corpus would leak an absolute path, homedir, or username. */

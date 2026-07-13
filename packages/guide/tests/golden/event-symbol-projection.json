@@ -1,0 +1,131 @@
+{
+  "litNodeIds": [
+    "sym:src/app.ts#run",
+    "sym:src/util/math.ts#add",
+    "sym:src/util/math.ts#mul"
+  ],
+  "anchors": [
+    "sym:src/util/math.ts#add"
+  ],
+  "neighbors": [
+    "sym:src/app.ts#run",
+    "sym:src/util/math.ts#mul"
+  ],
+  "litAncestors": [
+    "dir:src",
+    "dir:src/util",
+    "file:src/app.ts",
+    "file:src/util/math.ts",
+    "repo:root"
+  ],
+  "litEdges": [
+    {
+      "src": "sym:src/app.ts#run",
+      "dst": "sym:src/util/math.ts#add",
+      "kind": "calls",
+      "count": 1,
+      "constituentClaimIds": [
+        102
+      ],
+      "omittedClaimCount": 0
+    },
+    {
+      "src": "sym:src/util/math.ts#mul",
+      "dst": "sym:src/util/math.ts#add",
+      "kind": "calls",
+      "count": 3,
+      "constituentClaimIds": [
+        105
+      ],
+      "omittedClaimCount": 0
+    }
+  ],
+  "viewport": {
+    "x": -2,
+    "y": 5,
+    "w": 22,
+    "h": 19
+  },
+  "rail": [
+    {
+      "nodeId": "sym:src/util/math.ts#add",
+      "group": "anchors",
+      "hop": 0,
+      "edgeKind": "anchor",
+      "provenance": "symbol-anchor sym:src/util/math.ts#add",
+      "label": "add",
+      "path": "src/util/math.ts#add",
+      "constituentClaimIds": [],
+      "omittedClaimCount": 0
+    },
+    {
+      "nodeId": "file:src/util/math.ts",
+      "group": "contains",
+      "hop": 1,
+      "edgeKind": "contains",
+      "provenance": "structural:contains",
+      "label": "math.ts",
+      "path": "src/util/math.ts",
+      "constituentClaimIds": [],
+      "omittedClaimCount": 0
+    },
+    {
+      "nodeId": "dir:src/util",
+      "group": "contains",
+      "hop": 2,
+      "edgeKind": "contains",
+      "provenance": "structural:contains",
+      "label": "util",
+      "path": "src/util",
+      "constituentClaimIds": [],
+      "omittedClaimCount": 0
+    },
+    {
+      "nodeId": "dir:src",
+      "group": "contains",
+      "hop": 3,
+      "edgeKind": "contains",
+      "provenance": "structural:contains",
+      "label": "src",
+      "path": "src",
+      "constituentClaimIds": [],
+      "omittedClaimCount": 0
+    },
+    {
+      "nodeId": "repo:root",
+      "group": "contains",
+      "hop": 4,
+      "edgeKind": "contains",
+      "provenance": "structural:contains",
+      "label": "fixture-repo",
+      "path": "",
+      "constituentClaimIds": [],
+      "omittedClaimCount": 0
+    },
+    {
+      "nodeId": "sym:src/util/math.ts#add",
+      "group": "calls",
+      "hop": 0,
+      "edgeKind": "calls",
+      "provenance": "links.claim_ids=102,105 predicate=calls",
+      "label": "add",
+      "path": "src/util/math.ts#add",
+      "constituentClaimIds": [
+        102,
+        105
+      ],
+      "omittedClaimCount": 0
+    }
+  ],
+  "event": {
+    "kind": "diff",
+    "label": "sym:src/util/math.ts#add",
+    "from": "",
+    "to": ""
+  },
+  "downgrades": 0,
+  "omittedNeighborCount": 0,
+  "projectionId": "83cee9a7",
+  "structuralProjectionId": "83cee9a7",
+  "evidenceProjectionId": "46fe4dd5"
+}

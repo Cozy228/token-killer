@@ -34,12 +34,77 @@ export interface CorpusFile {
   recency: number | null;
 }
 
-/** A raw code edge carried with its provenance claim id. */
+/** A raw code edge carried with its provenance claim id(s). */
 export interface CorpusEdge {
   src: string;
   dst: string;
   count: number;
+  /**
+   * First observed claim id for this src->dst pair (back-compat / wire field).
+   * Kept so an already-generated corpus.json (single-claim shape) still loads.
+   */
   claimId: number | null;
+  /**
+   * ALL distinct claim ids that back this src->dst pair after SQL dedup (D33
+   * aggregate trust). Optional so a corpus.json generated before this field
+   * still loads; when absent, consumers fall back to `[claimId]`.
+   */
+  claimIds?: number[];
+}
+
+// ---------------------------------------------------------------------------
+// Claim sets (D33 aggregate trust). An aggregated edge/step carries the set of
+// constituent claim ids that back it, bounded to CLAIM_ID_CAP with the rest
+// disclosed as an omitted count — never "count + first claim id".
+// ---------------------------------------------------------------------------
+
+/** Max constituent claim ids carried inline; the rest become `omittedClaimCount`. */
+export const CLAIM_ID_CAP = 32;
+
+export interface ClaimSet {
+  /** Distinct claim ids, ascending, capped at CLAIM_ID_CAP. */
+  constituentClaimIds: number[];
+  /** Distinct claim ids beyond the cap (honest, bounded disclosure). */
+  omittedClaimCount: number;
+}
+
+/** Mutable accumulator for unioning claim ids across a rollup. */
+export interface ClaimAccumulator {
+  ids: Set<number>;
+  omitted: number;
+}
+
+export function emptyClaimAccumulator(): ClaimAccumulator {
+  return { ids: new Set<number>(), omitted: 0 };
+}
+
+/** Fold a claim source (id list + already-omitted count) into an accumulator. */
+export function accumulateClaims(acc: ClaimAccumulator, ids: Iterable<number>, omitted = 0): void {
+  for (const id of ids) acc.ids.add(id);
+  acc.omitted += omitted;
+}
+
+/** Cap + disclose: turn an accumulator into a bounded ClaimSet. */
+export function finalizeClaimSet(acc: ClaimAccumulator): ClaimSet {
+  const sorted = [...acc.ids].sort((a, b) => a - b);
+  const kept = sorted.slice(0, CLAIM_ID_CAP);
+  return {
+    constituentClaimIds: kept,
+    omittedClaimCount: acc.omitted + (sorted.length - kept.length),
+  };
+}
+
+/** One-shot: a bounded ClaimSet from a flat list of claim ids. */
+export function claimSetFromIds(ids: Iterable<number>): ClaimSet {
+  const acc = emptyClaimAccumulator();
+  accumulateClaims(acc, ids);
+  return finalizeClaimSet(acc);
+}
+
+/** Claim ids carried by a CorpusEdge (honest set if present, else the single id). */
+export function corpusEdgeClaimIds(e: CorpusEdge): number[] {
+  if (e.claimIds && e.claimIds.length > 0) return e.claimIds;
+  return e.claimId != null ? [e.claimId] : [];
 }
 
 /** A commit->target touch, carried only for the event's commit range. */
@@ -127,7 +192,14 @@ export interface AtlasEdge {
   dst: string;
   kind: "calls" | "imports";
   count: number;
-  claimId: number | null;
+  /**
+   * Distinct claim ids backing this (possibly aggregated) edge, bounded to
+   * CLAIM_ID_CAP (D33 aggregate trust). Replaces the former single `claimId`:
+   * an aggregated edge merges every constituent atom edge's claim id here.
+   */
+  constituentClaimIds: number[];
+  /** Distinct backing claim ids beyond the cap (honest, bounded disclosure). */
+  omittedClaimCount: number;
   /**
    * Set on a visible-slice edge when ANY constituent atom edge is lit for the
    * current event. Lets aggregated edges (folder->folder at far LOD) light up
@@ -144,8 +216,20 @@ export interface AtlasRegion {
 }
 
 export interface AtlasModel {
-  /** Stable content hash of the input (FNV-1a hex over canonical JSON). */
+  /**
+   * Stable content hash of the STRUCTURE (FNV-1a hex over canonical JSON of the
+   * files/decls/edge topology, no claim ids). Equal to `structuralProjectionId`;
+   * kept as `projectionId` so existing session/persist keys stay stable.
+   */
   projectionId: string;
+  /** Structure-only identity (files/decls/edges; claim ids excluded). */
+  structuralProjectionId: string;
+  /**
+   * Evidence identity (FNV-1a hex over the ordered claim-set content). Flips
+   * when the backing claims change even if the structure is byte-identical, so
+   * a claim-only regeneration is detectable (D33 projection identity).
+   */
+  evidenceProjectionId: string;
   nodes: AtlasNode[];
   /** id -> node, for O(1) lookup and ancestor walks. */
   nodeIndex: Map<string, AtlasNode>;
@@ -199,25 +283,66 @@ export interface VisibleSlice {
 
 export type RailGroup = "anchors" | "contains" | "calls" | "imports";
 
+/**
+ * A node's role in an event projection (D32):
+ *   - anchor    : a changed file/symbol the event names directly.
+ *   - neighbor  : a directly-observed 1-hop counterpart of an anchor.
+ *   - ancestor  : a containing folder — lit for tree highlight ONLY, never in
+ *                 the viewport bbox (root-pollution defect class).
+ */
+export type EventRole = "anchor" | "neighbor" | "ancestor";
+
 export interface RailStep {
   nodeId: string;
   group: RailGroup;
   hop: number;
   edgeKind: "anchor" | "contains" | "calls" | "imports";
-  /** Provenance string, e.g. `links.claim_id=14751 predicate=calls`. */
+  /** Provenance string, e.g. `links.claim_ids=14751,14802 predicate=calls`. */
   provenance: string;
   label: string;
   path: string;
+  /**
+   * Constituent claim ids backing this step (calls/imports steps; empty for
+   * anchor/contains steps which are structural). Bounded to CLAIM_ID_CAP.
+   */
+  constituentClaimIds: number[];
+  /** Backing claim ids beyond the cap. */
+  omittedClaimCount: number;
 }
 
 export interface EventProjection {
-  /** Sorted for byte-stable JSON. */
+  /**
+   * The lit set used for VIEWPORT math and canvas lighting: anchors + directly
+   * observed 1-hop neighbors ONLY. Ancestors are excluded by construction (they
+   * live in `litAncestors`); the viewport is this set's own bbox (D32).
+   */
   litNodeIds: string[];
+  /** Resolved changed anchors (subset of litNodeIds). */
+  anchors: string[];
+  /** Directly observed 1-hop neighbors of the anchors (subset of litNodeIds). */
+  neighbors: string[];
+  /**
+   * Containing folders of the lit set — for LEFT-TREE highlight only. NEVER
+   * enters the viewport bbox (root pollution is a defect class, now tested).
+   */
+  litAncestors: string[];
   litEdges: AtlasEdge[];
   viewport: Viewport;
   rail: RailStep[];
   event: { kind: "diff"; label: string; from: string; to: string };
+  /**
+   * Symbol anchors that could NOT resolve to a declaration node and were
+   * downgraded to their containing file (disclosed, not silent). With the D33
+   * kernel-completeness fix most symbols resolve, so this is normally small.
+   */
+  downgrades: number;
+  /** Neighbor edges dropped by the per-anchor neighbor cap (disclosed). */
+  omittedNeighborCount: number;
   projectionId: string;
+  /** Structure identity of the model this projection was computed from. */
+  structuralProjectionId: string;
+  /** Evidence identity of the model this projection was computed from. */
+  evidenceProjectionId: string;
 }
 
 /** Result of resolving a URL/corpus event into a projectable event, or a typed rejection. */

@@ -13,15 +13,21 @@ import type {
   AtlasModel,
   AtlasNode,
   AtlasRegion,
+  CorpusEdge,
   CorpusFile,
   CorpusInput,
   NodeStatus,
+} from "./types.js";
+import {
+  claimSetFromIds,
+  corpusEdgeClaimIds,
+  emptyClaimAccumulator,
+  finalizeClaimSet,
 } from "./types.js";
 
 // World-unit layout constants (integers). UNIT (px per unit) is a render concern.
 const GUTTER = 1;
 const HEADER = 1;
-const MAX_DECLS_SHOWN = 34;
 const SHELF_ASPECT = 1.4; // target region aspect ~1.2..1.6
 
 /** Footprint bucket side length by declaration count (D9). */
@@ -32,6 +38,18 @@ export function footprintFor(declCount: number): number {
   if (declCount <= 16) return 4;
   if (declCount <= 25) return 5;
   return 6;
+}
+
+/**
+ * File lot side length (world units). D33 kernel completeness: EVERY declaration
+ * is a logical node, so the lot must be large enough to hold ALL decls on its
+ * inner grid — the old MAX_DECLS_SHOWN=34 truncation is gone. For files up to a
+ * 6x6 grid this equals footprintFor(); beyond that it grows to ceil(sqrt(decls))
+ * so geometry stays valid (containment/no-overlap) while the model stays whole.
+ * Geometry is being retired (D26) — this only keeps the packer honest, not lossy.
+ */
+export function fileSide(declCount: number): number {
+  return Math.max(footprintFor(declCount), Math.ceil(Math.sqrt(Math.max(0, declCount))));
 }
 
 export function rootId(): string {
@@ -172,7 +190,7 @@ function sizeOf(
   cache: Map<TreeNode, LocalLayout>,
 ): { w: number; h: number; layout?: LocalLayout } {
   if (node.type === "file") {
-    const side = footprintFor(node.file.declCount);
+    const side = fileSide(node.file.declCount);
     return { w: side, h: side };
   }
   const layout = layoutFolder(node, cache);
@@ -287,10 +305,13 @@ function emitFile(
   out: { nodes: AtlasNode[]; regions: AtlasRegion[] },
 ): void {
   const file = node.file;
-  const side = footprintFor(file.declCount);
+  const side = fileSide(file.declCount);
   const fid = fileId(file.path);
-  const shown = Math.min(file.decls.length, MAX_DECLS_SHOWN, side * side);
-  const overflow = Math.max(0, file.declCount - shown);
+  // D33 kernel completeness: every declaration becomes a logical node. The lot
+  // grid is sized (fileSide) to hold them all, so there is no truncation and no
+  // overflow (the display "+N" budget now lives in projection/render layers).
+  const shown = file.decls.length;
+  const overflow = 0;
   out.nodes.push({
     id: fid,
     kind: "file",
@@ -336,42 +357,84 @@ function emitFile(
 function deriveEdges(input: CorpusInput, nodeIndex: Map<string, AtlasNode>): AtlasModel["edges"] {
   const cmp = (a: string, b: string) => (a < b ? -1 : a > b ? 1 : 0);
 
-  // Raw sym->sym calls that resolve to known decl nodes on both ends.
+  // Raw sym->sym calls that resolve to known decl nodes on both ends. Each keeps
+  // its own claim set (D33: never a single claim id, even for one atom edge).
   const sym: AtlasEdge[] = [];
   for (const e of input.edges.calls) {
     if (nodeIndex.has(e.src) && nodeIndex.has(e.dst) && e.src !== e.dst) {
-      sym.push({ src: e.src, dst: e.dst, kind: "calls", count: e.count, claimId: e.claimId });
+      const cs = claimSetFromIds(corpusEdgeClaimIds(e));
+      sym.push({
+        src: e.src,
+        dst: e.dst,
+        kind: "calls",
+        count: e.count,
+        constituentClaimIds: cs.constituentClaimIds,
+        omittedClaimCount: cs.omittedClaimCount,
+      });
     }
   }
   sym.sort((a, b) => cmp(a.src, b.src) || cmp(a.dst, b.dst));
 
-  // File-level aggregated calls + native file imports.
-  const fileAgg = new Map<string, AtlasEdge>();
-  const bump = (
-    src: string,
-    dst: string,
-    kind: "calls" | "imports",
-    count: number,
-    claimId: number | null,
-  ) => {
+  // File-level aggregated calls + native file imports. Claim ids from EVERY atom
+  // edge folded into the file-level edge's claim set (file-level rollup, D33).
+  interface FileAgg {
+    src: string;
+    dst: string;
+    kind: "calls" | "imports";
+    count: number;
+    claims: ReturnType<typeof emptyClaimAccumulator>;
+  }
+  const fileAgg = new Map<string, FileAgg>();
+  const bump = (src: string, dst: string, kind: "calls" | "imports", e: CorpusEdge) => {
     if (src === dst) return;
     if (!nodeIndex.has(src) || !nodeIndex.has(dst)) return;
-    const key = `${kind} ${src} ${dst}`;
-    const cur = fileAgg.get(key);
-    if (cur) cur.count += count;
-    else fileAgg.set(key, { src, dst, kind, count, claimId });
+    const key = `${kind} ${src} ${dst}`;
+    let cur = fileAgg.get(key);
+    if (!cur) {
+      cur = { src, dst, kind, count: 0, claims: emptyClaimAccumulator() };
+      fileAgg.set(key, cur);
+    }
+    cur.count += e.count;
+    for (const id of corpusEdgeClaimIds(e)) cur.claims.ids.add(id);
   };
   for (const e of input.edges.calls) {
-    bump(fileId(fileOfSym(e.src)), fileId(fileOfSym(e.dst)), "calls", e.count, e.claimId);
+    bump(fileId(fileOfSym(e.src)), fileId(fileOfSym(e.dst)), "calls", e);
   }
   for (const e of input.edges.imports) {
-    bump(e.src, e.dst, "imports", e.count, e.claimId);
+    bump(e.src, e.dst, "imports", e);
   }
-  const file = [...fileAgg.values()].sort(
-    (a, b) => cmp(a.kind, b.kind) || cmp(a.src, b.src) || cmp(a.dst, b.dst),
-  );
+  const file: AtlasEdge[] = [...fileAgg.values()]
+    .sort((a, b) => cmp(a.kind, b.kind) || cmp(a.src, b.src) || cmp(a.dst, b.dst))
+    .map((a) => {
+      const cs = finalizeClaimSet(a.claims);
+      return {
+        src: a.src,
+        dst: a.dst,
+        kind: a.kind,
+        count: a.count,
+        constituentClaimIds: cs.constituentClaimIds,
+        omittedClaimCount: cs.omittedClaimCount,
+      };
+    });
 
   return { file, sym };
+}
+
+/**
+ * Canonical string of the EVIDENCE (claim ids in structural context). Hashed to
+ * the evidenceProjectionId so a claim-only change flips identity while the
+ * structural hash (which excludes claim ids) stays byte-identical (D33).
+ */
+function canonicalEvidence(input: CorpusInput): string {
+  const cmp = (a: string, b: string) => (a < b ? -1 : a > b ? 1 : 0);
+  const line = (e: CorpusEdge) => [e.src, e.dst, [...corpusEdgeClaimIds(e)].sort((x, y) => x - y)];
+  const calls = [...input.edges.calls]
+    .sort((a, b) => cmp(a.src, b.src) || cmp(a.dst, b.dst))
+    .map(line);
+  const imports = [...input.edges.imports]
+    .sort((a, b) => cmp(a.src, b.src) || cmp(a.dst, b.dst))
+    .map(line);
+  return JSON.stringify({ calls, imports });
 }
 
 // ---------------------------------------------------------------------------
@@ -391,10 +454,13 @@ export function compile(input: CorpusInput): AtlasModel {
   for (const n of out.nodes) nodeIndex.set(n.id, n);
 
   const edges = deriveEdges(input, nodeIndex);
-  const projectionId = fnv1a(canonicalInput(input));
+  const structuralProjectionId = fnv1a(canonicalInput(input));
+  const evidenceProjectionId = fnv1a(canonicalEvidence(input));
 
   return {
-    projectionId,
+    projectionId: structuralProjectionId,
+    structuralProjectionId,
+    evidenceProjectionId,
     nodes: out.nodes,
     nodeIndex,
     edges,

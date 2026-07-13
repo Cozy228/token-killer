@@ -123,10 +123,14 @@ describe("cold-open hotspot viewport (D10)", () => {
       w: src.w + gx * 2,
       h: src.h + gy * 2,
     });
-    // The frame is anchored on ONE region, not the union of all lit nodes: the
-    // whole-lit bbox reaches the root origin, the hotspot does not.
-    const wholeLit = p.viewport;
-    expect(wholeLit.x).toBeLessThan(hotspot.x);
+    // The event viewport is now the lit set's OWN bbox (anchors + neighbors),
+    // with ancestors excluded (D32) — so it no longer reaches the root origin the
+    // way the old ancestor-polluted bbox did. It stays inside the root region.
+    const root = model.nodeIndex.get("repo:root")!.rect;
+    const vp = p.viewport;
+    const rootArea = root.w * root.h;
+    const vpArea = vp.w * vp.h;
+    expect(vpArea).toBeLessThan(rootArea);
   });
 
   it("counts lit files per top-level region and picks the winner", () => {

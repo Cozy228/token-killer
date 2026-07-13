@@ -20,9 +20,14 @@ import { DEFAULT_IDLE_MS, IdleBackstop } from "./idle.js";
 import {
   defaultCorpusDeps,
   loadGuideCorpus,
+  readGuideGeneration,
   type CorpusDeps,
   type GuideCorpusResult,
+  type GuideGenerationInfo,
 } from "./corpus.js";
+
+/** Default memo window for the per-request generation re-read (D33). */
+export const GENERATION_MEMO_MS = 2_000;
 
 export interface StartGuideOptions {
   home?: string;
@@ -42,6 +47,15 @@ export interface StartGuideOptions {
   corpusDeps?: CorpusDeps;
   /** Test seam: fixed bootstrap token. */
   token?: string;
+  /**
+   * Current-generation provider for GET /api/generation (D33 data-state honesty):
+   * re-read per request (memoized) instead of serving the startup snapshot. The
+   * real server wires a cheap read-only store read; tests inject a stub. When
+   * absent (fixture / injected corpus), the startup snapshot payload is served.
+   */
+  generationProvider?: () => GuideGenerationInfo;
+  /** Memo window (ms) for the generation provider. Default GENERATION_MEMO_MS. */
+  generationMemoMs?: number;
 }
 
 export interface GuideHandle {
@@ -89,6 +103,32 @@ export async function startGuide(opts: StartGuideOptions = {}): Promise<GuideHan
     ));
 
   const auth = new GuideAuth(opts.token);
+
+  // Per-request current-generation re-read (D33): serve the CURRENT store state,
+  // not the frozen startup snapshot. Memoized so a reload storm can't hammer the
+  // store. Falls back to the startup payload when no provider is wired (fixture /
+  // injected corpus) or when the read throws (store transiently unavailable).
+  const corpusDeps = opts.corpusDeps ?? defaultCorpusDeps;
+  const generationProvider: (() => GuideGenerationInfo) | undefined =
+    opts.generationProvider ??
+    (!opts.corpus && !opts.fixture
+      ? () => readGuideGeneration({ home: opts.home, projectDir: opts.projectDir }, corpusDeps)
+      : undefined);
+  const generationMemoMs = opts.generationMemoMs ?? GENERATION_MEMO_MS;
+  let genCache: { json: string; at: number } | null = null;
+  const currentGenerationJson = (): string => {
+    if (!generationProvider) return corpus.generationJson;
+    const now = Date.now();
+    if (genCache && now - genCache.at < generationMemoMs) return genCache.json;
+    try {
+      const json = JSON.stringify(generationProvider());
+      genCache = { json, at: now };
+      return json;
+    } catch {
+      // Store unavailable this instant: serve the startup snapshot, do not cache.
+      return corpus.generationJson;
+    }
+  };
 
   let closeResolve!: () => void;
   const closed = new Promise<void>((r) => {
@@ -156,14 +196,15 @@ export async function startGuide(opts: StartGuideOptions = {}): Promise<GuideHan
       return;
     }
 
-    // Cheap generation metadata (D10): identity + counts, never the full corpus.
-    // The reader polls this to detect a new generation without swapping the map.
+    // Cheap generation metadata (D10/D33): identity + counts, never the full
+    // corpus. Re-read per request (memoized) so a new generation is reported
+    // truthfully instead of the frozen startup snapshot.
     if (url.pathname === "/api/generation") {
       send(
         res,
         200,
         { "Content-Type": "application/json; charset=utf-8", "Cache-Control": "no-store" },
-        corpus.generationJson,
+        currentGenerationJson(),
         headOnly,
       );
       return;

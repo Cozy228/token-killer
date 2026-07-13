@@ -100,6 +100,35 @@ export function buildGenerationInfo(corpus: CorpusInput): GuideGenerationInfo {
 }
 
 /**
+ * Read the CURRENT published generation cheaply through the read-only store path
+ * (D33 data-state honesty): published_gen per source + entity counts, WITHOUT a
+ * full corpus projection. Never writes. Throws if no store is on disk (caller
+ * falls back to the startup snapshot).
+ */
+export function readGuideGeneration(
+  opts: GuideCorpusOptions,
+  deps: CorpusDeps = defaultCorpusDeps,
+): GuideGenerationInfo {
+  const ro = deps.openStoreReadOnly({ projectDir: opts.projectDir, home: opts.home });
+  try {
+    const generations = {
+      code: ro.publishedGen("code"),
+      git: ro.publishedGen("git"),
+      docs: ro.publishedGen("docs"),
+      memory: ro.publishedGen("memory"),
+    };
+    return {
+      generations,
+      identity: generationIdentity(generations),
+      fileCount: ro.countByKind("file"),
+      declCount: ro.countByKind("symbol"),
+    };
+  } finally {
+    ro.close();
+  }
+}
+
+/**
  * Startup phase: budgeted RefreshEngine catch-up (writable, isolated). Returns
  * whether the payload should disclose staleness (budget exceeded / reconciling).
  */

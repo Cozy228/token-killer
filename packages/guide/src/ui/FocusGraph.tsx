@@ -14,7 +14,20 @@
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { fileId, fileOfSym } from "../atlas/compile.js";
-import type { AtlasModel, AtlasNode, NodeStatus } from "../atlas/types.js";
+import type { AtlasModel, AtlasNode, ClaimAccumulator, NodeStatus } from "../atlas/types.js";
+import { accumulateClaims, emptyClaimAccumulator, finalizeClaimSet } from "../atlas/types.js";
+
+/** "N claims" label for a claim set (D33 aggregate trust — never a single id). */
+function claimsText(ids: number[], omitted: number): string {
+  const n = ids.length + omitted;
+  return n === 1 ? "1 claim" : `${n} claims`;
+}
+/** Full provenance for the hover title: the constituent ids + any omitted count. */
+function claimsTitle(ids: number[], omitted: number): string {
+  if (ids.length === 0) return "no claim id";
+  const base = `claim_ids=${ids.join(",")}`;
+  return omitted > 0 ? `${base} (+${omitted} more)` : base;
+}
 
 // Cards per column before the rest spill into boundary pills.
 const CARD_CAP = 8;
@@ -25,7 +38,8 @@ export interface FocusPair {
   from: string;
   to: string;
   count: number;
-  claimId: number | null;
+  constituentClaimIds: number[];
+  omittedClaimCount: number;
 }
 
 export interface FocusCounterpart {
@@ -41,7 +55,8 @@ export interface FocusCounterpart {
   importCount: number;
   relation: "calls" | "imports";
   count: number;
-  claimId: number | null;
+  constituentClaimIds: number[];
+  omittedClaimCount: number;
   fileId: string;
   fileName: string;
   filePathTail: string;
@@ -126,6 +141,8 @@ export function buildFocusModel(
 
   const inbound = new Map<string, FocusCounterpart>();
   const outbound = new Map<string, FocusCounterpart>();
+  // Claim-set accumulators per counterpart card (unioned across its edges).
+  const claimAcc = new Map<FocusCounterpart, ClaimAccumulator>();
 
   // Store-absent endpoints (edge references a node not in the corpus index).
   interface Absent {
@@ -171,13 +188,15 @@ export function buildFocusModel(
         importCount: 0,
         relation: "calls",
         count: 0,
-        claimId: null,
+        constituentClaimIds: [],
+        omittedClaimCount: 0,
         fileId: fId,
         fileName: fNode?.name ?? tailOf(fPath, 1),
         filePathTail: tailOf(fPath),
         pairs: [],
       };
       map.set(node.id, c);
+      claimAcc.set(c, emptyClaimAccumulator());
     }
     return c;
   };
@@ -203,7 +222,7 @@ export function buildFocusModel(
       const c = ensure(dir, other);
       if (e.kind === "calls") c.callCount += e.count;
       else c.importCount += e.count;
-      if (c.claimId == null) c.claimId = e.claimId;
+      accumulateClaims(claimAcc.get(c)!, e.constituentClaimIds, e.omittedClaimCount);
     }
     // Decl-level call pairs, attached to the counterpart file card (expandable).
     for (const e of model.edges.sym) {
@@ -223,7 +242,8 @@ export function buildFocusModel(
         from: model.nodeIndex.get(from)?.name ?? from,
         to: model.nodeIndex.get(to)?.name ?? to,
         count: e.count,
-        claimId: e.claimId,
+        constituentClaimIds: e.constituentClaimIds,
+        omittedClaimCount: e.omittedClaimCount,
       });
     }
   } else {
@@ -246,7 +266,7 @@ export function buildFocusModel(
       }
       const c = ensure(dir, other);
       c.callCount += e.count;
-      if (c.claimId == null) c.claimId = e.claimId;
+      accumulateClaims(claimAcc.get(c)!, e.constituentClaimIds, e.omittedClaimCount);
     }
   }
 
@@ -254,6 +274,9 @@ export function buildFocusModel(
     c.count = c.callCount + c.importCount;
     c.relation = c.callCount > 0 ? "calls" : "imports";
     c.pairs.sort((a, b) => b.count - a.count || (a.to < b.to ? -1 : 1));
+    const cs = finalizeClaimSet(claimAcc.get(c) ?? emptyClaimAccumulator());
+    c.constituentClaimIds = cs.constituentClaimIds;
+    c.omittedClaimCount = cs.omittedClaimCount;
   };
   for (const c of inbound.values()) finalize(c);
   for (const c of outbound.values()) finalize(c);
@@ -352,12 +375,14 @@ function Connector({
   count,
   relation,
   orientation,
-  claimId,
+  constituentClaimIds,
+  omittedClaimCount,
 }: {
   count: number;
   relation: "calls" | "imports";
   orientation: "inbound" | "outbound";
-  claimId: number | null;
+  constituentClaimIds: number[];
+  omittedClaimCount: number;
 }) {
   const w = 58;
   const h = 26;
@@ -366,7 +391,7 @@ function Connector({
   const x2 = w - 9;
   const sw = Math.max(1, Math.min(5, Math.log2(count + 1)));
   const dash = relation === "imports" ? "5 3" : undefined;
-  const title = `${relation} · count=${count}${claimId != null ? ` · claim_id=${claimId}` : ""}`;
+  const title = `${relation} · count=${count} · ${claimsTitle(constituentClaimIds, omittedClaimCount)}`;
   return (
     <svg
       className={`fg-connector fg-connector-${orientation}`}
@@ -412,7 +437,13 @@ function Card({
   const [open, setOpen] = useState(false);
   const hasPairs = c.pairs.length > 0;
   const connector = (
-    <Connector count={c.count} relation={c.relation} orientation={orientation} claimId={c.claimId} />
+    <Connector
+      count={c.count}
+      relation={c.relation}
+      orientation={orientation}
+      constituentClaimIds={c.constituentClaimIds}
+      omittedClaimCount={c.omittedClaimCount}
+    />
   );
   const body = (
     <div className="fg-card-body">
@@ -421,7 +452,7 @@ function Card({
         ref={(el) => registerNav(c.id, el)}
         className="fg-card-main"
         onClick={() => onReroot(c.id)}
-        title={c.claimId != null ? `claim_id=${c.claimId}` : undefined}
+        title={claimsTitle(c.constituentClaimIds, c.omittedClaimCount)}
       >
         <span className="fg-badge">
           {c.kind === "decl" ? `decl · ${c.symbolKind ?? "symbol"}` : "file"}
@@ -450,9 +481,12 @@ function Card({
               <span className="fg-pair-arrow">→</span>
               <span className="fg-pair-to">{p.to}</span>
               <span className="fg-pair-count">{p.count}</span>
-              {p.claimId != null ? (
-                <span className="fg-pair-prov" title={`claim_id=${p.claimId}`}>
-                  claim_id={p.claimId}
+              {p.constituentClaimIds.length > 0 || p.omittedClaimCount > 0 ? (
+                <span
+                  className="fg-pair-prov"
+                  title={claimsTitle(p.constituentClaimIds, p.omittedClaimCount)}
+                >
+                  {claimsText(p.constituentClaimIds, p.omittedClaimCount)}
                 </span>
               ) : null}
             </li>

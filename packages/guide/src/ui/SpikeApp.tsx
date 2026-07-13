@@ -127,6 +127,9 @@ export function SpikeApp({ dataSource, pollMs = DEFAULT_POLL_MS, storage }: Spik
 
   const [rawCorpus, setRawCorpus] = useState<CorpusInput | null>(null);
   const [loadError, setLoadError] = useState<string | null>(null);
+  // Data-state honesty (D33 / E5): how the corpus was actually loaded — live
+  // endpoint, static snapshot, or snapshot after a live failure (disclosed).
+  const [dataVia, setDataVia] = useState<{ via: "live" | "snapshot"; error?: string } | null>(null);
   const [data, setData] = useState<LoadedData | null>(null);
   const [viewport, setViewport] = useState<Viewport>({ x: 0, y: 0, w: 100, h: 100 });
   const [openViewport, setOpenViewport] = useState<Viewport>({ x: 0, y: 0, w: 100, h: 100 });
@@ -164,6 +167,7 @@ export function SpikeApp({ dataSource, pollMs = DEFAULT_POLL_MS, storage }: Spik
         if (cancelled) return;
         perf.setJsonBytes(loaded.bytes);
         loadedGenIdentityRef.current = generationInfoOf(loaded.corpus).identity;
+        setDataVia({ via: loaded.via, error: loaded.error });
         setRawCorpus(loaded.corpus);
       })
       .catch((err: unknown) => {
@@ -753,6 +757,14 @@ export function SpikeApp({ dataSource, pollMs = DEFAULT_POLL_MS, storage }: Spik
         <div className="hud-repo">
           <strong>{data.model.repo}</strong>
           <span className="hud-rev">@ {data.model.sourceRevision.slice(0, 12)}</span>
+          {dataVia ? (
+            <span
+              className={`hud-data-state data-state-${dataVia.error ? "snapshot-degraded" : dataVia.via}`}
+              title={dataVia.error ?? `data source: ${dataVia.via}`}
+            >
+              {dataVia.error ? "snapshot (live unavailable)" : dataVia.via}
+            </span>
+          ) : null}
         </div>
         <div className="hud-gen">
           gen code={gen.code} · git={gen.git} · docs={gen.docs} · memory={gen.memory}

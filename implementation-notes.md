@@ -384,3 +384,139 @@ Fix (substrate `EdgeLayer`):
 - guide `pnpm test` **121 passed** (was 118). cli 44 pass / 16 todo. `pnpm -r typecheck` clean.
   `pnpm --filter @contexa/guide build` OK; preview `/`=200, corpus=200; bundle contains
   `edge-stub` + `non-scaling-stroke`. Browser re-drive is the reviewer's.
+
+---
+
+# Slice 6a — Data-honesty P0s (no UI), Fable track
+
+Deviation log for the 6a build (work order `docs/build/M3-GOAL-PROMPT-V5.md`, brief
+D26–D33). Data/kernel layer only; the four-state UI lands in 6b–6e. NOT committed
+(reviewer drives the real corpus + commits).
+
+## What changed, per work-order item
+
+### 1. Kernel completeness (D7/D33)
+- `compile.ts`: removed `MAX_DECLS_SHOWN=34`. Every corpus declaration is now a
+  logical decl node. Added `fileSide(declCount) = max(footprintFor, ceil(sqrt(decls)))`
+  so the file lot grows to hold ALL decls on its inner grid — geometry stays valid
+  (containment/no-overlap) while the model is whole. `overflow` is always 0 now.
+- Replayed on the real corpus (`public/generated/corpus.json`, 4,205 decls):
+  - model nodes: **5,729** (192 folders + 1,332 files + 4,205 decls) — matches the
+    work-order target. Before (truncated): decls capped at ≤34/file.
+  - resolvable sym calls: **4,026** — matches the target.
+- `tests/data-honesty-6a.test.ts` computes expected node/call counts FROM the corpus
+  file (regeneration-tolerant) and additionally snapshots 5,729/4,026 with an update
+  note. Old `compile.test.ts` overflow test rewritten to assert completeness.
+
+### 2. Event projection semantics (D32) — `event.ts`
+- (a) Ancestors NEVER enter the viewport lit set. `lit` = anchors + neighbors only;
+  `litAncestors` is a separate set (for tree highlight) collected after `lit` is
+  frozen. Viewport = bbox of `lit`. Regression test asserts `repo:root`/folders are
+  absent from `litNodeIds`, present in `litAncestors`, and the viewport does not
+  cover the root rect. (See Deviations for the <30% threshold.)
+- (b) Real 1-hop expansion: `considerEdge` now admits an edge if EITHER endpoint
+  resolves to an anchor; the non-anchor endpoint becomes a `neighbor`, capped at
+  `NEIGHBOR_CAP_PER_ANCHOR=8` per owning anchor with `omittedNeighborCount` disclosed.
+  New DTO roles surfaced as `anchors`/`neighbors`/`litAncestors` arrays on the
+  projection.
+- (c) Symbol-anchor precision: unresolved symbol anchors are downgraded to their file
+  AND counted in `downgrades` (disclosed, not silent). Added a symbol-event golden
+  (`golden/event-symbol-projection.json`) with a TRUE decl anchor (downgrades=0).
+- Rail gains real neighbor steps in the existing mechanical order; each calls/imports
+  step now carries a claim SET (union across constituent edges).
+
+### 3. Aggregate trust (D33) — claim sets at all three layers
+- `types.ts`: `AtlasEdge.claimId` → `{constituentClaimIds: number[], omittedClaimCount:
+  number}` (cap 32). Shared helpers `emptyClaimAccumulator/accumulateClaims/
+  finalizeClaimSet/claimSetFromIds`. `CorpusEdge` gains optional `claimIds` (wire
+  back-compat: `claimId` kept; `corpusEdgeClaimIds` falls back to `[claimId]`).
+- `corpus-mapper.ts` (SQL dedup): collects EVERY distinct claim id per src→dst pair.
+- `compile.ts` (file rollup): unions constituent ids into the file-level edge.
+- `lod.ts` (visible-ancestor rollup): unions ids into the aggregated slice edge.
+- `event.ts` rail: unions ids per far endpoint.
+- Projection identity split: `structuralProjectionId` (topology only, == the old
+  `projectionId`, kept for session/persist stability) + `evidenceProjectionId` (hash
+  over claim-set content). Test asserts a claim-only change flips evidence, not
+  structure; a topology change flips structure.
+- Display sites threaded minimally: `FocusedEvidence`, `FocusGraph` (cards, connectors,
+  decl pairs), `ReactFlowRenderer` EdgeLayer show "N claims" with the full id list on
+  the hover title (existing provenance affordance).
+
+### 4. Data-state honesty (D33 / E5)
+- `data/source.ts`: `CorpusLoad.error?`; `FallbackDataSource` surfaces `via` and, when
+  live fails, the failure reason (never a silent downgrade).
+- `SpikeApp.tsx`: minimal top-bar badge — `live | snapshot | snapshot (live
+  unavailable)` (the single sanctioned UI touch; CSS in `styles.css`).
+- `packages/cli` `server.ts` + `corpus.ts`: GET `/api/generation` re-reads the CURRENT
+  published generation per request via a cheap read-only store read
+  (`readGuideGeneration`: `publishedGen` + `countByKind`), memoized 2s
+  (`GENERATION_MEMO_MS`), falling back to the startup snapshot when unavailable or when
+  a corpus/fixture is injected (tests). New cli test proves per-request re-read.
+
+## Decisions
+- **Footprint grows for big files** rather than letting decls overflow the lot. The
+  work order said footprint "no longer needs to fit shown decls," but the existing
+  geometry invariants (containment/no-overlap, `compile.test.ts`) still assert it and
+  geometry is only *being* retired (6b+). Growing `fileSide` keeps those green with no
+  model truncation. Only 8 real-corpus files exceed a 6×6 grid (max 115 decls).
+- **CorpusEdge keeps `claimId`** (optional `claimIds` added) so the already-generated
+  `corpus.json` (single-id shape) still loads; the honest multi-id set accrues at the
+  compile/lod/rail rollups even on the old file. `corpus.json` was NOT regenerated (see
+  Deviations).
+- **Downgraded symbols remain viewport anchors** (their file). They represent real
+  changed files; excluding them would understate the change. They are disclosed via
+  `downgrades`.
+- Claim-set inline cap = **32** ids, remainder in `omittedClaimCount`.
+
+## Deviations
+- **Viewport `<30%` regression threshold NOT met — measured ~0.68.** The work order's
+  item-2a regression asserts "viewport area < 30% of world area for [the real default]
+  event." Implemented faithfully (viewport = bbox of anchors+neighbors, ancestors
+  excluded), the real default event measures **67.7%** of world area (even the
+  cold-open hotspot region is 46.5%). Root cause: the default event is a repo-wide
+  ~20-commit diff whose changed anchors ALONE span ~40% of the map (docs + every
+  package); no ancestor-free bbox of a genuinely repo-wide change can be <30%. The
+  actual DEFECT the test guards — ancestor/root pollution forcing viewport ⊇ root
+  (area ≥ 1.0) — IS fixed and tested: `repo:root` is absent from the lit set, the
+  viewport does not cover the root rect, and area is a proper subset of the world
+  (`< 0.9` guard). The <30% focus is the D32 "wide-diff → canvas shows the current
+  group only" behavior, which is interactive group-focus deferred to slice 6e. I did
+  NOT redesign the viewport to force <30%. Flagged for reviewer ruling.
+- **`corpus.json` not regenerated.** The completeness numbers (5,729 / 4,026) and the
+  work order's pinned absolutes are computed from the CURRENT committed corpus; a
+  regen would move them and is a data change beyond this slice. The new SQL-dedup
+  `claimIds` therefore only lands in a *future* regen; its correctness is proven by a
+  mapper unit test instead.
+- **Symbol-anchor downgrades are high (214/227 on the default event), not "most
+  resolve."** The work order expected completeness to make most of the 227 default-event
+  symbol anchors resolve as decl nodes; empirically 214 still downgrade because those
+  touched symbols are not present in any file's current `decls` (deleted/renamed across
+  the 20-commit window). The mechanism (disclosed `downgrades` count) works as
+  specified; only the expected magnitude differed. Symbol *events* with a live decl
+  anchor resolve cleanly (downgrades=0, proven by the new golden).
+
+## Adjacent-found (untouched)
+- **NUL bytes in `compile.ts` (committed).** The `deriveEdges` `const key =
+  \`${kind} ${src} ${dst}\`` template literals held `\x00` separators instead of spaces
+  in HEAD (harmless — internal dedup key, self-consistent — but `git grep` flags the
+  file as binary). Both were inside the block I rewrote for the claim-set rollup, so I
+  normalized them to spaces (strictly required for the edit to apply; semantics
+  preserved). No other NUL bytes remain.
+- `packages/guide/SPIKE-NOTES.md` still documents `MAX_DECLS_SHOWN=34` as current —
+  now stale. Not touched (doc, out of scope).
+- `synthetic.ts` 10x clones carry `claimId` only (no `claimIds`); compile falls back to
+  `[claimId]`, so clone edges get single-id claim sets. Acceptable; left as-is.
+
+## Open questions
+- Reviewer ruling on the `<30%` viewport threshold vs. the repo-wide default event
+  (accept the honest ~0.68 + root-pollution guard, or re-scope the viewport to a
+  focused sub-frame now rather than in 6e?).
+- Should `corpus.json` be regenerated in this slice to carry `claimIds` on the wire
+  (changes the pinned census numbers), or deferred to the next scheduled regen?
+
+## Verify (delta)
+- guide `pnpm test` **138 passed** (was 121; +17 new across data-honesty-6a,
+  corpus-mapper, data-source, event symbol golden, spike-app badge). cli `pnpm test`
+  **45 passed / 16 todo** (was 44; +1 per-request generation test). `pnpm -r typecheck`
+  clean. `pnpm --filter @contexa/guide build` OK. Browser re-drive on the real corpus
+  is the reviewer's.

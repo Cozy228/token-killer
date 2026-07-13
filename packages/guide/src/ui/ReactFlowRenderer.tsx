@@ -69,6 +69,17 @@ function isAggregated(edge: AtlasEdge): boolean {
   return !edge.src.startsWith("sym:") || !edge.dst.startsWith("sym:");
 }
 
+/** Hover provenance for an aggregated edge: kind + count + backing claim set. */
+function edgeClaimsTitle(edge: AtlasEdge): string {
+  const total = edge.constituentClaimIds.length + edge.omittedClaimCount;
+  const claims = total === 1 ? "1 claim" : `${total} claims`;
+  const ids =
+    edge.constituentClaimIds.length > 0
+      ? ` (claim_ids=${edge.constituentClaimIds.join(",")}${edge.omittedClaimCount > 0 ? " +…" : ""})`
+      : "";
+  return `${edge.kind} · count=${edge.count} · ${claims}${ids}`;
+}
+
 // On-screen edge stroke width: log2 growth capped at 5px, +1.5 for a selected
 // edge, hard-capped at 6px. vector-effect keeps these screen-space at any zoom.
 function edgeStrokeWidth(count: number, selected: boolean): number {
@@ -230,6 +241,7 @@ export function EdgeLayer(props: {
 
         return (
           <g key={key} className={cls}>
+            {aggregated ? <title>{edgeClaimsTitle(e)}</title> : null}
             {EdgePath ? (
               EdgePath(e, geometry)
             ) : (

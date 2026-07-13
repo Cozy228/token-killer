@@ -33,11 +33,14 @@ describe("FocusedEvidence panel (R4-3)", () => {
     expect(typeof onFocus.mock.calls[0][0]).toBe("string");
   });
 
-  it("renders provenance (claim_id) on connection rows", () => {
+  it("renders provenance (claim set) on connection rows", () => {
     const { container } = render(
       <FocusedEvidence model={model} selectedId="sym:src/app.ts#run" onFocus={() => {}} />,
     );
-    expect(container.querySelector(".fe-row-prov")?.textContent).toMatch(/claim_id=/);
+    const prov = container.querySelector(".fe-row-prov");
+    // D33: visible "N claims"; full id list behind the title provenance affordance.
+    expect(prov?.textContent).toMatch(/\d+\s+claims?/);
+    expect(prov?.getAttribute("title")).toMatch(/claim_ids=/);
   });
 
   it("renders nothing for an unknown id", () => {
