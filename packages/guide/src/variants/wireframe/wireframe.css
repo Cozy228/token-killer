@@ -1,0 +1,103 @@
+/* Wireframe variant — pure structural default. Grayscale, system fonts.
+   Saturated color is spent ONLY on the three claim statuses (D11/D15).
+   Every rule is scoped under .variant-wireframe. */
+
+.variant-wireframe {
+  --lot-bg: #f4f4f5;
+  --lot-border: #b8b8bd;
+  --region-bg: #fbfbfc;
+  --region-border: #d6d6da;
+  --ink: #1c1c1f;
+  --ink-muted: #6b6b72;
+  --status-active: #9a9aa2;
+  --status-needs-review: #b26a00;
+  --status-conflict: #c02626;
+  --lit-outline: #0a0a0c;
+  --lit-tint: rgba(10, 10, 12, 0.07);
+  --dim-opacity: 0.12;
+  --font-ui: system-ui, sans-serif;
+  --font-mono: ui-monospace, SFMono-Regular, Menlo, monospace;
+  --font-display: system-ui, sans-serif;
+}
+
+.variant-wireframe .wf-node {
+  width: 100%;
+  height: 100%;
+  box-sizing: border-box;
+  border: 1px solid var(--lot-border);
+  background: var(--lot-bg);
+  font-family: var(--font-mono);
+  position: relative;
+  overflow: hidden;
+}
+.variant-wireframe .wf-node.wf-folder {
+  background: var(--region-bg);
+  border-color: var(--region-border);
+  border-style: dashed;
+}
+.variant-wireframe .wf-node.wf-decl {
+  background: #e9e9ec;
+  border-color: #cfcfd4;
+}
+.variant-wireframe .wf-node.wf-dimmed {
+  opacity: var(--dim-opacity);
+}
+/* Lit must read at overview zoom (the road-network SHOW page). High-contrast
+   neutral treatment — saturated color stays reserved for status ticks. */
+.variant-wireframe .wf-node.wf-lit {
+  outline: 3px solid var(--lit-outline);
+  outline-offset: -1px;
+  background: #ffffff;
+  box-shadow:
+    0 0 0 1.5px var(--lit-outline),
+    0 0 6px 1px rgba(10, 10, 12, 0.35);
+}
+.variant-wireframe .wf-node.wf-lit.wf-folder {
+  background: #fdfdfe;
+  border-style: solid;
+  border-color: var(--lit-outline);
+}
+.variant-wireframe .wf-node.wf-lit .wf-label {
+  font-weight: 700;
+}
+.variant-wireframe .wf-node.wf-focused {
+  outline: 3px solid #2563c9;
+  outline-offset: -1px;
+}
+.variant-wireframe .wf-label {
+  font-size: 9px;
+  line-height: 1.1;
+  color: var(--ink);
+  padding: 1px 2px;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+  overflow: hidden;
+}
+.variant-wireframe .wf-folder-label {
+  font-family: var(--font-ui);
+  font-weight: 600;
+  color: var(--ink-muted);
+}
+/* Perimeter status tick — the only saturated color. */
+.variant-wireframe .wf-tick {
+  position: absolute;
+  top: 0;
+  right: 0;
+  width: 4px;
+  height: 100%;
+}
+.variant-wireframe .wf-tick.wf-status-needs-review {
+  background: var(--status-needs-review);
+}
+.variant-wireframe .wf-tick.wf-status-conflict {
+  background: var(--status-conflict);
+}
+.variant-wireframe .wf-overflow {
+  position: absolute;
+  bottom: 0;
+  left: 0;
+  font-size: 8px;
+  color: var(--ink-muted);
+  padding: 0 2px;
+  background: rgba(255, 255, 255, 0.7);
+}

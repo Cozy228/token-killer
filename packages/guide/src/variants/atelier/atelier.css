@@ -1,0 +1,492 @@
+/* atelier : Museum Atlas. A light gallery exhibition floor: the codebase
+   curated as a museum wing. Editorial serif titles, floated plates with soft
+   physical depth, recessed matte region zones, engraved decl cells.
+
+   EVERY rule is scoped under .variant-atelier. Saturated color is spent ONLY on
+   the three claim statuses (D11/D15); activity stays neutral. Depth is the
+   storytelling mechanic: lit plates LIFT, dimmed plates FLATTEN. */
+
+.variant-atelier {
+  /* --- Substrate token overrides (neutral, chroma ~ 0) --- */
+  --ink: #1d1d1b;
+  --ink-muted: #6a6a66;
+  --region-border: #dededa;
+  --lit-outline: #1d1d1b;
+  --status-active: #8a8880; /* warm gray, neutral */
+  --status-needs-review: #7a5423; /* raw umber */
+  --status-conflict: #8f2d1e; /* deep oxide red */
+  --font-ui: "Public Sans Variable", system-ui, sans-serif;
+  --font-mono: "JetBrains Mono Variable", ui-monospace, SFMono-Regular, Menlo, monospace;
+  --font-display: "Source Serif 4 Variable", Georgia, serif;
+
+  /* --- Gallery surfaces --- */
+  --gallery-bg: #f7f7f6;
+  --plate-fill: #fdfdfc;
+  --region-fill: #eeeeec; /* one step darker matte : walls, not plates */
+  --decl-border: rgba(29, 29, 27, 0.2);
+
+  /* --- One consistent radius system (2px MAX) --- */
+  --radius: 2px;
+
+  /* --- Soft diffused low shadows, tinted to the bg hue (never harsh, <=8px blur) --- */
+  --shadow-plate: 0 1px 3px rgba(29, 29, 27, 0.08);
+  --shadow-lift: 0 3px 8px rgba(29, 29, 27, 0.14);
+
+  /* --- Change Trace depth --- */
+  --dim-opacity: 0.45;
+
+  /* --- Type scale (steps >= 1.4 between display / label / caption) --- */
+  --fs-display: 15px;
+  --fs-label: 10.5px;
+  --fs-caption: 7.5px;
+
+  /* --- Cinematic ease --- */
+  --ease-cine: cubic-bezier(0.22, 1, 0.36, 1);
+
+  background: var(--gallery-bg);
+  color: var(--ink);
+}
+
+/* The whole shell reads as a gallery floor. */
+.variant-atelier.spike-shell {
+  background: var(--gallery-bg);
+}
+
+/* React Flow background dots do not belong on a gallery floor; keep it calm. */
+.variant-atelier .react-flow__background {
+  opacity: 0.35;
+}
+
+/* ------------------------------------------------------------------ */
+/* Nodes : floated plates, recessed regions, engraved cells           */
+/* ------------------------------------------------------------------ */
+
+.variant-atelier .atelier-node {
+  width: 100%;
+  height: 100%;
+  box-sizing: border-box;
+  position: relative;
+  border-radius: var(--radius);
+  overflow: hidden;
+  transition:
+    box-shadow 600ms var(--ease-cine),
+    opacity 600ms var(--ease-cine),
+    outline-color 600ms var(--ease-cine);
+}
+
+/* File = floated plate */
+.variant-atelier .atelier-file {
+  background: var(--plate-fill);
+  box-shadow: var(--shadow-plate);
+  padding: 5px 6px;
+}
+
+/* Folder = recessed matte zone (1 step darker, NO shadow : walls don't float) */
+.variant-atelier .atelier-folder {
+  background: var(--region-fill);
+  border: 1px solid var(--region-border);
+  box-shadow: none;
+  padding: 6px 8px;
+}
+
+/* Decl = engraved cell (border-only, no fill) */
+.variant-atelier .atelier-decl {
+  background: transparent;
+  border: 1px solid var(--decl-border);
+  box-shadow: none;
+}
+
+/* ------------------------------------------------------------------ */
+/* Typography : the signature                                         */
+/* ------------------------------------------------------------------ */
+
+/* Region (folder) title : exhibit wall title */
+.variant-atelier .atelier-region-title {
+  font-family: var(--font-display);
+  font-weight: 580;
+  font-size: var(--fs-display);
+  line-height: 1.04;
+  letter-spacing: 0.002em;
+  color: var(--ink);
+  text-wrap: balance;
+  max-width: 100%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+}
+
+/* File label : Public Sans, quiet UI voice */
+.variant-atelier .atelier-file-label {
+  font-family: var(--font-ui);
+  font-weight: 500;
+  font-size: var(--fs-label);
+  line-height: 1.12;
+  letter-spacing: 0.006em;
+  color: var(--ink);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+/* Overflow marker : caption voice, editorial phrasing */
+.variant-atelier .atelier-overflow {
+  position: absolute;
+  left: 6px;
+  bottom: 3px;
+  font-family: var(--font-ui);
+  font-weight: 400;
+  font-size: var(--fs-caption);
+  letter-spacing: 0.01em;
+  color: var(--ink-muted);
+}
+
+/* Size gates : labels hide earlier on small lots (lowest density) */
+@container (max-width: 34px) {
+  .variant-atelier .atelier-file-label {
+    display: none;
+  }
+}
+/* Fallback size gate for engines without container queries on RF nodes:
+   very small folder zones drop their title. */
+.variant-atelier .atelier-folder.atelier-small .atelier-region-title {
+  display: none;
+}
+.variant-atelier .atelier-file.atelier-small .atelier-file-label {
+  display: none;
+}
+.variant-atelier .atelier-file.atelier-small .atelier-overflow {
+  display: none;
+}
+
+/* ------------------------------------------------------------------ */
+/* Status : perimeter tick (top edge) in the accent family            */
+/* ------------------------------------------------------------------ */
+
+.variant-atelier .atelier-tick {
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  height: 2px;
+  z-index: 2;
+}
+.variant-atelier .atelier-status-conflict {
+  background: var(--status-conflict);
+}
+.variant-atelier .atelier-status-needs-review {
+  background: var(--status-needs-review);
+}
+.variant-atelier .atelier-status-active {
+  background: var(--status-active);
+  opacity: 0.5; /* neutral, recessive */
+}
+
+/* Letterform (C / R) : non-color access at a readable size */
+.variant-atelier .atelier-tick-letter {
+  position: absolute;
+  top: 3px;
+  right: 4px;
+  font-family: var(--font-ui);
+  font-weight: 700;
+  font-size: 9px;
+  line-height: 1;
+  z-index: 3;
+}
+.variant-atelier .atelier-tick-letter.letter-conflict {
+  color: var(--status-conflict);
+}
+.variant-atelier .atelier-tick-letter.letter-needs-review {
+  color: var(--status-needs-review);
+}
+
+/* ------------------------------------------------------------------ */
+/* Change Trace : depth is the evidence                               */
+/* ------------------------------------------------------------------ */
+
+/* Lit plate LIFTS: deeper shadow + full opacity + 1px ink outline */
+.variant-atelier .atelier-node.lit.atelier-file {
+  box-shadow: var(--shadow-lift);
+  outline: 1px solid var(--lit-outline);
+  outline-offset: 0;
+  opacity: 1;
+}
+.variant-atelier .atelier-node.lit.atelier-folder {
+  outline: 1px solid var(--lit-outline);
+  opacity: 1;
+}
+.variant-atelier .atelier-node.lit.atelier-decl {
+  border-color: var(--lit-outline);
+  opacity: 1;
+}
+
+/* Dimmed plate FLATTENS: 45% opacity, shadow removed entirely */
+.variant-atelier .atelier-node.dimmed {
+  opacity: var(--dim-opacity);
+  box-shadow: none;
+}
+
+/* Focused plate: 2px ink outline offset 2px */
+.variant-atelier .atelier-node.focused {
+  outline: 2px solid var(--ink);
+  outline-offset: 2px;
+  z-index: 4;
+}
+
+/* ------------------------------------------------------------------ */
+/* Edges : quiet light-ink bezier curves                              */
+/* ------------------------------------------------------------------ */
+
+.variant-atelier .atelier-edge {
+  fill: none;
+  stroke: rgba(29, 29, 27, 0.25); /* faint backbone keeps the floor calm */
+  transition: stroke 600ms var(--ease-cine);
+}
+.variant-atelier .atelier-edge--calls {
+  stroke-dasharray: none;
+}
+.variant-atelier .atelier-edge--imports {
+  stroke-dasharray: 4 4;
+}
+/* Lit hook: substrate marks the edge group/path .lit for full-ink emphasis. */
+.variant-atelier .atelier-edge.lit,
+.variant-atelier .lit .atelier-edge {
+  stroke: rgba(29, 29, 27, 0.92);
+}
+
+/* ------------------------------------------------------------------ */
+/* Evidence Rail : caption cards, wall labels, most whitespace         */
+/* ------------------------------------------------------------------ */
+
+.variant-atelier .evidence-rail {
+  background: var(--gallery-bg);
+  padding: 18px 18px 28px;
+}
+.variant-atelier .rail-title {
+  font-family: var(--font-display);
+  font-weight: 600;
+  font-size: 19px;
+  line-height: 1.05;
+  letter-spacing: 0.004em;
+  color: var(--ink);
+  text-wrap: balance;
+}
+.variant-atelier .rail-subtitle {
+  font-family: var(--font-mono);
+  font-size: 10.5px;
+  color: var(--ink-muted);
+  margin-top: 4px;
+}
+.variant-atelier .rail-note {
+  font-family: var(--font-ui);
+  font-size: 10px;
+  color: var(--ink-muted);
+  margin-top: 6px;
+}
+.variant-atelier .rail-group-title {
+  font-family: var(--font-ui);
+  font-weight: 600;
+  font-size: 10px;
+  text-transform: uppercase;
+  letter-spacing: 0.09em;
+  color: var(--ink-muted);
+  margin: 22px 0 8px;
+}
+.variant-atelier .rail-steps {
+  gap: 10px;
+}
+
+/* Caption card : three wall-label lines, NO side-stripes */
+.variant-atelier .atelier-rail-card {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  width: 100%;
+  text-align: left;
+  background: var(--plate-fill);
+  border: 1px solid var(--region-border);
+  border-radius: var(--radius);
+  box-shadow: var(--shadow-plate);
+  padding: 11px 13px 12px;
+  cursor: pointer;
+  animation: atelier-settle 520ms var(--ease-cine) both;
+}
+.variant-atelier .atelier-rail-card:hover {
+  box-shadow: var(--shadow-lift);
+}
+.variant-atelier .atelier-rail-card.focused {
+  border: 1px solid var(--ink);
+  box-shadow: var(--shadow-lift);
+}
+.variant-atelier .atelier-card-label {
+  font-family: var(--font-ui);
+  font-weight: 500;
+  font-size: 13px;
+  line-height: 1.2;
+  color: var(--ink);
+}
+.variant-atelier .atelier-card-path {
+  font-family: var(--font-mono);
+  font-size: 10px;
+  line-height: 1.3;
+  color: var(--ink-muted);
+  word-break: break-all;
+}
+.variant-atelier .atelier-card-caption {
+  font-family: var(--font-ui);
+  font-size: 9.5px;
+  line-height: 1.35;
+  letter-spacing: 0.01em;
+  color: var(--ink-muted);
+  word-break: break-word;
+}
+
+/* Rail settle : one orchestrated moment, staggered 60ms, first 8 cards only */
+@keyframes atelier-settle {
+  from {
+    opacity: 0;
+    transform: translateY(6px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+.variant-atelier .rail-steps li:nth-child(1) .atelier-rail-card {
+  animation-delay: 0ms;
+}
+.variant-atelier .rail-steps li:nth-child(2) .atelier-rail-card {
+  animation-delay: 60ms;
+}
+.variant-atelier .rail-steps li:nth-child(3) .atelier-rail-card {
+  animation-delay: 120ms;
+}
+.variant-atelier .rail-steps li:nth-child(4) .atelier-rail-card {
+  animation-delay: 180ms;
+}
+.variant-atelier .rail-steps li:nth-child(5) .atelier-rail-card {
+  animation-delay: 240ms;
+}
+.variant-atelier .rail-steps li:nth-child(6) .atelier-rail-card {
+  animation-delay: 300ms;
+}
+.variant-atelier .rail-steps li:nth-child(7) .atelier-rail-card {
+  animation-delay: 360ms;
+}
+.variant-atelier .rail-steps li:nth-child(8) .atelier-rail-card {
+  animation-delay: 420ms;
+}
+.variant-atelier .rail-steps li:nth-child(n + 9) .atelier-rail-card {
+  animation-delay: 420ms;
+}
+
+/* ------------------------------------------------------------------ */
+/* Legend : an exhibit legend card                                    */
+/* ------------------------------------------------------------------ */
+
+.variant-atelier .atelier-legend {
+  background: var(--plate-fill);
+  border: 1px solid var(--region-border);
+  border-radius: var(--radius);
+  box-shadow: var(--shadow-plate);
+  padding: 14px 15px 15px;
+  font-family: var(--font-ui);
+  max-width: 260px;
+}
+.variant-atelier .atelier-legend-heading {
+  font-family: var(--font-display);
+  font-weight: 600;
+  font-size: 16px;
+  line-height: 1.05;
+  color: var(--ink);
+  margin: 0 0 10px;
+}
+.variant-atelier .atelier-legend-group {
+  display: flex;
+  flex-direction: column;
+  gap: 7px;
+}
+.variant-atelier .atelier-legend-row {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  font-size: 10.5px;
+  color: var(--ink);
+}
+.variant-atelier .atelier-legend-caption {
+  font-size: 9px;
+  color: var(--ink-muted);
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  margin: 13px 0 6px;
+}
+.variant-atelier .atelier-swatch {
+  flex: 0 0 auto;
+  width: 20px;
+  height: 14px;
+  border-radius: var(--radius);
+  position: relative;
+}
+.variant-atelier .atelier-swatch-tick {
+  border-top: 2px solid var(--ink);
+  background: var(--plate-fill);
+  box-shadow: var(--shadow-plate);
+}
+.variant-atelier .atelier-swatch-tick.sw-conflict {
+  border-top-color: var(--status-conflict);
+}
+.variant-atelier .atelier-swatch-tick.sw-needs-review {
+  border-top-color: var(--status-needs-review);
+}
+.variant-atelier .atelier-swatch-tick.sw-active {
+  border-top-color: var(--status-active);
+}
+.variant-atelier .atelier-swatch-lift {
+  background: var(--plate-fill);
+  box-shadow: var(--shadow-lift);
+  outline: 1px solid var(--lit-outline);
+}
+.variant-atelier .atelier-swatch-flat {
+  background: var(--plate-fill);
+  opacity: 0.45;
+}
+.variant-atelier .atelier-legend-letter {
+  display: inline-block;
+  min-width: 10px;
+  font-weight: 700;
+  font-size: 10px;
+}
+.variant-atelier .atelier-legend-letter.letter-conflict {
+  color: var(--status-conflict);
+}
+.variant-atelier .atelier-legend-letter.letter-needs-review {
+  color: var(--status-needs-review);
+}
+
+/* ------------------------------------------------------------------ */
+/* Reduced motion : crossfade only, no transforms                     */
+/* ------------------------------------------------------------------ */
+
+@media (prefers-reduced-motion: reduce) {
+  .variant-atelier .atelier-node {
+    transition: opacity 200ms ease;
+  }
+  .variant-atelier .atelier-edge {
+    transition: none;
+  }
+  .variant-atelier .atelier-rail-card {
+    animation: atelier-fade 260ms ease both;
+  }
+  .variant-atelier .rail-steps li .atelier-rail-card {
+    animation-delay: 0ms;
+  }
+  @keyframes atelier-fade {
+    from {
+      opacity: 0;
+    }
+    to {
+      opacity: 1;
+    }
+  }
+}

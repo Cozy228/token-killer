@@ -1,0 +1,485 @@
+/* instrument variant - "Flight Instrument" (dark cockpit / EFIS approach plate).
+   Every rule is scoped under .variant-instrument. Activity is neutral LUMINANCE;
+   saturated color is spent ONLY on the three claim statuses (D9/D11/D15).
+   No glow, no neon, no box-shadow bloom, no gradients-as-decoration. */
+
+.variant-instrument {
+  /* --- ink (high contrast on dark panels) --- */
+  --ink: #e8eaee;
+  --ink-muted: #8a92a0;
+  --ink-dim: #6b7280;
+
+  /* --- cockpit surfaces (true dark, never pure #000) --- */
+  --cockpit-bg: #0a0c10;
+  --panel-1: #12151b;
+  --panel-2: #171b22;
+  --panel-3: #1e242e;
+  --panel-lit: #2b333f;
+  --well: #0d1015;
+  --region-bg: rgba(18, 21, 27, 0.55);
+
+  /* --- steel strokes --- */
+  --steel: #3a404c;
+  --steel-bright: #4a515e;
+  --lit-border: #eef1f5;
+  --reticle: #d7dce3;
+
+  /* --- claim status (the only saturated color) --- */
+  --status-conflict: #ff5a52;
+  --status-needs-review: #ffb020;
+  --status-active: #7f8896;
+
+  /* --- substrate token overrides (edges + chrome read these) --- */
+  --region-border: #3a404c;
+  --lit-outline: #eef1f5;
+  --dim-opacity: 0.22;
+  --font-ui: "IBM Plex Mono", ui-monospace, SFMono-Regular, Menlo, monospace;
+  --font-mono: "IBM Plex Mono", ui-monospace, SFMono-Regular, Menlo, monospace;
+  --font-display: "IBM Plex Mono", ui-monospace, SFMono-Regular, Menlo, monospace;
+  --font-copy: "IBM Plex Sans Variable", system-ui, sans-serif;
+
+  /* --- edge stroke used by EdgePath --- */
+  --inst-edge: #4a515e;
+  --inst-edge-tick: #8a92a0;
+
+  /* --- React Flow canvas (substrate-owned; themed via its own vars) --- */
+  --xy-background-color-default: #0a0c10;
+  --xy-background-pattern-dots-color-default: #12151b;
+  --xy-background-pattern-lines-color-default: #12151b;
+  --xy-background-pattern-cross-color-default: #12151b;
+
+  background: var(--cockpit-bg);
+  color: var(--ink);
+  font-family: var(--font-mono);
+  font-variant-numeric: tabular-nums;
+  -webkit-font-smoothing: antialiased;
+}
+
+/* Motion: fast mechanical steps. */
+.variant-instrument .inst-node,
+.variant-instrument .inst-rail-row {
+  transition-duration: 160ms;
+  transition-timing-function: cubic-bezier(0.2, 0, 0, 1);
+  transition-property: background-color, border-color, opacity, transform;
+}
+
+/* ======================================================================
+   NODES
+   ====================================================================== */
+
+.variant-instrument .inst-node {
+  position: relative;
+  width: 100%;
+  height: 100%;
+  box-sizing: border-box;
+  border: 1px solid var(--steel);
+  background: var(--panel-1);
+  font-family: var(--font-mono);
+  font-variant-numeric: tabular-nums;
+  overflow: hidden;
+}
+
+/* Files: dark panels. Depth = luminance (shallower reads brighter). */
+.variant-instrument .inst-file.inst-d0 {
+  background: #262d38;
+}
+.variant-instrument .inst-file.inst-d1 {
+  background: #1e242e;
+}
+.variant-instrument .inst-file.inst-d2 {
+  background: #171b22;
+}
+.variant-instrument .inst-file.inst-d3 {
+  background: #12151b;
+}
+.variant-instrument .inst-file.inst-d4 {
+  background: #0f1218;
+}
+
+/* Folders: translucent region wells, 1px steel, dashed to sit visually behind. */
+.variant-instrument .inst-folder {
+  background: var(--region-bg);
+  border-color: var(--steel);
+  border-style: dashed;
+}
+
+/* Decls: inset darker wells, 1px. */
+.variant-instrument .inst-decl {
+  background: var(--well);
+  border-color: #2a2f39;
+}
+
+/* ---- labels (mono leads) ---- */
+.variant-instrument .inst-label {
+  font-size: 9px;
+  line-height: 1.15;
+  font-weight: 500;
+  letter-spacing: 0.01em;
+  color: var(--ink);
+  padding: 1px 3px;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+  overflow: hidden;
+}
+.variant-instrument .inst-folder-label {
+  font-weight: 600;
+  color: var(--ink-muted);
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+}
+
+/* ---- perimeter status tick on the TOP edge (saturated color) ---- */
+.variant-instrument .inst-tick {
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  height: 2px;
+}
+.variant-instrument .inst-tick-conflict {
+  background: var(--status-conflict);
+}
+.variant-instrument .inst-tick-needs-review {
+  background: var(--status-needs-review);
+}
+
+/* ---- two-letter status code (non-color accessibility) ---- */
+.variant-instrument .inst-code {
+  position: absolute;
+  top: 2px;
+  right: 3px;
+  font-size: 9px;
+  font-weight: 600;
+  line-height: 1;
+  letter-spacing: 0.06em;
+}
+.variant-instrument .inst-status-conflict .inst-code,
+.variant-instrument .inst-code-conflict {
+  color: var(--status-conflict);
+}
+.variant-instrument .inst-status-needs-review .inst-code,
+.variant-instrument .inst-code-needs-review {
+  color: var(--status-needs-review);
+}
+
+/* ---- overflow readout ("+N") as a fixed-width instrument slot ---- */
+.variant-instrument .inst-overflow {
+  position: absolute;
+  bottom: 0;
+  left: 0;
+  display: inline-flex;
+  align-items: baseline;
+  gap: 2px;
+  padding: 0 3px;
+  background: rgba(10, 12, 16, 0.72);
+  font-size: 8px;
+}
+.variant-instrument .inst-num {
+  font-weight: 600;
+  color: var(--ink);
+}
+.variant-instrument .inst-unit {
+  font-size: 7px;
+  font-weight: 500;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--ink-muted);
+}
+
+/* ---- Change Trace: lit steps UP two stops + near-white border ---- */
+.variant-instrument .inst-node.inst-lit {
+  background: var(--panel-lit);
+  border: 1.5px solid var(--lit-border);
+}
+.variant-instrument .inst-folder.inst-lit {
+  border-style: solid;
+}
+/* dimmed drops to ~22% opacity; the map stays present. */
+.variant-instrument .inst-node.inst-dimmed {
+  opacity: var(--dim-opacity);
+}
+
+/* ---- focused: 2px reticle CORNER BRACKETS (four drawn corners, no ring) ---- */
+.variant-instrument .inst-reticle {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+}
+.variant-instrument .inst-corner {
+  position: absolute;
+  width: 7px;
+  height: 7px;
+}
+.variant-instrument .inst-corner-tl {
+  top: 0;
+  left: 0;
+  border-top: 2px solid var(--reticle);
+  border-left: 2px solid var(--reticle);
+}
+.variant-instrument .inst-corner-tr {
+  top: 0;
+  right: 0;
+  border-top: 2px solid var(--reticle);
+  border-right: 2px solid var(--reticle);
+}
+.variant-instrument .inst-corner-bl {
+  bottom: 0;
+  left: 0;
+  border-bottom: 2px solid var(--reticle);
+  border-left: 2px solid var(--reticle);
+}
+.variant-instrument .inst-corner-br {
+  bottom: 0;
+  right: 0;
+  border-bottom: 2px solid var(--reticle);
+  border-right: 2px solid var(--reticle);
+}
+
+/* ======================================================================
+   EDGES (EdgePath renders <g class="inst-edge">)
+   ====================================================================== */
+.variant-instrument .inst-edge path {
+  stroke: var(--inst-edge);
+}
+
+/* ======================================================================
+   EVIDENCE RAIL (instrument stack)
+   ====================================================================== */
+.variant-instrument .evidence-rail {
+  background: var(--panel-1);
+  border-right: 1px solid var(--steel);
+  color: var(--ink);
+}
+.variant-instrument .rail-title {
+  font-family: var(--font-mono);
+  font-weight: 600;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--ink);
+}
+.variant-instrument .rail-subtitle {
+  font-family: var(--font-mono);
+  color: var(--ink-muted);
+}
+.variant-instrument .rail-note,
+.variant-instrument .rail-group-title {
+  font-family: var(--font-mono);
+  color: var(--ink-dim);
+}
+.variant-instrument .rail-group-title {
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  font-size: 10px;
+}
+
+.variant-instrument .inst-rail-row {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  width: 100%;
+  box-sizing: border-box;
+  padding: 5px 8px;
+  border: 1px solid transparent;
+  border-radius: 0;
+  background: var(--panel-2);
+  margin-bottom: 3px;
+  text-align: left;
+  cursor: pointer;
+  font-family: var(--font-mono);
+  font-variant-numeric: tabular-nums;
+  color: var(--ink);
+}
+.variant-instrument .inst-rail-row:hover {
+  background: var(--panel-3);
+}
+.variant-instrument .inst-rail-focused {
+  background: var(--panel-lit);
+  border: 1px solid var(--steel-bright);
+}
+.variant-instrument .inst-rail-line {
+  display: flex;
+  align-items: baseline;
+  gap: 7px;
+}
+.variant-instrument .inst-rail-code,
+.variant-instrument .inst-legend .inst-rail-code {
+  flex: 0 0 auto;
+  min-width: 20px;
+  font-weight: 600;
+  font-size: 11px;
+  letter-spacing: 0.06em;
+  color: var(--ink-muted);
+}
+.variant-instrument .inst-rail-label {
+  flex: 1 1 auto;
+  font-size: 12px;
+  font-weight: 500;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  color: var(--ink);
+}
+.variant-instrument .inst-rail-hop {
+  flex: 0 0 auto;
+  display: inline-flex;
+  align-items: baseline;
+  gap: 3px;
+}
+.variant-instrument .inst-rail-path {
+  font-size: 10px;
+  color: var(--ink-dim);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+/* ======================================================================
+   LEGEND (ChromeSlots.legend)
+   ====================================================================== */
+.variant-instrument .inst-legend {
+  font-family: var(--font-mono);
+  color: var(--ink);
+}
+.variant-instrument .inst-legend-title {
+  font-weight: 600;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  font-size: 11px;
+  margin-bottom: 8px;
+}
+.variant-instrument .inst-legend-block {
+  margin-bottom: 10px;
+}
+.variant-instrument .inst-legend-head {
+  font-size: 10px;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--ink-dim);
+  margin-bottom: 4px;
+}
+.variant-instrument .inst-legend-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  font-size: 11px;
+}
+.variant-instrument .inst-legend-list li {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  color: var(--ink-muted);
+}
+.variant-instrument .inst-legend .inst-code {
+  position: static;
+  font-size: 11px;
+}
+.variant-instrument .inst-swatch {
+  width: 12px;
+  height: 12px;
+  border: 1px solid var(--steel);
+  background: var(--panel-3);
+}
+.variant-instrument .inst-swatch-active {
+  border-color: var(--status-active);
+}
+.variant-instrument .inst-legend-note {
+  font-family: var(--font-copy);
+  font-size: 11px;
+  line-height: 1.5;
+  color: var(--ink-muted);
+  margin: 0;
+}
+
+/* ======================================================================
+   SHELL CHROME (scoped overrides so the whole cockpit reads dark)
+   ====================================================================== */
+.variant-instrument.spike-shell {
+  background: var(--cockpit-bg);
+}
+.variant-instrument .hud,
+.variant-instrument .perf-hud {
+  background: var(--panel-1);
+  border-color: var(--steel);
+  color: var(--ink);
+}
+.variant-instrument .hud {
+  border-bottom: 1px solid var(--steel);
+}
+.variant-instrument .hud-repo strong,
+.variant-instrument .perf-hud h2 {
+  color: var(--ink);
+}
+.variant-instrument .omnibox,
+.variant-instrument .hud-tools button,
+.variant-instrument .hud-tools select {
+  background: var(--panel-2);
+  color: var(--ink);
+  border: 1px solid var(--steel);
+  font-family: var(--font-mono);
+}
+.variant-instrument .omnibox::placeholder {
+  color: var(--ink-dim);
+}
+.variant-instrument .canvas-col {
+  border-right: 1px solid var(--steel);
+}
+.variant-instrument .react-flow,
+.variant-instrument .graph-wrapper {
+  background: var(--cockpit-bg);
+}
+.variant-instrument .map-hud {
+  background: rgba(10, 12, 16, 0.82);
+  border: 1px solid var(--steel);
+  color: var(--ink-muted);
+}
+.variant-instrument .map-hud summary,
+.variant-instrument .omissions-none {
+  color: var(--ink-dim);
+}
+.variant-instrument .search-results {
+  background: var(--panel-1);
+  border: 1px solid var(--steel);
+}
+.variant-instrument .search-hit {
+  background: var(--panel-2);
+  color: var(--ink);
+  border-bottom: 1px solid var(--steel);
+  font-family: var(--font-mono);
+}
+.variant-instrument .search-hit:hover {
+  background: var(--panel-3);
+}
+.variant-instrument .hit-kind {
+  color: var(--ink-dim);
+}
+.variant-instrument .event-reject {
+  background: #241a10;
+  border-bottom: 1px solid var(--status-needs-review);
+  color: var(--status-needs-review);
+}
+.variant-instrument .perf-hud table th {
+  color: var(--ink-dim);
+}
+.variant-instrument .perf-hud table td {
+  color: var(--ink);
+}
+.variant-instrument .perf-hud tr.fail td {
+  color: var(--status-conflict);
+}
+.variant-instrument .perf-hud .mono,
+.variant-instrument .perf-extra dt {
+  color: var(--ink-muted);
+}
+
+/* ======================================================================
+   REDUCED MOTION
+   ====================================================================== */
+@media (prefers-reduced-motion: reduce) {
+  .variant-instrument .inst-node,
+  .variant-instrument .inst-rail-row {
+    transition: none;
+  }
+}

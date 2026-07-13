@@ -1,0 +1,131 @@
+{
+  "litNodeIds": [
+    "dir:src",
+    "dir:src/util",
+    "file:src/app.ts",
+    "file:src/util/math.ts",
+    "repo:root",
+    "sym:src/app.ts#run",
+    "sym:src/util/math.ts#add",
+    "sym:src/util/math.ts#mul"
+  ],
+  "litEdges": [
+    {
+      "src": "sym:src/app.ts#run",
+      "dst": "sym:src/util/math.ts#add",
+      "kind": "calls",
+      "count": 1,
+      "claimId": 102
+    },
+    {
+      "src": "sym:src/util/math.ts#mul",
+      "dst": "sym:src/util/math.ts#add",
+      "kind": "calls",
+      "count": 3,
+      "claimId": 105
+    },
+    {
+      "src": "file:src/app.ts",
+      "dst": "file:src/util/math.ts",
+      "kind": "imports",
+      "count": 1,
+      "claimId": 202
+    }
+  ],
+  "viewport": {
+    "x": -4,
+    "y": -4,
+    "w": 28,
+    "h": 35
+  },
+  "rail": [
+    {
+      "nodeId": "file:src/app.ts",
+      "group": "anchors",
+      "hop": 0,
+      "edgeKind": "anchor",
+      "provenance": "diff-range aaaaaaa..bbbbbbb",
+      "label": "app.ts",
+      "path": "src/app.ts"
+    },
+    {
+      "nodeId": "file:src/util/math.ts",
+      "group": "anchors",
+      "hop": 0,
+      "edgeKind": "anchor",
+      "provenance": "diff-range aaaaaaa..bbbbbbb",
+      "label": "math.ts",
+      "path": "src/util/math.ts"
+    },
+    {
+      "nodeId": "sym:src/util/math.ts#add",
+      "group": "anchors",
+      "hop": 0,
+      "edgeKind": "anchor",
+      "provenance": "diff-range aaaaaaa..bbbbbbb",
+      "label": "add",
+      "path": "src/util/math.ts#add"
+    },
+    {
+      "nodeId": "dir:src",
+      "group": "contains",
+      "hop": 1,
+      "edgeKind": "contains",
+      "provenance": "structural:contains",
+      "label": "src",
+      "path": "src"
+    },
+    {
+      "nodeId": "dir:src/util",
+      "group": "contains",
+      "hop": 1,
+      "edgeKind": "contains",
+      "provenance": "structural:contains",
+      "label": "util",
+      "path": "src/util"
+    },
+    {
+      "nodeId": "file:src/util/math.ts",
+      "group": "contains",
+      "hop": 1,
+      "edgeKind": "contains",
+      "provenance": "structural:contains",
+      "label": "math.ts",
+      "path": "src/util/math.ts"
+    },
+    {
+      "nodeId": "repo:root",
+      "group": "contains",
+      "hop": 2,
+      "edgeKind": "contains",
+      "provenance": "structural:contains",
+      "label": "fixture-repo",
+      "path": ""
+    },
+    {
+      "nodeId": "sym:src/util/math.ts#add",
+      "group": "calls",
+      "hop": 0,
+      "edgeKind": "calls",
+      "provenance": "links.claim_id=102 predicate=calls",
+      "label": "add",
+      "path": "src/util/math.ts#add"
+    },
+    {
+      "nodeId": "file:src/util/math.ts",
+      "group": "imports",
+      "hop": 0,
+      "edgeKind": "imports",
+      "provenance": "links.claim_id=202 predicate=imports",
+      "label": "math.ts",
+      "path": "src/util/math.ts"
+    }
+  ],
+  "event": {
+    "kind": "diff",
+    "label": "fixture diff aaaaaaa..bbbbbbb",
+    "from": "aaaaaaa",
+    "to": "bbbbbbb"
+  },
+  "projectionId": "83cee9a7"
+}

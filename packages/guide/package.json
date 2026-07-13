@@ -1,0 +1,41 @@
+{
+  "name": "@contexa/guide",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "description": "ctx guide M3 slice-5a perf spike: quantized Atlas projection + React Flow renderer seam + Change Trace event projection. Throwaway probe proving D12 budgets.",
+  "scripts": {
+    "dev": "vite",
+    "build": "vite build",
+    "preview": "vite preview --strictPort",
+    "test": "vitest run",
+    "typecheck": "tsc --noEmit",
+    "gen": "tsx tools/extract-corpus.ts"
+  },
+  "engines": {
+    "node": ">=22.16"
+  },
+  "dependencies": {
+    "@xyflow/react": "^12.11.2",
+    "react": "^19.2.0",
+    "react-dom": "^19.2.0"
+  },
+  "devDependencies": {
+    "@fontsource-variable/archivo": "^5.2.6",
+    "@fontsource-variable/ibm-plex-sans": "^5.2.6",
+    "@fontsource-variable/jetbrains-mono": "^5.2.6",
+    "@fontsource-variable/public-sans": "^5.2.5",
+    "@fontsource-variable/source-serif-4": "^5.2.6",
+    "@fontsource/ibm-plex-mono": "^5.2.6",
+    "@testing-library/react": "^16.3.2",
+    "@types/node": "^25.9.3",
+    "@types/react": "^19.2.2",
+    "@types/react-dom": "^19.2.1",
+    "@vitejs/plugin-react": "^6.0.3",
+    "happy-dom": "^20.10.6",
+    "tsx": "^4.23.0",
+    "typescript": "rc",
+    "vite": "^8.1.4",
+    "vitest": "^4.1.10"
+  }
+}

@@ -1,0 +1,359 @@
+/* Surveyor's Plat variant. A county land-registry plat map: tracts (folders),
+   lots (files), parcels (decls). FLAT cadastral drawing. Hierarchy is line
+   weight only. Zero shadows, zero radius, near-zero motion. Every rule is
+   scoped under .variant-plat. Saturated color is spent ONLY on the three claim
+   statuses (D11/D15); activity is neutral luminance. */
+
+.variant-plat {
+  /* --- Cool paper + blue-black ink (redefined substrate tokens) --- */
+  --paper: #f4f6f9;
+  --paper-2: #eef2f7; /* one step darker paper (register rows, focused rail) */
+  --ink: #171c26;
+  --ink-muted: #5a6473;
+  --region-border: #c3ccd8;
+
+  /* Status: the ONLY saturated color (registry stamp tones). */
+  --status-active: #8b8f97; /* neutral gray tick */
+  --status-needs-review: #a9741a; /* ochre */
+  --status-conflict: #b02417; /* registry red */
+
+  --lit-outline: #171c26; /* full-strength ink for the Change Trace */
+  --edge-ink: #3b4658; /* neutral survey-line ink, lighter than node ink */
+
+  /* Faded-ink steps for the Change Trace dim state. Structure fades; the map
+     never disappears (fill stays paper). Labels use a stronger step so
+     dimmed text holds >=3:1. */
+  --ink-dim-rule: rgba(23, 28, 38, 0.35);
+  --ink-dim-label: rgba(23, 28, 38, 0.62);
+
+  --font-ui: "IBM Plex Sans Variable", system-ui, sans-serif;
+  --font-mono: "IBM Plex Mono", ui-monospace, SFMono-Regular, Menlo, monospace;
+  --font-display: "IBM Plex Sans Variable", system-ui, sans-serif;
+
+  background: var(--paper);
+  color: var(--ink);
+  font-family: var(--font-ui);
+}
+
+/* Diagonal survey hatch for lots "under survey" (in the Change Trace).
+   Inline SVG data URI, ~6% ink, tiles seamlessly on a 6px grid. */
+.variant-plat {
+  --plat-hatch: url("data:image/svg+xml,%3Csvg%20xmlns='http://www.w3.org/2000/svg'%20width='6'%20height='6'%3E%3Cpath%20d='M0%206L6%200M-1%201L1%20-1M5%207L7%205'%20stroke='%23171c26'%20stroke-width='0.7'%20stroke-opacity='0.5'/%3E%3C/svg%3E");
+}
+
+/* ---------------------------------------------------------------- Parcels */
+
+.variant-plat .plat-node {
+  position: relative;
+  width: 100%;
+  height: 100%;
+  box-sizing: border-box;
+  background-color: var(--lot-fill, var(--paper));
+  border: 1px solid var(--ink);
+  border-radius: 0;
+  overflow: hidden;
+  font-family: var(--font-ui);
+  /* Registry stillness: opacity settles only, no transforms. */
+  transition: opacity 120ms linear;
+}
+
+/* Tract (folder): 1.5px double-rule -- outer border plus an inset rule. */
+.variant-plat .plat-folder {
+  border-width: 1.5px;
+  border-color: var(--ink);
+}
+.variant-plat .plat-folder::before {
+  content: "";
+  position: absolute;
+  inset: 2px;
+  border: 1px solid var(--ink);
+  pointer-events: none;
+}
+
+/* Lot (file): 1px rule. */
+.variant-plat .plat-file {
+  border-width: 1px;
+  border-color: var(--ink);
+}
+
+/* Parcel (decl): 0.5px hairline. */
+.variant-plat .plat-decl {
+  border-width: 0.5px;
+  border-color: var(--ink);
+}
+
+/* ---- Change Trace: lit / dimmed / focused ---- */
+
+/* Lit: full-strength ink rule + "under survey" diagonal hatch. */
+.variant-plat .plat-lit {
+  border-color: var(--lit-outline);
+  background-image: var(--plat-hatch);
+}
+.variant-plat .plat-lit.plat-folder::before {
+  border-color: var(--lit-outline);
+}
+
+/* Dimmed: structure fades to 35% ink; fill stays paper (map never vanishes). */
+.variant-plat .plat-dimmed {
+  border-color: var(--ink-dim-rule);
+}
+.variant-plat .plat-dimmed.plat-folder::before {
+  border-color: var(--ink-dim-rule);
+}
+.variant-plat .plat-dimmed .plat-label {
+  color: var(--ink-dim-label);
+}
+
+/* Focused: double-rule ink outline + surveyor corner ticks. */
+.variant-plat .plat-focused {
+  outline: 2px solid var(--ink);
+  outline-offset: -1px;
+  border-color: var(--ink);
+}
+.variant-plat .plat-focused::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  --tk: var(--ink);
+  /* Solid-ink corner L-marks (two arms per corner). Not decorative gradients:
+     both stops are the same color, so each renders as a flat ink tick. */
+  background:
+    linear-gradient(var(--tk), var(--tk)) left top / 7px 2px no-repeat,
+    linear-gradient(var(--tk), var(--tk)) left top / 2px 7px no-repeat,
+    linear-gradient(var(--tk), var(--tk)) right top / 7px 2px no-repeat,
+    linear-gradient(var(--tk), var(--tk)) right top / 2px 7px no-repeat,
+    linear-gradient(var(--tk), var(--tk)) left bottom / 7px 2px no-repeat,
+    linear-gradient(var(--tk), var(--tk)) left bottom / 2px 7px no-repeat,
+    linear-gradient(var(--tk), var(--tk)) right bottom / 7px 2px no-repeat,
+    linear-gradient(var(--tk), var(--tk)) right bottom / 2px 7px no-repeat;
+}
+
+/* ---- Labels ---- */
+
+.variant-plat .plat-label {
+  position: relative;
+  z-index: 1;
+  color: var(--ink);
+  line-height: 1.1;
+  padding: 1px 3px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+/* Tract names as map-sheet titles: small, letterspaced small-caps. */
+.variant-plat .plat-sheet-title {
+  font-family: var(--font-display);
+  font-variant-caps: all-small-caps;
+  letter-spacing: 0.09em;
+  font-weight: 600;
+  font-size: 8px;
+  color: var(--ink);
+}
+
+/* Lot labels: sentence-case, small. */
+.variant-plat .plat-lot-label {
+  font-family: var(--font-ui);
+  font-weight: 500;
+  font-size: 8.5px;
+}
+
+/* Parcel-number-style overflow annotation in the lot corner (mono, tiny). */
+.variant-plat .plat-parcel-count {
+  position: absolute;
+  right: 0;
+  bottom: 0;
+  z-index: 1;
+  font-family: var(--font-mono);
+  font-variant-numeric: tabular-nums;
+  font-size: 7px;
+  line-height: 1;
+  padding: 1px 2px;
+  color: var(--ink-muted);
+  background: var(--lot-fill, var(--paper));
+}
+
+/* ---- Status ticks: the only saturated color (perimeter bar, top edge) ---- */
+
+.variant-plat .plat-tick {
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  height: 3px;
+  z-index: 2;
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+}
+.variant-plat .plat-status-active {
+  background: var(--status-active);
+}
+.variant-plat .plat-status-needs-review {
+  background: var(--status-needs-review);
+}
+.variant-plat .plat-status-conflict {
+  background: var(--status-conflict);
+}
+/* Letterform glyph for non-color access, at readable sizes only. */
+.variant-plat .plat-tick-glyph {
+  font-family: var(--font-mono);
+  font-weight: 600;
+  font-size: 7px;
+  line-height: 1;
+  color: var(--paper);
+  padding: 0 2px;
+  transform: translateY(4px);
+}
+
+/* ---------------------------------------------------------- Register rail */
+
+.variant-plat .plat-rail-row {
+  display: grid;
+  grid-template-columns: 22px 1fr auto;
+  align-items: start;
+  gap: 6px;
+  width: 100%;
+  text-align: left;
+  border: 1px solid var(--region-border);
+  border-radius: 0;
+  background: var(--paper);
+  padding: 4px 6px;
+  cursor: pointer;
+  color: var(--ink);
+  transition: opacity 120ms linear;
+}
+/* Focused row: full box rule in ink + one paper step darker (NOT a side stripe). */
+.variant-plat .plat-rail-row-focused {
+  border: 1px solid var(--ink);
+  background: var(--paper-2);
+}
+.variant-plat .plat-rail-ord {
+  font-family: var(--font-mono);
+  font-variant-numeric: tabular-nums;
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--ink);
+  padding-top: 1px;
+}
+.variant-plat .plat-rail-body {
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+}
+.variant-plat .plat-rail-label {
+  font-family: var(--font-ui);
+  font-weight: 500;
+  font-size: 12px;
+  color: var(--ink);
+}
+.variant-plat .plat-rail-path {
+  font-family: var(--font-mono);
+  font-size: 10px;
+  color: var(--ink-muted);
+  word-break: break-all;
+}
+.variant-plat .plat-rail-prov {
+  font-family: var(--font-mono);
+  font-size: 9px;
+  color: var(--ink-muted);
+  word-break: break-all;
+}
+.variant-plat .plat-rail-kind {
+  font-family: var(--font-mono);
+  font-size: 10px;
+  color: var(--ink-muted);
+  letter-spacing: 0.02em;
+  padding-top: 1px;
+}
+
+/* --------------------------------------------------------------- Legend */
+
+.variant-plat .plat-legend {
+  font-family: var(--font-ui);
+  font-size: 11px;
+  color: var(--ink);
+  border: 1px solid var(--region-border);
+  background: var(--paper);
+  padding: 8px 10px;
+}
+.variant-plat .plat-legend-title {
+  font-family: var(--font-display);
+  font-variant-caps: all-small-caps;
+  letter-spacing: 0.08em;
+  font-weight: 600;
+  font-size: 11px;
+  margin-bottom: 6px;
+}
+.variant-plat .plat-legend-list {
+  list-style: none;
+  margin: 0 0 6px;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+.variant-plat .plat-legend-status {
+  margin-bottom: 0;
+  padding-top: 6px;
+  border-top: 1px solid var(--region-border);
+}
+.variant-plat .plat-legend-list li {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+}
+.variant-plat .plat-swatch {
+  display: inline-block;
+  width: 20px;
+  height: 12px;
+  box-sizing: border-box;
+  background: var(--paper);
+  flex: none;
+}
+.variant-plat .plat-swatch-tract {
+  border: 1.5px solid var(--ink);
+}
+.variant-plat .plat-swatch-lot {
+  border: 1px solid var(--ink);
+}
+.variant-plat .plat-swatch-parcel {
+  border: 0.5px solid var(--ink);
+}
+.variant-plat .plat-swatch-hatch {
+  border: 1px solid var(--ink);
+  background-color: var(--paper);
+  background-image: var(--plat-hatch);
+}
+/* Legend status ticks: horizontal bar samples with the same tones. */
+.variant-plat .plat-legend-tick {
+  position: static;
+  width: 20px;
+  height: 8px;
+  flex: none;
+  justify-content: center;
+}
+.variant-plat .plat-legend-tick .plat-tick-glyph {
+  transform: none;
+  font-size: 7px;
+}
+
+/* ------------------------------------------------------------ HUD extra */
+
+.variant-plat .plat-sheet-caption {
+  font-family: var(--font-mono);
+  font-size: 10px;
+  letter-spacing: 0.04em;
+  color: var(--ink-muted);
+}
+
+/* --------------------------------------------------------------- Motion */
+
+@media (prefers-reduced-motion: reduce) {
+  .variant-plat .plat-node,
+  .variant-plat .plat-rail-row {
+    transition: none;
+  }
+}
