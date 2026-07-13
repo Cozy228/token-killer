@@ -755,3 +755,114 @@ toggle layers by edge kind · pin nodes to the current investigation · copy/sav
 Evidence Route · back to previous anchor. NOT provided in M3: auto main-route · importance
 ordering · behavior summaries · test-gap inference · architecture-violation detection ·
 concept→code narrative.
+
+---
+
+## Amendment 2026-07-13 — Canvas verdict + four-state model (D26–D33)
+
+Triple adversarial audit (Opus pipeline replay · Opus presentation census · Codex source
+attribution with recomputation, all on the real corpus @ 34ce9ec6) converged on one
+verdict after six build/fix rounds: **directory-derived coordinates cannot carry a
+relationship graph at repository scale.** Directory layout optimizes containment and
+path stability; relationship layout optimizes adjacency, rank, and crossing
+minimization; D9 forbade the second goal from moving the first's coordinates, and the
+two have no common solution. Evidence (replayed, not estimated): 94.7% of the world is
+empty paper; folder area/file-count spread 21x; cold-open zoom 0.17 vs first readable
+label at 1.0 (a ~6x dead zone); file-level backbone edges median 9.4% of the world
+diagonal with 12,189 crossings per 600 edges; the flagship diff deep link drew ZERO lit
+edges at its own default viewport. On conflict with earlier sections, THIS section wins.
+
+### D26 — Verdict and supersession
+
+- **D7 STANDS** as the data model: the complete, addressable, provable logical Atlas
+  (every declaration a logical node — see D33 kernel-completeness rule).
+- **D9 is RETIRED as canvas geometry.** Quantized directory packing no longer decides
+  any relationship-canvas position. Directory semantics survive as: grouping, the scope
+  tree, breadcrumbs, and overview counts. "Stable spatial identity" is carried by stable
+  IDs + the tree, not by persistent XY.
+- D10 (viewport/generation), D12 budgets, D14 find rules, D15 trust grammar, D17 export,
+  D24 naming gate: STAND, reinterpreted onto the four-state canvas.
+- D13's shell is REPLACED by D28. D11's edges-on-the-persistent-map and D22/D25's
+  "lit routes on the map" metaphor are RETIRED (the data shows it is always the
+  hairball); events light the tree + drive a bounded projection instead (D32).
+- The minimap is retired; tree + breadcrumb take over orientation.
+
+### D27 — Four-state canvas
+
+One center canvas, four projection modes; NO permanent all-repo node projection exists
+in any mode. Zoom only scales geometry; WHAT is projected changes only via explicit
+drill/expand/re-root, never via zoom thresholds.
+
+| Mode | Question it answers | Projection |
+|---|---|---|
+| Overview | what is this repo | module/package cards (D29) |
+| Scope Graph | what is inside this scope and how does it hang together | one scope's files/symbols, ELK layered (D30) |
+| Focused Connections | what connects to THIS thing | inbound / subject / outbound, 1-hop default (D31) |
+| Change Trace | what does this event touch | bounded event projection driven by the rail (D32) |
+
+### D28 — Shell
+
+- Top: repo · revision · generation · **live | snapshot | stale** badge · omnibox ·
+  current mode. Nothing else.
+- Left rail: directory/scope tree (DOM text, always legible; Recent lens + event
+  lighting render HERE as row highlights), attention counts, Change Trace rail (expands
+  in review), navigation history.
+- Center: the four-state canvas.
+- Right: inspector (subject identity + claim envelopes + declarations + connection
+  summaries + omission/expansion handles). The inspector and the rail are INDEPENDENT
+  scroll owners with reserved height budgets — never one flex column.
+- Perf HUD becomes dev-only (flag/route). The spike shell (Scale/Variant/Sweep chrome)
+  is retired from the product surface.
+
+### D29 — Overview cards
+
+Small set of module/package cards (fixed, screen-readable size; name, deterministic
+role line — path + counts only, NO generated prose pre-M4), file count,
+changed/needs-review/conflict counts, aggregate in/out counts, trust/freshness badge.
+Directory determines grouping only. Clicking a card enters its Scope Graph.
+
+### D30 — Scope Graph
+
+- Projects ONE scope's members; connectivity of the current bounded set goes through
+  ELK layered (crossing minimization). Cross-scope relations collapse into boundary
+  nodes carrying counts; clicking a boundary node re-roots/drills.
+- Explicit expand (click a container/group) changes content; budgets + disclosed
+  omissions per D12 discipline; anchor/lit members always survive budgets.
+
+### D31 — Focused Connections (promoted from the FocusGraph mock)
+
+The center-mode reading surface for "what connects": inbound | subject | outbound,
+1-hop default, self-describing cards, count-labeled short connectors, direction always
+explicit. High-degree subjects group rows by relation kind / scope / claim status with
+per-group expansion (never 187 edges at once). Boundary aggregation + breadcrumb
+re-root + keyboard navigation + real dialog/focus management (when modal-less, it IS
+the canvas mode; no hidden-shortcut-only entry).
+
+### D32 — Change Trace as bounded event projection
+
+- project(event) yields: changed anchors + observed anchor-to-anchor paths + direct
+  observed 1-hop neighbors (real expansion, not the anchor-induced subgraph) + boundary
+  aggregates. Ancestors NEVER enter the lit set for viewport math; the event viewport
+  is the projection's own bbox (root pollution is a defect class, now tested).
+- The rail is the primary narrative and DRIVES the canvas: selecting a rail group/step
+  focuses that slice of the projection. Wide diffs: rail narrates; the canvas shows the
+  current group only; the tree shows repo-wide location.
+- Every rail step carries constituent claim IDs, source revision, observed_at,
+  derivation, confidence, freshness, disclosure, omitted/aggregated counts.
+
+### D33 — Trust + kernel completeness + routing rules
+
+- **Kernel completeness:** display budgets may exist ONLY in projection/render layers.
+  Compile-time truncation (the MAX_DECLS_SHOWN=34 defect: 151 declarations + 333 calls
+  silently deleted) is a D7 violation — the logical model is always complete.
+- **Aggregate trust:** an aggregated edge/step carries {relationKind, count,
+  constituentClaimIds[], evidenceRevisions[], derivations[], confidenceSummary,
+  freshness, disclosure, omittedCount} — never "count + first claim id". Projection
+  identity includes evidence identity (or splits structural/evidence ids). Until this
+  lands, canvas aggregates must not be presented as claim-backed.
+- **Data-state honesty:** live-vs-snapshot fallback is surfaced, never silent;
+  /api/generation reports current state, not the startup snapshot.
+- **Edge routing:** routed sections/bend points from the layout engine are consumed and
+  drawn (ports explicit, labels on routed sections); aggregate edges show kind + count
+  and expansion replaces them with constituents. Straight center-to-center lines are
+  retired everywhere.

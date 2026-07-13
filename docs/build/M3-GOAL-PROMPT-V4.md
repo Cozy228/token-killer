@@ -1,7 +1,7 @@
 ---
-status: active
+status: superseded
 review_after: 2026-08-09
-note: M3 build work order v4 (P43), amended 2026-07-12 evening per P44 (D22-D25 — Event
+note: SUPERSEDED 2026-07-13 by M3-GOAL-PROMPT-V5.md after the triple-audit canvas verdict (M3-UI-LAYOUT-BRIEF D26-D33). Original note: M3 build work order v4 (P43), amended 2026-07-12 evening per P44 (D22-D25 — Event
   Projection, Evidence Rail, Change Trace naming gate, coordinate-system completeness).
   Supersedes M3-GOAL-PROMPT-V3.md — the v3 IA competition is OVER (D2): the information
   architecture is now RATIFIED in docs/design/M3-UI-LAYOUT-BRIEF.md (D1-D25) and both
