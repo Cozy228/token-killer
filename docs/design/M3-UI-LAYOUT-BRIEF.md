@@ -755,3 +755,270 @@ toggle layers by edge kind · pin nodes to the current investigation · copy/sav
 Evidence Route · back to previous anchor. NOT provided in M3: auto main-route · importance
 ordering · behavior summaries · test-gap inference · architecture-violation detection ·
 concept→code narrative.
+
+---
+
+## Amendment 2026-07-13 — Canvas verdict + four-state model (D26–D33)
+
+Triple adversarial audit (Opus pipeline replay · Opus presentation census · Codex source
+attribution with recomputation, all on the real corpus @ 34ce9ec6) converged on one
+verdict after six build/fix rounds: **directory-derived coordinates cannot carry a
+relationship graph at repository scale.** Directory layout optimizes containment and
+path stability; relationship layout optimizes adjacency, rank, and crossing
+minimization; D9 forbade the second goal from moving the first's coordinates, and the
+two have no common solution. Evidence (replayed, not estimated): 94.7% of the world is
+empty paper; folder area/file-count spread 21x; cold-open zoom 0.17 vs first readable
+label at 1.0 (a ~6x dead zone); file-level backbone edges median 9.4% of the world
+diagonal with 12,189 crossings per 600 edges; the flagship diff deep link drew ZERO lit
+edges at its own default viewport. On conflict with earlier sections, THIS section wins.
+
+### D26 — Verdict and supersession
+
+- **D7 STANDS** as the data model: the complete, addressable, provable logical Atlas
+  (every declaration a logical node — see D33 kernel-completeness rule).
+- **D9 is RETIRED as canvas geometry.** Quantized directory packing no longer decides
+  any relationship-canvas position. Directory semantics survive as: grouping, the scope
+  tree, breadcrumbs, and overview counts. "Stable spatial identity" is carried by stable
+  IDs + the tree, not by persistent XY.
+- D10 (viewport/generation), D12 budgets, D14 find rules, D15 trust grammar, D17 export,
+  D24 naming gate: STAND, reinterpreted onto the four-state canvas.
+- D13's shell is REPLACED by D28. D11's edges-on-the-persistent-map and D22/D25's
+  "lit routes on the map" metaphor are RETIRED (the data shows it is always the
+  hairball); events light the tree + drive a bounded projection instead (D32).
+- The minimap is retired; tree + breadcrumb take over orientation.
+
+### D27 — Four-state canvas
+
+One center canvas, four projection modes; NO permanent all-repo node projection exists
+in any mode. Zoom only scales geometry; WHAT is projected changes only via explicit
+drill/expand/re-root, never via zoom thresholds.
+
+| Mode | Question it answers | Projection |
+|---|---|---|
+| Overview | what is this repo | module/package cards (D29) |
+| Scope Graph | what is inside this scope and how does it hang together | one scope's files/symbols, ELK layered (D30) |
+| Focused Connections | what connects to THIS thing | inbound / subject / outbound, 1-hop default (D31) |
+| Change Trace | what does this event touch | bounded event projection driven by the rail (D32) |
+
+### D28 — Shell
+
+- Top: repo · revision · generation · **live | snapshot | stale** badge · omnibox ·
+  current mode. Nothing else.
+- Left rail: directory/scope tree (DOM text, always legible; Recent lens + event
+  lighting render HERE as row highlights), attention counts, Change Trace rail (expands
+  in review), navigation history.
+- Center: the four-state canvas.
+- Right: inspector (subject identity + claim envelopes + declarations + connection
+  summaries + omission/expansion handles). The inspector and the rail are INDEPENDENT
+  scroll owners with reserved height budgets — never one flex column.
+- Perf HUD becomes dev-only (flag/route). The spike shell (Scale/Variant/Sweep chrome)
+  is retired from the product surface.
+
+### D29 — Overview cards
+
+Small set of module/package cards (fixed, screen-readable size; name, deterministic
+role line — path + counts only, NO generated prose pre-M4), file count,
+changed/needs-review/conflict counts, aggregate in/out counts, trust/freshness badge.
+Directory determines grouping only. Clicking a card enters its Scope Graph.
+
+### D30 — Scope Graph
+
+- Projects ONE scope's members; connectivity of the current bounded set goes through
+  ELK layered (crossing minimization). Cross-scope relations collapse into boundary
+  nodes carrying counts; clicking a boundary node re-roots/drills.
+- Explicit expand (click a container/group) changes content; budgets + disclosed
+  omissions per D12 discipline; anchor/lit members always survive budgets.
+
+### D31 — Focused Connections (promoted from the FocusGraph mock)
+
+The center-mode reading surface for "what connects": inbound | subject | outbound,
+1-hop default, self-describing cards, count-labeled short connectors, direction always
+explicit. High-degree subjects group rows by relation kind / scope / claim status with
+per-group expansion (never 187 edges at once). Boundary aggregation + breadcrumb
+re-root + keyboard navigation + real dialog/focus management (when modal-less, it IS
+the canvas mode; no hidden-shortcut-only entry).
+
+### D32 — Change Trace as bounded event projection
+
+- project(event) yields: changed anchors + observed anchor-to-anchor paths + direct
+  observed 1-hop neighbors (real expansion, not the anchor-induced subgraph) + boundary
+  aggregates. Ancestors NEVER enter the lit set for viewport math; the event viewport
+  is the projection's own bbox (root pollution is a defect class, now tested).
+- The rail is the primary narrative and DRIVES the canvas: selecting a rail group/step
+  focuses that slice of the projection. Wide diffs: rail narrates; the canvas shows the
+  current group only; the tree shows repo-wide location.
+- Every rail step carries constituent claim IDs, source revision, observed_at,
+  derivation, confidence, freshness, disclosure, omitted/aggregated counts.
+
+### D33 — Trust + kernel completeness + routing rules
+
+- **Kernel completeness:** display budgets may exist ONLY in projection/render layers.
+  Compile-time truncation (the MAX_DECLS_SHOWN=34 defect: 151 declarations + 333 calls
+  silently deleted) is a D7 violation — the logical model is always complete.
+- **Aggregate trust:** an aggregated edge/step carries {relationKind, count,
+  constituentClaimIds[], evidenceRevisions[], derivations[], confidenceSummary,
+  freshness, disclosure, omittedCount} — never "count + first claim id". Projection
+  identity includes evidence identity (or splits structural/evidence ids). Until this
+  lands, canvas aggregates must not be presented as claim-backed.
+- **Data-state honesty:** live-vs-snapshot fallback is surfaced, never silent;
+  /api/generation reports current state, not the startup snapshot.
+- **Edge routing:** routed sections/bend points from the layout engine are consumed and
+  drawn (ports explicit, labels on routed sections); aggregate edges show kind + count
+  and expansion replaces them with constituents. Straight center-to-center lines are
+  retired everywhere.
+
+---
+
+## Amendment 2026-07-14 — Relationship-first geometry (D34–D41)
+
+Maintainer ruling after the D26 canvas verdict, ratified against fresh measurements of the
+real store (queries replayed 2026-07-14; every number below was produced by a query, not
+carried from a document). This section states HOW the four-state canvas is laid out. On
+conflict with any earlier section, THIS section wins.
+
+**North star (maintainer, verbatim intent):** the Code Atlas's first job is to make the
+provable relationships between code visible, walkable, and understandable. Layout organizes
+the relationships FIRST and places the files afterwards; directories provide supporting
+background only. Every relationship must be distinguishable at real zoom, and every key code
+name must be readable. Determinism, capacity limits, and directory information are
+CONSTRAINTS — they are not the point of the map.
+
+### Measured ground truth this amendment rests on
+
+| Measurement | Value | Consequence |
+|---|---|---|
+| connected components of the file relation graph (imports + lifted calls) | **3; the giant one holds 439/447 = 98.2%** | "relationship cluster" is NOT a scoping primitive — there is exactly one cluster |
+| cyclic SCCs at file grain | **5 SCCs, 17 files (3.8%); largest = 6 files** | the dependency graph is 96% a DAG — layering by dependency direction is well-defined nearly everywhere |
+| `calls` links that are intra-file | **2,153 / 4,228 = 51%** | a file-grain-only canvas discards half the call evidence |
+| declarations in one scope (`packages/core/src`) | **1,093** | a declaration-only canvas of a scope is unreadable |
+| cross-scope vs in-scope decl edges (`packages/core/src/store`) | **228 vs 58** | boundary aggregation dominates; it is structural, not decorative |
+| declaration fan-in | median 1 · p99 12 · **max 358 (`push`)** | no lane-separation scheme makes 358 edges distinguishable; grouping is a precondition, not a polish step |
+| parallel sym→sym call links | **0 (every pair has exactly one)** | overlapping "calls" lines were never parallel edges — they were distinct edges sharing one channel |
+| decl-bearing files with zero visible relation | **106 / 535 = 20%** | the "no visible route" set is real and sizeable; it must be honest, not hidden |
+
+### D34 — Relationship-first layout
+
+Positions are decided by relationships, not by paths. The layout engine organizes the
+relationship skeleton first and then places code atoms where they best explain that skeleton.
+Alphabetical path order, directory nesting, and quantized lots may NOT drive primary
+coordinates. (This is the positive statement of what D26 killed.)
+
+- Space direction expresses dependency direction: callers/importers upstream, callees/imported
+  downstream, along one consistent axis.
+- Cycles are laid out as one block; a false ordering is never fabricated for them. Only 17
+  files are cyclic — this is a small, explicit case, not the general one.
+- Independent relationship groups are laid out separately and then arranged as wholes.
+- Determinism is retained as a CONSTRAINT: identical data yields an identical layout; input
+  array order never changes the result; focus/search/hover never re-layout; adding parallel
+  evidence never moves an atom. Relationship-first layout must ALSO be deterministic — but
+  determinism is never bought back by returning to a directory grid.
+
+### D35 — Directory selects; relationships position
+
+The scope (a directory) is a SELECTOR: it decides WHICH atoms enter the bounded projection.
+It has no authority over WHERE they sit. This resolves the apparent conflict with the north
+star: there is only one relationship cluster in this repo (98.2%), so relationship clusters
+cannot bound a projection; directories can.
+
+Folder identity survives as a WEAK BACKGROUND HULL only:
+
+- a hull is drawn only where same-directory atoms happen to land adjacent after the
+  relationship layout;
+- same-directory atoms that the relationship layout separates are NOT dragged back together,
+  and no giant box is stretched across the map to contain them;
+- a hull never moves an atom, never obstructs edge routing, and never decides whether a
+  relationship may be drawn;
+- full paths remain available on the card, in the inspector, and in the Evidence Rail.
+
+### D36 — Compound grain: the declaration is the atom, the file is a container lot
+
+Restates and enforces D7 (the superseded assumption A1, "canvas grain stops at FILE level",
+is void — it was never the ratified model).
+
+- The atom is the declaration (`function | method | class | const`); a file with no live
+  declaration is its own fallback atom.
+- A file is a CONTAINER LOT, not an atom. Collapsed, it presents aggregate edges with counts.
+  Expanded, it reveals its declarations and the real symbol→symbol edges among them.
+- Layout is hierarchical (ELK `hierarchyHandling: INCLUDE_CHILDREN`): file containers are laid
+  out by dependency direction; declaration children are laid out inside them; cross-container
+  edges are routed through the hierarchy.
+- This is what preserves the 51% of call evidence that is intra-file: it is not discarded, it
+  is revealed on explicit expansion.
+
+### D37 — Routing IS layout, not post-processing
+
+Edges are not decoration applied after coordinates are frozen. Node placement, port
+assignment, and edge channels are computed by ONE process.
+
+- The layout engine's routed edge sections / bend points are CONSUMED and drawn (D33). A
+  reference implementation that computes orthogonal routing and then discards it, drawing
+  center-to-center curves instead, is the failure mode — do not reproduce it.
+- Ports are explicit: edges fan out from the source and fan in to the target as separate
+  approaches, not as one merged trunk.
+- Edges that share a trunk get stable, separate lanes; lane order is deterministic across
+  refreshes and input reorderings.
+- ELK input node size MUST be the real rendered card size. Feeding the engine a fixed box
+  while rendering a different one silently corrupts every spacing guarantee.
+
+### D38 — Edge labeling economy
+
+- `calls` and `imports` are distinguished by stroke, not by a permanently printed word.
+- A relation-kind label is NOT printed on every edge by default; a dense region must not become
+  a pile of the word "calls".
+- On focus/hover of a route, that route's label, kind, count, and provenance appear. One
+  relationship is highlighted for reading at a time.
+- Aggregate edges show kind + count; expansion replaces the aggregate with its constituents.
+  Parallel evidence is aggregated into ONE relationship — visual multiplicity is never
+  fabricated (measured: there are zero parallel symbol→symbol call links; any perceived
+  "stacked calls lines" were distinct edges sharing a channel, which D37 fixes).
+
+### D39 — Readable node sizing
+
+- Node size is derived from the real content: actual name length and actual child count. Fixed
+  lots/atoms are retired.
+- Declaration names (`function`/`const`/`class`/`method`) are readable first. Long names may be
+  ellipsized or wrapped under control, never chopped into unrecognizable fragments.
+- Full content survives in `title`, the inspector, and the accessibility label.
+- File name, full path, declaration kind and declaration name carry a clear visual hierarchy.
+- Dense files get real internal spacing. Shrinking the font or compressing the card to force
+  content in is forbidden.
+
+### D40 — Bounded first, readable second (and the honest periphery)
+
+The promise "every route is distinguishable and every name readable" applies to the set that
+SURVIVES budgeting — it is not a promise to display everything. Aggregation, grouping and
+budgets are therefore preconditions of readability, not optional polish. With a measured
+max fan-in of 358, this is arithmetic, not preference.
+
+- High-degree subjects group by relation kind / scope / claim status, with per-group expansion
+  (D31). Grouping is mandatory above the budget, not a nice-to-have.
+- Every omission is disclosed with an exact count and an expansion handle. A silently truncated
+  view is a defect of the same class as compile-time truncation (D33).
+- **No visible route, honestly placed** — the same rule at both grains:
+  - a FILE that is relevant to the current projection but carries no visible `calls`/`imports`
+    relation goes to a labelled peripheral "no visible route" area — never stuffed into the
+    centre as an isolated lot, never silently dropped (measured: 106 of 535 decl-bearing files);
+  - a DECLARATION inside an expanded file that carries no visible relation in this projection
+    collapses into a `+N more (no visible route)` handle rather than being rendered as an
+    isolated card (measured: `store.ts` holds 115 declarations — no ordering could make them all
+    readable, and importance ranking is forbidden pre-Artifact-2 by D25).
+  - Both remain reachable via search, the Evidence Rail, and the inspector.
+- The selection of what is omitted is MECHANICAL (degree in the current projection), never a
+  judgment of importance. Importance ranking stays behind the Artifact-2 gate (D19/D24/D25).
+
+### D41 — Acceptance is human sight, not arithmetic
+
+"The data differs" does not mean "the picture is readable". None of the following, alone or
+together, constitutes acceptance:
+
+- routed path arrays differ between edges;
+- label anchor points differ;
+- node rectangles do not mathematically intersect;
+- the result is deterministically reproducible.
+
+Those are FLOORS. The gate is: on a real page, at a real zoom, on the real corpus — routes are
+visually separable, text does not appear to overlap, a user can follow a route with their eyes,
+and a genuinely dense real file remains readable. Screenshots at fixed viewports (current corpus
+and the 10x class) are reviewed by the maintainer; the maintainer's sight is the final arbiter.
+Mechanical assertions (screen-px label size floor, minimum lane separation in screen px) are
+necessary and never sufficient.
